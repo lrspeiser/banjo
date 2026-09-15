@@ -944,7 +944,7 @@ if(BANJO_BUILD_TESTS)
             # A scene that keeps running instead of being run: stepping, reading
             # where everything is, and taking hold of something.
             add_executable(banjo_live_world_tests tests/live_world_tests.cpp)
-            target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene)
+            target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
 

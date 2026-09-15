@@ -698,6 +698,37 @@ enum class LiveOutcome : std::uint8_t {
     Broke = 3,     // it came apart
 };
 
+// What opening a world from a saved one gave back (LiveWorld::open with a
+// snapshot). See LiveWorld::snapshot for what a saved world holds.
+struct LiveRestore {
+    // "whole"  the world as it was saved: every body where it was and moving
+    //          or at rest as it was, every piece with its cells and name,
+    //          dents, severed bonds and cuts, joints at the angle they had,
+    //          edges and points, what was set aside, and the hand.
+    // "poses"  the saved world did not fit this scene -- it was saved from
+    //          another one, or from a build that lays the cells out another
+    //          way -- so the world opened from its scene and each thing still
+    //          whole and its authored self, on no joint and carrying no edge or
+    //          point, was put back where it was left.
+    // "none"   opened from its scene; nothing saved could be used.
+    // "" for a world not opened from a saved one.
+    std::string tier;
+    std::string why;              // why not whole, in words; "" when whole
+    double saved_t_s{};           // the saved world's clock
+    std::size_t bodies{};         // how many bodies came back (were put back, for "poses")
+    // What a saved world does not carry yet, in words.
+    std::vector<std::string> not_kept;
+    // What is set aside in the world opened again, where each was put away and
+    // facing the way poses() says things face: a host whose own record says
+    // one of them is out in the world can bring it back there.
+    struct Parked {
+        std::string name;
+        Vec3 at_m{};
+        Quat facing{};
+    };
+    std::vector<Parked> parked;
+};
+
 // A scene that keeps running instead of being run.
 //
 // runTileImpact is a batch: build, fracture, hand off, settle, write a
@@ -1264,7 +1295,48 @@ public:
                               std::string &why);
     [[nodiscard]] bool parked(const std::string &name) const;
 
+    // ---- a world that is kept: a restart gives back the room as it stood ----
+    //
+    // The whole of the world as it stands, as JSON ("banjo.world.v1"), for
+    // opening the same scene again later -- after the process holding it has
+    // gone. It carries every body by its cells (the scene's own node numbers)
+    // and their offsets in its frame, where it is and how it moves, whether it
+    // is asleep or set aside; the severed bonds and permanent sets; dents,
+    // cuts, joints, edges, tool points, the hand and the counters; the water;
+    // and what it does not carry (notKept()). `spec_digest` is the host's own
+    // word for the scene it opened, carried as it is.
+    //
+    // Empty, with `why`, while anything is in flight that a saved world cannot
+    // carry: a break being worked out, something cut through and about to come
+    // apart, an edge in a cut, a tool's point in the ground, a stroke of the
+    // hand. A host keeps the last one it was given, and asks again later.
+    [[nodiscard]] std::string snapshot(std::string &why, const std::string &spec_digest = {}) const;
+    // The scene opened again from a saved world. The scene builds the same
+    // cells under the same numbers, so each saved body is made again from its
+    // own cells, at its saved centre of mass facing the world's way -- which
+    // puts its cells exactly where its frame had them, so everything kept in its
+    // frame (dents, cuts, joint points, edges, tool points, the grip) is where it
+    // was -- and then turned and set moving as it was. A saved world that does
+    // not fit (another scene, or a build that lays the cells out another way:
+    // the lattice's fingerprint says) or cannot be read opens the scene as
+    // open(request) does, and restored() says so and why. Throws only when the
+    // scene itself cannot be opened.
+    [[nodiscard]] static std::unique_ptr<LiveWorld> open(const TileImpactRequest &request,
+                                                         const std::string &snapshot);
+    // What opening from a saved world gave back; an empty tier for a world
+    // opened from its scene.
+    [[nodiscard]] const LiveRestore &restored() const;
+    // What a saved world does not carry yet, in words.
+    [[nodiscard]] static std::vector<std::string> notKept();
+
 private:
+    // A saved world as read back, and the one open both ways go through.
+    struct Saved;
+    [[nodiscard]] static std::unique_ptr<LiveWorld> openFrom(const TileImpactRequest &request,
+                                                             const Saved *saved);
+    // After a saved world that did not fit: each thing still whole and its
+    // authored self put back where it was left (LiveRestore "poses").
+    void placeWhereLeft(const Saved &saved, const std::string &why);
     // Every body as the water sees it: shape, where it is, how it moves.
     [[nodiscard]] std::vector<water::BodyInWater> waterBodies();
     // Every body as the network sees it: where it is, how it is turned, what

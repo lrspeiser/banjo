@@ -8,14 +8,23 @@ restart of a server -- and the sims are restarted whenever work lands -- threw
 away everything anyone had built. Now each change is written here, one file to
 a room, and a room is read back the first time it is opened after a restart.
 
-What is kept is the authored room and its conversation. A page reload does not
-come here: it rejoins the running world (server._rejoin), so where things were
-moved to by hand, and what broke, stay while the server runs. A restart still
-loses them -- they belong to the running world, and saving that is the engine's
-to do -- and opens the room as authored. And what the person has (inventory.py):
-which things are in their bag and in their hands, so a restart does not hand
-the bag's things back to the room. It is optional -- a room kept before there
-was one reads as a person with nothing -- so the format is unchanged.
+What is kept is the authored room and its conversation, and what the person has
+(inventory.py): which things are in their bag and in their hands, so a restart
+does not hand the bag's things back to the room. And the running world itself,
+as the engine saves it (LiveWorld::snapshot, `world`): where everything is and
+how it is moving or resting, what broke into what, dents and cuts, joints at
+their angles, what is set aside, and what the hand holds -- so a restart gives
+back the room as it stood (server.keep_world saves it; the first open after a
+restart opens the room into it). A page reload does not come here: it rejoins
+the running world (server._rejoin).
+
+The format is banjo.room.v2: v1 with an optional `world`. A v1 room still reads,
+as a room with no saved world, and so does a room with no inventory, as a person
+with nothing. A saved world is used only for the spec it was saved from
+(live_session.spec_digest): the chat's changes are a new spec, so a world saved
+before them is dropped and the room opens from what the chat made. What the
+engine will not put back whole is set aside -- written out beside the room with
+why, never deleted -- and the room opens from its spec.
 
 One folder to a server (build/playground-rooms/<port> by default), because the
 three sims share one checkout and one person's world must not be another port's
@@ -37,7 +46,9 @@ import world_room
 
 log = logging.getLogger("banjo")
 
-FORMAT = "banjo.room.v1"
+FORMAT = "banjo.room.v2"
+# What is read: v1, kept before the running world was kept with its room, and v2.
+READS = ("banjo.room.v1", "banjo.room.v2")
 
 
 class RoomStore:
@@ -64,6 +75,12 @@ class RoomStore:
         has = kept.record() if callable(getattr(kept, "record", None)) else getattr(room, "inventory_record", None)
         if isinstance(has, dict):
             record["inventory"] = has
+        # The running world as it stood when last saved (server.keep_world),
+        # written in the same file as the record of what the person has, so
+        # the two are kept together or not at all.
+        world = getattr(room, "world_record", None)
+        if isinstance(world, dict):
+            record["world"] = world
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -83,7 +100,7 @@ class RoomStore:
                 return None
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
-                if (not isinstance(record, dict) or record.get("format") != FORMAT
+                if (not isinstance(record, dict) or record.get("format") not in READS
                         or record.get("scene") != scene
                         or not isinstance(record.get("spec"), dict)
                         or not isinstance(record["spec"].get("bodies"), list)
@@ -97,7 +114,28 @@ class RoomStore:
         room.chat = [turn for turn in record.get("chat", []) if isinstance(turn, dict)]
         room.kept_since = record.get("saved_unix_s")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
+        room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
         return room
+
+    def set_aside_world(self, room: Any, why: str) -> None:
+        """A saved world the engine would not put back whole: written out beside
+        the room, with why -- never deleted -- and the room kept without it."""
+        world = getattr(room, "world_record", None)
+        room.world_record = None
+        scene = getattr(room, "scene", None)
+        if not isinstance(world, dict) or scene not in world_room.SCENES:
+            return
+        aside = self.folder / f"{scene}.world-set-aside-{time.strftime('%Y%m%d-%H%M%S')}.json"
+        with self.lock:
+            try:
+                self.folder.mkdir(parents=True, exist_ok=True)
+                aside.write_text(json.dumps({"why": why, "world": world}, allow_nan=False), encoding="utf-8")
+                log.warning("rooms: the world kept with %s could not be put back (%s); kept as %s",
+                            scene, why, aside.name)
+            except (OSError, ValueError) as problem:
+                log.warning("rooms: the world kept with %s could not be put back (%s) or set aside: %s",
+                            scene, why, problem)
+        self.save(room)
 
     def set_aside(self, scene: str, why: str) -> None:
         """A kept room that would not open: moved out of the way, never deleted."""

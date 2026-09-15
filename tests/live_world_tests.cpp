@@ -15,14 +15,18 @@
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -1760,6 +1764,472 @@ PaneBroken breakThePane(bool cup_across_the_room) {
     return out;
 }
 
+// ---- a world that is kept: a restart gives back the room as it stood --------
+//
+// LiveWorld::snapshot, and LiveWorld::open with one: the owner's "a workshop
+// that remembers" (2026-09-15). A room where things have been dented, broken,
+// swung on a hinge, set aside and taken up, saved and opened again from what
+// was saved -- as a playground server started again opens it -- is that room:
+// every body where it was and as it was, with its cells, its dent and its name;
+// the joint at its angle; the hand holding what it held, by the same grip; what
+// was set aside still away. And it goes on from there: what was at rest stays
+// put, and what breaks next is new, and named and numbered after what there is.
+
+// Six corners of a room, far enough apart not to meet.
+TileImpactRequest workshop(double crate_x = 0.0) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    const auto box = [](const char *name, MaterialPreset material, Vec3 size, Vec3 at, bool anchored = false) {
+        SceneBody body;
+        body.name = name;
+        body.shape = BodyShape::Box;
+        body.material = material;
+        body.dimensions_m = size;
+        body.center_m = at;
+        body.anchored = anchored;
+        return body;
+    };
+    const auto ball = [](const char *name, double diameter, Vec3 at, Vec3 velocity = {}) {
+        SceneBody body;
+        body.name = name;
+        body.shape = BodyShape::Sphere;
+        body.material = MaterialPreset::Iron;
+        body.dimensions_m = {diameter, diameter, diameter};
+        body.center_m = at;
+        body.velocity_m_s = velocity;
+        return body;
+    };
+    r.bodies = {
+        // To be dented: iron at 16 m/s onto an anchored iron anvil
+        // (somethingCanBeDentedWithoutBeingBroken).
+        box("anvil", MaterialPreset::Iron, {0.3, 0.12, 0.3}, {-1.2, 0.06, 0.0}, true),
+        ball("iron ball", 0.1, {-1.2, 0.20, 0.0}, {0.0, -16.0, 0.0}),
+        // To be broken: a pane across two piers under a ball that falls 3 m
+        // (paneAndBall).
+        box("left pier", MaterialPreset::Iron, {0.08, 0.40, 0.20}, {0.94, 0.20, 0.0}, true),
+        box("right pier", MaterialPreset::Iron, {0.08, 0.40, 0.20}, {1.46, 0.20, 0.0}, true),
+        box("pane", MaterialPreset::Glass, {0.60, 0.02, 0.20}, {1.2, 0.41, 0.0}),
+        ball("glass breaker", 0.12, {1.2, 0.42 + 0.06 + 3.0, 0.0}),
+        // To swing on a hinge: a door by its post, 20 mm clear of it.
+        box("post", MaterialPreset::Oak, {0.06, 1.0, 0.06}, {0.0, 0.5, 1.2}, true),
+        box("door", MaterialPreset::Oak, {0.5, 0.8, 0.04}, {0.30, 0.45, 1.2}),
+        // To be set aside.
+        box("crate", MaterialPreset::Oak, {0.1, 0.1, 0.1}, {crate_x, 0.05, -1.2}),
+        // To be given a point and an edge, and taken up.
+        box("pick", MaterialPreset::Oak, {0.4, 0.04, 0.04}, {-1.2, 0.02, -1.2}),
+        // To be broken once the world has been opened again.
+        box("window", MaterialPreset::Glass, {0.3, 0.04, 0.3}, {1.2, 0.02, -1.2}),
+    };
+    return r;
+}
+
+// Steps, answering every break the world offers by working it out there and
+// then, as a host that waits for each would.
+void stepAnswering(LiveWorld &world, int steps, double dt_s = 1.0 / 240.0) {
+    for (int i = 0; i < steps; ++i) {
+        world.step(dt_s);
+        for (const std::string &name : world.breakable()) (void)world.fracture(name);
+    }
+}
+
+void requireSame(const Vec3 &a, const Vec3 &b, const std::string &what) {
+    require(a.x == b.x && a.y == b.y && a.z == b.z, what + " differs");
+}
+
+// Where a saved body's centre of mass was, as the saved world says.
+Vec3 rigidPoint(const nlohmann::json &body) {
+    const nlohmann::json &at = body.at("pose").at("com_m");
+    return {at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()};
+}
+
+// The same world, as a host sees it: every body by name -- what it is, where,
+// how it faces and moves, what it weighs, its cells, dent and cuts -- and the
+// joints, the hand, the edges and the points. Exactly, but for two things the
+// solver keeps in single precision and works out again: a body's mass, and
+// what a pin made again reads.
+void requireSameWorld(const LiveWorld &was, const LiveWorld &now, const std::string &what) {
+    const std::vector<LiveBodyPose> a = was.poses(true);
+    const std::vector<LiveBodyPose> b = now.poses(true);
+    require(a.size() == b.size() && was.bodies() == now.bodies(),
+            what + ": " + std::to_string(b.size()) + " bodies, not " + std::to_string(a.size()));
+    for (const LiveBodyPose &x : a) {
+        const LiveBodyPose *y = nullptr;
+        for (const LiveBodyPose &pose : b)
+            if (pose.name == x.name) y = &pose;
+        require(y != nullptr, what + ": the " + x.name + " did not come back");
+        const std::string of = what + ": the " + x.name + "'s ";
+        require(x.shape == y->shape && x.material == y->material && x.fragment == y->fragment &&
+                    x.anchored == y->anchored && x.revision == y->revision && x.color_rgba == y->color_rgba &&
+                    x.held == y->held,
+                of + "description differs");
+        requireSame(x.dimensions_m, y->dimensions_m, of + "size");
+        requireSame(x.position_m, y->position_m, of + "place");
+        for (int k = 0; k < 4; ++k)
+            require(x.orientation_wxyz[k] == y->orientation_wxyz[k], of + "facing differs");
+        requireSame(x.velocity_m_s, y->velocity_m_s, of + "velocity");
+        require(std::abs(x.mass_kg - y->mass_kg) <= 1e-9 * std::max(1.0, x.mass_kg), of + "mass differs");
+        require(x.dent_m == y->dent_m, of + "dent differs");
+        requireSame(x.dent_at_m, y->dent_at_m, of + "dent's place");
+        require(x.cells_local_m.size() == y->cells_local_m.size(), of + "cells differ in number");
+        for (std::size_t k = 0; k < x.cells_local_m.size(); ++k)
+            requireSame(x.cells_local_m[k], y->cells_local_m[k], of + "cell " + std::to_string(k));
+        require(x.kerfs.size() == y->kerfs.size(), of + "cuts differ in number");
+        for (std::size_t k = 0; k < x.kerfs.size(); ++k) {
+            const LiveBodyPose::Kerf &p = x.kerfs[k], &q = y->kerfs[k];
+            requireSame(p.point_local_m, q.point_local_m, of + "cut");
+            requireSame(p.along_local, q.along_local, of + "cut");
+            requireSame(p.facing_local, q.facing_local, of + "cut");
+            requireSame(p.normal_local, q.normal_local, of + "cut");
+            require(p.thickness_m == q.thickness_m && p.strips.size() == q.strips.size(), of + "cut differs");
+            for (std::size_t s = 0; s < p.strips.size(); ++s)
+                require(p.strips[s].along_from == q.strips[s].along_from &&
+                            p.strips[s].along_to == q.strips[s].along_to &&
+                            p.strips[s].facing_from == q.strips[s].facing_from &&
+                            p.strips[s].facing_to == q.strips[s].facing_to,
+                        of + "cut's strips differ");
+        }
+    }
+    const std::vector<LiveJoint> ja = was.joints();
+    const std::vector<LiveJoint> jb = now.joints();
+    require(ja.size() == jb.size(), what + ": a different number of joints");
+    for (std::size_t k = 0; k < ja.size(); ++k) {
+        const LiveJoint &p = ja[k], &q = jb[k];
+        const std::string of = what + ": joint " + std::to_string(p.id) + " (" + p.kind + ")'s ";
+        require(p.id == q.id && p.kind == q.kind && p.a == q.a && p.b == q.b && p.attached == q.attached,
+                of + "description differs");
+        require(p.lower == q.lower && p.upper == q.upper && p.friction == q.friction, of + "travel differs");
+        require(std::abs(p.at - q.at) < 1e-5,
+                of + "reading differs: " + std::to_string(p.at) + " against " + std::to_string(q.at));
+        requireSame(p.point_world_m, q.point_world_m, of + "point");
+        requireSame(p.axis_world, q.axis_world, of + "axis");
+        require(p.parted_because == q.parted_because, of + "parting differs");
+    }
+    const LiveHand ha = was.hand(), hb = now.hand();
+    require(ha.holding == hb.holding && ha.mode == hb.mode && ha.work_j == hb.work_j,
+            what + ": the hand holds " + hb.holding + " (" + hb.mode + "), not " + ha.holding + " (" + ha.mode + ")");
+    requireSame(ha.target_m, hb.target_m, what + ": where the hand wants the grip");
+    requireSame(ha.grip_m, hb.grip_m, what + ": the grip");
+    const std::vector<LiveBlade> ba = was.blades(), bb = now.blades();
+    require(ba.size() == bb.size(), what + ": a different number of edges");
+    for (std::size_t k = 0; k < ba.size(); ++k) {
+        const LiveBlade &p = ba[k], &q = bb[k];
+        const std::string of = what + ": edge " + std::to_string(p.id) + "'s ";
+        require(p.id == q.id && p.body == q.body && p.attached == q.attached && p.cut_area_m2 == q.cut_area_m2 &&
+                    p.cut_work_j == q.cut_work_j && p.thickness_m == q.thickness_m &&
+                    p.edge_radius_m == q.edge_radius_m && p.bevel_deg == q.bevel_deg,
+                of + "description differs");
+        requireSame(p.heel_local_m, q.heel_local_m, of + "heel");
+        requireSame(p.tip_local_m, q.tip_local_m, of + "tip");
+        requireSame(p.facing_local, q.facing_local, of + "facing");
+        requireSame(p.grip_local_m, q.grip_local_m, of + "grip");
+        requireSame(p.heel_m, q.heel_m, of + "heel in the world");
+    }
+    const std::vector<LiveToolPoint> pa = was.toolPoints(), pb = now.toolPoints();
+    require(pa.size() == pb.size(), what + ": a different number of tool points");
+    for (std::size_t k = 0; k < pa.size(); ++k) {
+        const LiveToolPoint &p = pa[k], &q = pb[k];
+        const std::string of = what + ": tool point " + std::to_string(p.id) + "'s ";
+        require(p.id == q.id && p.body == q.body && p.attached == q.attached && p.width_m == q.width_m &&
+                    p.thickness_m == q.thickness_m && p.angle_deg == q.angle_deg && p.length_m == q.length_m &&
+                    p.in == q.in,
+                of + "description differs");
+        requireSame(p.tip_local_m, q.tip_local_m, of + "tip");
+        requireSame(p.pointing_local, q.pointing_local, of + "pointing");
+        requireSame(p.grip_local_m, q.grip_local_m, of + "grip");
+        requireSame(p.tip_m, q.tip_m, of + "tip in the world");
+    }
+}
+
+// Where two saved worlds first differ, as a path into the document: "" when
+// they are the same.
+std::string firstDifference(const nlohmann::json &a, const nlohmann::json &b, const std::string &at = "") {
+    if (a.type() != b.type()) return at + " (" + a.dump().substr(0, 80) + " against " + b.dump().substr(0, 80) + ")";
+    if (a.is_object()) {
+        for (auto it = a.begin(); it != a.end(); ++it) {
+            if (!b.contains(it.key())) return at + "/" + it.key() + " (missing)";
+            const std::string d = firstDifference(it.value(), b.at(it.key()), at + "/" + it.key());
+            if (!d.empty()) return d;
+        }
+        for (auto it = b.begin(); it != b.end(); ++it)
+            if (!a.contains(it.key())) return at + "/" + it.key() + " (added)";
+        return "";
+    }
+    if (a.is_array()) {
+        if (a.size() != b.size())
+            return at + " (" + std::to_string(a.size()) + " against " + std::to_string(b.size()) + ")";
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const std::string d = firstDifference(a[i], b[i], at + "/" + std::to_string(i));
+            if (!d.empty()) return d;
+        }
+        return "";
+    }
+    return a == b ? "" : at + " (" + a.dump() + " against " + b.dump() + ")";
+}
+
+// Two saved worlds are one world: every field alike, but for what a pin reads,
+// which the solver works out again from single-precision turns -- a pin made
+// again reads its angle to about a millionth of a radian.
+void requireSameSaved(const std::string &first, const std::string &second, const std::string &what) {
+    nlohmann::json a = nlohmann::json::parse(first);
+    nlohmann::json b = nlohmann::json::parse(second);
+    require(a.at("joints").size() == b.at("joints").size(), what + ": a different number of joints");
+    for (std::size_t k = 0; k < a.at("joints").size(); ++k) {
+        nlohmann::json &p = a["joints"][k];
+        nlohmann::json &q = b["joints"][k];
+        require(p.contains("held") == q.contains("held"), what + ": joint " + std::to_string(k) + " holds in one only");
+        if (!p.contains("held")) continue;
+        const double at_p = p["held"]["at"].get<double>(), at_q = q["held"]["at"].get<double>();
+        require(std::abs(at_p - at_q) < 1e-5, what + ": joint " + std::to_string(k) + " reads " +
+                                                  std::to_string(at_q) + ", not " + std::to_string(at_p));
+        p["held"].erase("at");
+        q["held"].erase("at");
+    }
+    const std::string d = firstDifference(a, b);
+    require(d.empty(), what + ": the saved worlds differ at " + d);
+}
+
+void aWorldSavedComesBackAsItStood() {
+    constexpr double kPi = 3.14159265358979323846;
+    const auto live = LiveWorld::open(workshop());
+    live->foreseeCollisions(0.0);
+    // The ball dents on the anvil in its first hundredth of a second, and the
+    // other lands on the pane 0.78 s in.
+    stepAnswering(*live, 288, 1.0 / 480.0);
+    stepAnswering(*live, 240);
+    std::size_t shards = 0;
+    for (const LiveBodyPose &pose : live->poses())
+        if (pose.name.rfind("pane piece ", 0) == 0) ++shards;
+    const LiveBodyPose dented = named(live->poses(), "iron ball");
+    require(dented.dent_m > 0.0, "the iron ball took no dent, so this proves nothing about dents");
+    require(shards > 1, "the pane did not break, so this proves nothing about pieces");
+
+    // The door, hung by its post and hauled 50 degrees round; its pin's
+    // friction holds it where it is left.
+    const Vec3 pin{0.04, 0.45, 1.2};
+    require(live->hinge("post", "door", pin, {0.0, 1.0, 0.0}, -90.0, 90.0, 2.0) != 0,
+            "the door would not hang on its post");
+    require(live->grab("door"), "the door could not be taken hold of");
+    const double swing = 50.0 * kPi / 180.0;
+    live->moveHeld({pin.x + 0.26 * std::cos(swing), 0.45, pin.z - 0.26 * std::sin(swing)});
+    stepAnswering(*live, 240);
+    live->release();
+
+    // The crate into the bag.
+    std::string why;
+    require(live->park("crate", why), "the crate could not be set aside: " + why);
+
+    // The pick: a point at one end and an edge along one face, taken up by
+    // its middle and held half a metre up.
+    require(live->toolPoint("pick", {-1.0, 0.02, -1.2}, {1.0, 0.0, 0.0}, 0.04, 0.04, 30.0, 0.15,
+                            {-1.38, 0.02, -1.2}) != 0,
+            "the pick would not take a point: " + live->toolPointRefusal());
+    require(live->blade("pick", {-1.3, 0.02, -1.22}, {-1.1, 0.02, -1.22}, {0.0, 0.0, -1.0}, 0.01, 0.0002, 30.0,
+                        {-1.38, 0.02, -1.2}) != 0,
+            "the pick would not take an edge: " + live->bladeRefusal());
+    require(live->wield("pick", {-1.2, 0.02, -1.2}), "the pick could not be taken up");
+    live->moveHeld({-1.2, 0.6, -1.2});
+    stepAnswering(*live, 480);
+
+    const std::string first = live->snapshot(why);
+    require(!first.empty(), "the room could not be saved: " + why);
+    const nlohmann::json saved = nlohmann::json::parse(first);
+    const auto back = LiveWorld::open(workshop(), first);
+    const LiveRestore &restored = back->restored();
+    std::size_t resting = 0;
+    for (const nlohmann::json &body : saved.at("bodies"))
+        if (body.contains("pose") && !body.at("awake").get<bool>() && !body.at("anchored").get<bool>()) ++resting;
+    std::cout << "  saved at t=" << saved.at("t_s").get<double>() << " s: " << saved.at("bodies").size()
+              << " bodies (" << shards << " pieces of pane, " << resting << " of the loose ones at rest), "
+              << first.size() / 1024 << " KB; opened again " << restored.tier << " with " << restored.bodies
+              << " bodies\n";
+    require(restored.tier == "whole", "the room did not come back whole: " + restored.why);
+    requireSameWorld(*live, *back, "the room opened again");
+    require(back->parked("crate") && live->parked("crate"), "the crate is not still set aside");
+    require(back->hand().holding == "pick" && back->hand().mode == "grip", "the hand does not still hold the pick");
+    const std::string second = back->snapshot(why);
+    require(!second.empty(), "the room opened again could not be saved: " + why);
+    requireSameSaved(first, second, "the room opened again, saved");
+
+    // Stepped on, what was at rest stays put -- in the room and in the one
+    // opened again.
+    std::vector<std::string> still;
+    for (const nlohmann::json &body : saved.at("bodies"))
+        if (body.contains("pose") && !body.at("awake").get<bool>() && !body.at("anchored").get<bool>())
+            still.push_back(body.at("name").get<std::string>());
+    const std::vector<LiveBodyPose> live_before = live->poses(), back_before = back->poses();
+    stepAnswering(*live, 240);
+    stepAnswering(*back, 240);
+    const std::vector<LiveBodyPose> live_after = live->poses(), back_after = back->poses();
+    for (const std::string &name : still) {
+        require(length(named(back_after, name).position_m - named(back_before, name).position_m) < 1e-9,
+                "the " + name + " was at rest and moved in the room opened again");
+        require(length(named(live_after, name).position_m - named(live_before, name).position_m) < 1e-9,
+                "the " + name + " was at rest and moved in the room");
+    }
+    std::cout << "  stepped on for 1 s: the " << still.size() << " at rest stayed put in both\n";
+
+    // It goes on from there: what breaks next is new and numbered after it,
+    // and so is a joint made next.
+    require(back->grab("glass breaker"), "the glass breaker could not be taken up in the room opened again");
+    back->moveHeld({1.2, 0.04 + 0.06 + 10.0, -1.2});
+    back->release();
+    bool broke = false;
+    for (int i = 0; i < 720 && !broke; ++i) {
+        back->step(1.0 / 240.0);
+        for (const std::string &name : back->breakable())
+            if (back->fracture(name) > 1 && name == "window") broke = true;
+    }
+    require(broke, "the window was not broken, so nothing new was made");
+    const std::string third = back->snapshot(why);
+    require(!third.empty(), "the room opened again could not be saved after the window broke: " + why);
+    const nlohmann::json later = nlohmann::json::parse(third);
+    std::set<std::string> saved_names;
+    for (const nlohmann::json &body : saved.at("bodies")) saved_names.insert(body.at("name").get<std::string>());
+    const std::uint64_t next_body = saved.at("next").at("body").get<std::uint64_t>();
+    std::size_t made = 0;
+    for (const nlohmann::json &body : later.at("bodies")) {
+        const std::string name = body.at("name").get<std::string>();
+        if (name.rfind("window piece ", 0) != 0) continue;
+        ++made;
+        require(saved_names.count(name) == 0, "a new piece took a name the room already had: " + name);
+        require(body.at("body_id").get<std::uint64_t>() >= next_body,
+                "a new piece took a body number from before the room was saved: " + name);
+    }
+    require(made > 1, "the window's pieces are not in the room");
+    const unsigned joint = back->hinge("anvil", "iron ball", named(back->poses(), "iron ball").position_m,
+                                       {0.0, 1.0, 0.0});
+    require(joint == saved.at("next").at("joint").get<unsigned>(),
+            "a joint made in the room opened again did not take the next number: " + std::to_string(joint));
+    std::cout << "  then the window broke into " << made << " new pieces, numbered from " << next_body
+              << ", and a new pin took number " << joint << "\n";
+
+    // Not while the hand makes a stroke; saved once it is over.
+    LiveStroke stroke;
+    stroke.path_m = {live->hand().grip_m, live->hand().grip_m + Vec3{0.3, 0.0, 0.0}};
+    stroke.speed_m_s = 1.0;
+    stroke.accel_m_s2 = 20.0;
+    require(live->stroke(stroke, why), "the pick could not be swung: " + why);
+    require(live->snapshot(why).empty() && why.find("stroke") != std::string::npos,
+            "the room was saved in the middle of a stroke: " + why);
+    live->cancelStroke();
+    require(!live->snapshot(why).empty(), "the room could not be saved once the stroke was over: " + why);
+
+    // A saved world that does not fit -- this room with its crate authored
+    // 100 mm over, whose cells are not these -- opens the room as it is, and
+    // puts each thing still whole and its own self back where it was left.
+    const auto moved = LiveWorld::open(workshop(0.1), first);
+    require(moved->restored().tier == "poses" && moved->restored().why.find("cells") != std::string::npos,
+            "a world saved from another scene was not refused whole: " + moved->restored().tier + ", " +
+                moved->restored().why);
+    for (const nlohmann::json &body : saved.at("bodies")) {
+        if (body.at("name") != "glass breaker" || body.at("dent_m").get<double>() > 0.0) continue;
+        requireSame(named(moved->poses(), "glass breaker").position_m, rigidPoint(body),
+                    "the glass breaker put back where it was left");
+    }
+    require(!moved->parked("crate"), "the crate was set aside in a room whose bag the engine could not keep");
+    const auto unread = LiveWorld::open(workshop(), "{ half a world");
+    require(unread->restored().tier == "none" && !unread->restored().why.empty(),
+            "a saved world that does not read was taken as one");
+    require(unread->bodies() == workshop().bodies.size(), "a saved world that does not read left the room changed");
+    std::cout << "  saved from another scene: " << moved->restored().bodies << " whole things put back where they "
+              << "were left (" << moved->restored().why << ")\n";
+}
+
+// A world is not saved while something it cannot carry is under way -- a break
+// being worked out, an edge in a cut -- and is once that is over. A cut block
+// comes back with its kerf and its severed bonds.
+void aWorldIsNotSavedWhileSomethingIsUnderWay() {
+    std::string why;
+    {
+        const auto live = LiveWorld::open(paneAndBall(3.0));
+        live->foreseeCollisions(0.0);
+        bool started = false;
+        for (int i = 0; i < 2000 && !started; ++i) {
+            live->step(1.0 / 240.0);
+            const std::vector<std::string> waiting = live->breakable();
+            if (std::find(waiting.begin(), waiting.end(), "pane") != waiting.end())
+                started = live->beginFracture("pane");
+        }
+        require(started, "the pane was never struck hard enough to break, so this proves nothing");
+        require(live->snapshot(why).empty() && why.find("break") != std::string::npos,
+                "a world was saved while a break was being worked out: " + why);
+        const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (live->fracturePending() && std::chrono::steady_clock::now() < give_up) {
+            if (live->fractureReady()) {
+                (void)live->finishFracture();
+                break;
+            }
+            live->step(1.0 / 240.0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(!live->fracturePending(), "the break was never worked out");
+        require(!live->snapshot(why).empty(), "the world could not be saved once the break was done: " + why);
+    }
+    {
+        // theCutCostsWhatItTook's partial cut (blade_tests), with nothing but
+        // the two bodies and no gravity.
+        TileImpactRequest r;
+        r.cell_size_m = 0.01;
+        r.backend = benchBackend();
+        r.gravity_m_s2 = {0.0, 0.0, 0.0};
+        SceneBody block;
+        block.name = "block";
+        block.shape = BodyShape::Box;
+        block.material = MaterialPreset::Oak;
+        block.dimensions_m = {0.1, 0.1, 0.1};
+        block.center_m = {0.0, 0.5, 0.0};
+        SceneBody blade = block;
+        blade.name = "blade";
+        blade.material = MaterialPreset::Iron;
+        blade.dimensions_m = {0.2, 0.01, 0.03};
+        blade.center_m = {0.0, 0.5, 0.066};
+        blade.velocity_m_s = {0.0, 0.0, -6.0};
+        r.bodies = {block, blade};
+        const auto cut = LiveWorld::open(r);
+        require(cut->blade("blade", {-0.09, 0.5, 0.051}, {0.09, 0.5, 0.051}, {0.0, 0.0, -1.0}, 0.01, 0.00005, 30.0,
+                           {0.09, 0.5, 0.066}) != 0,
+                "the blade would not take an edge: " + cut->bladeRefusal());
+        // While the edge is in the block -- its cut open -- the world is not
+        // saved.
+        bool refused_in_the_cut = false;
+        for (int i = 0; i < 120; ++i) {
+            cut->step(1.0 / 240.0);
+            if (cut->steppedBack())
+                for (const std::string &name : cut->breakable()) cut->declineBreak(name);
+            const std::vector<LiveCut> cuts = cut->cuts();
+            if (!refused_in_the_cut &&
+                std::any_of(cuts.begin(), cuts.end(), [](const LiveCut &each) { return each.open; })) {
+                require(cut->snapshot(why).empty() && why.find("edge") != std::string::npos,
+                        "a world was saved with an edge in a cut: " + why);
+                std::cout << "  with the edge in the block: \"" << why << "\"\n";
+                refused_in_the_cut = true;
+            }
+            const std::vector<LiveBodyPose> poses = cut->poses();
+            const double closing = named(poses, "block").velocity_m_s.z - named(poses, "blade").velocity_m_s.z;
+            if (i > 4 && std::abs(closing) < 0.005) break;
+        }
+        require(refused_in_the_cut, "the edge was never seen in the block, so this proves nothing");
+        require(!named(cut->poses(), "block").kerfs.empty(), "the blade made no kerf, so this proves nothing");
+        // Drawn clear of the cut, it is saved, and comes back cut.
+        require(cut->grab("blade"), "the blade could not be taken hold of");
+        cut->moveHeld(named(cut->poses(), "blade").position_m + Vec3{0.0, 0.0, 0.2});
+        for (int i = 0; i < 10; ++i) cut->step(1.0 / 240.0);
+        cut->release();
+        for (int i = 0; i < 10; ++i) cut->step(1.0 / 240.0);
+        const std::string kept = cut->snapshot(why);
+        require(!kept.empty(), "the world could not be saved with the blade drawn clear: " + why);
+        require(!nlohmann::json::parse(kept).at("dead_bonds_b64").get<std::string>().empty(),
+                "the saved world carries no severed bond");
+        const auto again = LiveWorld::open(r, kept);
+        require(again->restored().tier == "whole", "the cut block did not come back whole: " + again->restored().why);
+        requireSameWorld(*cut, *again, "the cut block opened again");
+        requireSameSaved(kept, again->snapshot(why), "the cut block opened again, saved");
+        std::cout << "  the cut block came back with its " << named(again->poses(), "block").kerfs.size()
+                  << " kerf and its severed bonds\n";
+    }
+}
+
 void aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom() {
     const PaneBroken alone = breakThePane(false);
     const PaneBroken with_cup = breakThePane(true);
@@ -1845,6 +2315,10 @@ int main() {
         std::cout << "[PASS] a thing set aside is out of the world and comes back as it was\n";
         aHotThingSetAsideKeepsItsHeat();
         std::cout << "[PASS] a hot thing set aside keeps exactly what it holds, and burns on once it is back\n";
+        aWorldSavedComesBackAsItStood();
+        std::cout << "[PASS] a world saved comes back as it stood, and goes on from there\n";
+        aWorldIsNotSavedWhileSomethingIsUnderWay();
+        std::cout << "[PASS] a world is not saved while a break or a cut is under way, and is once it is over\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";

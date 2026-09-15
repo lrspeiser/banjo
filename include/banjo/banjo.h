@@ -128,7 +128,11 @@ extern "C" {
  * signature changed. A caller built against 20 must be rebuilt. It was made
  * beside 20 and numbered 19 on its branch; it landed second, so it is 21 and
  * no header was ever 19 -- one number is one header, as with 13 and 14. */
-#define BANJO_ABI_VERSION 21
+/* 22 added a world that is kept (docs/api/c-api.md, "A world that is kept"):
+ * banjo_snapshot saves the whole of a world as it stands, banjo_open_snapshot
+ * opens the same scene again from what was saved, and banjo_restored says what
+ * came back. No struct or signature that was in 21 changed. */
+#define BANJO_ABI_VERSION 22
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -1553,6 +1557,34 @@ BANJO_API const char *banjo_environment_report(const banjo_world *world, int ful
  * world is opened again from: the same water, over whatever ground that
  * scene's edits leave. */
 BANJO_API const char *banjo_environment_state(const banjo_world *world);
+
+/* ---- a world that is kept (ABI 22) ------------------------------------------
+ *
+ * The whole of a world as it stands, as JSON ("banjo.world.v1"), for opening
+ * the same scene again after the program holding it has gone: every body by
+ * its cells, where it is and how it moves or rests, the pieces things broke
+ * into, dents, severed bonds and cuts, joints at the angles they had, edges,
+ * tool points, what is set aside, the hand and the counters, and the water.
+ * `spec_digest` is the caller's own word for its scene (NULL for none), carried
+ * as it is. NULL, with why in banjo_last_error(), while something is under way
+ * that a saved world cannot carry: a break being worked out, a stroke of the
+ * hand, an edge in a cut, a tool's point in the ground -- keep the last one
+ * and ask again. The string is the world's until its next banjo_snapshot. */
+BANJO_API const char *banjo_snapshot(banjo_world *world, const char *spec_digest);
+/* The scene opened again from a saved world (banjo_snapshot): each body made
+ * again from its own cells, exactly where it was. A saved world that does not
+ * fit this scene or this build (the lattice's fingerprint says), or will not
+ * read, opens the scene as banjo_open does -- with each thing that is still
+ * whole and its own self put back where it was left, when it fits no better --
+ * and banjo_restored says which, and why. NULL only when the scene itself
+ * cannot be opened. */
+BANJO_API banjo_world *banjo_open_snapshot(const char *scene_json, double cell_size_m,
+                                           const char *snapshot_json);
+/* What opening from a saved world gave back, as JSON: {"tier": "whole",
+ * "poses" or "none" ("" for a world banjo_open opened), "why", "saved_t_s",
+ * "bodies", "not_kept": [what a saved world does not carry yet, in words],
+ * "parked": [{"name", "at_m", "facing_wxyz"}]}. */
+BANJO_API const char *banjo_restored(const banjo_world *world);
 /* Ground and water at a point: height, what it is made of, slope, depth,
  * surface and flow, and the ground's own share of rolling resistance there
  * (`rolling_resistance`). JSON. */

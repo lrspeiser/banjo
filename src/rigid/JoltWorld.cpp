@@ -1532,6 +1532,15 @@ unsigned JoltWorld::addHinge(const HingeDescription &d) {
     const double across = length(normal);
     if (!(across > 1e-9)) throw std::runtime_error("could not square up a hinge axis");
     normal = (1.0 / across) * normal;
+    if (!std::isfinite(d.at_rad) || std::abs(d.at_rad) > kPi + 1e-6)
+        throw std::invalid_argument("a hinge's reading as it is made is an angle from -pi to pi");
+    // Jolt measures the angle between the two bodies' normal axes about the
+    // pin, zero as the constraint is made when both are the same. The second
+    // body's is turned by the reading it is to have (HingeDescription::at_rad):
+    // made that way, it reads that angle now, and its limits are about the
+    // same zero the first one's were.
+    const Vec3 normal_b = d.at_rad == 0.0 ? normal
+                                          : std::cos(d.at_rad) * normal + std::sin(d.at_rad) * cross(axis, normal);
 
     JPH::HingeConstraintSettings settings;
     // World space, where the bodies are standing right now. Jolt keeps the
@@ -1546,7 +1555,8 @@ unsigned JoltWorld::addHinge(const HingeDescription &d) {
                    static_cast<JPH::Real>(d.point_world_m.y),
                    static_cast<JPH::Real>(d.point_world_m.z));
     settings.mHingeAxis1 = settings.mHingeAxis2 = toJolt(axis);
-    settings.mNormalAxis1 = settings.mNormalAxis2 = toJolt(normal);
+    settings.mNormalAxis1 = toJolt(normal);
+    settings.mNormalAxis2 = toJolt(normal_b);
     settings.mLimitsMin = static_cast<float>(d.lower_rad);
     settings.mLimitsMax = static_cast<float>(d.upper_rad);
     settings.mMaxFrictionTorque = static_cast<float>(d.friction_torque_n_m);
@@ -2173,6 +2183,8 @@ unsigned JoltWorld::addSlider(const SliderDescription &d) {
                                     "or more");
     if (!(d.friction_n >= 0.0) || !std::isfinite(d.friction_n))
         throw std::invalid_argument("slide friction must be zero or more newtons");
+    if (!std::isfinite(d.at_m))
+        throw std::invalid_argument("a slide's reading as it is made is a number of metres");
 
     const Vec3 along = (1.0 / reach) * d.axis_world;
     // Something square to the line of travel, for Jolt to measure from. Same
@@ -2188,7 +2200,11 @@ unsigned JoltWorld::addSlider(const SliderDescription &d) {
     // RVec3, not Vec3: this build carries positions in double precision, which
     // is the whole reason a room can be forty metres across and still place a
     // slide to the micrometre.
-    settings.mPoint1 = settings.mPoint2 = toJoltPosition(d.point_world_m);
+    // Jolt reads a slide as how far the second body's point is along the axis
+    // from the first's. Both are the same point for a slide made where the two
+    // stand; one to read at_m as it is made has the first's that far back.
+    settings.mPoint1 = toJoltPosition(d.point_world_m - d.at_m * along);
+    settings.mPoint2 = toJoltPosition(d.point_world_m);
     settings.mSliderAxis1 = settings.mSliderAxis2 = toJolt(along);
     settings.mNormalAxis1 = settings.mNormalAxis2 = toJolt(normal);
     settings.mLimitsMin = static_cast<float>(d.lower_m);
@@ -2782,6 +2798,22 @@ void JoltWorld::wake(MatterBodyId body_id) {
     // the same contacts would otherwise be asleep again within a step or two,
     // before it has had a chance to start moving.
     bodies.ResetSleepTimer(found->second);
+}
+
+void JoltWorld::sleep(MatterBodyId body_id) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    // Scenery is never awake, and has no motion to stop.
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.DeactivateBody(found->second);
+}
+
+JoltWorld::BodySurface JoltWorld::surfaceOf(MatterBodyId body_id) const {
+    const auto found = impl_->contact_states_.find(body_id);
+    if (found == impl_->contact_states_.end()) throw std::invalid_argument("rigid body is missing");
+    const CompiledContactMaterial &contact = found->second.contact;
+    return {contact.dynamic_friction, contact.restitution, contact.rolling_resistance};
 }
 
 void JoltWorld::addFragments(

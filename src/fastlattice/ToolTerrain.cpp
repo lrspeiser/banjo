@@ -247,6 +247,39 @@ std::vector<LiveToolPoint> ToolTerrain::points(const ToolTerrainHost &host) cons
     return out;
 }
 
+std::vector<ToolTerrain::SavedPoint> ToolTerrain::saved() const {
+    std::vector<SavedPoint> out;
+    out.reserve(points_.size());
+    for (const Point &p : points_)
+        out.push_back({p.id, p.body, p.tip_local, p.pointing_local, p.grip_local, p.width_local, p.shape,
+                       p.body_id, p.frame_nodes, p.frame_offsets, p.attached});
+    return out;
+}
+
+void ToolTerrain::restore(const std::vector<SavedPoint> &points, unsigned next) {
+    points_.clear();
+    log_.clear();
+    for (const SavedPoint &s : points) {
+        Point p;
+        p.id = s.id;
+        p.body = s.body;
+        p.tip_local = s.tip_local;
+        p.pointing_local = s.pointing_local;
+        p.grip_local = s.grip_local;
+        p.width_local = s.width_local;
+        p.shape = s.shape;
+        p.body_id = s.body_id;
+        p.frame_nodes = s.frame_nodes;
+        p.frame_offsets = s.frame_offsets;
+        p.attached = s.attached;
+        // A body made again collides as its hull until the next step makes it
+        // collide as its cells (prepare, shape).
+        p.shaped = false;
+        points_.push_back(std::move(p));
+    }
+    next_ = next;
+}
+
 void ToolTerrain::forget() {
     std::vector<std::size_t> moved(log_.size(), kNone);
     std::vector<LiveGroundWork> kept;

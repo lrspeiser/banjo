@@ -391,6 +391,12 @@ public:
         // What it takes to start it turning, in newton metres. A stiff old
         // hinge holds a door where it is left; zero swings freely.
         double friction_torque_n_m{0.0};
+        // The angle it reads as it is made, radians. Zero is a pin made where
+        // the two stand, which is every pin a scene hangs. A world opened again
+        // from a saved one hangs a door that had swung 60 degrees at 60, so it
+        // reads 60 and has the travel either side of that it had: its limits
+        // above stay the ones it was made with.
+        double at_rad{0.0};
     };
     [[nodiscard]] unsigned addHinge(const HingeDescription &description);
 
@@ -417,6 +423,9 @@ public:
         // difference between a gate that stays up when you stop hauling and one
         // that drops the moment you let go.
         double friction_n{0.0};
+        // How far along it reads as it is made, metres: zero for one built where
+        // the two stand. See HingeDescription::at_rad.
+        double at_m{0.0};
     };
     [[nodiscard]] unsigned addSlider(const SliderDescription &description);
 
@@ -700,6 +709,19 @@ public:
     // body is placed. A host that moves a body by hand and then expects gravity
     // to act on it has to say so.
     void wake(MatterBodyId body_id);
+    // The other way: take a body out of the step as a body at rest is, and zero
+    // its speed. For a world opened again from a saved one, whose bodies were at
+    // rest -- addFragments makes every body awake, and a room of things that had
+    // settled would otherwise all be simulated, and nudged, again. Scenery has
+    // nothing to put to sleep. Host thread, between steps.
+    void sleep(MatterBodyId body_id);
+    // How a body meets things, as it was made (RigidFragmentDescription's
+    // friction, restitution and its own share of rolling resistance), so a body
+    // made again from its cells meets things as it did.
+    struct BodySurface {
+        double friction{}, restitution{}, rolling_resistance{};
+    };
+    [[nodiscard]] BodySurface surfaceOf(MatterBodyId body_id) const;
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     // Trusted host callback, between steps. True accepts; false or an exception
     // restores Jolt bodies/contacts/constraints/global state, ticks and queued

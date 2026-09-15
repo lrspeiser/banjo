@@ -24,10 +24,12 @@ hand.
   5. a blade: wielded;
   6. a liftable loose thing: wielded at its middle;
   7. anything else: grabbed, so carried, or hauled on its joint.
-- **What a room keeps.** `room_store` v1 keeps the authored spec (with the
-  chat's builds and the ground's digs) and the conversation. Where things were
-  moved by hand, and what broke, go with the running world. A change by the
-  chat reopens the whole world.
+- **What a room keeps.** `room_store` keeps the authored spec (with the chat's
+  builds and the ground's digs), the conversation, the inventory record and,
+  since `banjo.room.v2`, the running world as the engine saves it. A reload
+  rejoins the running world, and a restart opens the room into the saved one.
+  A change by the chat reopens the whole world from its spec. See "What a room
+  keeps" below.
 - **The engine.** It cannot add a body to a running world, nor take one out and
   bring it back with its state.
 
@@ -129,24 +131,54 @@ hand.
 ## What a room keeps
 
 This section says what the code does (checked 2026-09-15), not what was
-planned. The plan here was a `room_store` v2 with every item's pose. Only its
-inventory half was built, and "a damaged thing cannot be stowed" was never
-checked by anything.
-- On disk (`room_store`, still `banjo.room.v1`): the spec, the chat, and the
-  inventory record as an optional field. No poses, no damage, no pieces.
+planned. The plan here was a `room_store` v2 with every item's pose. What was
+built instead keeps the engine's whole world, and "a damaged thing cannot be
+stowed" was never checked by anything.
+- On disk (`room_store`, `banjo.room.v2`; v1 still reads): the spec, the chat,
+  the inventory record, and `world`, the running world as the engine saves it
+  (`LiveWorld::snapshot`, "banjo.world.v1"). Written together, in one file, or
+  not at all.
+- What `world` holds:
+  - every body by its cells (the scene's own node numbers) and their offsets in
+    its frame, its name, body id, shape, dent, where it is and how it moves,
+    and whether it was at rest (it comes back asleep);
+  - the pieces things broke into, bonds a blade severed, each bond's permanent
+    set, and kerfs;
+  - joints, attached or parted, each reading the angle or travel it had;
+  - edges and tool points in their bodies' frames;
+  - what is set aside, where it was put away;
+  - the hand: what it holds, grip or carry, the grip, where it wants it;
+  - the clock and the counters, so what is made next is named and numbered
+    after what there is;
+  - the water, when the room has ground.
+  - Not yet: heat, char and fuel, which are declared again from the spec for
+    what is still there; and anything under way. A world is not saved while a
+    break is being worked out, a stroke is being made, an edge is in a cut or a
+    point is in the ground, and the last one saved is kept. A broken tool's
+    pieces are not yet its inventory item: each piece carries `from`, the name
+    of the authored thing it came from, for that.
+- When it is saved (`server.keep_world`): after an accepted inventory change,
+  after a break is worked out, every 5 s of the world's time while the page
+  steps it, after the ground changes, after the room opens, and as the server
+  stops (Ctrl+C or SIGTERM).
 - A page reload rejoins the running room (`server._rejoin`,
   `live_session.Live.rejoin`). Every body is where it is and as it is: moved,
   broken into pieces, dented. The hand still holds what it held, and the bag is
   as the record has it.
+- A server restart opens the room into the saved world, when that was saved
+  from the spec the room has now (`live_session.spec_digest`, which leaves out
+  the ground's edits and the carried water). Everything is where it was left
+  and as it was; the hand still holds what it held, and the record keeps it in
+  the hand (`inventory_room.after_open`). The engine's fingerprint of the
+  scene's cells refuses a world saved from other cells -- another scene, or a
+  build that lays them out another way. Then the room opens from its spec
+  with each thing still whole and its own self put back where it was left, and
+  the saved world is set aside beside the room with why, never deleted.
 - "Start the room again" opens the room again from its spec, as a reload used
-  to.
-- A server restart opens the room from its spec. Things come back where they
-  were authored, whole, and a thing that was in a hand goes back to the bag.
-  Keeping the running world through a restart needs the engine to save and
-  restore its state. That is the next slice of "nothing resets".
-- A dented thing can be stowed: nothing checks for a dent. Within one running
-  room it comes back from the bag as it went in (park and unpark keep the body,
-  heat and all). A restart restores it as authored.
+  to, and the world kept from then on is that one.
+- A dented thing can be stowed: nothing checks for a dent. It comes back from
+  the bag as it went in (park and unpark keep the body), and a restart keeps it
+  in the bag, dent and all.
 
 ## The engine half (read from the code, 2026-09-14)
 

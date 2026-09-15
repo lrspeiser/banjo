@@ -5004,25 +5004,29 @@ async function open({ again = false } = {}) {
     drawJoints(data.joints || []);
     drawRopes();
     clearHeat();
+    // The room as it stood: rejoined on a reload, or opened again whole from
+    // the world the server saved before it stopped (`restored`). Either way it
+    // is the room the person was in, standing where they stood.
+    const asItStood = !!data.rejoined || !!(data.restored && data.restored.tier === "whole");
     if (data.terrain) {
       drawTerrain(data.terrain);
       if (data.water) drawWater(data.water);
       // Somewhere to stand that looks at something: the valley says where --
-      // or, when a reload rejoins the room, where the person was standing.
-      placeCamera((data.rejoined && keptView(data.scene)) || data.terrain.view);
+      // or, when the room is as it stood, where the person was standing.
+      placeCamera((asItStood && keptView(data.scene)) || data.terrain.view);
     } else {
       clearGround();
-      if (data.rejoined) placeCamera(keptView(data.scene));
+      if (asItStood) placeCamera(keptView(data.scene));
     }
     // What this room's ground has had dug out of it and not put back: the
     // engine's count, the room's own edits replayed. A room with no ground has
     // none to carry.
     carryGround(data.terrain ? data.terrain.carried : null);
-    // A reload rejoins the room with the hand as it was: what the engine's hand
-    // holds is the person's again, taken over the way a thing out of the bag is
-    // (adoptGrip) -- or, on a joint, the way the hand's hold is at the end of an
-    // action (adoptHold).
-    const holding = data.rejoined && data.hand ? data.hand.holding : "";
+    // A reload rejoins the room with the hand as it was, and a restart gives it
+    // back so: what the engine's hand holds is the person's again, taken over
+    // the way a thing out of the bag is (adoptGrip) -- or, on a joint, the way
+    // the hand's hold is at the end of an action (adoptHold).
+    const holding = asItStood && data.hand ? data.hand.holding : "";
     if (holding && world.bodies.has(holding)) {
       const pinned = (data.joints || []).some((j) => j.attached !== false
                                                 && (j.a === holding || j.b === holding));
@@ -5042,7 +5046,14 @@ async function open({ again = false } = {}) {
       say("you", turn.asked);
       say("world", turn.replied, turn.did);
     }
-    if (data.kept || data.rejoined) say("world", "This is the room as you left it.");
+    // As left: rejoined, or opened again whole after a restart -- or, for a room
+    // kept before the running world was kept with it, as the chat left it.
+    if (asItStood || (data.kept && !data.restored && !data.kept_problem))
+      say("world", "This is the room as you left it.");
+    // And, said plainly, what a restart does not give back yet.
+    if (data.restored && data.restored.tier === "whole" && (data.restored.not_kept || []).length)
+      say("world", `Not kept yet: ${data.restored.not_kept.join("; ")}.`);
+    if (data.kept_problem) say("bad", data.kept_problem);
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")

@@ -31,6 +31,41 @@ def pane_and_ball(drop_m: float) -> dict:
     ]}
 
 
+class AWorldIsKeptFromPython(unittest.TestCase):
+    """banjo_snapshot, banjo_open_snapshot and banjo_restored through the
+    binding: the world saved, and the same scene opened again from it as it
+    stood. The physics of it -- every body, cell, dent, joint and hand as it
+    was -- is checked in tests/live_world_tests.cpp."""
+
+    def test_a_world_saved_opens_again_as_it_stood(self):
+        scene = pane_and_ball(10.0)
+        with banjo.World(scene, cell_size_m=0.02) as world:
+            pieces = 0
+            for _ in range(900):
+                if world.step(1 / 240) == banjo.BREAK_PENDING:
+                    pieces = world.fracture("pane")
+                    break
+            self.assertGreater(pieces, 1, "the pane did not break, so this proves nothing")
+            for _ in range(120):
+                world.advance(1 / 240)
+            saved = world.snapshot("the pane and the ball")
+            self.assertIsNotNone(saved, world.last_refusal)
+            self.assertEqual(saved["format"], "banjo.world.v1")
+            self.assertEqual(saved["spec_digest"], "the pane and the ball")
+            self.assertEqual(world.restored()["tier"], "", "a world opened from its scene says it was restored")
+            was = {b.name: (b.position_m, b.orientation_wxyz) for b in world.bodies()}
+            t = world.time_s
+        with banjo.World(scene, cell_size_m=0.02, snapshot=saved) as again:
+            said = again.restored()
+            self.assertEqual(said["tier"], "whole", said.get("why"))
+            self.assertTrue(said["not_kept"], "a restored world does not say what it does not keep")
+            self.assertEqual(again.time_s, t)
+            self.assertEqual({b.name: (b.position_m, b.orientation_wxyz) for b in again.bodies()}, was)
+        with banjo.World(scene, cell_size_m=0.02, snapshot="{ half a world") as unread:
+            self.assertEqual(unread.restored()["tier"], "none")
+            self.assertEqual(sorted(b.name for b in unread.bodies()), ["ball", "pane"])
+
+
 class TheLibraryLoads(unittest.TestCase):
     def test_the_abi_matches_the_binding(self):
         self.assertEqual(banjo.library().banjo_abi_version(), banjo.ABI_VERSION)

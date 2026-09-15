@@ -1,5 +1,44 @@
 # Development status and handoff
 
+**A restart gives back the room as it stood.** Branch `agent/world-snapshot` from `660da54` (agent/nothing-resets). This is slice 1b of the owner's "a workshop that remembers". Until now every server restart opened each room from its spec: what the person had moved went back to where it was authored, what broke came back whole, dents vanished, and a thing in the hand went back into the bag.
+- The engine saves its whole world and opens the same scene into it (`LiveWorld::snapshot`, `LiveWorld::open(request, snapshot)`, format "banjo.world.v1").
+  - Every body is made again from its own saved cells (the scene's node numbers) at its saved centre of mass, facing the world's way. Its offsets are then the saved ones exactly. It is turned and set moving as it was, and put back to sleep if it was at rest (`JoltWorld::sleep`). Our MatterBodyIds are kept.
+  - Also kept: pieces with their cells and names; bonds a blade severed, and each bond's permanent set; dents and kerfs; what is set aside; the hand (what it holds, grip or carry, the grip); edges and tool points in their bodies' frames; the clock and the counters; the water.
+  - Joints come back reading what they read: a door swung 50 degrees reads 50, with the travel it had either side. Hung again the way a break re-hangs them, it would read 0, because Jolt measures a hinge from how its constraint was made. `HingeDescription::at_rad` and `SliderDescription::at_m` fix that. Both are zero by default, so nothing else changes.
+  - A snapshot is refused, with why, while a break is being worked out, a stroke is being made, an edge is in a cut or a point is in the ground. The host keeps the last one.
+  - A fingerprint of the lattice (node and bond counts, and a hash of every cell's place and part and every bond's two cells) refuses a world saved from other cells. The scene then opens as it is, and each thing still whole and its own self is put back where it was left (tier "poses").
+  - Not kept yet: heat, char and fuel, which are declared again from the spec, for what is still there; and anything under way.
+- The runner has `{"op":"snapshot"}` and `--snapshot FILE`. The opening reply says `restored` and carries the joints, edges and points. The C API (ABI 22) has `banjo_snapshot`, `banjo_open_snapshot` and `banjo_restored`, and the Python binding and the in-process lane use them.
+- The playground:
+  - `room_store` writes `banjo.room.v2`, which adds `world`. v1 still reads.
+  - `server.keep_world` saves the world after an accepted inventory change, after a break is worked out, every 5 s of the world's time while the page steps it, after the ground changes, after the room opens, and as the server stops (Ctrl+C, SIGTERM or Ctrl+Break). A refused save keeps the last one, and is tried again half a second of world time later.
+  - The first open after a restart opens the room into the saved world, if it was saved from the spec the room has now (`live_session.spec_digest`, which leaves out the ground's edits and the carried water). Otherwise the room opens from its spec. A world the engine will not put back whole is set aside beside the room, never deleted, and the reply says why in `kept_problem`.
+  - `inventory_room.after_open` keeps a held thing in the hand when the restored engine holds it.
+  - The page says "This is the room as you left it." and what was not kept, and takes the hand and the view back, as on a reload.
+- Found on the way:
+  - `live_water` and `remember_ground` logged to a `log` that server.py never defined, so their warnings were NameErrors. It is defined now.
+  - A server stopped with Ctrl+C or Ctrl+Break took its engine runner with it, because they shared a process group, so nothing could be saved on the way out. The runner now has a group of its own (a session of its own on POSIX).
+  - body_table, collect, live_wire, threshold and live_session_tests find the engine only under build/integration, and read no environment variable.
+  - The spec's word had to leave out an empty water block too. After the chat reopens a room that declares no water, `server.with_water` gives it a block holding only the carried water, and the room's own spec has none. Without that, the next restart would have dropped the saved world without a word. `room_store_tests` pins it.
+- Tests:
+  - `live_world_tests`, aWorldSavedComesBackAsItStood. A room with a dented ball, a pane broken into 123 pieces, a door swung 50 degrees on its hinge, a crate set aside, and a pick with a point and an edge held up in the hand. Saved at 4.58 s into 330 KB (133 bodies) and opened again whole: body for body and cell for cell the same, with poses, velocities, dents, masses, joints, the hand, edges and points. Its own snapshot is identical but for what the door's pin reads, within 1e-5 rad. Stepped on for a second, the 125 things at rest stayed put in both. The window broken next made 8 pieces numbered from 1139, and the next pin took number 2. Opened into a scene whose cells differ, it came back as "poses", with 2 whole things put back where they were left.
+  - `live_world_tests`, aWorldIsNotSavedWhileSomethingIsUnderWay: refused while a break is worked out and while an edge is in a block; the cut block comes back with its kerf and severed bonds.
+  - `room_store_tests` 24: v1 reads, v2 round trips, a world saved before the chat's change is not used, a world the engine will not put back or cannot open is set aside, the world is kept as the page steps and after a break, a refused save keeps the last one, a held thing stays in the hand, and the spec's word.
+  - `inventory_room_tests` 9, two of them restarts on the real engine: the ball still in the hand and in the record's hand, and the bench plate's 20 pieces with the same cells.
+  - `banjo_ffi_tests` 18, with the C API round trip.
+  - `ctest -LE long -j 4` in Release: 127 of 128 in 153 s. The one failure is the foresight timing check under that load (485 ms of warning against a 611 ms run); run alone, the program passes (a 345 ms run).
+  - Python, every suite but agent_build_tests, one at a time: 58 of 58 exit 0 (381 s); again after the spec's-word fix, 58 of 58 exit 0 (355 s).
+  - What keeping costs on the world room (49 bodies, with its water), measured with the scratchpad's `measure_snapshot.py`:
+    - a snapshot takes 18 ms (17.5 to 20.5 ms over 7) and is 969 KB, 609 KB of it the water;
+    - the room's file (992 KB) is written in under a millisecond;
+    - opening the room takes 1.20 s from its spec and 1.21 s from the saved world;
+    - the save after a step runs once the page has its reply, so the next step waits at most that 18 ms, once every 5 s of the world's time.
+- Measured in the page with the scratchpad's `headless_restart.py`, in headless Chrome. It started and stopped its own server on 8802 each time, and there were no page errors:
+  - the rubber ball (2.25 kg), taken up with E and carried 2 m, was still in the right hand, at the same place ([15.507, 1.831, -2.565]), after the server was killed outright and started again. That world had been saved while the page stepped. The person stood where they had.
+  - put down 2.29 m from where the room was authored with it, then the server asked to stop with Ctrl+Break (it saved on the way out and exited 0) and started again: the ball was exactly where it was put ([15.507, 0.675, -2.565]), and the hand was empty.
+  - both times the chat said "This is the room as you left it." and what was not kept.
+  - the world room's file is 1.0 MB, of which the saved world is 969 KB and its water 609 KB.
+
 **A reload rejoins the running room: what you moved, broke or hold stays.** Branch `agent/nothing-resets` from `27a624c`. This is the first slice of the owner's next milestone, "a workshop that remembers" (2026-09-15). Until now, every open of a room rebuilt it from its spec, a page reload included. Whatever the person had moved went back to where it was authored, what had broken came back whole, and a thing in the hand went back into the bag.
 - A page opening the room this server is already running now rejoins it (`server._rejoin`, `live_session.Live.rejoin`).
   - The runner's `poses` reply is the whole world as it stands: every body with its cells, the pins, edges and tool points, the hand, and the whole ground.

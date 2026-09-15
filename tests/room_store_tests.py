@@ -28,6 +28,8 @@ sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "playground"))
 
 from playground_tests import PlaygroundTestCase, playground_server  # noqa: E402
+import inventory_room  # noqa: E402
+import live_session  # noqa: E402
 import room_store   # noqa: E402
 import world_chat   # noqa: E402
 import world_room   # noqa: E402
@@ -42,12 +44,26 @@ def names(spec):
 
 class StandInLive:
     """The live world, as far as opening one goes: it keeps what it was asked to
-    open, and refuses a room with a body called "will not open" in it."""
+    open, and refuses a room with a body called "will not open" in it. It saves
+    a stand-in world (snapshot, as live_session.Live does, carrying the digest of
+    the spec it was opened from) and opens into one it is given, as the engine
+    would: whole, or -- for one marked `refuse` -- from its spec, saying why; one
+    marked `crash` it will not open at all."""
 
     def __init__(self):
         self.opened = []
+        self.given = []        # the saved world each open was asked to open into, or None
+        self.snapshots = []    # every world it saved
         self.rejoined = 0
         self.session = None
+
+    def snapshot(self):
+        if self.session is None:
+            return None, "no world is open"
+        saved = {"format": "banjo.world.v1", "spec_digest": self.session.spec_digest, "t_s": 0.0,
+                 "saved": len(self.snapshots)}
+        self.snapshots.append(saved)
+        return json.loads(json.dumps(saved)), ""
 
     def rejoin(self, app):
         """The room that is running, as a page opening it again gets it: the same
@@ -63,10 +79,22 @@ class StandInLive:
         spec = json.loads(json.dumps(body["spec"]))
         if "will not open" in names(spec):
             raise ValueError("the engine refused it")
+        world = body.get("snapshot")
+        if isinstance(world, dict) and world.get("crash"):
+            raise ValueError("the engine fell over opening the saved world")
         self.opened.append(spec)
+        self.given.append(world)
         self.session = SimpleNamespace(id=f"session-{len(self.opened)}", state={"bodies": []},
-                                       send=lambda **_: {})
-        return {"session": self.session.id, "bodies": [{"name": n} for n in sorted(names(spec))]}
+                                       send=lambda **_: {},
+                                       spec_digest=live_session.spec_digest(body["spec"]))
+        opened = {"session": self.session.id, "bodies": [{"name": n} for n in sorted(names(spec))]}
+        if isinstance(world, dict):
+            opened["restored"] = (
+                {"tier": "none", "why": world["refuse"], "saved_t_s": 0.0, "bodies": 0,
+                 "not_kept": [], "parked": []} if world.get("refuse") else
+                {"tier": "whole", "why": "", "saved_t_s": 0.0, "bodies": len(names(spec)),
+                 "not_kept": ["heat, char and fuel"], "parked": []})
+        return opened
 
     def shutdown(self):
         pass
@@ -296,7 +324,26 @@ class WhatCannotBeKeptOrRead(KeptRoomsTestCase):
         self.ask(app, "an oak crate, please")
         self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ["yard.json"])
         record = json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))
-        self.assertEqual((record["format"], record["scene"]), ("banjo.room.v1", "yard"))
+        self.assertEqual((record["format"], record["scene"]), ("banjo.room.v2", "yard"))
+        # With the world as it stood when last saved: the chat's room, opened.
+        self.assertEqual(record["world"], app.live.snapshots[-1])
+
+    def test_a_world_the_engine_will_not_open_at_all_is_set_aside_and_the_room_opens_from_its_spec(self):
+        first = self.start()
+        self.open(first, scene="yard")
+        path = self.folder / "yard.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["world"]["crash"] = True
+        path.write_text(json.dumps(record), encoding="utf-8")
+        again = self.start()
+        opened = self.open(again, scene="yard")
+        self.assertIn("set aside", opened["kept_problem"])
+        self.assertIsNone(again.live.given[-1], "the room was not opened from its spec in the end")
+        aside = list(self.folder.glob("yard.world-set-aside-*.json"))
+        self.assertEqual(len(aside), 1)
+        self.assertTrue(json.loads(aside[0].read_text(encoding="utf-8"))["world"]["crash"])
+        # The room itself was not set aside: only its world.
+        self.assertEqual(list(self.folder.glob("yard.set-aside-*.json")), [])
 
     def test_only_the_rooms_on_the_menu_are_kept(self):
         store = room_store.RoomStore(self.folder)
@@ -305,6 +352,163 @@ class WhatCannotBeKeptOrRead(KeptRoomsTestCase):
         self.assertFalse(store.save(room))
         self.assertFalse(self.folder.exists())
         self.assertIsNone(store.load("../yard"))
+
+
+class ARoomComesBackAsItStood(KeptRoomsTestCase):
+    """A restart gives back the running world, not only the authored room: the
+    world is saved with the room (room_store v2's `world`, server.keep_world),
+    and the first open after a restart opens the room into it -- as it stood --
+    when it was saved from the spec the room has now. What the engine will not
+    put back whole is set aside, and the room opens from its spec."""
+
+    def test_the_world_kept_with_a_room_is_what_it_opens_into_after_a_restart(self):
+        first = self.start()
+        self.open(first, scene="yard")
+        record = json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))
+        self.assertEqual(record["format"], "banjo.room.v2")
+        self.assertEqual(record["world"], first.live.snapshots[-1], "the world was not kept as it opened")
+        self.assertIsNone(first.live.given[-1], "a room opened for the first time was opened into a world")
+        again = self.start()
+        opened = self.open(again, scene="yard")
+        self.assertEqual(again.live.given[-1], first.live.snapshots[-1],
+                         "the room was not opened into the world kept with it")
+        self.assertTrue(opened["kept"])
+        self.assertEqual(opened["restored"]["tier"], "whole")
+        self.assertNotIn("kept_problem", opened)
+        # A reload after that rejoins it; "Start the room again" opens it from
+        # its spec, and the world kept from then on is that one.
+        self.assertTrue(self.open(again, scene="yard").get("rejoined"))
+        self.open(again, scene="yard", again=True)
+        self.assertIsNone(again.live.given[-1])
+        self.assertEqual(json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))["world"],
+                         again.live.snapshots[-1])
+
+    def test_the_world_is_kept_as_the_page_steps_it_and_after_a_break(self):
+        app = self.start()
+        opened = self.open(app, scene="yard")
+        saved = len(app.live.snapshots)
+        body = {"session": opened["session"], "op": "step"}
+        playground_server.keep_world_after(app, body, {"t": 1.0})
+        self.assertEqual(len(app.live.snapshots), saved, "saved a second into the world")
+        playground_server.keep_world_after(app, body, {"t": playground_server.KEEP_WORLD_EVERY_S + 0.5})
+        self.assertEqual(len(app.live.snapshots), saved + 1, "not saved after five seconds of the world")
+        playground_server.keep_world_after(app, {"op": "step"}, {"t": 6.0, "finished": "pane"})
+        self.assertEqual(len(app.live.snapshots), saved + 2, "not saved once a break was worked out")
+
+    def test_a_refused_world_keeps_the_last_one(self):
+        app = self.start()
+        self.open(app, scene="yard")
+        kept = json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))["world"]
+        with mock.patch.object(app.live, "snapshot", return_value=(None, "a break is being worked out")):
+            self.assertFalse(playground_server.keep_world(app, "a test"))
+        self.assertEqual(json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))["world"], kept)
+
+    def test_a_room_kept_before_its_world_was_opens_from_its_spec(self):
+        self.folder.mkdir(parents=True)
+        (self.folder / "yard.json").write_text(json.dumps(
+            {"format": "banjo.room.v1", "scene": "yard", "saved_unix_s": 1.0,
+             "spec": world_room.yard(), "chat": [{"asked": "hello", "replied": "hi"}]}), encoding="utf-8")
+        app = self.start()
+        opened = self.open(app, scene="yard")
+        self.assertTrue(opened["kept"])
+        self.assertIsNone(app.live.given[-1])
+        self.assertNotIn("restored", opened)
+        self.assertEqual([turn["asked"] for turn in opened["chat"]], ["hello"])
+
+    def test_a_world_saved_before_the_chat_changed_the_room_is_not_opened_into_it(self):
+        first = self.start()
+        self.open(first, scene="yard")
+
+        def the_chat_builds_without_opening_again(api_key, model, room, *_, **__):
+            room.spec = dict(room.spec, bodies=room.spec["bodies"] + [dict(CRATE)])
+            return {"reply": "Built.", "did": [], "changed": False, "usage": {}, "rounds": 1}
+        self.ask(first, "an oak crate, please", chat=the_chat_builds_without_opening_again)
+        again = self.start()
+        opened = self.open(again, scene="yard")
+        self.assertIsNone(again.live.given[-1], "a world saved before the chat's change was opened into its room")
+        self.assertIn("oak crate", names(again.live.opened[-1]))
+        self.assertNotIn("kept_problem", opened)
+
+    def test_a_world_the_engine_will_not_put_back_whole_is_set_aside(self):
+        first = self.start()
+        self.open(first, scene="yard")
+        path = self.folder / "yard.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["world"]["refuse"] = "its cells are not this room's"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        again = self.start()
+        opened = self.open(again, scene="yard")
+        self.assertIn("could not be put back", opened["kept_problem"])
+        self.assertIn("its cells are not this room's", opened["kept_problem"])
+        aside = list(self.folder.glob("yard.world-set-aside-*.json"))
+        self.assertEqual(len(aside), 1)
+        self.assertEqual(json.loads(aside[0].read_text(encoding="utf-8"))["why"], "its cells are not this room's")
+        # The world kept from then on is the one the room opened as.
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["world"], again.live.snapshots[-1])
+
+
+class TheSpecAWorldIsSavedFrom(unittest.TestCase):
+    """live_session.spec_digest, the room's word for the spec a world was opened
+    from: a saved world is opened only into a room whose spec says the same.
+    What changes without changing what the world is made of leaves it as it was
+    -- a dig written into the room's ground, the water carried into a world the
+    chat opened again (server.with_water, which gives a room with no water block
+    one holding only its state) -- and what the chat builds does not."""
+
+    SPEC = {"bodies": [dict(CRATE)], "terrain": {"generate": "flat"}}
+
+    def test_what_does_not_change_the_world_does_not_change_it(self):
+        digest = live_session.spec_digest(self.SPEC)
+        self.assertTrue(digest)
+        dug = dict(self.SPEC, terrain=dict(self.SPEC["terrain"], edits=[
+            {"dig": {"from_m": [0.5, 1.0], "to_m": [0.5, 1.0], "width_m": 0.4, "depth_m": 0.2}}]))
+        self.assertEqual(live_session.spec_digest(dug), digest, "a dig changed the spec's word")
+        carried = dict(self.SPEC, water={"state": {"nx": 2, "nz": 2, "depth_b64": "AAAA"}})
+        self.assertEqual(live_session.spec_digest(carried), digest,
+                         "water carried into a room with no water block changed the spec's word")
+        declared = dict(self.SPEC, water={"discharge_m3_s": 0.3})
+        self.assertEqual(live_session.spec_digest(dict(declared, water=dict(declared["water"], state={"nx": 2}))),
+                         live_session.spec_digest(declared), "carried water changed a watered room's word")
+        self.assertNotEqual(live_session.spec_digest(declared), digest, "a river declared is not a change")
+
+    def test_what_the_chat_builds_changes_it(self):
+        built = dict(self.SPEC, bodies=self.SPEC["bodies"] + [dict(CRATE, name="another crate")])
+        self.assertNotEqual(live_session.spec_digest(built), live_session.spec_digest(self.SPEC))
+
+
+class WhatThePersonHoldsThroughARestart(unittest.TestCase):
+    """inventory_room.after_open on a room opened again whole: a thing in the
+    hand the engine still holds stays in the hand. From the spec, it goes back
+    into the bag, as before."""
+
+    SPEC = {"bodies": [{"id": "b-floor00001", "name": "floor", "shape": "box", "material": "oak",
+                        "size_mm": [600, 40, 400], "center_mm": [0, 20, 0], "anchored": True},
+                       {"id": "b-ball000001", "name": "ball", "shape": "sphere", "material": "iron",
+                        "size_mm": [100, 100, 100], "center_mm": [0, 600, 0]}]}
+
+    def app(self, holding):
+        asked = []
+        session = SimpleNamespace(id="s1", state={"hand": {"holding": holding}, "bodies": [{"name": "ball"}]})
+        live = SimpleNamespace(session=session, act=lambda body: asked.append(body) or {"ok": True})
+        room = SimpleNamespace(spec=self.SPEC, inventory=None,
+                               inventory_record={"revision": 3, "dominant": "right",
+                                                 "hands": {"right": "b-ball000001", "left": None},
+                                                 "stowed": [], "home": {}, "facing": {}})
+        return SimpleNamespace(room=room, live=live), asked
+
+    def test_a_held_thing_stays_in_the_hand_when_the_engine_still_holds_it(self):
+        app, asked = self.app("ball")
+        shown = inventory_room.after_open(app, {"restored": {"tier": "whole", "parked": []}})
+        self.assertEqual(shown["hands"]["right"]["name"], "ball")
+        self.assertEqual(shown["stowed"], [])
+        self.assertEqual(asked, [], "the engine was asked to change something it already had right")
+
+    def test_from_its_spec_it_goes_back_into_the_bag(self):
+        app, asked = self.app("")
+        shown = inventory_room.after_open(app, {"bodies": [{"name": "ball"}]})
+        self.assertIsNone(shown["hands"]["right"])
+        self.assertEqual([t["name"] for t in shown["stowed"]], ["ball"])
+        self.assertEqual([a["op"] for a in asked], ["park"])
 
 
 if __name__ == "__main__":

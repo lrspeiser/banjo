@@ -41,7 +41,7 @@ from typing import Any, Iterator
 # that work the ground (make_tool_point, strike, ground_works); 21 one material
 # state (a body's revision, what is left of it). No library was ever 19.
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 21
+ABI_VERSION = 22
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -1262,6 +1262,12 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_environment_report.restype = ctypes.c_char_p
     lib.banjo_environment_state.argtypes = [ctypes.c_void_p]
     lib.banjo_environment_state.restype = ctypes.c_char_p
+    lib.banjo_open_snapshot.argtypes = [ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p]
+    lib.banjo_open_snapshot.restype = ctypes.c_void_p
+    lib.banjo_snapshot.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.banjo_snapshot.restype = ctypes.c_char_p
+    lib.banjo_restored.argtypes = [ctypes.c_void_p]
+    lib.banjo_restored.restype = ctypes.c_char_p
     lib.banjo_survey.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
     lib.banjo_survey.restype = ctypes.c_char_p
     lib.banjo_materials.argtypes = []
@@ -1352,10 +1358,20 @@ class World:
     """One live world. Not thread-safe; it belongs to the thread that made it."""
 
     def __init__(self, scene: dict[str, Any] | str, cell_size_m: float = 0.02,
-                 library_path: str | os.PathLike[str] | None = None) -> None:
+                 library_path: str | os.PathLike[str] | None = None,
+                 snapshot: dict[str, Any] | str | None = None) -> None:
         self._lib = library(library_path)
+        # Why the last snapshot() was refused, in words.
+        self.last_refusal = ""
         text = scene if isinstance(scene, str) else json.dumps(scene)
-        handle = self._lib.banjo_open(text.encode("utf-8"), float(cell_size_m))
+        if snapshot is None:
+            handle = self._lib.banjo_open(text.encode("utf-8"), float(cell_size_m))
+        else:
+            # The scene opened again from a saved world (banjo_open_snapshot);
+            # restored() says what came back.
+            saved = snapshot if isinstance(snapshot, str) else json.dumps(snapshot)
+            handle = self._lib.banjo_open_snapshot(text.encode("utf-8"), float(cell_size_m),
+                                                   saved.encode("utf-8"))
         if not handle:
             raise BanjoError(self._error())
         self._handle = ctypes.c_void_p(handle)
@@ -2404,6 +2420,23 @@ class World:
     def environment_state(self) -> dict[str, Any]:
         """The water as it stands, for "water": {"state": ...} in a scene opened again."""
         text = self._lib.banjo_environment_state(self._alive()) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
+    def snapshot(self, spec_digest: str = "") -> dict[str, Any] | None:
+        """The whole of the world as it stands (banjo_snapshot), for
+        World(scene, snapshot=...) once this one has gone. None while something
+        is under way that a saved world cannot carry, with why in last_refusal."""
+        text = self._lib.banjo_snapshot(self._alive(), spec_digest.encode("utf-8"))
+        if not text:
+            self.last_refusal = self._error()
+            return None
+        self.last_refusal = ""
+        return json.loads(text.decode("utf-8"))
+
+    def restored(self) -> dict[str, Any]:
+        """What opening from a saved world gave back (banjo_restored): its tier,
+        why it is not whole, what a saved world does not carry yet."""
+        text = self._lib.banjo_restored(self._alive()) or b"{}"
         return json.loads(text.decode("utf-8"))
 
     def survey(self, x_m: float, z_m: float) -> dict[str, Any]:

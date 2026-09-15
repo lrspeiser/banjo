@@ -86,6 +86,28 @@ public:
                                                  std::string &why) const;
     [[nodiscard]] bool empty() const { return points_.empty(); }
 
+    // A point as a saved world keeps it (LiveWorld::snapshot): what it is and
+    // where it sits in its body's own frame. Not what only a meeting with the
+    // ground has -- a world is not saved while a point is in the ground -- and
+    // not whether its body has been made to collide as its cells yet, which a
+    // body made again has not: the next step does that, as it does for a new
+    // point.
+    struct SavedPoint {
+        unsigned id{};
+        std::string body;
+        Vec3 tip_local{}, pointing_local{}, grip_local{}, width_local{};
+        terrain::ToolPointShape shape;
+        MatterBodyId body_id{kInvalidMatterBodyId};
+        std::vector<std::uint32_t> frame_nodes;
+        std::vector<Vec3> frame_offsets;
+        bool attached{true};
+    };
+    [[nodiscard]] std::vector<SavedPoint> saved() const;
+    [[nodiscard]] unsigned nextId() const { return next_; }
+    // Replaces every point with these, and the next id with `next`. Its log of
+    // meetings starts empty.
+    void restore(const std::vector<SavedPoint> &points, unsigned next);
+
 private:
     static constexpr std::size_t kNone = static_cast<std::size_t>(-1);
     struct Point {

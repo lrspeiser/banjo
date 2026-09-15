@@ -103,22 +103,44 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
     """After the room is opened, or opened again because the chat changed it:
     put what the person has back where the record says.
 
-    A room opens from its spec, so the bag's things open standing in the world:
-    each is set aside again. A thing that was in a hand goes back into the bag,
-    into the slot kept for it, since the engine's hand is empty in a room just
-    opened. A thing the room no longer has, or that cannot be set aside now (the
-    chat joined it to something), leaves the record -- the record says only what
-    is true of the room. Returns what the page shows."""
+    A room opened from its spec has the bag's things standing in the world: each
+    is set aside again. A thing that was in a hand goes back into the bag, into
+    the slot kept for it, since the engine's hand is empty in a room just opened
+    -- unless the room was opened again as it stood (a restart: live_session
+    Live.open with a snapshot) and the engine's hand still holds it, when it
+    stays in the hand. And there the record is what the person has: one of the
+    room's things the engine holds and the record has in no hand is let go, and
+    a thing the saved world had set aside but the record has out in the world is
+    brought back where it was put away. A thing the room no longer has, or that
+    cannot be set aside now (the chat joined it to something), leaves the record
+    -- the record says only what is true of the room. Returns what the page
+    shows."""
     record = inventory_of(app)
     session = app.live.session
     if session is None:
         return shown(app)
     items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
+    item_of_body = {name: item_id for item_id, item in items.items() for name in item["bodies"]}
+    state = session.state or {}
+    # What the engine's hand holds as the room opens: nothing in a room opened
+    # from its spec; what it held, in one opened again as it stood.
+    holding = str((state.get("hand") or {}).get("holding") or "")
+    restored = opened.get("restored") if isinstance(opened, dict) else None
+    whole = isinstance(restored, dict) and restored.get("tier") == "whole"
     parked: set[str] = set()
     with record.lock:
         changed = False
         for hand in inventory.HANDS:
+            thing = items.get(record.hands.get(hand) or "")
+            if whole and thing is not None and hand == record.dominant and holding in thing["bodies"]:
+                continue
             changed = record.back_to_bag(hand) or changed
+        held = item_of_body.get(holding)
+        if whole and held is not None and held not in record.hands.values():
+            try:
+                app.live.act({"session": session.id, "op": "release"})
+            except Exception:   # nothing to let go of after all
+                pass
         present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
         for item in [i for i in record.stowed if i]:
             thing = items.get(item)
@@ -134,6 +156,17 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
             except Exception:   # the engine would not set it aside: it stays in the world
                 record.forget(item)
                 changed = True
+        if whole:
+            in_bag = {items[i]["name"] for i in record.stowed if i and i in items}
+            for away in restored.get("parked") or []:
+                name = away.get("name") if isinstance(away, dict) else None
+                if not name or name in in_bag:
+                    continue
+                try:
+                    app.live.act({"session": session.id, "op": "unpark", "name": name,
+                                  "at": away["at_m"], "q": away["facing_wxyz"]})
+                except Exception:   # it stays set aside
+                    pass
         if changed:
             record.revision += 1
     # The answer the page draws the room from was made before these were set

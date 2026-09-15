@@ -17,7 +17,7 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **21**. 13 and 14 were two additions made side by side and then
+Current ABI: **22**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18
 were added on top of both; 20 and 21 were two more made side by side -- 21 was
 numbered 19 on its branch and landed second, so no header was ever 19:
@@ -64,8 +64,11 @@ numbered 19 on its branch and landed second, so no header was ever 19:
   sustained load is answered by statics. `banjo_body` gained `revision` and
   `banjo_body_mechanics` the geometry of what is left, each at its **end**
   (see [Heat and strength](#heat-and-strength)).
+- **22** added a world that is kept -- `banjo_snapshot`, `banjo_open_snapshot`
+  and `banjo_restored` (see [A world that is kept](#a-world-that-is-kept)). It
+  changed no function or struct that was already there.
 
-A library at 21 has all of them, and none was ever 19. Nothing that was in 12
+A library at 22 has all of them, and none was ever 19. Nothing that was in 12
 changed, and nothing that was in 14 changed in 15. None of 16 to 21 changed a
 function that was
 already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
@@ -1683,6 +1686,61 @@ costs nothing; this is how to see that digging one corner did not wake the
 valley.
 
 ---
+
+## A world that is kept
+
+A world lives as long as the program holding it. These save the whole of it
+and open the same scene again from what was saved, as it stood -- which is how
+the playground gives back a room after its server has restarted.
+
+### `const char *banjo_snapshot(banjo_world *world, const char *spec_digest)`
+
+The whole of the world as it stands, as JSON, `"format": "banjo.world.v1"`.
+- `bodies`: every body by its cells (`nodes_b64`, the scene's own cell numbers)
+  and where each cell sits in its frame (`offsets_b64`: base64 of little-endian
+  doubles, three a cell); its name, `body_id`, shape, size, dent, how it meets
+  things, and `from`, the authored thing its cells came from; where it is and
+  how it moves (`pose`) and whether it was at rest (`awake`), or where it was
+  put away (`parked`).
+- `dead_bonds_b64` (bonds a blade severed), `plastic` (each bond's permanent
+  set), `kerfs`, `joints` (each with what its constraint reads and allows,
+  `held`), `blades`, `tool_points`, `hand`, the clock (`t_s`, `steps`), the
+  counters (`next`), and `water` when the scene has ground.
+- `fingerprint`: the scene's lattice in a few numbers, which decides whether a
+  saved world can be opened into a scene. `spec_digest`: the caller's own word
+  for its scene (NULL for none), carried as it is.
+- `not_kept`: what it does not carry yet, in words. Heat, char and fuel are one:
+  a world opened again declares its scene's heat afresh for what is still there.
+
+NULL, with why in `banjo_last_error()`, while something is under way that a
+saved world cannot carry: a break being worked out, a stroke of the hand, an
+edge in a cut, a tool's point in the ground. Keep the last one and ask again
+later. The string belongs to the world until its next `banjo_snapshot`.
+
+### `banjo_world *banjo_open_snapshot(const char *scene_json, double cell_size_m, const char *snapshot_json)`
+
+The scene opened again from a saved world. It must be the scene the world was
+saved from, and it builds the same cells under the same numbers. Each saved
+body is made again from its own cells at its saved centre of mass, facing the
+world's own way. That puts its cells exactly where its frame had them, so
+everything kept in its frame (a dent, a cut, a joint's points, an edge, a
+tool's point, the grip) is where it was. It is then turned and set moving as it
+was, and one that was at rest is put back to sleep. Joints are made again
+reading the angle or travel they had, with the travel either side of it that
+they had. Things set aside are set aside again, and the hand holds what it held.
+
+A saved world that does not fit -- another scene, or a build that lays the
+cells out another way, as its fingerprint says -- or will not read opens the
+scene as `banjo_open` does. Each thing still whole and its own self is then put
+back where it was left. NULL only when the scene itself cannot be opened.
+
+### `const char *banjo_restored(const banjo_world *world)`
+
+What opening from a saved world gave back, as JSON: `tier` is `"whole"`,
+`"poses"` (whole things put back where they were left) or `"none"`, and `""`
+for a world `banjo_open` opened; `why` when not whole; `saved_t_s`; `bodies`;
+`not_kept`; and `parked`, what is set aside with where it was put away
+(`at_m`, `facing_wxyz`).
 
 ## Rolling resistance
 

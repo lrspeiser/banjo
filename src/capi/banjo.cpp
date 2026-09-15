@@ -12,6 +12,8 @@
 #include "thermo/ThermoJson.hpp"
 #include "thermo/ThermoWorld.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -106,6 +108,10 @@ struct banjo_world {
     banjo::fastlattice::LiveStrokePreview preview;
     // What rolling resistance is doing, last time anyone asked.
     std::string rolling;
+    // The world saved as it stands, last time anyone asked, and what opening
+    // from a saved one gave back.
+    std::string snapshot;
+    std::string restored;
 };
 
 namespace {
@@ -171,7 +177,11 @@ const char *banjo_version_string(void) { return "banjo " __DATE__; }
 
 const char *banjo_last_error(void) { return g_error.c_str(); }
 
-banjo_world *banjo_open(const char *scene_json, double cell_size_m) {
+namespace {
+
+// banjo_open and banjo_open_snapshot: the scene, and a saved world to open it
+// into when there is one.
+banjo_world *openWorld(const char *scene_json, double cell_size_m, const char *snapshot_json) {
     try {
         clearError();
         if (!scene_json) { setError("a scene is needed"); return nullptr; }
@@ -185,7 +195,7 @@ banjo_world *banjo_open(const char *scene_json, double cell_size_m) {
         banjo::fastlattice::readSceneSettings(scene_json, request);
         if (request.bodies.empty()) { setError("a world needs at least one body"); return nullptr; }
         auto handle = std::make_unique<banjo_world>();
-        handle->world = LiveWorld::open(request);
+        handle->world = snapshot_json ? LiveWorld::open(request, std::string(snapshot_json)) : LiveWorld::open(request);
         return handle.release();
     } catch (const std::exception &error) {
         setError(error.what());
@@ -194,6 +204,17 @@ banjo_world *banjo_open(const char *scene_json, double cell_size_m) {
         setError("the scene could not be opened");
         return nullptr;
     }
+}
+
+} // namespace
+
+banjo_world *banjo_open(const char *scene_json, double cell_size_m) {
+    return openWorld(scene_json, cell_size_m, nullptr);
+}
+
+banjo_world *banjo_open_snapshot(const char *scene_json, double cell_size_m, const char *snapshot_json) {
+    if (!snapshot_json) { setError("a saved world is needed"); return nullptr; }
+    return openWorld(scene_json, cell_size_m, snapshot_json);
 }
 
 void banjo_close(banjo_world *world) { delete world; }
@@ -1622,6 +1643,45 @@ const char *banjo_environment_state(const banjo_world *world) {
         mutable_world->environment_state.clear();
     }
     return mutable_world->environment_state.c_str();
+}
+
+const char *banjo_snapshot(banjo_world *world, const char *spec_digest) {
+    if (!world) { setError("no world"); return nullptr; }
+    try {
+        clearError();
+        std::string why;
+        std::string saved = world->world->snapshot(why, spec_digest ? std::string(spec_digest) : std::string());
+        // Not now: something is under way that a saved world cannot carry.
+        if (saved.empty()) { setError(why); return nullptr; }
+        world->snapshot = std::move(saved);
+        return world->snapshot.c_str();
+    } catch (const std::exception &error) {
+        setError(error.what());
+        return nullptr;
+    } catch (...) {
+        setError("the world could not be saved");
+        return nullptr;
+    }
+}
+
+const char *banjo_restored(const banjo_world *world) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        const banjo::fastlattice::LiveRestore &restored = world->world->restored();
+        nlohmann::json parked = nlohmann::json::array();
+        for (const banjo::fastlattice::LiveRestore::Parked &p : restored.parked)
+            parked.push_back({{"name", p.name},
+                              {"at_m", nlohmann::json::array({p.at_m.x, p.at_m.y, p.at_m.z})},
+                              {"facing_wxyz", nlohmann::json::array({p.facing.w, p.facing.x, p.facing.y, p.facing.z})}});
+        mutable_world->restored = nlohmann::json{{"tier", restored.tier}, {"why", restored.why},
+                                                 {"saved_t_s", restored.saved_t_s}, {"bodies", restored.bodies},
+                                                 {"not_kept", restored.not_kept}, {"parked", std::move(parked)}}
+                                      .dump();
+    } catch (...) {
+        mutable_world->restored.clear();
+    }
+    return mutable_world->restored.c_str();
 }
 
 const char *banjo_survey(const banjo_world *world, double x_m, double z_m) {

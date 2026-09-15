@@ -56,7 +56,8 @@ class InProcessSession:
     written against that shape and neither should have to know the difference.
     """
 
-    def __init__(self, spec: dict[str, Any], cell_m: float | None = None) -> None:
+    def __init__(self, spec: dict[str, Any], cell_m: float | None = None,
+                 snapshot: dict[str, Any] | None = None) -> None:
         ok, why = available()
         if not ok:
             raise ValueError(f"the in-process engine is not available: {why}")
@@ -71,10 +72,14 @@ class InProcessSession:
         self._cell_m = float(cell_m if cell_m is not None else spec["cell_m"])
         self._stepped_back = False
         try:
-            self._world = banjo.World(scene, cell_size_m=self._cell_m)
+            # With a saved world, the scene opened again as it stood
+            # (banjo_open_snapshot), as the subprocess lane's --snapshot does.
+            self._world = banjo.World(scene, cell_size_m=self._cell_m, snapshot=snapshot)
         except Exception as error:
             raise ValueError(str(error)) from error
         self.state = self._describe(geometry=True)
+        if snapshot is not None:
+            self.state["restored"] = self._world.restored()
 
     # -- the wire, without a wire -----------------------------------------
     @staticmethod
@@ -472,6 +477,13 @@ class InProcessSession:
                 # Moves nothing: answered on its own, like thermo.
                 return {"ok": True,
                         "mechanics": world.mechanics_report(bool(command.get("laws", False)))}
+            elif op == "snapshot":
+                # The whole world as it stands, as the line protocol's
+                # `snapshot` answers: lean, and a refusal is an answer.
+                saved = world.snapshot(str(command.get("spec_digest") or ""))
+                if saved is None:
+                    return {"ok": True, "refused": world.last_refusal}
+                return {"ok": True, "snapshot": saved}
             elif op != "poses":
                 raise ValueError(f"unknown live operation: {op}")
         except Exception as error:

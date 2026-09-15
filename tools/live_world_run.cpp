@@ -107,6 +107,19 @@
 //                                            said so, open ones every time -- and
 //                                            "carried" with it
 //        {"op":"ground_work"}                the same list on its own (lean)
+//        {"op":"snapshot","spec_digest":".."}   the whole world as it stands, for
+//                                            opening again after a restart (lean):
+//                                            {"ok":true,"snapshot":{"format":
+//                                            "banjo.world.v1",...}}, or {"ok":true,
+//                                            "refused":why} while a break, a stroke,
+//                                            a cut or a point in the ground is under
+//                                            way. `spec_digest` is the host's own
+//                                            word for its scene, carried as it is
+//   args --scene FILE [--cell M] [--snapshot FILE]   with --snapshot, the scene
+//                                            opened again as the saved world left it;
+//                                            the opening reply carries "restored":
+//                                            {tier ("whole", "poses" or "none"), why,
+//                                            saved_t_s, bodies, not_kept, parked}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -208,6 +221,19 @@ nlohmann::json handJson(const LiveHand &hand) {
                          {"at_s", tidy(hand.let_go_at_s)},
                          {"work_j", tidy(hand.let_go_work_j)}};
     return out;
+}
+
+// What opening from a saved world gave back (LiveRestore), on the opening reply
+// of a world started with --snapshot. Unrounded: a thing set aside is brought
+// back where it was put away, to the last digit.
+nlohmann::json restoredJson(const LiveRestore &restored) {
+    nlohmann::json parked = nlohmann::json::array();
+    for (const LiveRestore::Parked &p : restored.parked)
+        parked.push_back({{"name", p.name},
+                          {"at_m", nlohmann::json::array({p.at_m.x, p.at_m.y, p.at_m.z})},
+                          {"facing_wxyz", nlohmann::json::array({p.facing.w, p.facing.x, p.facing.y, p.facing.z})}});
+    return {{"tier", restored.tier}, {"why", restored.why}, {"saved_t_s", restored.saved_t_s},
+            {"bodies", restored.bodies}, {"not_kept", restored.not_kept}, {"parked", std::move(parked)}};
 }
 
 nlohmann::json flightJson(const LiveFlight &flight) {
@@ -1127,6 +1153,8 @@ int main(int argc, char **argv) {
         // CUDA is the request default and most builds do not have it; the
         // playground asks for the parallel CPU lane and so does this.
         request.backend = BackendKind::CpuParallel;
+        // A saved world to open the scene into (LiveWorld::snapshot), if any.
+        std::string snapshot_path;
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             const auto value = [&]() -> std::string {
@@ -1148,16 +1176,38 @@ int main(int argc, char **argv) {
             }
             else if (option == "--cell") request.cell_size_m = std::stod(value());
             else if (option == "--ground-material") request.ground_material = presetFromName(value());
+            else if (option == "--snapshot") snapshot_path = value();
             else throw std::invalid_argument("unknown option: " + option);
         }
         if (request.bodies.empty()) throw std::invalid_argument("a live world needs --scene");
 
-        std::unique_ptr<LiveWorld> world = LiveWorld::open(request);
+        std::unique_ptr<LiveWorld> world;
+        if (snapshot_path.empty()) {
+            world = LiveWorld::open(request);
+        } else {
+            // The scene opened again as a saved world left it. One that does
+            // not fit, or will not read, opens the scene as it is, and the
+            // opening reply says so (`restored`).
+            std::ifstream saved(snapshot_path, std::ios::binary);
+            if (!saved) throw std::invalid_argument("cannot read the saved world " + snapshot_path);
+            world = LiveWorld::open(request, std::string(std::istreambuf_iterator<char>(saved),
+                                                         std::istreambuf_iterator<char>()));
+        }
         // The opening state, so a host can draw the scene before it moves --
         // the ground and the water whole, if it has them.
         {
             nlohmann::json opening = describe(*world, true);
             addEnvironment(*world, opening, true);
+            if (!snapshot_path.empty()) {
+                // Opened again from a saved world, it already has its pins,
+                // edges and points -- where they were, not where the scene
+                // first put them -- so the opening says them, as a poses
+                // reply does, for a host that must not declare them again.
+                opening["restored"] = restoredJson(world->restored());
+                opening["joints"] = jointsOf(*world);
+                opening["blades"] = bladesOf(*world);
+                opening["tool_points"] = toolPointsOf(*world);
+            }
             std::cout << opening.dump() << std::endl;
         }
         world->forgetDelays();
@@ -1238,6 +1288,21 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "snapshot") {
+                    // The whole world as it stands, for opening again after a
+                    // restart (LiveWorld::snapshot). Lean, like `collect`: it
+                    // changes nothing, and the world it describes is itself. A
+                    // refusal is an answer -- something is under way that a
+                    // saved world cannot carry -- not a failure.
+                    std::string why;
+                    const std::string saved = world->snapshot(why, command.value("spec_digest", std::string{}));
+                    nlohmann::json answer{{"ok", true}};
+                    if (saved.empty())
+                        answer["refused"] = why;
+                    else
+                        answer["snapshot"] = nlohmann::json::parse(saved);
+                    std::cout << answer.dump() << std::endl;
+                    continue;
                 } else if (op == "foresee") {
                     // How far ahead to look, in seconds. Zero is off, which is
                     // what a caller comparing the two paths wants.

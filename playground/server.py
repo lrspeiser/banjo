@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import subprocess
 import threading
 import time
@@ -51,6 +52,9 @@ from banjo_authoring import EngineCLI, EngineError, write_package, validate_netw
 
 STATIC = Path(__file__).resolve().parent
 ACTIVE = {"planning", "validating", "running"}
+# The server's own log. live_water and remember_ground already wrote to a
+# module-level `log` that did not exist, so their warnings were NameErrors.
+log = logging.getLogger("banjo")
 
 # Rooms the QA suite saved: every chat trial's finished room, as the spec a live
 # world is opened from, at <run>/<case>-<trial>.spec.json. Opened by id, so a
@@ -1232,8 +1236,31 @@ class Handler(BaseHTTPRequestHandler):
                     if rejoined is not None: return self.send(rejoined)
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
                 rooms[scene]=app.room=room
+                # The running world as this server last saved it (keep_world),
+                # for a room read back from disk after a restart: the room opens
+                # into it, as it stood. Only on the first open after a restart --
+                # a room this server holds opens again from what it is held as --
+                # and only a world saved from the spec the room has now: the
+                # chat's changes are a new spec, and a world saved before them is
+                # not the room they made.
+                world=getattr(room,"world_record",None) if kept else None
+                if not kept: room.world_record=None
+                if world is not None and world.get("spec_digest")!=live_session.spec_digest(room.spec):
+                    log.info("rooms: the world kept with %s was saved from another spec; the room opens from its spec",
+                             scene)
+                    room.world_record=world=None
+                world_problem=None
                 try:
-                    opened=app.live.open(app,{"spec":room.spec})
+                    try:
+                        opened=app.live.open(app,{"spec":room.spec,**({"snapshot":world} if world else {})})
+                    except Exception as failed:
+                        if world is None: raise
+                        # A saved world the engine would not open at all: set
+                        # aside, never deleted, and the room opens from its spec.
+                        world_problem=str(failed)[:300]
+                        app.store.set_aside_world(room,world_problem)
+                        world=None
+                        opened=app.live.open(app,{"spec":room.spec})
                 except Exception as problem:
                     if not kept: raise
                     # A kept room that no longer opens -- kept by an older build,
@@ -1246,11 +1273,28 @@ class Handler(BaseHTTPRequestHandler):
                     opened["kept_problem"]=(f"the room kept from before would not open "
                                             f"({str(problem)[:200]}); it was set aside and the "
                                             f"room opened as first made")
+                # Opened, but not as it stood: the engine said why (its
+                # `restored`). Set aside with that, and said.
+                restored=opened.get("restored") if world is not None else None
+                if isinstance(restored,dict) and restored.get("tier")!="whole":
+                    world_problem=str(restored.get("why") or "the engine could not put it back")[:300]
+                    app.store.set_aside_world(room,world_problem)
+                if world_problem:
+                    placed=(int(restored.get("bodies") or 0)
+                            if isinstance(restored,dict) and restored.get("tier")=="poses" else 0)
+                    opened["kept_problem"]=("the room as it stood when the server stopped could not be put back ("
+                                            +world_problem+"); it was set aside and the room opened from what it "
+                                            "is held as"+(f", with {placed} whole things put back where they "
+                                                          "were left" if placed else ""))
                 app.live_holder="world"
                 # What the person has is put back where the record says: the
                 # bag's things are set aside again (inventory_room.after_open).
                 opened["inventory"]=inventory_room.after_open(app,opened)
                 if body.get("fresh"): room_store.keep(app,room)
+                # Saved now, so what a restart gives back is this world from
+                # here on -- the one just opened again, or the one just opened
+                # from its spec, which a restart must not trade for an older one.
+                keep_world(app,"the room opened")
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
                 opened["kept"]=kept
@@ -1306,6 +1350,8 @@ class Handler(BaseHTTPRequestHandler):
                         opened=app.live.open(app,{"spec":with_water(session,app.room.spec,ground_was)})
                         app.live_holder="world"
                         opened["inventory"]=inventory_room.after_open(app,opened)
+                        # The world the chat's room is now, kept with it.
+                        keep_world(app,"the chat changed the room")
                         answer["reopened"]=True
                         answer["session"]=opened["session"]
                         answer["state"]=opened
@@ -1350,7 +1396,11 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.server.app
                 _this_pages_room(app,body)
                 answer=inventory_room.request(app,body)
-                if answer.get("ok"): room_store.keep(app,app.room)
+                # Kept with the world as it now stands -- the thing in the hand
+                # or in the bag in the engine as the record says -- or, with a
+                # world that will not be saved just now, on its own.
+                if answer.get("ok") and not keep_world(app,"what the person has changed"):
+                    room_store.keep(app,app.room)
                 return self.send(answer)
             if path=="/api/world/inventory/shown":
                 # And what the person has now, as the page shows it.
@@ -1368,7 +1418,11 @@ class Handler(BaseHTTPRequestHandler):
                 answer=self.server.app.live.act(body)
                 remember_ground(self.server.app,body,answer)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.server.app,answer)
-                return self.send(with_notebook(self.server.app,answer,seen))
+                self.send(with_notebook(self.server.app,answer,seen))
+                # After the page has its answer: the running world kept with
+                # the room when a break is done, and every few seconds of it.
+                keep_world_after(self.server.app,body,answer)
+                return
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
@@ -1661,6 +1715,8 @@ def _stand(app,room,name,step,person):
     app.live_holder="world"
     # The bag's things open standing in the room again: set aside once more.
     opened["inventory"]=inventory_room.after_open(app,opened)
+    # And the room as it now stands is what a restart gives back.
+    keep_world(app,"a thing was stood up")
     return opened,f"stood {name} {answer.get('stands')} on {answer.get('on')}"
 
 
@@ -1886,6 +1942,66 @@ def _worked(app,part,step,kind,holding=None):
                           if turning else
                           f"the hand slid it {went:+.2f} of the {amount:+.2f} m asked, and could move it no further")
     return said,grip,None
+
+
+# How much of the world's own time may go by, while the page steps it, between
+# saving the running world with its room (keep_world): a restart gives back the
+# room as it stood at most this long before the server stopped.
+KEEP_WORLD_EVERY_S=5.0
+# And after a save the engine refused -- something under way that a saved world
+# cannot carry -- how long before it is asked again: not on every step.
+KEEP_WORLD_RETRY_S=0.5
+
+
+def keep_world(app,why=""):
+    """Save the running world with its room (room_store v2, `world`), so a
+    restart gives back the room as it stood rather than as it was authored:
+    where everything is and how it moves or rests, what broke into what, dents
+    and cuts, joints at their angles, what is set aside, what the hand holds.
+
+    Asked for after an accepted change to what the person has, after a break is
+    worked out, every KEEP_WORLD_EVERY_S of the world's time while the page steps
+    it, after the ground changes, after the room opens and as the server stops.
+    Only for the world page's own room, and only a room that is kept. A world
+    that will not be saved now -- something under way that a saved world cannot
+    carry: a break, a stroke of the hand, an edge in a cut, a point in the
+    ground -- keeps the last one saved, and says why in the log. True when the
+    world and its room were written."""
+    room=getattr(app,"room",None)
+    if room is None or getattr(room,"scene",None) not in world_room.SCENES: return False
+    if getattr(app,"live_holder",None)!="world" or app.live.session is None: return False
+    snapshot=getattr(app.live,"snapshot",None)
+    if snapshot is None: return False
+    lock=getattr(app,"world_lock",None)
+    if lock is None: lock=app.world_lock=threading.Lock()
+    with lock:
+        saved,refused=snapshot()
+        if saved is None:
+            log.info("rooms: the running world was not saved (%s): %s; the last one saved is kept",why,refused)
+            return False
+        room.world_record=saved
+        room.world_saved_t=float(saved.get("t_s") or 0.0)
+        room_store.keep(app,room)
+    return True
+
+
+def keep_world_after(app,body,answer):
+    """What a page's own act asks of the room kept with the server: the world
+    saved once a break has been worked out (a reply that says `finished`), and
+    every KEEP_WORLD_EVERY_S of the world's time while the page steps it."""
+    if not isinstance(body,dict) or not isinstance(answer,dict): return
+    room=getattr(app,"room",None)
+    if room is None: return
+    t=answer.get("t")
+    due=bool(answer.get("finished"))
+    if not due and body.get("op")=="step" and isinstance(t,(int,float)):
+        # Either way round: a world opened again starts its clock over.
+        due=(abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))>=KEEP_WORLD_EVERY_S
+             and abs(float(t)-float(getattr(room,"world_refused_t",-1.0e9)))>=KEEP_WORLD_RETRY_S)
+    if not due: return
+    if not keep_world(app,"a break was worked out" if answer.get("finished") else "the world moved on") \
+            and isinstance(t,(int,float)):
+        room.world_refused_t=float(t)
 
 
 def _rejoin(app,scene):
@@ -2212,8 +2328,9 @@ def remember_ground(app,body,answer=None):
         if not new: return
     terrain["edits"]=edits+new
     room.spec=dict(spec,terrain=terrain)
-    # The ground is part of what the room is, so it is kept with it (room_store).
-    room_store.keep(app,room)
+    # The ground is part of what the room is, so it is kept with it (room_store),
+    # and with the world standing on it as it is now.
+    if not keep_world(app,"the ground changed"): room_store.keep(app,room)
 
 
 def main():
@@ -2264,11 +2381,27 @@ def main():
     # public name, besides localhost, when it is hosted.
     app.password=password or None
     app.public_host=os.environ.get("BANJO_PUBLIC_HOST") or None
+    # One saved world at a time (keep_world): two request threads saving at once
+    # could put the older world on disk last.
+    app.world_lock=threading.Lock()
     server=ThreadingHTTPServer((args.host,args.port),Handler);server.app=app
     print(f"Banjo playground: http://127.0.0.1:{args.port}"
           +(f" -- listening on {args.host}, behind a password" if app.password else ""),flush=True)
+    # Asked to stop -- a host redeploying, a service manager -- the server stops
+    # the way Ctrl+C stops it, so the running world is saved on the way out.
+    def asked_to_stop(*_):
+        raise KeyboardInterrupt
+    for name in ("SIGTERM","SIGBREAK"):
+        if hasattr(signal,name):
+            try: signal.signal(getattr(signal,name),asked_to_stop)
+            except (ValueError,OSError): pass
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: server.server_close();app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
+    finally:
+        server.server_close()
+        # The room as it stands now, for the server that starts next.
+        try: keep_world(app,"the server stopped")
+        except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
+        app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
 
 if __name__=="__main__": main()

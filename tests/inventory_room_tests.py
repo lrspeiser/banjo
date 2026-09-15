@@ -261,5 +261,99 @@ class AReloadRejoinsTheRunningWorld(unittest.TestCase):
             self.assertTrue(piece.get("cells_local_m"), f"{name} came back without its cells")
 
 
+class ARestartOpensTheRoomAsItStood(unittest.TestCase):
+    """What a server started again does with the world it saved before it
+    stopped (live_session.Live.snapshot, then Live.open with it): the world
+    opened again whole, the ball still in the hand and the record's hand with
+    it, and the bench plate's pieces with their own cells."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():
+            raise unittest.SkipTest(f"{ENGINE} is not built")
+        cls._temp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def open(self, room_spec, snapshot=None):
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        app = types.SimpleNamespace(engine_path=ENGINE, runs_path=Path(self._temp.name), live=live,
+                                    room=types.SimpleNamespace(spec=room_spec))
+        return app, live.open(app, dict({"spec": room_spec}, **({"snapshot": snapshot} if snapshot else {})))
+
+    def test_the_ball_in_the_hand_is_still_in_the_hand(self):
+        app, opened = self.open(spec())
+        session = opened["session"]
+        for _ in range(20):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        took = inventory_room.request(app, {"request": "u1", "revision": 0, "op": "take_up", "item": "ball",
+                                            "person": PERSON})
+        self.assertTrue(took["ok"], took)
+        for _ in range(5):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        saved, why = app.live.snapshot()
+        self.assertIsNotNone(saved, why)
+        self.assertEqual(saved["hand"]["holding"], "ball")
+        self.assertTrue(saved["hand"]["wielding"])
+        kept = inventory_room.inventory_of(app).record()
+        before = app.live.act({"session": session, "op": "poses"})
+        app.live.shutdown()                       # the server stops
+
+        again, reopened = self.open(spec(), snapshot=saved)
+        again.room.inventory_record = kept        # read back with the room (room_store)
+        self.assertEqual(reopened["restored"]["tier"], "whole", reopened["restored"])
+        self.assertEqual(reopened["t"], before["t"], "the world's clock did not come back")
+        self.assertEqual((reopened.get("hand") or {}).get("holding"), "ball", reopened.get("hand"))
+        self.assertEqual({b["name"]: b["position_m"] for b in reopened["bodies"]},
+                         {b["name"]: b["position_m"] for b in before["bodies"]})
+        shown = inventory_room.after_open(again, reopened)
+        self.assertEqual(shown["hands"]["right"], BALL, "the record's hand let go of the ball")
+        self.assertEqual(shown["stowed"], [])
+        self.assertEqual(again.live.act({"session": reopened["session"], "op": "poses"}).get("held"), "ball")
+
+    def test_the_plates_pieces_come_back_with_their_cells(self):
+        room_spec = world_room.room()
+        for body in room_spec["bodies"]:
+            if body["name"] == "iron ball":
+                body["center_mm"] = [-2800, 140 + 60 + 1500, -1200]   # as AReloadRejoinsTheRunningWorld
+        app, opened = self.open(room_spec)
+        session = opened["session"]
+        app.live.act({"session": session, "op": "foresee", "horizon_s": 0.0})
+        broke = None
+        for _ in range(600):
+            state = app.live.act({"session": session, "op": "step", "dt": 1 / 240.0, "n": 8})
+            for name in state.get("breakable") or []:
+                answer = app.live.act({"session": session, "op": "fracture", "name": name})
+                if name == "glass plate 20mm":
+                    broke = answer
+            if broke is not None:
+                break
+        self.assertIsNotNone(broke, "the plate was never struck hard enough to ask")
+        self.assertGreater(broke.get("pieces", 0), 1, broke)
+        for _ in range(10):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 240.0, "n": 8})
+
+        def shards(bodies):
+            return {b["name"]: b for b in bodies if b["name"].startswith("glass plate 20mm piece")}
+        before = shards(app.live.act({"session": session, "op": "poses"})["bodies"])
+        saved, why = app.live.snapshot()
+        self.assertIsNotNone(saved, why)
+        app.live.shutdown()
+
+        again, reopened = self.open(room_spec, snapshot=saved)
+        self.assertEqual(reopened["restored"]["tier"], "whole", reopened["restored"])
+        now = shards(reopened["bodies"])
+        self.assertNotIn("glass plate 20mm", {b["name"] for b in reopened["bodies"]}, "the plate came back whole")
+        self.assertEqual(set(now), set(before))
+        for name, piece in now.items():
+            self.assertTrue(piece.get("cells_local_m"), f"{name} came back without its cells")
+            self.assertEqual(piece.get("cells_local_m"), before[name].get("cells_local_m"),
+                             f"{name} came back with other cells than it had")
+            self.assertEqual(piece["position_m"], before[name]["position_m"], f"{name} moved")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

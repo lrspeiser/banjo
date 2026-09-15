@@ -324,6 +324,37 @@ In the room, walking into the pieces shrinks them away over a quarter of a
 second, adds them to a tally in the corner, and says so once the sweeping stops —
 once, not once per step, or crossing a shattered pane would bury the chat.
 
+### A world that outlives its process
+
+`{"op":"snapshot","spec_digest":"..."}` answers, lean, with the whole world as
+it stands: `{"ok": true, "snapshot": {"format": "banjo.world.v1", ...}}`
+(`LiveWorld::snapshot`). Started again with `--snapshot FILE` beside `--scene`,
+the runner opens the same scene into it, and its opening reply says what came
+back: `"restored": {"tier": "whole", "why", "saved_t_s", "bodies", "not_kept",
+"parked"}`, with the joints, edges and tool points the world already has.
+
+The scene is built again first, and it builds the same cells under the same
+numbers. Each saved body is then made from its own cells at its saved centre of
+mass, facing the world's own way. That puts its cells exactly where its frame
+had them, so everything kept in its frame -- a dent, a kerf, a pin, an edge, a
+tool's point, the grip -- is where it was on it. Then it is turned and set
+moving as it was, and one that was at rest is put back to sleep. Joints are made
+again reading what they read: a door swung 50 degrees reads 50, with the travel
+either side of that it had (`HingeDescription::at_rad`, `SliderDescription::at_m`).
+Measured in `live_world_tests`: a room of 133 bodies, 123 of them pieces of a
+pane, saved at 4.58 s into 330 KB, came back with every body, cell, pose, dent,
+joint, edge and point as it was. Its own snapshot matched the first except for
+what the door's pin reads, which the solver works out again in single precision
+(within 1e-5 rad). Stepped on for a second, the 125 at rest stayed put in both.
+
+A world is not saved while anything is under way that it cannot carry: a break
+being worked out, a stroke of the hand, an edge in a cut, a point in the ground.
+Those answer `{"ok": true, "refused": why}`, and the host keeps the last one. A
+snapshot carries the fingerprint of the lattice it was taken from: node and bond
+counts, and a hash of every cell's place, part and bonds. One that does not fit
+opens the scene as it is, `"tier": "poses"`, with each thing still whole and its
+own self put back where it was left.
+
 ## The clock was never the problem. The event was late.
 
 Three pauses fixed — the run off the caller's thread, the wire trimmed, the

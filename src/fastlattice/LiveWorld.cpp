@@ -21,6 +21,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 #include <deque>
@@ -1122,6 +1124,12 @@ struct LiveWorld::Impl {
     [[nodiscard]] bool inWorld(std::size_t slot) const {
         return slot < body_of.size() && world->contains(body_of[slot]);
     }
+    // The lattice this world's scene builds, in a few numbers (fingerprintOf):
+    // a saved world carries them, and is only ever opened into the same cells.
+    std::size_t fingerprint_nodes{}, fingerprint_bonds{};
+    std::string fingerprint_hash;
+    // What opening from a saved world gave back (LiveWorld::restored).
+    LiveRestore restored;
     // The rigid bodies told what the thermal network says they weigh now, so
     // momentum and energy are about what is really there: after an accepted
     // step, and when a thing set aside comes back into the world.
@@ -1136,10 +1144,204 @@ struct LiveWorld::Impl {
     }
 };
 
+// A saved world, as read back (LiveWorld::snapshot).
+struct LiveWorld::Saved {
+    nlohmann::json doc;
+};
+
+namespace {
+
+// What a saved world says it is. It carries the scene's cells under their own
+// numbers, so a document written by anything else is not read as one.
+constexpr const char *kWorldFormat = "banjo.world.v1";
+
+// A saved world that does not fit the scene it is being opened into.
+struct SavedWorldMismatch : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+// The lattice a scene builds, in a few numbers: how many cells and bonds, and a
+// hash of where each cell is (to the micrometre), which part it belongs to, and
+// which two cells each bond joins. A saved world names its bodies' cells by
+// these numbers, so it can only be opened into a scene that builds the same
+// ones: another scene, or this one under a build that lays its cells out
+// another way, would hand it cells it does not have.
+struct LatticeFingerprint {
+    std::size_t nodes{}, bonds{};
+    std::string hash;
+};
+
+LatticeFingerprint fingerprintOf(const TileImpactSetup &setup) {
+    std::uint64_t h = 1469598103934665603ULL;   // FNV-1a, 64 bits
+    const auto mix = [&h](std::uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            h ^= (v >> (8 * i)) & 0xffU;
+            h *= 1099511628211ULL;
+        }
+    };
+    const auto micrometres = [](double v) {
+        return static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(v * 1.0e6)));
+    };
+    mix(setup.matter.nodes.size());
+    mix(setup.asset.bonds.size());
+    for (std::size_t i = 0; i < setup.matter.nodes.size(); ++i) {
+        const Vec3 &at = setup.matter.nodes[i].position_world_m;
+        mix(i < setup.part_of_node.size() ? setup.part_of_node[i] : 0xffffffffU);
+        mix(micrometres(at.x));
+        mix(micrometres(at.y));
+        mix(micrometres(at.z));
+    }
+    for (const BondRest &bond : setup.asset.bonds) {
+        mix(bond.node_a);
+        mix(bond.node_b);
+    }
+    char text[17];
+    std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(h));
+    return {setup.matter.nodes.size(), setup.asset.bonds.size(), text};
+}
+
+// Numbers as a saved world writes them: every double exactly (a JSON number
+// round-trips a double), and the few that are not finite as words, because
+// JSON has no infinity.
+nlohmann::json savedNumber(double v) {
+    if (std::isfinite(v)) return v;
+    if (std::isnan(v)) return "nan";
+    return v > 0.0 ? "inf" : "-inf";
+}
+
+double numberFrom(const nlohmann::json &j) {
+    if (j.is_number()) return j.get<double>();
+    const std::string word = j.get<std::string>();
+    if (word == "inf") return std::numeric_limits<double>::infinity();
+    if (word == "-inf") return -std::numeric_limits<double>::infinity();
+    if (word == "nan") return std::numeric_limits<double>::quiet_NaN();
+    throw std::invalid_argument("\"" + word + "\" is not a number");
+}
+
+nlohmann::json savedVec(const Vec3 &v) {
+    return nlohmann::json::array({savedNumber(v.x), savedNumber(v.y), savedNumber(v.z)});
+}
+
+Vec3 vecFrom(const nlohmann::json &j) { return {numberFrom(j.at(0)), numberFrom(j.at(1)), numberFrom(j.at(2))}; }
+
+nlohmann::json savedQuat(const Quat &q) {
+    return nlohmann::json::array({savedNumber(q.w), savedNumber(q.x), savedNumber(q.y), savedNumber(q.z)});
+}
+
+Quat quatFrom(const nlohmann::json &j) {
+    return Quat{numberFrom(j.at(0)), numberFrom(j.at(1)), numberFrom(j.at(2)), numberFrom(j.at(3))};
+}
+
+nlohmann::json savedRigid(const RigidSnapshot &s) {
+    return {{"com_m", savedVec(s.center_of_mass_world_m)}, {"q_wxyz", savedQuat(s.orientation_world)},
+            {"v_m_s", savedVec(s.linear_velocity_m_s)}, {"w_rad_s", savedVec(s.angular_velocity_rad_s)}};
+}
+
+RigidSnapshot rigidFrom(const nlohmann::json &j) {
+    RigidSnapshot s{};
+    s.center_of_mass_world_m = vecFrom(j.at("com_m"));
+    s.orientation_world = quatFrom(j.at("q_wxyz"));
+    s.linear_velocity_m_s = vecFrom(j.at("v_m_s"));
+    s.angular_velocity_rad_s = vecFrom(j.at("w_rad_s"));
+    return s;
+}
+
+// Arrays as base64 of their bytes, little-endian as every machine this runs on
+// is: a bowl's two thousand cells are two thousand numbers, not a page of them.
+template <class T>
+std::string packedArray(const std::vector<T> &values) {
+    return terrain::encodeBase64(values.data(), values.size() * sizeof(T));
+}
+
+template <class T>
+std::vector<T> unpackedArray(const nlohmann::json &holder, const char *key) {
+    const std::vector<std::uint8_t> bytes = terrain::decodeBase64(holder.at(key).get<std::string>());
+    if (bytes.size() % sizeof(T) != 0) throw std::invalid_argument(std::string(key) + " is cut short");
+    std::vector<T> out(bytes.size() / sizeof(T));
+    if (!bytes.empty()) std::memcpy(out.data(), bytes.data(), bytes.size());
+    return out;
+}
+
+std::string packedVecs(const std::vector<Vec3> &values) {
+    std::vector<double> flat;
+    flat.reserve(3 * values.size());
+    for (const Vec3 &v : values) {
+        flat.push_back(v.x);
+        flat.push_back(v.y);
+        flat.push_back(v.z);
+    }
+    return packedArray(flat);
+}
+
+std::vector<Vec3> unpackedVecs(const nlohmann::json &holder, const char *key) {
+    const std::vector<double> flat = unpackedArray<double>(holder, key);
+    if (flat.size() % 3 != 0) throw std::invalid_argument(std::string(key) + " is not points of three numbers");
+    std::vector<Vec3> out;
+    out.reserve(flat.size() / 3);
+    for (std::size_t k = 0; k + 2 < flat.size(); k += 3) out.push_back({flat[k], flat[k + 1], flat[k + 2]});
+    return out;
+}
+
+const char *savedKind(JoltWorld::JointKind kind) {
+    switch (kind) {
+    case JoltWorld::JointKind::Slider: return "slider";
+    case JoltWorld::JointKind::Link: return "link";
+    case JoltWorld::JointKind::Pulley: return "pulley";
+    case JoltWorld::JointKind::Fixing: return "fixing";
+    case JoltWorld::JointKind::Elastic: return "elastic";
+    default: return "hinge";
+    }
+}
+
+JoltWorld::JointKind kindFrom(const std::string &word) {
+    if (word == "slider") return JoltWorld::JointKind::Slider;
+    if (word == "link") return JoltWorld::JointKind::Link;
+    if (word == "pulley") return JoltWorld::JointKind::Pulley;
+    if (word == "fixing") return JoltWorld::JointKind::Fixing;
+    if (word == "elastic") return JoltWorld::JointKind::Elastic;
+    if (word == "hinge") return JoltWorld::JointKind::Hinge;
+    throw std::invalid_argument("\"" + word + "\" is not a kind of joint");
+}
+
+// One body of a saved world: where it goes once it is made from its cells.
+struct Placement {
+    std::string name;
+    MatterBodyId id{};
+    RigidSnapshot pose{};
+    bool anchored{};
+    bool awake{true};
+    bool parked{};
+    double parked_mass_kg{};
+};
+
+// What the scene declares about heat, for a world opened from a saved one:
+// only what is about something still there. A pane that broke is its pieces
+// now, and a declaration naming it would refuse the scene.
+void keepWhatIsThere(thermo::Declarations &declared,
+                     const std::unordered_map<std::string, std::size_t> &index_of) {
+    const auto there = [&index_of](const std::string &name) { return index_of.count(name) != 0; };
+    std::erase_if(declared.regions, [&](const thermo::GasRegionDeclaration &region) {
+        return (!region.piston.empty() && !there(region.piston)) ||
+               (!region.container.empty() && !there(region.container));
+    });
+    std::set<std::string> regions;
+    for (const thermo::GasRegionDeclaration &region : declared.regions) regions.insert(region.name);
+    std::erase_if(declared.contents, [&](const thermo::ContentsDeclaration &contents) {
+        return !there(contents.body) || (!contents.environment.empty() && regions.count(contents.environment) == 0);
+    });
+    std::erase_if(declared.heaters, [&](const thermo::HeaterDeclaration &heater) {
+        return !there(heater.target) && regions.count(heater.target) == 0;
+    });
+}
+
+}  // namespace
+
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
 LiveWorld::~LiveWorld() = default;
 
-std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
+std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) { return openFrom(request, nullptr); }
+
+std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request, const Saved *saved) {
     std::unique_ptr<LiveWorld> live(new LiveWorld());
     Impl &impl = *live->impl_;
     impl.request = request;
@@ -1156,8 +1358,29 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
     // setup assumes goes under all of it -- to the rock's own floor -- where it
     // is a safety net and not a surface: the floor under a lattice run and the
     // plane heat conducts into both follow it there.
+    //
+    // A saved world's water goes back as the scene's own carried water
+    // ("water": {"state": ...}), which is how a world opened again after the
+    // chat keeps its water: the same water over whatever ground the scene's
+    // edits leave. Water that will not go back -- saved on another grid, say --
+    // is said, and the scene's own is used.
+    std::string water_note;
     if (!r.environment_scene_json.empty()) {
-        impl.environment = terrain::Environment::fromScene(r.environment_scene_json);
+        const bool carry = saved != nullptr && saved->doc.contains("water") && saved->doc.at("water").is_object();
+        try {
+            std::string scene_text = r.environment_scene_json;
+            if (carry) {
+                nlohmann::json scene = nlohmann::json::parse(scene_text);
+                scene["water"]["state"] = saved->doc.at("water");
+                scene_text = scene.dump();
+            }
+            impl.environment = terrain::Environment::fromScene(scene_text);
+        } catch (const std::exception &error) {
+            if (!carry) throw;
+            water_note = std::string("the water: it could not be put back (") + error.what() +
+                         "), so it is as the room declares it";
+            impl.environment = terrain::Environment::fromScene(r.environment_scene_json);
+        }
         if (impl.environment) setup.ground_y = std::min(setup.ground_y, impl.environment->floorY());
     }
 
@@ -1179,11 +1402,57 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
     impl.plastic_extension_m.assign(setup.asset.bonds.size(), 0.0);
     impl.plastic_strain_m.assign(setup.asset.bonds.size(), 0.0);
 
-    // Nothing has been struck, so every part is still one whole component.
-    const auto components = findConnectedComponents(setup.matter);
-    if (components.empty()) throw std::runtime_error("a live world needs at least one body");
+    // The lattice this scene builds, in a few numbers, which a saved world has
+    // to have been taken from.
+    const LatticeFingerprint print = fingerprintOf(setup);
+    impl.fingerprint_nodes = print.nodes;
+    impl.fingerprint_bonds = print.bonds;
+    impl.fingerprint_hash = print.hash;
+    if (saved != nullptr) {
+        const nlohmann::json &doc = saved->doc;
+        const nlohmann::json &was = doc.at("fingerprint");
+        const std::size_t was_nodes = was.at("nodes").get<std::size_t>();
+        const std::size_t was_bonds = was.at("bonds").get<std::size_t>();
+        const std::string was_hash = was.at("hash").get<std::string>();
+        if (was_nodes != print.nodes || was_bonds != print.bonds || was_hash != print.hash)
+            throw SavedWorldMismatch("it was saved from a scene whose cells are not this one's: " +
+                                     std::to_string(was_nodes) + " cells and " + std::to_string(was_bonds) +
+                                     " bonds (" + was_hash + ") against " + std::to_string(print.nodes) + " and " +
+                                     std::to_string(print.bonds) + " (" + print.hash + ")");
+        // What a blade severed stays severed, in the scene's own matter where
+        // every later run finds it -- before anything reads the bonds.
+        for (const std::uint32_t k : unpackedArray<std::uint32_t>(doc, "dead_bonds_b64")) {
+            if (k >= setup.matter.bonds.size())
+                throw std::invalid_argument("a severed bond is not one of this scene's");
+            ActiveBondState &bond = setup.matter.bonds[k];
+            if (!bond.alive) continue;
+            bond.alive = false;
+            bond.damage = 1.0;
+            bond.failure_mode = BondFailureMode::Shear;
+        }
+        // And the permanent set each bond carries: what a dent is made of.
+        const nlohmann::json &set = doc.at("plastic");
+        const auto set_bonds = unpackedArray<std::uint32_t>(set, "bonds_b64");
+        const auto extension = unpackedArray<double>(set, "extension_b64");
+        const auto strain = unpackedArray<double>(set, "strain_b64");
+        if (extension.size() != set_bonds.size() || strain.size() != set_bonds.size())
+            throw std::invalid_argument("the saved permanent set is not one number a bond");
+        for (std::size_t k = 0; k < set_bonds.size(); ++k) {
+            if (set_bonds[k] >= impl.plastic_extension_m.size())
+                throw std::invalid_argument("a bond with a permanent set is not one of this scene's");
+            impl.plastic_extension_m[set_bonds[k]] = extension[k];
+            impl.plastic_strain_m[set_bonds[k]] = strain[k];
+        }
+    }
 
-    FragmentBuildResult build = buildFragmentRepresentations(setup.matter, components, {
+    // Nothing has been struck, so every part is still one whole component --
+    // unless the world is opened again from a saved one, whose bodies are made
+    // from their own cells below instead.
+    const auto components =
+        saved != nullptr ? std::vector<FragmentComponent>{} : findConnectedComponents(setup.matter);
+    if (saved == nullptr && components.empty()) throw std::runtime_error("a live world needs at least one body");
+
+    FragmentBuildResult build = saved != nullptr ? FragmentBuildResult{} : buildFragmentRepresentations(setup.matter, components, {
         .first_body_id = 1000,
         .maximum_rigid_fragments = std::max<std::size_t>(1, components.size()),
         .minimum_nodes_per_rigid_fragment = 1,
@@ -1293,6 +1562,143 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         impl.body_of.push_back(fragment.body_id);
     }
 
+    // A saved world's bodies, made again from their own cells (open with a
+    // snapshot). Each is built at its saved centre of mass, facing the world's
+    // own way, from its cells laid out as its frame had them: so its offsets are
+    // the ones it had, and everything kept in its frame -- a dent, a kerf, a
+    // joint's point, an edge, a tool's point, the grip -- is where it was on it.
+    // It is turned and set moving as it was once it is in the world, below.
+    // Under our own body ids, which the rest of the engine keys by.
+    std::vector<Placement> placements;
+    if (saved != nullptr) {
+        const nlohmann::json &doc = saved->doc;
+        // What each part is made of, as the scene's bodies say: what the loop
+        // above fills in from each whole part.
+        if (!setup.part_of_node.empty()) {
+            impl.material_of_part.assign(setup.part_bodies.size(), std::string{});
+            for (std::size_t part = 0; part < setup.part_bodies.size(); ++part)
+                if (!setup.part_bodies[part].empty())
+                    impl.material_of_part[part] =
+                        materialPresetName(r.bodies[setup.part_bodies[part].front()].material);
+        }
+        ActiveMatter placed = setup.matter;
+        std::vector<char> taken(setup.matter.nodes.size(), 0);
+        std::set<std::string> names;
+        std::set<MatterBodyId> ids;
+        for (const nlohmann::json &b : doc.at("bodies")) {
+            LiveBodyPose described{};
+            described.name = b.at("name").get<std::string>();
+            const std::string name = described.name;
+            if (name.empty() || !names.insert(name).second)
+                throw std::invalid_argument("two saved bodies are called \"" + name + "\"");
+            described.material = b.value("material", std::string{});
+            described.shape = b.value("shape", std::string{"hull"});
+            described.dimensions_m = vecFrom(b.at("dimensions_m"));
+            described.revision = b.value("revision", 0U);
+            described.color_rgba = b.value("color_rgba", std::uint32_t{0});
+            described.anchored = b.value("anchored", false);
+            described.fragment = b.value("fragment", false);
+            described.dent_m = numberFrom(b.at("dent_m"));
+            described.dent_at_m = vecFrom(b.at("dent_at_m"));
+            const MatterBodyId id = b.at("body_id").get<MatterBodyId>();
+            if (id < 1000 || !ids.insert(id).second)
+                throw std::invalid_argument("the saved " + name + " has a body id that is not its own");
+            const std::vector<std::uint32_t> nodes = unpackedArray<std::uint32_t>(b, "nodes_b64");
+            const std::vector<Vec3> offsets = unpackedVecs(b, "offsets_b64");
+            if (nodes.empty() || offsets.size() != nodes.size())
+                throw std::invalid_argument("the saved " + name + " has no cells, or not a place for each");
+            for (const std::uint32_t node : nodes) {
+                if (node >= taken.size() || taken[node] != 0)
+                    throw std::invalid_argument("the saved " + name + " has a cell that is not its own");
+                taken[node] = 1;
+            }
+            Placement at;
+            at.name = name;
+            at.id = id;
+            at.anchored = described.anchored;
+            at.parked = b.contains("parked");
+            if (at.parked) {
+                // Set aside: made where it was put away, and set aside again
+                // before anything steps (below).
+                at.pose = rigidFrom(b.at("parked").at("pose"));
+                at.pose.linear_velocity_m_s = {};
+                at.pose.angular_velocity_rad_s = {};
+                at.parked_mass_kg = numberFrom(b.at("parked").at("mass_kg"));
+            } else {
+                at.pose = rigidFrom(b.at("pose"));
+                at.awake = b.value("awake", true);
+            }
+            for (std::size_t k = 0; k < nodes.size(); ++k) {
+                ActiveNodeState &node = placed.nodes[nodes[k]];
+                node.position_world_m = at.pose.center_of_mass_world_m + offsets[k];
+                node.previous_position_world_m = node.position_world_m;
+                node.velocity_m_s = {};
+                node.spin_angular_velocity_rad_s = {};
+            }
+            const MaterialDefinition *definition = &setup.tile_material;
+            if (setup.multi_body && !setup.part_of_node.empty()) {
+                const std::uint32_t part = setup.part_of_node[nodes.front()];
+                if (part < setup.part_definitions.size()) definition = &setup.part_definitions[part];
+            }
+            // How it meets things, as it was made: a piece a fracture made takes
+            // the scene's, one a cut made its own material's.
+            const double friction = numberFrom(b.at("friction"));
+            const double restitution = numberFrom(b.at("restitution"));
+            const double rolling = numberFrom(b.at("rolling_resistance"));
+            const FragmentComponent component{0, nodes};
+            FragmentBuildResult one = buildFragmentRepresentations(
+                placed, std::span<const FragmentComponent>(&component, 1),
+                {.first_body_id = id,
+                 .maximum_rigid_fragments = 1,
+                 .minimum_nodes_per_rigid_fragment = 1,
+                 .maximum_collision_points = 192,
+                 .friction = friction,
+                 .restitution = restitution,
+                 .rolling_resistance = rolling});
+            if (one.rigid_fragments.empty())
+                throw std::invalid_argument("the saved " + name + " could not be made from its cells");
+            RigidFragmentDescription fragment = std::move(one.rigid_fragments.front());
+            fragment.body_id = id;
+            fragment.anchored = described.anchored;
+            fragment.friction = friction;
+            fragment.restitution = restitution;
+            fragment.rolling_resistance = rolling;
+            if (described.shape == "sphere" || described.shape == "box") {
+                fragment.primitive = described.shape == "sphere" ? FragmentPrimitive::Sphere : FragmentPrimitive::Box;
+                fragment.primitive_dimensions_m = described.dimensions_m;
+            }
+            if (b.contains("tilt_wxyz")) {
+                const Quat tilt = quatFrom(b.at("tilt_wxyz"));
+                fragment.primitive_rotation_wxyz[0] = tilt.w;
+                fragment.primitive_rotation_wxyz[1] = tilt.x;
+                fragment.primitive_rotation_wxyz[2] = tilt.y;
+                fragment.primitive_rotation_wxyz[3] = tilt.z;
+                impl.tilt_of[name] = tilt;
+            }
+            // Exactly where it was: its cells' middle, worked out again from the
+            // same cells, is the same but for its last bits, and its offsets are
+            // the saved ones exactly.
+            fragment.mass_properties.center_of_mass_world_m = at.pose.center_of_mass_world_m;
+            fragment.mass_properties.linear_velocity_m_s = {};
+            fragment.mass_properties.angular_velocity_rad_s = {};
+            for (std::size_t k = 0; k < nodes.size(); ++k) impl.cell_offset_m[nodes[k]] = offsets[k];
+            impl.limits_of.push_back(fragmentFractureLimits(setup.matter, nodes, definition->density_kg_m3,
+                                                            definition->young_modulus_pa,
+                                                            definition->yield_strength_pa));
+            impl.impedance_of.push_back(acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
+            impl.density_of.push_back(definition->density_kg_m3);
+            impl.tensile_of.push_back(definition->tensile_strength_pa);
+            impl.compressive_of.push_back(definition->compressive_strength_pa);
+            impl.nodes_of.push_back(nodes);
+            impl.described.push_back(std::move(described));
+            impl.body_of.push_back(id);
+            build.rigid_fragments.push_back(std::move(fragment));
+            placements.push_back(std::move(at));
+        }
+        if (placements.empty()) throw std::invalid_argument("the saved world has nothing in it");
+        impl.next_body_id = std::max<MatterBodyId>(doc.at("next").at("body").get<MatterBodyId>(), *ids.rbegin() + 1);
+    }
+
     // The most bodies a live world will hold: what runReversibleTrial allows,
     // which is what breaking depends on.
     constexpr std::size_t kLiveBodyCeiling = 2048;
@@ -1352,13 +1758,287 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
 
     for (std::size_t i = 0; i < impl.described.size(); ++i)
         impl.index_of.emplace(impl.described[i].name, i);
+    // A saved world's bodies turned and moving as they were -- or asleep, as
+    // bodies at rest are, so a room that had settled does not all start being
+    // simulated, and nudged, again. Scenery was made where it stands.
+    for (const Placement &at : placements) {
+        if (at.anchored) continue;
+        impl.world->applyRigidState(at.id, at.pose);
+        if (!at.parked && !at.awake) impl.world->sleep(at.id);
+    }
     // What the scene declares about heat, chemistry and gas. A declaration the
     // network refuses refuses the scene, with the network's own words, rather
-    // than opening a world that quietly lacks the fire it was asked for.
+    // than opening a world that quietly lacks the fire it was asked for. A world
+    // opened again from a saved one declares only what is about something still
+    // there, and from the start: heat is not yet part of a saved world.
     if (!r.thermo_scene_json.empty()) {
-        const thermo::Declarations declared = thermo::readSceneDeclarations(r.thermo_scene_json);
+        thermo::Declarations declared = thermo::readSceneDeclarations(r.thermo_scene_json);
+        if (saved != nullptr) keepWhatIsThere(declared, impl.index_of);
         if (declared.any()) thermo::apply(live->ensureThermo(), declared);
     }
+    if (saved == nullptr) return live;
+
+    // ---- the rest of a saved world -------------------------------------------
+    const nlohmann::json &doc = saved->doc;
+    LiveRestore said;
+    said.tier = "whole";
+    said.saved_t_s = numberFrom(doc.at("t_s"));
+    said.bodies = placements.size();
+    said.not_kept = notKept();
+    if (!water_note.empty()) said.not_kept.push_back(water_note);
+    // Set aside again, where each was put away and holding what it held.
+    for (const Placement &at : placements) {
+        if (!at.parked) continue;
+        std::string refused;
+        if (!impl.world->park(at.id, refused))
+            throw std::invalid_argument("the saved " + at.name + " could not be set aside again: " + refused);
+        impl.parked.emplace(at.name, Impl::ParkedRecord{at.pose, at.parked_mass_kg});
+        if (impl.thermo && impl.thermo->holds(at.name)) impl.thermo->park(at.name);
+        said.parked.push_back({at.name, at.pose.center_of_mass_world_m,
+                               composeTurns(at.pose.orientation_world, impl.shapeTurn(impl.index_of.at(at.name)))});
+    }
+    // Where blades have been through things, each in its body's own frame, and
+    // the bonds each crosses, found again from its cells.
+    for (const auto &[name, list] : doc.at("kerfs").items()) {
+        const auto found = impl.index_of.find(name);
+        if (found == impl.index_of.end()) continue;
+        for (const nlohmann::json &k : list) {
+            Impl::Kerf kerf{};
+            kerf.blade = k.at("blade").get<unsigned>();
+            kerf.origin = vecFrom(k.at("origin"));
+            kerf.u = vecFrom(k.at("u"));
+            kerf.v = vecFrom(k.at("v"));
+            kerf.w = vecFrom(k.at("w"));
+            kerf.strip = numberFrom(k.at("strip"));
+            kerf.half_width = numberFrom(k.at("half_width"));
+            for (const nlohmann::json &entry : k.at("swept")) {
+                auto &spans = kerf.swept[entry.at(0).get<int>()];
+                for (const nlohmann::json &span : entry.at(1))
+                    spans.emplace_back(numberFrom(span.at(0)), numberFrom(span.at(1)));
+            }
+            findCrossings(kerf, impl.nodes_of[found->second], impl.cell_offset_m, setup.asset);
+            impl.kerfs[name].push_back(std::move(kerf));
+        }
+    }
+    // Edges, in their bodies' frames, with what each has cut.
+    for (const nlohmann::json &b : doc.at("blades")) {
+        Impl::Blade blade{};
+        blade.id = b.at("id").get<unsigned>();
+        blade.body = b.at("body").get<std::string>();
+        blade.heel_local = vecFrom(b.at("heel_local"));
+        blade.tip_local = vecFrom(b.at("tip_local"));
+        blade.facing_local = vecFrom(b.at("facing_local"));
+        blade.grip_local = vecFrom(b.at("grip_local"));
+        blade.thickness = numberFrom(b.at("thickness_m"));
+        blade.edge_radius = numberFrom(b.at("edge_radius_m"));
+        blade.bevel_deg = numberFrom(b.at("bevel_deg"));
+        blade.cut_area = numberFrom(b.at("cut_area_m2"));
+        blade.cut_work = numberFrom(b.at("cut_work_j"));
+        blade.attached = b.value("attached", true);
+        blade.body_id = b.at("body_id").get<MatterBodyId>();
+        blade.frame_nodes = unpackedArray<std::uint32_t>(b, "frame_nodes_b64");
+        blade.frame_offsets = unpackedVecs(b, "frame_offsets_b64");
+        impl.blades.push_back(std::move(blade));
+    }
+    impl.next_blade = doc.at("next").at("blade").get<unsigned>();
+    // Tools' points, likewise.
+    {
+        std::vector<ToolTerrain::SavedPoint> points;
+        for (const nlohmann::json &p : doc.at("tool_points")) {
+            ToolTerrain::SavedPoint point;
+            point.id = p.at("id").get<unsigned>();
+            point.body = p.at("body").get<std::string>();
+            point.tip_local = vecFrom(p.at("tip_local"));
+            point.pointing_local = vecFrom(p.at("pointing_local"));
+            point.grip_local = vecFrom(p.at("grip_local"));
+            point.width_local = vecFrom(p.at("width_local"));
+            point.shape.width_m = numberFrom(p.at("width_m"));
+            point.shape.thickness_m = numberFrom(p.at("thickness_m"));
+            point.shape.angle_deg = numberFrom(p.at("angle_deg"));
+            point.shape.length_m = numberFrom(p.at("length_m"));
+            point.body_id = p.at("body_id").get<MatterBodyId>();
+            point.frame_nodes = unpackedArray<std::uint32_t>(p, "frame_nodes_b64");
+            point.frame_offsets = unpackedVecs(p, "frame_offsets_b64");
+            point.attached = p.value("attached", true);
+            points.push_back(std::move(point));
+        }
+        impl.tools.restore(points, doc.at("next").at("point").get<unsigned>());
+    }
+    // Joints: every one on record, and each that was holding made again where
+    // it holds -- a pin and a slide reading what they read, with the travel
+    // they had either side of it (HingeDescription::at_rad).
+    constexpr double kPi = 3.14159265358979323846;
+    for (const nlohmann::json &o : doc.at("joints")) {
+        Impl::SceneJoint joint{};
+        joint.id = o.at("id").get<unsigned>();
+        joint.kind = kindFrom(o.at("kind").get<std::string>());
+        joint.a = o.at("a").get<std::string>();
+        joint.b = o.at("b").get<std::string>();
+        joint.point_local_a = vecFrom(o.at("point_local_a"));
+        joint.point_local_b = vecFrom(o.at("point_local_b"));
+        joint.axis_local_a = vecFrom(o.at("axis_local_a"));
+        joint.point_local_b_tie = vecFrom(o.at("point_local_b_tie"));
+        joint.stand_off_a = numberFrom(o.at("stand_off_a"));
+        joint.stand_off_b = numberFrom(o.at("stand_off_b"));
+        joint.lower = numberFrom(o.at("lower"));
+        joint.upper = numberFrom(o.at("upper"));
+        joint.friction = numberFrom(o.at("friction"));
+        joint.breaks_at_n = numberFrom(o.at("breaks_at_n"));
+        joint.over_a = vecFrom(o.at("over_a"));
+        joint.over_b = vecFrom(o.at("over_b"));
+        joint.ratio = numberFrom(o.at("ratio"));
+        joint.holds_tension_n = numberFrom(o.at("holds_tension_n"));
+        joint.holds_shear_n = numberFrom(o.at("holds_shear_n"));
+        joint.comes_off_n = numberFrom(o.at("comes_off_n"));
+        joint.rest_m = numberFrom(o.at("rest_m"));
+        joint.stiffness_n_m = numberFrom(o.at("stiffness_n_m"));
+        joint.damping_n_s_m = numberFrom(o.at("damping_n_s_m"));
+        joint.at_when_hung = numberFrom(o.at("at_when_hung"));
+        joint.attached = o.at("attached").get<bool>();
+        joint.member_end = o.at("member_end").get<int>();
+        joint.declared_tension_n = numberFrom(o.at("declared_tension_n"));
+        joint.declared_shear_n = numberFrom(o.at("declared_shear_n"));
+        joint.declared_breaks_at_n = numberFrom(o.at("declared_breaks_at_n"));
+        joint.declared_stiffness_n_m = numberFrom(o.at("declared_stiffness_n_m"));
+        joint.declared_kept = o.at("declared_kept").get<bool>();
+        joint.rated_tension_n = numberFrom(o.at("rated_tension_n"));
+        joint.rated_shear_n = numberFrom(o.at("rated_shear_n"));
+        joint.rated_breaks_at_n = numberFrom(o.at("rated_breaks_at_n"));
+        joint.rated_stiffness_n_m = numberFrom(o.at("rated_stiffness_n_m"));
+        joint.capacity_fraction = numberFrom(o.at("capacity_fraction"));
+        joint.checked_fraction = numberFrom(o.at("checked_fraction"));
+        joint.rechecks = o.at("rechecks").get<unsigned>();
+        joint.parted_because = o.at("parted_because").get<std::string>();
+        joint.parted_load_n = numberFrom(o.at("parted_load_n"));
+        joint.parted_capacity_n = numberFrom(o.at("parted_capacity_n"));
+        joint.member_said = o.at("member_said").get<std::string>();
+        joint.rigid = 0;
+        const auto one = impl.index_of.find(joint.a);
+        const auto two = impl.index_of.find(joint.b);
+        if (joint.attached && o.contains("held") && one != impl.index_of.end() && two != impl.index_of.end() &&
+            impl.inWorld(one->second) && impl.inWorld(two->second)) {
+            const nlohmann::json &held = o.at("held");
+            const MatterBodyId ida = impl.body_of[one->second];
+            const MatterBodyId idb = impl.body_of[two->second];
+            const RigidSnapshot sa = impl.world->snapshot(ida);
+            const RigidSnapshot sb = impl.world->snapshot(idb);
+            const Vec3 point = sa.center_of_mass_world_m + sa.orientation_world.rotate(joint.point_local_a);
+            const Vec3 along = sa.orientation_world.rotate(joint.axis_local_a);
+            const Vec3 point_b = sb.center_of_mass_world_m + sb.orientation_world.rotate(joint.point_local_b_tie);
+            switch (joint.kind) {
+            case JoltWorld::JointKind::Hinge: {
+                JoltWorld::HingeDescription pin{};
+                pin.a = ida;
+                pin.b = idb;
+                pin.point_world_m = point;
+                pin.axis_world = along;
+                // Jolt keeps a limit as a float, and pi as a float is a hair
+                // past pi: a full turn's limits, read back, are clamped to it.
+                pin.lower_rad = std::max(-kPi, numberFrom(held.at("lower")));
+                pin.upper_rad = std::min(kPi, numberFrom(held.at("upper")));
+                pin.friction_torque_n_m = joint.friction;
+                pin.at_rad = std::clamp(numberFrom(held.at("at")), -kPi, kPi);
+                joint.rigid = impl.world->addHinge(pin);
+                break;
+            }
+            case JoltWorld::JointKind::Slider: {
+                JoltWorld::SliderDescription groove{};
+                groove.a = ida;
+                groove.b = idb;
+                groove.point_world_m = point;
+                groove.axis_world = along;
+                groove.lower_m = std::min(0.0, numberFrom(held.at("lower")));
+                groove.upper_m = std::max(0.0, numberFrom(held.at("upper")));
+                groove.friction_n = joint.friction;
+                groove.at_m = numberFrom(held.at("at"));
+                joint.rigid = impl.world->addSlider(groove);
+                break;
+            }
+            case JoltWorld::JointKind::Link: {
+                JoltWorld::LinkDescription rope{};
+                rope.a = ida;
+                rope.b = idb;
+                rope.point_a_world_m = point;
+                rope.point_b_world_m = point_b;
+                rope.length_m = joint.upper;
+                rope.breaking_tension_n = joint.breaks_at_n;
+                joint.rigid = impl.world->addLink(rope);
+                break;
+            }
+            case JoltWorld::JointKind::Pulley: {
+                JoltWorld::PulleyDescription rove{};
+                rove.a = ida;
+                rove.b = idb;
+                rove.point_a_world_m = point;
+                rove.point_b_world_m = point_b;
+                rove.over_a_world_m = joint.over_a;
+                rove.over_b_world_m = joint.over_b;
+                rove.ratio = joint.ratio;
+                rove.length_m = joint.upper;
+                joint.rigid = impl.world->addPulley(rove);
+                break;
+            }
+            case JoltWorld::JointKind::Elastic: {
+                JoltWorld::ElasticDescription limb{};
+                limb.a = ida;
+                limb.b = idb;
+                limb.point_a_world_m = point;
+                limb.point_b_world_m = point_b;
+                limb.rest_m = joint.rest_m;
+                limb.stiffness_n_m = joint.stiffness_n_m;
+                limb.damping_n_s_m = joint.damping_n_s_m;
+                joint.rigid = impl.world->addElastic(limb);
+                break;
+            }
+            case JoltWorld::JointKind::Fixing: {
+                JoltWorld::FixingDescription peg{};
+                peg.a = ida;
+                peg.b = idb;
+                peg.point_world_m = point;
+                peg.axis_world = along;
+                peg.holds_tension_n = joint.holds_tension_n;
+                peg.holds_shear_n = joint.holds_shear_n;
+                peg.comes_off_n = joint.comes_off_n;
+                joint.rigid = impl.world->addFixing(peg);
+                break;
+            }
+            default:
+                break;
+            }
+        }
+        impl.joints.push_back(std::move(joint));
+    }
+    impl.next_joint = doc.at("next").at("joint").get<unsigned>();
+    // Anything still attached with nothing standing in for it as it was saved
+    // is hung now, as after any rearrangement of the bodies.
+    live->rehangJoints();
+    // The hand: what it holds, how, and where it wants it.
+    {
+        const nlohmann::json &hand = doc.at("hand");
+        impl.hand_strength_n = numberFrom(hand.at("strength_n"));
+        impl.hand_torque_n_m = numberFrom(hand.at("torque_n_m"));
+        impl.hand_mass_kg = numberFrom(hand.at("mass_kg"));
+        // Plain values, kept whether or not it holds anything: an empty hand
+        // still says what the work was, and where it last wanted the grip.
+        impl.grip_local = vecFrom(hand.at("grip_local_m"));
+        impl.held_at = vecFrom(hand.at("held_at_m"));
+        impl.held_facing = quatFrom(hand.at("held_facing_wxyz"));
+        impl.hand_work_j = numberFrom(hand.at("work_j"));
+        const std::string holding = hand.value("holding", std::string{});
+        if (const auto found = impl.index_of.find(holding);
+            !holding.empty() && found != impl.index_of.end() && impl.inWorld(found->second)) {
+            impl.holding = found->second;
+            impl.wielding = hand.value("wielding", false);
+        }
+    }
+    // The clock and the counters, so what comes next is named and numbered
+    // after what there is.
+    impl.time_s = numberFrom(doc.at("t_s"));
+    impl.steps_taken = doc.at("steps").get<std::uint64_t>();
+    impl.last_dt_s = numberFrom(doc.at("last_dt_s"));
+    impl.foresee_horizon_s = numberFrom(doc.at("foresee_horizon_s"));
+    impl.survey_due = true;
+    impl.restored = std::move(said);
     return live;
 }
 
@@ -9052,5 +9732,341 @@ bool LiveWorld::unpark(const std::string &name, const Vec3 &at_world_m, const Qu
 }
 
 bool LiveWorld::parked(const std::string &name) const { return impl_->parked.count(name) != 0; }
+
+// ===========================================================================
+// A world that is kept: the whole of it as it stands, and the scene opened
+// again from that (docs/inventory-and-hands-design.md, "What a room keeps").
+// ===========================================================================
+
+std::vector<std::string> LiveWorld::notKept() {
+    return {"heat, char and fuel: each thing still there is heated as its room declares it, from the start",
+            "anything under way: a world is saved only between breaks, strokes of the hand, cuts and a point's "
+            "time in the ground, so the last one saved before any of those is what comes back",
+            "the solver's memory of its contacts: a thing that was moving carries on from where it was, but "
+            "not step for step as it would have"};
+}
+
+const LiveRestore &LiveWorld::restored() const { return impl_->restored; }
+
+std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest) const {
+    const Impl &I = *impl_;
+    why.clear();
+    const auto refuse = [&why](std::string reason) {
+        why = std::move(reason);
+        return std::string{};
+    };
+    // What a saved world cannot carry, and so waits for: each is over in well
+    // under a second of the world's time, or as soon as the hand is done.
+    if (I.pending || !I.queued.empty() || !I.held_for_fracture.empty())
+        return refuse("a break is being worked out: the world is saved once it has come apart");
+    if (!I.split_later.empty()) return refuse("something cut through is about to come apart");
+    if (!I.engaged.empty() || !I.exempt.empty())
+        return refuse("an edge is in a cut: the world is saved once it is clear");
+    // Nor while an edge's ordinary contact with anything is suspended -- the
+    // edge biting, or lying in the mouth of the cut it made (prepareCuts) --
+    // whatever the lists above say: made again, the two would meet as ordinary
+    // solids, one inside the other.
+    for (const Impl::Blade &blade : I.blades) {
+        const auto holder = I.index_of.find(blade.body);
+        if (!blade.attached || holder == I.index_of.end() || !I.inWorld(holder->second)) continue;
+        for (std::size_t j = 0; j < I.described.size(); ++j)
+            if (j != holder->second && I.inWorld(j) &&
+                I.world->pairContactOwner(I.body_of[holder->second], I.body_of[j]) == PairContactOwner::External)
+                return refuse("the " + blade.body + "'s edge is in a cut in the " + I.described[j].name +
+                              ": the world is saved once it is clear");
+    }
+    for (const LiveBodyPose &body : I.described)
+        if (I.tools.inGround(body.name))
+            return refuse("the " + body.name + "'s point is in the ground: the world is saved once it is out");
+    if (I.stroke) return refuse("the hand is making a stroke: the world is saved once it is over");
+
+    nlohmann::json doc;
+    doc["format"] = kWorldFormat;
+    doc["fingerprint"] = {{"nodes", I.fingerprint_nodes}, {"bonds", I.fingerprint_bonds}, {"hash", I.fingerprint_hash}};
+    doc["spec_digest"] = spec_digest;
+    doc["t_s"] = savedNumber(I.time_s);
+    doc["steps"] = I.steps_taken;
+    doc["last_dt_s"] = savedNumber(I.last_dt_s);
+    doc["foresee_horizon_s"] = savedNumber(I.foresee_horizon_s);
+    doc["next"] = {{"body", I.next_body_id}, {"joint", I.next_joint}, {"blade", I.next_blade},
+                   {"point", I.tools.nextId()}};
+
+    // Every body: what it is, its cells and where they sit in its frame, and
+    // where it is and how it moves -- or where it was put away.
+    nlohmann::json bodies = nlohmann::json::array();
+    for (std::size_t i = 0; i < I.described.size(); ++i) {
+        const LiveBodyPose &d = I.described[i];
+        const MatterBodyId id = I.body_of[i];
+        const JoltWorld::BodySurface surface = I.world->surfaceOf(id);
+        nlohmann::json b = {{"name", d.name},
+                            {"material", d.material},
+                            {"shape", d.shape},
+                            {"dimensions_m", savedVec(d.dimensions_m)},
+                            {"revision", d.revision},
+                            {"color_rgba", d.color_rgba},
+                            {"anchored", d.anchored},
+                            {"fragment", d.fragment},
+                            {"dent_m", savedNumber(d.dent_m)},
+                            {"dent_at_m", savedVec(d.dent_at_m)},
+                            {"body_id", id},
+                            {"friction", savedNumber(surface.friction)},
+                            {"restitution", savedNumber(surface.restitution)},
+                            {"rolling_resistance", savedNumber(surface.rolling_resistance)}};
+        // Which authored thing its cells came from, by name: a piece of a tool
+        // is still of that tool, for whoever keeps a record of things.
+        const std::vector<std::uint32_t> &nodes = I.nodes_of[i];
+        if (!nodes.empty() && nodes.front() < I.setup->part_of_node.size()) {
+            const std::uint32_t part = I.setup->part_of_node[nodes.front()];
+            if (part < I.setup->part_bodies.size() && !I.setup->part_bodies[part].empty() &&
+                I.setup->part_bodies[part].front() < I.request.bodies.size())
+                b["from"] = I.request.bodies[I.setup->part_bodies[part].front()].name;
+        }
+        if (const auto tilt = I.tilt_of.find(d.name); tilt != I.tilt_of.end()) b["tilt_wxyz"] = savedQuat(tilt->second);
+        std::vector<Vec3> offsets;
+        offsets.reserve(nodes.size());
+        for (const std::uint32_t node : nodes) offsets.push_back(I.cell_offset_m[node]);
+        b["nodes_b64"] = packedArray(nodes);
+        b["offsets_b64"] = packedVecs(offsets);
+        if (const auto away = I.parked.find(d.name); away != I.parked.end()) {
+            b["parked"] = {{"pose", savedRigid(away->second.pose)}, {"mass_kg", savedNumber(away->second.mass_kg)}};
+        } else if (I.world->contains(id)) {
+            b["pose"] = savedRigid(I.world->snapshot(id));
+            b["awake"] = I.world->isAwake(id);
+        } else {
+            return refuse("the " + d.name + " is neither in the world nor set aside");
+        }
+        bodies.push_back(std::move(b));
+    }
+    doc["bodies"] = std::move(bodies);
+
+    // What blades severed, in the scene's own matter, and each bond's
+    // permanent set: sparse, since almost every bond is whole and unset.
+    std::vector<std::uint32_t> dead;
+    for (std::size_t k = 0; k < I.setup->matter.bonds.size(); ++k)
+        if (!I.setup->matter.bonds[k].alive) dead.push_back(static_cast<std::uint32_t>(k));
+    doc["dead_bonds_b64"] = packedArray(dead);
+    std::vector<std::uint32_t> set_bonds;
+    std::vector<double> extension, strain;
+    for (std::size_t k = 0; k < I.plastic_extension_m.size(); ++k) {
+        const double s = k < I.plastic_strain_m.size() ? I.plastic_strain_m[k] : 0.0;
+        if (I.plastic_extension_m[k] == 0.0 && s == 0.0) continue;
+        set_bonds.push_back(static_cast<std::uint32_t>(k));
+        extension.push_back(I.plastic_extension_m[k]);
+        strain.push_back(s);
+    }
+    doc["plastic"] = {{"bonds_b64", packedArray(set_bonds)},
+                      {"extension_b64", packedArray(extension)},
+                      {"strain_b64", packedArray(strain)}};
+
+    // Joints, whole: what they are, in each body's frame, and -- for each one
+    // holding -- what the constraint standing in for it reads now and the
+    // travel it allows (a pin made again reads the same).
+    nlohmann::json joints = nlohmann::json::array();
+    for (const Impl::SceneJoint &j : I.joints) {
+        nlohmann::json o = {{"id", j.id},
+                            {"kind", savedKind(j.kind)},
+                            {"a", j.a},
+                            {"b", j.b},
+                            {"point_local_a", savedVec(j.point_local_a)},
+                            {"point_local_b", savedVec(j.point_local_b)},
+                            {"axis_local_a", savedVec(j.axis_local_a)},
+                            {"point_local_b_tie", savedVec(j.point_local_b_tie)},
+                            {"stand_off_a", savedNumber(j.stand_off_a)},
+                            {"stand_off_b", savedNumber(j.stand_off_b)},
+                            {"lower", savedNumber(j.lower)},
+                            {"upper", savedNumber(j.upper)},
+                            {"friction", savedNumber(j.friction)},
+                            {"breaks_at_n", savedNumber(j.breaks_at_n)},
+                            {"over_a", savedVec(j.over_a)},
+                            {"over_b", savedVec(j.over_b)},
+                            {"ratio", savedNumber(j.ratio)},
+                            {"holds_tension_n", savedNumber(j.holds_tension_n)},
+                            {"holds_shear_n", savedNumber(j.holds_shear_n)},
+                            {"comes_off_n", savedNumber(j.comes_off_n)},
+                            {"rest_m", savedNumber(j.rest_m)},
+                            {"stiffness_n_m", savedNumber(j.stiffness_n_m)},
+                            {"damping_n_s_m", savedNumber(j.damping_n_s_m)},
+                            {"at_when_hung", savedNumber(j.at_when_hung)},
+                            {"attached", j.attached},
+                            {"member_end", j.member_end},
+                            {"declared_tension_n", savedNumber(j.declared_tension_n)},
+                            {"declared_shear_n", savedNumber(j.declared_shear_n)},
+                            {"declared_breaks_at_n", savedNumber(j.declared_breaks_at_n)},
+                            {"declared_stiffness_n_m", savedNumber(j.declared_stiffness_n_m)},
+                            {"declared_kept", j.declared_kept},
+                            {"rated_tension_n", savedNumber(j.rated_tension_n)},
+                            {"rated_shear_n", savedNumber(j.rated_shear_n)},
+                            {"rated_breaks_at_n", savedNumber(j.rated_breaks_at_n)},
+                            {"rated_stiffness_n_m", savedNumber(j.rated_stiffness_n_m)},
+                            {"capacity_fraction", savedNumber(j.capacity_fraction)},
+                            {"checked_fraction", savedNumber(j.checked_fraction)},
+                            {"rechecks", j.rechecks},
+                            {"parted_because", j.parted_because},
+                            {"parted_load_n", savedNumber(j.parted_load_n)},
+                            {"parted_capacity_n", savedNumber(j.parted_capacity_n)},
+                            {"member_said", j.member_said}};
+        if (j.rigid != 0 && I.world->hasJoint(j.rigid)) {
+            const JoltWorld::JointReport now = I.world->jointState(j.rigid);
+            o["held"] = {{"at", savedNumber(now.at)}, {"lower", savedNumber(now.lower)},
+                         {"upper", savedNumber(now.upper)}};
+        }
+        joints.push_back(std::move(o));
+    }
+    doc["joints"] = std::move(joints);
+
+    nlohmann::json blades = nlohmann::json::array();
+    for (const Impl::Blade &blade : I.blades)
+        blades.push_back({{"id", blade.id},
+                          {"body", blade.body},
+                          {"heel_local", savedVec(blade.heel_local)},
+                          {"tip_local", savedVec(blade.tip_local)},
+                          {"facing_local", savedVec(blade.facing_local)},
+                          {"grip_local", savedVec(blade.grip_local)},
+                          {"thickness_m", savedNumber(blade.thickness)},
+                          {"edge_radius_m", savedNumber(blade.edge_radius)},
+                          {"bevel_deg", savedNumber(blade.bevel_deg)},
+                          {"cut_area_m2", savedNumber(blade.cut_area)},
+                          {"cut_work_j", savedNumber(blade.cut_work)},
+                          {"attached", blade.attached},
+                          {"body_id", blade.body_id},
+                          {"frame_nodes_b64", packedArray(blade.frame_nodes)},
+                          {"frame_offsets_b64", packedVecs(blade.frame_offsets)}});
+    doc["blades"] = std::move(blades);
+
+    nlohmann::json kerfs = nlohmann::json::object();
+    for (const auto &[name, list] : I.kerfs) {
+        nlohmann::json cut = nlohmann::json::array();
+        for (const Impl::Kerf &kerf : list) {
+            nlohmann::json swept = nlohmann::json::array();
+            for (const auto &[strip, spans] : kerf.swept) {
+                nlohmann::json each = nlohmann::json::array();
+                for (const auto &span : spans)
+                    each.push_back(nlohmann::json::array({savedNumber(span.first), savedNumber(span.second)}));
+                swept.push_back(nlohmann::json::array({strip, std::move(each)}));
+            }
+            cut.push_back({{"blade", kerf.blade},
+                           {"origin", savedVec(kerf.origin)},
+                           {"u", savedVec(kerf.u)},
+                           {"v", savedVec(kerf.v)},
+                           {"w", savedVec(kerf.w)},
+                           {"strip", savedNumber(kerf.strip)},
+                           {"half_width", savedNumber(kerf.half_width)},
+                           {"swept", std::move(swept)}});
+        }
+        kerfs[name] = std::move(cut);
+    }
+    doc["kerfs"] = std::move(kerfs);
+
+    nlohmann::json points = nlohmann::json::array();
+    for (const ToolTerrain::SavedPoint &p : I.tools.saved())
+        points.push_back({{"id", p.id},
+                          {"body", p.body},
+                          {"tip_local", savedVec(p.tip_local)},
+                          {"pointing_local", savedVec(p.pointing_local)},
+                          {"grip_local", savedVec(p.grip_local)},
+                          {"width_local", savedVec(p.width_local)},
+                          {"width_m", savedNumber(p.shape.width_m)},
+                          {"thickness_m", savedNumber(p.shape.thickness_m)},
+                          {"angle_deg", savedNumber(p.shape.angle_deg)},
+                          {"length_m", savedNumber(p.shape.length_m)},
+                          {"body_id", p.body_id},
+                          {"frame_nodes_b64", packedArray(p.frame_nodes)},
+                          {"frame_offsets_b64", packedVecs(p.frame_offsets)},
+                          {"attached", p.attached}});
+    doc["tool_points"] = std::move(points);
+
+    const bool holding = I.holding != static_cast<std::size_t>(-1) && I.holding < I.described.size();
+    doc["hand"] = {{"holding", holding ? I.described[I.holding].name : std::string{}},
+                   {"wielding", holding && I.wielding},
+                   {"grip_local_m", savedVec(I.grip_local)},
+                   {"held_at_m", savedVec(I.held_at)},
+                   {"held_facing_wxyz", savedQuat(I.held_facing)},
+                   {"strength_n", savedNumber(I.hand_strength_n)},
+                   {"torque_n_m", savedNumber(I.hand_torque_n_m)},
+                   {"mass_kg", savedNumber(I.hand_mass_kg)},
+                   {"work_j", savedNumber(I.hand_work_j)}};
+    // The water as it stands, for the scene's own "water": {"state": ...}.
+    if (I.environment) {
+        const nlohmann::json water = nlohmann::json::parse(I.environment->stateJson(), nullptr, false);
+        if (water.is_object() && water.contains("depth_b64")) doc["water"] = water;
+    }
+    doc["not_kept"] = notKept();
+    return doc.dump();
+}
+
+std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot) {
+    Saved saved;
+    try {
+        saved.doc = nlohmann::json::parse(snapshot);
+        if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
+            throw std::invalid_argument("it is not a saved world this engine reads");
+    } catch (const std::exception &error) {
+        std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
+        LiveRestore said;
+        said.tier = "none";
+        said.why = std::string("the saved world could not be read: ") + error.what();
+        said.not_kept = notKept();
+        live->impl_->restored = std::move(said);
+        return live;
+    }
+    std::string why;
+    try {
+        return openFrom(request, &saved);
+    } catch (const SavedWorldMismatch &mismatch) {
+        why = mismatch.what();
+    } catch (const std::exception &error) {
+        why = std::string("the saved world could not be put back: ") + error.what();
+    }
+    std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
+    live->placeWhereLeft(saved, why);
+    return live;
+}
+
+void LiveWorld::placeWhereLeft(const Saved &saved, const std::string &why) {
+    Impl &I = *impl_;
+    LiveRestore said;
+    said.tier = "none";
+    said.why = why;
+    said.not_kept = notKept();
+    try {
+        const nlohmann::json &doc = saved.doc;
+        if (doc.contains("t_s")) said.saved_t_s = numberFrom(doc.at("t_s"));
+        // What cannot be put back on its own: a thing on a joint, or carrying
+        // an edge or a point, which the scene declares against where it was
+        // authored.
+        std::set<std::string> held_by_something;
+        for (const nlohmann::json &j : doc.value("joints", nlohmann::json::array())) {
+            held_by_something.insert(j.value("a", std::string{}));
+            held_by_something.insert(j.value("b", std::string{}));
+        }
+        for (const nlohmann::json &b : doc.value("blades", nlohmann::json::array()))
+            held_by_something.insert(b.value("body", std::string{}));
+        for (const nlohmann::json &p : doc.value("tool_points", nlohmann::json::array()))
+            held_by_something.insert(p.value("body", std::string{}));
+        for (const nlohmann::json &b : doc.at("bodies")) {
+            const std::string name = b.value("name", std::string{});
+            if (name.empty() || held_by_something.count(name) != 0 || b.contains("parked") || !b.contains("pose"))
+                continue;
+            // Still whole and its authored self: not a piece, never dented or
+            // reshaped, not scenery.
+            if (b.value("fragment", false) || b.value("anchored", false) || b.value("revision", 0U) != 0) continue;
+            if (b.contains("dent_m") && numberFrom(b.at("dent_m")) > 0.0) continue;
+            const auto found = I.index_of.find(name);
+            if (found == I.index_of.end()) continue;
+            const std::size_t i = found->second;
+            const LiveBodyPose &d = I.described[i];
+            if (d.fragment || d.anchored || d.shape != b.value("shape", std::string{}) || !I.inWorld(i)) continue;
+            if (b.contains("nodes_b64") && unpackedArray<std::uint32_t>(b, "nodes_b64").size() != I.nodes_of[i].size())
+                continue;
+            I.world->applyRigidState(I.body_of[i], rigidFrom(b.at("pose")));
+            if (!b.value("awake", true)) I.world->sleep(I.body_of[i]);
+            ++said.bodies;
+        }
+    } catch (const std::exception &) {
+        // What could be put back was; the rest is where the scene has it.
+    }
+    if (said.bodies > 0) said.tier = "poses";
+    I.restored = std::move(said);
+}
 
 } // namespace banjo::fastlattice

@@ -11,9 +11,11 @@ about a kilobyte, where the same scene as cells was 9,841.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
+import os
 import subprocess
 import threading
 import time
@@ -69,6 +71,36 @@ def _made_of(pin: Any) -> dict[str, Any]:
     return {"member": member}
 
 
+def spec_digest(spec: Any) -> str:
+    """The room's own word for the spec a world was opened from, which a saved
+    world carries (LiveWorld::snapshot's `spec_digest`), so that it is only ever
+    opened into the room it was saved from.
+
+    A digest of the spec less what changes without changing what the world is
+    made of: the ground's edits, which the world keeps in its ground and the
+    room writes into its spec as they are made (server.remember_ground), and
+    the water carried into a world opened again (server.with_water). What the
+    chat builds changes it, so a world saved before the chat changed the room
+    is not opened into the room it made."""
+    if not isinstance(spec, dict):
+        return ""
+    plain = dict(spec)
+    terrain = plain.get("terrain")
+    if isinstance(terrain, dict) and "edits" in terrain:
+        plain["terrain"] = {k: v for k, v in terrain.items() if k != "edits"}
+    water = plain.get("water")
+    if isinstance(water, dict) and "state" in water:
+        plain["water"] = {k: v for k, v in water.items() if k != "state"}
+    # A block left holding nothing says nothing: server.with_water gives a room
+    # that declares no water a block holding only the water it carries, and a
+    # room that had none must say the same as it did.
+    for key in ("terrain", "water"):
+        if isinstance(plain.get(key), dict) and not plain[key]:
+            del plain[key]
+    text = json.dumps(plain, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _three(value: Any, what: str) -> list[float]:
     """Three finite numbers, or a refusal that says which were wrong."""
     if not isinstance(value, list) or len(value) != 3:
@@ -82,7 +114,8 @@ def _three(value: Any, what: str) -> list[float]:
 class Session:
     """One open world."""
 
-    def __init__(self, engine_path: Path, spec: dict[str, Any], runs_path: Path) -> None:
+    def __init__(self, engine_path: Path, spec: dict[str, Any], runs_path: Path,
+                 snapshot: dict[str, Any] | None = None) -> None:
         # Anything the panel can describe can be run live. A plate-and-ball spec
         # is translated into the objects it already is, rather than refused for
         # being the wrong shape.
@@ -107,10 +140,26 @@ class Session:
                          encoding="utf-8")
         self._lock = threading.Lock()
         self._closed = False
+        command = [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"]
+        # A saved world to open the scene into (LiveWorld::snapshot), beside
+        # the scene it was saved from. The opening reply says what came back
+        # (`restored`): the whole world, whole things where they were left, or
+        # the scene as it is.
+        if snapshot is not None:
+            saved = directory / "snapshot.json"
+            saved.write_text(json.dumps(snapshot), encoding="utf-8")
+            command += ["--snapshot", str(saved)]
+        # A process group of its own (a session, on POSIX). Sharing the
+        # server's, a Ctrl+C or Ctrl+Break meant for the server ended the world
+        # with it, before the server could save the world on its way out
+        # (server.keep_world). A server that dies still ends it: its pipe
+        # closes and it stops reading.
+        apart = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+                 else {"start_new_session": True})
         self._process = subprocess.Popen(
-            [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"],
+            command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=str(directory))
+            text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=str(directory), **apart)
         self.opened_at = time.time()
         # Who hears every reply after it is read: the server's keeper of what
         # the person's own hand did (server.hear). None hears nothing.
@@ -302,6 +351,9 @@ class Live:
         # alongside the bodies, where whoever wrote them can be told.
         spec = fracture_lab.validate(body.get("spec") or {})
         pins = spec.get("joints") or []
+        # A saved world to open the room into (Live.snapshot): the room as it
+        # stood when it was saved, rather than as its spec authors it.
+        snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else None
         with self._lock:
             if self.session is not None:
                 self.session.close()
@@ -311,10 +363,13 @@ class Live:
             # the tests run both against the same scenes, so the choice is about
             # where a crash lands, not about what the physics does.
             if getattr(app, "live_inprocess", False):
-                session = live_inprocess.InProcessSession(spec)
+                session = live_inprocess.InProcessSession(spec, snapshot=snapshot)
             else:
-                session = Session(app.engine_path, spec, app.runs_path)
+                session = Session(app.engine_path, spec, app.runs_path, snapshot=snapshot)
             self.session = session
+            # What the room calls the spec this world was opened from, which a
+            # snapshot of it carries (spec_digest).
+            session.spec_digest = spec_digest(body.get("spec"))
             # What the person's own hand does to the ground goes to their
             # notebook (server.hear), read against the room document this world
             # was opened from -- bodies as the room spells them, its tool points
@@ -328,6 +383,15 @@ class Live:
         # carries neither. Returned from here without them, a room on ground
         # with a pick in it opened with no ground drawn at all.
         opening = dict(session.state)
+        restored = opening.get("restored")
+        if isinstance(restored, dict) and restored.get("tier") == "whole":
+            # The world came back as it was saved, with its pins, edges and
+            # points where they were -- a gate swung open, a pick carried across
+            # the room. Declared again from the spec, each would go in where the
+            # spec first put it in the world, which is no longer where its wood
+            # is. The spec's own entries take the ids the world has for them.
+            return {"session": session.id, "spec": spec, **opening,
+                    **self._adopt(spec, opening)}
         hung = self._hang(session, pins)
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
@@ -364,6 +428,55 @@ class Live:
                 return None
             session.id = uuid.uuid4().hex
             return {"session": session.id, "spec": session.room_spec, **whole, "rejoined": True}
+
+    def snapshot(self) -> tuple[dict[str, Any] | None, str]:
+        """The whole of the running world, for opening the room again after the
+        server has gone (LiveWorld::snapshot), carrying the room's word for the
+        spec it was opened from. None, and why, while something is under way
+        that a saved world cannot carry -- a break being worked out, a stroke of
+        the hand, an edge in a cut, a point in the ground -- or with no world
+        open: the caller keeps the last one it had, and asks again later."""
+        session = self.session
+        if session is None:
+            return None, "no world is open"
+        try:
+            reply = session.send(op="snapshot", spec_digest=getattr(session, "spec_digest", ""))
+        except LiveError as error:
+            return None, str(error)
+        saved = reply.get("snapshot")
+        if not isinstance(saved, dict):
+            return None, str(reply.get("refused") or "the world gave no snapshot")
+        return saved, ""
+
+    @staticmethod
+    def _adopt(spec: dict[str, Any], opening: dict[str, Any]) -> dict[str, Any]:
+        """The spec's pins, edges and points given the ids a world opened again
+        from a saved one has for them, as declaring them would have (_hang,
+        _arm, _point): the first of the world's with the same kind and the same
+        two names for each pin, and the same body for an edge or a point. One
+        whose thing broke, so the world has it under a piece's name, keeps
+        none."""
+        taken: set[Any] = set()
+        for pin in spec.get("joints") or []:
+            if not isinstance(pin, dict):
+                continue
+            for joint in opening.get("joints") or []:
+                if (joint.get("id") not in taken and joint.get("kind") == str(pin.get("kind", "hinge"))
+                        and joint.get("a") == pin.get("a") and joint.get("b") == pin.get("b")):
+                    pin["id"] = joint.get("id")
+                    taken.add(joint.get("id"))
+                    break
+        for key, listed in (("blades", "blades"), ("tool_points", "tool_points")):
+            used: set[Any] = set()
+            for entry in spec.get(key) or []:
+                if not isinstance(entry, dict):
+                    continue
+                for have in opening.get(listed) or []:
+                    if have.get("id") not in used and have.get("body") == entry.get("body"):
+                        entry["id"] = have.get("id")
+                        used.add(have.get("id"))
+                        break
+        return {}
 
     @staticmethod
     def _point(session: "Session", points: Any) -> dict[str, Any]:
