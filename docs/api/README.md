@@ -292,6 +292,19 @@ fixing for the nock that you `banjo_unhinge` to loose. The arrow's speed is not
 chosen — it comes out of the energy in the limbs and the mass of what is nocked,
 so changing the bow, the draw or the arrow changes the shot.
 
+`banjo_drum` is a seventh, and the first of the machines (ABI 23): a rope that
+winds onto a turning drum for as many turns as there is rope, which a rope tied
+to a wheel's rim cannot do. A machine drives it. `banjo_make_energy_store` puts a
+battery in a body, `banjo_make_motor` puts a DC motor with a brake on a pin and
+wires it to the battery, `banjo_drive_motor` tells it a command from -1 to 1,
+and `banjo_motors`, `banjo_energy_stores` and `banjo_drum_ropes` read back what
+each did. Every joule is accounted for. Measured through the Python binding, a
+hoist lifting a 26.6 kg crate 0.834 m drew 409.6 J from its battery: 223.1 J of
+work -- 217.4 J into the crate's height and 5.1 J into motion -- and 186.5 J of
+heat in the motor. Braked at the top, it held the crate and drew nothing. See
+[c-api.md, "Machines"](c-api.md#machines) and
+[../machine-world.md](../machine-world.md).
+
 Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door

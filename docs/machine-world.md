@@ -36,8 +36,14 @@ in the engine and checked in `tests/motor_tests.cpp`:
   - the motor's work is the crate's height and motion to 0.26%;
   - braked at the top, the crate does not move.
 
-The controller, the stores and motors in the saved world, and every layer
-above the engine come next. None of it can be seen in the page yet.
+The C API (ABI 23) and the Python binding carry all of it now:
+`banjo_make_energy_store`, `banjo_make_motor`, `banjo_drive_motor`, `banjo_drum`
+and `banjo_inertia_about`, with what each did read back from `banjo_energy_stores`,
+`banjo_motors` and `banjo_drum_ropes` (docs/api/c-api.md, "Machines").
+`tests/banjo_ffi_tests.py` drives the flywheel and the hoist above through the
+library and gets the same numbers. The controller, the stores and motors in the
+saved world, and the layers above the binding (the runner's ops, the MCP tools,
+the page) come next. None of it can be seen in the page yet.
 
 ## What this is
 

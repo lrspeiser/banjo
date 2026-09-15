@@ -39,9 +39,12 @@ from typing import Any, Iterator
 # strength; 17 the hand's own motions and the one-way fixing; 18 rolling
 # resistance (materials(), World.rolling_report(), the survey's share); 20 tools
 # that work the ground (make_tool_point, strike, ground_works); 21 one material
-# state (a body's revision, what is left of it). No library was ever 19.
+# state (a body's revision, what is left of it). No library was ever 19. 22
+# a world that is kept (snapshot, restored); 23 machines -- a store of energy,
+# a DC motor on a pin with a brake, a rope that winds onto a drum, and how hard
+# a thing is to turn (energy_store, motor, drive_motor, drum, inertia_about).
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 22
+ABI_VERSION = 23
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -95,6 +98,7 @@ JOINT_LINK = 2
 JOINT_PULLEY = 3
 JOINT_FIXING = 4
 JOINT_ELASTIC = 5
+JOINT_DRUM = 6          # ABI 23: a rope that winds onto a turning drum
 
 
 class _Joint(ctypes.Structure):
@@ -390,6 +394,57 @@ class _StrikeRequest(ctypes.Structure):
                 ("give_up_s", ctypes.c_double)]
 
 
+# ---- machines (ABI 23) -------------------------------------------------------
+
+class _EnergyStore(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("name", ctypes.c_char_p),
+                ("body", ctypes.c_char_p),
+                ("capacity_j", ctypes.c_double),
+                ("charge_j", ctypes.c_double),
+                ("voltage_v", ctypes.c_double),
+                ("max_power_w", ctypes.c_double),
+                ("given_j", ctypes.c_double),
+                ("short_j", ctypes.c_double)]
+
+
+class _Motor(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("joint", ctypes.c_uint),
+                ("store", ctypes.c_uint),
+                ("stall_torque_n_m", ctypes.c_double),
+                ("no_load_rad_s", ctypes.c_double),
+                ("brake_torque_n_m", ctypes.c_double),
+                ("command", ctypes.c_double),
+                ("brake", ctypes.c_int),
+                ("state", ctypes.c_char_p),
+                ("speed_rad_s", ctypes.c_double),
+                ("torque_n_m", ctypes.c_double),
+                ("current_a", ctypes.c_double),
+                ("power_w", ctypes.c_double),
+                ("turned_rad", ctypes.c_double),
+                ("work_j", ctypes.c_double),
+                ("heat_j", ctypes.c_double),
+                ("drawn_j", ctypes.c_double),
+                ("friction_heat_j", ctypes.c_double)]
+
+
+class _DrumRope(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("drum", ctypes.c_char_p),
+                ("load", ctypes.c_char_p),
+                ("radius_m", ctypes.c_double),
+                ("length_m", ctypes.c_double),
+                ("out_m", ctypes.c_double),
+                ("wound_m", ctypes.c_double),
+                ("tension_n", ctypes.c_double),
+                ("centre_m", ctypes.c_double * 3),
+                ("axis", ctypes.c_double * 3),
+                ("leaves_m", ctypes.c_double * 3),
+                ("meets_m", ctypes.c_double * 3),
+                ("attached", ctypes.c_int)]
+
+
 @dataclass(frozen=True)
 class ToolPoint:
     """A point on a body that can go into the ground. See docs/ground-work.md.
@@ -666,9 +721,11 @@ class Joint:
     hold it, which is a gate coming off its hinges.
     """
     id: int
-    # "hinge" or "slider". Also the unit on the four numbers below: a pin has
-    # turned so many DEGREES and grips in newton metres; a slide has moved so
-    # many METRES and grips in newtons.
+    # "hinge", "slider", "link", "pulley", "fixing", "elastic" or (ABI 23)
+    # "drum". Also the unit on the four numbers below: a pin has turned so many
+    # DEGREES and grips in newton metres; a slide has moved so many METRES and
+    # grips in newtons. A drum's rope is metres: `at` is how much of it is off
+    # the drum and `upper` the whole rope, and `World.drum_ropes` says the rest.
     kind: str
     a: str
     b: str
@@ -731,6 +788,89 @@ class Joint:
     parted_because: str = ""
     parted_load_n: float = 0.0
     parted_capacity_n: float = 0.0
+
+
+@dataclass(frozen=True)
+class EnergyStore:
+    """A store of energy: a battery (ABI 23, docs/machine-world.md).
+
+    The joules in it and what it can hold, a voltage for the current it gives,
+    and the most power it gives, 0 for no limit but its charge. Nothing goes
+    back into it but from a declared source: a load driving a motor gives it
+    nothing back. `given_j` is all it has given; `short_j` is what steps asked
+    of it that it no longer had -- reported, never folded in anywhere.
+    """
+    id: int
+    name: str
+    body: str               # what it is in; "" for nothing
+    capacity_j: float
+    charge_j: float
+    voltage_v: float
+    max_power_w: float
+    given_j: float
+    short_j: float
+
+
+@dataclass(frozen=True)
+class Motor:
+    """A DC motor on a pin, drawing on a store (ABI 23, docs/machine-world.md).
+
+    Its line is the torque it stalls at and the speed it runs at unloaded, both
+    at its store's voltage; `command` is the share of that voltage, -1 to 1.
+    `state` is "driving", "coasting", "braking", "flat" (told to drive, and its
+    store is empty) or "gone" (its pin is not in anything). The speed, torque,
+    current and power are the last kept step's; the rest is since it was made:
+    `turned_rad` is the whole turn, never wrapped, and its account is
+
+        drawn_j = work_j + heat_j
+
+    where work_j went into what it drives and heat_j is its windings' I^2 R and
+    whatever a load driving it gave back. `friction_heat_j` is what the pin's
+    friction took while it coasted or braked.
+    """
+    id: int
+    joint: int              # the pin it is on (World.hinge)
+    store: int              # what it draws on (World.energy_store)
+    stall_torque_n_m: float
+    no_load_rad_s: float
+    brake_torque_n_m: float
+    command: float
+    brake: bool
+    state: str
+    speed_rad_s: float      # b's turn relative to a's, about the pin
+    torque_n_m: float
+    current_a: float
+    power_w: float          # asked of the store
+    turned_rad: float
+    work_j: float
+    heat_j: float
+    drawn_j: float
+    friction_heat_j: float
+
+
+@dataclass(frozen=True)
+class DrumRope:
+    """A rope that winds onto a turning drum: the joint a hoist needs (ABI 23).
+
+    `id` is the joint's, as `World.joints` lists it (kind "drum"). `out_m` is
+    how much rope is off the drum -- the most the span to the load may be --
+    and `wound_m` how much is on it; `centre_m` and `axis` are the drum's now,
+    and `leaves_m` and `meets_m` where the rope leaves the drum and meets the
+    load, for a host that draws it.
+    """
+    id: int
+    drum: str
+    load: str
+    radius_m: float
+    length_m: float
+    out_m: float
+    wound_m: float
+    tension_n: float
+    centre_m: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    leaves_m: tuple[float, float, float]
+    meets_m: tuple[float, float, float]
+    attached: bool
 
 
 @dataclass(frozen=True)
@@ -1173,6 +1313,35 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_joint_friction.restype = ctypes.c_int
     lib.banjo_unhinge.argtypes = [ctypes.c_void_p, ctypes.c_uint]
     lib.banjo_unhinge.restype = ctypes.c_int
+    # ABI 23: machines -- stores of energy, motors on pins, and drums.
+    lib.banjo_make_energy_store.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                            ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                                            ctypes.c_double]
+    lib.banjo_make_energy_store.restype = ctypes.c_int
+    lib.banjo_energy_store_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_energy_store_count.restype = ctypes.c_int
+    lib.banjo_energy_stores.argtypes = [ctypes.c_void_p, ctypes.POINTER(_EnergyStore), ctypes.c_int]
+    lib.banjo_energy_stores.restype = ctypes.c_int
+    lib.banjo_make_motor.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
+                                     ctypes.c_double, ctypes.c_double, ctypes.c_double]
+    lib.banjo_make_motor.restype = ctypes.c_int
+    lib.banjo_drive_motor.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_double, ctypes.c_int]
+    lib.banjo_drive_motor.restype = ctypes.c_int
+    lib.banjo_motor_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_motor_count.restype = ctypes.c_int
+    lib.banjo_motors.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Motor), ctypes.c_int]
+    lib.banjo_motors.restype = ctypes.c_int
+    lib.banjo_inertia_about.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double * 3,
+                                        ctypes.POINTER(ctypes.c_double)]
+    lib.banjo_inertia_about.restype = ctypes.c_int
+    lib.banjo_drum.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                               ctypes.c_double * 3, ctypes.c_double * 3, ctypes.c_double,
+                               ctypes.c_double * 3, ctypes.c_int, ctypes.c_double, ctypes.c_double]
+    lib.banjo_drum.restype = ctypes.c_int
+    lib.banjo_drum_rope_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_drum_rope_count.restype = ctypes.c_int
+    lib.banjo_drum_ropes.argtypes = [ctypes.c_void_p, ctypes.POINTER(_DrumRope), ctypes.c_int]
+    lib.banjo_drum_ropes.restype = ctypes.c_int
     lib.banjo_decline_break.restype = ctypes.c_int
     lib.banjo_last_outcome.argtypes = [ctypes.c_void_p]
     lib.banjo_last_outcome.restype = ctypes.c_int
@@ -1746,7 +1915,7 @@ class World:
                               "reading the pins")
         names = {JOINT_SLIDER: "slider", JOINT_LINK: "link",
                  JOINT_PULLEY: "pulley", JOINT_FIXING: "fixing",
-                 JOINT_ELASTIC: "elastic", JOINT_HINGE: "hinge"}
+                 JOINT_ELASTIC: "elastic", JOINT_DRUM: "drum", JOINT_HINGE: "hinge"}
         return [Joint(id=int(out[i].id),
                       kind=names.get(out[i].kind, "hinge"),
                       a=(out[i].a or b"").decode("utf-8"),
@@ -1793,6 +1962,124 @@ class World:
     def unhinge(self, joint: int) -> None:
         """Take the pin out. What was hanging on it falls."""
         self._check(self._lib.banjo_unhinge(self._alive(), joint), "taking a pin out")
+
+    # -- machines: stores of energy, motors and drums (ABI 23) ---------------
+    def energy_store(self, name: str, body: str, capacity_j: float, charge_j: float,
+                     voltage_v: float = 24.0, max_power_w: float = 0.0) -> int:
+        """Put a store of energy -- a battery -- in a named body, or in nothing
+        (`body` ""): what it can hold and what it holds, in joules; its voltage;
+        and the most power it gives, 0 for no limit but its charge. A `name` of
+        "" names it "store <id>". Nothing goes back into it but from a declared
+        source. Returns the store's id (banjo_make_energy_store)."""
+        return self._check(
+            self._lib.banjo_make_energy_store(self._alive(), name.encode("utf-8"), body.encode("utf-8"),
+                                              float(capacity_j), float(charge_j), float(voltage_v),
+                                              float(max_power_w)),
+            f"putting a store of energy in {body!r}")
+
+    def energy_stores(self) -> list[EnergyStore]:
+        """Every store of energy, with its charge and what it has given."""
+        count = self._check(self._lib.banjo_energy_store_count(self._alive()), "counting the stores")
+        if count <= 0:
+            return []
+        out = (_EnergyStore * count)()
+        written = self._check(self._lib.banjo_energy_stores(self._alive(), out, count),
+                              "reading the stores")
+        return [EnergyStore(id=int(s.id), name=(s.name or b"").decode("utf-8"),
+                            body=(s.body or b"").decode("utf-8"), capacity_j=s.capacity_j,
+                            charge_j=s.charge_j, voltage_v=s.voltage_v, max_power_w=s.max_power_w,
+                            given_j=s.given_j, short_j=s.short_j)
+                for s in out[:written]]
+
+    def motor(self, joint: int, store: int, stall_torque_n_m: float, no_load_rad_s: float,
+              brake_torque_n_m: float = 0.0) -> int:
+        """Put a DC motor on a pin (an id from `hinge`), drawing on a store.
+
+        Its line is two numbers a maker gives: the torque it stalls at and the
+        speed it runs at unloaded, both at the store's voltage. `brake_torque_n_m`
+        is what its brake holds with, 0 for no brake. It starts coasting, told
+        nothing. Refused for a joint that is not there or not a pin, a pin with
+        a motor already, and a store that is not there. Returns the motor's id
+        (banjo_make_motor).
+        """
+        return self._check(
+            self._lib.banjo_make_motor(self._alive(), int(joint), int(store), float(stall_torque_n_m),
+                                       float(no_load_rad_s), float(brake_torque_n_m)),
+            f"putting a motor on joint {joint}")
+
+    def drive_motor(self, motor: int, command: float, brake: bool = False) -> None:
+        """What a motor is told, from the next step on: a command from -1 to 1,
+        the share of its store's voltage and which way, and whether its brake
+        is on. The brake is friction on the pin, so it holds only while the
+        motor is not driving -- a command of 0 -- and holding draws nothing."""
+        self._check(self._lib.banjo_drive_motor(self._alive(), int(motor), float(command),
+                                                1 if brake else 0),
+                    f"telling motor {motor} {command}")
+
+    def motors(self) -> list[Motor]:
+        """Every motor: what it is told, what it did in the last kept step, and
+        its account since it was made. See `Motor`."""
+        count = self._check(self._lib.banjo_motor_count(self._alive()), "counting the motors")
+        if count <= 0:
+            return []
+        out = (_Motor * count)()
+        written = self._check(self._lib.banjo_motors(self._alive(), out, count), "reading the motors")
+        return [Motor(id=int(m.id), joint=int(m.joint), store=int(m.store),
+                      stall_torque_n_m=m.stall_torque_n_m, no_load_rad_s=m.no_load_rad_s,
+                      brake_torque_n_m=m.brake_torque_n_m, command=m.command, brake=bool(m.brake),
+                      state=(m.state or b"").decode("utf-8"), speed_rad_s=m.speed_rad_s,
+                      torque_n_m=m.torque_n_m, current_a=m.current_a, power_w=m.power_w,
+                      turned_rad=m.turned_rad, work_j=m.work_j, heat_j=m.heat_j,
+                      drawn_j=m.drawn_j, friction_heat_j=m.friction_heat_j)
+                for m in out[:written]]
+
+    def inertia_about(self, name: str, axis: Any) -> float:
+        """How hard a named thing is to turn about an axis through its centre of
+        mass, kg m^2, from the inertia the solver uses: what a motor has to spin
+        up. Infinite for anchored scenery, which the solver never turns."""
+        out = ctypes.c_double()
+        self._check(self._lib.banjo_inertia_about(self._alive(), name.encode("utf-8"), _triple(axis),
+                                                  ctypes.byref(out)),
+                    f"asking how hard {name!r} is to turn")
+        return out.value
+
+    def drum(self, drum: str, load: str, centre_m: Any, axis: Any, radius_m: float,
+             load_at_m: Any, winds: int, length_m: float, out_m: float = 0.0) -> int:
+        """Hang a named load from a rope that winds onto a drum -- a thing that
+        turns on a pin of its own (`hinge`) -- made off on the load at
+        `load_at_m`.
+
+        The drum's centre, its axle and the radius the rope lies at are given as
+        things stand now. `winds` is +1 if the drum turning the positive way
+        about `axis` takes rope on, -1 if the other way does. `length_m` is the
+        whole rope; `out_m` is how much of it is off the drum, and 0 means "as
+        it hangs": exactly the span from the drum to the load. What is off the
+        drum changes by the radius times the turn, for as many turns as there is
+        rope, and it pulls and never pushes. Returns the joint's id (banjo_drum);
+        `unhinge` takes it off.
+        """
+        return self._check(
+            self._lib.banjo_drum(self._alive(), drum.encode("utf-8"), load.encode("utf-8"),
+                                 _triple(centre_m), _triple(axis), float(radius_m), _triple(load_at_m),
+                                 int(winds), float(length_m), float(out_m)),
+            f"hanging {load!r} from a drum on {drum!r}")
+
+    def drum_ropes(self) -> list[DrumRope]:
+        """Every drum's rope: how much is out and on, what it carries, and where
+        it leaves the drum and meets the load. See `DrumRope`."""
+        count = self._check(self._lib.banjo_drum_rope_count(self._alive()), "counting the drums")
+        if count <= 0:
+            return []
+        out = (_DrumRope * count)()
+        written = self._check(self._lib.banjo_drum_ropes(self._alive(), out, count),
+                              "reading the drums")
+        return [DrumRope(id=int(r.id), drum=(r.drum or b"").decode("utf-8"),
+                         load=(r.load or b"").decode("utf-8"), radius_m=r.radius_m,
+                         length_m=r.length_m, out_m=r.out_m, wound_m=r.wound_m,
+                         tension_n=r.tension_n, centre_m=tuple(r.centre_m), axis=tuple(r.axis),
+                         leaves_m=tuple(r.leaves_m), meets_m=tuple(r.meets_m),
+                         attached=bool(r.attached))
+                for r in out[:written]]
 
     def collect(self, at_m: Any, radius_m: float = 1.0,
                 largest_cells: int = 0) -> list[Lot]:
