@@ -492,15 +492,61 @@ class AStructureIsHeldToWhatItWasDeclaredToDo(unittest.TestCase):
         self.assertIn("error", answer, f"{tool} was expected to refuse")
         return answer["error"]
 
-    def build_the_guides_ski_jump(self, name: str, start: list, facing: list) -> dict:
-        planned = self.call("plan_construction", name=name, reading="a ski jump", start_m=start, facing=facing,
-                            **world_chat.SKI_JUMP_DECLARED)
-        for part in world_chat.SKI_JUMP_EXAMPLE:
+    def build(self, name: str, parts, declared: dict, start: list, facing: list, changed=None) -> dict:
+        """One of the guide's worked structures, from its numbers, along a line
+        -- each part `changed` first when given -- and its measurements."""
+        planned = self.call("plan_construction", name=name, reading=f"the guide's {declared['kind']}",
+                            start_m=start, facing=facing, **declared)
+        ux, uz = facing[0], facing[2]
+        for part in parts:
+            part = changed(dict(part)) if changed else part
+            s, aside = part["s_m"], part.get("aside_m", 0.0)
             self.call("add_object", object={
                 "name": f"{name} {part['name']}", "shape": "box", "material": "oak", "size_m": part["size_m"],
-                "position_m": [start[0] + facing[0] * part["s_m"], part["y_m"], start[1] + facing[2] * part["s_m"]],
+                "position_m": [start[0] + ux * s - uz * aside, part["y_m"], start[1] + uz * s + ux * aside],
                 "rotation_deg": [0, planned["line"]["yaw_deg"], part["tilt_deg"]], "anchored": True})
         return self.call("check_construction", name=name)
+
+    def build_the_guides_ski_jump(self, name: str, start: list, facing: list) -> dict:
+        return self.build(name, world_chat.SKI_JUMP_EXAMPLE, world_chat.SKI_JUMP_DECLARED, start, facing)
+
+    def test_the_guides_staircase_and_bridge_pass_every_check_along_two_lines(self):
+        for i, (title, parts, declared, _) in enumerate(world_chat.WORKED_STRUCTURES[1:]):
+            for name, start, facing in ((f"{title} along x", [0.0, 4.0 * i], [1, 0, 0]),
+                                        (f"{title} along -z", [10.0 + 4.0 * i, 12.0], [0, 0, -1])):
+                with self.subTest(name=name):
+                    checked = self.build(name, parts, declared, start, facing)
+                    self.assertTrue(checked["passed"], checked["results"])
+                    self.assertEqual(len(checked["parts"]), len(parts))
+
+    def test_a_bridge_short_of_its_far_end_does_not_reach_it(self):
+        def shorter(part):
+            if part["name"] == "deck":
+                part.update(size_m=[3.0, 0.04, 1.0], s_m=1.5)
+            elif part["s_m"] > 3.0:
+                part["s_m"] = 2.9
+            return part
+        checked = self.build("bridge", world_chat.BRIDGE_EXAMPLE, world_chat.BRIDGE_DECLARED, [0.0, 0.0], [1, 0, 0],
+                             changed=shorter)
+        self.assertEqual(checked["failed"], ["reaches"])
+
+    def test_a_bridge_laid_on_the_ground_is_not_clear_of_what_it_crosses(self):
+        checked = self.build("bridge", [dict(world_chat.BRIDGE_EXAMPLE[0], y_m=0.02)], world_chat.BRIDGE_DECLARED,
+                             [0.0, 0.0], [1, 0, 0])
+        self.assertEqual(checked["failed"], ["clear of what it crosses"])
+
+    def test_stairs_with_one_high_step_are_not_even(self):
+        def higher(part):
+            if part["name"] == "step 6":
+                part["y_m"] += 0.08
+            elif part["name"] == "riser 6":
+                part.update(size_m=[0.04, part["size_m"][1] + 0.08, 0.8], y_m=part["y_m"] + 0.04)
+            return part
+        checked = self.build("stairs", world_chat.STAIRCASE_EXAMPLE, world_chat.STAIRCASE_DECLARED, [0.0, 0.0],
+                             [1, 0, 0], changed=higher)
+        self.assertEqual(checked["failed"], ["steps"])
+        self.assertIn("step 6 rises 0.24 m", next(r for r in checked["results"] if r["requirement"] == "steps")
+                      ["measured"])
 
     def test_a_board_named_a_ramp_is_not_a_ski_jump(self):
         """The lab's own baseline: one 1600 x 600 x 100 mm oak board tilted 12

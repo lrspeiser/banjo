@@ -125,15 +125,43 @@ SKI_JUMP_EXAMPLE = (
     {"name": "post 3", "size_m": [0.08, 0.64, 0.08], "s_m": 4.7149, "y_m": 0.32, "tilt_deg": 0.0},
     {"name": "post 4", "size_m": [0.08, 0.76, 0.08], "s_m": 6.3718, "y_m": 0.38, "tilt_deg": 0.0})
 SKI_JUMP_DECLARED = {"kind": "ski_jump", "length_m": 6.5, "width_m": 0.6, "height_m": 2.4}
+# A staircase of six even steps, 0.16 m up and 0.28 m deep, each tread a board
+# on a board standing under its middle -- nothing touches a step but its own
+# riser, so no two parts share a cell wherever it is built -- and a bridge of
+# one deck on four posts, 0.6 m over the ground. Square to the room, but for a
+# quarter turn. tests/chat_history_tests.py builds both along two lines and
+# measures them.
+STAIRCASE_EXAMPLE = tuple(
+    part for k in range(6) for part in (
+        {"name": f"step {k + 1}", "size_m": [0.28, 0.04, 0.8], "s_m": round(0.28 * k + 0.14, 4),
+         "y_m": round(0.16 * (k + 1) - 0.02, 4), "tilt_deg": 0.0},
+        {"name": f"riser {k + 1}", "size_m": [0.04, round(0.16 * (k + 1) - 0.04, 4), 0.8],
+         "s_m": round(0.28 * k + 0.14, 4), "y_m": round((0.16 * (k + 1) - 0.04) / 2, 4), "tilt_deg": 0.0}))
+STAIRCASE_DECLARED = {"kind": "staircase", "width_m": 0.8, "height_m": 0.96}
+BRIDGE_EXAMPLE = (
+    {"name": "deck", "size_m": [4.0, 0.04, 1.0], "s_m": 2.0, "y_m": 0.58, "tilt_deg": 0.0},
+    *({"name": f"post {i}", "size_m": [0.08, 0.56, 0.08], "s_m": s, "aside_m": aside, "y_m": 0.28,
+       "tilt_deg": 0.0}
+      for i, (s, aside) in enumerate(((0.1, 0.44), (0.1, -0.44), (3.9, 0.44), (3.9, -0.44)), 1)))
+BRIDGE_DECLARED = {"kind": "bridge", "length_m": 4.0, "width_m": 1.0, "height_m": 0.5}
+WORKED_STRUCTURES = (("A ski jump", SKI_JUMP_EXAMPLE, SKI_JUMP_DECLARED, "about 3,100 cells"),
+                     ("A staircase", STAIRCASE_EXAMPLE, STAIRCASE_DECLARED, "about 2,400 cells"),
+                     ("A bridge on flat ground", BRIDGE_EXAMPLE, BRIDGE_DECLARED, "about 2,700 cells"))
 
 
 def _structures() -> str:
-    """STRUCTURES, as the guide says it, with the worked ski jump."""
+    """STRUCTURES, as the guide says it, with its worked structures."""
     rows = []
-    for part in SKI_JUMP_EXAMPLE:
-        size = ", ".join(f"{v:g}" for v in part["size_m"])
-        rows.append(f"  {part['name']:<8} [{size}] at s {part['s_m']:g}, y {part['y_m']:g}"
-                    + (f", t {part['tilt_deg']:g}" if part["tilt_deg"] else ""))
+    for title, parts, declared, cost in WORKED_STRUCTURES:
+        said = ", ".join(f"{key} {value:g}" if isinstance(value, float) else f"{key} {value}"
+                         for key, value in declared.items())
+        rows.append(f"{title} (plan_construction {said}; at 0.04 m cells, {cost}):")
+        for part in parts:
+            size = ", ".join(f"{v:g}" for v in part["size_m"])
+            rows.append(f"  {part['name']:<8} [{size}] at s {part['s_m']:g}"
+                        + (f", aside {part['aside_m']:g}" if part.get("aside_m") else "")
+                        + f", y {part['y_m']:g}"
+                        + (f", t {part['tilt_deg']:g}" if part["tilt_deg"] else ""))
     return "\n".join([
         "STRUCTURES. A ramp to ride or jump, a bridge, a stair, a tower -- something",
         "people use where it stands, not a thing to take -- is a STRUCTURE, and is built",
@@ -143,19 +171,26 @@ def _structures() -> str:
         "Read what it is FOR. \"A ski ramp\", \"a ski jump\" or \"a jump\" is a ski_jump: a",
         "raised start, a run down, and a takeoff that turns up at its end. \"A ramp to",
         "sled down\" or \"a slide\" is a downhill_ramp; \"a ramp up to the door\" is an",
-        "access_ramp; anything else is a structure. Build it the size its use needs, not",
-        "the size of a hand: a ski jump is at least 6 m long with its start at least 2 m",
-        "up. It goes on clear ground in front of the person, its line across their view",
-        "so they see it from the side: the_person's structure_middle_m is its middle and",
+        "access_ramp. \"A bridge over the river\" or \"across the gap\" is a bridge: its",
+        "line starts at the near end and its length reaches the far one (survey both",
+        "banks), its deck walkable and clear of what it crosses. \"Stairs up to the",
+        "platform\" are a staircase, its line from its foot up, in even steps. Anything",
+        "else is a structure. Build it the size its use needs, not the size of a hand:",
+        "a ski jump is at least 6 m long with its start at least 2 m up, and a bridge",
+        "reaches right across. It goes on clear ground in front of the person, its line",
+        "across their view so they see it from the side: the_person's",
+        "structure_middle_m is its middle and",
         "across_the_view the way its line runs. Then build it of ANCHORED parts along",
         "that line, and nothing else until it is done:",
         "- its surface as boards laid end to end along its profile, each tilted to",
         "  follow it and meeting the next, none more than 4 m long (no object is):",
-        "  plan_construction's answer says where a point s m along its line is, and",
-        "  the rotation_deg of a board along it;",
+        "  plan_construction's answer says where a point s m along its line and a m to",
+        "  its right is, and the rotation_deg of a board along it;",
         "- posts from the ground up to the underside of what is raised: under its",
         "  raised start, and at most 2.5 m apart;",
         "- nothing in its way beyond its end.",
+        "Give every side a whole number of cells (0.04 m): the room rounds sizes to",
+        "cells, and a post a hair too tall overlaps what it holds up.",
         "In the valley the ground is not level: survey under its start and under each",
         "post. Its heights are above the ground at its start, and each post runs from",
         "the ground under it up to the underside of what it holds.",
@@ -166,14 +201,11 @@ def _structures() -> str:
         "until every requirement passes. If one fails, repair that: never declare it",
         "smaller, which the room refuses. If one cannot be met here -- the cells left",
         "will not hold it -- say which requirement and why.",
-        "A ski jump that passed every check, its parts anchored oak (s is how far along",
-        "its line from its start a part's middle is; y is its middle's height above the",
-        "ground at the start; t is a board's tilt, for the rotation_deg the answer",
-        "gives):",
-        *rows,
-        f"declared: plan_construction kind {SKI_JUMP_DECLARED['kind']}, length_m "
-        f"{SKI_JUMP_DECLARED['length_m']:g}, width_m {SKI_JUMP_DECLARED['width_m']:g}, height_m "
-        f"{SKI_JUMP_DECLARED['height_m']:g}. At 0.04 m cells it costs about 3,100 cells."])
+        "Worked structures that passed every check, their parts anchored oak. s is how",
+        "far along its line from its start a part's middle is, aside how far to its",
+        "right (none: on the line), y its middle's height above the ground at the start,",
+        "and t a board's tilt, for the rotation_deg the answer gives:",
+        *rows])
 
 
 GUIDE = """You are the room. Someone is standing in a physics simulation, talking

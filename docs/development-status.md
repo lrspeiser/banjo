@@ -1,5 +1,44 @@
 # Development status and handoff
 
+**A structure is held to what it was declared to do.** Branch `agent/authoring-contract`, from `152c884`. The owner's review of 2026-09-15 ([building-from-language.md](building-from-language.md)): asked for "a long ski ramp", both chats built one tilted board and called it a ski ramp, and the room accepted it. This is increment 1 of four, the authoring contract, widened when the owner asked whether it was "a general purpose llm toolset or just focused on making a wooden board into a ski ramp".
+- `mcp/constructions.py`: the kinds `ski_jump`, `downhill_ramp`, `access_ramp`, `bridge`, `staircase` and `structure`, each a selection of measurements made from the world's own geometry:
+  - rays cast down along its line every centimetre, which meet a tilted board as its exact box;
+  - its width, slopes over a window, gaps and steps, treads and risers;
+  - its height over the ground or the water, and the space beyond it;
+  - support traced part to part: two parts touch when their turned boxes are within 6 cm, by a separating-axis test.
+- The MCP has `plan_construction` and `check_construction`.
+  - A declaration can be raised, never lowered.
+  - Its answer says where a point along and beside its line is, and how a board along it is turned.
+- The room keeps what was declared, in `constructions` in its spec.
+  - As the chat answers, what it declared or changed that turn is measured.
+  - A failure goes back to it, at most twice (`NOT_FINISHED`); after that its answer starts "Not finished:".
+  - The page shows the measurements under the answer.
+- The guide:
+  - a thing to take goes close in front of the person;
+  - a structure goes 6 m out, across their view (`structure_middle_m`, `across_the_view`), at the size its use needs;
+  - it reads what a ramp, a bridge or a stair is for;
+  - it has three worked structures: a ski jump, a staircase and a bridge;
+  - the actions nudge asks only about things to take.
+- A `use_action`, `drive` or `operate` made after a change in the same turn is held back, and the server does it once the change is in (`then`).
+- `add_object` says when a side over 4 m was cut to 4 m (`size_cut`).
+- The lab's chat (`scene_chat.py`): ramps are no longer always one board, and its cell arithmetic is right (it said 60,000 cells for 12,000).
+- Measured (`tests/chat_history_tests.py`):
+  - the lab's baseline board, declared a ski jump, fails length, width, start height, coming down and takeoff;
+  - a straight 6.5 m ramp from 2.4 m up on posts fails only its takeoff (falling 19.8 degrees);
+  - the guide's ski jump, staircase and bridge pass every check, each along two lines;
+  - a board on four feet, two of them taller, passes as a downhill ramp;
+  - a board on posts half a metre short is "resting on nothing";
+  - a bridge a metre short fails `reaches`, and one laid on the ground fails its clearance;
+  - stairs with one 0.24 m step fail `steps`.
+- Tests:
+  - `chat_history_tests` (35), including a turn that builds a board for a ski jump: sent back twice, then "Not finished:";
+  - `machine_room_tests`: a held-back drive winds the hoist in the room as changed;
+  - `chat_tool_parity_tests`.
+- Not yet:
+  - the builders of increment 2: the chat still places every part itself;
+  - a trial (increment 3);
+  - the lab's chat has the new prompt but not the contract (increment 4).
+
 **A change to a room keeps what it did not touch.** Branch `agent/room-carry`, from `48fbee4`. The owner, 2026-09-15: "nothing should be resetting rooms". Every chat change and every action's stand step opened the room again from its spec: the hoist's crate went back to the ground and its battery back to full, and everything moved, broken, dented, swung, held or heated went back as authored.
 - The engine carries a saved world into a changed scene thing by thing: `LiveWorld::open(request, snapshot, LiveCarry)`, restored tier `"carried"` (docs/a-world-that-keeps-running.md, "A room changed while it runs keeps what the change did not touch").
   - An authored part's cells are its own numbers moved by where its part begins, because the scene builds each part on its own and lays them end to end. A saved world now carries `parts` (each part's runs of cells and bonds, a fingerprint of them, every field its bodies were authored with), `lattice` and `heat` (the thermal network's lumps). A whole restore reads none of them.

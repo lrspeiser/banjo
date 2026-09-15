@@ -58,7 +58,8 @@ and a controlled comparison of how much the model thinks and how it builds.
 
 `plan_construction` (MCP, [mcp.md](api/mcp.md#structures)) takes:
 
-- a `kind`: `ski_jump`, `downhill_ramp`, `access_ramp`, or `structure`;
+- a `kind`: `ski_jump`, `downhill_ramp`, `access_ramp`, `bridge`,
+  `staircase`, or `structure`;
 - a `reading`: one sentence saying how the request was read, which the person
   sees -- a ski ramp read as a jump, not as a slope to walk up;
 - its line on the ground: `start_m` (a ramp's raised end) or `middle_m`, and
@@ -73,7 +74,19 @@ The kind brings what it must do, in numbers (`mcp/constructions.py`, `KINDS`):
 | `ski_jump` | at least 6 m long and 0.6 m wide; its start at least 2 m up and a fifth of its length; one surface along it, with no gap or step over 5 cm; coming down by at least half its start height; rising at least 5 degrees over its last metre, to take off; every part anchored; every part standing on the ground, on scenery or on another part; 3 m clear beyond its end |
 | `downhill_ramp` | at least 3 m long; its start at least 1 m up and 0.15 of its length; one surface; coming down; anchored; supported |
 | `access_ramp` | at least 1 m long, rising at least 0.1 m; no steeper than one in eight (7.2 degrees) over any half metre; one surface; anchored; supported |
+| `bridge` | at least 1.5 m long and 0.5 m wide; its deck from within 0.3 m of its start to within 0.3 m of its far end; one surface; walkable, no steeper than 12 degrees over any half metre; its deck at least 0.3 m (or as declared) above the ground or water under its middle; anchored; supported |
+| `staircase` | rising at least 0.3 m; at least 2 even steps, each rising 0.10 to 0.22 m and going at least 0.22 m (the top one as far as it likes), their rises within 2 cm of each other; at least 0.5 m wide; anchored; supported |
 | `structure` | its length and width along its line; supported |
+
+The owner asked, the same day, whether this is "a general purpose llm toolset
+or just focused on making a wooden board into a ski ramp". A kind is a
+selection of measurements, not code of its own. The measurements are the
+general part: the surface along a line and its width, slopes over a window,
+gaps and steps, treads and risers, how high it stands over the ground or the
+water, what stands in a space beyond it, and what holds up what. So a new kind
+is a new selection, and the next ones on the benchmark (an arch, a hollow
+container, a passage a person fits through) each want one or two
+measurements more: a span's underside, an enclosed volume, a clear box.
 
 The requirements are kept apart from the builder. Declared again, a
 construction may raise them, never lower them, and cannot change its kind: a
@@ -119,9 +132,9 @@ added after it until another is declared.
 - The guide tells a thing to take (it goes close in front of the person) from a
   structure: its middle 6 m out, its line across their view
   (`the_person.structure_middle_m`, `across_the_view`), the size its use needs.
-  It reads what a ramp is for, and gives a worked ski jump -- seven anchored
-  parts that pass every check, built along two lines by
-  `tests/chat_history_tests.py`.
+  It reads what a ramp is for, what a bridge and stairs are, and gives three
+  worked structures -- a ski jump, a staircase and a bridge -- that pass every
+  check, each built along two lines by `tests/chat_history_tests.py`.
 - The actions nudge (`NOTHING_OFFERED`) is only for a thing to take: asked for
   a ski ramp, it had the chat give an anchored board a "Use the ramp" action.
 - A call that works the running room (`use_action`, `drive`, `operate`) made

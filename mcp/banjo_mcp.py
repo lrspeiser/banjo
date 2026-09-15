@@ -2761,6 +2761,20 @@ def _ground_at(entry: dict[str, Any]) -> Any:
     return lambda x, z: 0.0
 
 
+def _water_at(entry: dict[str, Any]) -> Any:
+    """The water's surface over a point, or None where it is dry; None for a
+    world with no ground of its own."""
+    if not _has_terrain(entry):
+        return None
+    world = entry["world"]
+
+    def at(x: float, z: float) -> float | None:
+        here = world.survey(x, z)
+        water = here.get("water") if here.get("on_the_ground") else None
+        return float(water["surface_m"]) if water and float(water.get("depth_m", 0.0)) > 0.005 else None
+    return at
+
+
 def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
     """Declare a structure before building it: its kind, how the request was
     read, where its line runs, and what it must do."""
@@ -2793,7 +2807,8 @@ def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
     yaw = round(math.degrees(math.atan2(-uz, ux)), 2) + 0.0
     return {"construction": name, "kind": record["kind"], "reading": record["reading"],
             "line": {"start_m": record["start_m"], "facing": record["facing"],
-                     "a_point_s_m_along_it": f"[{x0:g} + s * {ux:g}, {z0:g} + s * {uz:g}]",
+                     "a_point_s_m_along_it_and_a_m_to_its_right":
+                         f"[{x0:g} + s * {ux:g} - a * {uz:g}, {z0:g} + s * {uz:g} + a * {ux:g}]",
                      "yaw_deg": yaw,
                      "a_board_along_it": f"rotation_deg [0, {yaw:g}, t]: tilted t degrees, rising along "
                                          f"the line for t above 0 and falling for t below"},
@@ -2820,7 +2835,8 @@ def tool_check_construction(args: dict[str, Any]) -> dict[str, Any]:
     extra = args.get("parts")
     if isinstance(extra, list):
         record["parts"] = sorted(set(record["parts"]) | {str(p) for p in extra})
-    result = constructions.check(record, world, _ground_at(entry), {b["name"] for b in entry["scene"]["bodies"]})
+    result = constructions.check(record, world, _ground_at(entry), {b["name"] for b in entry["scene"]["bodies"]},
+                                 water_at=_water_at(entry))
     result["construction"] = name
     result["reading"] = record["reading"]
     record["last_check"] = result
@@ -7050,12 +7066,16 @@ TOOLS = [
                      "description": "0 to 1. Left out, it stays as it was: 1 when made."}}}},
     {"name": "plan_construction",
      "description": "Declare a STRUCTURE before you build it -- a ski jump, a downhill ramp, an "
-                    "access ramp or another structure -- so the room holds it to what the person "
-                    "asked for. Give its kind; a reading, one sentence saying how you read the "
-                    "request, which the person sees; where its line starts on the ground (start_m "
-                    "[x, z], a ramp's raised end) and the level way it runs (facing); and its size "
-                    "(length_m, width_m, and height_m: a ramp's start height or an access ramp's "
-                    "rise). The kind brings what it must do, in numbers the room measures. A "
+                    "access ramp, a bridge, a staircase or another structure -- so the room holds it "
+                    "to what the person asked for. Give its kind; a reading, one sentence saying how "
+                    "you read the request, which the person sees; where its line starts on the ground "
+                    "(start_m [x, z]: a ramp's raised end, a bridge's near end, a staircase's foot) and "
+                    "the level way it runs (facing); and its size (length_m, width_m, and height_m: a "
+                    "ramp's start height, an access ramp's or a staircase's rise, a bridge's deck over "
+                    "what it crosses). The kind brings what it must do, in numbers the room measures. "
+                    "A bridge reaches from its start to its length, walkable, its deck clear of what "
+                    "it crosses; a staircase rises in even steps, each 0.10 to 0.22 m up and at least "
+                    "0.22 m deep. A "
                     "ski_jump is at least 6 m long, its start at least 2 m up and at least a fifth "
                     "of its length; it comes down from its start, is one surface with no gap or "
                     "step, rises at least 5 degrees over its last metre to take off, stands every "
@@ -7087,7 +7107,8 @@ TOOLS = [
          "length_m": {"type": "number", "description": "Along its line, in metres."},
          "width_m": {"type": "number", "description": "Across it, in metres."},
          "height_m": {"type": "number",
-                      "description": "A ramp's start above the ground, or an access ramp's rise."},
+                      "description": "A ramp's start above the ground; an access ramp's or a staircase's "
+                                     "rise; a bridge's deck above the ground or water under its middle."},
          "scale": {"type": "string", "enum": ["full", "model"],
                    "description": "full, a person's size; model only when they asked for a small one."}}}},
     {"name": "check_construction",

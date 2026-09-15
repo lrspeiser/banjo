@@ -18,12 +18,20 @@ for instance, needs:
   another part;
 - a clear runout.
 
+A kind is a handful of measurements, not code of its own. The owner asked
+(2026-09-15) whether this is "a general purpose llm toolset or just focused on
+making a wooden board into a ski ramp". The measurements are the general part
+-- the surface along a line and its width, its slopes, its gaps and steps, its
+treads, how high it stands over the ground or the water, what stands in a
+space beyond it, what holds up what -- and a ramp, a bridge and a staircase are
+each a selection of them (KINDS).
+
 What is built is measured against that from the world's own geometry: rays
-cast straight down onto it along its line, the ground under it, and the bodies
-around it. A ray meets a body as the solver collides it -- a tilted board as
-its exact box, not as a staircase of cells (measured: within 0.01 mm of the
-box's own top, with 40 mm cells). The answer gives each requirement, what was
-required and what was measured.
+cast straight down onto it along its line, the ground and the water under it,
+and the bodies around it. A ray meets a body as the solver collides it -- a
+tilted board as its exact box, not as a staircase of cells (measured: within
+0.01 mm of the box's own top, with 40 mm cells). The answer gives each
+requirement, what was required and what was measured.
 
 It is judged by what it does, not by its shape: a board on four feet, two of
 them taller, is as good a downhill ramp as boards laid end to end on posts --
@@ -38,15 +46,15 @@ from __future__ import annotations
 import math
 from typing import Any, Callable
 
-# What each kind of structure must do. Lengths are in metres, and a requirement
-# a declaration leaves out takes the kind's own. start_height is how high the
-# surface stands above the ground where the run starts: a share of its length,
-# never less than the kind's least. A "model" -- one the person asked to be
-# small -- takes a tenth of each.
+# What each kind of structure must do: the measurements it is held to, and its
+# numbers. Lengths are in metres, and a requirement a declaration leaves out
+# takes the kind's own. A "model" -- one the person asked to be small -- takes a
+# tenth of each.
 KINDS: dict[str, dict[str, Any]] = {
     "ski_jump": {
         "reading": "a ski jump: a raised start, a run down, and a takeoff that turns up at its end",
         "length_m": 12.0, "least_length_m": 6.0, "width_m": 1.5, "least_width_m": 0.6,
+        # How high its start is: a share of its length, never less than the least.
         "start_height_share": 0.2, "least_start_height_m": 2.0,
         "takeoff_deg": 5.0, "runout_m": 3.0,
         "checks": ("length", "width", "start_height", "continuous", "descends", "takeoff", "fixed",
@@ -61,6 +69,19 @@ KINDS: dict[str, dict[str, Any]] = {
         "length_m": 4.0, "least_length_m": 1.0, "width_m": 1.0, "least_width_m": 0.6,
         "rise_m": 0.5, "least_rise_m": 0.1, "steepest_deg": 7.2,     # one in eight
         "checks": ("length", "width", "rise", "gentle", "continuous", "fixed", "supported")},
+    "bridge": {
+        "reading": "a bridge: a walkable deck from one end to the other, clear of what it crosses",
+        "length_m": 4.0, "least_length_m": 1.5, "width_m": 1.0, "least_width_m": 0.5,
+        # How high its deck stands over the ground or water under its middle.
+        "clearance_m": 0.3, "least_clearance_m": 0.1, "walkable_deg": 12.0,
+        "checks": ("reaches", "width", "continuous", "walkable", "above", "fixed", "supported")},
+    "staircase": {
+        "reading": "a staircase: even steps up to a height",
+        "width_m": 0.8, "least_width_m": 0.5, "rise_m": 1.0, "least_rise_m": 0.3,
+        # Each step rises between these, goes at least this far (the top one,
+        # a landing, as far as it likes), and its rises are this even.
+        "step_rise_m": (0.10, 0.22), "least_going_m": 0.22, "even_m": 0.02, "going_m": 0.28,
+        "checks": ("rise", "steps", "width", "fixed", "supported")},
     "structure": {
         "reading": "a structure",
         "length_m": 1.0, "least_length_m": 0.1, "width_m": 0.5, "least_width_m": 0.04,
@@ -73,9 +94,13 @@ SCALES = {"full": 1.0, "model": 0.1}
 STATION_M = 0.01         # rays along its line, this far apart
 STEP_M = 0.05            # a gap in it, or a rise or drop between two rays, bigger than this breaks it
 TOUCH_M = 0.06           # parts this close count as touching, as the ground does
+REACH_M = 0.3            # a bridge's deck starts and ends this close to its declared ends
 TAKEOFF_OVER_M = 1.0     # the takeoff is its slope over its last metre
-GENTLE_OVER_M = 0.5      # an access ramp's steepness is its slope over any half metre
+WINDOW_M = 0.5           # steepness is a slope over any half metre
 CLEAR_HEIGHT_M = 2.5     # the runout is clear this high above the ground
+LEVEL_M = 0.005          # a tread is level to this
+# Upper limits, from the kind: declared again, they are what they were.
+LIMITS = ("steepest_deg", "walkable_deg")
 
 
 def _number(value: Any, what: str, default: float) -> float:
@@ -107,9 +132,9 @@ def plan(existing: dict[str, Any] | None, args: dict[str, Any], names_now: set[s
     it keeps its parts and may raise what it must do, never lower it.
 
     Its line is given by start_m, where it starts on the ground -- a ramp's
-    raised end -- or by middle_m, where its middle is, and facing, the level way
-    it runs: a line across the person's view is code's to work out, not the
-    model's."""
+    raised end, a staircase's foot, a bridge's near end -- or by middle_m, where
+    its middle is, and facing, the level way it runs: a line across the
+    person's view is code's to work out, not the model's."""
     kind = str(args.get("kind") or "").strip().lower()
     if kind not in KINDS:
         raise ValueError(f"kind is one of {', '.join(KINDS)}, not {kind!r}")
@@ -117,12 +142,27 @@ def plan(existing: dict[str, Any] | None, args: dict[str, Any], names_now: set[s
     if scale not in SCALES:
         raise ValueError("scale is full -- a person's size -- or model, when they asked for a small one")
     shape, factor = KINDS[kind], SCALES[scale]
+    checks, called = shape["checks"], kind.replace("_", " ")
     reading = " ".join(str(args.get("reading") or "").split())[:240]
     if not reading:
         raise ValueError(f"reading is one sentence saying how you read the request, which the person "
                          f"sees -- like \"{shape['reading']}\"")
     facing = _level(args.get("facing"), "facing")
-    length = _number(args.get("length_m"), "length_m", shape["length_m"] * factor)
+    # How high it rises, for what rises: an access ramp, a staircase.
+    rise = None
+    if "rise" in checks:
+        rise = _number(args.get("height_m"), "height_m", shape["rise_m"] * factor)
+        if rise < shape["least_rise_m"] * factor - 1e-9:
+            raise ValueError(f"a {called} rises at least {shape['least_rise_m'] * factor:g} m")
+    if "steps" in checks:
+        # As many steps as its rise needs at the steepest, each going the least.
+        steps = math.ceil(rise / (shape["step_rise_m"][1] * factor) - 1e-9)
+        least_length = steps * shape["least_going_m"] * factor
+        default_length = max(least_length,
+                             math.ceil(rise / (0.18 * factor) - 1e-9) * shape["going_m"] * factor)
+    else:
+        least_length, default_length = shape["least_length_m"] * factor, shape["length_m"] * factor
+    length = _number(args.get("length_m"), "length_m", default_length)
     width = _number(args.get("width_m"), "width_m", shape["width_m"] * factor)
     start, middle = args.get("start_m"), args.get("middle_m")
     for value, what in ((start, "start_m"), (middle, "middle_m")):
@@ -136,41 +176,49 @@ def plan(existing: dict[str, Any] | None, args: dict[str, Any], names_now: set[s
     else:
         raise ValueError("give where its line starts on the ground, start_m [x, z] -- for a ramp, its "
                          "raised end -- or where its middle is, middle_m [x, z]")
-    if length < shape["least_length_m"] * factor - 1e-9:
-        raise ValueError(f"a {kind.replace('_', ' ')} is at least {shape['least_length_m'] * factor:g} m long"
+    if length < least_length - 1e-9:
+        if "steps" in checks:
+            raise ValueError(f"a staircase rising {rise:g} m is at least {least_length:.2f} m long: {steps} "
+                             f"steps, each going at least {shape['least_going_m'] * factor:g} m")
+        raise ValueError(f"a {called} is at least {least_length:g} m long"
                          + ("" if scale == "model" else ": for a small one, say scale model"))
     if width < shape["least_width_m"] * factor - 1e-9:
-        raise ValueError(f"a {kind.replace('_', ' ')} is at least {shape['least_width_m'] * factor:g} m wide")
+        raise ValueError(f"a {called} is at least {shape['least_width_m'] * factor:g} m wide")
     requirements: dict[str, float] = {"length_m": round(length, 3), "width_m": round(width, 3)}
-    if "start_height" in shape["checks"]:
+    if "start_height" in checks:
         least = max(shape["least_start_height_m"] * factor, shape["start_height_share"] * length)
         height = _number(args.get("height_m"), "height_m", least)
         if height < least - 1e-9:
-            raise ValueError(f"a {kind.replace('_', ' ')} {length:g} m long starts at least {least:.2f} m "
-                             f"up: a share of its length, and never less than "
-                             f"{shape['least_start_height_m'] * factor:g} m")
+            raise ValueError(f"a {called} {length:g} m long starts at least {least:.2f} m up: a share of "
+                             f"its length, and never less than {shape['least_start_height_m'] * factor:g} m")
         requirements["start_height_m"] = round(height, 3)
-    if "takeoff" in shape["checks"]:
+    if "takeoff" in checks:
         requirements["takeoff_deg"] = shape["takeoff_deg"]
-    if "runout" in shape["checks"]:
+    if "runout" in checks:
         requirements["runout_m"] = round(shape["runout_m"] * factor, 3)
-    if "rise" in shape["checks"]:
-        rise = _number(args.get("height_m"), "height_m", shape["rise_m"] * factor)
-        if rise < shape["least_rise_m"] * factor - 1e-9:
-            raise ValueError(f"an access ramp rises at least {shape['least_rise_m'] * factor:g} m")
+    if rise is not None:
+        requirements["rise_m"] = round(rise, 3)
+    if "gentle" in checks:
         steepest = shape["steepest_deg"]
         if length < rise / math.tan(math.radians(steepest)) - 1e-6:
             raise ValueError(f"an access ramp rising {rise:g} m is at least "
                              f"{rise / math.tan(math.radians(steepest)):.2f} m long, to be no steeper "
                              f"than one in eight")
-        requirements["rise_m"] = round(rise, 3)
         requirements["steepest_deg"] = steepest
+    if "above" in checks:
+        clearance = _number(args.get("height_m"), "height_m", shape["clearance_m"] * factor)
+        if clearance < shape["least_clearance_m"] * factor - 1e-9:
+            raise ValueError(f"a bridge's deck stands at least {shape['least_clearance_m'] * factor:g} m over "
+                             f"what it crosses")
+        requirements["clearance_m"] = round(clearance, 3)
+    if "walkable" in checks:
+        requirements["walkable_deg"] = shape["walkable_deg"]
     if existing is not None:
         if existing["kind"] != kind:
             raise ValueError(f"it was declared a {existing['kind'].replace('_', ' ')}; to build something "
                              f"else, declare a construction of another name")
         lowered = [key for key, was in existing["requirements"].items()
-                   if key != "steepest_deg" and requirements.get(key, was) < was - 1e-9]
+                   if key not in LIMITS and requirements.get(key, was) < was - 1e-9]
         if lowered:
             raise ValueError("what it must do can be raised, never lowered: "
                              + ", ".join(f"{key} was {existing['requirements'][key]:g}" for key in lowered))
@@ -199,17 +247,30 @@ def parts_now(record: dict[str, Any], names_now: set[str]) -> list[str]:
 def said(record: dict[str, Any]) -> list[str]:
     """What it must do, in words."""
     req, out = record["requirements"], []
-    step = max(STEP_M * SCALES.get(record.get("scale") or "full", 1.0), 0.01)
+    shape = KINDS[record["kind"]]
+    checks = shape["checks"]
+    factor = SCALES.get(record.get("scale") or "full", 1.0)
+    step = max(STEP_M * factor, 0.01)
+    if "reaches" in checks:
+        out.append(f"its deck from its start to {req['length_m']:g} m along its line, within "
+                   f"{REACH_M * factor:g} m of each end")
     for key, words in (("length_m", "at least {:g} m long along its line"),
                        ("width_m", "at least {:g} m across"),
                        ("start_height_m", "its start at least {:g} m above the ground there"),
-                       ("rise_m", "rising at least {:g} m from its low end to its high end"),
+                       ("rise_m", "rising at least {:g} m from its foot to its top"),
                        ("steepest_deg", "no steeper than {:g} degrees over any half metre"),
+                       ("walkable_deg", "no steeper than {:g} degrees over any half metre, to walk"),
+                       ("clearance_m", "its deck at least {:g} m above the ground or water under its middle"),
                        ("takeoff_deg", "rising at least {:g} degrees over its last metre, to take off"),
                        ("runout_m", "{:g} m clear beyond its end")):
-        if key in req:
+        if key in req and not (key == "length_m" and "reaches" in checks) and not (
+                key == "length_m" and "steps" in checks):
             out.append(words.format(req[key]))
-    checks = KINDS[record["kind"]]["checks"]
+    if "steps" in checks:
+        low, high = shape["step_rise_m"]
+        out.append(f"even steps: each rising {low * factor:g} to {high * factor:g} m and going at least "
+                   f"{shape['least_going_m'] * factor:g} m (the top one as far as it likes), their rises within "
+                   f"{shape['even_m'] * factor * 100:g} cm of each other")
     if "continuous" in checks:
         out.append(f"one surface along it, with no gap or step of more than {step * 100:.0f} cm")
     if "descends" in checks:
@@ -295,15 +356,44 @@ def _slope(stations: list[float], height: dict[float, float]) -> float:
     return 0.0 if spread <= 0.0 else sum((s - mean_s) * (height[s] - mean_h) for s in stations) / spread
 
 
+def _steepest(on: list[float], height: dict[float, float], window: float, first: float, last: float,
+              factor: float) -> tuple[float, float]:
+    """The steepest slope over any window along it, in degrees, and where."""
+    steepest, where, begin = 0.0, first, first
+    while True:
+        span = [s for s in on if begin - 1e-9 <= s <= begin + window + 1e-9]
+        if len(span) >= 3:
+            degrees = abs(math.degrees(math.atan(_slope(span, height))))
+            if degrees > steepest:
+                steepest, where = degrees, begin
+        if begin + window >= last:
+            return steepest, where
+        begin += 0.1 * factor
+
+
+def _treads(on: list[float], height: dict[float, float], station: float, factor: float) -> list[list[float]]:
+    """The level stretches of a profile -- a staircase's treads -- as [from_s,
+    to_s, height], less slivers under 5 cm (where a ray met an edge)."""
+    treads: list[list[float]] = []
+    for s in on:
+        if treads and abs(height[s] - treads[-1][2]) <= LEVEL_M and s - treads[-1][1] <= 1.5 * station:
+            treads[-1][1] = s
+        else:
+            treads.append([s, s, height[s]])
+    return [t for t in treads if t[1] - t[0] >= 0.05 * factor]
+
+
 def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float], float],
-          names_now: set[str]) -> dict[str, Any]:
+          names_now: set[str], water_at: Callable[[float, float], float | None] | None = None) -> dict[str, Any]:
     """What was built, measured against what it must do: each requirement with
-    what was required and what was measured, and whether all passed."""
+    what was required and what was measured, and whether all passed. water_at,
+    where there is water, gives its surface over a point (None: dry)."""
     record["parts"] = parts_now(record, names_now)
     bodies = {name: world.body(name) for name in record["parts"]}
     bodies = {name: body for name, body in bodies.items() if body is not None}
     req = record["requirements"]
-    checks = KINDS[record["kind"]]["checks"]
+    shape = KINDS[record["kind"]]
+    checks = shape["checks"]
     factor = SCALES.get(record.get("scale") or "full", 1.0)
     step_m = max(STEP_M * factor, 0.01)
     station = min(STATION_M, req["length_m"] / 400.0)
@@ -320,6 +410,12 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
                 "passed": bool(results) and all(r["passed"] for r in results),
                 "failed": [r["requirement"] for r in results if not r["passed"]],
                 "results": results, "parts": record["parts"], **more}
+
+    def under(x: float, z: float) -> float:
+        """The ground under a point, or the water over it."""
+        ground = ground_at(x, z)
+        water = water_at(x, z) if water_at is not None else None
+        return ground if water is None else max(ground, water)
 
     if not bodies:
         result("parts", "something built after it was declared", "nothing", False)
@@ -350,6 +446,11 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
     run = last - first
     start_height = max(height[s] - ground_at(profile[s][0], profile[s][1]) for s in on if s <= first + lead)
 
+    if "reaches" in checks:
+        close = REACH_M * factor
+        result("reaches", f"its deck from within {close:g} m of its start to within {close:g} m of "
+                          f"{req['length_m']:g} m along its line", f"from {first:.2f} m to {last:.2f} m",
+               first <= close and last >= req["length_m"] - close)
     if "length" in checks:
         result("length", f"at least {req['length_m']:g} m along its line", f"{run:.2f} m",
                run >= req["length_m"] - 2.0 * station)
@@ -366,8 +467,36 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
         result("start height", f"at least {req['start_height_m']:g} m above the ground at its start",
                f"{start_height:.2f} m", start_height >= req["start_height_m"] - 0.02 * factor)
     if "rise" in checks:
-        rise = max(height.values()) - min(height.values())
-        result("rise", f"at least {req['rise_m']:g} m", f"{rise:.2f} m", rise >= req["rise_m"] - 0.02 * factor)
+        foot = min(ground_at(profile[first][0], profile[first][1]), ground_at(profile[last][0], profile[last][1]))
+        rise = max(height.values()) - foot
+        result("rise", f"at least {req['rise_m']:g} m from its foot to its top", f"{rise:.2f} m",
+               rise >= req["rise_m"] - 0.02 * factor)
+    if "steps" in checks:
+        treads = _treads(on, height, station, factor)
+        if len(treads) >= 2 and treads[-1][2] < treads[0][2]:
+            # Declared from its top: measured from its foot all the same.
+            treads = [[-t[1], -t[0], t[2]] for t in reversed(treads)]
+            foot = ground_at(profile[last][0], profile[last][1])
+        else:
+            foot = ground_at(profile[first][0], profile[first][1])
+        levels = [foot] + [t[2] for t in treads]
+        rises = [b - a for a, b in zip(levels, levels[1:])]
+        goings = [t[1] - t[0] + station for t in treads[:-1]]
+        low, high = (v * factor for v in shape["step_rise_m"])
+        going, even = shape["least_going_m"] * factor, shape["even_m"] * factor
+        wrong = [f"step {i} rises {r:.2f} m" for i, r in enumerate(rises, 1)
+                 if not low - LEVEL_M <= r <= high + LEVEL_M]
+        short = [f"step {i} goes {g:.2f} m" for i, g in enumerate(goings, 1) if g < going - 0.01 * factor]
+        spread = max(rises) - min(rises) if rises else 0.0
+        words = (f"{len(treads)} steps rising {min(rises):.2f} to {max(rises):.2f} m, going at least "
+                 f"{min(goings):.2f} m" if len(treads) >= 2 else
+                 f"{len(treads)} step{'' if len(treads) == 1 else 's'}")
+        problems = wrong[:3] + short[:3] + ([f"their rises {spread * 100:.0f} cm apart"] if spread > even + LEVEL_M
+                                            else [])
+        result("steps", f"at least 2 steps, each rising {low:g} to {high:g} m and going at least {going:g} m, "
+                        f"their rises within {even * 100:g} cm of each other",
+               words + ("; " + "; ".join(problems) if problems else ""),
+               len(treads) >= 2 and not problems)
     if "continuous" in checks:
         words = []
         gaps = [(a, b - a - station) for a, b in zip(on, on[1:]) if b - a - station > step_m]
@@ -392,19 +521,21 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
                f"{'rising' if degrees >= 0 else 'falling'} {abs(degrees):.1f} degrees",
                degrees >= req["takeoff_deg"] - 0.2)
     if "gentle" in checks:
-        window, steepest, where = GENTLE_OVER_M * factor, 0.0, first
-        begin = first
-        while True:
-            span = [s for s in on if begin - 1e-9 <= s <= begin + window + 1e-9]
-            if len(span) >= 3:
-                degrees = abs(math.degrees(math.atan(_slope(span, height))))
-                if degrees > steepest:
-                    steepest, where = degrees, begin
-            if begin + window >= last:
-                break
-            begin += 0.1 * factor
+        steepest, where = _steepest(on, height, WINDOW_M * factor, first, last, factor)
         result("gentle", f"no steeper than {req['steepest_deg']:g} degrees over any half metre",
                f"{steepest:.1f} degrees at its steepest, from {where:.1f} m", steepest <= req["steepest_deg"] + 0.2)
+    if "walkable" in checks:
+        steepest, where = _steepest(on, height, WINDOW_M * factor, first, last, factor)
+        result("walkable", f"no steeper than {req['walkable_deg']:g} degrees over any half metre",
+               f"{steepest:.1f} degrees at its steepest, from {where:.1f} m", steepest <= req["walkable_deg"] + 0.2)
+    if "above" in checks:
+        # Over its middle half, every 5 cm: how high its top stands over the
+        # ground or the water under it.
+        middle = [s for s in on if first + run / 4.0 <= s <= last - run / 4.0][::5] or on[::5]
+        lowest = min((height[s] - under(profile[s][0], profile[s][1]), s) for s in middle)
+        result("clear of what it crosses",
+               f"its deck at least {req['clearance_m']:g} m above the ground or water under its middle",
+               f"{lowest[0]:.2f} m at its lowest, at {lowest[1]:.1f} m", lowest[0] >= req["clearance_m"] - 0.02 * factor)
     if "fixed" in checks:
         loose = sorted(name for name, body in bodies.items() if not body.anchored)
         result("fixed in place", "every part anchored",
