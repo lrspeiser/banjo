@@ -8,9 +8,11 @@ restart of a server -- and the sims are restarted whenever work lands -- threw
 away everything anyone had built. Now each change is written here, one file to
 a room, and a room is read back the first time it is opened after a restart.
 
-What is kept is exactly what a page reload keeps: the authored room and its
-conversation. Where things were moved to by hand, and what broke, belong to the
-running world and go when it does. And what the person has (inventory.py):
+What is kept is the authored room and its conversation. A page reload does not
+come here: it rejoins the running world (server._rejoin), so where things were
+moved to by hand, and what broke, stay while the server runs. A restart still
+loses them -- they belong to the running world, and saving that is the engine's
+to do -- and opens the room as authored. And what the person has (inventory.py):
 which things are in their bag and in their hands, so a restart does not hand
 the bag's things back to the room. It is optional -- a room kept before there
 was one reads as a person with nothing -- so the format is unchanged.

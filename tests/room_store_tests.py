@@ -46,7 +46,18 @@ class StandInLive:
 
     def __init__(self):
         self.opened = []
+        self.rejoined = 0
         self.session = None
+
+    def rejoin(self, app):
+        """The room that is running, as a page opening it again gets it: the same
+        world under a new id, so a page holding the old one has lost the room."""
+        if self.session is None:
+            return None
+        self.rejoined += 1
+        self.session.id = f"{self.session.id}-again"
+        return {"session": self.session.id, "rejoined": True,
+                "bodies": [{"name": n} for n in sorted(names(self.opened[-1]))]}
 
     def open(self, app, body):
         spec = json.loads(json.dumps(body["spec"]))
@@ -138,6 +149,47 @@ class APageThatLostItsRoom(KeptRoomsTestCase):
         chat.assert_not_called()
 
 
+class APageOpeningItsRoomAgain(KeptRoomsTestCase):
+    """A reload is not a new room. A page opening the room that is running here
+    joins it as it stands -- moved, broken, the hand holding what it held --
+    rather than opening it again from its spec, which put all of that back as
+    authored."""
+
+    def test_a_reload_rejoins_the_running_room_and_fresh_opens_it_again(self):
+        app = self.start()
+        first = self.open(app, scene="yard")
+        again = self.open(app, scene="yard")
+        self.assertTrue(again.get("rejoined"), again)
+        self.assertEqual(len(app.live.opened), 1, "the room was opened again from its spec")
+        self.assertEqual(app.live.rejoined, 1)
+        self.assertNotEqual(again["session"], first["session"])
+        self.assertEqual(again["scene"], "yard")
+        self.assertIn("inventory", again)
+        self.assertIn("chat", again)
+        # The page that had it has lost it, as when opening replaced the room.
+        with mock.patch.object(world_chat, "ask", side_effect=the_chat_builds_a_crate) as chat:
+            status, answer = self.post(app, "/api/world/ask",
+                                       {"session": first["session"], "message": "an oak crate, please"})
+        self.assertEqual(status, 400, answer)
+        chat.assert_not_called()
+        # "Start the room again" opens it again from what it is held as.
+        replayed = self.open(app, scene="yard", again=True)
+        self.assertFalse(replayed.get("rejoined"))
+        self.assertEqual(len(app.live.opened), 2, "Start the room again did not open it again")
+        fresh = self.open(app, scene="yard", fresh=True)
+        self.assertFalse(fresh.get("rejoined"))
+        self.assertEqual(len(app.live.opened), 3, "fresh did not open the room again")
+
+    def test_another_room_is_opened_not_rejoined(self):
+        app = self.start()
+        self.open(app, scene="yard")
+        other = next(s for s in sorted(world_room.SCENES) if s != "yard")
+        opened = self.open(app, scene=other)
+        self.assertFalse(opened.get("rejoined"))
+        self.assertEqual(len(app.live.opened), 2)
+        self.assertEqual(app.live.rejoined, 0)
+
+
 class ARoomOutlivesItsServer(KeptRoomsTestCase):
     def test_what_the_chat_built_is_there_after_a_restart(self):
         first = self.start()
@@ -175,15 +227,17 @@ class ARoomOutlivesItsServer(KeptRoomsTestCase):
         self.assertEqual(again.live.opened[-1], world_room.yard())
         self.assertEqual(again.room.chat, [])
 
-    def test_a_reload_opens_the_room_this_server_holds(self):
+    def test_starting_the_room_again_replays_the_room_this_server_holds(self):
         """Start the room again -- the page's button -- replays the room as it is
-        held, as it always did: nothing is read back from disk under it."""
+        held, as it always did: nothing is read back from disk under it. (A
+        reload rejoins the running room instead: APageOpeningItsRoomAgain.)"""
         app = self.start()
         self.open(app, scene="yard")
         self.ask(app, "an oak crate, please")
         held = app.room
-        opened = self.open(app, scene="yard")
+        opened = self.open(app, scene="yard", again=True)
         self.assertFalse(opened["kept"])
+        self.assertFalse(opened.get("rejoined"))
         self.assertIs(app.room, held)
         self.assertIn("oak crate", names(app.live.opened[-1]))
 

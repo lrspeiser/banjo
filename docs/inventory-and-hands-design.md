@@ -126,16 +126,27 @@ hand.
 - Anything else stays in the world or in the hand, with the reason.
 - No state is quietly paused, repaired or thrown away by stowing.
 
-## What a room keeps (`room_store` v2)
+## What a room keeps
 
-- With the spec and the chat, the room keeps two more things:
-  - the inventory record;
-  - the pose of every item where it was left in the world.
-- So a reload puts things where they were, a stowed thing stays stowed, and
-  nothing comes back as an old copy.
-- A v1 file still reads, with an empty inventory and the authored poses.
-- Damage is not kept yet. A thing that has broken or dented cannot be stowed,
-  and says so, and a reload restores it as authored. That stays open.
+This section says what the code does (checked 2026-09-15), not what was
+planned. The plan here was a `room_store` v2 with every item's pose. Only its
+inventory half was built, and "a damaged thing cannot be stowed" was never
+checked by anything.
+- On disk (`room_store`, still `banjo.room.v1`): the spec, the chat, and the
+  inventory record as an optional field. No poses, no damage, no pieces.
+- A page reload rejoins the running room (`server._rejoin`,
+  `live_session.Live.rejoin`). Every body is where it is and as it is: moved,
+  broken into pieces, dented. The hand still holds what it held, and the bag is
+  as the record has it.
+- "Start the room again" opens the room again from its spec, as a reload used
+  to.
+- A server restart opens the room from its spec. Things come back where they
+  were authored, whole, and a thing that was in a hand goes back to the bag.
+  Keeping the running world through a restart needs the engine to save and
+  restore its state. That is the next slice of "nothing resets".
+- A dented thing can be stowed: nothing checks for a dent. Within one running
+  room it comes back from the bag as it went in (park and unpark keep the body,
+  heat and all). A restart restores it as authored.
 
 ## The engine half (read from the code, 2026-09-14)
 

@@ -659,6 +659,26 @@ function placeBeyond(block) {
   }
 }
 
+// Where the person stood, kept for this tab: sessionStorage lasts through a
+// reload and goes with the tab. A reload rejoins the room as it stands
+// (server.py _rejoin), and puts the person back where they were rather than at
+// the valley's view point.
+function keepView() {
+  if (!world.scene || !world.session) return;
+  const look = camera.position.clone().add(forwardVector().multiplyScalar(4));
+  try {
+    sessionStorage.setItem(`banjo.view.${world.scene}`,
+      JSON.stringify({ eye_m: camera.position.toArray(), look_m: look.toArray() }));
+  } catch (_) { /* no storage here: a reload starts at the view point */ }
+}
+function keptView(scene) {
+  try {
+    const view = JSON.parse(sessionStorage.getItem(`banjo.view.${scene}`) || "null");
+    return view && Array.isArray(view.eye_m) && Array.isArray(view.look_m) ? view : null;
+  } catch (_) { return null; }
+}
+addEventListener("pagehide", keepView);
+
 function placeCamera(view) {
   if (!view) return;
   const [ex, ey, ez] = view.eye_m, [lx, ly, lz] = view.look_m;
@@ -4733,7 +4753,7 @@ async function runAction(name, index) {
   } finally { world.acting = false; world.doing = null; showDetails(true); }
 }
 
-$("reset").addEventListener("click", () => open());
+$("reset").addEventListener("click", () => open({ again: true }));
 
 // A gas is seen through its window. The crosshair's first body is then the pane
 // of glass, but what the person is looking at -- and means to heat -- is the
@@ -4935,7 +4955,10 @@ function showBuild(id) {
   $("scene").value = QA_OPTION;
 }
 
-async function open() {
+// `again`: the "Start the room again" button, which opens the room again from
+// what it is held as -- the way out of a room that has stopped. Without it, a
+// page opening the room that is running (a reload) rejoins it as it stands.
+async function open({ again = false } = {}) {
   // What the room being replaced did since its last report, as its own.
   traceOldWorld();
   world.opening = true;
@@ -4943,7 +4966,8 @@ async function open() {
   const qa = qaBuild();
   showBuild(qa);
   try {
-    const data = await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value });
+    const data = await api("/api/world/open",
+                           qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
@@ -4983,15 +5007,27 @@ async function open() {
     if (data.terrain) {
       drawTerrain(data.terrain);
       if (data.water) drawWater(data.water);
-      // Somewhere to stand that looks at something: the valley says where.
-      placeCamera(data.terrain.view);
+      // Somewhere to stand that looks at something: the valley says where --
+      // or, when a reload rejoins the room, where the person was standing.
+      placeCamera((data.rejoined && keptView(data.scene)) || data.terrain.view);
     } else {
       clearGround();
+      if (data.rejoined) placeCamera(keptView(data.scene));
     }
     // What this room's ground has had dug out of it and not put back: the
     // engine's count, the room's own edits replayed. A room with no ground has
     // none to carry.
     carryGround(data.terrain ? data.terrain.carried : null);
+    // A reload rejoins the room with the hand as it was: what the engine's hand
+    // holds is the person's again, taken over the way a thing out of the bag is
+    // (adoptGrip) -- or, on a joint, the way the hand's hold is at the end of an
+    // action (adoptHold).
+    const holding = data.rejoined && data.hand ? data.hand.holding : "";
+    if (holding && world.bodies.has(holding)) {
+      const pinned = (data.joints || []).some((j) => j.attached !== false
+                                                && (j.a === holding || j.b === holding));
+      if (pinned) adoptHold(holding); else adoptGrip(holding, null);
+    }
     world.framesSinceOpen = 0;
     // Drawn and ready to step: the frame report starts here, with this world's
     // clock and the wall from now -- not from the page load, nor the last room.
@@ -5006,7 +5042,7 @@ async function open() {
       say("you", turn.asked);
       say("world", turn.replied, turn.did);
     }
-    if (data.kept) say("world", "This is the room as you left it.");
+    if (data.kept || data.rejoined) say("world", "This is the room as you left it.");
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")

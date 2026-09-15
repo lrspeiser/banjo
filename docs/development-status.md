@@ -1,5 +1,25 @@
 # Development status and handoff
 
+**A reload rejoins the running room: what you moved, broke or hold stays.** Branch `agent/nothing-resets` from `27a624c`. This is the first slice of the owner's next milestone, "a workshop that remembers" (2026-09-15). Until now, every open of a room rebuilt it from its spec, a page reload included. Whatever the person had moved went back to where it was authored, what had broken came back whole, and a thing in the hand went back into the bag.
+- A page opening the room this server is already running now rejoins it (`server._rejoin`, `live_session.Live.rejoin`).
+  - The runner's `poses` reply is the whole world as it stands: every body with its cells, the pins, edges and tool points, the hand, and the whole ground.
+  - The world takes a new id, so a page still holding the old one is refused, as it was when opening replaced the room.
+  - The in-process lane sends no cells and no ground, so it opens the room as before.
+- The page takes the engine's hand over as its own: `adoptGrip`, or `adoptHold` for a thing on a joint. It puts the person back where they stood; the view is kept per tab in `sessionStorage`.
+- "Start the room again" sends `again` and opens the room again from what it is held as, as a reload used to. `fresh` still builds it from scratch.
+- Not yet: a server restart still opens the room from its spec. That needs the engine to save and restore its state, which is the next slice.
+- Docs:
+  - the README's open route;
+  - `room_store`'s docstring;
+  - the design doc's "what a room keeps". It described a `room_store` v2 with every item's pose, and a rule that a damaged thing cannot be stowed. Neither was built, so the section now says what the code does.
+- Tests:
+  - `room_store_tests`: a reload rejoins; "Start the room again" and `fresh` open the room again; another room opens.
+  - `inventory_room_tests`, on the real engine: the hand still holds the ball, and the old page is refused. The bench plate's 20 pieces come back with the same cells.
+- Measured in the page on my server (8801), with the scratchpad's `headless_rejoin.py` in headless Chrome, with no page errors:
+  - the rubber ball taken up with E was still in the right hand after a reload, and the person stood where they had;
+  - put down 2.29 m from where the room was authored with it, it was exactly there after the next reload;
+  - "Start the room again" put it back where it was authored.
+
 **A break is worked out at its own step, not the room's.** Branch `agent/trial-clock` from `ecedebb`. This is the first of the evaluation's steps toward sizes chosen per object, which the owner approved as "good for our performance either way".
 - A room's lattice has one step, set at open by the stiffest, lightest thing anywhere in it, and every live fracture run in the room took it. Now each run takes its own lattice's step (`latticeStateSubstepLimit`), at the scene's `dt_factor`. That step comes from the run's cells' masses and live bonds, as heat and earlier breaks have left them. It is the step the same bodies would take in a room of their own.
 - A run's wait says its step and how many steps it took: `step_us` and `steps` from the runner, and `, N steps of S us` in the server's log.

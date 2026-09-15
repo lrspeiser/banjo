@@ -1221,6 +1221,15 @@ class Handler(BaseHTTPRequestHandler):
                 # what anyone built. Fresh is the room as first made, kept as
                 # that once it has opened, so a fresh room that will not open
                 # never costs the one that was kept.
+                # A page opening the room that is running here already -- a
+                # reload, or the same room in a second tab -- joins it as it
+                # stands, rather than putting it back as it was authored. The
+                # page's "Start the room again" says `again`: that one opens it
+                # again from what it is held as, which is the way out of a room
+                # that has stopped.
+                if not body.get("fresh") and not body.get("again"):
+                    rejoined=_rejoin(app,scene)
+                    if rejoined is not None: return self.send(rejoined)
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
                 rooms[scene]=app.room=room
                 try:
@@ -1877,6 +1886,30 @@ def _worked(app,part,step,kind,holding=None):
                           if turning else
                           f"the hand slid it {went:+.2f} of the {amount:+.2f} m asked, and could move it no further")
     return said,grip,None
+
+
+def _rejoin(app,scene):
+    """The room this server is running, for a page that opens it again: every
+    body where it is and as it is now -- moved, broken, dented -- the hand still
+    holding what it held, and the bag as the record has it. A reload used to open
+    the room again from its spec, which put all of that back as authored and
+    emptied the hand. None when the room asked for is not the one running here
+    (another scene, the lab's world, nothing open), and the room is opened as
+    before."""
+    room=getattr(app,"room",None)
+    if (room is None or room.scene!=scene or getattr(app,"live_holder",None)!="world"
+            or app.live.session is None):
+        return None
+    rejoin=getattr(app.live,"rejoin",None)
+    opened=rejoin(app) if rejoin is not None else None
+    if opened is None: return None
+    opened["inventory"]=inventory_room.shown(app)
+    opened["scene"]=room.scene
+    opened["scenes"]=sorted(world_room.SCENES)
+    # Not read back from disk: this server holds it (kept means that).
+    opened["kept"]=False
+    opened["chat"]=room.chat[-20:]
+    return opened
 
 
 def _this_pages_room(app,body):

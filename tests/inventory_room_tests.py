@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "playground"))
 
 import inventory_room  # noqa: E402
 import live_session    # noqa: E402
+import world_room      # noqa: E402
 
 # Resolved: CI gives the build as a relative path, and the live session starts
 # the runner from the run's own folder, where a relative path means nothing.
@@ -177,6 +178,87 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
     def test_a_change_without_its_own_id_is_refused(self):
         with self.assertRaises(ValueError):
             inventory_room.request(self.app, {"revision": 0, "op": "take", "item": "ball", "person": PERSON})
+
+
+class AReloadRejoinsTheRunningWorld(unittest.TestCase):
+    """What a page gets when it opens the room that is already running here
+    (live_session.Live.rejoin, which server.py uses for a reload): the world as
+    it stands -- a thing still in the hand, pieces as they broke, with their
+    cells -- under a new id, so the page that had it loses it."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():
+            raise unittest.SkipTest(f"{ENGINE} is not built")
+        cls._temp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def open(self, room_spec):
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        app = types.SimpleNamespace(engine_path=ENGINE, runs_path=Path(self._temp.name), live=live,
+                                    room=types.SimpleNamespace(spec=room_spec))
+        return app, live.open(app, {"spec": room_spec})["session"]
+
+    def test_the_hand_still_holds_what_it_held_and_the_old_page_is_refused(self):
+        app, session = self.open(spec())
+        for _ in range(20):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        app.live.act({"session": session, "op": "grab", "name": "ball"})
+        for _ in range(5):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        before = app.live.act({"session": session, "op": "poses"})
+        rejoined = app.live.rejoin(app)
+        self.assertTrue(rejoined["rejoined"])
+        self.assertNotEqual(rejoined["session"], session)
+        self.assertEqual((rejoined.get("hand") or {}).get("holding"), "ball", rejoined.get("hand"))
+        self.assertEqual(rejoined["t"], before["t"], "the world moved on while it was rejoined")
+        self.assertEqual({b["name"]: b["position_m"] for b in rejoined["bodies"]},
+                         {b["name"]: b["position_m"] for b in before["bodies"]})
+        with self.assertRaises(live_session.LiveError):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 1})
+        stepped = app.live.act({"session": rejoined["session"], "op": "step", "dt": 1 / 120.0, "n": 1})
+        self.assertGreater(stepped["t"], before["t"])
+
+    def test_what_broke_stays_broken_with_its_cells(self):
+        room_spec = world_room.room()
+        for body in room_spec["bodies"]:
+            if body["name"] == "iron ball":
+                # Over the 20 mm glass plate, its bottom 1.5 m above the plate's
+                # top, which is 140 mm up (scratchpad measure_trial_clock.py).
+                body["center_mm"] = [-2800, 140 + 60 + 1500, -1200]
+        app, session = self.open(room_spec)
+        app.live.act({"session": session, "op": "foresee", "horizon_s": 0.0})
+        broke = None
+        for _ in range(600):
+            state = app.live.act({"session": session, "op": "step", "dt": 1 / 240.0, "n": 8})
+            for name in state.get("breakable") or []:
+                answer = app.live.act({"session": session, "op": "fracture", "name": name})
+                if name == "glass plate 20mm":
+                    broke = answer
+            if broke is not None:
+                break
+        self.assertIsNotNone(broke, "the plate was never struck hard enough to ask")
+        self.assertGreater(broke.get("pieces", 0), 1, broke)
+        for _ in range(10):
+            app.live.act({"session": session, "op": "step", "dt": 1 / 240.0, "n": 8})
+
+        def shards(bodies):
+            return {b["name"]: b for b in bodies if b["name"].startswith("glass plate 20mm piece")}
+        before = shards(app.live.act({"session": session, "op": "poses"})["bodies"])
+        rejoined = app.live.rejoin(app)
+        now = shards(rejoined["bodies"])
+        self.assertNotIn("glass plate 20mm", {b["name"] for b in rejoined["bodies"]},
+                         "the plate came back whole")
+        self.assertGreater(len(now), 1, sorted(b["name"] for b in rejoined["bodies"]))
+        self.assertEqual(set(now), set(before))
+        for name, piece in now.items():
+            self.assertEqual(piece.get("cells_local_m"), before[name].get("cells_local_m"),
+                             f"{name} came back with other cells than it has")
+            self.assertTrue(piece.get("cells_local_m"), f"{name} came back without its cells")
 
 
 if __name__ == "__main__":

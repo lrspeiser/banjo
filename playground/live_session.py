@@ -337,6 +337,34 @@ class Live:
         return {"session": session.id, "spec": spec, **opening, **session.state, **hung, **armed,
                 **tooled}
 
+    def rejoin(self, app: Any) -> dict[str, Any] | None:
+        """The world that is running, for a page opening its room again.
+
+        A reload is not a new room. Opening again from the room's spec put
+        everything back as it was authored -- what the person had moved, what
+        had broken, what their hand held -- because opening was the only way a
+        page had to get the room to draw. The running world says the whole of
+        itself instead: a poses reply carries every body with its cells, the
+        pins, the edges, the tool points, the hand and the ground whole.
+
+        The world takes a new id on the way. A page still holding the old one is
+        told its room was opened again, as it was when opening replaced the room,
+        rather than stepping this world as well as the page that rejoined it.
+
+        None when there is nothing to rejoin, or when the lane cannot say the
+        whole of its world -- the in-process one sends neither a piece's cells
+        nor the ground -- and the caller opens the room as before."""
+        with self._lock:
+            session = self.session
+            if session is None or isinstance(session, live_inprocess.InProcessSession):
+                return None
+            try:
+                whole = session.send(op="poses")
+            except LiveError:
+                return None
+            session.id = uuid.uuid4().hex
+            return {"session": session.id, "spec": session.room_spec, **whole, "rejoined": True}
+
     @staticmethod
     def _point(session: "Session", points: Any) -> dict[str, Any]:
         """Give every body the room says is a tool that digs its point.
