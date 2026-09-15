@@ -2135,6 +2135,10 @@ def _chat_live(app,name,args,person=None):
             brake=bool(args.get("brake",command==0.0))
             app.live.act({"session":app.live.session.id,"op":"drive","motor":motor["id"],
                           "command":command,"brake":brake})
+            # What the chat said is written into the room as well: kept as told
+            # here, so a room it changes later carries the motor as it is then
+            # rather than telling it this again.
+            live_session.remember_told(app.live.session,motor["id"],command,brake)
             return {"in_the_room":f"the running room's motor turning {part} was told it too; nothing was opened again"}
         return {"error":f"{name} is not something done to the room as it stands"}
     except Exception as failure:

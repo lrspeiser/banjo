@@ -219,6 +219,19 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     return {"engine": engine, "pairs": pairs, "told": told}
 
 
+def remember_told(session: Any, motor: Any, command: float, brake: bool) -> None:
+    """What a running world's motor has just been told by the room's chat
+    (drive, which works the room as it stands and writes what it said into the
+    spec too), kept as what the world was told (Session.declared), so a later
+    carry does not tell it that again (carry_plan's `told`). Set winding by the
+    chat and then stopped with E, a hoist in a room the chat changed next would
+    otherwise have started winding again."""
+    declared = getattr(session, "declared", None)
+    if isinstance(declared, dict):
+        declared["motors"] = [(made, (command, brake) if ident == motor else told, ident)
+                              for made, told, ident in declared.get("motors") or []]
+
+
 def _three(value: Any, what: str) -> list[float]:
     """Three finite numbers, or a refusal that says which were wrong."""
     if not isinstance(value, list) or len(value) != 3:

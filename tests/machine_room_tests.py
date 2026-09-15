@@ -701,6 +701,51 @@ class AChangeKeepsTheRoomAsItStood(unittest.TestCase):
                 [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]]
         self.assertGreater(abs(axes[tallest][1]), 0.99, "the plank is not standing")
 
+    def test_a_motor_the_chat_set_going_and_e_stopped_stays_stopped_through_a_change(self):
+        """The chat's drive works the room as it stands and writes what it said
+        into the room too. Set winding by the chat and then stopped, as E stops
+        it, the hoist stays stopped when the chat next changes the room: the
+        carry does not tell it the chat's old command again
+        (live_session.remember_told). Without that it did, and the hoist began
+        winding again by itself."""
+        import world_chat
+        from unittest import mock
+        session, _ = self.wound_up_and_moved()
+
+        def wind_it(api_key, model_name, conversation):
+            if not any(isinstance(item, dict) and item.get("type") == "function_call_output"
+                       for item in conversation):
+                return {"status": "completed", "usage": {}, "output": [{
+                    "type": "function_call", "call_id": "d1", "name": "drive",
+                    "arguments": json.dumps({"part": "drum", "command": 1})}]}
+            return {"status": "completed", "usage": {},
+                    "output": [{"type": "message", "content": [{"type": "output_text", "text": "Winding."}]}]}
+
+        with mock.patch.object(world_chat, "_call", wind_it):
+            status, answer = self.post("/api/world/ask", {"session": session.id, "message": "wind it up"})
+        self.assertEqual(status, 200, answer)
+        self.assertFalse(answer.get("reopened"), "telling the motor opened the room again")
+        self.assertIs(self.app.live.session, session)
+        self.step(session, 0.3)
+        motor = session.state["machines"]["motors"][0]
+        self.assertEqual(motor["state"], "driving", "the chat's drive did not reach the running room")
+        # Stopped as E stops it: the running room's motor, braked. The room's
+        # spec still says what the chat told it.
+        session.send(op="drive", motor=motor["id"], command=0.0, brake=True)
+        self.step(session, 0.5)
+        before = self.as_it_stands(session.state)
+        rounds: list = []
+        with mock.patch.object(world_chat, "_call", an_oak_crate_beside_the_hoist(rounds)):
+            status, answer = self.post("/api/world/ask",
+                                       {"session": session.id, "message": "put an oak crate beside the hoist"})
+        self.assertEqual(status, 200, answer)
+        self.assertTrue(answer.get("reopened"), answer)
+        state = answer["state"]
+        self.assertEqual(state["restored"]["tier"], "carried", state["restored"].get("why"))
+        self.assertEqual(state["machines"]["motors"][0]["state"], "braking",
+                         "the change told the motor the chat's old command again")
+        self.assertEqual(self.as_it_stands(state), before, "the hoist, its battery or the ball is not as it stood")
+
 
 class TheTestRoomIsAHoist(unittest.TestCase):
     """The tests-machines room (playground/rooms/tests-machines.json), which
