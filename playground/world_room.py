@@ -993,6 +993,10 @@ SCENES = {
     "tests-gates": _saved_room("tests-gates"),
     "tests-ropes": _saved_room("tests-ropes"),
     "tests-motion": _saved_room("tests-motion"),
+    # A battery hoist (docs/machine-world.md): a drum on a pin with a motor and
+    # its brake, a battery, and a crate on the drum's rope, with its actions --
+    # wind it up, stop, let it down. Off the menu, like the other test rooms.
+    "tests-machines": _saved_room("tests-machines"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

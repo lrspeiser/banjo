@@ -1681,6 +1681,20 @@ function factsOf(name, entry, distance) {
     const guide = guideFor(name);
     out.push(!guide ? "joined to something" : guide.kind === "slider" ? "slides in a groove" : "turns on a pin");
   } else if (!throwable(entry, false) && entry.mass) out.push("too heavy for one hand to throw");
+  // A machine, as the last step left it (docs/machine-world.md): what the motor
+  // that turns this is doing, and what a battery in it holds -- here, where the
+  // person is looking, as well as in the Room tab's Machines panel.
+  for (const m of (world.machines && world.machines.motors) || []) {
+    if (!m.on || m.on[1] !== name) continue;
+    out.push(m.state === "driving" ? `its motor runs at ${Math.round(m.power_w)} W`
+      : m.state === "braking" ? "its motor's brake is on"
+      : m.state === "flat" ? "its motor's battery is flat"
+      : m.state === "gone" ? "its motor's pin is gone" : "its motor is off");
+  }
+  for (const s of (world.machines && world.machines.stores) || []) {
+    if (s.body !== name || !(s.capacity_j > 0)) continue;
+    out.push(`a battery, ${Math.round(100 * s.charge_j / s.capacity_j)}% charged (${(s.charge_j / 1000).toFixed(2)} kJ)`);
+  }
   // The true depth, beside a hollow drawn deeper than that so it can be seen at
   // all: saying so is what makes the drawing honest rather than a claim.
   if (entry.dentMm > 0) {

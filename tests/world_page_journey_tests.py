@@ -454,5 +454,86 @@ class ARestartGivesBackTheRoom(PageJourney):
                         f"after a restart it is not where it was put: {put} -> {after}")
 
 
+class AHoistWindsInThePage(PageJourney):
+    """A battery hoist (docs/machine-world.md), in the tests-machines room.
+
+    The room opens with its battery full and its motor braked, and the
+    Machines panel says so. Looking at the drum, E runs "Wind it up": the
+    crate rises by the rope the drum takes on, and the battery gives what the
+    motor draws. Tab on to "Stop" and E again, and the crate stays up with the
+    motor drawing nothing."""
+
+    def press_tab(self):
+        for kind in ("keyDown", "keyUp"):
+            self.page.send("Input.dispatchKeyEvent", {"type": kind, "key": "Tab", "code": "Tab",
+                                                      "windowsVirtualKeyCode": 9, "nativeVirtualKeyCode": 9})
+            time.sleep(0.05)
+
+    def choose(self, what):
+        """Tab through the drum's choices until `what` is the one E does. The
+        side view works out what is chosen in the frame after a key, and in
+        CI's software drawing a frame can be a second away."""
+        for _ in range(10):
+            if self.wait_for("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && r[1] === "
+                             f"{json.dumps(what)})", 2):
+                return True
+            self.press_tab()
+        return False
+
+    def machines(self):
+        return self.js("banjoRoom.world.machines")
+
+    def test_e_winds_the_crate_up_and_stop_holds_it(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-machines"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-machines' && "
+                                      "banjoRoom.ready()", 300), "the hoist room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && banjoRoom.world.machines.motors && "
+                                      "banjoRoom.world.machines.motors.length === 1", 60),
+                        f"the room's steps do not carry its machines: {self.situation()}")
+        m = self.machines()
+        self.assertEqual(m["motors"][0]["state"], "braking", "the motor did not start with its brake on")
+        self.assertEqual(m["stores"][0]["charge_j"], m["stores"][0]["capacity_j"], "the battery is not full")
+        panel = self.js("document.getElementById('machines').hidden ? null : "
+                        "document.getElementById('machine-list').innerText")
+        self.assertTrue(panel and "hoist battery" in panel and "hoist: drum" in panel,
+                        f"the Machines panel does not show the battery and the motor: {panel!r}")
+        # In front of the drum, looking at it.
+        self.page.evaluate("banjoRoom.standAt(0.1, 1.62, 2.2); banjoRoom.lookAt(0.0, 2.0, 0.0); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'hoist: drum'", 10),
+                        "the crosshair is not on the drum")
+        self.assertTrue(self.offering("Wind it up"), f"E is not offering to wind it up: {self.situation()}")
+        crate_y = "banjoRoom.world.bodies.get('hoist: crate').mesh.position.y"
+        drawn0, rope0 = self.js(crate_y), m["ropes"][0]
+        self.press_e()
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.motors[0].state === 'driving'", 30),
+                        f"E did not set the motor winding: {self.situation()}")
+        time.sleep(1.5)
+        m = self.machines()
+        rope1 = m["ropes"][0]
+        # The rope's end on the crate and what is off the drum come from the
+        # same step: the crate rises by what the drum takes on.
+        rise = rope1["meets"][1] - rope0["meets"][1]
+        taken = rope0["out_m"] - rope1["out_m"]
+        print(f"\n   winding for 1.5 s: the crate rose {rise:.3f} m and {taken:.3f} m of rope went onto the"
+              f" drum; the battery gave {m['stores'][0]['given_j']:.0f} J", flush=True)
+        self.assertGreater(taken, 0.1, "the drum did not take the rope on")
+        self.assertLess(abs(rise - taken), 0.002, f"the crate rose {rise:.4f} m for {taken:.4f} m of rope")
+        self.assertGreater(self.js(crate_y) - drawn0, 0.1, "the crate the page draws did not go up")
+        self.assertGreater(m["stores"][0]["given_j"], 0.0, "the battery gave nothing")
+        self.assertTrue(self.choose("Stop"), f"Tab did not move on to Stop: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.motors[0].state === 'braking'", 30),
+                        f"Stop did not put the brake on: {self.situation()}")
+        time.sleep(1.0)
+        held = self.machines()
+        time.sleep(1.5)
+        now = self.machines()
+        self.assertLess(abs(now["ropes"][0]["meets"][1] - held["ropes"][0]["meets"][1]), 0.005,
+                        "braked, the crate did not stay up")
+        self.assertEqual(now["motors"][0]["drawn_j"], held["motors"][0]["drawn_j"],
+                         "braked, the motor went on drawing")
+        self.no_page_errors("after winding the hoist")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -140,6 +140,35 @@ class AHoistInARoom(unittest.TestCase):
         self.assertEqual(self.machines()["motors"][0]["drawn_j"], drawn1)
         self.assertEqual(self.machines()["motors"][0]["state"], "braking")
 
+    def test_the_rooms_own_action_winds_it_up_and_stops_it(self):
+        """Through the server's own run_action, as the page's E runs it: the
+        drive step goes through the live session's act, which has to know it."""
+        import server  # noqa: E402 -- the playground server's own action runner
+        self.step(0.5)
+        spec = hoist_room()
+        spec["actions"] = [{"body": "drum", "label": "Wind it up", "steps": [{"do": "drive", "command": 1.0}]},
+                           {"body": "drum", "label": "Stop", "steps": [{"do": "drive", "command": 0.0}]}]
+        live = self.live
+
+        class Room:
+            pass
+
+        class App:
+            pass
+
+        room, app = Room(), App()
+        room.spec = spec
+        app.live, app.room = live, room
+        answer = server.run_action(app, {"object": "drum", "action": 0})
+        self.assertFalse(answer.get("refused"), answer)
+        self.step(0.5)
+        self.assertEqual(self.machines()["motors"][0]["state"], "driving")
+        self.assertGreater(self.machines()["stores"][0]["given_j"], 0.0)
+        answer = server.run_action(app, {"object": "drum", "action": 1})
+        self.assertFalse(answer.get("refused"), answer)
+        self.step(0.2)
+        self.assertEqual(self.machines()["motors"][0]["state"], "braking")
+
     def test_an_action_finds_the_motor_by_what_it_turns(self):
         import server  # noqa: E402 -- the playground server's own lookup
         self.step(0.2)
@@ -153,6 +182,21 @@ class AHoistInARoom(unittest.TestCase):
         self.assertEqual(server._motor_for(app, "drum")["on"], ["post", "drum"])
         with self.assertRaises(ValueError):
             server._motor_for(app, "crate")
+
+
+class TheTestRoomIsAHoist(unittest.TestCase):
+    """The tests-machines room (playground/rooms/tests-machines.json), which
+    the page opens by link: a hoist that the room's own checks take as it is."""
+
+    def test_it_is_checked_with_its_machines_and_its_actions(self):
+        import fracture_lab  # noqa: E402
+        import world_room  # noqa: E402
+        spec = fracture_lab.validate(world_room.SCENES["tests-machines"]())
+        self.assertEqual([m["on"] for m in spec["machines"]["motors"]], [["hoist: post", "hoist: drum"]])
+        self.assertTrue(spec["machines"]["motors"][0]["brake"], "the hoist's motor does not start braked")
+        self.assertIn("drum", [j["kind"] for j in spec["joints"]])
+        self.assertEqual([a["label"] for a in spec["actions"]], ["Wind it up", "Stop", "Let it down"])
+        self.assertEqual([s["do"] for a in spec["actions"] for s in a["steps"]], ["drive"] * 3)
 
 
 if __name__ == "__main__":

@@ -985,6 +985,19 @@ class Live:
             return session.send(op="foresee", horizon_s=horizon)
         if op in ("release", "poses", "joints", "overloaded", "blades", "cuts"):
             return session.send(op=op)
+        if op == "drive":
+            # A motor told what to do (docs/machine-world.md): a command from -1
+            # to 1, the share of its voltage, and whether its brake is on. The
+            # room's own action step (server.run_action) comes this way.
+            try:
+                motor = int(body.get("motor"))
+                command = float(body.get("command", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError("drive needs a motor's number and a command from -1 to 1") from None
+            if not (math.isfinite(command) and -1.0 <= command <= 1.0):
+                raise LiveError("a motor's command is from -1 to 1")
+            return session.send(op="drive", motor=motor, command=command,
+                                brake=bool(body.get("brake", False)))
         if op == "heat":
             # Kindling, a torch, a stove: external work into a body or a gas
             # region, from now. Whether it lights anything is the engine's

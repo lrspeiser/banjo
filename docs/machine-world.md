@@ -36,8 +36,17 @@ in the engine and checked in `tests/motor_tests.cpp`:
   - the motor's work is the crate's height and motion to 0.26%;
   - braked at the top, the crate does not move.
 
-The controller, the stores and motors in the saved world, and every layer
-above the engine come next. None of it can be seen in the page yet.
+A hoist can be worked in the page at `/world?scene=tests-machines`. That is
+a test room off the menu, like the others:
+
+- look at the drum, and E winds the crate up;
+- Tab and E stop it, with the brake on;
+- Tab and E again let it down;
+- the Machines panel shows the battery's charge, what the motor is doing and
+  what it drew, as work and heat, and the rope.
+
+The chat cannot build one yet: its tools for machines, and a recipe for the
+hoist, come next, with the controller.
 
 ## What this is
 
