@@ -540,6 +540,10 @@ public:
         // zero is "as it hangs": exactly the span from the drum to the load.
         double length_m{};
         double out_m{};
+        // Or how much is on the drum, exactly, as a saved world keeps it: out_m
+        // is worked out from this, so this is what comes back to the last bit.
+        // Negative to go by out_m.
+        double wound_m{-1.0};
     };
     [[nodiscard]] unsigned addDrum(const DrumDescription &description);
     // A drum's rope as it stands: what it pulls with, how much of it is off the

@@ -17,7 +17,7 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **22**. 13 and 14 were two additions made side by side and then
+Current ABI: **23**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18
 were added on top of both; 20 and 21 were two more made side by side -- 21 was
 numbered 19 on its branch and landed second, so no header was ever 19:
@@ -67,15 +67,24 @@ numbered 19 on its branch and landed second, so no header was ever 19:
 - **22** added a world that is kept -- `banjo_snapshot`, `banjo_open_snapshot`
   and `banjo_restored` (see [A world that is kept](#a-world-that-is-kept)). It
   changed no function or struct that was already there.
+- **23** added machines ([machine-world.md](../machine-world.md)): a store of
+  energy -- `banjo_make_energy_store`, `banjo_energy_store_count`,
+  `banjo_energy_stores` -- a DC motor on a pin, with a brake --
+  `banjo_make_motor`, `banjo_drive_motor`, `banjo_motor_count`, `banjo_motors`
+  -- a rope that winds onto a turning drum -- `banjo_drum`,
+  `banjo_drum_rope_count`, `banjo_drum_ropes` -- and how hard a thing is to
+  turn, `banjo_inertia_about`, with the new structs `banjo_energy_store`,
+  `banjo_motor` and `banjo_drum_rope` (see [Machines](#machines)). It changed no
+  function or struct that was already there; the joint kinds gained
+  `BANJO_JOINT_DRUM`, which `banjo_joints` reports for a drum's rope.
 
-A library at 22 has all of them, and none was ever 19. Nothing that was in 12
-changed, and nothing that was in 14 changed in 15. None of 16 to 21 changed a
-function that was
-already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
-and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17,
-`banjo_body` and `banjo_body_mechanics` in 21 -- so a caller built against an
-older header must be rebuilt, and every field that was there keeps its place and
-its meaning. 18 changed no struct.
+A library at 23 has all of them, and none was ever 19. Nothing that was in 12
+changed, and nothing that was in 14 changed in 15. None of 16 to 23 changed a
+function that was already there, but structs grew at their ends --
+`banjo_joint`, `banjo_overload` and `banjo_energy` in 16, `banjo_body` and
+`banjo_joint` again in 17, `banjo_body` and `banjo_body_mechanics` in 21 -- so a
+caller built against an older header must be rebuilt, and every field that was
+there keeps its place and its meaning. 18, 20, 22 and 23 changed no struct.
 
 ---
 
@@ -834,6 +843,12 @@ the same way from the points it is made off at; `upper` is the rope's length, an
 meaningful for links and pulleys — newtons over the last step, see `banjo_tie` —
 and `breaks_at_n` only for links.
 
+For a drum's rope (`BANJO_JOINT_DRUM`, ABI 23), `at` is how much of the rope is
+off the drum -- the most the span from the drum to the load may be -- `upper`
+the whole rope and `lower` 0, all in metres; `tension_n` is what it carried over
+the last step, and `at_m` and `axis` are the drum's centre and axle.
+`banjo_drum_ropes` says the rest (see [Machines](#machines)).
+
 `at_m` is worked out from the body the pin is in rather than remembered, so a
 gate carried across the room reports its hinge where the gate is.
 
@@ -872,6 +887,218 @@ away and 3.0 mm char; ..."*.
 
 Newton metres for a pin, newtons for a slide. Taking the joint out drops
 whatever it was holding up — both kinds; the name is historical.
+
+---
+
+## Machines
+
+A machine here is parts held by joints, some of the joints driven, drawing on a
+store of energy: a battery turns a motor, and the motor lifts a load
+([machine-world.md](../machine-world.md)). Nothing is played. A motor puts a
+torque on a pin, bounded by the line a DC motor follows, and how far the pin
+turns is the world's answer. Every joule is accounted for, one kept step at a
+time, from the impulse the solver applied: what a store gives is what its motors
+drew, and what a motor drew is its work and its heat. A step that is taken back
+takes nothing out of a store.
+
+```c
+double centre[3] = {0.0, 2.0, 0.0}, axle[3] = {0.0, 0.0, 1.0};
+double made_off[3] = {0.1, 0.5, 0.0};           /* the middle of the crate's top */
+int pin = banjo_hinge(w, "post", "drum", centre, axle, -180.0, 180.0, 0.0);
+int rope = banjo_drum(w, "drum", "crate", centre, axle, 0.1, made_off,
+                      1,                        /* turning the +z way takes rope on */
+                      2.0, 0.0);                /* two metres of rope, out as it hangs */
+int battery = banjo_make_energy_store(w, "battery", "post", 5000.0, 5000.0, 24.0, 0.0);
+int motor = banjo_make_motor(w, (unsigned)pin, (unsigned)battery,
+                             60.0, 10.0,        /* stalls at 60 N m; 10 rad/s unloaded */
+                             200.0);            /* its brake holds 200 N m */
+banjo_drive_motor(w, (unsigned)motor, 1.0, 0);  /* full voltage: wind the crate up */
+for (int i = 0; i < 90; ++i) banjo_step(w, 1.0 / 60.0);
+banjo_drive_motor(w, (unsigned)motor, 0.0, 1);  /* stop, and hold it on the brake */
+```
+
+**Measured** through the Python binding (`tests/banjo_ffi_tests.py`), in the
+rooms `tests/motor_tests.cpp` uses and at its 1/60 s step. The two give the same
+numbers.
+
+| check | result |
+|---|---|
+| a 125.92 kg iron flywheel spun up by a motor that stalls at 10 N m and runs at 10 rad/s | 6.3217 rad/s at T = J w0 / stall, where the line says 6.3126; 8.6537 at 2T (the line: 8.6470); it turned 6.0881 times (the line: 6.0688) |
+| its account | the battery gave 291.402 J, and the motor drew 291.402 J: 126.141 J of work and 165.261 J of heat. The flywheel's spin is 125.731 J |
+| a hoist's brake holding a 26.56 kg crate | the rope carries 260.479 N of its 260.566 N weight, and the motor draws 0 J |
+| lifting it for 1.5 s | the drum turned 1.3280 times and took on 0.834424 m of rope, its radius times its turn to the micrometre; the crate rose 0.834427 m |
+| that account | 409.596 J drawn: 223.132 J of work -- 217.423 J into the crate's height and 5.140 J into motion -- and 186.464 J of heat |
+| braked at the top | in a second the crate moved 0.000000 m, and nothing more was drawn |
+| its rope taken off with `banjo_unhinge` | the crate fell 0.326 m in 0.25 s |
+
+### `int banjo_make_energy_store(banjo_world *world, const char *name, const char *body, double capacity_j, double charge_j, double voltage_v, double max_power_w)`
+### `int banjo_energy_store_count(const banjo_world *world)`
+### `int banjo_energy_stores(const banjo_world *world, banjo_energy_store *out, int max)`
+
+A store of energy -- a battery -- in a named body, or in nothing (`body` NULL or
+`""`): what it can hold and what it holds, in joules; its voltage; and the most
+power it gives, 0 for no limit but its charge. `name` NULL or `""` names it
+`"store <id>"`. Returns the store's id, always above zero. Refused, with the
+reason, for a body that is not there, a charge above what it holds, and a
+capacity or voltage that is not above zero. (`make_energy_store` because
+`banjo_energy_store` is the struct.)
+
+```c
+typedef struct {
+    unsigned id;
+    const char *name;
+    const char *body;             /* what it is in; "" for nothing */
+    double capacity_j;
+    double charge_j;
+    double voltage_v;
+    double max_power_w;           /* the most it gives; 0 for no limit but its charge */
+    double given_j;               /* all it has given since it was made */
+    double short_j;               /* what steps asked of it that it no longer had */
+} banjo_energy_store;
+```
+
+Nothing goes back into a store but from a declared source. A load driving a
+motor gives it nothing back: that energy becomes heat in the motor. A motor's
+drive is held to what is left before each step, from the speed the step starts
+at; a step that ends faster did a little more work than that, and the little is
+`short_j`, reported and never folded in anywhere. An empty store stops its
+motors (`"flat"`) and never goes below empty.
+
+### `int banjo_make_motor(banjo_world *world, unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s, double brake_torque_n_m)`
+
+A DC motor on a pin (an id from `banjo_hinge`), drawing on a store. Its line is
+the two numbers a maker gives, both at the store's voltage: the torque it stalls
+at and the speed it runs at unloaded. The command `u`, from -1 to 1, is the share
+of the voltage applied, and at a speed `w` the line gives
+
+    torque = stall * (u - w / no_load)
+
+Each step Jolt's hinge motor aims at `u * no_load`, with its torque limit set
+from the line at the speed the step begins with, so the solver applies what the
+line allows and no more. The torque constant is `V / no_load` and the windings'
+resistance `V² / (stall * no_load)`, so a torque `t` costs the store the work
+`t w` and the heat `t² no_load / stall`, and the drive is held to the store's
+power and to its charge.
+
+`brake_torque_n_m` is what its brake holds with, 0 for none. It starts coasting,
+told nothing. Refused, with the reason, for a joint that is not there or is not a
+pin, a store that is not there, and a pin with a motor already. (`make_motor`
+because `banjo_motor` is the struct.)
+
+What it turns runs in bearings: the pin's friction and the motor's windings are
+its losses. The engine's slight drag on moving pieces -- 0.02 of their speed a
+second, a numerical stand-in -- is taken off the pin's two bodies while the
+motor is on it.
+
+### `int banjo_drive_motor(banjo_world *world, unsigned motor, double command, int brake)`
+
+What a motor is told, from the next step on: a command from -1 to 1 (anything
+else is refused), and whether its brake is on. The brake is friction on the pin,
+so it holds only while the motor is not driving, at a command of 0, and **holding
+draws nothing**: a braked hoist holds its crate on the brake, not on current.
+
+### `int banjo_motor_count(const banjo_world *world)`
+### `int banjo_motors(const banjo_world *world, banjo_motor *out, int max)`
+
+```c
+typedef struct {
+    unsigned id;
+    unsigned joint;               /* the pin it is on */
+    unsigned store;               /* what it draws on */
+    double stall_torque_n_m;
+    double no_load_rad_s;
+    double brake_torque_n_m;
+    double command;               /* -1 to 1 */
+    int brake;
+    const char *state;            /* "driving", "coasting", "braking", "flat" or "gone" */
+    double speed_rad_s;           /* the last kept step: b's turn relative to a's */
+    double torque_n_m;
+    double current_a;
+    double power_w;               /* asked of the store */
+    double turned_rad;            /* since it was made: the whole turn, never wrapped */
+    double work_j, heat_j, drawn_j, friction_heat_j;
+} banjo_motor;
+```
+
+Its account, one kept step at a time, from the impulse the solver applied:
+`work_j` is the torque times the turn, what it did to what it drives; `heat_j` is
+its windings' I²R and whatever a load driving it gave back; `drawn_j` is what it
+asked of the store, `work_j + heat_j` while it drives and never less than
+nothing. While the pin coasts or brakes, what the pin's friction takes out of the
+turn is `friction_heat_j`. `state` is `"flat"` when it is told to drive and its
+store is empty, and `"gone"` when its pin is no longer in anything. `turned_rad`
+counts every turn: a hinge's `at` wraps at ±180 degrees, and a motor's count does
+not.
+
+`power_w` is the command times the store's voltage times `current_a`, as a DC
+motor's is, to within one step's change in speed over the unloaded speed:
+measured on the flywheel, 13.5388 W asked against 13.5298 W for V I.
+
+### `int banjo_inertia_about(const banjo_world *world, const char *name, const double axis[3], double *out_kg_m2)`
+
+How hard a named thing is to turn about an axis through its centre of mass, in
+kg m², from the inertia the solver uses: what a motor has to spin up. `INFINITY`
+for anchored scenery, which the solver never turns. Refused for a name that is
+not in the world and for an axis with no direction. Measured on the 125.92 kg
+flywheel above, 0.4 × 0.1 × 0.4 m of iron: 3.35787 kg m² about its axle and
+1.78387 across it, `m (a² + b²) / 12` for a box, both to seven figures.
+
+### `int banjo_drum(banjo_world *world, const char *drum, const char *load, const double centre_m[3], const double axis[3], double radius_m, const double load_at_m[3], int winds, double length_m, double out_m)`
+
+A rope that winds onto a turning drum: the joint a hoist, a winch or a crane
+needs. It runs from the drum -- a thing that turns on a pin of its own
+(`banjo_hinge`) -- to a load, made off on the load at `load_at_m`. The drum's
+centre, its axle and the radius the rope lies at are given as things stand now,
+and kept in the drum's own frame. `winds` is +1 if the drum turning the positive
+way about `axis` takes rope on, and -1 if the other way does. `length_m` is the
+whole rope; `out_m` is how much of it is off the drum, and 0 means "as it hangs":
+exactly the span from the drum to the load. Returns the joint's id.
+
+The rope leaves the drum at its tangent, so its tension turns the drum at the
+drum's radius, and what is off the drum changes by the radius times the turn --
+for as many turns as there is rope, since nothing here is an angle that wraps. A
+rope tied to a point on a wheel's rim lifts only as far as that point swings,
+about half a turn. Like any rope it pulls and never pushes.
+
+It is Jolt's own rope with its drum end moved, as each step begins, to where the
+rope leaves the drum (`rigid/DrumRope.hpp`), so it keeps its tension from step to
+step. It is a joint: `banjo_joints` lists it as `BANJO_JOINT_DRUM`, and
+`banjo_unhinge` takes it off, and then what hung on it falls.
+
+### `int banjo_drum_rope_count(const banjo_world *world)`
+### `int banjo_drum_ropes(const banjo_world *world, banjo_drum_rope *out, int max)`
+
+```c
+typedef struct {
+    unsigned id;                  /* the joint's id, as banjo_joints has it */
+    const char *drum;
+    const char *load;
+    double radius_m;
+    double length_m;              /* the whole rope */
+    double out_m;                 /* off the drum: the most the span to the load may be */
+    double wound_m;               /* on it */
+    double tension_n;             /* over the last step; 0 while slack */
+    double centre_m[3], axis[3];  /* the drum's centre and axle, now */
+    double leaves_m[3];           /* where the rope leaves the drum */
+    double meets_m[3];            /* and where it meets the load */
+    int attached;
+    int winds;                    /* +1 or -1, as banjo_drum was told */
+} banjo_drum_rope;
+```
+
+The drums' ropes, in the order `banjo_joints` lists them, with what a host needs
+to draw one. Measured on the hoist, held on its brake: the rope left the drum
+100.0000 mm from its centre, met the crate at the middle of its top, and ran
+1.501106 m between the two with 1.501104 m out.
+
+`winds` is which way the drum takes rope on: +1 when turning the positive way
+about its axle winds rope onto it, -1 when turning the other way does.
+
+**Kept.** `banjo_snapshot` keeps the stores (what each holds and has given),
+the motors (each one's command, brake and account, and what it said of its last
+step) and the ropes on drums (how much of each is off its drum), so a hoist
+opened again from a saved world has its battery, its motor and its brake as
+they stood.
 
 ---
 

@@ -1855,7 +1855,7 @@ unsigned JoltWorld::addDrum(const DrumDescription &d) {
     settings.rope.load_point_local = JPH::Vec3(into_load * toJoltPosition(d.load_point_world_m));
     settings.rope.winds = d.winds < 0 ? -1.0F : 1.0F;
     settings.rope.length_m = d.length_m;
-    settings.rope.wound_m = d.out_m > 0.0 ? d.length_m - d.out_m : -1.0;
+    settings.rope.wound_m = d.wound_m >= 0.0 ? d.wound_m : d.out_m > 0.0 ? d.length_m - d.out_m : -1.0;
     auto *raw = bodies.CreateConstraint(&settings, drum, load);
     if (!raw) throw std::runtime_error("drum creation failed");
     const auto id = impl_->next_joint_++;

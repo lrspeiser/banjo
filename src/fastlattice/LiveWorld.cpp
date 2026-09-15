@@ -2168,6 +2168,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 // As much off the drum as there was when it was saved, however
                 // many turns are on it. (Zero would mean "as it hangs".)
                 rope.out_m = std::clamp(numberFrom(held.at("at")), 1e-6, joint.upper);
+                // And the tally itself, where it was kept, so that what is on
+                // the drum and off it come back to the last bit.
+                if (held.contains("wound_m"))
+                    rope.wound_m = std::clamp(numberFrom(held.at("wound_m")), 0.0, joint.upper);
                 joint.rigid = impl.world->addDrum(rope);
                 break;
             }
@@ -2204,6 +2208,17 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         motor.said.brake_torque_n_m = numberFrom(o.at("brake_torque_n_m"));
         motor.said.command = numberFrom(o.at("command"));
         motor.said.brake = o.at("brake").get<bool>();
+        // What it said of the last kept step before it was saved, until it
+        // takes another. A world saved before these were kept has only its
+        // command and brake to go on.
+        motor.said.state = o.value("state", std::string(motor.said.brake            ? "braking"
+                                                        : motor.said.command != 0.0 ? "driving"
+                                                                                    : "coasting"));
+        const auto lastStep = [&](const char *key) { return o.contains(key) ? numberFrom(o.at(key)) : 0.0; };
+        motor.said.speed_rad_s = lastStep("speed_rad_s");
+        motor.said.torque_n_m = lastStep("torque_n_m");
+        motor.said.current_a = lastStep("current_a");
+        motor.said.power_w = lastStep("power_w");
         motor.said.turned_rad = numberFrom(o.at("turned_rad"));
         motor.said.work_j = numberFrom(o.at("work_j"));
         motor.said.heat_j = numberFrom(o.at("heat_j"));
@@ -10370,6 +10385,10 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
             const JoltWorld::JointReport now = I.world->jointState(j.rigid);
             o["held"] = {{"at", savedNumber(now.at)}, {"lower", savedNumber(now.lower)},
                          {"upper", savedNumber(now.upper)}};
+            // A drum's tally, which what is off it is worked out from: kept as
+            // it is, it comes back to the last bit.
+            if (j.kind == JoltWorld::JointKind::Drum)
+                o["held"]["wound_m"] = savedNumber(I.world->drumState(j.rigid).wound_m);
         }
         joints.push_back(std::move(o));
     }
@@ -10400,6 +10419,11 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"brake_torque_n_m", savedNumber(m.said.brake_torque_n_m)},
                           {"command", savedNumber(m.said.command)},
                           {"brake", m.said.brake},
+                          {"state", m.said.state},
+                          {"speed_rad_s", savedNumber(m.said.speed_rad_s)},
+                          {"torque_n_m", savedNumber(m.said.torque_n_m)},
+                          {"current_a", savedNumber(m.said.current_a)},
+                          {"power_w", savedNumber(m.said.power_w)},
                           {"turned_rad", savedNumber(m.said.turned_rad)},
                           {"work_j", savedNumber(m.said.work_j)},
                           {"heat_j", savedNumber(m.said.heat_j)},

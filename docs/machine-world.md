@@ -45,6 +45,14 @@ a test room off the menu, like the others:
 - the Machines panel shows the battery's charge, what the motor is doing and
   what it drew, as work and heat, and the rope.
 
+The C API (ABI 23) and the Python binding carry all of it:
+`banjo_make_energy_store`, `banjo_make_motor`, `banjo_drive_motor`, `banjo_drum`
+and `banjo_inertia_about`, with what each did read back from
+`banjo_energy_stores`, `banjo_motors` and `banjo_drum_ropes` (docs/api/c-api.md,
+"Machines"). `tests/banjo_ffi_tests.py` drives the flywheel and the hoist above
+through the library and gets the same numbers. A saved world keeps the stores,
+the motors and the ropes on drums.
+
 The chat cannot build one yet: its tools for machines, and a recipe for the
 hoist, come next, with the controller.
 

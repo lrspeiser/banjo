@@ -34,7 +34,9 @@ using banjo::fastlattice::LiveImpact;
 using banjo::fastlattice::LiveStroke;
 using banjo::fastlattice::LiveStrokePreview;
 using banjo::fastlattice::LiveJoint;
+using banjo::fastlattice::LiveEnergyStore;
 using banjo::fastlattice::LiveMaterialState;
+using banjo::fastlattice::LiveMotor;
 using banjo::fastlattice::LiveOverload;
 using banjo::fastlattice::LivePick;
 using banjo::fastlattice::LiveWorld;
@@ -112,6 +114,11 @@ struct banjo_world {
     // from a saved one gave back.
     std::string snapshot;
     std::string restored;
+    // Stores of energy, motors and the drums' ropes, last time anyone asked:
+    // the names and states handed out point in here.
+    std::vector<LiveEnergyStore> stores;
+    std::vector<LiveMotor> motors;
+    std::vector<LiveJoint> drums;
 };
 
 namespace {
@@ -165,6 +172,42 @@ LiveStroke readStroke(const double *path_m, int points, double speed_m_s, double
     stroke.let_go_at_end = let_go_at_end != 0;
     stroke.give_up_s = give_up_s;
     return stroke;
+}
+
+// The joints that are a drum's rope, in the order the joints are listed.
+std::vector<LiveJoint> drumsOf(const LiveWorld &world) {
+    std::vector<LiveJoint> drums;
+    for (LiveJoint &joint : world.joints())
+        if (joint.kind == "drum") drums.push_back(std::move(joint));
+    return drums;
+}
+
+// Why a pin would not take a motor, in words. LiveWorld::motor only says no, so
+// this asks the world what it has, in the order the engine refuses: the pin,
+// that it is a pin, the store, and a motor already on it.
+std::string motorRefusal(const LiveWorld &world, unsigned joint, unsigned store) {
+    const std::string pin = "joint " + std::to_string(joint);
+    const std::vector<LiveJoint> joints = world.joints();
+    const auto found =
+        std::find_if(joints.begin(), joints.end(), [&](const LiveJoint &j) { return j.id == joint; });
+    if (found == joints.end()) return "there is no " + pin + " to put a motor on";
+    if (found->kind != "hinge") {
+        const std::string &kind = found->kind;
+        const std::string what = kind == "slider"    ? std::string("a slide")
+                                 : kind == "link"    ? std::string("a rope's link")
+                                 : kind == "pulley"  ? std::string("a pulley")
+                                 : kind == "fixing"  ? std::string("a fixing")
+                                 : kind == "elastic" ? std::string("an elastic")
+                                 : kind == "drum"    ? std::string("a drum's rope")
+                                                     : "a " + kind;
+        return pin + " is " + what + ", and a motor goes on a pin (banjo_hinge)";
+    }
+    const std::vector<LiveEnergyStore> stores = world.energyStores();
+    if (std::none_of(stores.begin(), stores.end(), [&](const LiveEnergyStore &s) { return s.id == store; }))
+        return "there is no store " + std::to_string(store) + " for a motor to draw on";
+    for (const LiveMotor &m : world.motors())
+        if (m.joint == joint) return pin + " has a motor already: motor " + std::to_string(m.id);
+    return pin + " would not take that motor";
 }
 
 } // namespace
@@ -739,6 +782,7 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
                           : joint.kind == "pulley" ? BANJO_JOINT_PULLEY
                           : joint.kind == "fixing" ? BANJO_JOINT_FIXING
                           : joint.kind == "elastic" ? BANJO_JOINT_ELASTIC
+                          : joint.kind == "drum"   ? BANJO_JOINT_DRUM
                                                     : BANJO_JOINT_HINGE;
             out[i].a = joint.a.c_str();
             out[i].b = joint.b.c_str();
@@ -795,6 +839,256 @@ int banjo_joint_friction(banjo_world *world, unsigned joint, double friction) {
 int banjo_unhinge(banjo_world *world, unsigned joint) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] { world->world->unhinge(joint); return BANJO_OK; });
+}
+
+// ---- machines: stores of energy, motors and drums (ABI 23) -------------------
+
+int banjo_make_energy_store(banjo_world *world, const char *name, const char *body, double capacity_j,
+                            double charge_j, double voltage_v, double max_power_w) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(capacity_j > 0.0) || !std::isfinite(capacity_j)) {
+        setError("a store's capacity is joules, more than zero");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(charge_j >= 0.0 && charge_j <= capacity_j)) {
+        setError("a store's charge is joules, from zero to what it can hold");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(voltage_v > 0.0) || !std::isfinite(voltage_v)) {
+        setError("a store's voltage is volts, more than zero");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(max_power_w >= 0.0) || !std::isfinite(max_power_w)) {
+        setError("the most a store gives is watts, zero (no limit but its charge) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const std::string in = body ? body : "";
+        const unsigned store =
+            world->world->energyStore(name ? name : "", in, capacity_j, charge_j, voltage_v, max_power_w);
+        if (store == 0) {
+            setError("a store cannot go in \"" + in + "\": there is nothing of that name in the scene");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(store);
+    });
+}
+
+int banjo_energy_store_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->stores = world->world->energyStores();
+        return static_cast<int>(mutable_world->stores.size());
+    });
+}
+
+int banjo_energy_stores(const banjo_world *world, banjo_energy_store *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->stores = world->world->energyStores();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->stores.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveEnergyStore &s = mutable_world->stores[static_cast<std::size_t>(i)];
+            banjo_energy_store &o = out[i];
+            o.id = s.id;
+            o.name = s.name.c_str();
+            o.body = s.body.c_str();
+            o.capacity_j = s.capacity_j;
+            o.charge_j = s.charge_j;
+            o.voltage_v = s.voltage_v;
+            o.max_power_w = s.max_power_w;
+            o.given_j = s.given_j;
+            o.short_j = s.short_j;
+        }
+        return count;
+    });
+}
+
+int banjo_make_motor(banjo_world *world, unsigned joint, unsigned store, double stall_torque_n_m,
+                     double no_load_rad_s, double brake_torque_n_m) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(stall_torque_n_m > 0.0) || !std::isfinite(stall_torque_n_m)) {
+        setError("a motor's stall torque is newton metres, more than zero");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(no_load_rad_s > 0.0) || !std::isfinite(no_load_rad_s)) {
+        setError("a motor's speed unloaded is radians a second, more than zero");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(brake_torque_n_m >= 0.0) || !std::isfinite(brake_torque_n_m)) {
+        setError("a brake's torque is newton metres, zero (no brake) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned motor =
+            world->world->motor(joint, store, stall_torque_n_m, no_load_rad_s, brake_torque_n_m);
+        if (motor == 0) {
+            setError(motorRefusal(*world->world, joint, store));
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(motor);
+    });
+}
+
+int banjo_drive_motor(banjo_world *world, unsigned motor, double command, int brake) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(command >= -1.0 && command <= 1.0)) {
+        setError("a motor's command is from -1 to 1: the share of its store's voltage, and which way");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        if (!world->world->driveMotor(motor, command, brake != 0)) {
+            setError("there is no motor " + std::to_string(motor));
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_motor_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->motors = world->world->motors();
+        return static_cast<int>(mutable_world->motors.size());
+    });
+}
+
+int banjo_motors(const banjo_world *world, banjo_motor *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->motors = world->world->motors();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->motors.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveMotor &m = mutable_world->motors[static_cast<std::size_t>(i)];
+            banjo_motor &o = out[i];
+            o.id = m.id;
+            o.joint = m.joint;
+            o.store = m.store;
+            o.stall_torque_n_m = m.stall_torque_n_m;
+            o.no_load_rad_s = m.no_load_rad_s;
+            o.brake_torque_n_m = m.brake_torque_n_m;
+            o.command = m.command;
+            o.brake = m.brake ? 1 : 0;
+            o.state = m.state.c_str();
+            o.speed_rad_s = m.speed_rad_s;
+            o.torque_n_m = m.torque_n_m;
+            o.current_a = m.current_a;
+            o.power_w = m.power_w;
+            o.turned_rad = m.turned_rad;
+            o.work_j = m.work_j;
+            o.heat_j = m.heat_j;
+            o.drawn_j = m.drawn_j;
+            o.friction_heat_j = m.friction_heat_j;
+        }
+        return count;
+    });
+}
+
+int banjo_inertia_about(const banjo_world *world, const char *name, const double axis[3], double *out_kg_m2) {
+    if (!world || !name || !axis || !out_kg_m2) {
+        setError("no world, no name, no axis, or nowhere to write");
+        return BANJO_BAD_ARGUMENT;
+    }
+    const double reach = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (!(reach > 1e-12) || !std::isfinite(reach)) { setError("an axis needs a direction"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        // Anchored scenery is never turned by the solver, so it has no inverse
+        // inertia to invert: it is infinitely hard to turn, which is what the
+        // engine means to answer for it (JoltWorld::inertiaAbout). It is
+        // answered here rather than asked, because asking reads the motion of
+        // a static body, which Jolt does not give one: an access violation in
+        // the host's process, not an answer.
+        for (const LiveBodyPose &pose : world->world->poses())
+            if (pose.anchored && pose.name == name) {
+                *out_kg_m2 = HUGE_VAL;
+                return static_cast<int>(BANJO_OK);
+            }
+        const double inertia = world->world->inertiaAbout(name, readVec(axis));
+        // Zero is the engine's word for "not there": anything in the world has
+        // a mass, and so an inertia about every axis.
+        if (!(inertia > 0.0)) {
+            setError(std::string("there is nothing called \"") + name + "\" in the world to turn");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        *out_kg_m2 = inertia;
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_drum(banjo_world *world, const char *drum, const char *load, const double centre_m[3],
+               const double axis[3], double radius_m, const double load_at_m[3], int winds, double length_m,
+               double out_m) {
+    if (!world || !drum || !load || !centre_m || !axis || !load_at_m) {
+        setError("no world, no names, or no drum"); return BANJO_BAD_ARGUMENT;
+    }
+    if (winds != 1 && winds != -1) {
+        setError("winds is +1 if the drum turning the positive way about its axle takes rope on, and -1 "
+                 "if turning the other way does");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(radius_m > 0.0) || !std::isfinite(radius_m)) {
+        setError("a drum's radius is metres, more than zero"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(length_m > 0.0) || !std::isfinite(length_m)) {
+        setError("a drum's rope is metres long, more than zero"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(out_m >= 0.0 && out_m <= length_m)) {
+        setError("the rope off a drum is metres, from zero (as it hangs) to the whole rope");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned rope = world->world->drum(drum, load, readVec(centre_m), readVec(axis), radius_m,
+                                                 readVec(load_at_m), winds, length_m, out_m);
+        if (rope == 0) {
+            setError(std::string("\"") + load + "\" cannot hang from a drum on \"" + drum +
+                     "\": one of them is not in the scene or is set aside, they are the same thing, "
+                     "or the axle has no direction");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(rope);
+    });
+}
+
+int banjo_drum_rope_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->drums = drumsOf(*world->world);
+        return static_cast<int>(mutable_world->drums.size());
+    });
+}
+
+int banjo_drum_ropes(const banjo_world *world, banjo_drum_rope *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->drums = drumsOf(*world->world);
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->drums.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveJoint &j = mutable_world->drums[static_cast<std::size_t>(i)];
+            banjo_drum_rope &o = out[i];
+            o.id = j.id;
+            o.drum = j.a.c_str();
+            o.load = j.b.c_str();
+            o.radius_m = j.radius_m;
+            o.winds = j.winds;
+            // A drum's joint reads as its rope: what is off the drum, of all of it.
+            o.length_m = j.upper;
+            o.out_m = j.at;
+            o.wound_m = j.wound_m;
+            o.tension_n = j.tension_n;
+            writeVec(j.point_world_m, o.centre_m);
+            writeVec(j.axis_world, o.axis);
+            writeVec(j.leaves_m, o.leaves_m);
+            writeVec(j.meets_m, o.meets_m);
+            o.attached = j.attached ? 1 : 0;
+        }
+        return count;
+    });
 }
 
 int banjo_make_blade(banjo_world *world, const char *body, const double heel_m[3],

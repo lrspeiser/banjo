@@ -7,8 +7,9 @@
     - It is Jolt's own hinge motor. Its torque limit is set each step from the line before the reversible trial, and held to what the store can give.
     - After a kept step, the solver's impulse gives the work, the windings' I²R and what was drawn. Nothing goes back into a store.
   - `LiveWorld::drum` and `rigid/DrumRope.hpp` make a rope that winds onto a turning drum, for as many turns as there is rope. It is Jolt's rope with its drum end moved to where it leaves the drum as each step begins, so it keeps its warm start.
-  - A saved world keeps stores, motors and drum ropes.
+  - A saved world keeps stores, motors and drum ropes, and what each motor said of its last step: a braked hoist opened again says it is braking before it takes a step.
 - The runner takes the ops `store`, `motor`, `drive` and `drum`, and every step that has any machines carries `machines`.
+- The C API (ABI 23) and the Python binding carry all of it, merged from `agent/machine-capi`: `banjo_make_energy_store`, `banjo_make_motor`, `banjo_drive_motor`, `banjo_drum` and `banjo_inertia_about`, read back through `banjo_energy_stores`, `banjo_motors` and `banjo_drum_ropes` (docs/api/c-api.md, "Machines"). A drum's rope says which way it winds (`winds`).
 - The playground:
   - A room's spec can have a `drum` joint and a `machines` block (`live_session._power`, checked in `fracture_lab.normalise_machines`). A motor names its pin by its two things and starts braked.
   - The action step `drive` (`server.run_action`) finds the motor by the thing it turns.
@@ -19,6 +20,8 @@
   - `DrumRope.cpp` instantiates Jolt's inline solver code. Its copy, compiled with our `/fp:precise`, replaced Jolt's own `/fp:fast` copy at link, in the kerf too. That moved a cut in banjo_blade_tests from 4.676 J to 4.192 J.
     - The file is now compiled with Jolt's floating-point model, and the cut is at 4.676 J again.
     - The wider hazard is its own task.
+  - A saved hoist opened again said its braked motor was coasting until its first step, and its rope read 2.5 nm more out than was saved. The drum's turn since a step began was worked out in float, and a drum that had not turned at all came out turned 2.5e-8 rad. It is now worked out in double, and the saved world keeps the rope's own tally and what each motor said of its last step.
+  - A braked hoist left alone does not creep: stepped for ten minutes it went to sleep, and the crate, the drum and the rope moved not at all.
 - Tests:
   - `motor_tests` 8:
     - a flywheel's spin-up is within 0.14% of the line, and its work is the spin to 0.33%;
@@ -28,15 +31,16 @@
     - a brake holds without drawing;
     - nothing regenerates: the lost spin becomes heat to 0.17%;
     - the hoist: rise = r × turn, and the motor's work is height plus motion to 0.26%;
-    - a restart round trip: charge, account, brake, rope out and crate height all back exactly, and it winds on after.
-  - `machine_room_tests` 3, through the live session and the runner: driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J.
-  - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 2 and fracture_lab all pass.
+    - a restart round trip: the battery's charge, the motor's account and brake and what it said of its last step, the rope off the drum and on it, and the crate's height all come back exactly, and it winds on after.
+  - `banjo_ffi_tests` 22, through the library: the flywheel and the hoist give motor_tests' numbers, what is not a machine is refused, and a saved hoist opens again exactly as it was saved and winds on (0.2691 m in 0.5 s, the battery giving the 301.728 J the motor drew).
+  - `machine_room_tests` 5, through the live session and the runner: driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J; an action drives it through `server.run_action`; and the test room is a hoist.
+  - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 3 and fracture_lab all pass.
   - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
 - Not yet:
   - the chat's MCP tools for machines and a hoist recipe;
-  - the C API and binding, in progress on `agent/machine-capi`;
   - a drum on a body that breaks being re-hung onto its pieces;
-  - the heat of the windings going to the thermal model.
+  - the heat of the windings going to the thermal model;
+  - opened again from a saved world, a braked crate settles 1.1 mm in its first second, the same 1.1 mm it settles in a fresh room when the brake first takes its weight. The likely cause is that a saved world does not keep the solver's warm start; not yet looked into.
 
 **A restart gives back the room as it stood.** Branch `agent/world-snapshot` from `660da54` (agent/nothing-resets). This is slice 1b of the owner's "a workshop that remembers". Until now every server restart opened each room from its spec: what the person had moved went back to where it was authored, what broke came back whole, dents vanished, and a thing in the hand went back into the bag.
 - The engine saves its whole world and opens the same scene into it (`LiveWorld::snapshot`, `LiveWorld::open(request, snapshot)`, format "banjo.world.v1").

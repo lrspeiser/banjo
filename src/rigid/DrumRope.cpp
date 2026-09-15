@@ -81,17 +81,36 @@ void DrumRopeConstraint::findDeparture() {
 double DrumRopeConstraint::woundNow() const {
     // What turned since the step began: the drum about its axle, and the point
     // the rope leaves from. The arc between is rope taken on, or let off.
+    //
+    // Worked in double from the bodies' float state. In float, a drum that had
+    // not turned at all came out turned 2.5e-8 rad, and a rope opened again
+    // from a saved world read 2.5 nm more out than was saved. In double what
+    // is left is some 1e-17 rad, which the rope's length does not see.
     const JPH::Quat now = mBody1->GetRotation();
     const JPH::Vec3 axis = (now * mRope.axis_local).Normalized();
-    JPH::Quat turned = now * mDrumBefore.Conjugated();
-    if (turned.GetW() < 0.0F) turned = -turned;
-    const double twist = 2.0 * std::atan2(static_cast<double>(turned.GetXYZ().Dot(axis)),
-                                          static_cast<double>(turned.GetW()));
+    const double ax = axis.GetX(), ay = axis.GetY(), az = axis.GetZ();
+    // now * conjugate(before)
+    const double nw = now.GetW(), nx = now.GetX(), ny = now.GetY(), nz = now.GetZ();
+    const double bw = mDrumBefore.GetW(), bx = mDrumBefore.GetX(), by = mDrumBefore.GetY(),
+                 bz = mDrumBefore.GetZ();
+    double tw = nw * bw + nx * bx + ny * by + nz * bz;
+    double tx = bw * nx - nw * bx - (ny * bz - nz * by);
+    double ty = bw * ny - nw * by - (nz * bx - nx * bz);
+    double tz = bw * nz - nw * bz - (nx * by - ny * bx);
+    if (tw < 0.0) {
+        tw = -tw;
+        tx = -tx;
+        ty = -ty;
+        tz = -tz;
+    }
+    const double twist = 2.0 * std::atan2(tx * ax + ty * ay + tz * az, tw);
     JPH::Vec3 leaving;
     JPH::RVec3 anchor;
     departure(leaving, anchor);
-    const double swept = std::atan2(static_cast<double>(axis.Dot(mLeavingBefore.Cross(leaving))),
-                                    static_cast<double>(mLeavingBefore.Dot(leaving)));
+    const double lx = leaving.GetX(), ly = leaving.GetY(), lz = leaving.GetZ();
+    const double px = mLeavingBefore.GetX(), py = mLeavingBefore.GetY(), pz = mLeavingBefore.GetZ();
+    const double swept = std::atan2(ax * (py * lz - pz * ly) + ay * (pz * lx - px * lz) + az * (px * ly - py * lx),
+                                    px * lx + py * ly + pz * lz);
     return std::clamp(mRope.wound_m + static_cast<double>(mRope.winds) * static_cast<double>(mRope.radius_m) *
                                           (twist - swept),
                       0.0, mRope.length_m);

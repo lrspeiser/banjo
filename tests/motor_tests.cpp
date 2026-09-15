@@ -432,6 +432,7 @@ void aRestartGivesTheHoistBackAsItStood() {
     const LiveEnergyStore store_before = world->energyStores().front();
     const LiveMotor motor_before = world->motors().front();
     const double out_before = jointOf(*world, rope).at;
+    const double wound_before = jointOf(*world, rope).wound_m;
     const Crate crate_before = crateOf(*world);
 
     std::string why;
@@ -454,8 +455,16 @@ void aRestartGivesTheHoistBackAsItStood() {
                 motor.command == 0.0 && motor.drawn_j == motor_before.drawn_j &&
                 motor.turned_rad == motor_before.turned_rad,
             "the motor did not come back with its account and its brake");
-    require(back.kind == "drum" && std::abs(back.at - out_before) < 1e-4,
-            "the rope did not come back with as much off the drum");
+    // And saying what it said of its last step before it was saved, until it
+    // takes another: braked, holding the crate up.
+    require(motor.state == "braking" && motor.state == motor_before.state &&
+                motor.speed_rad_s == motor_before.speed_rad_s && motor.torque_n_m == motor_before.torque_n_m &&
+                motor.current_a == motor_before.current_a && motor.power_w == motor_before.power_w,
+            "the motor came back saying it was " + motor.state + ", and it was " + motor_before.state +
+                " when it was saved");
+    // To the last bit: the saved world keeps the rope's own tally.
+    require(back.kind == "drum" && back.at == out_before && back.wound_m == wound_before,
+            "the rope did not come back with as much off the drum and on it");
     require(std::abs(crate.y - crate_before.y) < 0.001, "the crate did not come back where it hung");
 
     // And it goes on from there.
