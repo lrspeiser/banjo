@@ -27,7 +27,9 @@ From Python: capture(builds, port, out_dir) -> list[dict], each build being
 {"id": "<run>/<case>-<trial>", "focus_m": [x, y, z], "extent_m": r, "show_s": s}.
 
 Chrome is driven over the DevTools protocol with the installed `websockets`
-package; nothing is downloaded. One Chrome for the batch, on a profile of its
+package or, where it is not installed, a small client from the standard library
+(_PlainSocket); nothing is downloaded. BANJO_CHROME says where Chrome is, and
+BANJO_CHROME_ARGS adds to its command line. One Chrome for the batch, on a profile of its
 own under build/, one page and one build at a time, closed by PID at the end.
 """
 from __future__ import annotations
@@ -180,16 +182,111 @@ def builds_in(run: str, show_s: float = DEFAULT_SHOW_S,
 # Chrome, over the DevTools protocol
 # ---------------------------------------------------------------------------
 
+class _PlainSocket:
+    """A WebSocket client from the standard library, enough for DevTools:
+    text frames out, masked as a client's must be; frames back however long,
+    in one or several; a ping answered. For where the `websockets` package is
+    not installed -- CI's system Python refuses a pip install into it -- and
+    only ever for a browser on this machine."""
+
+    def __init__(self, url: str, timeout: float = 15.0) -> None:
+        import secrets
+        import socket
+        from urllib.parse import urlsplit
+        parts = urlsplit(url)
+        self._sock = socket.create_connection((parts.hostname, parts.port or 80), timeout=timeout)
+        key = base64.b64encode(secrets.token_bytes(16)).decode()
+        path = parts.path + (f"?{parts.query}" if parts.query else "")
+        self._sock.sendall((f"GET {path} HTTP/1.1\r\nHost: {parts.hostname}:{parts.port}\r\n"
+                            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("the browser closed the socket during the handshake")
+            head += chunk
+        head, _, self._buffer = head.partition(b"\r\n\r\n")
+        if not head.startswith(b"HTTP/1.1 101"):
+            raise ConnectionError(f"the browser refused the socket: {head.splitlines()[0]!r}")
+
+    def _exactly(self, n: int, deadline: float) -> bytes:
+        while len(self._buffer) < n:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TimeoutError("the browser did not answer in time")
+            self._sock.settimeout(left)
+            chunk = self._sock.recv(max(65536, n - len(self._buffer)))
+            if not chunk:
+                raise ConnectionError("the browser closed the socket")
+            self._buffer += chunk
+        out, self._buffer = self._buffer[:n], self._buffer[n:]
+        return out
+
+    def _frame(self, opcode: int, payload: bytes) -> None:
+        import secrets
+        import struct
+        n = len(payload)
+        head = bytes([0x80 | opcode]) + (bytes([0x80 | n]) if n < 126 else
+                                         bytes([0x80 | 126]) + struct.pack("!H", n) if n < 65536 else
+                                         bytes([0x80 | 127]) + struct.pack("!Q", n))
+        mask = secrets.token_bytes(4)
+        self._sock.sendall(head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+    def send(self, text: str) -> None:
+        self._frame(0x1, text.encode("utf-8"))
+
+    def recv(self, timeout: float | None = None) -> str:
+        import struct
+        deadline = time.monotonic() + (3600.0 if timeout is None else timeout)
+        message = b""
+        while True:
+            first, second = self._exactly(2, deadline)
+            opcode, n = first & 0x0F, second & 0x7F
+            if n == 126:
+                n = struct.unpack("!H", self._exactly(2, deadline))[0]
+            elif n == 127:
+                n = struct.unpack("!Q", self._exactly(8, deadline))[0]
+            mask = self._exactly(4, deadline) if second & 0x80 else b""
+            payload = self._exactly(n, deadline)
+            if mask:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            if opcode == 0x8:
+                raise ConnectionError("the browser closed the socket")
+            if opcode == 0x9:
+                self._frame(0xA, payload)
+                continue
+            if opcode == 0xA:
+                continue
+            message += payload
+            if first & 0x80:
+                return message.decode("utf-8")
+
+    def close(self) -> None:
+        try:
+            self._frame(0x8, b"")
+        except OSError:
+            pass
+        self._sock.close()
+
+
 class DevTools:
     """One DevTools connection: commands out, their answers back, and every
     event that arrived in between kept in `events`."""
 
     def __init__(self, url: str) -> None:
-        from websockets.sync.client import connect
-        # No size limit (a screenshot is megabytes of base64), no compression
-        # and no keepalive pings: this is a local socket to a local browser.
-        self.socket = connect(url, max_size=None, compression=None, ping_interval=None,
-                              open_timeout=15, max_queue=1024)
+        try:
+            if os.environ.get("BANJO_DEVTOOLS_PLAIN"):
+                raise ImportError("the plain socket was asked for")
+            from websockets.sync.client import connect
+        except ImportError:
+            # Without the package (CI's system Python), or when asked for it.
+            self.socket = _PlainSocket(url)
+        else:
+            # No size limit (a screenshot is megabytes of base64), no compression
+            # and no keepalive pings: this is a local socket to a local browser.
+            self.socket = connect(url, max_size=None, compression=None, ping_interval=None,
+                                  open_timeout=15, max_queue=1024)
         self.next_id = 0
         self.events: list[dict[str, Any]] = []
 
@@ -250,7 +347,12 @@ class Chrome:
              # a second, which reads as the room running at a fraction of real
              # time. Headless is always looked at; these make sure of it.
              "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
-             "--disable-backgrounding-occluded-windows", "about:blank"],
+             "--disable-backgrounding-occluded-windows",
+             # Whatever else this machine's Chrome needs, as BANJO_CHROME_ARGS
+             # says: CI's Ubuntu keeps its sandbox from the user namespaces it
+             # wants (--no-sandbox), and has no GPU for WebGL but SwiftShader.
+             *os.environ.get("BANJO_CHROME_ARGS", "").split(),
+             "about:blank"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.pid = self.process.pid
         atexit.register(self.close)

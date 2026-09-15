@@ -35,6 +35,9 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -2443,6 +2446,68 @@ RayHit JoltWorld::castRay(const Vec3 &from_world_m,const Vec3 &direction,
     // with no id of ours still stopped the ray and is still reported.
     for(const auto &[id,body]:impl_->bodies_)
         if(body==result.mBodyID){out.named=true;out.body_id=id;break;}
+    return out;
+}
+
+namespace {
+// A body's shape, read under the body's lock and held after it: the queries
+// that use it take locks of their own, and asking them while holding this one
+// could wait on itself.
+[[nodiscard]] JPH::RefConst<JPH::Shape> shapeOf(const JPH::PhysicsSystem &physics, JPH::BodyID id) {
+    JPH::BodyLockRead lock(physics.GetBodyLockInterface(), id);
+    if (!lock.Succeeded()) throw std::runtime_error("rigid body is not readable");
+    return lock.GetBody().GetShape();
+}
+[[nodiscard]] JPH::Quat joltTurn(const Quat &q) {
+    return JPH::Quat(static_cast<float>(q.x), static_cast<float>(q.y), static_cast<float>(q.z),
+                     static_cast<float>(q.w)).Normalized();
+}
+}  // namespace
+
+std::pair<Vec3, Vec3> JoltWorld::shapeBoundsTurned(MatterBodyId body_id,
+                                                   const Quat &orientation_world) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    const JPH::RefConst<JPH::Shape> shape = shapeOf(*impl_->physics_, found->second);
+    const JPH::AABox box = shape->GetWorldSpaceBounds(JPH::Mat44::sRotation(joltTurn(orientation_world)),
+                                                      JPH::Vec3::sReplicate(1.0f));
+    return {Vec3{box.mMin.GetX(), box.mMin.GetY(), box.mMin.GetZ()},
+            Vec3{box.mMax.GetX(), box.mMax.GetY(), box.mMax.GetZ()}};
+}
+
+std::vector<PlacementOverlap> JoltWorld::overlapsAt(MatterBodyId body_id, const Vec3 &center_of_mass_world_m,
+                                                    const Quat &orientation_world, double tolerance_m) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    const JPH::RefConst<JPH::Shape> shape = shapeOf(*impl_->physics_, found->second);
+    const JPH::RVec3 at = toJoltPosition(center_of_mass_world_m);
+    JPH::CollideShapeSettings settings;
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+    const JPH::IgnoreSingleBodyFilter itself(found->second);
+    impl_->physics_->GetNarrowPhaseQuery().CollideShape(
+        shape.GetPtr(), JPH::Vec3::sReplicate(1.0f),
+        JPH::RMat44::sRotationTranslation(joltTurn(orientation_world), at), settings, at, collector,
+        {}, {}, itself);
+    // One entry per thing it meets: the deepest meeting with it.
+    std::vector<PlacementOverlap> out;
+    for (const JPH::CollideShapeResult &hit : collector.mHits) {
+        const double depth = static_cast<double>(hit.mPenetrationDepth);
+        if (!(depth > tolerance_m)) continue;
+        PlacementOverlap met{};
+        met.depth_m = depth;
+        met.point_world_m = center_of_mass_world_m + Vec3{hit.mContactPointOn2.GetX(),
+                                                          hit.mContactPointOn2.GetY(),
+                                                          hit.mContactPointOn2.GetZ()};
+        for (const auto &[id, body] : impl_->bodies_)
+            if (body == hit.mBodyID2) { met.named = true; met.body_id = id; break; }
+        const auto same = std::find_if(out.begin(), out.end(), [&](const PlacementOverlap &o) {
+            return o.named == met.named && o.body_id == met.body_id;
+        });
+        if (same == out.end()) out.push_back(met);
+        else if (met.depth_m > same->depth_m) *same = met;
+    }
+    std::sort(out.begin(), out.end(),
+              [](const PlacementOverlap &a, const PlacementOverlap &b) { return a.depth_m > b.depth_m; });
     return out;
 }
 

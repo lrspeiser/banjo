@@ -1321,7 +1321,7 @@ async function takeIntoHand(name, point) {
 // A hand in the middle of a throw, a draw or a tool's stroke, or of one of a
 // thing's actions, is busy: the bag and its slots wait until it is done.
 const HAND_BUSY = new Set(["preparing", "throwing", "placing", "drawing", "letting-down",
-                           "tool-working", "tool-lifting"]);
+                           "tool-working", "tool-lifting", "carrying-to"]);
 function handBusy() {
   if (world.acting || (world.held && HAND_BUSY.has(world.use.mode))) {
     lastAction("Your hand is busy: finish or stop what it is doing first.", "refused");
@@ -1551,8 +1551,14 @@ function heldChoices() {
     });
     return [...out, ...latch];
   }
-  return [{ label: "Put it down", run: () => intend("put down") },
-          { label: "Let go of it here", run: () => intend("drop") }, ...latch];
+  // E shows where it will go, and E again puts it there (the owner, 2026-09-15:
+  // "E shows, E places"). Tab reaches a quick drop.
+  if (world.placing) {
+    return [{ label: "Put it here", run: () => placeHere() },
+            { label: "Stop placing", run: () => stopPlacing(true) }];
+  }
+  return [{ label: "Place it…", run: () => startPlacing() },
+          { label: "Drop it here", run: () => intend("drop") }, ...latch];
 }
 
 function choices() {
@@ -1648,9 +1654,15 @@ function detailsModel() {
     if (Number.isInteger(slot) && slot < SLOT_KEYS) facts.push(`${slot + 1} puts it back in your bag`);
     model.facts = facts.join(" · ");
     choiceRows();
+    if (world.placing) {
+      rows.push([["Mouse wheel"], world.placing.turnable ? "turn it" : "it goes down the way it is held"],
+                [["Esc"], "stop placing: it stays in your hand"]);
+    }
     if (ours || held.throwable || held.pick || held.blade) rows.push([[k("stow")], "put it in your bag"]);
     if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
-    const help = handHelp(world.use);
+    // Placing: what the copy is doing is the only help -- not a throw's preview,
+    // nor the wheel as it is when only holding.
+    const help = world.placing ? { rows: [], note: "", meter: null } : handHelp(world.use);
     rows.push(...help.rows);
     model.meter = help.meter;
     model.note = [help.note, world.carry].filter(Boolean).join(" · ");
@@ -2119,6 +2131,8 @@ addEventListener("keydown", (e) => {
   // The one control language (interaction.js): E does what the side view marks
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
+  // Esc while placing: the copy goes, and the thing stays in the hand.
+  if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
   if (isKey("stow", e.code)) toTheBag();
@@ -2172,6 +2186,15 @@ canvas.addEventListener("wheel", (e) => {
   const held = world.held;
   if (!held || held.bow || held.blade || held.pick) return;
   e.preventDefault();
+  // Placing: the wheel turns the see-through copy about the vertical instead,
+  // a twelfth of a turn a notch, and the engine is asked about it at once.
+  if (world.placing && !world.placing.carrying) {
+    if (world.placing.turnable) {
+      world.placing.yaw += Math.sign(e.deltaY) * (Math.PI / 12);
+      world.placing.asked = 0;
+    }
+    return;
+  }
   held.distance = clamp(held.distance * Math.exp(-e.deltaY * 0.0015),
                         HOLD_RANGE_M.least, HOLD_RANGE_M.most);
 }, { passive: false });
@@ -2963,10 +2986,234 @@ async function settleDown() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
+// ---------------------------------------------------------------------------
+// Placing: a see-through copy where it will go
+// ---------------------------------------------------------------------------
+//
+// The owner, 2026-09-15: "E shows, E places" (docs/inventory-and-hands.md,
+// section 5). With a thing in the hand, E shows a copy of it where the person
+// is looking -- upright as it was made, on the surface there, turned with the
+// wheel -- and the engine says whether it fits (op place_check,
+// LiveWorld::placement): what it would go into, what it would rest on, whether
+// it may tip off. E again carries it there with the hand -- the same bounded
+// hand, so what is in the way stops it -- and lets go. Esc, and the copy goes;
+// the thing stays in the hand. Nothing in the room moves for the copy.
+const PLACE_REACH_M = 3.0;
+const ghostLook = (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4,
+                                                            depthWrite: false });
+const GHOST_LOOK = { fits: ghostLook(0x9fe8b0), tips: ghostLook(0xf2c46b), no: ghostLook(0xf07a6a) };
+
+// Which way a thing faces about the vertical: its own x axis, laid flat.
+function headingOf(q) {
+  const v = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+  return Math.hypot(v.x, v.z) < 1e-6 ? 0 : Math.atan2(-v.z, v.x);
+}
+
+function startPlacing() {
+  const held = world.held;
+  const entry = held && world.bodies.get(held.name);
+  if (!entry || world.placing) return;
+  const ghost = entry.mesh.clone();
+  ghost.traverse((part) => { if (part.isMesh) { part.material = GHOST_LOOK.fits; part.castShadow = false; } });
+  ghost.renderOrder = 10;
+  ghost.visible = false;
+  scene.add(ghost);
+  // What the wrist can turn is turned with the wheel; a thing carried in the
+  // arms goes down the way it is held.
+  world.placing = { name: held.name, ghost, yaw: headingOf(entry.mesh.quaternion), turnable: !!held.throwable,
+                    answer: null, asked: 0, busy: false, carrying: null };
+  lastAction(`Look where ${titled(held.name)} should go${held.throwable ? " and turn it with the wheel" : ""};`
+             + ` ${keyOf("interact")} puts it there, Esc keeps it in your hand.`);
+  showDetails(true);
+}
+
+function stopPlacing(said) {
+  const p = world.placing;
+  if (!p) return;
+  world.placing = null;
+  scene.remove(p.ghost);
+  if (said) lastAction(`Stopped placing: ${titled(p.name)} is still in your hand.`);
+  showDetails(true);
+}
+
+// What is ahead of the crosshair within reach -- past the thing in the hand,
+// which is in front of the eye and not where it is to go.
+async function surfaceAhead(name) {
+  const dir = forwardVector();
+  let from = camera.position.clone(), left = PLACE_REACH_M;
+  for (let tries = 0; tries < 3 && left > 0; ++tries) {
+    const hit = await act("pick", { from: from.toArray(), dir: dir.toArray(), max_m: left });
+    if (!hit.hit) return null;
+    if (hit.name !== name) return hit;
+    const past = hit.distance_m + 0.02;
+    from = from.addScaledVector(dir, past);
+    left -= past;
+  }
+  return null;
+}
+
+async function askWhere(p) {
+  try {
+    const hit = await surfaceAhead(p.name);
+    if (world.placing !== p || p.carrying) return;
+    if (!hit) {
+      p.answer = { fits: false, why: "that is out of reach: look at a surface nearer you" };
+    } else {
+      const yawAsked = p.yaw;
+      // What the spot is on goes with it: the engine lifts the copy off that,
+      // and off the ground, and says anything else it would go into.
+      const onto = hit.name || "";
+      const answer = await act("place_check", { name: p.name, on: hit.point_m, onto,
+                                                yaw_deg: yawAsked * 180 / Math.PI });
+      if (world.placing !== p || p.carrying) return;
+      // The answer keeps the spot and the turn it was asked about, so what is
+      // put down is what was checked -- never a newer pose nobody asked about.
+      p.answer = Object.assign(answer, { on: hit.point_m, onto, yaw: yawAsked });
+    }
+    drawGhost(p);
+  } catch { /* the next frame asks again */ }
+}
+
+function drawGhost(p) {
+  const a = p.answer;
+  // Said at once, not a frame later: the side view is drawn from world.carry,
+  // which updateGuides would only set on the next frame.
+  world.carry = placingNote();
+  if (!a || !a.at_m) { p.ghost.visible = false; showDetails(true); return; }
+  const f = a.facing || a.q;
+  p.ghost.position.set(a.at_m[0], a.at_m[1], a.at_m[2]);
+  p.ghost.quaternion.set(f[1], f[2], f[3], f[0]);
+  const look = !a.fits ? GHOST_LOOK.no : a.supported_corners < 3 ? GHOST_LOOK.tips : GHOST_LOOK.fits;
+  p.ghost.traverse((part) => { if (part.isMesh) part.material = look; });
+  p.ghost.visible = true;
+  showDetails(true);
+}
+
+// Said under what is held, in the side view: what the engine made of the spot.
+function placingNote() {
+  const a = world.placing && world.placing.answer;
+  return a ? sentence(a.why) : "looking for where it can go";
+}
+
+function updatePlacing(now) {
+  const p = world.placing;
+  if (!p) return;
+  if (!world.held || world.held.name !== p.name || ["preparing", "throwing"].includes(world.use.mode)) {
+    stopPlacing(false);
+    return;
+  }
+  if (p.carrying || p.busy || now - p.asked < 125) return;
+  p.asked = now;
+  p.busy = true;
+  askWhere(p).finally(() => { p.busy = false; });
+}
+
+// E, with the copy shown: asked once more of the room as it is now -- something
+// may have moved into the spot -- and then carried there.
+async function placeHere() {
+  const p = world.placing;
+  if (!p || p.carrying) return;
+  const a = p.answer;
+  if (!a || !a.fits || !a.on) {
+    lastAction(a ? a.why : "Look at where it should go first.", "refused");
+    return;
+  }
+  let now;
+  try {
+    now = await act("place_check", { name: p.name, on: a.on, onto: a.onto, yaw_deg: a.yaw * 180 / Math.PI });
+  } catch (error) { lastAction(String(error.message || error), "refused"); return; }
+  if (world.placing !== p || p.carrying) return;
+  p.answer = Object.assign(now, { on: a.on, onto: a.onto, yaw: a.yaw });
+  drawGhost(p);
+  if (!now.fits) { lastAction(now.why, "refused"); return; }
+  carryTo(p, now);
+}
+
+// Along a path a hand can take -- up, over, and down onto the spot -- at the
+// pace of a careful hand. The hand holds a point of the thing (its grip, or its
+// middle when carried), so the path is that point's, to where it will be when
+// the thing stands on the spot.
+function carryTo(p, target) {
+  const held = world.held, entry = world.bodies.get(p.name);
+  if (!held || !entry) return;
+  const at = new THREE.Vector3(...target.at_m);
+  const facing = new THREE.Quaternion(target.facing[1], target.facing[2], target.facing[3], target.facing[0]);
+  const from = held.throwable && world.use.grip ? world.use.grip.clone() : entry.mesh.position.clone();
+  const local = from.clone().sub(entry.mesh.position).applyQuaternion(entry.mesh.quaternion.clone().invert());
+  const end = at.clone().add(local.applyQuaternion(facing));
+  const over = Math.max(from.y, end.y + 0.2);
+  const path = [from, new THREE.Vector3(from.x, over, from.z), new THREE.Vector3(end.x, end.y + 0.2, end.z), end];
+  const lengths = path.slice(1).map((q, i) => q.distanceTo(path[i]));
+  const total = lengths.reduce((s, l) => s + l, 0);
+  p.carrying = { path, lengths, total, since: performance.now(), ms: 1000 * Math.max(0.4, total / 0.8),
+                 at, facing: target.facing, arrived: 0, letting: false, was: world.use.mode };
+  world.use.mode = "carrying-to";
+  showUse();
+}
+
+// Which way the wrist is to turn it while it is carried there: the way the
+// copy faced. Nothing for a thing carried in the arms.
+function placingFacing() {
+  const c = world.placing && world.placing.carrying;
+  return c && world.placing.turnable ? c.facing : null;
+}
+
+// Where the hand wants the thing while it carries it to its spot -- and, once
+// the path is done and the thing has got there, let go.
+function placingHand(now) {
+  const c = world.placing && world.placing.carrying;
+  if (!c) return null;
+  let along = Math.min(1, (now - c.since) / c.ms) * c.total;
+  let k = 0;
+  while (k < c.lengths.length - 1 && along > c.lengths[k]) { along -= c.lengths[k]; ++k; }
+  const p = c.path[k].clone().lerp(c.path[k + 1], c.lengths[k] > 0 ? Math.min(1, along / c.lengths[k]) : 1);
+  if (now - c.since >= c.ms) {
+    if (!c.arrived) c.arrived = now;
+    const entry = world.bodies.get(world.placing.name);
+    const there = entry && entry.mesh.position.distanceTo(c.at) < 0.03;
+    if ((there || now - c.arrived > 1500) && !c.letting) intend(letGoWhereItWent);
+  }
+  return [p.x, p.y, p.z];
+}
+
+async function letGoWhereItWent() {
+  const p = world.placing, c = p && p.carrying;
+  if (!c || c.letting) return;
+  c.letting = true;
+  const name = p.name;
+  const entry = world.bodies.get(name);
+  const off = entry ? entry.mesh.position.distanceTo(c.at) : Infinity;
+  if (off > 0.1) {
+    // It did not get there: something is in the way. The hand keeps hold.
+    p.carrying = null;
+    world.use.mode = c.was;
+    showUse();
+    lastAction(`${titled(name)} would not go there: something is in the way`
+               + ` (it stopped ${off.toFixed(2)} m short).`, "refused");
+    return;
+  }
+  stopPlacing(false);
+  world.held = null;
+  showHolding(false);
+  clearGuides();
+  aimArc.hide();
+  world.use = { mode: "none" };
+  showUse();
+  try {
+    await act("release");
+    // Put down, a thing the record says the hand held is in the world now.
+    leftTheHand(name);
+    lastAction(`Put ${name} there.`);
+    remember(`placed ${name} at ${c.at.x.toFixed(2)}, ${c.at.y.toFixed(2)}, ${c.at.z.toFixed(2)} m`);
+  } catch (error) { say("bad", String(error.message || error)); }
+}
+
 // Where the hand wants a throwable thing this tick: brought in to the hand,
 // held there, or wound back as far as has been asked. While the engine is
 // making a stroke the hand is the engine's, and nothing is sent.
 function throwingHand(now) {
+  const placed = placingHand(now);
+  if (placed) return placed;
   const use = world.use;
   if (use.mode === "preparing") {
     use.asked = Math.min(1, (now - use.since) / (WIND_UP_S * 1000));
@@ -2992,6 +3239,8 @@ function throwingHand(now) {
 // what is below it and then let go of.
 function carriedHand(now) {
   const held = world.held;
+  const placed = placingHand(now);
+  if (placed) return placed;
   if (held.lowering) {
     const s = Math.min(1, (now - held.lowering.since) / held.lowering.ms);
     const p = held.lowering.from.clone();
@@ -3837,6 +4086,14 @@ async function askWhatIsBelow(at, clear) {
 
 function updateGuides() {
   if (!world.held) { world.carry = null; return; }
+  // Placing: the see-through copy says where it goes, and the side view what
+  // the engine made of the spot -- not the drop straight down from the hand.
+  if (world.placing) {
+    guides.visible = false;
+    landing.visible = false;
+    world.carry = placingNote();
+    return;
+  }
   const entry = world.bodies.get(world.held.name);
   if (!entry) return;
   const at = entry.mesh.position;
@@ -3950,7 +4207,7 @@ async function tick() {
       // And which way it is to face: the wrist's wish, sent only while the
       // page is placing the hand. During a stroke the hand is the engine's,
       // and the wish it had stays where it was.
-      if (hand) hand_q = wristWish(elapsed);
+      if (hand) hand_q = placingFacing() || wristWish(elapsed);
     } else if (world.held && world.held.pick) {
       // A tool: held ready by the page, with the ring following the crosshair;
       // while the server uses it, nothing is sent -- the hand is the engine's
@@ -4267,6 +4524,7 @@ function frame() {
   walk(dt);
   turnFromKeys(dt);
   updateGuides();
+  updatePlacing(now);
   fadePieces(now);
   animateHeat(now);
   animateWater(now);
@@ -4984,6 +5242,7 @@ async function open({ again = false } = {}) {
     // report itself starts over once the room is drawn (traceNewWorld, below).
     world.clock = Number(data.t) || 0;
     world.story = [];
+    stopPlacing(false);
     world.held = null;
     world.use = { mode: "none" };
     world.loosing = null;

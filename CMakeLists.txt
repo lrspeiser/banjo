@@ -1020,6 +1020,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_scene_joint_tests)
             add_test(NAME banjo_scene_joint_tests COMMAND banjo_scene_joint_tests)
 
+            # Where a thing would go set down, and whether it fits: the
+            # engine's half of placing a thing (docs/inventory-and-hands.md,
+            # section 5), which the page's see-through copy asks.
+            add_executable(banjo_placement_tests tests/placement_tests.cpp)
+            target_link_libraries(banjo_placement_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_placement_tests)
+            add_test(NAME banjo_placement_tests COMMAND banjo_placement_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows

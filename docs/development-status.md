@@ -38,6 +38,54 @@
   - put down 2.29 m from where the room was authored with it, then the server asked to stop with Ctrl+Break (it saved on the way out and exited 0) and started again: the ball was exactly where it was put ([15.507, 0.675, -2.565]), and the hand was empty.
   - both times the chat said "This is the room as you left it." and what was not kept.
   - the world room's file is 1.0 MB, of which the saved world is 969 KB and its water 609 KB.
+**Placing with a see-through copy: E shows where, E puts it there.** Branch `agent/placement` from `31ac61f`. Stage 2 of "a workshop that remembers", with the key choice the owner made on 2026-09-15: "E shows, E places". It follows their spec in docs/inventory-and-hands.md, section 5: a dedicated preview, and the normal way to put things down.
+- The engine answers where a thing would go and whether it fits. It asks the shapes the solver collides, and nothing moves.
+  - `JoltWorld::overlapsAt`: what a body's own shape would go into at another pose. Itself is left out, and there is one entry per thing, the deepest.
+  - `JoltWorld::shapeBoundsTurned`: the box its shape fills, turned.
+  - `LiveWorld::placement` and the runner's `place_check`: set down upright at a point on a surface, turned about the vertical, it gives fits, the pose, the facing, what it rests on, how many corners of its footprint have something under them, what it would go into, and why, in words.
+    - It is lifted clear of the surface it is set on (`onto`, which the page gets from pick) and of the ground, which matters on a slope or a rounded top.
+    - Anything else it would go into is in the way.
+    - A lift of more than half its own height means it is not being set on that surface: the answer is "too steep".
+- The page:
+  - E, holding a thing, shows the copy on the surface under the crosshair within 3 m. The copy is green if it fits, amber if it may tip or roll, and red if it will not go there, and the side view says why.
+  - The wheel turns it.
+  - E again checks the spot once more, then the bounded hand carries the thing up, over and down onto it, turned as the copy was, and lets go. Something in the way stops it, and it stays in the hand.
+  - Esc cancels. Tab reaches "Drop it here".
+- Found on the way:
+  - The support must be named by what the crosshair hit, not guessed from under the point. A ball lying on the spot is under it too, and a crate was lifted onto that ball instead of being said to be in its way.
+  - A ball on a 20 degree slope goes 1 mm in, so it is lifted until clear, not merely within the 3 mm tolerance used for other things.
+  - Two names already in world.js: `cap` exists only inside showNotebook, and `sentence` already capitalises and adds a stop. A second `const sentence` stopped the whole module at load, and `node --check` passes that; the scratchpad's `page_errors.py PORT` loads the page and prints what it threw.
+- Tests:
+  - `tests/placement_tests.cpp`, 9 checks: open slab, the crate's top, its edge (may tip), the crate where the ball is (in the way), turned 45 degrees, a 20 degree ramp (lifted 54.1 mm against 53.2 by geometry, said to roll), the crate's side (too steep), asking moves nothing, and the refusals.
+  - The browser journey now puts the ball down with E, E.
+- Measured in the page on my server (8801), with the scratchpad's `headless_place.py`, and no page errors:
+  - the copy fits on the ground ("It fits here, on the ground");
+  - the wheel turned it;
+  - at the crate's side it reads "that is too steep to set it on";
+  - Esc kept the ball in the hand;
+  - E, E put it 2 mm from where the copy stood.
+- Regression:
+  - `ctest -LE long -j4`: 128 of 129 pass. The failure is `live_world_tests`' timing check, which fails under load; the program passes alone, 32 of 32.
+  - Python: 59 of 59 suites pass, including the browser journey (16 s) and `world_room_tests` (55 OK).
+- Not yet:
+  - placing straight from the bag;
+  - stability tested by running the room forward;
+  - surfaces that do not face up;
+  - the in-process lane;
+  - the room's chat, which does not use placement yet.
+
+**The world page walks through a reload in CI.** Branch `agent/journey-ci` from `660da54`. The review of main asked that the page checks, which were scratchpad scripts nothing reran, become committed tests that CI runs. This is the first of them.
+- `tests/world_page_journey_tests.py` starts a playground server of its own on a free port, with the build's engine and rooms in a folder of its own. It drives headless Chrome through the rejoin journey:
+  - E picks the rubber ball up;
+  - a reload keeps it in the hand, and the person stands where they stood;
+  - it is put down 2 m away, and a reload keeps it there;
+  - "Start the room again" puts it back where the room had it;
+  - no page errors throughout.
+- CI runs it with `BANJO_BROWSER_TESTS=required`, so a missing Chrome or engine fails the build instead of skipping.
+- `tests/qa_browser.py`:
+  - gains `_PlainSocket`, a standard-library WebSocket client, used where `websockets` is not installed. CI's system Python refuses a pip install, and `BANJO_DEVTOOLS_PLAIN=1` asks for it anywhere;
+  - gains `BANJO_CHROME_ARGS`, for what a machine's Chrome needs. In CI that is `--no-sandbox --enable-unsafe-swiftshader`.
+- Measured on this machine: the journey passes in 16 s with `websockets` and in 17 s with the plain socket, and `qa_open_tests` passes 11 of 11. CI on this branch is the first run on Linux.
 
 **A reload rejoins the running room: what you moved, broke or hold stays.** Branch `agent/nothing-resets` from `27a624c`. This is the first slice of the owner's next milestone, "a workshop that remembers" (2026-09-15). Until now, every open of a room rebuilt it from its spec, a page reload included. Whatever the person had moved went back to where it was authored, what had broken came back whole, and a thing in the hand went back into the bag.
 - A page opening the room this server is already running now rejoins it (`server._rejoin`, `live_session.Live.rejoin`).

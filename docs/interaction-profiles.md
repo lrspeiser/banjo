@@ -150,7 +150,7 @@ A small vocabulary, combined per object:
 | Component | What the hand does | Meter (measured) | Aiming guide | Status |
 |---|---|---|---|---|
 | carry | places it where it is put (no force), beside the view | where it is, what is under it | drop line and landing ring | exists; held beside the view since section 7 |
-| place | lowers it onto what is below with a stroke that arrives, then lets go | height above support | drop line and landing ring; placement ghost later | section 7 |
+| place | E shows a see-through copy where the crosshair meets a surface, upright and turned with the wheel, and the engine says whether it fits; E again carries it there with the bounded hand and lets go | fits; what it rests on; whether it may tip or roll | the see-through copy: green, amber or red | section 7 |
 | turn | the wrist turns it towards what the keys ask, with at most 60 N m | how it stands | — | section 7 |
 | throw | winds up, then strokes forward and lets go at the end | wind-up reached; after: speed left with, work done | preview arc and first impact | increment 1 |
 | draw-and-release | hauls the draw point back; lets go to loose | draw reached; energy in this bow's own limbs; pull | aim line and predicted arrow flight (approximate) | increment 2 |
@@ -475,9 +475,46 @@ pillar was held upright at 0.18 degrees with no overshoot, and set down and let
 go at 0.00 degrees, sliding nothing. Asked all at once it overshoots by more than
 20 degrees, which is the wrist being bounded.
 
-**Status:** built. Not yet: a placement ghost (where it will stand, drawn before
-it is put down); turning a thing too heavy to hold up, which a person does by
-walking one end up; anything on a joint, which turns the way its joints let it.
+**Status:** built. Not yet: turning a thing too heavy to hold up, which a person
+does by walking one end up; anything on a joint, which turns the way its joints
+let it.
+
+### Placing: a see-through copy where it will go
+
+The owner, 2026-09-15: "E shows, E places" (docs/inventory-and-hands.md,
+section 5).
+
+**Showing where.** With a thing in the hand, E shows a see-through copy of it on
+the surface under the crosshair, within 3 m.
+- The copy is upright as the thing was built, with its middle over the point.
+- The engine's `place_check` (LiveWorld::placement, from the shapes the solver
+  collides) lifts it clear of that surface and the ground, which matters on a
+  slope or a rounded top.
+- It then says, in words and in the copy's colour, one of: it fits; it may tip
+  off (fewer than three corners of its footprint have something under them); it
+  may slide or roll (the surface is steeper than 15 degrees); it is too steep to
+  set on (lifting it clear would take more than half its height: a wall, a
+  crate's side); it would go into something else; nothing is under it.
+- Nothing in the room moves while the copy is shown.
+
+**Turning and cancelling.**
+- The wheel turns the copy about the vertical, for what the wrist can turn.
+- Esc takes the copy away, and the thing stays in the hand.
+- Tab reaches "Drop it here".
+
+**Putting it there.** E again first checks the spot once more against the room
+as it is now: something may have moved into it.
+- The hand then carries the thing up, over and down onto the spot at 0.8 m/s,
+  the wrist turning it to face as the copy did, and lets go once it is there
+  (within 3 cm).
+- It is the same bounded hand as always: a thing stopped short by something in
+  the way stays in the hand, and the page says so.
+
+**Not yet:**
+- placing straight from the bag;
+- stability tested by running the room forward;
+- surfaces that do not face up;
+- the in-process lane, which has no `place_check`.
 
 ## 8. Pose help
 
@@ -509,7 +546,8 @@ blocked. Shown briefly on first use, and on the help key afterwards.
    that arrives before the hand lets go; "/" opens the chat, which is told what
    is held, and the MCP's `turn_object` stands a thing up at a point (section
    7). Measured.
-5. **Pose help**, a placement ghost, and the remaining components.
+5. **Pose help** and the remaining components. The placement ghost is built
+   (2026-09-15; section 7, "Placing").
 6. **A tool that digs** — swing-and-lever, on `agent/progression`: a tool with
    a point ([ground work](ground-work.md)) is taken up by any of its parts, by
    the grip its point was given with, and held ready, point down. The engine

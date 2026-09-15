@@ -106,6 +106,16 @@ struct RayHit {
     Vec3 point_world_m{};
 };
 
+// What a body's own shape would go into if it stood somewhere else: one entry
+// per thing it meets, the deepest meeting with it. `named` is false for the
+// ground, as it is for a RayHit.
+struct PlacementOverlap {
+    bool named{};
+    MatterBodyId body_id{};
+    double depth_m{};
+    Vec3 point_world_m{};
+};
+
 struct CohesiveTensionPatchKick {
     std::vector<CohesiveInterfaceIncrement> interface_increments;
     PairImpulseAudit transfer;
@@ -700,6 +710,21 @@ public:
     // not be pointed at: its cells are its surface and no box describes it.
     //
     // Costs no step and changes nothing, so it is safe to ask every frame.
+    // A body's own shape turned to `orientation_world`, its centre of mass at
+    // the origin: the box it fills. What setting it down on a surface needs --
+    // how far its underside reaches below its middle, turned that way -- asked
+    // of the shape the solver collides rather than guessed from its size.
+    [[nodiscard]] std::pair<Vec3, Vec3> shapeBoundsTurned(MatterBodyId body_id,
+                                                          const Quat &orientation_world) const;
+    // What a body's own shape would go into if it stood at a pose other than
+    // where it is -- centre of mass and orientation -- by more than
+    // `tolerance_m`: other bodies, and the ground (named false). The shapes the
+    // solver uses, itself left out; no step taken and nothing changed, so a
+    // host can ask it every frame while someone chooses where to put a thing.
+    [[nodiscard]] std::vector<PlacementOverlap> overlapsAt(MatterBodyId body_id,
+                                                           const Vec3 &center_of_mass_world_m,
+                                                           const Quat &orientation_world,
+                                                           double tolerance_m) const;
     [[nodiscard]] RayHit castRay(const Vec3 &from_world_m,const Vec3 &direction,
                                  double max_distance_m) const;
     // Put a body back into simulation and clear how long it has been still.

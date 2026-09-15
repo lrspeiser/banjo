@@ -70,6 +70,10 @@
 //        {"op":"environment","full":false}   the ground, the water, their ledgers
 //        {"op":"environment_state"}          the water, for carrying into a reopen
 //        {"op":"terrain"}                    the whole ground again, for drawing
+//        {"op":"place_check","name":"stool","on":[x,y,z],"yaw_deg":30,"onto":"table"}
+//                                            where it would go set down upright at a
+//                                            point on a surface, and whether it fits
+//                                            (LiveWorld::placement); changes nothing
 //        {"op":"blade","body":"sword","heel":[..],"tip":[..],"facing":[0,0,-1],
 //         "thickness_m":0.01,"edge_radius_m":0.0002,"bevel_deg":30,"grip":[..]}
 //                                            give a body an edge (docs/cutting-model.md)
@@ -1665,6 +1669,29 @@ int main(int argc, char **argv) {
                                           {"name", found.name},
                                           {"distance_m", found.distance_m},
                                           {"point_m", vec(found.point_world_m)}};
+                    std::cout << answer.dump() << std::endl;
+                    continue;
+                } else if (op == "place_check") {
+                    // Where a thing would go set down on a surface, and whether
+                    // it fits there (LiveWorld::placement): the page's
+                    // see-through copy asks this while someone chooses where.
+                    // Changes nothing, so it answers on its own, as pick does.
+                    constexpr double kDegree = 3.14159265358979323846 / 180.0;
+                    const LivePlacement p = world->placement(command.at("name").get<std::string>(),
+                                                             readVec(command, "on"),
+                                                             command.value("yaw_deg", 0.0) * kDegree,
+                                                             command.value("onto", std::string{}));
+                    nlohmann::json touching = nlohmann::json::array();
+                    for (const auto &[what, depth] : p.touching)
+                        touching.push_back({{"name", what}, {"depth_mm", tidy(1000.0 * depth)}});
+                    nlohmann::json answer{
+                        {"ok", true}, {"fits", p.fits}, {"why", p.why}, {"at_m", vec(p.at_m)},
+                        {"q", nlohmann::json::array({tidy(p.turn_wxyz[0]), tidy(p.turn_wxyz[1]),
+                                                     tidy(p.turn_wxyz[2]), tidy(p.turn_wxyz[3])})},
+                        {"facing", nlohmann::json::array({tidy(p.facing_wxyz[0]), tidy(p.facing_wxyz[1]),
+                                                          tidy(p.facing_wxyz[2]), tidy(p.facing_wxyz[3])})},
+                        {"rests_on", p.rests_on}, {"supported_corners", p.supported_corners},
+                        {"touching", std::move(touching)}};
                     std::cout << answer.dump() << std::endl;
                     continue;
                 } else if (op == "heat") {
