@@ -214,8 +214,8 @@ click on a thing lists its actions and 1 to 9 run them; E or a double-click
 takes hold; E puts down; / talks to you.
 - FIRST: a gate between two posts (with its latch), a portcullis and its winch,
   a door that shuts itself, a bell on a rope, a bow, a pick, a table with a
-  chair -- build_recipe builds each of these exactly, with its actions. Never
-  build one of them part by part (THINGS BUILT BY RECIPE below).
+  chair, a battery hoist -- build_recipe builds each of these exactly, with its
+  actions. Never build one of them part by part (THINGS BUILT BY RECIPE below).
 - A loose thing (a crate, a pot, a plank, a ball): add_object. Keys, holding
   it: hold the left mouse and let go to throw; Z X turn it, T G tip it away or
   back, C V tip it sideways, U stands it upright, the wheel holds it nearer or
@@ -242,6 +242,14 @@ takes hold; E puts down; / talks to you.
   for a chain. Keys: take hold and haul it. A bell: THINGS BUILT BY RECIPE below.
 - A spring (a door that shuts itself, a catapult's arm): spring. The door:
   THINGS BUILT BY RECIPE below.
+- A machine that runs by itself (a hoist, a crane, a winch with a motor): a
+  battery in a thing (store), a motor on a pin wired to it (motor, with a brake
+  over what it holds up), and a rope that winds onto the drum on that pin
+  (drum). A battery hoist: build_recipe "hoist". Keys: one click on the drum
+  lists its actions. Offer, on the drum, "Wind it up" (drive, command 1),
+  "Stop" (drive, command 0, brake true) and "Let it down" (drive, command
+  -0.1). drive also tells a motor what to do for them, and it goes on doing
+  it until it is told otherwise.
 - A latch (a bar that holds a gate shut): a bar fixed to the gate and to its
   post. Keys: R, or the right mouse, releases it, and the page offers "Release
   the latch".
@@ -1016,6 +1024,14 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"cut {answer.get('cut')} out of the rock"
     if name == "set_river":
         return f"set {answer.get('river')} to {answer.get('discharge_m3_s')} m3/s"
+    if name == "drum":
+        return f"hung {args.get('b')} on a rope from the drum {args.get('a')}"
+    if name == "store":
+        return f"put a {float(answer.get('capacity_j') or 0.0) / 1000.0:g} kJ battery in {answer.get('in')}"
+    if name == "motor":
+        return f"put a motor on the pin between {' and '.join((answer.get('motor') or {}).get('on') or [])}"
+    if name == "drive":
+        return f"told the motor turning {args.get('part')} {answer.get('command')}"
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 

@@ -2307,6 +2307,152 @@ class TheWorldsThingsOnJoints(unittest.TestCase):
             runner.join(timeout=3)
 
 
+class TheWorldsHoistByRecipe(unittest.TestCase):
+    """The battery hoist (banjo_mcp.RECIPES["hoist"], docs/machine-world.md),
+    built by build_recipe on the world's own west terrace as the chat builds
+    it, opened on the engine's runner and worked by its own actions as the page
+    runs them: it must do what its recipe says it did."""
+
+    RADIUS_M = 0.08
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_it_winds_the_crate_up_holds_it_and_lets_it_down(self):
+        import server
+        import world_chat
+        world_id = room_world.open_room(world_room.valley())   # the world's ground, bare
+        try:
+            built = room_world.call(world_id, "build_recipe", {"recipe": "hoist", "at_m": [-8.4, -5.2]})
+            self.assertNotIn("error", built, built)
+            spec = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+        y0 = built["ground_y_m"]
+        self.assertEqual(built["parts"], ["hoist post", "hoist drum", "hoist crate", "hoist battery"])
+        self.assertEqual([j["tool"] for j in built["joints"]], ["hinge", "drum"])
+        self.assertEqual(built["actions_offered"], {"hoist drum": ["Wind it up", "Stop", "Let it down"]})
+        self.assertIn('"hoist": a battery hoist', world_chat.GUIDE)
+        # In the room's spelling: the rope on the drum, and the battery and the
+        # motor on the drum's pin, braked.
+        (rope,) = [j for j in spec["joints"] if j["kind"] == "drum"]
+        self.assertEqual((rope["a"], rope["b"], rope["winds"], rope["radius_mm"]),
+                         ("hoist drum", "hoist crate", 1, self.RADIUS_M * 1000.0))
+        self.assertEqual([(s["name"], s["body"]) for s in spec["machines"]["stores"]],
+                         [("hoist battery", "hoist battery")])
+        (motor,) = spec["machines"]["motors"]
+        self.assertEqual((motor["on"], motor["store"], motor["command"], motor["brake"]),
+                         (["hoist post", "hoist drum"], "hoist battery", 0.0, True))
+        # Laid out as a hoist: the crate clear of the ground, the drum above it,
+        # and the rope made off at the middle of the crate's top, straight below
+        # the drum's rim.
+        bodies = {b["name"]: b for b in spec["bodies"]}
+        crate, drum = bodies["hoist crate"], bodies["hoist drum"]
+        top = crate["center_mm"][1] + crate["size_mm"][1] / 2.0
+        self.assertGreaterEqual(crate["center_mm"][1] - crate["size_mm"][1] / 2.0 - y0 * 1000.0, 300.0,
+                                "the crate does not hang clear of the ground")
+        self.assertGreater(drum["center_mm"][1] - drum["size_mm"][1] / 2.0, top + 1000.0,
+                           "the drum is not above the crate")
+        for got, wanted in zip(rope["to_mm"], [crate["center_mm"][0], top, crate["center_mm"][2]]):
+            self.assertAlmostEqual(got, wanted, places=3)
+        self.assertAlmostEqual(rope["to_mm"][0], rope["at_mm"][0] + rope["radius_mm"], places=3)
+        self.assertAlmostEqual(rope["to_mm"][2], rope["at_mm"][2], places=3)
+
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        app.room = world_room.Room("world")
+        app.room.spec = spec
+        opened = live.open(app, {"spec": spec})
+        self.assertFalse(opened.get("joint_problems"), opened.get("joint_problems"))
+        self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        session = live.session
+        labels = [a["label"] for a in spec["actions"] if a["body"] == "hoist drum"]
+
+        def step(seconds: float) -> float:
+            steps = max(1, round(seconds / (8 / 240.0)))
+            for _ in range(steps):
+                session.send(op="step", dt=1 / 240.0, n=8)
+            return steps * 8 / 240.0
+
+        def machines() -> dict:
+            return session.state.get("machines") or {}
+
+        def crate_now() -> dict:
+            return next(b for b in session.state["bodies"] if b["name"] == "hoist crate")
+
+        def press(label: str) -> None:
+            answer = server.run_action(app, {"object": "hoist drum", "action": labels.index(label)})
+            self.assertFalse(answer.get("refused"), answer)
+
+        step(0.5)
+        # Opened, the brake holds the crate on its rope and draws nothing, and
+        # the rope runs straight down from where it leaves the drum.
+        held = machines()
+        mass = crate_now()["mass_kg"]
+        self.assertEqual((held["motors"][0]["state"], held["motors"][0]["drawn_j"]), ("braking", 0.0))
+        self.assertAlmostEqual(held["ropes"][0]["tension_n"], mass * 9.81, delta=0.01 * mass * 9.81)
+        leaves, meets = held["ropes"][0]["leaves"], held["ropes"][0]["meets"]
+        self.assertLess(math.hypot(leaves[0] - meets[0], leaves[2] - meets[2]), 0.001, (leaves, meets))
+
+        # Wind it up: the crate rises by the drum's radius times its turn, and
+        # the battery gives what the motor drew.
+        y_held, out0, turned0 = crate_now()["position_m"][1], held["ropes"][0]["out_m"], \
+            held["motors"][0]["turned_rad"]
+        press("Wind it up")
+        step(1.0)
+        wound = machines()
+        turned = wound["motors"][0]["turned_rad"] - turned0
+        taken = out0 - wound["ropes"][0]["out_m"]
+        rise = crate_now()["position_m"][1] - y_held
+        print(f"\n   Wind it up, for a second: the drum turned {turned / (2 * math.pi):.3f} times, took on "
+              f"{taken:.4f} m of rope (r x turn {self.RADIUS_M * turned:.4f} m), the crate rose {rise:.4f} m; "
+              f"the battery gave {wound['stores'][0]['given_j']:.3f} J, the motor drew "
+              f"{wound['motors'][0]['drawn_j']:.3f} J ({wound['motors'][0]['work_j']:.3f} J of work, "
+              f"{wound['motors'][0]['heat_j']:.3f} J of heat)", flush=True)
+        self.assertEqual(wound["motors"][0]["state"], "driving")
+        self.assertGreater(turned, math.pi)
+        self.assertAlmostEqual(taken, self.RADIUS_M * turned, delta=0.001)
+        self.assertAlmostEqual(rise, self.RADIUS_M * turned, delta=0.01 * self.RADIUS_M * turned)
+        self.assertGreater(wound["stores"][0]["given_j"], 0.0)
+        self.assertAlmostEqual(wound["stores"][0]["given_j"], wound["motors"][0]["drawn_j"], delta=0.01)
+
+        # Stop: the brake holds it, drawing nothing more.
+        press("Stop")
+        step(0.5)
+        y_stopped, drawn = crate_now()["position_m"][1], machines()["motors"][0]["drawn_j"]
+        step(1.0)
+        print(f"   Stop, then a second: the crate moved {crate_now()['position_m'][1] - y_stopped:.6f} m",
+              flush=True)
+        self.assertAlmostEqual(crate_now()["position_m"][1], y_stopped, delta=0.002)
+        self.assertEqual(machines()["motors"][0]["drawn_j"], drawn)
+        self.assertEqual(machines()["motors"][0]["state"], "braking")
+
+        # Let it down: the crate's weight turns the drum past the motor's
+        # unloaded speed at -0.1, and the motor's line holds it back, so it
+        # comes down at r w0 (0.1 + m g r / stall). The line is followed to
+        # 0.2% on a flywheel (tests/motor_tests.cpp): a hundredth here. The
+        # battery gives nothing for it.
+        press("Let it down")
+        step(0.5)
+        y_going, given = crate_now()["position_m"][1], machines()["stores"][0]["given_j"]
+        took = step(0.5)
+        speed = (y_going - crate_now()["position_m"][1]) / took
+        unloaded = machines()["motors"][0]["no_load_rad_s"]
+        line = self.RADIUS_M * unloaded * (0.1 + mass * 9.81 * self.RADIUS_M / motor["stall_torque_n_m"])
+        print(f"   Let it down: it came down at {speed:.4f} m/s, where the motor's line says {line:.4f}; "
+              f"the battery gave {machines()['stores'][0]['given_j'] - given:.4f} J meanwhile", flush=True)
+        self.assertEqual(machines()["motors"][0]["state"], "driving")
+        self.assertAlmostEqual(speed, line, delta=0.01 * line)
+        self.assertAlmostEqual(machines()["stores"][0]["given_j"], given, delta=0.01)
+
+
 class TheWorldAsShipped(unittest.TestCase):
     """The world the menu offers (rooms/world.json), as its chat built it: the
     mechanisms it built by recipe are in it with their actions, it fits the

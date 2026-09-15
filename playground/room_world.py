@@ -81,7 +81,12 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              "make_terrain", "dig", "fill", "cut_block", "set_river",
              # A tool that digs is a body with a point; and what a strike breaks
              # out of the ground stays out of it, like a dig.
-             "tool_point", "strike"}
+             "tool_point", "strike",
+             # A machine is part of what the room IS (docs/machine-world.md): a
+             # rope on a drum is a joint, a battery and a motor are its
+             # `machines`, and what a motor was last told is kept with it, so
+             # the room runs it as the chat left it.
+             "drum", "store", "motor", "drive"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -142,6 +147,14 @@ def joint_call(pin: dict[str, Any]) -> tuple[str, dict[str, Any]]:
                           "rest_m": pin.get("rest_mm", 0.0) / 1000.0,
                           "stiffness_n_m": pin.get("stiffness_n_m", 1000.0),
                           "damping_n_s_m": pin.get("damping_n_s_m", 0.0), **made}
+    if kind == "drum":
+        # A rope that winds onto a drum: the drum's centre and axle, and where
+        # it is made off on the load (docs/machine-world.md).
+        return "drum", {**ends, "at_m": _m(pin["at_mm"]), "axis": list(pin.get("axis", [0, 0, 1])),
+                        "radius_m": float(pin["radius_mm"]) / 1000.0, "at_b_m": _m(pin["to_mm"]),
+                        "winds": -1 if float(pin.get("winds", 1)) < 0 else 1,
+                        "length_m": float(pin["length_mm"]) / 1000.0,
+                        "out_m": float(pin.get("out_mm", 0.0)) / 1000.0}
     raise ValueError(f"{kind!r} is not a kind of joint the room knows")
 
 
@@ -180,6 +193,15 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
         if args.get("comes_off_n", 0.0) > 0.0:
             spec["comes_off_n"] = args["comes_off_n"]
         return spec
+    if tool == "drum":
+        return {**ends, "at_mm": _mm(args["at_m"]), "axis": list(args.get("axis", [0, 0, 1])),
+                "radius_mm": round(float(args["radius_m"]) * 1000.0, 3),
+                "to_mm": _mm(args["at_b_m"]),
+                # Always said: the MCP keeps the way it worked out when the call
+                # left it out.
+                "winds": -1 if float(args.get("winds", 1)) < 0 else 1,
+                "length_mm": round(float(args["length_m"]) * 1000.0, 3),
+                "out_mm": round(float(args.get("out_m", 0.0)) * 1000.0, 3)}
     return {**ends, "at_mm": _mm(args["at_a_m"]), "to_mm": _mm(args["at_b_m"]),
             "rest_mm": round(float(args.get("rest_m", 0.0)) * 1000.0, 3),
             "stiffness_n_m": args.get("stiffness_n_m", 1000.0),
@@ -276,6 +298,13 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     # so, once the change is made. It used to be left out always: the first
     # thing the chat changed in the courtyard took the bow's controls with it.
     names = {body["name"] for body in bodies}
+    # Its batteries and the motors on its pins (docs/machine-world.md), in the
+    # room's own spelling -- nothing in them is a length -- each while it still
+    # stands: a battery while what it is in is there, a motor while its pin and
+    # its battery are.
+    machines = machines_spec(banjo_mcp.machines_as_built(entry), names, spec["joints"])
+    if machines:
+        spec["machines"] = machines
     uses = []
     for profile in entry.get("interactions", []):
         try:
@@ -303,6 +332,20 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     if water:
         spec["water"] = water
     return spec
+
+
+def machines_spec(machines: dict[str, Any], names: set[str],
+                  joints: list[dict[str, Any]]) -> dict[str, Any]:
+    """The MCP's batteries and motors as the room's `machines` block, less any
+    that no longer stands against the room as it is: a battery in something
+    gone, a motor whose pin or battery is gone."""
+    stores = [dict(s) for s in machines.get("stores") or []
+              if not s.get("body") or s["body"] in names]
+    kept = {s["name"] for s in stores}
+    hinges = {(j["a"], j["b"]) for j in joints if j.get("kind") == "hinge"}
+    motors = [dict(m, on=list(m["on"])) for m in machines.get("motors") or []
+              if tuple(m["on"]) in hinges and m["store"] in kept]
+    return {"stores": stores, "motors": motors} if stores or motors else {}
 
 
 def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
@@ -381,6 +424,23 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
         for pin in validated.get("joints", []):
             tool, args = joint_call(pin)
             banjo_mcp.HANDLERS[tool]({**args, "world_id": world_id})
+        # And its batteries and the motors on its pins, through the MCP's own
+        # calls, after the pins they name -- each motor then told what the room
+        # last told it. A battery in nothing, which a room may hold and no call
+        # makes, goes in as it is.
+        machines = validated.get("machines") or {}
+        for store in machines.get("stores") or []:
+            if store.get("body"):
+                banjo_mcp.HANDLERS["store"]({**store, "world_id": world_id})
+            else:
+                banjo_mcp._add_store(entry, {k: store[k] for k in banjo_mcp.MACHINE_STORE_FIELDS})
+        for motor in machines.get("motors") or []:
+            banjo_mcp.HANDLERS["motor"]({"world_id": world_id,
+                                         **{k: motor[k] for k in banjo_mcp.MACHINE_MOTOR_FIELDS
+                                            if k not in ("command", "brake")}})
+            made = banjo_mcp._machines(entry)["motors"][-1]
+            if (made["command"], made["brake"]) != (motor["command"], motor["brake"]):
+                banjo_mcp._set_drive(entry, made, motor["command"], motor["brake"])
         # And its edges, through the MCP's own call, so they are kept as a
         # model's would be.
         for edge in validated.get("blades", []):

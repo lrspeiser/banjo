@@ -326,6 +326,9 @@ def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
             "what_has_happened": entry["story"][-20:]}
     if entry.get("interactions"):
         said["things_a_person_uses"] = [_use_said(p) for p in entry["interactions"]]
+    machines = _machines_said(entry)
+    if machines:
+        said["machines"] = machines
     if _has_terrain(entry):
         report = world.environment_report()
         said["ground"] = _ground_said(report)
@@ -465,6 +468,10 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     strength = _strength_said(world)
     if strength is not None:
         answer["strength"] = strength
+    # What the batteries gave and the motors did, and the drums' ropes.
+    machines = _machines_said(entry)
+    if machines:
+        answer["machines"] = machines
     if _has_terrain(entry):
         water = _water_said(world)
         if water is not None:
@@ -737,6 +744,10 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
         record["live"] = answer["joint"]
         kept.append(record)
     entry["joints"] = kept
+    # And the batteries and the motors on the pins just hung again, each motor
+    # told what it was last told (see tool_motor). One that will not go on is
+    # dropped and said, like a joint.
+    lost += _remake_machines(entry, fresh)
     # And the edges, on the bodies now standing there (see tool_blade). One
     # that will not go on is dropped and said, like a joint.
     blades = list(scene.get("blades") or [])
@@ -918,6 +929,11 @@ def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
     # joint -- and is listed, so nothing disappears unannounced.
     held = _held_by(entry, name)
     joints = [r for r in entry["joints"] if r not in held]
+    # And a battery in it, a motor on a pin that goes with it, and a motor whose
+    # battery goes: said, like the joints -- and back as they were if the
+    # change is refused.
+    machines_were = {k: list(v) for k, v in _machines(entry).items()}
+    machines_gone = _drop_machines(entry, {name}, held)
     # A heater aimed at it, and a gas region that pushed on it, go with it --
     # said, like the joints, rather than left to refuse the next rebuild.
     block = _thermo_block(entry)
@@ -936,10 +952,16 @@ def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
                                       if b.get("body") != name],
                               tool_points=[p for p in entry["scene"].get("tool_points") or []
                                            if p.get("body") != name]), block)
-    lost = _rebuild(entry, scene, world_id, joints)
+    try:
+        lost = _rebuild(entry, scene, world_id, joints)
+    except Refused:
+        entry["machines"] = machines_were
+        raise
     answer: dict[str, Any] = {"removed": name, "objects": _describe(entry["world"])}
     if held:
         answer["joints_removed_with_it"] = [_joint_words(r) for r in held]
+    if machines_gone:
+        answer["machines_removed_with_it"] = machines_gone
     if edges:
         answer["edge_removed_with_it"] = f"the edge on {name}"
     if points:
@@ -1401,7 +1423,7 @@ MAX_ACTIONS = 9             # few enough for a person to step through with Tab
 MAX_STEPS = 12
 ACTION_LABEL_CHARS = 60
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
-                "heat", "wait")
+                "heat", "wait", "drive")
 # Where a turn or a slide ends, by name: the joint's far stop, half way there,
 # its near stop, or where it was when the room was made.
 ACTION_STOPS = ("all_the_way", "half_way", "all_the_way_back", "back_to_start")
@@ -1464,7 +1486,8 @@ STEP_FIELDS = {"stand": ("stand", "along", "where"), "take_hold": ("part",),
                "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
                "push": ("part", "toward", "distance_m", "speed_m_s"),
                "turn": ("part", "degrees", "stop"), "slide": ("part", "distance_m", "stop"),
-               "heat": ("part", "power_w", "seconds"), "wait": ("seconds",)}
+               "heat": ("part", "power_w", "seconds"), "wait": ("seconds",),
+               "drive": ("part", "command", "brake")}
 
 
 def _worked_by(entry: dict[str, Any], part: str, tool: str) -> bool:
@@ -1566,7 +1589,8 @@ def _unturnable(entry: dict[str, Any], body: dict[str, Any]) -> str | None:
 
 
 def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[str],
-                    masses: dict[str, float], aside: list[str]) -> dict[str, Any]:
+                    masses: dict[str, float], aside: list[str],
+                    warned: list[str] | None = None) -> dict[str, Any]:
     """One action in the form it is kept in, or Refused with why. Checked the
     way the room will run it: the hand holds one thing at a time, and the
     person's hand is free again when the program ends."""
@@ -1592,7 +1616,7 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         do = str(step.get("do") or "").strip().lower()
         if do not in ACTION_STEPS:
             raise Refused(f"{where}: do is one of {', '.join(ACTION_STEPS)}, not {do!r}")
-        named = ("take_hold", "push", "turn", "slide", "heat")
+        named = ("take_hold", "push", "turn", "slide", "heat", "drive")
         part = str(step.get("part") or name) if do in named else name
         if do in named and part not in names:
             raise Refused(f"{where}: there is nothing called {part!r}")
@@ -1692,6 +1716,32 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         elif do == "wait":
             out["seconds"] = _action_number(step.get("seconds"), f"{where}: seconds",
                                             0.1, 10.0, 1.0)
+        elif do == "drive":
+            # A motor told what to do (docs/machine-world.md), found by the
+            # thing it turns as the room's page finds it (server._motor_for):
+            # the hand is not needed, and may be holding something.
+            turning = _motors_turning(entry, part)
+            if not turning:
+                raise Refused(f"{where}: nothing turns {part} with a motor: put one on the pin it "
+                              f"turns on (motor), wired to a battery (store)")
+            if len(turning) > 1:
+                raise Refused(f"{where}: {len(turning)} motors are on pins of {part}, between "
+                              f"{'; '.join(' and '.join(m['on']) for m in turning)}: give the step "
+                              f"the part the one you mean turns")
+            out["part"] = part
+            out["command"] = _action_number(step.get("command"), f"{where}: command", -1.0, 1.0)
+            brake = step.get("brake")
+            if brake is not None and not isinstance(brake, bool):
+                raise Refused(f"{where}: brake is true or false")
+            if out["command"] == 0.0:
+                # Stopped, its brake goes on unless the step says not.
+                out["brake"] = True if brake is None else brake
+                if out["brake"] and turning[0]["brake_torque_n_m"] <= 0.0 and warned is not None:
+                    warned.append(f"{where}: the motor on {' and '.join(turning[0]['on'])} has no "
+                                  f"brake, so stopped it coasts and what hangs on it falls")
+            elif brake:
+                aside.append(f"{where}: brake (a brake holds only while the motor is stopped, at a "
+                             f"command of 0)")
         kept.append(out)
     # Only a last turn or slide may end holding what it worked: that keeps what
     # it raised up until the person lets go.
@@ -1719,7 +1769,9 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
     names = {b["name"] for b in entry["scene"]["bodies"]}
     masses = _masses(entry) if actions else {}
     aside: list[str] = []
-    kept = [_action_checked(entry, name, action, names, masses, aside) for action in actions]
+    warned: list[str] = []
+    kept = [_action_checked(entry, name, action, names, masses, aside, warned)
+            for action in actions]
     labels = [action["label"].lower() for action in kept]
     if len(set(labels)) != len(labels):
         raise Refused("two actions have the same label, and the person has to be able to "
@@ -1735,12 +1787,15 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
         "note": "Shown when the person looks at it, in the order given (in the playground, "
                 "E does the one marked and Tab moves E on). Each program runs when it is "
                 "chosen: the hand's steps in the running room with the "
-                "hand's own 800 N, a stand step as turn_object with all its checks. What "
+                "hand's own 800 N, a stand step as turn_object with all its checks, a drive "
+                "step as drive tells the motor. What "
                 "happens is the engine's answer then, and a step that cannot be done stops "
                 "the action with why."}
     if aside:
         answer["not_read"] = ("; ".join(aside) + ". Set aside: a step reads only its own "
                               "kind's fields, and a place only its kind's.")
+    if warned:
+        answer["warnings"] = warned
     return answer
 
 
@@ -1796,6 +1851,8 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     scene.pop("tool_points", None)
     entry["scene"] = scene
     entry["joints"] = []
+    # And its batteries and motors: there is nothing left for them to be in.
+    entry["machines"] = {"stores": [], "motors": []}
     # And how anything in it was used: there is nothing left to use.
     if entry.get("interactions"):
         entry.setdefault("withdrawn", []).extend(
@@ -1888,6 +1945,14 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
                 "holds_shear_n": round(joint.holds_shear_n, 2),
                 **({"comes_off_n": round(joint.comes_off_n, 2)}
                    if joint.comes_off_n > 0.0 else {})}
+    if joint.kind == "drum":
+        # A rope on a drum, in metres: how much is off the drum -- the most the
+        # span to the load may be -- and the whole rope. at_m and axis are the
+        # drum's centre and axle as it stands.
+        return {**common,
+                "rope_out_m": round(joint.at, 4),
+                "length_m": round(joint.upper, 4),
+                "tension_n": round(joint.tension_n, 2)}
     if joint.kind == "pulley":
         return {**common,
                 "rope_m": round(joint.at, 4),
@@ -2086,6 +2151,587 @@ def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Machines (docs/machine-world.md)
+# ---------------------------------------------------------------------------
+#
+# A machine is parts held by joints, a pin driven by a motor, and a store the
+# motor draws on: a battery turns a motor, and the motor winds a rope onto a
+# drum and lifts a load. Nothing is played. A motor puts a torque on its pin,
+# bounded by the line a DC motor follows, and how far the pin turns is the
+# world's answer; what the battery gave, and where it went, is the engine's
+# account, one kept step at a time.
+#
+# The rope on a drum is a joint like the others, recorded as the call that made
+# it (_recorded). The stores and the motors are kept as the room spells them --
+# its `machines` block, in which nothing is a length -- and made again on every
+# rebuild, after the joints: a motor names its pin by the two things it joins,
+# since the engine numbers pins afresh in every world it opens.
+
+MACHINE_STORE_FIELDS = ("name", "body", "capacity_j", "charge_j", "voltage_v", "max_power_w")
+MACHINE_MOTOR_FIELDS = ("on", "store", "stall_torque_n_m", "no_load_rpm", "brake_torque_n_m",
+                        "command", "brake")
+G_M_S2 = 9.81
+
+
+def _machines(entry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """The world's stores and motors as they were made, each with the engine's
+    id for it in the world open now (`live`)."""
+    block = entry.setdefault("machines", {})
+    block.setdefault("stores", [])
+    block.setdefault("motors", [])
+    return block
+
+
+def machines_as_built(entry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """The stores and the motors in the room's spelling, as the playground
+    writes them into its room: each motor with what it was last told."""
+    block = _machines(entry)
+    return {"stores": [{k: s[k] for k in MACHINE_STORE_FIELDS} for s in block["stores"]],
+            "motors": [{k: (list(m[k]) if k == "on" else m[k]) for k in MACHINE_MOTOR_FIELDS}
+                       for m in block["motors"]]}
+
+
+def _pin_between(entry: dict[str, Any], on: Any) -> dict[str, Any] | None:
+    """The pin a motor named by two things is on: the last hinge made between
+    them that way round, or failing that the other way -- as the room finds it
+    (fracture_lab.normalise_machines, live_session._power)."""
+    a, b = str(on[0]), str(on[1])
+    pins = [r for r in entry.get("joints", []) if r["tool"] == "hinge"]
+    for want in ((a, b), (b, a)):
+        same = [r for r in pins if (str(r["args"].get("a")), str(r["args"].get("b"))) == want]
+        if same:
+            return same[-1]
+    return None
+
+
+def _store_named(entry: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((s for s in _machines(entry)["stores"] if s["name"] == name), None)
+
+
+def _motors_turning(entry: dict[str, Any], part: str) -> list[dict[str, Any]]:
+    """The motors whose pins have `part` on one side: how drive, and a thing's
+    drive step, find a motor -- by the thing it turns, as the room's page does
+    (server._motor_for)."""
+    return [m for m in _machines(entry)["motors"] if part in m["on"]]
+
+
+def _machine_checked(entry: dict[str, Any]) -> None:
+    """The world's own conditions, for a change to its machines: the
+    playground's room holds them to what its lane can open, as it does a joint."""
+    check = entry.get("check")
+    if check is not None:
+        try:
+            check(entry["scene"], entry.get("joints", []))
+        except ValueError as problem:
+            raise Refused(str(problem)) from None
+
+
+def _drum_departure(centre: list[float], axis: list[float], radius: float, made_off: list[float],
+                    winds: int) -> tuple[list[float], float] | None:
+    """Where a rope runs off a drum to a point, and how far it runs from there:
+    the point on the drum's circle where it leaves tangentially, on the side
+    where turning the drum the `winds` way takes rope on -- worked out as the
+    engine does (rigid/DrumRope.cpp, departure). None when the point is over
+    the drum itself, seen along its axle, where the rope has no side to leave."""
+    n = _vunit(axis, "axis")
+    to = [m - c for m, c in zip(made_off, centre)]
+    along = _vdot(to, n)
+    across = [t - along * k for t, k in zip(to, n)]
+    reach = math.sqrt(_vdot(across, across))
+    if not reach > 1.0001 * radius:
+        return None
+    u = [x / reach for x in across]
+    v = _vcross(n, u)
+    c = radius / reach
+    s = math.sqrt(max(0.0, 1.0 - c * c))
+    leaves = [ce + radius * (c * ui + winds * s * vi) for ce, ui, vi in zip(centre, u, v)]
+    return leaves, math.dist(leaves, made_off)
+
+
+def _downward(leaves: list[float], made_off: list[float], span: float) -> float:
+    """How nearly straight down a rope runs from where it leaves the drum to
+    where it is made off: 1 straight down, 0 level."""
+    return (leaves[1] - made_off[1]) / span if span > 1e-9 else 0.0
+
+
+def tool_drum(args: dict[str, Any]) -> dict[str, Any]:
+    """Hang a named load on a rope that winds onto a drum: a hoist, a winch.
+
+    The drum is a thing on a pin of its own. The rope runs off its rim at the
+    tangent, so its pull turns the drum at the drum's radius, and what is off
+    the drum changes by the radius times the turn -- for as many turns as
+    there is rope, where a rope tied to a wheel's rim (reeve) lifts only as far
+    as that point swings, about half a turn.
+    """
+    world: banjo.World = _live(_world(args.get("world_id")))
+    drum, load = str(args.get("a", "")), str(args.get("b", ""))
+    centre = _triple(args.get("at_m"), "at_m", -200.0, 200.0)
+    axis = _vunit(_triple(args.get("axis", [0.0, 0.0, 1.0]), "axis", -1e6, 1e6), "axis")
+    radius = _action_number(args.get("radius_m"), "radius_m", 0.001, 100.0)
+    made_off = _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0)
+    length = _action_number(args.get("length_m"), "length_m", 0.001, 500.0)
+    out = _action_number(args.get("out_m"), "out_m", 0.0, 500.0, 0.0)
+    ways = {w: _drum_departure(centre, axis, radius, made_off, w) for w in (1, -1)}
+    if ways[1] is None:
+        raise Refused(f"at_b_m is over the drum itself, seen along its axle -- within its {radius:g} m "
+                      f"radius of it -- so the rope has no side of the drum to run off. Make it off "
+                      f"beside the drum: for a load hanging under a drum at [x, y, z] on an axle along "
+                      f"z, straight below its rim, [x + {radius:g}, lower, z]")
+    given = args.get("winds")
+    if _given(given):
+        try:
+            said = float(given)
+        except (TypeError, ValueError):
+            said = 0.0
+        if isinstance(given, bool) or said not in (1.0, -1.0):
+            raise Refused(f"winds is 1 -- the drum turning the positive way about its axle (right-"
+                          f"handed) takes the rope on -- or -1, the other way, not {given!r}. Left "
+                          f"out, it is the way that runs the rope off the side of the drum it hangs "
+                          f"on")
+        winds = int(said)
+    else:
+        # The way that runs it off the drum on the load's side, most nearly
+        # straight down to it: a load under the +x side of a drum on an axle
+        # along +z is wound up by the drum turning the positive way.
+        winds = 1 if (_downward(ways[1][0], made_off, ways[1][1])
+                      >= _downward(ways[-1][0], made_off, ways[-1][1])) else -1
+    leaves, span = ways[winds]
+    if out > 0.0 and out < span - 0.001:
+        raise Refused(f"out_m {out:g} is less than the {span:.3f} m the rope has to run from where it "
+                      f"leaves the drum to where it is made off: its first step would snap {load} "
+                      f"{span - out:.3f} m toward the drum. 0 means as it hangs")
+    hangs = out if out > 0.0 else span
+    if hangs > length + 1e-9:
+        raise Refused(f"length_m is the whole rope, off the drum and on it, and {length:g} m is less "
+                      f"than the {hangs:.3f} m that is off it "
+                      + ("as out_m says" if out > 0.0 else "as it hangs, from where it leaves the "
+                                                            "drum to where it is made off")
+                      + f": give length_m at least that")
+    try:
+        joint = world.drum(drum, load, centre, axis, radius, made_off, winds, length, out)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    rope = next((r for r in world.drum_ropes() if r.id == joint), None)
+    turning = "the positive" if winds > 0 else "the negative"
+    return {"joint": joint, "winds": winds,
+            "rope_out_m": round(rope.out_m if rope is not None else hangs, 4),
+            "on_the_drum_m": round(rope.wound_m if rope is not None else length - hangs, 4),
+            "leaves_the_drum_m": [round(v, 4) for v in (rope.leaves_m if rope is not None else leaves)],
+            "note": f"{load} hangs on a rope from the drum {drum}. Turning {drum} {turning} way about "
+                    f"its axle {[round(v, 3) for v in axis]} winds the rope on and lifts it, "
+                    f"{radius:g} m for every radian; the other way lets it out, as far as there is "
+                    f"rope. It pulls and never pushes. A motor on {drum}'s pin turns it (motor, then "
+                    f"drive); so does a hand. Read rope_out_m and tension_n from `joints`.",
+            # Kept with the call, so the room's spec and every rebuild wind it
+            # the same way whether or not the caller said which.
+            "as_made": {"winds": winds}}
+
+
+def _add_store(entry: dict[str, Any], record: dict[str, Any]) -> None:
+    """A store, as the room spells it, into the world and the record: held to
+    the world's own conditions first, so nothing is left half made."""
+    stores = _machines(entry)["stores"]
+    stores.append(record)
+    try:
+        _machine_checked(entry)
+        record["live"] = _live(entry).energy_store(
+            record["name"], record["body"], record["capacity_j"], record["charge_j"],
+            record["voltage_v"], record["max_power_w"])
+    except banjo.BanjoError as error:
+        stores.remove(record)
+        raise Refused(str(error)) from None
+    except Refused:
+        stores.remove(record)
+        raise
+
+
+def tool_store(args: dict[str, Any]) -> dict[str, Any]:
+    """Put a store of energy -- a battery -- in a named thing."""
+    entry = _world(args.get("world_id"))
+    _live(entry)
+    name = " ".join(str(args.get("name") or "").split())[:60]
+    if not name:
+        raise Refused("a store needs a name: a motor is wired to it by that name (motor)")
+    body = str(args.get("body") or "")
+    if not any(b["name"] == body for b in entry["scene"]["bodies"]):
+        raise Refused(f"a battery is in something: there is nothing called {body!r} in this world to "
+                      f"put it in")
+    if _store_named(entry, name) is not None:
+        raise Refused(f"there is a store called {name!r} already: a motor finds its store by its "
+                      f"name, so each needs one of its own")
+    # The room's own bounds (fracture_lab.normalise_machines), so what one
+    # takes the other does.
+    capacity = _action_number(args.get("capacity_j"), "capacity_j", 0.001, 1e12)
+    record = {"name": name, "body": body, "capacity_j": capacity,
+              "charge_j": _action_number(args.get("charge_j"), "charge_j", 0.0, capacity, capacity),
+              "voltage_v": _action_number(args.get("voltage_v"), "voltage_v", 0.001, 1e6, 24.0),
+              "max_power_w": _action_number(args.get("max_power_w"), "max_power_w", 0.0, 1e12, 0.0)}
+    _add_store(entry, record)
+    return {"store": name, "in": body,
+            **{k: record[k] for k in ("capacity_j", "charge_j", "voltage_v", "max_power_w")},
+            "note": f"{name} is in {body}, holding {record['charge_j']:g} J of {capacity:g}. A motor "
+                    f"draws on it by its name (motor), and what it gives is what its motors drew. "
+                    f"Nothing goes back into it: a load that runs its motor backwards gives it "
+                    f"nothing, and that becomes heat in the motor. Empty, it stops its motors. run "
+                    f"and describe_world say what it holds and has given."}
+
+
+def _drum_sense(entry: dict[str, Any], motor: dict[str, Any]) -> list[tuple[dict[str, Any], int]]:
+    """Each rope on a drum that a motor's pin turns, with +1 if a positive
+    command winds that rope on -- lifts its load -- and -1 if it lets it out.
+
+    The motor turns the pin's `b` about the pin's axis, relative to its `a`;
+    the rope winds on when its drum turns the `winds` way about the rope's own
+    axle."""
+    pin = _pin_between(entry, motor["on"])
+    if pin is None:
+        return []
+    axis = _unit3(pin["args"].get("axis", [0.0, 1.0, 0.0]))
+    a, b = str(pin["args"].get("a")), str(pin["args"].get("b"))
+    found = []
+    for rope in entry.get("joints", []):
+        drum = str(rope["args"].get("a"))
+        if rope["tool"] != "drum" or drum not in (a, b):
+            continue
+        along = _vdot(axis, _unit3(rope["args"].get("axis", [0.0, 0.0, 1.0])))
+        if abs(along) < 0.5:
+            continue
+        found.append((rope, (1 if drum == b else -1) * (1 if along > 0 else -1)
+                      * (-1 if float(rope["args"].get("winds", 1)) < 0 else 1)))
+    return found
+
+
+def _motor_loads(entry: dict[str, Any], motor: dict[str, Any]) -> list[str]:
+    """What a motor is asked to lift, against what it can: each load hanging
+    from a drum on its pin, as the torque its weight puts on the drum."""
+    world = entry.get("world")
+    said = []
+    for rope, _sense in _drum_sense(entry, motor):
+        load, radius = str(rope["args"].get("b")), float(rope["args"].get("radius_m", 0.0))
+        body = world.body(load) if world is not None else None
+        if body is None or body.anchored:
+            continue
+        torque = body.mass_kg * G_M_S2 * radius
+        if torque >= motor["stall_torque_n_m"]:
+            said.append(f"{load}, {body.mass_kg:.1f} kg on a {radius:g} m drum, turns it with "
+                        f"{torque:.1f} N m, and this motor stalls at {motor['stall_torque_n_m']:g}: it "
+                        f"cannot lift it, and driven it stalls and heats. Give it a smaller drum or a "
+                        f"stronger motor")
+        if 0.0 < motor["brake_torque_n_m"] < torque:
+            said.append(f"its brake holds {motor['brake_torque_n_m']:g} N m, less than the "
+                        f"{torque:.1f} N m {load} puts on the drum: stopped, it slips and lets "
+                        f"{load} down")
+        if motor["brake_torque_n_m"] <= 0.0:
+            said.append(f"it has no brake, so stopped it coasts and {load} runs it down and falls: "
+                        f"give it a brake_torque_n_m over {torque:.0f} N m to hold it")
+    return said
+
+
+def _set_drive(entry: dict[str, Any], motor: dict[str, Any], command: float, brake: bool) -> None:
+    """What a motor is told from the next step on, into its record -- so the
+    room's spec, and every rebuild, has it -- and into the world."""
+    was = (motor["command"], motor["brake"])
+    motor["command"], motor["brake"] = float(command), bool(brake)
+    try:
+        _machine_checked(entry)
+        _live(entry).drive_motor(motor["live"], motor["command"], brake=motor["brake"])
+    except banjo.BanjoError as error:
+        motor["command"], motor["brake"] = was
+        raise Refused(str(error)) from None
+    except Refused:
+        motor["command"], motor["brake"] = was
+        raise
+
+
+def tool_motor(args: dict[str, Any]) -> dict[str, Any]:
+    """Put an electric motor on a pin, wired to a store."""
+    entry = _world(args.get("world_id"))
+    world = _live(entry)
+    on = args.get("on")
+    if (not isinstance(on, (list, tuple)) or len(on) != 2 or not all(isinstance(n, str) for n in on)
+            or on[0] == on[1]):
+        raise Refused("on is the two things the motor's pin joins, as hinge made it: what it hangs "
+                      "from, then what turns -- like [\"hoist post\", \"hoist drum\"]")
+    pin = _pin_between(entry, on)
+    if pin is None:
+        raise Refused(f"there is no pin between {on[0]} and {on[1]}: a motor turns a pin, so hinge "
+                      f"them first (a slide, a rope or a fixing has nothing for it to turn)")
+    on = [str(pin["args"].get("a")), str(pin["args"].get("b"))]
+    if any(m["on"] == on for m in _machines(entry)["motors"]):
+        raise Refused(f"the pin between {on[0]} and {on[1]} has a motor already: drive that one")
+    store = _store_named(entry, str(args.get("store") or ""))
+    if store is None:
+        have = [s["name"] for s in _machines(entry)["stores"]]
+        raise Refused(f"there is no store called {str(args.get('store') or '')!r} to wire it to"
+                      + (f" -- this world has {', '.join(repr(h) for h in have)}" if have else
+                         ": put a battery in something with store first"))
+    # The room's own bounds (fracture_lab.normalise_machines).
+    record = {"on": on, "store": store["name"],
+              "stall_torque_n_m": _action_number(args.get("stall_torque_n_m"), "stall_torque_n_m",
+                                                 0.001, 1e9),
+              "no_load_rpm": _action_number(args.get("no_load_rpm"), "no_load_rpm", 0.001, 1e6),
+              "brake_torque_n_m": _action_number(args.get("brake_torque_n_m"), "brake_torque_n_m",
+                                                 0.0, 1e9, 0.0),
+              "command": 0.0}
+    # One with a brake starts with it on, as the room's does, so what hangs on
+    # it does not fall the moment it is made.
+    record["brake"] = record["brake_torque_n_m"] > 0.0
+    motors = _machines(entry)["motors"]
+    motors.append(record)
+    try:
+        _machine_checked(entry)
+        record["live"] = world.motor(pin["live"], store["live"], record["stall_torque_n_m"],
+                                     record["no_load_rpm"] * math.pi / 30.0,
+                                     record["brake_torque_n_m"])
+        if record["brake"]:
+            world.drive_motor(record["live"], 0.0, brake=True)
+    except banjo.BanjoError as error:
+        motors.remove(record)
+        raise Refused(str(error)) from None
+    except Refused:
+        motors.remove(record)
+        raise
+    answer: dict[str, Any] = {
+        "motor": {"on": on, "store": store["name"]},
+        "unloaded_rad_s": round(record["no_load_rpm"] * math.pi / 30.0, 4),
+        "state": "braking" if record["brake"] else "coasting",
+        "note": f"It turns {on[1]} about the pin, with a torque of stall x (command - speed / "
+                f"unloaded speed): {record['stall_torque_n_m']:g} N m at a standstill at full "
+                f"command, less as it speeds up, nothing at {record['no_load_rpm']:g} turns a "
+                f"minute. It is "
+                + ("braked, holding what hangs on it without drawing anything" if record["brake"]
+                   else "coasting: nothing holds its pin")
+                + ". drive tells it what to do, by the thing it turns; offer_actions gives a "
+                  "person drive steps to work it with."}
+    winding = [f"winds the rope to {rope['args'].get('b')} on, lifting it" if sense > 0 else
+               f"lets the rope to {rope['args'].get('b')} out, lowering it"
+               for rope, sense in _drum_sense(entry, record)]
+    if winding:
+        answer["a_command_of_1"] = "; ".join(winding)
+    warnings = _motor_loads(entry, record)
+    if warnings:
+        answer["warnings"] = warnings
+    return answer
+
+
+def tool_drive(args: dict[str, Any]) -> dict[str, Any]:
+    """Tell a motor what to do from now on: a command, and its brake."""
+    entry = _world(args.get("world_id"))
+    _live(entry)
+    part = str(args.get("part") or "")
+    found = _motors_turning(entry, part)
+    if not found:
+        raise Refused(f"nothing turns {part!r} with a motor: put one on the pin it turns on (motor), "
+                      f"wired to a battery (store)")
+    if len(found) > 1:
+        raise Refused(f"{len(found)} motors are on pins of {part}, between "
+                      f"{'; '.join(' and '.join(m['on']) for m in found)}: name the thing the one you "
+                      f"mean turns")
+    motor = found[0]
+    command = _action_number(args.get("command"), "command", -1.0, 1.0)
+    brake = args.get("brake")
+    if brake is not None and not isinstance(brake, bool):
+        raise Refused("brake is true or false")
+    aside = []
+    if brake is None:
+        brake = command == 0.0
+    elif brake and command != 0.0:
+        aside.append("brake: a brake holds only while the motor is stopped, at a command of 0, so it "
+                     "is off while it drives")
+        brake = False
+    _set_drive(entry, motor, command, brake)
+    if command == 0.0:
+        if brake and motor["brake_torque_n_m"] > 0.0:
+            does = (f"stopped, with its brake on: it holds {motor['on'][1]} where it is and draws "
+                    f"nothing")
+        else:
+            does = (f"stopped, and nothing holds its pin: it coasts, and whatever hangs from "
+                    f"{motor['on'][1]} runs it down"
+                    + ("" if motor["brake_torque_n_m"] > 0.0 else " -- it has no brake"))
+    else:
+        does = (f"turning {motor['on'][1]} the {'positive' if command > 0 else 'negative'} way about "
+                f"its pin, at {abs(command) * 100:.0f}% of its battery's voltage")
+        ways = [(f"winds the rope to {rope['args'].get('b')} on: it rises" if sense * command > 0 else
+                 f"lets the rope to {rope['args'].get('b')} out: it comes down, faster than the "
+                 f"motor turns unloaded by what its weight adds, and the battery gives nothing for "
+                 f"that")
+                for rope, sense in _drum_sense(entry, motor)]
+        if ways:
+            does += "; it " + "; ".join(ways)
+    answer: dict[str, Any] = {
+        "motor": {"on": motor["on"], "store": motor["store"]}, "command": command, "brake": brake,
+        "does": does,
+        "note": "Nothing moves until time passes: run says how far it turned, what it drew and "
+                "what its battery gave. It goes on doing this until it is told otherwise."}
+    if aside:
+        answer["not_read"] = "; ".join(aside)
+    return answer
+
+
+def _remake_machines(entry: dict[str, Any], world: banjo.World | None) -> list[str]:
+    """The stores, then the motors, made again on a world just opened, after
+    its joints: each as it was made, and each motor told what it was last
+    told. What cannot be made again is dropped and said, as a joint is."""
+    block = _machines(entry)
+    if not block["stores"] and not block["motors"]:
+        return []
+    lost: list[str] = []
+    names = {b["name"] for b in entry["scene"]["bodies"]}
+    stores = []
+    for store in block["stores"]:
+        words = f"the store {store['name']}"
+        if world is None:
+            lost.append(f"{words}: the world is empty")
+            continue
+        if store["body"] and store["body"] not in names:
+            lost.append(f"{words}: {store['body']} is not in the world")
+            continue
+        try:
+            store["live"] = world.energy_store(store["name"], store["body"], store["capacity_j"],
+                                               store["charge_j"], store["voltage_v"],
+                                               store["max_power_w"])
+        except banjo.BanjoError as error:
+            lost.append(f"{words}: {error}")
+            continue
+        stores.append(store)
+    block["stores"] = stores
+    motors = []
+    for motor in block["motors"]:
+        words = f"the motor on {motor['on'][0]} and {motor['on'][1]}"
+        pin, store = _pin_between(entry, motor["on"]), _store_named(entry, motor["store"])
+        if world is None or pin is None or store is None:
+            lost.append(f"{words}: " + ("the world is empty" if world is None else
+                                        "there is no pin between them now" if pin is None else
+                                        f"its store {motor['store']} is gone"))
+            continue
+        try:
+            motor["live"] = world.motor(pin["live"], store["live"], motor["stall_torque_n_m"],
+                                        motor["no_load_rpm"] * math.pi / 30.0,
+                                        motor["brake_torque_n_m"])
+            if motor["command"] or motor["brake"]:
+                world.drive_motor(motor["live"], motor["command"], brake=motor["brake"])
+        except banjo.BanjoError as error:
+            lost.append(f"{words}: {error}")
+            continue
+        motors.append(motor)
+    block["motors"] = motors
+    return lost
+
+
+def _drop_machines(entry: dict[str, Any], bodies: Any = (), pins: Any = ()) -> list[str]:
+    """Take out the stores in things that are going and the motors on pins that
+    are going -- with any motor whose store goes -- and say which."""
+    block = _machines(entry)
+    gone_bodies = set(bodies)
+    gone_pins = {(str(r["args"].get("a")), str(r["args"].get("b"))) for r in pins}
+    said = [f"the store {s['name']} in {s['body']}" for s in block["stores"]
+            if s["body"] in gone_bodies]
+    block["stores"] = [s for s in block["stores"] if s["body"] not in gone_bodies]
+    kept = {s["name"] for s in block["stores"]}
+    motors = []
+    for motor in block["motors"]:
+        if (tuple(motor["on"]) in gone_pins or set(motor["on"]) & gone_bodies
+                or motor["store"] not in kept):
+            said.append(f"the motor on {motor['on'][0]} and {motor['on'][1]}")
+        else:
+            motors.append(motor)
+    block["motors"] = motors
+    return said
+
+
+def _machines_said(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """What the machines are doing now: each store's charge and what it has
+    given; each motor's state and its account since it was made (drawn_j is
+    its work_j and its heat_j); each drum's rope. None where there are none."""
+    world = entry.get("world")
+    block = _machines(entry)
+    ropes = any(r["tool"] == "drum" for r in entry.get("joints", []))
+    if world is None or not (block["stores"] or block["motors"] or ropes):
+        return None
+    said: dict[str, Any] = {}
+    stores = {s.id: s for s in world.energy_stores()}
+    said["stores"] = []
+    for store in block["stores"]:
+        now = stores.get(store.get("live"))
+        if now is not None:
+            said["stores"].append({"name": store["name"], "in": store["body"],
+                                   "charge_j": round(now.charge_j, 3),
+                                   "capacity_j": round(now.capacity_j, 3),
+                                   "given_j": round(now.given_j, 3),
+                                   **({"short_j": round(now.short_j, 3)} if now.short_j > 0 else {})})
+    motors = {m.id: m for m in world.motors()}
+    said["motors"] = []
+    for motor in block["motors"]:
+        now = motors.get(motor.get("live"))
+        if now is not None:
+            said["motors"].append({"on": motor["on"], "store": motor["store"], "state": now.state,
+                                   "command": round(now.command, 4), "brake": now.brake,
+                                   "speed_rad_s": round(now.speed_rad_s, 4),
+                                   "torque_n_m": round(now.torque_n_m, 3),
+                                   "power_w": round(now.power_w, 2),
+                                   "turned_rad": round(now.turned_rad, 4),
+                                   "drawn_j": round(now.drawn_j, 3), "work_j": round(now.work_j, 3),
+                                   "heat_j": round(now.heat_j, 3),
+                                   "friction_heat_j": round(now.friction_heat_j, 3)})
+    stable = {r["live"]: r["id"] for r in entry.get("joints", [])}
+    said["ropes"] = [{"joint": stable.get(r.id, r.id), "drum": r.drum, "load": r.load,
+                      "out_m": round(r.out_m, 4), "on_the_drum_m": round(r.wound_m, 4),
+                      "tension_n": round(r.tension_n, 2)} for r in world.drum_ropes()]
+    return {k: v for k, v in said.items() if v}
+
+
+def _drum_warnings(entry: dict[str, Any], args: dict[str, Any]) -> list[str]:
+    """A rope on a drum that will not do what a hoist does: a drum on no pin,
+    or on one that turns about another axis; an end off what it is made off on;
+    a rope that does not come straight down to what hangs on it."""
+    cell = float(entry.get("cell_m", 0.02))
+    drum, load = str(args.get("a", "")), str(args.get("b", ""))
+    axis = _unit3(args.get("axis", [0.0, 0.0, 1.0]))
+    said: list[str] = []
+    pins = [r for r in entry.get("joints", [])
+            if r["tool"] == "hinge" and drum in (r["args"].get("a"), r["args"].get("b"))]
+    if not pins:
+        said.append(f"{drum} does not turn on a pin, so nothing winds this rope: hinge {drum} to what "
+                    f"holds it up, about its axle {[round(v, 3) for v in axis]} through at_m, and put "
+                    f"a motor on that pin")
+    elif all(abs(_vdot(axis, _unit3(r["args"].get("axis", [0.0, 1.0, 0.0])))) < 0.99 for r in pins):
+        said.append(f"{drum} turns on a pin about another axis than this rope's axle "
+                    f"{[round(v, 3) for v in axis]}: a rope winds onto a drum about the pin it turns "
+                    f"on, so give them the same axis")
+    for end, name, what in (("at_m", drum, "the drum's centre, on its axle"),
+                            ("at_b_m", load, "where the rope is made off")):
+        off = _off_body(entry, name, args.get(end) or [0.0, 0.0, 0.0])
+        if off is not None and off > cell:
+            said.append(f"{end}, {what}, is {off:.2f} m outside {name}: made off in the air, the "
+                        f"point rides on {name} like the end of a stiff arm that is not there. Put it "
+                        f"on {name}" + (" -- the middle of its top, for a load that hangs"
+                                        if end == "at_b_m" else ""))
+    if not (_box(entry, load) or {}).get("anchored"):
+        try:
+            centre = [float(v) for v in args["at_m"]]
+            made_off = [float(v) for v in args["at_b_m"]]
+            winds = -1 if float(args.get("winds", 1)) < 0 else 1
+            radius = float(args["radius_m"])
+            here = _drum_departure(centre, axis, radius, made_off, winds)
+            there = _drum_departure(centre, axis, radius, made_off, -winds)
+        except (KeyError, TypeError, ValueError):
+            here = there = None
+        if here is not None:
+            down = _downward(here[0], made_off, here[1])
+            off_deg = math.degrees(math.acos(max(-1.0, min(1.0, down))))
+            if off_deg > 2.0:
+                other = (_downward(there[0], made_off, there[1]) if there is not None else -2.0)
+                said.append(f"the rope leaves {drum} at {[round(v, 3) for v in here[0]]} and runs "
+                            f"{off_deg:.0f} degrees off straight down to {load}: let go, {load} "
+                            f"swings in under where it leaves the drum. What hangs from a drum is "
+                            f"made off straight below its rim"
+                            + (f"; with winds {-winds} the rope would leave the drum's other side, "
+                               f"{math.degrees(math.acos(max(-1.0, min(1.0, other)))):.0f} degrees "
+                               f"off" if other > down + 1e-6 else ""))
+    return said
+
+
+# ---------------------------------------------------------------------------
 # Things a person uses (docs/interaction-profiles.md)
 # ---------------------------------------------------------------------------
 #
@@ -2102,7 +2748,7 @@ def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
 
 # The joining calls, and the room's names for the joints they make.
 JOINT_KINDS = {"hinge": "hinge", "slide": "slider", "tie": "link", "reeve": "pulley",
-               "fix": "fixing", "spring": "elastic"}
+               "fix": "fixing", "spring": "elastic", "drum": "drum"}
 
 # A trial steps as the playground's room does (playground/world.js, LIVE_DT),
 # with the engine's own hand, which is the person's.
@@ -2746,6 +3392,7 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
 
     made: list[dict[str, Any]] = []
     tried: list[dict[str, Any]] = []
+    machines_made: list[str] = []
     try:
         for record in list(entry.get("joints", [])):
             a, b = record["args"].get("a"), record["args"].get("b")
@@ -2761,6 +3408,26 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
             answer = HANDLERS[record["tool"]](call)
             made.append({"joint": answer["joint"], "tool": record["tool"],
                          "a": call["a"], "b": call["b"]})
+        # And the batteries in them and the motors on pins between them, each
+        # motor told what its original was last told: a copied hoist winds. A
+        # motor whose battery is not copied draws on the same one.
+        copied_stores: dict[str, str] = {}
+        for store in list(_machines(entry)["stores"]):
+            if store["body"] in renamed:
+                copied_stores[store["name"]] = f"{prefix} {store['name']}"[:60]
+                tool_store({"world_id": world_id, **{k: store[k] for k in MACHINE_STORE_FIELDS},
+                            "name": copied_stores[store["name"]], "body": renamed[store["body"]]})
+                machines_made.append(f"the store {copied_stores[store['name']]}")
+        for motor in list(_machines(entry)["motors"]):
+            if motor["on"][0] in renamed and motor["on"][1] in renamed:
+                tool_motor({"world_id": world_id, "on": [renamed[n] for n in motor["on"]],
+                            "store": copied_stores.get(motor["store"], motor["store"]),
+                            **{k: motor[k] for k in ("stall_torque_n_m", "no_load_rpm",
+                                                     "brake_torque_n_m")}})
+                copy = _machines(entry)["motors"][-1]
+                if (motor["command"], motor["brake"]) != (copy["command"], copy["brake"]):
+                    _set_drive(entry, copy, motor["command"], motor["brake"])
+                machines_made.append(f"the motor on {copy['on'][0]} and {copy['on'][1]}")
         for profile in list(entry.get("interactions", [])):
             if not set(profile["parts"]) <= set(renamed):
                 continue
@@ -2788,10 +3455,13 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
                            if r["args"].get("a") not in copied and r["args"].get("b") not in copied]
         entry["interactions"] = [p for p in entry.get("interactions", [])
                                  if not set(p["parts"]) & copied]
+        _drop_machines(entry, copied)
         _rebuild(entry, was_scene, world_id)
         raise
     answer = {"copied": [renamed[n] for n in names], "offset_m": [round(v, 4) for v in offset],
               "joints": made, "objects": _describe(entry["world"])}
+    if machines_made:
+        answer["machines"] = machines_made
     if any(abs(a - o) > 1e-9 for a, o in zip(asked, offset)):
         answer["offset_note"] = (f"moved by whole {cell:g} m cells, so the copy is cut from the "
                                  f"grid as the original is")
@@ -3027,6 +3697,58 @@ RECIPES: dict[str, dict[str, Any]] = {
                                           "gap_m": 0.05}},
                 {"do": "put_down"}]}]},
         "use": "the chair is drawn up on the table's +z side, the side to stand on",
+    },
+    # A battery hoist (docs/machine-world.md): the test room's
+    # (rooms/tests-machines.json), laid on the room's 0.04 m cells. A concrete
+    # post, and a cell in front of it an oak drum on a pin along z; the rope off
+    # the drum's +x rim straight down to the middle of an iron crate's top, the
+    # crate 0.32 m clear of the ground; a battery beside the post, and a motor on
+    # the pin with a brake that holds the crate.
+    #
+    # Let down, the crate's own weight turns the drum past the motor's unloaded
+    # speed and the motor's line holds it back: at a command of u < 0 it comes
+    # down at r w0 (|u| + m g r / stall), and its weight is 0.42 of the stall
+    # torque here. So -0.1, the gentlest command that still pays rope out with
+    # nothing on it (0.08 m/s), brings the crate down at about 0.42 m/s, only
+    # 0.08 faster than its weight alone would; the test room's -0.3 is 0.58. A
+    # command of 0 without the brake would not let it down but drop it: the
+    # motor is off, and nothing but the pin's friction holds the drum.
+    "hoist": {
+        "title": "a battery hoist: an oak drum on a pin in front of a post, wound by a motor from a "
+                 "20 kJ battery, with a 32 kg iron crate hanging clear of the ground on its rope",
+        "tried": "wound up for a second, the drum turned 0.89 times and the crate rose 0.447 m, the "
+                 "drum's 0.08 m radius times its turn, and the battery gave the 267 J the motor drew; "
+                 "stopped, the brake held it still and drew nothing; let down, it came down at "
+                 "0.42 m/s and the battery gave nothing",
+        "parts": [
+            {"name": "hoist post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 2.4, 0.08], "position_m": (0.0, 1.2, -0.2), "anchored": True},
+            {"name": "hoist drum", "shape": "box", "material": "oak",
+             "size_m": [0.16, 0.16, 0.24], "position_m": (0.0, 2.0, 0.0)},
+            {"name": "hoist crate", "shape": "box", "material": "iron",
+             "size_m": [0.16, 0.16, 0.16], "position_m": (0.08, 0.4, 0.0)},
+            {"name": "hoist battery", "shape": "box", "material": "concrete",
+             "size_m": [0.24, 0.28, 0.16], "position_m": (-0.24, 0.14, -0.2), "anchored": True}],
+        "joints": [
+            ("hinge", {"a": "hoist post", "b": "hoist drum", "at_m": (0.0, 2.0, 0.0),
+                       "axis": [0, 0, 1], "lower_deg": -180, "upper_deg": 180, "friction_n_m": 0}),
+            ("drum", {"a": "hoist drum", "b": "hoist crate", "at_m": (0.0, 2.0, 0.0),
+                      "axis": [0, 0, 1], "radius_m": 0.08, "at_b_m": (0.08, 0.48, 0.0), "winds": 1,
+                      "length_m": 2.0})],
+        # The battery is named for the thing it is in, so a second hoist's is
+        # numbered with its parts.
+        "then": [
+            ("store", {"name": "hoist battery", "body": "hoist battery", "capacity_j": 20000,
+                       "voltage_v": 24}),
+            ("motor", {"on": ["hoist post", "hoist drum"], "store": "hoist battery",
+                       "stall_torque_n_m": 60, "no_load_rpm": 95.5, "brake_torque_n_m": 200})],
+        "actions": {"hoist drum": [
+            {"label": "Wind it up", "steps": [{"do": "drive", "command": 1.0}]},
+            {"label": "Stop", "steps": [{"do": "drive", "command": 0.0, "brake": True}]},
+            {"label": "Let it down", "steps": [{"do": "drive", "command": -0.1}]}]},
+        "use": "click on the drum for its actions: Wind it up winds the crate up, Stop stops it with "
+               "the brake on, and Let it down lets it down; the motor keeps doing what it was last "
+               "told, so stop it before the crate reaches the drum",
     },
 }
 
@@ -3309,6 +4031,7 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
                            if r["args"].get("a") not in mine and r["args"].get("b") not in mine]
         entry["interactions"] = [p for p in entry.get("interactions", [])
                                  if not set(p.get("parts") or []) & mine]
+        _drop_machines(entry, mine)
         entry["actions"] = {k: v for k, v in (entry.get("actions") or {}).items() if k not in mine}
         _rebuild(entry, was_scene, world_id)
         raise
@@ -3459,10 +4182,18 @@ def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
     # take out whatever happened to be made third this time.
     stable = {r["live"]: r["id"] for r in entry.get("joints", [])}
     pins = entry["world"].joints()
+    # A rope on a drum says the rest of what it is from the drum's own reading.
+    ropes = ({r.id: r for r in entry["world"].drum_ropes()} if any(p.kind == "drum" for p in pins)
+             else {})
     said_now = []
     for pin in pins:
         said = _said(pin)
         said["joint"] = stable.get(pin.id, pin.id)
+        rope = ropes.get(pin.id)
+        if rope is not None:
+            said.update(on_the_drum_m=round(rope.wound_m, 4), radius_m=round(rope.radius_m, 4),
+                        winds=rope.winds, leaves_m=[round(v, 4) for v in rope.leaves_m],
+                        meets_m=[round(v, 4) for v in rope.meets_m])
         said_now.append(said)
     return {"joints": said_now,
             "note": "nothing here is animated: a joint is a constraint, and what "
@@ -3482,10 +4213,15 @@ def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused(str(error))
     # Out of the record too: a pin taken out is not one to hang again at the
     # next rebuild.
+    answer: dict[str, Any] = {"joint": joint, "note": "the pin is out; what hung on it is falling"}
     if record is not None:
         entry["joints"].remove(record)
         _recheck_interactions(entry)
-    return {"joint": joint, "note": "the pin is out; what hung on it is falling"}
+        # And a motor on it, which has nothing to turn now.
+        gone = _drop_machines(entry, pins=[record]) if record["tool"] == "hinge" else []
+        if gone:
+            answer["machines_removed_with_it"] = gone
+    return answer
 
 
 def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
@@ -5369,7 +6105,9 @@ TOOLS = [
                     "lever), turn a part round the pin it turns on -- its own, or that of "
                     "what it is fixed to, as a winch's handle is to its wheel -- by degrees "
                     "or to a stop (all_the_way, half_way, all_the_way_back, back_to_start), "
-                    "slide a part along its groove the same way, heat a part, and wait. A "
+                    "slide a part along its groove the same way, heat a part, wait, and drive "
+                    "the motor on the pin a part turns on (command -1 to 1; 0 stops it and puts "
+                    "its brake on) -- a hoist's \"Wind it up\" is drive, command 1. A "
                     "winch's \"Raise the gate\" is a turn of its handle, stop all_the_way. "
                     "A place is relative to the person when the "
                     "key is pressed (in_front_m) or to a thing (on, beside with a side as the "
@@ -5394,8 +6132,15 @@ TOOLS = [
                      "type": "object", "required": ["do"], "properties": {
                          "do": {"type": "string", "enum": list(ACTION_STEPS)},
                          "part": {"type": "string",
-                                  "description": "take_hold, push, turn, slide, heat: which "
-                                                 "thing; the object itself when left out."},
+                                  "description": "take_hold, push, turn, slide, heat, drive: which "
+                                                 "thing (for drive, what the motor turns); the "
+                                                 "object itself when left out."},
+                         "command": {"type": "number",
+                                     "description": "drive: -1 to 1, the share of the battery's "
+                                                    "voltage and which way; 0 stops the motor."},
+                         "brake": {"type": "boolean",
+                                   "description": "drive, stopped (command 0): whether its brake "
+                                                  "goes on -- on unless said."},
                          "degrees": {"type": "number",
                                      "description": "turn: how far, -360 to 360, right-handed "
                                                     "about the pin's axis -- or give stop "
@@ -5700,6 +6445,138 @@ TOOLS = [
                                           "per metre. 0 gives 96% of the stored "
                                           "energy back as motion."},
          "member": MEMBER}}},
+    {"name": "drum",
+     "description": "Hang a named load on a rope that WINDS ONTO A DRUM: a hoist, a winch, a "
+                    "crane. The drum `a` is a thing that turns on a pin of its own -- hinge it to "
+                    "what holds it up first, the pin's axis its axle -- and the rope runs off its "
+                    "rim at the tangent, straight to where it is made off on the load `b`. What "
+                    "is off the drum changes by the radius times the drum's turn, for as many "
+                    "turns as there is rope, where a rope tied to a wheel's rim (reeve) lifts only "
+                    "as far as that point swings, about half a turn. Like any rope it pulls and "
+                    "never pushes. A motor on the drum's pin winds it (store, motor, drive); so "
+                    "does a hand. For a load that hangs, make it off straight below the rim: a "
+                    "drum at [x, y, z] of radius r on an axle along z takes a load made off at "
+                    "[x + r, lower, z], the middle of its top. Refused, with why: a load over the "
+                    "drum itself seen along its axle, out_m less than the span the rope has to "
+                    "run, and a rope shorter than what is off the drum. joints reads its "
+                    "rope_out_m and tension_n; unhinge takes it off, and what hung on it falls. A "
+                    "whole battery hoist is build_recipe \"hoist\".",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_m", "radius_m", "at_b_m", "length_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string", "description": "The drum: a thing that turns on a pin of its "
+                                                "own."},
+         "b": {"type": "string", "description": "The load the rope lifts."},
+         "at_m": dict(VECTOR, description="The drum's centre, on its axle, in world metres: where "
+                                          "its pin is."),
+         "axis": dict(VECTOR, description="The drum's axle, the axis of its pin: [0,0,1] by "
+                                          "default."),
+         "radius_m": {"type": "number",
+                      "description": "The radius the rope lies at on the drum -- half its width, "
+                                     "for a square block of a drum. It lifts radius_m for every "
+                                     "radian the drum turns, and a load of m kg puts m x 9.81 x "
+                                     "radius_m N m on it."},
+         "at_b_m": dict(VECTOR, description="Where the rope is made off on `b`, in world metres: "
+                                            "the middle of its top, for a load that hangs."),
+         "length_m": {"type": "number",
+                      "description": "The whole rope, off the drum and on it: at least the span "
+                                     "from the drum to at_b_m. What is on the drum is how far the "
+                                     "load can be let down."},
+         "out_m": {"type": "number",
+                   "description": "How much of it is off the drum. 0, the default, means as it "
+                                  "hangs: the span from where it leaves the drum to at_b_m."},
+         "winds": {"type": "integer",
+                   "description": "1 if the drum turning the positive way about its axle (right-"
+                                  "handed) winds the rope on, -1 if the other way does. Left out, "
+                                  "the way that runs the rope off the side of the drum the load "
+                                  "hangs on; the answer says which."}}}},
+    {"name": "store",
+     "description": "Put a store of energy -- a BATTERY -- in a named thing: what it can hold and "
+                    "what it holds, in joules; its voltage; and the most power it gives, 0 for no "
+                    "limit but its charge. A motor is wired to it by its name (motor). Every "
+                    "joule is counted: what it gives is what its motors drew, their work and "
+                    "their heat, and nothing goes back into it -- a load that runs its motor "
+                    "backwards gives it nothing, and that becomes heat in the motor. Empty, it "
+                    "stops its motors. run and describe_world say what it holds and has given. "
+                    "Refused, with why: nothing called `body` to put it in, a name another store "
+                    "has, and a charge above what it can hold.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "name", "body", "capacity_j"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string",
+                  "description": "What to call it, like 'hoist battery': a motor is wired to it "
+                                 "by this name."},
+         "body": {"type": "string", "description": "The thing it is in."},
+         "capacity_j": {"type": "number", "description": "What it can hold, in joules."},
+         "charge_j": {"type": "number",
+                      "description": "What it holds now, in joules: full when left out."},
+         "voltage_v": {"type": "number",
+                       "description": "Its voltage, 24 by default: a motor's line is given at it."},
+         "max_power_w": {"type": "number",
+                         "description": "The most it gives, in watts: 0, the default, for no "
+                                        "limit but its charge."}}}},
+    {"name": "motor",
+     "description": "Put an electric MOTOR on a pin, wired to a battery (store): what makes a "
+                    "hoist, a winch or a wheel go by itself. Name the pin by the two things it "
+                    "joins, as hinge made it (`on`: what it hangs from, then what turns); it turns "
+                    "the second about the pin. Its line is two numbers a maker gives, at the "
+                    "battery's voltage: the torque it stalls at, in N m, and the speed it runs at "
+                    "unloaded, in turns a minute. Told a command u from -1 to 1 (drive), it gives "
+                    "a torque of stall x (u - speed / unloaded speed): the heavier the load the "
+                    "slower it goes, and past its stall torque it stalls and heats. A drum of "
+                    "radius r lifts m kg only if m x 9.81 x r is under the stall torque. "
+                    "brake_torque_n_m gives it a brake: friction on the pin that holds while it is "
+                    "stopped, and draws nothing. With a brake it starts braked, so what hangs on "
+                    "it does not fall; without one it starts coasting, and a load runs it down. "
+                    "The answer says which way a command of 1 turns each drum's rope, and warns "
+                    "of a load it cannot lift or hold. Refused, with why: no pin between the two "
+                    "things, a pin with a motor already, and no battery of that name.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "on", "store", "stall_torque_n_m", "no_load_rpm"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "on": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2,
+                "description": "The two things its pin joins, like [\"hoist post\", \"hoist "
+                               "drum\"]."},
+         "store": {"type": "string", "description": "The battery it draws on, by its name."},
+         "stall_torque_n_m": {"type": "number",
+                              "description": "The torque it gives at a standstill at full "
+                                             "command, in N m: 60 turns a 0.08 m drum under up "
+                                             "to 76 kg."},
+         "no_load_rpm": {"type": "number",
+                         "description": "How fast it runs with nothing to turn, in turns a "
+                                        "minute: 95.5 is 10 radians a second."},
+         "brake_torque_n_m": {"type": "number",
+                              "description": "What its brake holds with, in N m: over what the "
+                                             "load puts on the pin. 0, the default, for no "
+                                             "brake."}}}},
+    {"name": "drive",
+     "description": "Tell a motor what to do, from now on: `command` from -1 to 1 is the share of "
+                    "its battery's voltage and which way -- 1 full ahead, 0 stopped, negative "
+                    "backwards -- and `brake`. The motor is found by the thing it turns (`part`), "
+                    "as a thing's drive step finds it (offer_actions). Stopped (0), its brake goes "
+                    "on unless you say brake false; a brake holds only while it is stopped, and "
+                    "draws nothing. Stopped without a brake it is off, and whatever hangs on it "
+                    "runs it down and falls. Letting a load down, the load's own weight turns the "
+                    "motor faster than the command alone would, the motor's line holds it back, "
+                    "and the battery gives nothing for that. Nothing moves until time passes: run "
+                    "says how far it turned, what it drew and what the battery gave. It goes on "
+                    "doing what it was told -- in the playground's room too, where it is kept "
+                    "with the motor -- so for a person to work a machine, give it drive steps "
+                    "with offer_actions. Refused, with why: nothing turning that part with a "
+                    "motor, two motors on its pins, and a command past -1 or 1.",
+     "inputSchema": {"type": "object", "required": ["world_id", "part", "command"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "part": {"type": "string", "description": "What the motor turns, like 'hoist drum'."},
+         "command": {"type": "number",
+                     "description": "-1 to 1: the share of its battery's voltage, and which way. "
+                                    "0 stops it."},
+         "brake": {"type": "boolean",
+                   "description": "Stopped (command 0), whether its brake goes on: on unless "
+                                  "said."}}}},
     {"name": "interaction",
      "description": "Say how a PERSON USES something you built, so the playground gives "
                     "them its controls -- and try it. Two kinds. draw-and-release: a bow, "
@@ -6373,6 +7250,8 @@ def _joint_warnings(entry: dict[str, Any], tool: str, args: dict[str, Any]) -> l
                             f"the point rides on {name} like the end of a stiff arm that is "
                             f"not there. Put the point on {name} -- for a rope of segments, "
                             f"0.02 m either side of the join, with the bodies touching.")
+    if tool == "drum":
+        said += _drum_warnings(entry, args)
     if tool == "fix":
         # A fixing joins two things at a point in both of them: a peg in its
         # post and in what it carries. Measured, a model set a peg down on top
@@ -6407,7 +7286,7 @@ def _off_body(entry: dict[str, Any], name: str, point: Any) -> float | None:
 # The calls that make joints, unwrapped: what a rebuild uses to hang a
 # recorded joint again on a fresh world.
 MAKE_JOINT = {"hinge": tool_hinge, "slide": tool_slide, "tie": tool_tie,
-              "reeve": tool_reeve, "fix": tool_fix, "spring": tool_spring}
+              "reeve": tool_reeve, "fix": tool_fix, "spring": tool_spring, "drum": tool_drum}
 
 
 def _recorded(tool_name: str):
@@ -6422,9 +7301,13 @@ def _recorded(tool_name: str):
     def record(args: dict[str, Any]) -> dict[str, Any]:
         entry = _world(args.get("world_id"))
         answer = make(args)
+        # What the call left to the tool and the tool worked out -- which way a
+        # drum winds -- is kept with the call, so a rebuild makes the same joint
+        # and the room is told it.
+        as_made = answer.pop("as_made", None) or {}
         made = {"id": entry.get("next_joint", 1), "tool": tool_name,
                 "live": answer["joint"],
-                "args": {k: v for k, v in args.items() if k != "world_id"}}
+                "args": {**{k: v for k, v in args.items() if k != "world_id"}, **as_made}}
         entry["next_joint"] = made["id"] + 1
         entry.setdefault("joints", []).append(made)
         check = entry.get("check")
@@ -6470,6 +7353,10 @@ HANDLERS = {
     "reeve": _recorded("reeve"),
     "fix": _recorded("fix"),
     "spring": _recorded("spring"),
+    "drum": _recorded("drum"),
+    "store": tool_store,
+    "motor": tool_motor,
+    "drive": tool_drive,
     "interaction": tool_interaction,
     "duplicate": tool_duplicate,
     "build_recipe": tool_build_recipe,
