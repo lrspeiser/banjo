@@ -430,6 +430,11 @@ class TheLibraryLoads(unittest.TestCase):
     def test_the_abi_matches_the_binding(self):
         self.assertEqual(banjo.library().banjo_abi_version(), banjo.ABI_VERSION)
 
+    def test_the_library_names_its_floating_point_profile(self):
+        # Numbers computed under another profile are not these numbers
+        # (docs/floating-point-model.md), so a log line says which it was.
+        self.assertIn("floating-point profile banjo-cpu-precise-v1", banjo.version())
+
     def test_a_bad_scene_says_what_is_wrong_instead_of_crashing(self):
         with self.assertRaises(banjo.BanjoError) as caught:
             banjo.World("not json at all")

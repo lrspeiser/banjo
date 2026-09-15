@@ -1,4 +1,5 @@
 #include "terrain/TerrainGenerator.hpp"
+#include "numeric/FpProfile.hpp"
 
 #include <algorithm>
 #include <array>
@@ -742,7 +743,10 @@ std::string cacheFileName(const ValleyParameters &p) {
             mix(static_cast<std::uint64_t>(std::llround(p.cell_m * 1e6))) ^
             mix(static_cast<std::uint64_t>(std::llround(p.discharge_m3_s * 1e6)) * 7ULL) ^
             mix(static_cast<std::uint64_t>(p.erosion_iterations) * 13ULL) ^
-            mix(static_cast<std::uint64_t>(std::llround(p.spinup_limit_s)) * 17ULL));
+            mix(static_cast<std::uint64_t>(std::llround(p.spinup_limit_s)) * 17ULL) ^
+            // And the numerical profile the ground was computed under: a valley
+            // another build made is left in the cache and not used.
+            mix(banjo::fp::profileHash()));
     std::snprintf(name, sizeof name, "valley-g%d-%016llx.terrain", kGeneratorVersion,
                   static_cast<unsigned long long>(key));
     return name;

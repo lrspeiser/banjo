@@ -44,9 +44,18 @@ jobs:
         run: cmake --build build/ci --parallel 2
 
       # The five suites labelled `long` cost up to an hour or more each and
-      # run in long-physics.yml instead, nightly and on demand.
+      # run in long-physics.yml instead, nightly and on demand. The one labelled
+      # `performance` (banjo_live_world_deadline) is a claim about the machine as
+      # much as the engine, which a four-core runner cannot test; it runs on the
+      # declared desktop (scripts/run-performance-gate.py). A selection that
+      # matches no test fails rather than passing empty, and the JUnit keeps
+      # each test's whole output, so the numbers it printed can be compared.
       - name: Test core and material laws
-        run: ctest --test-dir build/ci --output-on-failure -LE long
+        run: >-
+          ctest --test-dir build/ci --output-on-failure --no-tests=error
+          --output-junit ${{ github.workspace }}/ctest-results.xml
+          --test-output-size-passed 20000000 --test-output-size-failed 20000000
+          -LE "long|performance"
 
       - name: Test playground HTTP boundary without an API key
         env:
@@ -118,3 +127,17 @@ jobs:
             build/ci/banjo-fracture.png
             build/ci/ball-scenarios.csv
           if-no-files-found: error
+
+      # What ran, what the floating-point audit found in the build's generated
+      # commands, and which profile the build was compiled to -- kept whether the
+      # job passed or not.
+      - name: Keep the test and floating-point evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: banjo-ci-evidence-${{ github.sha }}
+          path: |
+            ctest-results.xml
+            build/ci/banjo-fp-profile.json
+            build/ci/fp-model-audit-Release.json
+          if-no-files-found: warn

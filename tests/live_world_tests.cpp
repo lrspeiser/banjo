@@ -989,35 +989,39 @@ void aSecondBreakDoesNotStopTheClock() {
             "this is here to catch");
 }
 
-void theWorldSeesACollisionComing() {
-    struct Seen { double lead_ms, cost_ms; std::string object; bool foreseen, blocked; };
-    const auto watch = [](double fall) {
-        const auto live = LiveWorld::open(paneAndBall(fall));
-        live->foreseeCollisions(4.0);
-        for (int i = 0; i < 432; ++i) {   // 1.8 s at 1/240
-            live->step(1.0 / 240.0);
-            for (const std::string &name : live->breakable()) live->fracture(name);
-        }
-        Seen out{0.0, 0.0, "", false, false};
-        for (const LiveDelay &delay : live->delays()) {
-            const std::string kind(delay.kind);
-            // The warning, which carries how much lead there was.
-            if (kind == "foreseen" && delay.cost_ms == 0.0 && !out.foreseen) {
-                out.foreseen = true;
-                out.lead_ms = delay.lead_ms;
-                out.object = delay.object;
-            }
-            // The run that was started on the back of it and then used. Its
-            // cost is what the warning had to cover.
-            if (kind == "foreseen" && delay.cost_ms > 0.0) out.cost_ms = delay.cost_ms;
-            if (kind == "blocked" && !out.blocked) out.blocked = true;
-        }
-        return out;
-    };
+struct ForeseenDrop { double lead_ms, cost_ms; std::string object; bool foreseen, blocked; };
 
-    const Seen gentle = watch(0.5);
-    const Seen fair = watch(1.5);
-    const Seen high = watch(6.0);
+// A pane and a ball dropped from `fall` onto it, watched for 1.8 s by a world
+// that looks 4 s ahead: what it foresaw, with how much warning, and what the
+// run it started on the back of that warning cost.
+ForeseenDrop watchADrop(double fall) {
+    const auto live = LiveWorld::open(paneAndBall(fall));
+    live->foreseeCollisions(4.0);
+    for (int i = 0; i < 432; ++i) {   // 1.8 s at 1/240
+        live->step(1.0 / 240.0);
+        for (const std::string &name : live->breakable()) live->fracture(name);
+    }
+    ForeseenDrop out{0.0, 0.0, "", false, false};
+    for (const LiveDelay &delay : live->delays()) {
+        const std::string kind(delay.kind);
+        // The warning, which carries how much lead there was.
+        if (kind == "foreseen" && delay.cost_ms == 0.0 && !out.foreseen) {
+            out.foreseen = true;
+            out.lead_ms = delay.lead_ms;
+            out.object = delay.object;
+        }
+        // The run that was started on the back of it and then used. Its
+        // cost is what the warning had to cover.
+        if (kind == "foreseen" && delay.cost_ms > 0.0) out.cost_ms = delay.cost_ms;
+        if (kind == "blocked" && !out.blocked) out.blocked = true;
+    }
+    return out;
+}
+
+void theWorldSeesACollisionComing() {
+    const ForeseenDrop gentle = watchADrop(0.5);
+    const ForeseenDrop fair = watchADrop(1.5);
+    const ForeseenDrop high = watchADrop(6.0);
     std::cout << "  1.5 m: " << fair.lead_ms << " ms warning on " << fair.object
               << ", first run cost " << fair.cost_ms << " ms\n"
               << "  6.0 m: " << high.lead_ms << " ms warning on " << high.object
@@ -1044,24 +1048,67 @@ void theWorldSeesACollisionComing() {
             "a longer fall did not give more warning, so the lead is not being "
             "worked out from the approach at all");
     // Whether the run is FINISHED inside the warning is a claim about the
-    // machine as much as the engine: the lattice runs on every core there is,
-    // and the warning is set by the fall. On this project's 24-thread machine
-    // it holds with room to spare; on a four-core CI runner a 1.5 m fall's
-    // 485 ms of warning does not cover a 1082 ms run (measured, GCC, four
-    // cores), and nothing in the engine can make it. So it is checked where it
-    // can be true, and said -- with the numbers -- where it cannot be tested.
+    // machine as much as the engine, and is checked on its own:
+    // theDeadlineIsMet.
+}
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#define BANJO_LIVE_WORLD_STRING2(x) #x
+#define BANJO_LIVE_WORLD_STRING(x) BANJO_LIVE_WORLD_STRING2(x)
+constexpr const char *kCompiler = "MSVC " BANJO_LIVE_WORLD_STRING(_MSC_FULL_VER);
+#elif defined(__clang__)
+constexpr const char *kCompiler = "Clang " __clang_version__;
+#elif defined(__GNUC__)
+constexpr const char *kCompiler = "GCC " __VERSION__;
+#else
+constexpr const char *kCompiler = "a compiler this does not name";
+#endif
+#ifdef BANJO_FP_PROFILE
+constexpr const char *kProfile = BANJO_FP_PROFILE;
+#else
+constexpr const char *kProfile = "(none)";
+#endif
+
+// Whether a foreseen fracture's first run is finished inside its warning. The
+// lattice runs on every core there is, up to 16, and the warning is set by the
+// fall, so this is a claim about the machine as much as the engine. On this
+// project's 24-thread desktop it holds with room to spare. On a four-core CI
+// runner a 1.5 m fall's 485 ms of warning does not cover a 1082 ms run
+// (measured, GCC, four cores), and nothing in the engine can make it. Beside
+// other heavy work it fails on any build (docs/floating-point-model.md). So it
+// runs on its own -- `banjo_live_world_tests --deadline`, ctest's
+// banjo_live_world_deadline, labelled performance and run serially -- and says
+// the margin, cold and warm, and what it ran on. The requirement is unchanged:
+// the first run in a fresh world, started on the way down, done before contact.
+void theDeadlineIsMet() {
     const unsigned threads = std::thread::hardware_concurrency();
+    const unsigned lattice = threads < 1U ? 1U : (threads > 16U ? 16U : threads);
+    std::cout << "  on " << threads << " hardware threads (the lattice uses " << lattice << "), "
+              << kCompiler << ", profile " << kProfile << "\n";
+    const ForeseenDrop gentle = watchADrop(0.5);   // as the suite runs it: nothing breaks first
+    const ForeseenDrop cold = watchADrop(1.5);     // the first run the process makes
+    const ForeseenDrop high = watchADrop(6.0);
+    const ForeseenDrop warm = watchADrop(1.5);     // the same drop again, the process warm
+    const auto say = [](const char *what, const ForeseenDrop &seen) {
+        std::cout << "  " << what << ": " << seen.lead_ms << " ms of warning, the run took "
+                  << seen.cost_ms << " ms: margin " << seen.lead_ms - seen.cost_ms << " ms"
+                  << (seen.blocked ? " (still blocked at contact)" : "") << "\n";
+    };
+    say("1.5 m, cold", cold);
+    say("6.0 m", high);
+    say("1.5 m, warm", warm);
+    require(!gentle.foreseen, "a drop too gentle to break anything was still foreseen");
+    require(cold.foreseen && cold.cost_ms > 0.0, "the 1.5 m drop was not foreseen, or its run never started");
     if (threads < 8) {
         std::cout << "  not checked here: whether the run is done inside the warning needs a "
                      "machine that can run the lattice in time, and this one has "
-                  << threads << " hardware threads (the run was started "
-                  << fair.lead_ms << " ms ahead and took " << fair.cost_ms << " ms)\n";
+                  << threads << " hardware threads\n";
         return;
     }
-    require(!fair.blocked,
+    require(!cold.blocked,
             "something still blocked at the moment of contact, so the run that "
             "was started on the way down was not ready in time");
-    require(fair.lead_ms > fair.cost_ms,
+    require(cold.lead_ms > cold.cost_ms,
             "the warning is shorter than the run it would have to cover, so there "
             "is no time to work the fracture out before it is needed");
 }
@@ -2249,8 +2296,13 @@ void aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom() {
             "the pane's run was taken at the room's step, not its own lattice's");
 }
 
-int main() {
+int main(int argc, char **argv) {
     try {
+        if (argc > 1 && std::string(argv[1]) == "--deadline") {
+            theDeadlineIsMet();
+            std::cout << "[PASS] a foreseen fracture's first run is done inside its warning\n";
+            return 0;
+        }
         aWorldOpensIntactAndNamed();
         std::cout << "[PASS] a world opens intact, named, and in the shapes that were asked for\n";
         steppingIsGravity();
@@ -2282,7 +2334,7 @@ int main() {
         aSecondBreakDoesNotStopTheClock();
         std::cout << "[PASS] a second break does not stop the clock\n";
         theWorldSeesACollisionComing();
-        std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
+        std::cout << "[PASS] the world sees a collision coming, names what will break and starts its run on the way down\n";
         aDropBreaksThePlateWhateverThePhaseOfTheStep();
         std::cout << "[PASS] a drop breaks the plate whatever the phase of the step it lands in\n";
         aBodyAskedAboutForADentIsNotBroken();

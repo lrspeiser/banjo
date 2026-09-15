@@ -15,7 +15,9 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
 `const char *banjo_version_string(void)` says which library it is in words, for
-a log line. Never parse it: the number to compare is `banjo_abi_version()`.
+a log line: the day it was built and the floating-point profile it was compiled
+to ([One floating-point model](../floating-point-model.md)). Never parse it: the
+number to compare is `banjo_abi_version()`.
 
 Current ABI: **23**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18

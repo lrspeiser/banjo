@@ -1,4 +1,5 @@
 #include "prediction/ScenarioCache.hpp"
+#include "numeric/FpProfile.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -162,6 +163,8 @@ void ScenarioProjectionCache::saveCsv(const std::filesystem::path &path) const {
         throw std::runtime_error("could not open scenario cache for writing");
     }
 
+    // Which numerical profile computed these (src/numeric/FpProfile.hpp).
+    output << "# banjo.fp-profile " << fp::profile() << '\n';
     output << "striker,target,surface,radius_um,speed_mm_s,slope_mdeg,"
               "gravity_x_mm_s2,gravity_y_mm_s2,gravity_z_mm_s2,voxel_um,seed,"
               "impact_energy_j,peak_force_n,peak_pressure_pa,fracture_energy_ratio,"
@@ -222,7 +225,18 @@ std::size_t ScenarioProjectionCache::loadCsv(const std::filesystem::path &path) 
         return 0U;
     }
 
+    // A table computed under another numerical profile, or under none it names
+    // (written before profiles were), is left where it is and not used.
     std::string line;
+    if (!std::getline(input, line)) {
+        return 0U;
+    }
+    if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    if (line != std::string("# banjo.fp-profile ") + fp::profile()) {
+        return 0U;
+    }
     if (!std::getline(input, line)) {
         return 0U;
     }

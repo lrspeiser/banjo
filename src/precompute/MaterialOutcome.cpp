@@ -67,6 +67,7 @@ void fnvAppend(std::uint64_t &hash, const Value &value) {
 void writeKey(std::ostream &output, const MaterialOutcomeKey &key) {
     output << key.format_version << ' '
            << key.solver_model_version << ' '
+           << key.fp_profile_hash << ' '
            << static_cast<unsigned>(key.striker) << ' '
            << static_cast<unsigned>(key.target) << ' '
            << static_cast<unsigned>(key.surface) << ' '
@@ -97,6 +98,7 @@ void writeKey(std::ostream &output, const MaterialOutcomeKey &key) {
     unsigned surface = 0U;
     if (!(input >> key.format_version
                 >> key.solver_model_version
+                >> key.fp_profile_hash
                 >> striker
                 >> target
                 >> surface
@@ -130,6 +132,9 @@ void validateOutcome(const MaterialOutcome &outcome) {
     if (outcome.key.format_version != kMaterialOutcomeFormatVersion ||
         outcome.key.solver_model_version != kMaterialSolverModelVersion) {
         throw std::invalid_argument("material outcome version is incompatible");
+    }
+    if (outcome.key.fp_profile_hash != fp::profileHash()) {
+        throw std::invalid_argument("material outcome was computed under another numerical profile");
     }
     if (outcome.nodes.empty() || outcome.nodes.size() > kMaximumNodes ||
         outcome.bonds.empty() || outcome.bonds.size() > kMaximumBonds ||
@@ -191,6 +196,7 @@ std::uint64_t materialOutcomeFingerprint(const MaterialOutcomeKey &key) {
     std::uint64_t hash = 1469598103934665603ULL;
     fnvAppend(hash, key.format_version);
     fnvAppend(hash, key.solver_model_version);
+    fnvAppend(hash, key.fp_profile_hash);
     const auto striker = static_cast<std::uint8_t>(key.striker);
     const auto target = static_cast<std::uint8_t>(key.target);
     const auto surface = static_cast<std::uint8_t>(key.surface);

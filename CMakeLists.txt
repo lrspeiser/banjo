@@ -29,6 +29,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # while CI on Ubuntu stopped at libbanjo.so ("recompile with -fPIC"). Set
 # before any target and any fetched dependency, so Jolt gets it too.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# One floating-point model for everything linked into the engine, Jolt
+# included -- banjo-cpu-precise-v1: /fp:precise, or -fno-fast-math
+# -ffp-contract=off -- and a build that audits the commands CMake generated
+# before it compiles anything. Before any target and any fetched dependency, for
+# the same reason as the line above. Why, and what it cost:
+# cmake/FloatingPointModel.cmake and docs/floating-point-model.md.
+include(cmake/FloatingPointModel.cmake)
 
 function(banjo_enable_warnings target)
     if(MSVC)
@@ -106,9 +113,13 @@ add_library(
     src/fracture/CellSkin.cpp
     src/prediction/BallScenarioProjection.cpp
     src/prediction/ScenarioCache.cpp
-    src/precompute/MaterialOutcome.cpp)
+    src/precompute/MaterialOutcome.cpp
+    src/numeric/FpProfile.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The profile's name, for what the engine reports and what its numerical caches
+# are keyed by (src/numeric/FpProfile.hpp). Public, so every object sees the same.
+target_compile_definitions(banjo_core PUBLIC BANJO_FP_PROFILE="${BANJO_FP_PROFILE}")
 target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
 
@@ -213,54 +224,40 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
+    # One file of ours compiled inside Jolt's own target, with Jolt's own flags,
+    # so banjo_fp_profile_tests can ask what Jolt's objects actually do with a
+    # NaN, an infinity, a signed zero and a product that could be fused.
+    target_sources(Jolt PRIVATE src/numeric/FpProbeJolt.cpp)
 
     add_library(
         banjo_runtime
         src/physics/TetrahedronContact.cpp
         src/rigid/DrumRope.cpp
         src/rigid/JoltWorld.cpp
-        src/sim/RollingBallExperiment.cpp)
+        src/sim/RollingBallExperiment.cpp
+        src/numeric/FpProbeRuntime.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
-    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, and
-    # instantiates Jolt's inline solver code -- the same AxisConstraintPart the
-    # kerf's SixDOF constraint uses. The linker keeps one copy of an inline
-    # function, the first it meets, and banjo_runtime comes before Jolt: a copy
-    # compiled here, without Jolt's floating-point flags, replaced the one Jolt
-    # compiled for itself, and moved a cut's work in banjo_blade_tests from
-    # 4.676 J to 4.192 J. So this file is compiled with Jolt's own
-    # floating-point model, which Jolt's Build/CMakeLists.txt sets in its own
-    # directory where no target of ours inherits it -- by the same rules. (Its
-    # architecture flags, /arch:AVX2 or -mavx2 and the rest, are PUBLIC on the
-    # Jolt target and reach every target of ours already.)
-    #
-    # And with Jolt's RTTI. Jolt is built without it (CPP_RTTI_ENABLED), so its
-    # classes have no type information; a class of ours derived from one, built
-    # with RTTI, asks for its base's, and GCC's link failed for want of
+    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, a
+    # class derived from JPH::TwoBodyConstraint, so it is compiled with Jolt's
+    # RTTI setting. Jolt is built without RTTI (CPP_RTTI_ENABLED), so its
+    # classes have no type information, and a class of ours derived from one
+    # and built with RTTI asks for its base's: GCC's link failed for want of
     # `typeinfo for JPH::TwoBodyConstraint`. MSVC linked it; the rule is the
     # same for both.
-    if (MSVC)
-        if (CROSS_PLATFORM_DETERMINISTIC)
-            set(banjo_jolt_flags "/fp:precise;/fp:except-")
+    #
+    # Its floating-point model is everyone's (cmake/FloatingPointModel.cmake).
+    # It was once given Jolt's /fp:fast here, after its copy of Jolt's
+    # AxisConstraintPart replaced Jolt's own and moved a cut in
+    # banjo_blade_tests from 4.676 J to 4.192 J; that mended its own copies and
+    # left JoltWorld.cpp's and TetrahedronContact.cpp's as they were.
+    if (NOT CPP_RTTI_ENABLED)
+        if (MSVC)
+            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
         else()
-            set(banjo_jolt_flags "/fp:fast;/fp:except-")
-        endif()
-        if (NOT CPP_RTTI_ENABLED)
-            list(APPEND banjo_jolt_flags "/GR-")
-        endif()
-    else()
-        if (CROSS_PLATFORM_DETERMINISTIC OR NOT USE_FMADD)
-            set(banjo_jolt_flags "-ffp-contract=off")
-        elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86")
-            set(banjo_jolt_flags "-ffp-contract=fast")
-        else()
-            set(banjo_jolt_flags "-ffp-contract=on")
-        endif()
-        if (NOT CPP_RTTI_ENABLED)
-            list(APPEND banjo_jolt_flags "-fno-rtti")
+            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
         endif()
     endif()
-    set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "${banjo_jolt_flags}")
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
     banjo_enable_warnings(banjo_runtime)
 
@@ -832,6 +829,18 @@ if(BANJO_BUILD_TESTS)
     banjo_enable_warnings(banjo_tests)
     add_test(NAME banjo_tests COMMAND banjo_tests)
 
+    # The floating-point audit (scripts/check-fp-model.py). Every configuration
+    # of this build, audited from what CMake generated -- the build itself audits
+    # only the configuration it builds -- and the audit's own checks: its rules,
+    # and a fixture of builds that leave the model, each of which it must name.
+    add_test(NAME banjo_fp_model_audit
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-fp-model.py
+                     --build ${CMAKE_BINARY_DIR} --all-configs)
+    add_test(NAME banjo_fp_model_audit_tests
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_model_audit_tests.py)
+    set_tests_properties(banjo_fp_model_audit_tests PROPERTIES ENVIRONMENT
+        "BANJO_FP_FIXTURE_GENERATOR=${CMAKE_GENERATOR};BANJO_FP_FIXTURE_PLATFORM=${CMAKE_GENERATOR_PLATFORM};BANJO_FP_FIXTURE_CXX=${CMAKE_CXX_COMPILER};BANJO_FP_FIXTURE_REQUIRED=1")
+
     add_executable(banjo_material_tests tests/material_prediction_tests.cpp)
     target_link_libraries(banjo_material_tests PRIVATE banjo_core)
     target_compile_features(banjo_material_tests PRIVATE cxx_std_23)
@@ -987,6 +996,24 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
+            # Its check against the wall clock -- a foreseen fracture's first
+            # run done inside its warning -- is a claim about the machine as much
+            # as the engine: beside other heavy work it fails on any build. It
+            # runs on its own, labelled performance, for the performance gate
+            # (scripts/run-performance-gate.py) rather than every push. The rest
+            # of the suite still reads the clock in places, so both run serially.
+            add_test(NAME banjo_live_world_deadline COMMAND banjo_live_world_tests --deadline)
+            set_tests_properties(banjo_live_world_tests banjo_live_world_deadline PROPERTIES RUN_SERIAL TRUE)
+            set_tests_properties(banjo_live_world_deadline PROPERTIES LABELS performance)
+
+            # What the build's objects -- ours, and Jolt's own -- do with NaNs,
+            # infinities, signed zeros, denormals and a product that could be
+            # fused, and what the engine's own checks make of NaNs, in the
+            # profile they were built to (docs/floating-point-model.md).
+            add_executable(banjo_fp_profile_tests tests/fp_profile_tests.cpp)
+            target_link_libraries(banjo_fp_profile_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fp_profile_tests)
+            add_test(NAME banjo_fp_profile_tests COMMAND banjo_fp_profile_tests)
 
             # A room opened again from a scene that has changed keeps everything
             # the change did not touch: a saved world carried in thing by thing.
@@ -1197,6 +1224,23 @@ if(BANJO_BUILD_TESTS)
         target_compile_features(banjo_runtime_tests PRIVATE cxx_std_23)
         banjo_enable_warnings(banjo_runtime_tests)
         add_test(NAME banjo_runtime_tests COMMAND banjo_runtime_tests)
+
+        # Adding a file must not change what the simulation computes: one Jolt
+        # scene, built alone and with tests/fp_link_order_extra.cpp -- our own
+        # copies of Jolt's solver and closest-point inlines -- first on the link
+        # line, where the linker meets them before Jolt's, compared bit for bit.
+        # Under one floating-point model the copies compute the same; under two,
+        # the link order chose the arithmetic (docs/floating-point-model.md).
+        add_executable(banjo_fp_link_order_plain tests/fp_link_order_harness.cpp)
+        target_link_libraries(banjo_fp_link_order_plain PRIVATE Jolt)
+        banjo_enable_warnings(banjo_fp_link_order_plain)
+        add_executable(banjo_fp_link_order_extra_first tests/fp_link_order_extra.cpp tests/fp_link_order_harness.cpp)
+        target_link_libraries(banjo_fp_link_order_extra_first PRIVATE Jolt)
+        banjo_enable_warnings(banjo_fp_link_order_extra_first)
+        add_test(NAME banjo_fp_link_order_tests
+                 COMMAND ${CMAKE_COMMAND} -DPLAIN=$<TARGET_FILE:banjo_fp_link_order_plain>
+                         -DEXTRA_FIRST=$<TARGET_FILE:banjo_fp_link_order_extra_first>
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_link_order_compare.cmake)
     endif()
 endif()
 
