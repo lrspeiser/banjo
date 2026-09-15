@@ -2457,6 +2457,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // makes it now -- is woken to fall. Jolt wakes nothing sleeping on a body
     // that is simply not there (LiveWorld::park).
     std::vector<std::string> put_back;
+    // What that wakes, by name, for the report (LiveRestore::woken): which
+    // things lie near what did not come back depends on where the pieces of a
+    // break came to rest, and that is not the same on every machine.
+    std::vector<std::string> woken;
     if (carrying && plan.exact) {
         std::set<std::string> unmatched;
         for (std::size_t g = 0; g < plan.carried.size(); ++g)
@@ -2472,8 +2476,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             for (const Placement &p : placements) {
                 if (p.anchored || p.parked) continue;
                 const std::size_t j = impl.index_of.at(p.name);
-                if (length(p.pose.center_of_mass_world_m - at) <= reach + 0.5 * length(impl.described[j].dimensions_m))
+                if (length(p.pose.center_of_mass_world_m - at) <= reach + 0.5 * length(impl.described[j].dimensions_m)) {
                     impl.world->wake(p.id);
+                    if (std::find(woken.begin(), woken.end(), p.name) == woken.end()) woken.push_back(p.name);
+                }
             }
         }
     }
@@ -3032,6 +3038,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         }
         said.not_carried.insert(said.not_carried.end(), lost.begin(), lost.end());
         said.not_kept.insert(said.not_kept.begin(), said.not_carried.begin(), said.not_carried.end());
+        said.woken = std::move(woken);
     }
     impl.restored = std::move(said);
     return live;

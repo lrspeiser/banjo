@@ -820,6 +820,11 @@ struct LiveRestore {
     // and why -- the room changed it or took it away, or it could not be
     // carried exactly.
     std::vector<std::string> not_carried;
+    // For "carried": the things woken because a saved thing near them did not
+    // come back as it was -- the room took it away, or has it as the room makes
+    // it now -- so what rested on it or against it falls or moves. Everything
+    // else came back asleep or awake as it was saved.
+    std::vector<std::string> woken;
     // For "carried": how much of each came back as it was saved, and how many
     // bodies are as the scene has them instead.
     struct Carried {

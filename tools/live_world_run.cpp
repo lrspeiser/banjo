@@ -136,9 +136,11 @@
 //                                            on]}, and "restored" says tier "carried"
 //                                            with "carried" {placed, fresh, gone,
 //                                            joints, energy_stores, motors, blades,
-//                                            tool_points, heat, hand} and
+//                                            tool_points, heat, hand},
 //                                            "not_carried", what did not come back as
-//                                            it was saved and why
+//                                            it was saved and why, and "woken", what
+//                                            was woken because a saved thing near it
+//                                            did not come back as it was
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -261,6 +263,7 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
                           {"energy_stores", n.energy_stores}, {"motors", n.motors}, {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
+        out["woken"] = restored.woken;
     }
     return out;
 }

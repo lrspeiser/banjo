@@ -254,10 +254,17 @@ Shift shiftOf(const nlohmann::json &saved_part, const nlohmann::json &now) {
     throw std::runtime_error("the world carried into has no part authored as " + saved_part.at("bodies").dump());
 }
 
+// What the world opened again says it woke (LiveRestore::woken). Which things lie
+// near what did not come back depends on where a break's pieces came to rest,
+// and that is not the same on every machine: on Linux one of the pane's pieces
+// lay by the door and was woken when the door came back shut, on Windows none did.
+std::set<std::string> wokenBy(const LiveRestore &r) { return {r.woken.begin(), r.woken.end()}; }
+
 // Every named body exactly as the saved world had it: field for field, and each
 // of its cells under its new number -- its number in its own part, from where
-// that part now begins. `woken` may have been woken, since what they rested on
-// did not come back.
+// that part now begins. `woken` are the ones the world says it woke, since what
+// they rested on did not come back as it was: each of those is awake, and every
+// other one is asleep or awake as it was saved.
 void requireCarriedExactly(const nlohmann::json &saved, const nlohmann::json &now, const std::vector<std::string> &names,
                            const std::set<std::string> &woken = {}) {
     std::size_t cells = 0;
@@ -266,6 +273,8 @@ void requireCarriedExactly(const nlohmann::json &saved, const nlohmann::json &no
         const nlohmann::json *b = bodyIn(now, name);
         require(a != nullptr, "the saved world has no " + name);
         require(b != nullptr, "the " + name + " did not come back");
+        if (woken.count(name) != 0 && b->contains("awake"))
+            require(b->at("awake").get<bool>(), "the " + name + " was said to be woken, and is asleep");
         for (const char *key : {"material", "shape", "dimensions_m", "revision", "color_rgba", "anchored", "fragment",
                                 "dent_m", "dent_at_m", "body_id", "friction", "restitution", "rolling_resistance",
                                 "from", "tilt_wxyz", "offsets_b64", "pose", "parked"}) {
@@ -469,7 +478,7 @@ void aThingAddedLeavesTheRestAsItStood() {
             "something was said not to be carried: " + (r.not_carried.empty() ? std::string{} : r.not_carried.front()));
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names);
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     requireJointsAsSaved(p.doc, now, {p.door_pin, p.hoist_pin, p.rope});
     require(p.doc.at("energy_stores") == now.at("energy_stores"), "the battery is not as it was");
     require(p.doc.at("motors") == now.at("motors"), "the motor is not as it was");
@@ -518,7 +527,8 @@ void aThingTakenAwayLeavesTheRestAsItStood() {
     require(says(r, "the anvil: the room no longer has it"), "it was not said that the anvil is gone");
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names, {"iron ball"});
+    require(wokenBy(r).count("iron ball") != 0, "the iron ball, resting on the anvil, was not said to be woken");
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     requireJointsAsSaved(p.doc, now, {p.door_pin, p.hoist_pin, p.rope});
     require(bodyIn(now, "iron ball")->at("awake").get<bool>(), "the iron ball was left asleep with nothing under it");
     const LiveBodyPose ball = named(back->poses(), "iron ball");
@@ -545,7 +555,7 @@ void aThingMovedInTheSceneIsWhereTheSceneHasIt() {
     require(says(r, "the rolling ball: the room changed it"), "it was not said that the rolling ball was changed");
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names);
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     const LiveBodyPose ball = named(back->poses(), "rolling ball");
     require(length(ball.position_m - moved) < 1e-6, "the rolling ball is not where the scene has it");
     theHoistWindsOn(*back, p.motor, p.rope);
@@ -568,7 +578,7 @@ void aPinTheRoomChangedPutsWhatItHoldsBackAsTheRoomHasIt() {
     require(says(r, "the door: it was on a pin the room changed or took away"), "it was not said why the door is not");
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names);
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     const LiveBodyPose door = named(back->poses(), "door");
     require(length(door.position_m - Vec3{0.30, 0.45, 1.2}) < 1e-6 && std::abs(door.orientation_wxyz[0] - 1.0) < 1e-9,
             "the door is not shut where the scene has it");
@@ -606,7 +616,7 @@ void cellsThatAreNotTheSavedOnesFallBackForThatThingAlone() {
             "it was not said why the rolling ball could not be carried");
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names);
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     require(bodyIn(now, "rolling ball")->at("pose") == left.at("pose"), "the rolling ball is not where it was left");
 }
 
@@ -622,7 +632,7 @@ void heatTheRoomDeclaresAnewIsAsDeclared() {
     require(says(r, "the hot block's heat: the room declares it anew"), "it was not said that the heat is declared anew");
     std::string why;
     const nlohmann::json now = nlohmann::json::parse(back->snapshot(why));
-    requireCarriedExactly(p.doc, now, names);
+    requireCarriedExactly(p.doc, now, names, wokenBy(r));
     double hot = 0.0;
     for (const thermo::BodyHeat &heat : back->thermo()->bodies())
         if (heat.body == "hot block") hot = heat.temperature_k;

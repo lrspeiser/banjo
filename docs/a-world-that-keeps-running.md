@@ -411,8 +411,13 @@ did not (`"not_carried"`, also at the front of `not_kept`):
   it;
 - heat the scene declares anew is as declared; heaters and gas regions are the
   scene's, from the start;
-- and what rested on a thing that went is woken, so it falls: Jolt wakes nothing
-  sleeping on a body that is simply not there.
+- and what lay near a thing that went, or that is as the scene has it now, is
+  woken so it falls or moves -- Jolt wakes nothing sleeping on a body that is
+  simply not there -- and is named in `"woken"`. Everything else is asleep or
+  awake as it was saved. Which things lie near it depends on where a break's
+  pieces came to rest, which is not the same on every machine: on Linux a
+  pane's piece lay by a door the room had changed, and was woken; on Windows
+  none did.
 
 The water is the scene's own: the server carries the running room's water into
 the spec whenever the ground under it is the same (`with_water`), and the
