@@ -53,8 +53,19 @@ and `banjo_inertia_about`, with what each did read back from
 through the library and gets the same numbers. A saved world keeps the stores,
 the motors and the ropes on drums.
 
-The chat cannot build one yet: its tools for machines, and a recipe for the
-hoist, come next, with the controller.
+The room's chat builds one with its own tools: `drum`, `store`, `motor` and
+`drive` in the MCP, a `drive` step for a thing's actions, and `build_recipe`
+`"hoist"` ([docs/api/mcp.md](api/mcp.md), "Machines"). Built by the recipe on the
+world's terrace and worked by its own actions on the live runner:
+
+- "Wind it up" lifted the 32 kg crate 0.4470 m in a second, for 0.4471 m of the
+  drum's radius times its turn, and the battery gave the 267.251 J the motor
+  drew;
+- "Stop" held it still, drawing nothing;
+- "Let it down" brought it down at 0.4170 m/s, where the motor's line says
+  0.4173, and the battery gave nothing.
+
+The controller comes next.
 
 ## What this is
 

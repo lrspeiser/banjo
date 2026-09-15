@@ -32,6 +32,13 @@ ENGINE = next((p for p in [
     ROOT / "build/integration/Release/banjo_live_world_run.exe",
     ROOT / "build/integration/banjo_live_world_run",
 ] if p.is_file()), None)
+# The C library, for the room held as an MCP world (room_world): what the
+# room's chat builds with.
+LIBRARY = next((p for p in [
+    *([Path(os.environ["BANJO_LIBRARY"])] if os.environ.get("BANJO_LIBRARY") else []),
+    ROOT / "build/integration/Release/banjo.dll",
+    ROOT / "build/integration/libbanjo.so",
+] if p.is_file()), None)
 
 RADIUS_M = 0.1
 
@@ -182,6 +189,200 @@ class AHoistInARoom(unittest.TestCase):
         self.assertEqual(server._motor_for(app, "drum")["on"], ["post", "drum"])
         with self.assertRaises(ValueError):
             server._motor_for(app, "crate")
+
+
+CHAT_RADIUS_M = 0.08     # RECIPES["hoist"]'s drum, which the chat is also told to build
+
+
+def a_bare_room() -> dict:
+    """A room on the world's 0.04 m cells with nothing in it but a stone."""
+    return {"algorithm": "lattice", "cell_m": 0.04, "plasticity": "on",
+            "bodies": [{"name": "marker stone", "shape": "box", "material": "concrete",
+                        "size_mm": [80, 80, 80], "center_mm": [2000, 40, 2000], "anchored": True}]}
+
+
+class App:
+    """What the live session and the room's own action runner ask of the server."""
+    engine_path = ENGINE
+    runs_path = ROOT / "build/playground-runs"
+    live_inprocess = False
+
+
+class Room:
+    pass
+
+
+@unittest.skipIf(ENGINE is None or LIBRARY is None, "the live world runner or the C library is not built")
+class AHoistTheChatBuilds(unittest.TestCase):
+    """A battery hoist built the way the room's chat builds one -- the MCP's own
+    tools, one call at a time, through room_world -- handed to the room as the
+    spec it keeps (export_spec), opened through the live session on the
+    engine's runner, and worked by the actions it was given, as the page runs
+    them (server.run_action)."""
+
+    def build(self, then=None) -> tuple[dict, dict]:
+        import room_world  # noqa: E402 -- the room as the chat's MCP world
+        world_id = room_world.open_room(a_bare_room())
+        said: dict = {}
+        try:
+            def call(tool: str, /, **args) -> dict:
+                answer = room_world.call(world_id, tool, args)
+                self.assertNotIn("error", answer, f"{tool}: {answer.get('error')}")
+                said[tool] = answer
+                return answer
+
+            for part in ({"name": "post", "shape": "box", "material": "concrete", "size_m": [0.08, 2.4, 0.08],
+                          "position_m": [0.0, 1.2, -0.2], "anchored": True},
+                         {"name": "drum", "shape": "box", "material": "oak", "size_m": [0.16, 0.16, 0.24],
+                          "position_m": [0.0, 2.0, 0.0]},
+                         {"name": "crate", "shape": "box", "material": "iron", "size_m": [0.16, 0.16, 0.16],
+                          "position_m": [0.08, 0.4, 0.0]},
+                         {"name": "battery", "shape": "box", "material": "concrete",
+                          "size_m": [0.24, 0.28, 0.16], "position_m": [-0.24, 0.14, -0.2], "anchored": True}):
+                call("add_object", object=part)
+            call("hinge", a="post", b="drum", at_m=[0.0, 2.0, 0.0], axis=[0, 0, 1])
+            call("drum", a="drum", b="crate", at_m=[0.0, 2.0, 0.0], axis=[0, 0, 1], radius_m=CHAT_RADIUS_M,
+                 at_b_m=[0.08, 0.48, 0.0], length_m=2.0)
+            call("store", name="battery", body="battery", capacity_j=20000)
+            call("motor", on=["post", "drum"], store="battery", stall_torque_n_m=60, no_load_rpm=95.5,
+                 brake_torque_n_m=200)
+            call("offer_actions", name="drum", actions=[
+                {"label": "Wind it up", "steps": [{"do": "drive", "command": 1}]},
+                {"label": "Stop", "steps": [{"do": "drive", "command": 0}]},
+                {"label": "Let it down", "steps": [{"do": "drive", "command": -0.1}]}])
+            if then is not None:
+                then(call)
+            spec = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+        return spec, said
+
+    def open(self, spec: dict):
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app, room = App(), Room()
+        room.spec = spec
+        app.live, app.room = live, room
+        opened = live.open(app, {"spec": spec})
+        self.assertFalse(opened.get("joint_problems"), opened.get("joint_problems"))
+        self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        return app, live.session
+
+    @staticmethod
+    def step(session, seconds: float) -> None:
+        for _ in range(max(1, round(seconds / (8 / 240.0)))):
+            session.send(op="step", dt=1 / 240.0, n=8)
+
+    def test_what_the_tools_made_is_the_rooms_own_spelling(self):
+        import fracture_lab  # noqa: E402
+        spec, said = self.build()
+        self.assertEqual(said["drum"]["winds"], 1, "a rope under the drum's +x rim is wound on by the +z turn")
+        self.assertEqual([j for j in spec["joints"] if j["kind"] == "drum"],
+                         [{"kind": "drum", "a": "drum", "b": "crate", "at_mm": [0.0, 2000.0, 0.0],
+                           "axis": [0, 0, 1], "radius_mm": 80.0, "to_mm": [80.0, 480.0, 0.0], "winds": 1,
+                           "length_mm": 2000.0, "out_mm": 0.0}])
+        self.assertEqual(spec["machines"], {
+            "stores": [{"name": "battery", "body": "battery", "capacity_j": 20000.0, "charge_j": 20000.0,
+                        "voltage_v": 24.0, "max_power_w": 0.0}],
+            "motors": [{"on": ["post", "drum"], "store": "battery", "stall_torque_n_m": 60.0,
+                        "no_load_rpm": 95.5, "brake_torque_n_m": 200.0, "command": 0.0, "brake": True}]})
+        self.assertEqual([a["steps"] for a in spec["actions"]],
+                         [[{"do": "drive", "part": "drum", "command": 1.0}],
+                          [{"do": "drive", "part": "drum", "command": 0.0, "brake": True}],
+                          [{"do": "drive", "part": "drum", "command": -0.1}]])
+        self.assertEqual(fracture_lab.validate(spec)["machines"], spec["machines"])
+
+    def test_opened_it_winds_the_crate_up_by_the_drums_radius_times_its_turn(self):
+        """Its own actions, pressed: the crate rises by the drum's radius times
+        its turn to a hundredth, the battery gives what the motor drew, the brake
+        holds it drawing nothing, and let down the battery gives nothing."""
+        import server  # noqa: E402 -- the page's own action runner
+        spec, _ = self.build()
+        app, session = self.open(spec)
+
+        def machines() -> dict:
+            return session.state.get("machines") or {}
+
+        def crate() -> dict:
+            return next(b for b in session.state["bodies"] if b["name"] == "crate")
+
+        def press(action: int) -> None:
+            answer = server.run_action(app, {"object": "drum", "action": action})
+            self.assertFalse(answer.get("refused"), answer)
+
+        self.step(session, 0.5)
+        held = machines()
+        self.assertEqual(held["motors"][0]["state"], "braking")
+        self.assertEqual(held["motors"][0]["drawn_j"], 0.0)
+        weight = crate()["mass_kg"] * 9.81
+        self.assertAlmostEqual(held["ropes"][0]["tension_n"], weight, delta=0.01 * weight)
+        y0, out0, turned0 = crate()["position_m"][1], held["ropes"][0]["out_m"], held["motors"][0]["turned_rad"]
+        press(0)                                  # Wind it up
+        self.step(session, 1.0)
+        wound = machines()
+        turned = wound["motors"][0]["turned_rad"] - turned0
+        taken = out0 - wound["ropes"][0]["out_m"]
+        rise = crate()["position_m"][1] - y0
+        print(f"\n   wound up for a second: the drum turned {turned / (2 * math.pi):.3f} times, took on "
+              f"{taken:.4f} m of rope (r x turn {CHAT_RADIUS_M * turned:.4f} m), the crate rose {rise:.4f} m; "
+              f"the battery gave {wound['stores'][0]['given_j']:.3f} J, the motor drew "
+              f"{wound['motors'][0]['drawn_j']:.3f} J", flush=True)
+        self.assertEqual(wound["motors"][0]["state"], "driving")
+        self.assertGreater(turned, math.pi)
+        self.assertAlmostEqual(taken, CHAT_RADIUS_M * turned, delta=0.001)
+        self.assertAlmostEqual(rise, CHAT_RADIUS_M * turned, delta=0.01 * CHAT_RADIUS_M * turned)
+        self.assertGreater(wound["stores"][0]["given_j"], 0.0)
+        self.assertAlmostEqual(wound["stores"][0]["given_j"], wound["motors"][0]["drawn_j"], delta=0.01)
+        press(1)                                  # Stop, the brake on
+        self.step(session, 0.5)
+        y1, drawn1 = crate()["position_m"][1], machines()["motors"][0]["drawn_j"]
+        self.step(session, 1.0)
+        self.assertAlmostEqual(crate()["position_m"][1], y1, delta=0.002)
+        self.assertEqual(machines()["motors"][0]["drawn_j"], drawn1)
+        self.assertEqual(machines()["motors"][0]["state"], "braking")
+        press(2)                                  # Let it down
+        self.step(session, 0.5)
+        ya, given = crate()["position_m"][1], machines()["stores"][0]["given_j"]
+        self.step(session, 0.5)
+        self.assertGreater(ya - crate()["position_m"][1], 0.1, "let down, it did not come down")
+        self.assertAlmostEqual(machines()["stores"][0]["given_j"], given, delta=0.01,
+                               msg="letting it down drew on the battery")
+
+    def test_a_motor_the_chat_left_running_runs_in_the_room(self):
+        """drive is kept with the motor: the room opens with it doing what the
+        chat last told it."""
+        spec, said = self.build(then=lambda call: call("drive", part="drum", command=1))
+        self.assertIn("rises", said["drive"]["does"])
+        (motor,) = spec["machines"]["motors"]
+        self.assertEqual((motor["command"], motor["brake"]), (1.0, False))
+        _, session = self.open(spec)
+        self.step(session, 0.5)
+        self.assertEqual(session.state["machines"]["motors"][0]["state"], "driving")
+        rose = next(b for b in session.state["bodies"] if b["name"] == "crate")["position_m"][1] - 0.4
+        self.assertGreater(rose, 0.1, "opened with its motor told to wind, the crate did not rise")
+
+
+@unittest.skipIf(LIBRARY is None, "the C library is not built")
+class TheTestRoomComesBackFromTheTools(unittest.TestCase):
+    """The tests-machines room held as the chat's MCP world, and handed back:
+    its rope on the drum, its battery and its motor are what they were."""
+
+    def test_its_drum_and_its_machines_are_what_went_in(self):
+        import fracture_lab  # noqa: E402
+        import room_world  # noqa: E402
+        import world_room  # noqa: E402
+        room = world_room.SCENES["tests-machines"]()
+        original = fracture_lab.validate(room)
+        world_id = room_world.open_room(room)
+        try:
+            again = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+        self.assertEqual(again["machines"], original["machines"])
+        self.assertEqual([j for j in again["joints"] if j["kind"] == "drum"],
+                         [j for j in original["joints"] if j["kind"] == "drum"])
+        self.assertEqual([a["label"] for a in again["actions"]], ["Wind it up", "Stop", "Let it down"])
 
 
 class TheTestRoomIsAHoist(unittest.TestCase):

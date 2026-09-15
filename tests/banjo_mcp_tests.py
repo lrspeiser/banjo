@@ -678,6 +678,176 @@ class TheTools(unittest.TestCase):
             self.client.call("joints", world_id=world_id)["joints"][0]["tension_n"],
             100.0, "the rope is holding two 618 N weights and reports nothing")
 
+    # A battery hoist by hand, laid out as RECIPES["hoist"] lays one on 0.04 m
+    # cells: an oak drum on a pin a cell in front of a concrete post, an iron
+    # crate under the drum's +x rim, and a battery beside the post.
+    HOIST = [
+        {"name": "post", "shape": "box", "material": "concrete", "size_m": [0.08, 2.4, 0.08],
+         "position_m": [0.0, 1.2, -0.2], "anchored": True},
+        {"name": "drum", "shape": "box", "material": "oak", "size_m": [0.16, 0.16, 0.24],
+         "position_m": [0.0, 2.0, 0.0]},
+        {"name": "crate", "shape": "box", "material": "iron", "size_m": [0.16, 0.16, 0.16],
+         "position_m": [0.08, 0.4, 0.0]},
+        {"name": "battery", "shape": "box", "material": "concrete", "size_m": [0.24, 0.28, 0.16],
+         "position_m": [-0.24, 0.14, -0.2], "anchored": True}]
+    ROPE = {"a": "drum", "b": "crate", "at_m": [0.0, 2.0, 0.0], "axis": [0, 0, 1], "radius_m": 0.08,
+            "at_b_m": [0.08, 0.48, 0.0], "length_m": 2.0}
+    MOTOR = {"on": ["post", "drum"], "store": "battery", "stall_torque_n_m": 60, "no_load_rpm": 95.5,
+             "brake_torque_n_m": 200}
+
+    def hoist_world(self) -> str:
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=self.HOIST)["world_id"]
+        self.client.call("hinge", world_id=world_id, a="post", b="drum", at_m=[0.0, 2.0, 0.0],
+                         axis=[0, 0, 1])
+        return world_id
+
+    @staticmethod
+    def crate_y(answer: dict) -> float:
+        return next(o for o in answer["objects"] if o["name"] == "crate")["position_m"][1]
+
+    def test_a_battery_hoist_made_with_the_tools_winds_its_crate_up(self):
+        """A rope on a drum, a battery and a motor, through the tools and in the
+        MCP's own world through the binding (docs/machine-world.md): braked it
+        holds the crate, driven it winds it up by the drum's radius times its
+        turn, the battery gives what the motor drew, and stopped it holds."""
+        world_id = self.hoist_world()
+        rope = self.client.call("drum", world_id=world_id, **self.ROPE)
+        # Which way it winds is worked out when it is not said: a load under the
+        # drum's +x rim is wound up by the drum turning the +z way.
+        self.assertEqual(rope["winds"], 1)
+        self.assertAlmostEqual(rope["rope_out_m"], 1.52, places=3)
+        self.assertEqual(rope["leaves_the_drum_m"], [0.08, 2.0, 0.0])
+        self.assertNotIn("warnings", rope)
+        battery = self.client.call("store", world_id=world_id, name="battery", body="battery",
+                                   capacity_j=20000)
+        self.assertEqual((battery["charge_j"], battery["voltage_v"], battery["max_power_w"]),
+                         (20000.0, 24.0, 0.0))
+        # Named by its pin's two things the other way round, it is on the pin as
+        # hinge made it; with a brake, it starts braked.
+        motor = self.client.call("motor", world_id=world_id, **dict(self.MOTOR, on=["drum", "post"]))
+        self.assertEqual(motor["motor"], {"on": ["post", "drum"], "store": "battery"})
+        self.assertEqual(motor["state"], "braking")
+        self.assertIn("lifting it", motor["a_command_of_1"])
+        self.assertNotIn("warnings", motor)
+
+        held = self.client.call("run", world_id=world_id, seconds=1.0)
+        (was,) = held["machines"]["motors"]
+        self.assertEqual((was["state"], was["drawn_j"]), ("braking", 0.0))
+        mass = next(o for o in held["objects"] if o["name"] == "crate")["mass_kg"]
+        weight = mass * 9.81
+        self.assertAlmostEqual(held["machines"]["ropes"][0]["tension_n"], weight, delta=0.01 * weight)
+
+        driven = self.client.call("drive", world_id=world_id, part="drum", command=1.0)
+        self.assertEqual((driven["command"], driven["brake"]), (1.0, False))
+        self.assertIn("rises", driven["does"])
+        up = self.client.call("run", world_id=world_id, seconds=1.0)
+        (now,) = up["machines"]["motors"]
+        turned = now["turned_rad"] - was["turned_rad"]
+        rise = self.crate_y(up) - self.crate_y(held)
+        print(f"\n   driven for a second: the drum turned {turned:.4f} rad (0.08 m x turn "
+              f"{0.08 * turned:.4f} m), the crate rose {rise:.4f} m; the battery gave "
+              f"{up['machines']['stores'][0]['given_j']:.3f} J, the motor drew {now['drawn_j']:.3f} J",
+              flush=True)
+        self.assertEqual(now["state"], "driving")
+        self.assertGreater(turned, math.pi)
+        self.assertAlmostEqual(rise, 0.08 * turned, delta=0.01 * 0.08 * turned)
+        self.assertAlmostEqual(up["machines"]["stores"][0]["given_j"], now["drawn_j"], delta=0.01)
+        self.assertAlmostEqual(now["drawn_j"], now["work_j"] + now["heat_j"], delta=0.01)
+
+        stopped = self.client.call("drive", world_id=world_id, part="drum", command=0.0)
+        self.assertTrue(stopped["brake"], "stopped, its brake does not go on of itself")
+        self.client.call("run", world_id=world_id, seconds=0.5)
+        braked = self.client.call("describe_world", world_id=world_id)
+        self.client.call("run", world_id=world_id, seconds=1.0)
+        still = self.client.call("describe_world", world_id=world_id)
+        self.assertLess(abs(self.crate_y(still) - self.crate_y(braked)), 0.002, "braked, it did not hold")
+        self.assertEqual(still["machines"]["motors"][0]["drawn_j"],
+                         braked["machines"]["motors"][0]["drawn_j"], "holding it drew on the battery")
+
+        # joints reads the rope as a drum's, in metres.
+        listed = next(j for j in self.client.call("joints", world_id=world_id)["joints"]
+                      if j["kind"] == "drum")
+        self.assertEqual((listed["length_m"], listed["winds"], listed["radius_m"]), (2.0, 1, 0.08))
+        self.assertAlmostEqual(listed["rope_out_m"] + listed["on_the_drum_m"], 2.0, places=3)
+        self.assertAlmostEqual(listed["tension_n"], weight, delta=0.01 * weight)
+
+    def test_what_is_not_a_machine_is_refused_in_words_the_caller_can_act_on(self):
+        world_id = self.hoist_world()
+        rope = dict(self.ROPE)
+        for words, tool, call in (
+                ("over the drum itself", "drum", dict(rope, at_b_m=[0.02, 2.03, 0.3])),
+                ("winds is 1", "drum", dict(rope, winds=0)),
+                ("length_m is the whole rope", "drum", dict(rope, length_m=1.0)),
+                ("is less than the 1.520 m", "drum", dict(rope, out_m=0.5)),
+                ("nothing called 'nowhere'", "store", dict(name="b", body="nowhere", capacity_j=10)),
+                ("charge_j is from 0 to 10", "store", dict(name="b", body="battery", capacity_j=10,
+                                                           charge_j=20)),
+                ("no pin between post and crate", "motor", dict(self.MOTOR, on=["post", "crate"])),
+                ("no store called 'battery'", "motor", dict(self.MOTOR)),
+                ("nothing turns 'drum'", "drive", dict(part="drum", command=1))):
+            self.assertIn(words, self.client.refuse(tool, world_id=world_id, **call), f"{tool} {call}")
+        self.client.call("store", world_id=world_id, name="battery", body="battery", capacity_j=20000)
+        self.assertIn("already", self.client.refuse("store", world_id=world_id, name="battery",
+                                                    body="post", capacity_j=10))
+        self.client.call("motor", world_id=world_id, **self.MOTOR)
+        self.assertIn("motor already", self.client.refuse("motor", world_id=world_id,
+                                                          **dict(self.MOTOR, on=["drum", "post"])))
+        self.assertIn("command is from -1 to 1", self.client.refuse("drive", world_id=world_id,
+                                                                     part="drum", command=1.5))
+        self.assertIn("brake is true or false", self.client.refuse("drive", world_id=world_id,
+                                                                    part="drum", command=0,
+                                                                    brake="on"))
+        # A thing's drive step is held to the same: a motor that turns it, and
+        # a command.
+        self.assertIn("nothing turns crate with a motor", self.client.refuse(
+            "offer_actions", world_id=world_id, name="crate",
+            actions=[{"label": "Up", "steps": [{"do": "drive", "command": 1}]}]))
+        self.assertIn("command is needed", self.client.refuse(
+            "offer_actions", world_id=world_id, name="drum",
+            actions=[{"label": "Up", "steps": [{"do": "drive"}]}]))
+        offered = self.client.call("offer_actions", world_id=world_id, name="drum", actions=[
+            {"label": "Wind it up", "steps": [{"do": "drive", "command": 1, "brake": True}]},
+            {"label": "Stop", "steps": [{"do": "drive", "command": 0}]}])
+        self.assertEqual([a["steps"] for a in offered["actions"]],
+                         [[{"do": "drive", "part": "drum", "command": 1.0}],
+                          [{"do": "drive", "part": "drum", "command": 0.0, "brake": True}]])
+        self.assertIn("brake", offered["not_read"], "a brake with the motor driving was kept")
+        # And the server is still answering.
+        self.assertTrue(self.client.call("describe_world", world_id=world_id)["objects"])
+
+    def test_a_hoist_keeps_its_machines_through_a_rebuild_and_loses_them_with_what_holds_them(self):
+        """Adding a thing opens the world again: the battery and the motor come
+        back with the pin, the motor told what it was last told. Taking the
+        battery away takes the motor with it; taking the pin out takes its
+        motor; both are said."""
+        world_id = self.hoist_world()
+        self.client.call("drum", world_id=world_id, **self.ROPE)
+        self.client.call("store", world_id=world_id, name="battery", body="battery", capacity_j=20000)
+        self.client.call("motor", world_id=world_id, **self.MOTOR)
+        self.client.call("drive", world_id=world_id, part="drum", command=1.0)
+        added = self.client.call("add_object", world_id=world_id, object={
+            "name": "ball", "shape": "sphere", "material": "rubber", "size_m": [0.12, 0.12, 0.12],
+            "position_m": [1.5, 1.5]})
+        self.assertNotIn("joints_lost", added)
+        kept = self.client.call("describe_world", world_id=world_id)["machines"]
+        self.assertEqual([(s["name"], s["charge_j"]) for s in kept["stores"]], [("battery", 20000.0)])
+        self.assertEqual([(m["on"], m["command"], m["brake"]) for m in kept["motors"]],
+                         [(["post", "drum"], 1.0, False)])
+        self.assertEqual(len(kept["ropes"]), 1)
+        ran = self.client.call("run", world_id=world_id, seconds=0.5)
+        self.assertEqual(ran["machines"]["motors"][0]["state"], "driving")
+        self.assertGreater(ran["machines"]["motors"][0]["turned_rad"], 0.5)
+        removed = self.client.call("remove_object", world_id=world_id, name="battery")
+        self.assertEqual(removed["machines_removed_with_it"],
+                         ["the store battery in battery", "the motor on post and drum"])
+        self.assertNotIn("motors", self.client.call("describe_world", world_id=world_id)["machines"])
+        self.client.call("store", world_id=world_id, name="spare", body="post", capacity_j=5000)
+        self.client.call("motor", world_id=world_id, **dict(self.MOTOR, store="spare"))
+        pin = next(j["joint"] for j in self.client.call("joints", world_id=world_id)["joints"]
+                   if j["kind"] == "hinge")
+        out = self.client.call("unhinge", world_id=world_id, joint=pin)
+        self.assertEqual(out["machines_removed_with_it"], ["the motor on post and drum"])
+
     def test_a_spring_stores_what_is_done_to_it(self):
         """An elastic element through the tools, with its model reported.
 
@@ -1325,6 +1495,67 @@ class TheTools(unittest.TestCase):
         self.assertAlmostEqual(door["ground_y_m"], math.ceil(ground / 0.04 - 1e-9) * 0.04, places=4)
         self.assertIn("recipe is one of", self.client.refuse("build_recipe", world_id=world_id,
                                                               recipe="rocket", at_m=[-12.0, -4.0]))
+
+    def test_a_battery_hoist_is_built_by_recipe_and_winds(self):
+        """build_recipe "hoist" over the protocol: a post, a drum on a pin with a
+        motor and its brake, a battery, and a crate hanging clear of the ground
+        straight below the drum's rim, with its actions. Wound with drive, the
+        crate rises by the drum's radius times its turn. A second one's parts,
+        battery and motor are numbered."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [4.0, 0.04, 4.0], "anchored": True}])["world_id"]
+        hoist = self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[1.0, -1.0])
+        self.assertEqual(hoist["parts"], ["hoist post", "hoist drum", "hoist crate", "hoist battery"])
+        self.assertEqual([j["tool"] for j in hoist["joints"]], ["hinge", "drum"])
+        self.assertEqual(hoist["actions_offered"],
+                         {"hoist drum": ["Wind it up", "Stop", "Let it down"]})
+        self.assertEqual(hoist["and"]["motor"]["state"], "braking")
+        things = {o["name"]: o for o in hoist["objects"]}
+        crate, drum = things["hoist crate"], things["hoist drum"]
+        self.assertGreaterEqual(crate["position_m"][1] - crate["size_m"][1] / 2.0, 0.3,
+                                "the crate does not hang clear of the ground")
+        self.assertGreater(drum["position_m"][1] - drum["size_m"][1] / 2.0,
+                           crate["position_m"][1] + crate["size_m"][1] / 2.0 + 1.0,
+                           "the drum is not above the crate")
+        rope = next(j for j in self.client.call("joints", world_id=world_id)["joints"]
+                    if j["kind"] == "drum")
+        self.assertLess(math.hypot(rope["leaves_m"][0] - rope["meets_m"][0],
+                                   rope["leaves_m"][2] - rope["meets_m"][2]), 0.001,
+                        "the rope does not run straight down from the drum's rim")
+        self.assertAlmostEqual(math.dist(rope["leaves_m"], rope["at_m"]), 0.08, places=4)
+
+        held = self.client.call("run", world_id=world_id, seconds=0.5)
+        self.client.call("drive", world_id=world_id, part="hoist drum", command=1.0)
+        up = self.client.call("run", world_id=world_id, seconds=1.0)
+        turned = up["machines"]["motors"][0]["turned_rad"] - held["machines"]["motors"][0]["turned_rad"]
+        rise = (next(o for o in up["objects"] if o["name"] == "hoist crate")["position_m"][1]
+                - next(o for o in held["objects"] if o["name"] == "hoist crate")["position_m"][1])
+        self.assertAlmostEqual(rise, 0.08 * turned, delta=0.01 * 0.08 * turned)
+        self.assertAlmostEqual(up["machines"]["stores"][0]["given_j"],
+                               up["machines"]["motors"][0]["drawn_j"], delta=0.01)
+
+        second = self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[3.0, -1.0])
+        self.assertIn("hoist drum 2", second["parts"])
+        self.assertEqual(second["actions_offered"],
+                         {"hoist drum 2": ["Wind it up", "Stop", "Let it down"]})
+        self.assertEqual(second["and"]["motor"]["motor"],
+                         {"on": ["hoist post 2", "hoist drum 2"], "store": "hoist battery 2"})
+
+        # Copied, a hoist is copied whole: its rope on the drum, and its battery
+        # and its motor, told what the original was last told -- and it winds.
+        copy = self.client.call("duplicate", world_id=world_id, prefix="third",
+                                names=["hoist post", "hoist drum", "hoist crate", "hoist battery"],
+                                offset_m=[0.0, 0.0, 2.0])
+        self.assertEqual([j["tool"] for j in copy["joints"]], ["hinge", "drum"])
+        self.assertEqual(copy["machines"], ["the store third hoist battery",
+                                            "the motor on third hoist post and third hoist drum"])
+        motors = self.client.call("describe_world", world_id=world_id)["machines"]["motors"]
+        self.assertEqual([(m["on"], m["store"], m["command"]) for m in motors if m["on"][0] == "third hoist post"],
+                         [(["third hoist post", "third hoist drum"], "third hoist battery", 1.0)])
+        rope = next(r for r in self.client.call("run", world_id=world_id, seconds=0.5)["machines"]["ropes"]
+                    if r["drum"] == "third hoist drum")
+        self.assertLess(rope["out_m"], 1.52 - 0.05, "the copied hoist did not wind")
 
     def test_a_valley_within_a_river_network(self):
         """make_terrain(beyond_the_edges): the river comes down a reach from a

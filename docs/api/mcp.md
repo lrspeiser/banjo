@@ -58,7 +58,7 @@ broke.
 | `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall unless a joint holds it — a thing about to be hung with `fix`, `hinge`, `slide`, `tie`, `reeve` or `spring` is meant to start there. On ground with water it says `in_water` when that is where it went. A part of a piece (a `join` name) that [x, z] would set down on top of another part of the same piece is refused: every part of one piece takes its exact [x, y, z]. |
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
 | `turn_object` | stand an object **upright** — its longest side vertical — or lay it down, its longest side level, and set it down at `at_m` [x, z] on whatever is under that point. An **edit**, like `move_object`, that the engine holds to what the world would do with it: it must not overlap anything, what is under it has to be under its middle on every side and flat (not the top of a ball), and the world is then **run** — from a third of a degree off how it was put, so a balance only an exact run could keep is found out — until it is still. Standing as it was put (moved under 20 mm, turned under 5 degrees) it is kept; otherwise it is refused with what happened and nothing changes. The answer says what it stands on and how far its long side came to rest from vertical. "Turn this upright and set it in front of me" is this call. [Turning a thing](#turning-a-thing) |
-| `offer_actions` | what a person can **do** with a thing, kept with it: up to nine short programs of up to twelve steps — stand, take_hold, carry_to, put_down, let_go, push, heat, wait — each checked when it is offered against what the engine says of the thing (a hand holds up at most 73 kg, a thing fixed in place is not moved, and a program ends with the hand empty). A client lists them when the thing is clicked and runs one on the world as it is then. A field a step's kind does not use is set aside and listed in `not_read`. [A thing's actions](#a-things-actions) |
+| `offer_actions` | what a person can **do** with a thing, kept with it: up to nine short programs of up to twelve steps — stand, take_hold, carry_to, put_down, let_go, push, heat, wait, drive — each checked when it is offered against what the engine says of the thing (a hand holds up at most 73 kg, a thing fixed in place is not moved, a drive step needs a motor that turns the thing, and a program ends with the hand empty). A client lists them when the thing is clicked and runs one on the world as it is then. A field a step's kind does not use is set aside and listed in `not_read`. [A thing's actions](#a-things-actions) |
 | `read_knowledge` | what the person knows: techniques, each design by its standing (found, built, demonstrated for a stated use) with the evidence it rests on — the engine's own numbers for what their tool did, scoped to what was tried, with the model's limitations — and what is blocked and by what. It spends nothing and changes nothing: no tool can add to it. [What a person knows](#what-a-person-knows) |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
@@ -77,9 +77,11 @@ broke.
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
+| `drum` | a rope that **winds onto a drum**: from a drum on a pin of its own to a load, off the drum's rim at its tangent, so what is off the drum changes by the radius times the turn, for as many turns as there is rope. In metres like every joint: the drum's centre and axle, `radius_m`, where the rope is made off on the load, `length_m` and `out_m` (0: as it hangs); `winds`, when left out, is worked out from the side the load hangs on. Refused for a load over the drum itself, less rope out than the span it has to run, and a rope shorter than what is off the drum; warned for a drum on no pin and a rope that does not hang straight down ([Machines](#machines)) |
+| `store` / `motor` / `drive` | a **battery** in a named thing, in joules, volts and watts; a DC **motor** on a pin named by the two things it joins, wired to a battery by name, given by its stall torque, its unloaded speed in turns a minute and its brake; and what a motor is **told** from now on, found by the thing it turns: a command from -1 to 1, and its brake. `run` and `describe_world` say what each battery gave and each motor did ([Machines](#machines)) |
 | `interaction` | say how a person **uses** a thing you built — draw-and-release, a bow; or swing-and-lever, a tool with a `tool_point` swung into the ground and levered, tried by being swung into the nearest level soil, levered out, and swung onto the nearest bare rock — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
 | `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
-| `build_recipe` | build a mechanism the engine has been tried on, **exactly**, at a place `[x, z]`: every part, every joint and its actions, on the ground surveyed there and laid on the room's cells — `gate` (between two posts, with a latch bar), `portcullis` (raised by a winch beside it), `door` (that shuts itself on a spring), `bell` (on a rope from a frame), `bow`, `table` (with a chair), and the tools that work the ground, `pick`, `mattock` and `hoe` (each one piece, with its point and how a person uses it, tried in the engine). For a tool, optional `tool` makes it the one the person asked for: `call_it`; `material` (the whole piece's — a joined piece is all one material); head and haft sizes; the point's shape (as broad as its head unless said); and `use` (as `interaction`'s, less `pry`, which is the kind's). Blanks are dropped, and a tool the hand's 60 N m wrist cannot hold level is not built. A second one's parts are numbered; if any part would overlap what is there, nothing is built. It exists because a model given a gate as seven calls of offsets set its parts down on the ground and put its pin 0.22 m inside the gate's edge, and a mattock made by hand was refused three times and ended as an action that only carried it |
+| `build_recipe` | build a mechanism the engine has been tried on, **exactly**, at a place `[x, z]`: every part, every joint and its actions, on the ground surveyed there and laid on the room's cells — `gate` (between two posts, with a latch bar), `portcullis` (raised by a winch beside it), `door` (that shuts itself on a spring), `bell` (on a rope from a frame), `bow`, `table` (with a chair), `hoist` (a battery hoist, with its motor and its crate: [Machines](#machines)), and the tools that work the ground, `pick`, `mattock` and `hoe` (each one piece, with its point and how a person uses it, tried in the engine). For a tool, optional `tool` makes it the one the person asked for: `call_it`; `material` (the whole piece's — a joined piece is all one material); head and haft sizes; the point's shape (as broad as its head unless said); and `use` (as `interaction`'s, less `pry`, which is the kind's). Blanks are dropped, and a tool the hand's 60 N m wrist cannot hold level is not built. A second one's parts are numbered; if any part would overlap what is there, nothing is built. It exists because a model given a gate as seven calls of offsets set its parts down on the ground and put its pin 0.22 m inside the gate's edge, and a mattock made by hand was refused three times and ended as an action that only carried it |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
 | `list_substances` | what matter is made of: substances, reactions (with where every number came from) and the catalogue's compositions — oak is dry wood, moisture and ash, which is why an oak log can burn |
@@ -180,6 +182,7 @@ Every step is something the engine already does:
 | `wait` | Lets the room run for `seconds` |
 | `turn` | Takes hold of whatever stands off the pin that a part turns on (its own pin, or that of what it is fixed to, as a winch's handle is to its wheel). Carries it round the pin's axis with the hand's own strokes, by `degrees` (right-handed about the axis) or to a `stop`: `all_the_way`, `half_way`, `all_the_way_back` or `back_to_start`. It says how far it went and what else moved |
 | `slide` | The same along the groove a part slides in, by `distance_m` or to a `stop` |
+| `drive` | Tells the motor on the pin a part turns on (its `part`, the thing itself when left out) a `command` from -1 to 1, as `drive` does. At 0 it stops, and its `brake` goes on unless the step says `brake` false. The hand is not needed. Checked when offered: a motor has to turn the part, and one only; a brake with the motor driving is set aside and said ([Machines](#machines)) |
 
 A place is where the hand takes the middle of what it moves. Its `kind` says
 which of these it is, and only that kind's fields are read; without a `kind`,
@@ -266,7 +269,11 @@ the floor with nothing anywhere to say it had ever been hung. Now:
 - what `hinge_friction` set is kept, and a joint `unhinge` took out stays out;
 - removing an object removes the joints that held it, and says which;
 - a joint that cannot be hung again is dropped and listed under `joints_lost`,
-  never silently.
+  never silently;
+- a battery and a motor are kept the same way ([Machines](#machines)): made
+  again after the joints, each motor told what it was last told, and taken out
+  with what they need -- what a battery is in, a motor's pin or its battery --
+  and listed under `machines_removed_with_it`.
 
 `move_object` refuses a joined object rather than leave its pins behind in
 mid-air: unhinge it first, or put things where they belong before joining them.
@@ -422,6 +429,99 @@ hand, which pulls with 800 N, its weight plus 800 N. `place` moves the hand once
 and then lets the world run, so that is what a rope held against it carries. A
 host driving the engine directly that moves the hand before every step pulls
 twice as hard; see `tension_n` in [c-api.md](c-api.md).
+
+For a rope on a `drum`, `rope_out_m` is how much of it is off the drum -- the
+most the span to the load may be -- `on_the_drum_m` how much is wound on, and
+`length_m` the whole rope; `leaves_m` and `meets_m` are where it leaves the drum
+and where it meets the load, and `at_m` and `axis` the drum's centre and axle as
+it stands.
+
+## Machines
+
+A battery turns a motor, and the motor winds a rope onto a drum and lifts a load
+([machine-world.md](../machine-world.md)). Four tools make one, each the
+engine's own call through the binding (`banjo_drum`, `banjo_make_energy_store`,
+`banjo_make_motor` and `banjo_drive_motor` in [c-api.md](c-api.md)):
+
+- `drum`: a rope from a drum `a` -- a thing on a pin of its own -- to a load `b`,
+  made off at `at_b_m`. `at_m` and `axis` are the drum's centre and axle,
+  `radius_m` where the rope lies on it, `length_m` the whole rope, and `out_m`
+  what is off the drum (0: as it hangs). `winds` is +1 when the drum turning the
+  positive way about its axle takes rope on; left out, it is the way that runs
+  the rope off the side of the drum the load hangs on, and the answer says which.
+  Refused: a load over the drum itself, seen along its axle; an `out_m` less than
+  the span the rope has to run, which would snap the load toward the drum on the
+  first step; and a rope shorter than what is off the drum. Warned: a drum on no
+  pin, or on one about another axis; an end made off in the air; and a rope that
+  does not run straight down to what hangs on it.
+- `store`: a battery in a named thing, with `capacity_j`, `charge_j` (full when
+  left out), `voltage_v` (24) and `max_power_w` (0, no limit but its charge).
+  Refused: nothing of that name to put it in, a name another store has, a charge
+  over its capacity.
+- `motor`: a DC motor on a pin, named by the two things the pin joins (`on`,
+  either way round; it is kept in the pin's own order), wired to a store by its
+  name, with `stall_torque_n_m`, `no_load_rpm` (turns a minute) and
+  `brake_torque_n_m`. With a brake it starts braked. The answer says which way a
+  command of 1 turns each drum's rope on its pin, and warns of a load it cannot
+  lift (m g r over its stall torque), a brake that cannot hold it, and a load
+  hanging on a motor with no brake. Refused: no pin between the two, a pin with a
+  motor already, no store of that name.
+- `drive`: what a motor is told from now on, found by the thing it turns
+  (`part`), as the page finds it: `command` from -1 to 1, and `brake`, which is on
+  when it is stopped unless said. The answer says what that does to each drum's
+  load. Refused: nothing turning that part with a motor, two motors on its pins,
+  and a command past -1 or 1.
+
+The numbers take the room's own bounds (`fracture_lab.normalise_machines`), so
+whatever one takes the other does.
+
+A world keeps all of it through every rebuild: the rope on a drum is a joint,
+recorded as the call that made it, and the batteries and motors are kept as the
+room spells them and made again after the joints. `run` and `describe_world`
+carry `machines`: each battery's charge and what it has given, each motor's
+state, speed, torque, power, whole turn and account (`drawn_j` is `work_j` plus
+`heat_j`), and each drum's rope. A thing's actions take a `drive` step (see
+[A thing's actions](#a-things-actions)).
+
+In the playground's room all four are part of what the room is: the drum joint
+and a `machines` block, `stores` and `motors`, in the room's spec, which
+`playground/live_session.py` opens. A motor keeps what `drive` last told it, so
+the room runs it as the chat left it -- from the room as authored, since a room
+the chat changed is opened again.
+
+`build_recipe` `"hoist"` builds a battery hoist at `[x, z]`: a concrete post; a
+cell in front of it an oak drum 0.16 m square on a pin along z, 2 m up; a 32 kg
+iron crate hanging 0.32 m clear of the ground on 2 m of rope, which runs straight
+down from the drum's +x rim to the middle of its top; a 20 kJ, 24 V battery
+beside the post; and a motor on the drum's pin that stalls at 60 N m, runs at
+95.5 turns a minute unloaded and has a 200 N m brake. Its actions, on the drum,
+are "Wind it up" (drive 1), "Stop" (drive 0 with the brake) and "Let it down"
+(drive -0.1).
+
+"Let it down" is -0.1 because the crate lets itself down. Driven backwards with
+a load pulling the same way, a DC motor turns faster than it would unloaded, and
+its line holds it back: the crate comes down at r w0 (|u| + m g r / stall), and
+here m g r / stall is 0.42. So -0.1 brings the crate down at 0.42 m/s, 0.08 faster
+than its weight alone would, and an empty rope is still paid out, at 0.08 m/s.
+The test room's -0.3 would be 0.58 m/s. A command of 0 without the brake would
+drop it, since the motor is then off. The battery gives nothing while the load
+drives the motor (decision D2).
+
+**Measured**, the recipe built by `build_recipe` on the world's west terrace,
+opened on the live runner and worked by its own actions
+(`tests/world_room_tests.py` TheWorldsHoistByRecipe):
+
+| check | result |
+|---|---|
+| "Wind it up" for a second | the drum turned 0.889 times and took on 0.4470 m of rope, its radius times its turn (0.4471 m); the crate rose 0.4470 m |
+| its account | the battery gave 267.251 J, what the motor drew: 145.466 J of work and 121.785 J of heat |
+| "Stop" | in the next second the crate moved 0.000000 m, and nothing more was drawn |
+| "Let it down" | 0.4170 m/s, where the motor's line says 0.4173, and the battery gave 0 J |
+
+The same hoist built with the four tools in the MCP's own world, through the
+binding (`tests/banjo_mcp_tests.py`), and through `room_world` into a room that
+the live runner opened (`tests/machine_room_tests.py`), rose by its radius times
+its turn to within a hundredth, with the battery giving what the motor drew.
 
 ## What a session looks like
 
