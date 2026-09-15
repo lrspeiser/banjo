@@ -1,5 +1,43 @@
 # Development status and handoff
 
+**The machine world begins: a battery, a motor on a pin with a brake, and a rope drum.** Branch `agent/machine-world`, from `7ff4581`. The owner's next direction (docs/machine-world.md) is a planet of machines. Creatures and tools there are machines that draw on stores of energy, and every joule is accounted for. Its first milestone is a battery hoist.
+- In the engine:
+  - `LiveWorld::energyStore` is a battery: capacity, charge, voltage and most power.
+  - `LiveWorld::motor` is a DC motor's line on a hinge (stall torque, unloaded speed) with a brake. It is driven with `driveMotor`, and `energyStores()` and `motors()` read them.
+    - It is Jolt's own hinge motor. Its torque limit is set each step from the line before the reversible trial, and held to what the store can give.
+    - After a kept step, the solver's impulse gives the work, the windings' I²R and what was drawn. Nothing goes back into a store.
+  - `LiveWorld::drum` and `rigid/DrumRope.hpp` make a rope that winds onto a turning drum, for as many turns as there is rope. It is Jolt's rope with its drum end moved to where it leaves the drum as each step begins, so it keeps its warm start.
+  - A saved world keeps stores, motors and drum ropes.
+- The runner takes the ops `store`, `motor`, `drive` and `drum`, and every step that has any machines carries `machines`.
+- The playground:
+  - A room's spec can have a `drum` joint and a `machines` block (`live_session._power`, checked in `fracture_lab.normalise_machines`). A motor names its pin by its two things and starts braked.
+  - The action step `drive` (`server.run_action`) finds the motor by the thing it turns.
+  - The page draws a drum's rope and has a Machines panel.
+  - docs/machine-world.md, "The room's spelling", has all of it.
+- Found on the way:
+  - Every moving piece but a whole ball carries Jolt damping of 0.02/s. It is a numerical stand-in, not a law. A flywheel on a frictionless pin lost 6% of its motor's work to it. What a motor turns now loses it. Whether everything on a pin should is the owner's decision D4.
+  - `DrumRope.cpp` instantiates Jolt's inline solver code. Its copy, compiled with our `/fp:precise`, replaced Jolt's own `/fp:fast` copy at link, in the kerf too. That moved a cut in banjo_blade_tests from 4.676 J to 4.192 J.
+    - The file is now compiled with Jolt's floating-point model, and the cut is at 4.676 J again.
+    - The wider hazard is its own task.
+- Tests:
+  - `motor_tests` 8:
+    - a flywheel's spin-up is within 0.14% of the line, and its work is the spin to 0.33%;
+    - a stalled motor's heat is I²R exactly;
+    - a flat battery never goes below empty;
+    - a battery's power limit holds;
+    - a brake holds without drawing;
+    - nothing regenerates: the lost spin becomes heat to 0.17%;
+    - the hoist: rise = r × turn, and the motor's work is height plus motion to 0.26%;
+    - a restart round trip: charge, account, brake, rope out and crate height all back exactly, and it winds on after.
+  - `machine_room_tests` 3, through the live session and the runner: driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J.
+  - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 2 and fracture_lab all pass.
+  - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
+- Not yet:
+  - the chat's MCP tools for machines and a hoist recipe;
+  - the C API and binding, in progress on `agent/machine-capi`;
+  - a drum on a body that breaks being re-hung onto its pieces;
+  - the heat of the windings going to the thermal model.
+
 **A restart gives back the room as it stood.** Branch `agent/world-snapshot` from `660da54` (agent/nothing-resets). This is slice 1b of the owner's "a workshop that remembers". Until now every server restart opened each room from its spec: what the person had moved went back to where it was authored, what broke came back whole, dents vanished, and a thing in the hand went back into the bag.
 - The engine saves its whole world and opens the same scene into it (`LiveWorld::snapshot`, `LiveWorld::open(request, snapshot)`, format "banjo.world.v1").
   - Every body is made again from its own saved cells (the scene's node numbers) at its saved centre of mass, facing the world's way. Its offsets are then the saved ones exactly. It is turned and set moving as it was, and put back to sleep if it was at rest (`JoltWorld::sleep`). Our MatterBodyIds are kept.

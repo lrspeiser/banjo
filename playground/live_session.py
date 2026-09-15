@@ -393,6 +393,8 @@ class Live:
             return {"session": session.id, "spec": spec, **opening,
                     **self._adopt(spec, opening)}
         hung = self._hang(session, pins)
+        # And its batteries and the motors on its pins, which name the pins.
+        hung.update(self._power(session, spec.get("machines") or {}, pins))
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
         armed = self._arm(session, spec.get("blades") or [])
@@ -551,6 +553,60 @@ class Live:
         return state
 
     @staticmethod
+    def _power(session: "Session", machines: Any, pins: Any) -> dict[str, Any]:
+        """The room's stores of energy and the motors on its pins
+        (docs/machine-world.md), once the pins are in.
+
+        A motor names its pin by the two things it joins -- the world numbers
+        pins as they go in -- and its unloaded speed in turns a minute, as a
+        maker gives it. One with a brake starts with it on, so a crate hanging
+        on a hoist does not fall the moment the room opens. What will not go in
+        is said, as a pin that will not hang is."""
+        if not machines:
+            return {}
+        if not isinstance(machines, dict):
+            raise LiveError("a room's machines must be an object with stores and motors")
+        problems: list[str] = []
+        stores: dict[str, Any] = {}
+        for store in machines.get("stores") or []:
+            name = str(store.get("name", ""))
+            try:
+                answer = session.send(
+                    op="store", name=name, body=str(store.get("body", "")),
+                    capacity_j=float(store.get("capacity_j", 0.0)),
+                    charge_j=float(store.get("charge_j", store.get("capacity_j", 0.0))),
+                    voltage_v=float(store.get("voltage_v", 24.0)),
+                    max_power_w=float(store.get("max_power_w", 0.0)))
+            except Exception as error:
+                problems.append(f"{name or 'a store'} would not go in: {error}")
+                continue
+            stores[name] = answer.get("store")
+        hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
+                  for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
+        for motor in machines.get("motors") or []:
+            on = [str(v) for v in (motor.get("on") or [])]
+            joint = hinges.get(tuple(on)) if len(on) == 2 else None
+            store = stores.get(str(motor.get("store", "")))
+            if joint is None or store is None:
+                problems.append(f"the motor on {' and '.join(on) or 'nothing'} has "
+                                + ("no pin between those two" if joint is None
+                                   else f"no store called {motor.get('store', '')!r}"))
+                continue
+            try:
+                answer = session.send(
+                    op="motor", joint=joint, store=store,
+                    stall_torque_n_m=float(motor.get("stall_torque_n_m", 0.0)),
+                    no_load_rad_s=float(motor.get("no_load_rpm", 0.0)) * 3.141592653589793 / 30.0,
+                    brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)))
+                brake = bool(motor.get("brake", float(motor.get("brake_torque_n_m", 0.0)) > 0.0))
+                command = float(motor.get("command", 0.0))
+                if brake or command:
+                    session.send(op="drive", motor=answer.get("motor"), command=command, brake=brake)
+            except Exception as error:
+                problems.append(f"the motor on {on[0]} and {on[1]} would not go on: {error}")
+        return {"machine_problems": problems} if problems else {}
+
+    @staticmethod
     def _hang(session: "Session", pins: Any) -> dict[str, Any]:
         """Put every pin the room asks for into the world that just opened.
 
@@ -644,6 +700,29 @@ class Live:
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not tie to "
                                     f"{pin.get('a', '?')}: {error}")
+                    continue
+                pin["id"] = answer.get("joint")
+                if answer.get("joints") is not None:
+                    state["joints"] = answer["joints"]
+                continue
+            if kind == "drum":
+                # A rope that winds onto a turning drum (docs/machine-world.md):
+                # from the drum -- a thing on a pin of its own -- to a load, for
+                # as many turns as there is rope. out_mm of nothing is "as it
+                # hangs": the span from the drum to the load when it goes on.
+                try:
+                    answer = session.send(
+                        op="drum", drum=str(pin.get("a", "")), load=str(pin.get("b", "")),
+                        centre=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
+                        axis=[float(v) for v in (pin.get("axis") or [0, 0, 1])],
+                        radius_m=float(pin.get("radius_mm", 0.0)) / 1000.0,
+                        load_point=[float(v) / 1000.0 for v in (pin.get("to_mm") or [])],
+                        winds=-1 if float(pin.get("winds", 1)) < 0 else 1,
+                        length_m=float(pin.get("length_mm", 0.0)) / 1000.0,
+                        out_m=float(pin.get("out_mm", 0.0)) / 1000.0)
+                except Exception as error:
+                    problems.append(f"the rope from {pin.get('a', '?')} to {pin.get('b', '?')} "
+                                    f"would not go on its drum: {error}")
                     continue
                 pin["id"] = answer.get("joint")
                 if answer.get("joints") is not None:

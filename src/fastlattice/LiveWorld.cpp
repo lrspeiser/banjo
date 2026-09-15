@@ -2178,6 +2178,41 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.joints.push_back(std::move(joint));
     }
     impl.next_joint = doc.at("next").at("joint").get<unsigned>();
+    // Stores of energy and the motors on pins, as they stood: what each battery
+    // holds and has given, and each motor's command, brake and account. None
+    // in a world saved before there were machines.
+    for (const nlohmann::json &o : doc.value("energy_stores", nlohmann::json::array())) {
+        LiveEnergyStore store{};
+        store.id = o.at("id").get<unsigned>();
+        store.name = o.at("name").get<std::string>();
+        store.body = o.at("body").get<std::string>();
+        store.capacity_j = numberFrom(o.at("capacity_j"));
+        store.charge_j = numberFrom(o.at("charge_j"));
+        store.voltage_v = numberFrom(o.at("voltage_v"));
+        store.max_power_w = numberFrom(o.at("max_power_w"));
+        store.given_j = numberFrom(o.at("given_j"));
+        store.short_j = numberFrom(o.at("short_j"));
+        impl.energy_stores.push_back(std::move(store));
+    }
+    for (const nlohmann::json &o : doc.value("motors", nlohmann::json::array())) {
+        Impl::Motor motor{};
+        motor.said.id = o.at("id").get<unsigned>();
+        motor.said.joint = o.at("joint").get<unsigned>();
+        motor.said.store = o.at("store").get<unsigned>();
+        motor.said.stall_torque_n_m = numberFrom(o.at("stall_torque_n_m"));
+        motor.said.no_load_rad_s = numberFrom(o.at("no_load_rad_s"));
+        motor.said.brake_torque_n_m = numberFrom(o.at("brake_torque_n_m"));
+        motor.said.command = numberFrom(o.at("command"));
+        motor.said.brake = o.at("brake").get<bool>();
+        motor.said.turned_rad = numberFrom(o.at("turned_rad"));
+        motor.said.work_j = numberFrom(o.at("work_j"));
+        motor.said.heat_j = numberFrom(o.at("heat_j"));
+        motor.said.drawn_j = numberFrom(o.at("drawn_j"));
+        motor.said.friction_heat_j = numberFrom(o.at("friction_heat_j"));
+        impl.motors.push_back(std::move(motor));
+    }
+    impl.next_energy_store = doc.value("next_energy_store", 1U);
+    impl.next_motor = doc.value("next_motor", 1U);
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -10338,6 +10373,40 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         joints.push_back(std::move(o));
     }
     doc["joints"] = std::move(joints);
+
+    // Stores of energy and the motors on pins (docs/machine-world.md): what a
+    // battery holds and has given, and each motor's command and account, so a
+    // restart gives a machine back as it stood.
+    nlohmann::json energy_stores = nlohmann::json::array();
+    for (const LiveEnergyStore &s : I.energy_stores)
+        energy_stores.push_back({{"id", s.id},
+                                 {"name", s.name},
+                                 {"body", s.body},
+                                 {"capacity_j", savedNumber(s.capacity_j)},
+                                 {"charge_j", savedNumber(s.charge_j)},
+                                 {"voltage_v", savedNumber(s.voltage_v)},
+                                 {"max_power_w", savedNumber(s.max_power_w)},
+                                 {"given_j", savedNumber(s.given_j)},
+                                 {"short_j", savedNumber(s.short_j)}});
+    doc["energy_stores"] = std::move(energy_stores);
+    nlohmann::json motors = nlohmann::json::array();
+    for (const Impl::Motor &m : I.motors)
+        motors.push_back({{"id", m.said.id},
+                          {"joint", m.said.joint},
+                          {"store", m.said.store},
+                          {"stall_torque_n_m", savedNumber(m.said.stall_torque_n_m)},
+                          {"no_load_rad_s", savedNumber(m.said.no_load_rad_s)},
+                          {"brake_torque_n_m", savedNumber(m.said.brake_torque_n_m)},
+                          {"command", savedNumber(m.said.command)},
+                          {"brake", m.said.brake},
+                          {"turned_rad", savedNumber(m.said.turned_rad)},
+                          {"work_j", savedNumber(m.said.work_j)},
+                          {"heat_j", savedNumber(m.said.heat_j)},
+                          {"drawn_j", savedNumber(m.said.drawn_j)},
+                          {"friction_heat_j", savedNumber(m.said.friction_heat_j)}});
+    doc["motors"] = std::move(motors);
+    doc["next_energy_store"] = I.next_energy_store;
+    doc["next_motor"] = I.next_motor;
 
     nlohmann::json blades = nlohmann::json::array();
     for (const Impl::Blade &blade : I.blades)

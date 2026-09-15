@@ -270,6 +270,68 @@ LiveStroke readStroke(const nlohmann::json &command) {
 // Every pin, as the host sees it. `a` and `b` are the names it holds, which do
 // change: a pin whose wood is smashed follows the piece it ends up inside, so a
 // gate that was hung on "post" can find itself hung on "post piece 3".
+// Stores of energy, the motors that draw on them and the ropes on drums
+// (docs/machine-world.md), or null when the world has none of them. Sent with
+// every step that has any: a battery's charge, a motor's power and a hoist's
+// rope change every step, and a host that polled for them would draw them a
+// poll behind, as the bow's meter did at 4 Hz.
+nlohmann::json machinesOf(const LiveWorld &world) {
+    const std::vector<LiveEnergyStore> stores = world.energyStores();
+    const std::vector<LiveMotor> motors = world.motors();
+    const std::vector<LiveJoint> joints = world.joints();
+    nlohmann::json ropes = nlohmann::json::array();
+    for (const LiveJoint &joint : joints) {
+        if (joint.kind != "drum" || !joint.attached) continue;
+        ropes.push_back({{"joint", joint.id},
+                         {"out_m", tidy(joint.at)},
+                         {"wound_m", tidy(joint.wound_m)},
+                         {"tension_n", tidy(joint.tension_n)},
+                         {"leaves", vec(joint.leaves_m)},
+                         {"meets", vec(joint.meets_m)}});
+    }
+    if (stores.empty() && motors.empty() && ropes.empty()) return nullptr;
+    nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
+                       {"ropes", std::move(ropes)}};
+    for (const LiveEnergyStore &s : stores)
+        out["stores"].push_back({{"id", s.id},
+                                 {"name", s.name},
+                                 {"body", s.body},
+                                 {"capacity_j", tidy(s.capacity_j)},
+                                 {"charge_j", tidy(s.charge_j)},
+                                 {"voltage_v", tidy(s.voltage_v)},
+                                 {"max_power_w", tidy(s.max_power_w)},
+                                 {"given_j", tidy(s.given_j)},
+                                 {"short_j", tidy(s.short_j)}});
+    for (const LiveMotor &m : motors) {
+        // The two things its pin joins, by name: a step's joints travel only
+        // when their set changes, and a host looking for the motor that turns
+        // the drum it is looking at has the names.
+        nlohmann::json on = nlohmann::json::array();
+        for (const LiveJoint &joint : joints)
+            if (joint.id == m.joint) on = {joint.a, joint.b};
+        out["motors"].push_back({{"id", m.id},
+                                 {"joint", m.joint},
+                                 {"on", std::move(on)},
+                                 {"store", m.store},
+                                 {"state", m.state},
+                                 {"command", tidy(m.command)},
+                                 {"brake", m.brake},
+                                 {"stall_torque_n_m", tidy(m.stall_torque_n_m)},
+                                 {"no_load_rad_s", tidy(m.no_load_rad_s)},
+                                 {"brake_torque_n_m", tidy(m.brake_torque_n_m)},
+                                 {"speed_rad_s", tidy(m.speed_rad_s)},
+                                 {"torque_n_m", tidy(m.torque_n_m)},
+                                 {"current_a", tidy(m.current_a)},
+                                 {"power_w", tidy(m.power_w)},
+                                 {"turned_rad", tidy(m.turned_rad)},
+                                 {"work_j", tidy(m.work_j)},
+                                 {"heat_j", tidy(m.heat_j)},
+                                 {"drawn_j", tidy(m.drawn_j)},
+                                 {"friction_heat_j", tidy(m.friction_heat_j)}});
+    }
+    return out;
+}
+
 nlohmann::json jointsOf(const LiveWorld &world) {
     constexpr double kDegrees = 180.0 / 3.14159265358979323846;
     nlohmann::json out = nlohmann::json::array();
@@ -322,6 +384,17 @@ nlohmann::json jointsOf(const LiveWorld &world) {
             said["length_m"] = tidy(joint.upper);
             said["tension_n"] = tidy(joint.tension_n);
             said["breaks_at_n"] = tidy(joint.breaks_at_n);
+        } else if (joint.kind == "drum") {
+            // A rope on a drum (rigid/DrumRope.hpp): how much of it is off the
+            // drum and on it, what it carries, and where it leaves the drum and
+            // meets the load, for a host that draws it.
+            said["metres"] = tidy(joint.at);
+            said["length_m"] = tidy(joint.upper);
+            said["wound_m"] = tidy(joint.wound_m);
+            said["radius_m"] = tidy(joint.radius_m);
+            said["tension_n"] = tidy(joint.tension_n);
+            said["leaves"] = vec(joint.leaves_m);
+            said["meets"] = vec(joint.meets_m);
         } else if (sliding) {
             said["metres"] = tidy(joint.at);
             said["lower_m"] = tidy(joint.lower);
@@ -1641,6 +1714,47 @@ int main(int argc, char **argv) {
                                      .dump()
                               << std::endl;
                     continue;
+                } else if (op == "drum") {
+                    // A rope that winds onto a turning drum (rigid/DrumRope.hpp):
+                    // from the drum -- a thing on a pin of its own -- to a load,
+                    // for as many turns as there is rope.
+                    const unsigned rope = world->drum(
+                        command.at("drum").get<std::string>(), command.at("load").get<std::string>(),
+                        readVec(command, "centre"), readVec(command, "axis"), command.value("radius_m", 0.0),
+                        readVec(command, "load_point"), command.value("winds", 1), command.value("length_m", 0.0),
+                        command.value("out_m", 0.0));
+                    if (rope == 0)
+                        throw std::invalid_argument("that rope cannot go on that drum");
+                    reply["joint"] = rope;
+                } else if (op == "store") {
+                    // A store of energy -- a battery -- in a named thing
+                    // (docs/machine-world.md). Full unless it is said otherwise.
+                    const double capacity = command.value("capacity_j", 0.0);
+                    const unsigned store = world->energyStore(
+                        command.value("name", std::string{}), command.value("body", std::string{}), capacity,
+                        command.value("charge_j", capacity), command.value("voltage_v", 24.0),
+                        command.value("max_power_w", 0.0));
+                    if (store == 0)
+                        throw std::invalid_argument(
+                            "a store needs a thing that is here to be in, and a charge no more than it holds");
+                    reply["store"] = store;
+                } else if (op == "motor") {
+                    // A motor on a pin, wired to a store: its stall torque and
+                    // the speed it runs at unloaded, and the brake it holds with.
+                    const unsigned motor = world->motor(
+                        command.at("joint").get<unsigned>(), command.at("store").get<unsigned>(),
+                        command.value("stall_torque_n_m", 0.0), command.value("no_load_rad_s", 0.0),
+                        command.value("brake_torque_n_m", 0.0));
+                    if (motor == 0)
+                        throw std::invalid_argument(
+                            "a motor goes on a pin with none, wired to a store, with a stall torque and an "
+                            "unloaded speed above zero");
+                    reply["motor"] = motor;
+                } else if (op == "drive") {
+                    // What a motor is told: a command from -1 to 1, and its brake.
+                    if (!world->driveMotor(command.at("motor").get<unsigned>(), command.value("command", 0.0),
+                                           command.value("brake", false)))
+                        throw std::invalid_argument("there is no such motor");
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {
@@ -1853,6 +1967,10 @@ int main(int argc, char **argv) {
                 // And what that heat has done to what things can carry.
                 if (nlohmann::json strength = mechanicsSummary(*world); !strength.is_null())
                     reply["mechanics"] = std::move(strength);
+                // Batteries, motors and ropes on drums, on every reply that has
+                // any (machinesOf).
+                if (nlohmann::json machines = machinesOf(*world); !machines.is_null())
+                    reply["machines"] = std::move(machines);
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

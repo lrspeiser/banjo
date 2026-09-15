@@ -396,11 +396,14 @@ LIMITS = {
 # a hand-kept copy of this list is how `subtract` was silently dropped on the way
 # in: the field existed on both sides and the whitelist in the middle did not
 # know about it, so a cut arrived as a solid box with no error anywhere.
-FIELDS = set(DEFAULT) | {"request_id"}
+# `machines` too (docs/machine-world.md), which is not in DEFAULT because a room
+# without machines says nothing about them: an empty block in every room's
+# document would change the word every saved world is checked against.
+FIELDS = set(DEFAULT) | {"request_id", "machines"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge", "slider", "link", "pulley", "fixing", "elastic")
+JOINT_KINDS = ("hinge", "slider", "link", "pulley", "fixing", "elastic", "drum")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -496,6 +499,28 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                 fixing["comes_off_n"] = comes_off
             out.append(fixing)
             continue
+        if kind == "drum":
+            # A rope that winds onto a turning drum (docs/machine-world.md):
+            # at_mm and axis are the drum's centre and axle, to_mm where the
+            # rope is made off on the load. As many turns as there is rope.
+            far = joint.get("to_mm")
+            if not isinstance(far, list) or len(far) != 3:
+                raise ValueError(f"joint {i} is a drum and needs to_mm as three numbers: "
+                                 f"where the rope is made off on {b!r}")
+            far = [_number(v, -100000.0, 100000.0, f"joint {i} to_mm") for v in far]
+            radius = _number(joint.get("radius_mm", 0.0), 1.0, 100000.0, f"joint {i} radius_mm")
+            span = _number(joint.get("length_mm", 0.0), 1.0, 500000.0, f"joint {i} length_mm")
+            # Zero is "as it hangs": the span from the drum to the load when it
+            # goes on.
+            out_mm = _number(joint.get("out_mm", 0.0), 0.0, span, f"joint {i} out_mm")
+            winds = _number(joint.get("winds", 1), -1.0, 1.0, f"joint {i} winds")
+            if winds not in (-1.0, 1.0):
+                raise ValueError(f"joint {i} winds is 1 (the drum turning the positive way "
+                                 f"about its axle takes the rope on) or -1")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis, "to_mm": far,
+                        "radius_mm": radius, "length_mm": span, "out_mm": out_mm,
+                        "winds": int(winds)})
+            continue
         if kind == "pulley":
             # Four places: where the rope is made off on each body, and the two
             # sheaves it runs over. The sheaves are points in the WORLD and stay
@@ -571,6 +596,77 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                     "lower_deg": lower, "upper_deg": upper,
                     "friction_n_m": friction})
     return out
+
+
+def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
+                       joints: list[dict[str, Any]]) -> dict[str, Any]:
+    """Check a room's stores of energy and the motors on its pins
+    (docs/machine-world.md) against what is in it.
+
+    Checked here, like the pins: a motor that will not go on is a hoist that
+    does not wind, which reads as the physics being wrong. A motor names its
+    pin by the two things it joins, in either order, and there has to be a pin
+    between them; it draws on a store the room has."""
+    if not machines:
+        return {}
+    if not isinstance(machines, dict):
+        raise ValueError("machines must be an object with stores and motors")
+    unknown = set(machines) - {"stores", "motors"}
+    if unknown:
+        raise ValueError(f"machines has fields it does not know: {sorted(unknown)}")
+    named = {str(body.get("name", "")) for body in bodies}
+    stores: list[dict[str, Any]] = []
+    for i, store in enumerate(machines.get("stores") or []):
+        if not isinstance(store, dict):
+            raise ValueError(f"store {i} is not an object")
+        name = str(store.get("name", "")).strip()
+        if not name or any(s["name"] == name for s in stores):
+            raise ValueError(f"store {i} needs a name of its own")
+        body = str(store.get("body", ""))
+        if body and body not in named:
+            raise ValueError(f"store {name!r} is in {body!r}, which is not in this room")
+        capacity = _number(store.get("capacity_j", 0.0), 0.001, 1e12, f"store {name!r} capacity_j")
+        stores.append({"name": name, "body": body, "capacity_j": capacity,
+                       "charge_j": _number(store.get("charge_j", capacity), 0.0, capacity,
+                                           f"store {name!r} charge_j"),
+                       "voltage_v": _number(store.get("voltage_v", 24.0), 0.001, 1e6,
+                                            f"store {name!r} voltage_v"),
+                       "max_power_w": _number(store.get("max_power_w", 0.0), 0.0, 1e12,
+                                              f"store {name!r} max_power_w")})
+    if len(stores) > 64:
+        raise ValueError("a room may hold at most 64 stores")
+    hinges = {(j["a"], j["b"]) for j in joints if j.get("kind", "hinge") == "hinge"}
+    motors: list[dict[str, Any]] = []
+    for i, motor in enumerate(machines.get("motors") or []):
+        if not isinstance(motor, dict):
+            raise ValueError(f"motor {i} is not an object")
+        on = motor.get("on")
+        if not isinstance(on, list) or len(on) != 2:
+            raise ValueError(f"motor {i} needs on: the two things its pin joins")
+        on = [str(v) for v in on]
+        if tuple(on) not in hinges and tuple(reversed(on)) in hinges:
+            on.reverse()
+        if tuple(on) not in hinges:
+            raise ValueError(f"motor {i} is on a pin between {on[0]!r} and {on[1]!r}, and there is none")
+        if any(m["on"] == on for m in motors):
+            raise ValueError(f"motor {i}: the pin between {on[0]!r} and {on[1]!r} has a motor already")
+        store = str(motor.get("store", ""))
+        if not any(s["name"] == store for s in stores):
+            raise ValueError(f"motor {i} draws on {store!r}, and there is no store called that")
+        brake = _number(motor.get("brake_torque_n_m", 0.0), 0.0, 1e9, f"motor {i} brake_torque_n_m")
+        motors.append({"on": on, "store": store,
+                       "stall_torque_n_m": _number(motor.get("stall_torque_n_m", 0.0), 0.001, 1e9,
+                                                   f"motor {i} stall_torque_n_m"),
+                       "no_load_rpm": _number(motor.get("no_load_rpm", 0.0), 0.001, 1e6,
+                                              f"motor {i} no_load_rpm"),
+                       "brake_torque_n_m": brake,
+                       "command": _number(motor.get("command", 0.0), -1.0, 1.0, f"motor {i} command"),
+                       # One with a brake starts with it on, so what it holds up
+                       # does not fall when the room opens.
+                       "brake": bool(motor.get("brake", brake > 0.0))})
+    if len(motors) > 64:
+        raise ValueError("a room may hold at most 64 motors")
+    return {"stores": stores, "motors": motors}
 
 
 def normalise_blades(blades: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -678,9 +774,9 @@ INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
 
 
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
-                "heat", "wait")
+                "heat", "wait", "drive")
 ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "distance_m",
-                      "degrees", "stop", "speed_m_s", "power_w", "seconds"}
+                      "degrees", "stop", "speed_m_s", "power_w", "seconds", "command", "brake"}
 ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
                        "from", "offset_m"}
 
@@ -723,6 +819,12 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
             if "part" in step and str(step["part"]) not in named:
                 raise ValueError(f"action {i} step {j + 1} names {step['part']!r}, and there "
                                  f"is nothing called that")
+            if step["do"] == "drive":
+                # A motor's command, the share of its voltage, and its brake
+                # (docs/machine-world.md).
+                _number(step.get("command", 0.0), -1.0, 1.0, f"action {i} step {j + 1} command")
+                if "brake" in step and not isinstance(step["brake"], bool):
+                    raise ValueError(f"action {i} step {j + 1}: brake is true or false")
             for key in ("to", "toward"):
                 place = step.get(key)
                 if place is None:
@@ -1571,6 +1673,14 @@ def validate(spec: Any) -> dict[str, Any]:
         # plate and ball fields are not read.
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
         result["joints"] = normalise_joints(result["joints"], result["bodies"])
+        # Only a room that has machines carries them: a room without says
+        # nothing, so its document -- and the word a saved world is checked
+        # against -- is what it was before there were machines.
+        if result.get("machines"):
+            result["machines"] = normalise_machines(result["machines"], result["bodies"],
+                                                    result["joints"])
+        else:
+            result.pop("machines", None)
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))

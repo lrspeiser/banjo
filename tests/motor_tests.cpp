@@ -404,6 +404,76 @@ void aHoistWindsItsRopeOnAndLiftsTheCrate() {
     require(world->motors().front().drawn_j == drawn_stopped, "holding the crate up drew on the battery");
 }
 
+// A world saved with a hoist in it, and opened again from what was saved: the
+// battery holds what it held, the motor has its account and its brake, as much
+// rope is off the drum, and the crate hangs where it hung. And it goes on from
+// there: driven again, the drum winds the rope on as before.
+void aRestartGivesTheHoistBackAsItStood() {
+    constexpr double kTurn = 2.0 * 3.14159265358979323846;
+    const TileImpactRequest room = hoistRoom();
+    const auto world = LiveWorld::open(room);
+    const Vec3 axle{0.0, 0.0, 1.0};
+    const Vec3 centre{0.0, 2.0, 0.0};
+    const double radius = 0.1;
+    const unsigned pin = world->hinge("post", "drum", centre, axle);
+    const unsigned rope = world->drum("drum", "crate", centre, axle, radius, Vec3{0.1, 0.5, 0.0}, 1, 2.0);
+    const unsigned battery = world->energyStore("battery", "post", 5000.0, 5000.0);
+    const unsigned drive = world->motor(pin, battery, 60.0, 10.0, 200.0);
+    require(pin != 0 && rope != 0 && battery != 0 && drive != 0, "the hoist would not go together");
+    world->driveMotor(drive, 0.0, true);
+    run(*world, 0.5, [] {});
+    world->driveMotor(drive, 1.0);
+    run(*world, 0.8, [] {});
+    world->driveMotor(drive, 0.0, true);
+    run(*world, 1.0, [] {});
+    const LiveEnergyStore store_before = world->energyStores().front();
+    const LiveMotor motor_before = world->motors().front();
+    const double out_before = jointOf(*world, rope).at;
+    const Crate crate_before = crateOf(*world);
+
+    std::string why;
+    const std::string saved = world->snapshot(why);
+    require(!saved.empty(), "the hoist could not be saved: " + why);
+    const auto again = LiveWorld::open(room, saved);
+    require(again->energyStores().size() == 1 && again->motors().size() == 1,
+            "the battery or the motor did not come back");
+    const LiveEnergyStore store = again->energyStores().front();
+    const LiveMotor motor = again->motors().front();
+    const LiveJoint back = jointOf(*again, rope);
+    const Crate crate = crateOf(*again);
+    std::cout << "  saved and opened again: the battery holds " << store.charge_j << " J (" << store_before.charge_j
+              << " saved), the motor has drawn " << motor.drawn_j << " J (" << motor_before.drawn_j << ") and is "
+              << (motor.brake ? "braked" : "not braked") << ", " << back.at << " m of rope is out (" << out_before
+              << "), and the crate hangs at " << crate.y << " m (" << crate_before.y << ")\n";
+    require(store.charge_j == store_before.charge_j && store.given_j == store_before.given_j,
+            "the battery did not come back holding what it held");
+    require(motor.id == motor_before.id && motor.joint == motor_before.joint && motor.brake &&
+                motor.command == 0.0 && motor.drawn_j == motor_before.drawn_j &&
+                motor.turned_rad == motor_before.turned_rad,
+            "the motor did not come back with its account and its brake");
+    require(back.kind == "drum" && std::abs(back.at - out_before) < 1e-4,
+            "the rope did not come back with as much off the drum");
+    require(std::abs(crate.y - crate_before.y) < 0.001, "the crate did not come back where it hung");
+
+    // And it goes on from there.
+    run(*again, 0.5, [] {});
+    const LiveMotor held = again->motors().front();
+    const Crate still = crateOf(*again);
+    require(std::abs(still.y - crate.y) < 0.002, "opened again, the brake did not hold the crate");
+    const double out_held = jointOf(*again, rope).at;
+    again->driveMotor(drive, 1.0);
+    run(*again, 0.6, [] {});
+    const LiveMotor lifted = again->motors().front();
+    const double turned = lifted.turned_rad - held.turned_rad;
+    const double taken = out_held - jointOf(*again, rope).at;
+    const double rise = crateOf(*again).y - still.y;
+    std::cout << "  driven again: the drum turned " << turned / kTurn << " times, took on " << taken
+              << " m of rope and the crate rose " << rise << " m\n";
+    require(turned > 0.0 && std::abs(taken - radius * turned) < 0.002 * radius * turned,
+            "opened again, the rope taken on is not the drum's radius times its turn");
+    require(std::abs(rise - taken) < 0.01 * taken, "opened again, the crate did not rise by the rope taken on");
+}
+
 } // namespace
 
 int main() {
@@ -419,6 +489,7 @@ int main() {
         {"a brake holds without drawing, and lets go", aBrakeHoldsWithoutDrawingAndLetsGo},
         {"a load driving the motor gives nothing back", aLoadDrivingTheMotorGivesNothingBack},
         {"a hoist winds its rope on and lifts the crate", aHoistWindsItsRopeOnAndLiftsTheCrate},
+        {"a restart gives the hoist back as it stood", aRestartGivesTheHoistBackAsItStood},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

@@ -219,6 +219,56 @@ Owner rules 4 and 6 mean this goes through every layer:
 - the page's panel and switch;
 - the API-docs and chat-tool parity tests.
 
+## The room's spelling
+
+A room's spec gains three things, which `playground/live_session.py` opens.
+
+- **A joint of kind `drum`:**
+
+  ```json
+  {"kind": "drum", "a": "hoist drum", "b": "crate", "at_mm": [0, 2000, 0], "axis": [0, 0, 1],
+   "radius_mm": 100, "to_mm": [100, 500, 0], "winds": 1, "length_mm": 2000, "out_mm": 0}
+  ```
+
+  - `a` is the drum, a thing on a pin of its own, and `b` is the load.
+  - `at_mm` and `axis` are the drum's centre and axle.
+  - `to_mm` is where the rope is made off on the load.
+  - `winds` is +1 if turning the drum the positive way about its axle takes
+    rope on.
+  - `out_mm` is how much rope is off the drum. Nothing means "as it hangs".
+- **`machines`, put in after the joints:**
+
+  ```json
+  "machines": {
+    "stores": [{"name": "battery", "body": "post", "capacity_j": 5000, "charge_j": 5000,
+                "voltage_v": 24, "max_power_w": 0}],
+    "motors": [{"on": ["post", "hoist drum"], "store": "battery", "stall_torque_n_m": 60,
+                "no_load_rpm": 95.5, "brake_torque_n_m": 200}]
+  }
+  ```
+
+  - A motor names its pin by the two things the pin joins, because the world
+    numbers pins as they go in.
+  - It gives its unloaded speed in turns a minute, as a maker would.
+  - It starts with its brake on when it has one, so a crate hanging on a hoist
+    does not fall when the room opens.
+- **An action step `{"do": "drive", "part": "hoist drum", "command": 1}`:**
+  - It tells the motor that turns the part a command from −1 to 1.
+  - A command of 0 stops the motor and puts its brake on.
+  - It does not need the hand.
+
+The runner (`tools/live_world_run.cpp`) takes the operations `store`,
+`motor`, `drive` and `drum`. Every step that has any machines carries
+`machines`:
+
+- each store's charge and what it has given;
+- each motor's state, readings and account, and the two things its pin joins;
+- each drum rope's rope out, rope wound on and tension, and where it leaves
+  the drum and meets the load, for drawing.
+
+A saved world keeps the stores, the motors and the ropes on drums, so a
+restart gives a machine back as it stood.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

@@ -2043,6 +2043,14 @@ def _this_pages_room(app,body):
                          " page, so nothing was done here. Reload the page to take the room back")
 
 
+def _motor_for(app,part):
+    """The motor that turns `part`, from the machines the last step reported
+    (docs/machine-world.md): a motor is known by the two things its pin joins."""
+    state=(app.live.session.state or {}) if app.live.session else {}
+    for motor in ((state.get("machines") or {}).get("motors") or []):
+        if part in (motor.get("on") or []): return motor
+    raise ValueError(f"nothing turns {part} with a motor")
+
 def run_action(app,body):
     """One of a thing's actions, pressed on the page (POST /api/world/action).
 
@@ -2079,7 +2087,7 @@ def run_action(app,body):
     # turned, its gate up: "Lower the gate" goes on from that hold, since
     # letting go first would drop the gate. Anything else needs the hand free.
     held=((app.live.session.state or {}).get("hand") or {}).get("holding")
-    if held and action["steps"][0]["do"] not in ("turn","slide"):
+    if held and action["steps"][0]["do"] not in ("turn","slide","drive"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     try:
@@ -2169,6 +2177,21 @@ def run_action(app,body):
                 app.live.act({"session":app.live.session.id,"op":"heat","target":part,"power_w":float(step.get("power_w",2000.0)),
                               "seconds":float(step.get("seconds",10.0))})
                 done.append(f"heating {part}")
+            elif do=="drive":
+                # A motor told what to do (docs/machine-world.md): a command
+                # from -1 to 1 and its brake -- on by default when it is told to
+                # stop. It is the motor that turns the part; the hand is not
+                # needed, so it may be holding something.
+                part=step.get("part") or name
+                motor=_motor_for(app,part)
+                command=max(-1.0,min(1.0,float(step.get("command",0.0))))
+                brake=bool(step.get("brake",command==0.0))
+                app.live.act({"session":app.live.session.id,"op":"drive","motor":motor["id"],
+                              "command":command,"brake":brake})
+                done.append(f"stopped the motor turning {part}"+(" and put its brake on" if brake else "")
+                            if command==0.0 else
+                            f"set the motor turning {part} going {'back ' if command<0 else ''}"
+                            f"at {round(100*abs(command))}%")
             elif do=="wait":
                 time.sleep(float(step.get("seconds",1.0)))
                 done.append(f"waited {float(step.get('seconds',1.0)):g} s")

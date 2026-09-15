@@ -1001,8 +1001,71 @@ function drawRopes() {
           over(joint.over_b || [0, 0, 0]),
           b.mesh.position.clone()]),
         ROPE_MATERIAL));
+    } else if (joint.kind === "drum") {
+      // A rope on a drum: from where it leaves the drum -- the point on the
+      // drum's rim it runs off towards the load, which moves as the load swings
+      // -- to where it is made off on the load. Both change every step, so they
+      // come with every step (world.machines), and the joint's own report,
+      // which travels only when the set of joints changes, is the fallback.
+      const now = (world.machines && world.machines.ropes || []).find((r) => r.joint === joint.id);
+      const ends = now || joint;
+      if (!ends.leaves || !ends.meets) continue;
+      const at = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+      ropeGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([at(ends.leaves), at(ends.meets)]),
+        ROPE_MATERIAL));
     }
   }
+}
+
+// Batteries, motors and ropes on drums, as the last step left them
+// (docs/machine-world.md): every step that has any carries them all.
+function followMachines(machines) {
+  world.machines = machines || null;
+  drawMachines(world.machines);
+}
+
+// The machines in the side panel: what each battery holds, what each motor is
+// doing, and where what it drew went -- its work and its heat -- as the engine
+// counted them, and each drum's rope.
+function drawMachines(block) {
+  const rows = [];
+  const row = (what, much) => {
+    const li = document.createElement("li");
+    const a = document.createElement("span");
+    a.className = "what";
+    a.textContent = what;
+    const b = document.createElement("span");
+    b.className = "much";
+    b.textContent = much;
+    li.append(a, b);
+    rows.push(li);
+  };
+  const joules = (j) => (Math.abs(j) >= 1000 ? `${(j / 1000).toFixed(2)} kJ` : `${Math.round(j)} J`);
+  for (const s of (block && block.stores) || []) {
+    const share = s.capacity_j > 0 ? Math.round(100 * s.charge_j / s.capacity_j) : 0;
+    row(s.name, `${joules(s.charge_j)} of ${joules(s.capacity_j)} (${share}%) · has given ${joules(s.given_j)}`);
+  }
+  for (const m of (block && block.motors) || []) {
+    const turns = m.on && m.on.length === 2 ? m.on[1] : `pin ${m.joint}`;
+    const doing = m.state === "driving"
+      ? `running ${m.speed_rad_s.toFixed(1)} rad/s at ${Math.abs(m.torque_n_m).toFixed(1)} N m, ${Math.round(m.power_w)} W`
+      : m.state === "flat" ? "stopped: its battery is flat"
+      : m.state === "braking" ? `braked, holding ${Math.abs(m.torque_n_m).toFixed(1)} N m`
+      : m.state === "gone" ? "its pin is gone"
+      : "coasting";
+    row(`motor turning ${turns}`, `${doing} · drew ${joules(m.drawn_j)}: ${joules(m.work_j)} of work,`
+      + ` ${joules(m.heat_j)} of heat`);
+  }
+  for (const r of (block && block.ropes) || []) {
+    const joint = (world.joints || []).find((j) => j.id === r.joint);
+    row(joint ? `rope from ${joint.a} to ${joint.b}` : "rope on a drum",
+      `${r.out_m.toFixed(2)} m out, ${r.wound_m.toFixed(2)} m on the drum · carries ${Math.round(r.tension_n)} N`);
+  }
+  $("machine-list").replaceChildren(...rows);
+  $("machine-note").textContent = "what each motor drew is its work and its heat; nothing goes back"
+    + " into a battery, and a brake holds without drawing";
+  $("machines").hidden = rows.length === 0;
 }
 
 function drawJoints(pins) {
@@ -1017,7 +1080,7 @@ function drawJoints(pins) {
     // drawn every frame by drawRopes, because both of its ends move. So is a
     // limb, for the same reason and in a different colour.
     if (pin.kind === "link" || pin.kind === "pulley" ||
-        pin.kind === "elastic") continue;
+        pin.kind === "elastic" || pin.kind === "drum") continue;
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
     const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
@@ -4330,6 +4393,7 @@ async function tick() {
     followTheBow(state);
     tools.follow(state);
     previewShot();
+    followMachines(state.machines);
     drawRopes();
     followJoints();
     // Strength before heat, so the panel drawHeat fills in says both.
