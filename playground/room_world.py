@@ -83,10 +83,17 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # out of the ground stays out of it, like a dig.
              "tool_point", "strike",
              # A machine is part of what the room IS (docs/machine-world.md): a
-             # rope on a drum is a joint, a battery and a motor are its
-             # `machines`, and what a motor was last told is kept with it, so
-             # the room runs it as the chat left it.
-             "drum", "store", "motor", "drive"}
+             # rope on a drum is a joint, and a battery and a motor are its
+             # `machines`.
+             "drum", "store", "motor"}
+
+# The calls that work what is in the room as it stands, the way the person's E
+# does: the chat pressing one of a thing's actions, or telling its motor what to
+# do. They act on the running room, which is not opened again, so nothing in it
+# goes back to where it was made -- the owner, 2026-09-15: "nothing should be
+# resetting rooms". What a motor is told is still written into the room, so it
+# goes on doing it if the room is opened again.
+LIVE = {"use_action", "drive"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120

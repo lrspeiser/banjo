@@ -1328,7 +1328,11 @@ class Handler(BaseHTTPRequestHandler):
                     answer=world_chat.ask(app.api_key,app.model,room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
                                           trace=trace,water_state=live_water(session,room.spec),
-                                          person=person,history=room.chat,journal=journal_of(app))
+                                          person=person,history=room.chat,journal=journal_of(app),
+                                          # Working what is in the room -- a thing's action
+                                          # pressed, a motor told -- happens to the room as
+                                          # it stands.
+                                          live=lambda name,args:_chat_live(app,name,args,body.get("person")))
                 except Exception as failure:
                     world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
                     room_store.keep(app,room)
@@ -2050,6 +2054,40 @@ def _motor_for(app,part):
     for motor in ((state.get("machines") or {}).get("motors") or []):
         if part in (motor.get("on") or []): return motor
     raise ValueError(f"nothing turns {part} with a motor")
+
+def _chat_live(app,name,args,person=None):
+    """What the room's chat does to the room as it stands (room_world.LIVE): one
+    of a thing's actions pressed, as the page's E presses it, or its motor told
+    what to do. The running room takes it, and nothing is opened again -- the
+    owner, 2026-09-15: "nothing should be resetting rooms". What it did, or
+    {"error": why}, for the model."""
+    try:
+        if name=="use_action":
+            thing=str(args.get("name",""))[:200]
+            offered=[a for a in (app.room.spec.get("actions") or []) if a.get("body")==thing]
+            if not offered: raise ValueError(f"{thing or 'that'} has no actions in this room: offer_actions gives it some")
+            which=args.get("action")
+            labels=[str(a.get("label","")) for a in offered]
+            index=next((i for i,label in enumerate(labels) if label.lower()==str(which).strip().lower()),None)
+            key=str(which).strip()
+            if index is None and key.isdigit() and 1<=int(key)<=len(offered):
+                index=int(key)-1
+            if index is None: raise ValueError(f"{thing} has no action {which!r}: its actions are {', '.join(labels)}")
+            said=run_action(app,{"object":thing,"action":index,"person":person})
+            if said.get("refused"): return {"error":said["refused"],"done":said.get("done",[])}
+            return {"used":thing,"action":said["action"],"done":said["done"],
+                    "in_the_room":"done to the room as it stands, as the person's E does it; nothing was opened again"}
+        if name=="drive":
+            part=str(args.get("part") or "")
+            motor=_motor_for(app,part)
+            command=max(-1.0,min(1.0,float(args.get("command",0.0))))
+            brake=bool(args.get("brake",command==0.0))
+            app.live.act({"session":app.live.session.id,"op":"drive","motor":motor["id"],
+                          "command":command,"brake":brake})
+            return {"in_the_room":f"the running room's motor turning {part} was told it too; nothing was opened again"}
+        return {"error":f"{name} is not something done to the room as it stands"}
+    except Exception as failure:
+        return {"error":str(failure)}
 
 def run_action(app,body):
     """One of a thing's actions, pressed on the page (POST /api/world/action).

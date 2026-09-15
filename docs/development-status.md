@@ -46,6 +46,7 @@
   - "Wind it up" lifted the 32 kg crate 0.4470 m in a second, for 0.4471 m of the drum's radius times its turn, the battery giving the 267.251 J the motor drew;
   - "Stop" held it still, drawing nothing;
   - "Let it down" (a command of -0.1) brought it down at 0.4170 m/s, where the motor's line says 0.4173, drawing nothing.
+  - Asked to work it, the chat presses the hoist's own action on the room as it stands (`use_action`, a new MCP tool), just as E does, and `drive` tells the running room's motor too. Neither opens the room again (`room_world.LIVE`; `server._chat_live`): the owner, 2026-09-15, "nothing should be resetting rooms".
 - The playground:
   - A room's spec can have a `drum` joint and a `machines` block (`live_session._power`, checked in `fracture_lab.normalise_machines`). A motor names its pin by its two things and starts braked.
   - The action step `drive` (`server.run_action`) finds the motor by the thing it turns.
@@ -84,7 +85,7 @@
   - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 3 and fracture_lab all pass.
   - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
 - Not yet:
-  - the chat telling a motor what to do works on the room as the chat built it: the room is opened again from its spec, so the crate goes back to where it was made and the battery back to full. A thing's own actions work on the room as it is. Which the chat should do is the owner's call;
+  - a chat change to what the room IS (a thing added, moved or taken away, a joint, a dig) still opens it again from what the chat built, and what happened in it since goes back: next, the room as it stands carried into the one opened again, so nothing resets;
   - a drum on a body that breaks being re-hung onto its pieces;
   - the heat of the windings going to the thermal model;
   - opened again from a saved world, a braked crate settles 1.1 mm in its first second, the same 1.1 mm it settles in a fresh room when the brake first takes its weight. The likely cause is that a saved world does not keep the solver's warm start; not yet looked into.
