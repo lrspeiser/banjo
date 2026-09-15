@@ -30,6 +30,10 @@
   - a board on posts half a metre short is "resting on nothing";
   - a bridge a metre short fails `reaches`, and one laid on the ground fails its clearance;
   - stairs with one 0.24 m step fail `steps`.
+- In the page, with the real chat (the scratchpad's `headless_structures.py`, on a server of my own):
+  - in the yard, "Build a long ski ramp.": the chat declared a ski jump, built the guide's worked one and passed 9 of 9 checks, at 99.9% of realtime with no page errors. On the first try it asked "Shall I build the anchored boards and supporting posts now?" three times, built nothing, and was told "Not finished"; the guide, the note and the plan's answer now say that declaring builds nothing;
+  - in the yard, "Build a staircase about a metre high." gave 5 even steps on posts, 5 of 5, after repairing itself over 20 rounds; "Build a bridge four metres long." passed 7 of 7, placed 10 m out because the staircase stood at the first spot;
+  - in the valley, "Build a long ski ramp." is Not finished. The chat laid the flat-ground example on the hillside without adding the ground's height, patched it for 30 rounds and blamed the cell budget. That turn read 2.76 M input tokens, because every `add_object` answer carries the whole world's object list. Code working out every height from the ground is increment 2's builder.
 - Tests:
   - `chat_history_tests` (35), including a turn that builds a board for a ski jump: sent back twice, then "Not finished:";
   - `machine_room_tests`: a held-back drive winds the hoist in the room as changed;
