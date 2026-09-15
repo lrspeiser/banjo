@@ -1,5 +1,18 @@
 # Development status and handoff
 
+**The world page walks through a reload in CI.** Branch `agent/journey-ci` from `660da54`. The review of main asked that the page checks, which were scratchpad scripts nothing reran, become committed tests that CI runs. This is the first of them.
+- `tests/world_page_journey_tests.py` starts a playground server of its own on a free port, with the build's engine and rooms in a folder of its own. It drives headless Chrome through the rejoin journey:
+  - E picks the rubber ball up;
+  - a reload keeps it in the hand, and the person stands where they stood;
+  - it is put down 2 m away, and a reload keeps it there;
+  - "Start the room again" puts it back where the room had it;
+  - no page errors throughout.
+- CI runs it with `BANJO_BROWSER_TESTS=required`, so a missing Chrome or engine fails the build instead of skipping.
+- `tests/qa_browser.py`:
+  - gains `_PlainSocket`, a standard-library WebSocket client, used where `websockets` is not installed. CI's system Python refuses a pip install, and `BANJO_DEVTOOLS_PLAIN=1` asks for it anywhere;
+  - gains `BANJO_CHROME_ARGS`, for what a machine's Chrome needs. In CI that is `--no-sandbox --enable-unsafe-swiftshader`.
+- Measured on this machine: the journey passes in 16 s with `websockets` and in 17 s with the plain socket, and `qa_open_tests` passes 11 of 11. CI on this branch is the first run on Linux.
+
 **A reload rejoins the running room: what you moved, broke or hold stays.** Branch `agent/nothing-resets` from `27a624c`. This is the first slice of the owner's next milestone, "a workshop that remembers" (2026-09-15). Until now, every open of a room rebuilt it from its spec, a page reload included. Whatever the person had moved went back to where it was authored, what had broken came back whole, and a thing in the hand went back into the bag.
 - A page opening the room this server is already running now rejoins it (`server._rejoin`, `live_session.Live.rejoin`).
   - The runner's `poses` reply is the whole world as it stands: every body with its cells, the pins, edges and tool points, the hand, and the whole ground.
