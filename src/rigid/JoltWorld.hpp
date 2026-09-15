@@ -518,6 +518,39 @@ public:
     };
     [[nodiscard]] unsigned addPulley(const PulleyDescription &description);
 
+    // A rope that winds onto a turning drum (rigid/DrumRope.hpp), from a drum
+    // -- a body that turns on a pin of its own -- to a load. The rope leaves the
+    // drum where it runs off it tangentially towards the load, and as the drum
+    // turns it takes rope on or lets it off, for as many turns as there is rope.
+    // It pulls and never pushes.
+    struct DrumDescription {
+        MatterBodyId drum{kInvalidMatterBodyId};
+        MatterBodyId load{kInvalidMatterBodyId};
+        // The drum's centre and axle, and the radius the rope lies at, in world
+        // metres as things stand now.
+        Vec3 centre_world_m{};
+        Vec3 axis_world{0.0, 0.0, 1.0};
+        double radius_m{};
+        // Where the rope is made off on the load.
+        Vec3 load_point_world_m{};
+        // +1: the drum turning the positive way about its axle takes rope on;
+        // -1: the other way.
+        int winds{1};
+        // The whole rope, and how much of it is off the drum now. An out_m of
+        // zero is "as it hangs": exactly the span from the drum to the load.
+        double length_m{};
+        double out_m{};
+    };
+    [[nodiscard]] unsigned addDrum(const DrumDescription &description);
+    // A drum's rope as it stands: what it pulls with, how much of it is off the
+    // drum and on it, and where it leaves the drum and meets the load.
+    struct DrumReport {
+        double tension_n{};
+        double out_m{}, wound_m{}, length_m{}, span_m{};
+        Vec3 leaves_m{}, meets_m{};
+    };
+    [[nodiscard]] DrumReport drumState(unsigned joint) const;
+
     // A fixing: two bodies held together as one, until they are not.
     //
     // A peg, a bracket, a nail, a bolt, a door catch, a locking bar, a rope
@@ -625,7 +658,10 @@ public:
         // A tool's point in the ground, held by the soil. Not built by anyone
         // either: the ground-work model makes it while a point is in and takes
         // it away when the point comes out (docs/ground-work.md).
-        GroundBite = 7
+        GroundBite = 7,
+        // A rope that winds onto a turning drum (rigid/DrumRope.hpp): a hoist,
+        // a winch, a crane.
+        Drum = 8
     };
 
     // An edge engaged in matter, as the solver sees it.

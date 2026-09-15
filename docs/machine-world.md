@@ -17,8 +17,8 @@ used and lost adding up. The second hand arrives on this road as a powered
 gripper, and the wood chain (the pick, shaping wood, the valley) folds into it
 rather than being built as wood content first.
 
-**Status, 2026-09-15.** The store, the motor and the brake are built in the
-engine and checked in `tests/motor_tests.cpp`:
+**Status, 2026-09-15.** The store, the motor, the brake and the drum are built
+in the engine and checked in `tests/motor_tests.cpp`:
 
 - a flywheel spun up stays within 0.2% of the motor's own curve, turn after
   turn, and the motor's work is its spin to 0.33%;
@@ -27,9 +27,16 @@ engine and checked in `tests/motor_tests.cpp`:
 - a battery gives no more than its power;
 - a brake holds without drawing, and lets go;
 - a load driving the motor gives nothing back, and its lost spin all becomes
-  heat (0.17%).
+  heat (0.17%);
+- a hoist's drum winds its rope on for as many turns as there is rope
+  (`rigid/DrumRope.hpp`):
+  - braked, the rope carries the 26.6 kg crate's weight to 0.03%;
+  - lifting, the crate rises 0.834 m as the drum turns 1.33 times, which is
+    the drum's radius times its turn;
+  - the motor's work is the crate's height and motion to 0.26%;
+  - braked at the top, the crate does not move.
 
-The drum, the controller, the account in the saved world and every layer
+The controller, the stores and motors in the saved world, and every layer
 above the engine come next. None of it can be seen in the page yet.
 
 ## What this is
@@ -178,13 +185,13 @@ Acceptance, in the page, on the real engine:
      turn, for as many turns as the rope is long.
    - The turn is counted unwrapped, not wrapped at ±180°. The drum and the
      controller both need that.
-   - How to do it in Jolt is for a test to decide. Jolt's rope
+   - It is a small constraint of our own (`rigid/DrumRope.hpp`). Jolt's rope
      (`DistanceConstraint`) fixes where it is tied on each body when it is
-     made; afterwards only its length can change (`SetDistance`). So a rope
-     that leaves the drum at the tangent point is either made again every step,
-     which loses the solver's warm start, or a small constraint of our own.
-     Jolt's own rack and pinion is the fallback, for a load running in guide
-     rails.
+     made, and only its length can change afterwards. A rope made again every
+     step would start each step with none of its tension, as a new kerf does.
+     So the drum's rope is Jolt's rope with its drum end moved, as each step
+     begins, to where it leaves the drum. For the step that end is a point of
+     the drum, and it keeps its tension from step to step.
 5. **Readings and a controller.**
    - Each motor reports its command, speed, torque, current and power.
    - Each drum reports its turns and how much rope is out.

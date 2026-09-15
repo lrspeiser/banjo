@@ -217,6 +217,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     add_library(
         banjo_runtime
         src/physics/TetrahedronContact.cpp
+        src/rigid/DrumRope.cpp
         src/rigid/JoltWorld.cpp
         src/sim/RollingBallExperiment.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

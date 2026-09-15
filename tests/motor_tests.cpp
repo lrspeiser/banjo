@@ -278,6 +278,132 @@ void aLoadDrivingTheMotorGivesNothingBack() {
     require(std::abs(spin_lost + drawn - heat) <= 0.01 * heat, "what the flywheel lost did not turn into heat");
 }
 
+// An iron post; an oak drum 0.2 x 0.2 x 0.3 m on an axle along z at (0, 2, 0);
+// and an iron crate 0.15 m across hanging 1.5 m below the drum's right-hand
+// side, where a rope off the drum's 0.1 m radius comes straight down to it.
+TileImpactRequest hoistRoom() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.05;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody post;
+    post.name = "post";
+    post.shape = BodyShape::Box;
+    post.material = MaterialPreset::Iron;
+    post.dimensions_m = {0.1, 2.0, 0.1};
+    post.center_m = {-0.4, 1.0, 0.0};
+    post.anchored = true;
+    SceneBody drum;
+    drum.name = "drum";
+    drum.shape = BodyShape::Box;
+    drum.material = MaterialPreset::Oak;
+    drum.dimensions_m = {0.2, 0.2, 0.3};
+    drum.center_m = {0.0, 2.0, 0.0};
+    SceneBody crate;
+    crate.name = "crate";
+    crate.shape = BodyShape::Box;
+    crate.material = MaterialPreset::Iron;
+    crate.dimensions_m = {0.15, 0.15, 0.15};
+    crate.center_m = {0.1, 0.425, 0.0};
+    r.bodies = {post, drum, crate};
+    return r;
+}
+
+struct Crate {
+    double mass{}, y{}, speed{};
+};
+
+Crate crateOf(const LiveWorld &world) {
+    Crate c;
+    for (const LiveBodyPose &p : world.poses())
+        if (p.name == "crate") {
+            c.mass = p.mass_kg;
+            c.y = p.position_m.y;
+            const Vec3 &v = p.velocity_m_s;
+            c.speed = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        }
+    return c;
+}
+
+LiveJoint jointOf(const LiveWorld &world, unsigned id) {
+    for (const LiveJoint &j : world.joints())
+        if (j.id == id) return j;
+    throw std::runtime_error("there is no joint " + std::to_string(id));
+}
+
+void aHoistWindsItsRopeOnAndLiftsTheCrate() {
+    constexpr double kG = 9.81;
+    constexpr double kTurn = 2.0 * 3.14159265358979323846;
+    const auto world = LiveWorld::open(hoistRoom());
+    const Vec3 axle{0.0, 0.0, 1.0};
+    const Vec3 centre{0.0, 2.0, 0.0};
+    const double radius = 0.1;
+    const unsigned pin = world->hinge("post", "drum", centre, axle);
+    // Two metres of rope, 1.5 of it out: the drum turning the positive way
+    // about z takes it on.
+    const unsigned rope = world->drum("drum", "crate", centre, axle, radius, Vec3{0.1, 0.5, 0.0}, 1, 2.0);
+    const unsigned battery = world->energyStore("battery", "post", 5000.0, 5000.0);
+    // It stalls at 60 N m, over twice the crate's 26 N m on the drum; its brake
+    // holds 200.
+    const unsigned drive = world->motor(pin, battery, 60.0, 10.0, 200.0);
+    require(pin != 0 && rope != 0 && battery != 0 && drive != 0, "the hoist would not go together");
+    const double inertia = world->inertiaAbout("drum", axle);
+
+    // The brake holds the drum, and the rope carries the crate.
+    world->driveMotor(drive, 0.0, true);
+    run(*world, 1.0, [] {});
+    const Crate held = crateOf(*world);
+    const LiveJoint hanging = jointOf(*world, rope);
+    std::cout << "  held by the brake: the rope carries " << hanging.tension_n << " N of the crate's "
+              << held.mass * kG << " N, with " << hanging.at << " m of it out and " << hanging.wound_m
+              << " m on the drum; the drum turned " << world->motors().front().turned_rad
+              << " rad, and the crate hangs " << 0.5 - 0.075 - held.y << " m below where it was made\n";
+    require(hanging.kind == "drum", "the rope says it is a " + hanging.kind);
+    require(std::abs(hanging.tension_n - held.mass * kG) < 0.01 * held.mass * kG,
+            "the rope does not carry the crate's weight");
+    require(world->motors().front().drawn_j == 0.0, "holding the crate drew on the battery");
+
+    // Lifting.
+    const LiveMotor before = world->motors().front();
+    const double out_before = hanging.at;
+    world->driveMotor(drive, 1.0);
+    run(*world, 1.5, [] {});
+    const LiveMotor lifted = world->motors().front();
+    const Crate up = crateOf(*world);
+    const LiveJoint wound = jointOf(*world, rope);
+    const double rise = up.y - held.y;
+    const double turned = lifted.turned_rad - before.turned_rad;
+    const double taken = out_before - wound.at;
+    std::cout << "  lifting for 1.5 s: the drum turned " << turned / kTurn << " times, taking on " << taken
+              << " m of rope (r x turn: " << radius * turned << " m), and the crate rose " << rise << " m\n";
+    require(turned > kTurn, "the drum did not turn even once");
+    require(std::abs(taken - radius * turned) < 0.002 * radius * turned,
+            "the rope taken on is not the drum's radius times its turn");
+    require(std::abs(rise - taken) < 0.01 * taken, "the crate did not rise by the rope taken on");
+    // The account: the motor's work is the crate's height and the motion.
+    const double height = up.mass * kG * rise;
+    const double motion = 0.5 * up.mass * up.speed * up.speed +
+                          0.5 * inertia * lifted.speed_rad_s * lifted.speed_rad_s;
+    const double work = lifted.work_j - before.work_j;
+    const double heat = lifted.heat_j - before.heat_j;
+    const double drawn = lifted.drawn_j - before.drawn_j;
+    std::cout << "  it drew " << drawn << " J: " << work << " J of work -- " << height
+              << " J into the crate's height and " << motion << " J into motion -- and " << heat << " J of heat\n";
+    require(std::abs(drawn - work - heat) <= 1e-9 * drawn, "what the motor drew is not its work and its heat");
+    require(std::abs(work - height - motion) <= 0.01 * work,
+            "the motor's work is not the crate's height and the motion");
+
+    // Braked at the top: it stays there, and holding it draws nothing.
+    world->driveMotor(drive, 0.0, true);
+    run(*world, 0.5, [] {});
+    const Crate stopped = crateOf(*world);
+    const double drawn_stopped = world->motors().front().drawn_j;
+    run(*world, 1.0, [] {});
+    const Crate still = crateOf(*world);
+    std::cout << "  braked: in a second the crate moved " << still.y - stopped.y << " m\n";
+    require(std::abs(still.y - stopped.y) < 0.002, "braked, the crate did not stay up");
+    require(world->motors().front().drawn_j == drawn_stopped, "holding the crate up drew on the battery");
+}
+
 } // namespace
 
 int main() {
@@ -292,6 +418,7 @@ int main() {
         {"a battery gives no more than its power", aBatteryGivesNoMoreThanItsPower},
         {"a brake holds without drawing, and lets go", aBrakeHoldsWithoutDrawingAndLetsGo},
         {"a load driving the motor gives nothing back", aLoadDrivingTheMotorGivesNothingBack},
+        {"a hoist winds its rope on and lifts the crate", aHoistWindsItsRopeOnAndLiftsTheCrate},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

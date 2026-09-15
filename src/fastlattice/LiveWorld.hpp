@@ -324,6 +324,12 @@ struct LiveJoint {
     Vec3 over_a_m{}, over_b_m{};
     // What it takes to part a link. Zero means it never parts.
     double breaks_at_n{};
+    // A drum's rope: the radius it lies at, how much of it is on the drum (`at`
+    // is how much is off it, and `upper` the whole rope), and where it leaves
+    // the drum and meets the load, for a host that draws it. Zero for every
+    // other kind.
+    double radius_m{}, wound_m{};
+    Vec3 leaves_m{}, meets_m{};
     // Where it is now, in the world, for a host that wants to draw it. For a
     // slide, the point is where the travel is measured FROM -- where the thing
     // was built -- not where it has got to.
@@ -1189,6 +1195,19 @@ public:
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;
+    // A rope that winds onto a turning drum (rigid/DrumRope.hpp): from the
+    // drum -- a thing that turns on a pin of its own -- to a load, made off on
+    // the load at load_point_world_m. The drum's centre and axle and the
+    // radius the rope lies at are given as things stand now. `winds` is +1 if
+    // the drum turning the positive way about its axle takes rope on, -1 if
+    // the other way does. length_m is the whole rope; out_m is how much of it
+    // is off the drum, and zero means "as it hangs" -- exactly the span from
+    // the drum to the load. As many turns as there is rope, and it pulls and
+    // never pushes. Returns 0 if either name is not there, they are the same
+    // thing, or the numbers are not a drum's.
+    unsigned drum(const std::string &drum, const std::string &load, const Vec3 &centre_world_m,
+                  const Vec3 &axis_world, double radius_m, const Vec3 &load_point_world_m, int winds,
+                  double length_m, double out_m = 0.0);
 
     // ---- heat, chemistry and gas ----------------------------------------
     //

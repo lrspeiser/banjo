@@ -32,6 +32,8 @@
 #include <Jolt/Physics/Constraints/PulleyConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
+
+#include "rigid/DrumRope.hpp"
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -1608,6 +1610,16 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
         out.friction = 0.0;
         return out;
     }
+    if (held.kind == JointKind::Drum) {
+        // A drum's rope reads as how much of it is off the drum: the most the
+        // span from the drum to the load may be. drumState says the rest.
+        const auto *rope = static_cast<const DrumRopeConstraint *>(held.constraint.GetPtr());
+        out.at = rope->out();
+        out.lower = 0.0;
+        out.upper = rope->length();
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Pulley) {
         auto *rove = static_cast<JPH::PulleyConstraint *>(held.constraint.GetPtr());
         // The whole run: one side plus the ratio times the other, which is the
@@ -1755,7 +1767,8 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     // set, every step, from the material; nobody else's.
     if (held.kind == JointKind::Link || held.kind == JointKind::Pulley ||
         held.kind == JointKind::Fixing || held.kind == JointKind::Elastic ||
-        held.kind == JointKind::Kerf || held.kind == JointKind::GroundBite) return;
+        held.kind == JointKind::Kerf || held.kind == JointKind::GroundBite ||
+        held.kind == JointKind::Drum) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -1801,9 +1814,69 @@ unsigned JoltWorld::addLink(const LinkDescription &d) {
     return id;
 }
 
+unsigned JoltWorld::addDrum(const DrumDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.drum == d.load || !contains(d.drum) || !contains(d.load))
+        throw std::invalid_argument("a drum's rope needs a drum and a load, two different bodies in the world");
+    if (impl_->joints_.size() >= 4096) throw std::invalid_argument("joint budget exceeded");
+    if (!(d.radius_m > 0.0) || !std::isfinite(d.radius_m)) throw std::invalid_argument("a drum needs a radius");
+    if (!(d.length_m > 0.0) || !std::isfinite(d.length_m))
+        throw std::invalid_argument("a drum's rope needs a length");
+    if (!(d.out_m >= 0.0) || !(d.out_m <= d.length_m))
+        throw std::invalid_argument("a drum cannot let out more rope than it has");
+    const double reach = std::sqrt(d.axis_world.x * d.axis_world.x + d.axis_world.y * d.axis_world.y +
+                                   d.axis_world.z * d.axis_world.z);
+    if (!(reach > 1e-9)) throw std::invalid_argument("a drum's axle needs a direction");
+    for (const Vec3 &point : {d.centre_world_m, d.load_point_world_m})
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+            throw std::invalid_argument("a drum's rope needs places for its ends");
+
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    const JPH::BodyID drum = impl_->bodies_.at(d.drum);
+    const JPH::BodyID load = impl_->bodies_.at(d.load);
+    // Everything in each body's own centre-of-mass frame, where it stays when
+    // the whole winch is carried or turned over.
+    const JPH::RMat44 into_drum = bodies.GetCenterOfMassTransform(drum).InversedRotationTranslation();
+    const JPH::RMat44 into_load = bodies.GetCenterOfMassTransform(load).InversedRotationTranslation();
+    DrumRopeSettings settings;
+    settings.rope.centre_local = JPH::Vec3(into_drum * toJoltPosition(d.centre_world_m));
+    settings.rope.axis_local = into_drum.Multiply3x3(
+        toJolt(Vec3{d.axis_world.x / reach, d.axis_world.y / reach, d.axis_world.z / reach}));
+    settings.rope.radius_m = static_cast<float>(d.radius_m);
+    settings.rope.load_point_local = JPH::Vec3(into_load * toJoltPosition(d.load_point_world_m));
+    settings.rope.winds = d.winds < 0 ? -1.0F : 1.0F;
+    settings.rope.length_m = d.length_m;
+    settings.rope.wound_m = d.out_m > 0.0 ? d.length_m - d.out_m : -1.0;
+    auto *raw = bodies.CreateConstraint(&settings, drum, load);
+    if (!raw) throw std::runtime_error("drum creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.drum, d.load, JointKind::Drum, static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+JoltWorld::DrumReport JoltWorld::drumState(unsigned joint) const {
+    DrumReport out{};
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Drum) return out;
+    const auto *rope = static_cast<const DrumRopeConstraint *>(found->second.constraint.GetPtr());
+    // The impulse over the step, over the step: the force. A rope pulls, so its
+    // impulse is zero or less (DrumRopeConstraint::totalLambda).
+    const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
+    out.tension_n = std::max(0.0, -static_cast<double>(rope->totalLambda())) / dt;
+    out.out_m = rope->out();
+    out.wound_m = rope->wound();
+    out.length_m = rope->length();
+    out.span_m = rope->span();
+    out.leaves_m = fromJoltPosition(rope->leaves());
+    out.meets_m = fromJoltPosition(rope->meets());
+    return out;
+}
+
 double JoltWorld::jointTension(unsigned joint) const {
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end()) return 0.0;
+    if (found->second.kind == JointKind::Drum) return drumState(joint).tension_n;
     if (found->second.kind == JointKind::Pulley) {
         const double impulse =
             static_cast<JPH::PulleyConstraint *>(found->second.constraint.GetPtr())

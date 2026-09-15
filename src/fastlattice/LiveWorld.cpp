@@ -835,6 +835,11 @@ struct LiveWorld::Impl {
         double comes_off_n{};
         // An elastic's declared model.
         double rest_m{}, stiffness_n_m{}, damping_n_s_m{};
+        // A drum's rope (rigid/DrumRope.hpp): the radius it lies at on the drum,
+        // and which way the drum turns to take it on. Its whole length is
+        // `upper`, as a link's is; how much is off the drum is the constraint's.
+        double radius_m{};
+        int winds{1};
         // How far it had got, last time anyone could ask. Kept up to date every
         // step because the thing that destroys the constraint is the same thing
         // that needs to know it -- once the wood is rebuilt there is nobody left
@@ -1432,6 +1437,7 @@ const char *savedKind(JoltWorld::JointKind kind) {
     case JoltWorld::JointKind::Pulley: return "pulley";
     case JoltWorld::JointKind::Fixing: return "fixing";
     case JoltWorld::JointKind::Elastic: return "elastic";
+    case JoltWorld::JointKind::Drum: return "drum";
     default: return "hinge";
     }
 }
@@ -1442,6 +1448,7 @@ JoltWorld::JointKind kindFrom(const std::string &word) {
     if (word == "pulley") return JoltWorld::JointKind::Pulley;
     if (word == "fixing") return JoltWorld::JointKind::Fixing;
     if (word == "elastic") return JoltWorld::JointKind::Elastic;
+    if (word == "drum") return JoltWorld::JointKind::Drum;
     if (word == "hinge") return JoltWorld::JointKind::Hinge;
     throw std::invalid_argument("\"" + word + "\" is not a kind of joint");
 }
@@ -2055,6 +2062,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         joint.parted_load_n = numberFrom(o.at("parted_load_n"));
         joint.parted_capacity_n = numberFrom(o.at("parted_capacity_n"));
         joint.member_said = o.at("member_said").get<std::string>();
+        // A drum's, absent from a world saved before there were drums.
+        joint.radius_m = o.value("radius_m", 0.0);
+        joint.winds = o.value("winds", 1) < 0 ? -1 : 1;
         joint.rigid = 0;
         const auto one = impl.index_of.find(joint.a);
         const auto two = impl.index_of.find(joint.b);
@@ -2143,6 +2153,22 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 peg.holds_shear_n = joint.holds_shear_n;
                 peg.comes_off_n = joint.comes_off_n;
                 joint.rigid = impl.world->addFixing(peg);
+                break;
+            }
+            case JoltWorld::JointKind::Drum: {
+                JoltWorld::DrumDescription rope{};
+                rope.drum = ida;
+                rope.load = idb;
+                rope.centre_world_m = point;
+                rope.axis_world = along;
+                rope.radius_m = joint.radius_m;
+                rope.load_point_world_m = point_b;
+                rope.winds = joint.winds;
+                rope.length_m = joint.upper;
+                // As much off the drum as there was when it was saved, however
+                // many turns are on it. (Zero would mean "as it hangs".)
+                rope.out_m = std::clamp(numberFrom(held.at("at")), 1e-6, joint.upper);
+                joint.rigid = impl.world->addDrum(rope);
                 break;
             }
             default:
@@ -3122,6 +3148,7 @@ std::vector<LiveJoint> LiveWorld::joints() const {
                     : joint.kind == JoltWorld::JointKind::Pulley ? "pulley"
                     : joint.kind == JoltWorld::JointKind::Fixing ? "fixing"
                     : joint.kind == JoltWorld::JointKind::Elastic ? "elastic"
+                    : joint.kind == JoltWorld::JointKind::Drum    ? "drum"
                                                                  : "hinge";
         said.rest_m = joint.rest_m;
         said.stiffness_n_m = joint.stiffness_n_m;
@@ -3146,6 +3173,13 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             said.upper = now.upper;
             said.friction = now.friction;
             said.tension_n = impl_->world->jointTension(joint.rigid);
+            if (joint.kind == JoltWorld::JointKind::Drum) {
+                const JoltWorld::DrumReport rope = impl_->world->drumState(joint.rigid);
+                said.radius_m = joint.radius_m;
+                said.wound_m = rope.wound_m;
+                said.leaves_m = rope.leaves_m;
+                said.meets_m = rope.meets_m;
+            }
             if (joint.kind == JoltWorld::JointKind::Elastic) {
                 // How far apart the two ATTACHMENT POINTS are, worked out from
                 // where the bodies now stand. Not their centres: a bow limb
@@ -3275,6 +3309,61 @@ double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) 
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end() || !impl_->inWorld(found->second)) return 0.0;
     return impl_->world->inertiaAbout(impl_->body_of[found->second], axis_world);
+}
+
+unsigned LiveWorld::drum(const std::string &drum, const std::string &load, const Vec3 &centre_world_m,
+                         const Vec3 &axis_world, double radius_m, const Vec3 &load_point_world_m, int winds,
+                         double length_m, double out_m) {
+    const auto first = impl_->index_of.find(drum);
+    const auto second = impl_->index_of.find(load);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    // A thing set aside (park) is not in the world to be joined to anything.
+    if (!impl_->inWorld(first->second) || !impl_->inWorld(second->second)) return 0;
+    const double reach = length(axis_world);
+    if (!(reach > 1e-9) || !(radius_m > 0.0) || !std::isfinite(radius_m) || !(length_m > 0.0) ||
+        !std::isfinite(length_m) || !(out_m >= 0.0) || out_m > length_m)
+        return 0;
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = drum;
+    joint.b = load;
+    joint.kind = JoltWorld::JointKind::Drum;
+    joint.lower = 0.0;
+    joint.upper = length_m;
+    joint.radius_m = radius_m;
+    joint.winds = winds < 0 ? -1 : 1;
+    // The drum's centre and axle in its own frame, and the rope's end in the
+    // load's, as a pin's and a rope's are kept.
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world).rotate(centre_world_m - one.center_of_mass_world_m);
+    joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+    joint.point_local_b_tie =
+        conjugateOf(two.orientation_world).rotate(load_point_world_m - two.center_of_mass_world_m);
+    joint.point_local_b = joint.point_local_b_tie;
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
+    try {
+        JoltWorld::DrumDescription rope{};
+        rope.drum = impl_->body_of[first->second];
+        rope.load = impl_->body_of[second->second];
+        rope.centre_world_m = centre_world_m;
+        rope.axis_world = (1.0 / reach) * axis_world;
+        rope.radius_m = radius_m;
+        rope.load_point_world_m = load_point_world_m;
+        rope.winds = joint.winds;
+        rope.length_m = length_m;
+        rope.out_m = out_m;
+        joint.rigid = impl_->world->addDrum(rope);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
 }
 
 void LiveWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
@@ -9864,6 +9953,7 @@ const char *jointWord(JoltWorld::JointKind kind) {
     case JoltWorld::JointKind::Pulley: return "pulley";
     case JoltWorld::JointKind::Fixing: return "fixing";
     case JoltWorld::JointKind::Elastic: return "spring";
+    case JoltWorld::JointKind::Drum: return "drum rope";
     default: return "hinge";
     }
 }
@@ -10237,7 +10327,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"parted_because", j.parted_because},
                             {"parted_load_n", savedNumber(j.parted_load_n)},
                             {"parted_capacity_n", savedNumber(j.parted_capacity_n)},
-                            {"member_said", j.member_said}};
+                            {"member_said", j.member_said},
+                            {"radius_m", savedNumber(j.radius_m)},
+                            {"winds", j.winds}};
         if (j.rigid != 0 && I.world->hasJoint(j.rigid)) {
             const JoltWorld::JointReport now = I.world->jointState(j.rigid);
             o["held"] = {{"at", savedNumber(now.at)}, {"lower", savedNumber(now.lower)},
