@@ -1498,6 +1498,35 @@ class TheTools(unittest.TestCase):
         self.assertIn("recipe is one of", self.client.refuse("build_recipe", world_id=world_id,
                                                               recipe="rocket", at_m=[-12.0, -4.0]))
 
+    def test_a_things_action_is_used_by_its_label_or_its_number(self):
+        """use_action presses one of a thing's actions, as E does in the
+        playground: the hoist's "Wind it up" tells its motor to wind, and run
+        winds the crate up; its number works as its label does, and "2" is Stop,
+        which holds it; an action it does not have is refused, naming the ones
+        it has."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [4.0, 0.04, 4.0], "anchored": True}])["world_id"]
+        self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[1.0, -1.0])
+
+        def crate_y() -> float:
+            return next(o for o in self.client.call("describe_world", world_id=world_id)["objects"]
+                        if o["name"] == "hoist crate")["position_m"][1]
+
+        y0 = crate_y()
+        used = self.client.call("use_action", world_id=world_id, name="hoist drum", action="Wind it up")
+        self.assertEqual((used["used"], used["action"]), ("hoist drum", "Wind it up"))
+        self.client.call("run", world_id=world_id, seconds=1.0)
+        self.assertGreater(crate_y() - y0, 0.2, "used, 'Wind it up' did not wind the crate up")
+        stopped = self.client.call("use_action", world_id=world_id, name="hoist drum", action="2")
+        self.assertEqual(stopped["action"], "Stop")
+        self.client.call("run", world_id=world_id, seconds=0.5)
+        held = crate_y()
+        self.client.call("run", world_id=world_id, seconds=1.0)
+        self.assertLess(abs(crate_y() - held), 0.002, "stopped by its action, the crate did not stay up")
+        refused = self.client.refuse("use_action", world_id=world_id, name="hoist drum", action="Fly")
+        self.assertIn("Wind it up, Stop, Let it down", refused)
+
     def test_a_hoist_asked_for_with_a_tool_filled_in_is_built_and_says_so(self):
         """The chat fills every field it is shown: asked for a hoist, it filled
         build_recipe's `tool` in, was refused twice, and built nothing. What only

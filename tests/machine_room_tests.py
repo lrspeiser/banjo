@@ -196,6 +196,50 @@ class AHoistInARoom(unittest.TestCase):
         with self.assertRaises(ValueError):
             server._motor_for(app, "crate")
 
+    def test_the_chat_works_it_on_the_room_as_it_stands(self):
+        """What the room's chat does to the room as it stands (server._chat_live,
+        room_world.LIVE): its action pressed by label or by number, and its motor
+        told, all on the running room -- the session is the same one afterwards,
+        so nothing was opened again. The owner, 2026-09-15: "nothing should be
+        resetting rooms"."""
+        import server  # noqa: E402
+        self.step(0.5)
+        spec = hoist_room()
+        spec["actions"] = [{"body": "drum", "label": "Wind it up", "steps": [{"do": "drive", "command": 1.0}]},
+                           {"body": "drum", "label": "Stop", "steps": [{"do": "drive", "command": 0.0}]}]
+
+        class Room:
+            pass
+
+        class App:
+            pass
+
+        room, app = Room(), App()
+        room.spec = spec
+        app.live, app.room = self.live, room
+        session = self.live.session.id
+        y0 = self.crate()["position_m"][1]
+        said = server._chat_live(app, "use_action", {"name": "drum", "action": "wind it up"})
+        self.assertNotIn("error", said, said)
+        self.assertEqual(said["action"], "Wind it up")
+        self.step(0.5)
+        self.assertEqual(self.machines()["motors"][0]["state"], "driving")
+        y1 = self.crate()["position_m"][1]
+        print(f"\n   pressed by the chat, 'Wind it up' wound the crate up {y1 - y0:.4f} m in half a second",
+              flush=True)
+        self.assertGreater(y1 - y0, 0.05, "pressed by the chat, the hoist did not wind")
+        said = server._chat_live(app, "use_action", {"name": "drum", "action": "2"})
+        self.assertNotIn("error", said, said)
+        self.step(0.2)
+        self.assertEqual(self.machines()["motors"][0]["state"], "braking")
+        said = server._chat_live(app, "drive", {"part": "drum", "command": 1.0, "brake": False})
+        self.assertNotIn("error", said, said)
+        self.step(0.2)
+        self.assertEqual(self.machines()["motors"][0]["state"], "driving")
+        refused = server._chat_live(app, "use_action", {"name": "drum", "action": "Fly"})
+        self.assertIn("Wind it up, Stop", refused.get("error", ""))
+        self.assertEqual(self.live.session.id, session, "working the hoist opened the room again")
+
 
 @unittest.skipIf(ENGINE is None, "the live world runner is not built")
 class AHoistRoomComesBackAfterARestart(unittest.TestCase):

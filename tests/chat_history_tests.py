@@ -305,5 +305,51 @@ class WhatThePersonCarries(unittest.TestCase):
         self.assertNotIn("carrying", said)
 
 
+class WorkingTheRoomAsItStands(unittest.TestCase):
+    """The owner, 2026-09-15: "nothing should be resetting rooms". Asked to work
+    something, the chat presses its action on the room as it stands
+    (use_action) or tells its motor (drive): both go to the running room
+    through `live`, and nothing in the turn opens the room again."""
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_a_things_action_and_its_motor_go_to_the_running_room(self):
+        rounds = iter([
+            [{"type": "function_call", "call_id": "c1", "name": "use_action",
+              "arguments": json.dumps({"name": "hoist: drum", "action": "Wind it up"})}],
+            [{"type": "function_call", "call_id": "c2", "name": "drive",
+              "arguments": json.dumps({"part": "hoist: drum", "command": 0.5})}],
+            [{"type": "message", "content": [{"type": "output_text", "text": "Winding it, at half."}]}]])
+
+        def model(api_key, model_name, conversation):
+            return {"status": "completed", "usage": {}, "output": next(rounds)}
+
+        worked: list = []
+
+        def live(name, args):
+            worked.append((name, dict(args)))
+            if name == "use_action":
+                return {"used": "hoist: drum", "action": "Wind it up", "done": ["wound"]}
+            return {"in_the_room": "told"}
+
+        room = world_room.Room("tests-machines")
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", room, {"bodies": []},
+                                    "wind it up, then run it at half", [], live=live)
+        finally:
+            world_chat._call = real
+        self.assertEqual([name for name, _ in worked], ["use_action", "drive"])
+        self.assertEqual(worked[0][1], {"name": "hoist: drum", "action": "Wind it up"})
+        self.assertEqual((worked[1][1]["command"], worked[1][1]["brake"]), (0.5, False))
+        self.assertFalse(answer["changed"], "working the hoist would open the room again")
+        self.assertTrue(answer["worked"])
+        self.assertEqual(answer["reply"], "Winding it, at half.")
+        self.assertIn("Wind it up on hoist: drum", " ".join(answer["did"]))
+        # What its motor was told is written into the room, so it goes on doing
+        # it if the room is opened again.
+        motor = room.spec["machines"]["motors"][0]
+        self.assertEqual((motor["command"], motor["brake"]), (0.5, False))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

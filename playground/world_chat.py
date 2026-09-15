@@ -216,6 +216,9 @@ takes hold; E puts down; / talks to you.
   a door that shuts itself, a bell on a rope, a bow, a pick, a table with a
   chair, a battery hoist -- build_recipe builds each of these exactly, with its
   actions. Never build one of them part by part (THINGS BUILT BY RECIPE below).
+- To WORK something for them -- open the gate, wind the hoist up, stop it, let
+  it down -- press its own action with use_action. It happens to the room as it
+  stands, just as their E does, and nothing goes back to where it was made.
 - A loose thing (a crate, a pot, a plank, a ball): add_object. Keys, holding
   it: hold the left mouse and let go to throw; Z X turn it, T G tip it away or
   back, C V tip it sideways, U stands it upright, the wheel holds it nearer or
@@ -248,8 +251,9 @@ takes hold; E puts down; / talks to you.
   (drum). A battery hoist: build_recipe "hoist". Keys: one click on the drum
   lists its actions. Offer, on the drum, "Wind it up" (drive, command 1),
   "Stop" (drive, command 0, brake true) and "Let it down" (drive, command
-  -0.1). drive also tells a motor what to do for them, and it goes on doing
-  it until it is told otherwise.
+  -0.1). To work it for them, press those with use_action; drive tells its
+  motor directly. Both happen to the room as it stands, and it goes on doing
+  what it was told until it is told otherwise.
 - A latch (a bar that holds a gate shut): a bar fixed to the gate and to its
   post. Keys: R, or the right mouse, releases it, and the page offers "Release
   the latch".
@@ -973,6 +977,8 @@ def _now(live_state: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     """One line for the person, under the answer, per change that was made."""
+    if name == "use_action":
+        return f"pressed {answer.get('action') or args.get('action')} on {args.get('name')}"
     if name == "add_object":
         return f"added {answer.get('added')}"
     if name == "remove_object":
@@ -1236,8 +1242,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         water_state: dict[str, Any] | None = None,
         person: Any = None,
         history: list[dict[str, Any]] | None = None,
-        journal: Any = None) -> dict[str, Any]:
+        journal: Any = None,
+        live: Any = None) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
+
+    `live`, when given, works the running room for the calls in
+    room_world.LIVE -- live(name, args) returns what it did there, or
+    {"error": why} -- so pressing a thing's action or telling its motor what to
+    do happens to the room as it stands, and does not open it again.
 
     `live_state` is the world as the ENGINE has it -- pieces, dents and all --
     and is what the model is told the room looks like now. `room` is the
@@ -1312,7 +1324,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         conversation: list[dict[str, Any]] = _earlier_turns(history) + [
             {"role": "user", "content": json.dumps(opening, allow_nan=False)}]
         did: list[str] = []
-        changed = offered = reminded = made = False
+        changed = offered = reminded = made = worked = recorded = False
         usage = {"input_tokens": 0, "output_tokens": 0}
         reply = ""
         rounds = 0
@@ -1380,7 +1392,9 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 # Said it built something, and nothing changed: asked once more.
                 # Asked for a table and a chair, the chat called no tool and
                 # answered "Built a small oak table ..." in its recipe's words.
-                if not changed and not reminded and CLAIMS.search(reply):
+                # Working something on the room as it stands is doing something
+                # too: "put its brake on" is not a claim to have built it.
+                if not changed and not worked and not reminded and CLAIMS.search(reply):
                     reminded = True
                     conversation.extend(o for o in outputs
                                         if o.get("type") in ("reasoning", "message"))
@@ -1401,7 +1415,23 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                     args = {}
                 if not isinstance(args, dict):
                     args = {}
-                answer = room_world.call(world_id, name, args)
+                if name == "use_action" and live is not None:
+                    # A thing's action, pressed on the room as it stands -- the
+                    # page's own action runner, as the person's E runs it. The
+                    # model's copy is the room as it was made, which is not
+                    # where the room is now.
+                    answer = live(name, args)
+                else:
+                    answer = room_world.call(world_id, name, args)
+                    if name == "drive" and live is not None and "error" not in answer:
+                        # Told in the model's copy, which writes it into the
+                        # room, and told to the running room's motor.
+                        answer = {**answer, **live(name, {**args, "command": answer["command"],
+                                                          "brake": answer["brake"]})}
+                if name in room_world.LIVE and "error" not in answer:
+                    worked = True
+                    recorded = recorded or name == "drive"
+                    did.append(_did(name, args, answer))
                 if name in room_world.AUTHORING and "error" not in answer:
                     changed = True
                     did.append(_did(name, args, answer))
@@ -1422,11 +1452,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                      + ("What I had built by then is in the room." if changed
                         else "Nothing in the room was changed."))
 
-        if changed:
+        if changed or recorded:
+            # What a motor was told is written into the room either way, so it
+            # goes on doing it if the room is opened again; only a change to
+            # what the room IS opens it again.
             room.spec = room_world.export_spec(entry)
         # And where the person was, as the model was told it -- with the
         # places it was given for new things -- for the turn's log.
-        return {"reply": reply, "did": did, "changed": changed,
+        return {"reply": reply, "did": did, "changed": changed, "worked": worked,
                 "wall_s": round(time.perf_counter() - started, 2), "rounds": rounds,
                 "usage": usage, "the_person": opening.get("the_person")}
     finally:

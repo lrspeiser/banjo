@@ -2514,6 +2514,45 @@ def tool_motor(args: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
+    """Press one of a thing's actions (offer_actions): what E does in the
+    playground. In the playground's room the room itself runs it, as it stands;
+    in this world a drive step tells the motor, as drive does, and a step the
+    person's hand takes is the playground's."""
+    entry = _world(args.get("world_id"))
+    name = str(args.get("name") or "")
+    if not any(b["name"] == name for b in entry["scene"]["bodies"]):
+        raise Refused(f"there is nothing called {name!r} in this world")
+    offered = (entry.get("actions") or {}).get(name) or []
+    if not offered:
+        raise Refused(f"{name} has no actions: offer_actions gives it some")
+    which = args.get("action")
+    labels = [str(a["label"]) for a in offered]
+    key = str(which).strip()
+    action = next((a for a in offered if str(a["label"]).lower() == key.lower()), None)
+    if action is None and key.isdigit() and 1 <= int(key) <= len(offered):
+        action = offered[int(key) - 1]
+    if action is None:
+        raise Refused(f"{name} has no action {which!r}: its actions are {', '.join(labels)}")
+    hand = sorted({s["do"] for s in action["steps"] if s["do"] not in ("drive", "wait")})
+    if hand:
+        raise Refused(f"'{action['label']}' has {', '.join(hand)} steps, which the person's hand takes in "
+                      f"the playground's running room; in this world, do them with the hand's own calls")
+    done = []
+    for step in action["steps"]:
+        if step["do"] == "drive":
+            said = tool_drive({"world_id": args.get("world_id"), "part": step.get("part") or name,
+                               "command": step.get("command", 0.0),
+                               **({"brake": step["brake"]} if "brake" in step else {})})
+            done.append(said["does"])
+        else:
+            done.append(f"wait {float(step.get('seconds', 1.0)):g} s: run the world that long to see it")
+    return {"used": name, "action": action["label"], "done": done,
+            "note": "Nothing moves until time passes: run says what it did. In the playground's room "
+                    "the action runs on the room as it stands, as the person's E runs it, and the room "
+                    "is not opened again."}
+
+
 def tool_drive(args: dict[str, Any]) -> dict[str, Any]:
     """Tell a motor what to do from now on: a command, and its brake."""
     entry = _world(args.get("world_id"))
@@ -6572,10 +6611,12 @@ TOOLS = [
                     "motor faster than the command alone would, the motor's line holds it back, "
                     "and the battery gives nothing for that. Nothing moves until time passes: run "
                     "says how far it turned, what it drew and what the battery gave. It goes on "
-                    "doing what it was told -- in the playground's room too, where it is kept "
-                    "with the motor -- so for a person to work a machine, give it drive steps "
-                    "with offer_actions. Refused, with why: nothing turning that part with a "
-                    "motor, two motors on its pins, and a command past -1 or 1.",
+                    "doing what it was told, and is kept with the motor. In the playground's room "
+                    "it tells the running room's motor too, which is not opened again. For a "
+                    "person to work a machine, give it drive steps with offer_actions; to work "
+                    "one for them, use_action presses its own action. Refused, with why: nothing "
+                    "turning that part with a motor, two motors on its pins, and a command past "
+                    "-1 or 1.",
      "inputSchema": {"type": "object", "required": ["world_id", "part", "command"],
                      "properties": {
          "world_id": {"type": "string"},
@@ -6586,6 +6627,23 @@ TOOLS = [
          "brake": {"type": "boolean",
                    "description": "Stopped (command 0), whether its brake goes on: on unless "
                                   "said."}}}},
+    {"name": "use_action",
+     "description": "Press one of a thing's actions (offer_actions), by its label or its number "
+                    "from 1: what the person's E does in the playground. There the room itself "
+                    "runs it, as it stands -- a hoist wound up from where its crate hangs, a gate "
+                    "opened from where it is -- and nothing in the room goes back to where it was "
+                    "made. To work a thing for the person (\"wind it up\", \"stop it\", \"let it "
+                    "down\", \"open the gate\"), this is the call. In this world a drive step tells "
+                    "the motor, as drive does, and an action with a step the person's hand takes "
+                    "is refused with why. Refused, with why: nothing of that name, a thing with "
+                    "no actions, and an action it does not have.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name", "action"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string", "description": "The thing whose action it is, like 'hoist drum'."},
+         "action": {"type": "string",
+                    "description": "Its label, like 'Wind it up', or its number from 1 in the order "
+                                   "offer_actions gave them."}}}},
     {"name": "interaction",
      "description": "Say how a PERSON USES something you built, so the playground gives "
                     "them its controls -- and try it. Two kinds. draw-and-release: a bow, "
@@ -7349,6 +7407,7 @@ HANDLERS = {
     "move_object": tool_move_object,
     "turn_object": tool_turn_object,
     "offer_actions": tool_offer_actions,
+    "use_action": tool_use_action,
     "read_knowledge": tool_read_knowledge,
     "clear_world": tool_clear_world,
     "pick_up": tool_pick_up,

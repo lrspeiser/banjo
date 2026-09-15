@@ -70,6 +70,12 @@ class TheChatUsesTheMCP(unittest.TestCase):
         names = {t["name"] for t in banjo_mcp.TOOLS}
         self.assertLessEqual(room_world.AUTHORING, names)
 
+    def test_what_works_the_room_as_it_stands_is_a_real_tool_and_opens_nothing(self):
+        names = {t["name"] for t in banjo_mcp.TOOLS}
+        self.assertLessEqual(room_world.LIVE, names)
+        self.assertFalse(room_world.LIVE & room_world.AUTHORING,
+                         "a call that works the room as it stands must not open it again")
+
     def test_what_is_sent_to_the_model_is_the_mcp_list(self):
         sent = world_chat.payload("a-model", [])["tools"]
         self.assertEqual(sent, room_world.chat_tools())

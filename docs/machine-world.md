@@ -65,6 +65,12 @@ world's terrace and worked by its own actions on the live runner:
 - "Let it down" brought it down at 0.4170 m/s, where the motor's line says
   0.4173, and the battery gave nothing.
 
+Asked to wind it up, stop it or let it down, the chat presses the hoist's own
+action on the room as it stands (`use_action`), just as E does, and `drive`
+tells the running room's motor too. Neither opens the room again, so the crate
+goes on from where it hangs and the battery keeps what it has given. The owner,
+2026-09-15: "nothing should be resetting rooms".
+
 The controller comes next.
 
 ## What this is
