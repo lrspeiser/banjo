@@ -3,6 +3,7 @@
 #include "core/Math.hpp"
 #include "fracture/ActiveMatter.hpp"
 #include "material/MaterialCatalog.hpp"
+#include "numeric/FpProfile.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +12,8 @@
 
 namespace banjo {
 
-inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 2U;
+// 3: the key carries the numerical profile the outcome was computed under.
+inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 3U;
 inline constexpr std::uint32_t kMaterialSolverModelVersion = 5U;
 
 struct MaterialOutcomeKeyInput {
@@ -42,6 +44,7 @@ struct MaterialOutcomeKeyInput {
 struct MaterialOutcomeKey {
     std::uint32_t format_version{kMaterialOutcomeFormatVersion};
     std::uint32_t solver_model_version{kMaterialSolverModelVersion};
+    std::uint64_t fp_profile_hash{fp::profileHash()};
     MaterialPreset striker{MaterialPreset::Iron};
     MaterialPreset target{MaterialPreset::Glass};
     MaterialPreset surface{MaterialPreset::Concrete};

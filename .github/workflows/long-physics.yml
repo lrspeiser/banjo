@@ -53,8 +53,34 @@ jobs:
       - name: Build
         run: cmake --build build/ci --parallel 2 --target banjo_${{ matrix.suite }}_tests
 
+      # A name that matches no test fails rather than passing empty, and the
+      # JUnit keeps the suite's whole output.
       - name: Test
-        run: ctest --test-dir build/ci --output-on-failure -R "^banjo_${{ matrix.suite }}_tests$"
+        run: >-
+          ctest --test-dir build/ci --output-on-failure --no-tests=error
+          --output-junit ${{ github.workspace }}/long-${{ matrix.suite }}.xml
+          --test-output-size-passed 20000000 --test-output-size-failed 20000000
+          -R "^banjo_${{ matrix.suite }}_tests$"
+
+      - name: Say what built it
+        if: always()
+        run: |
+          { echo "commit ${{ github.sha }}"; c++ --version | head -n 1; cmake --version | head -n 1; } > toolchain.txt
+
+      # The results, the audit of the build's floating-point model and what
+      # built it, kept whether the suite passed or not, under the commit's name.
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-${{ matrix.suite }}-${{ github.sha }}
+          path: |
+            long-${{ matrix.suite }}.xml
+            toolchain.txt
+            build/ci/Testing/Temporary/LastTest*.log
+            build/ci/banjo-fp-profile.json
+            build/ci/fp-model-audit-Release.json
+          if-no-files-found: warn
 
   record-plate-drop:
     runs-on: ubuntu-24.04
@@ -75,7 +101,25 @@ jobs:
       - name: Record a plate drop through the network lane
         env:
           BANJO_RECORD_TIMEOUT_S: "19800"
-        run: >-
-          python3 tests/playground_record_tests.py
-          --recorder build/ci/banjo_playground_record
-          --engine build/ci/banjo_platform_cli -v -k plate
+        run: |
+          set -o pipefail
+          python3 tests/playground_record_tests.py \
+            --recorder build/ci/banjo_playground_record \
+            --engine build/ci/banjo_platform_cli -v -k plate 2>&1 | tee record-plate.log
+
+      - name: Say what built it
+        if: always()
+        run: |
+          { echo "commit ${{ github.sha }}"; c++ --version | head -n 1; cmake --version | head -n 1; } > toolchain.txt
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: record-plate-drop-${{ github.sha }}
+          path: |
+            record-plate.log
+            toolchain.txt
+            build/ci/banjo-fp-profile.json
+            build/ci/fp-model-audit-Release.json
+          if-no-files-found: warn

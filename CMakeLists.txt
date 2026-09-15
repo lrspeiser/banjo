@@ -30,10 +30,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # before any target and any fetched dependency, so Jolt gets it too.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # One floating-point model for everything linked into the engine, Jolt
-# included -- /fp:precise, or -ffp-contract=off -- and a check, once this file
-# has been read, that no target or file asks for another. Before any target and
-# any fetched dependency, for the same reason as the line above. Why, and what
-# it cost: cmake/FloatingPointModel.cmake and docs/floating-point-model.md.
+# included -- banjo-cpu-precise-v1: /fp:precise, or -fno-fast-math
+# -ffp-contract=off -- and a build that audits the commands CMake generated
+# before it compiles anything. Before any target and any fetched dependency, for
+# the same reason as the line above. Why, and what it cost:
+# cmake/FloatingPointModel.cmake and docs/floating-point-model.md.
 include(cmake/FloatingPointModel.cmake)
 
 function(banjo_enable_warnings target)
@@ -112,9 +113,13 @@ add_library(
     src/fracture/CellSkin.cpp
     src/prediction/BallScenarioProjection.cpp
     src/prediction/ScenarioCache.cpp
-    src/precompute/MaterialOutcome.cpp)
+    src/precompute/MaterialOutcome.cpp
+    src/numeric/FpProfile.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The profile's name, for what the engine reports and what its numerical caches
+# are keyed by (src/numeric/FpProfile.hpp). Public, so every object sees the same.
+target_compile_definitions(banjo_core PUBLIC BANJO_FP_PROFILE="${BANJO_FP_PROFILE}")
 target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
 
@@ -219,13 +224,18 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
+    # One file of ours compiled inside Jolt's own target, with Jolt's own flags,
+    # so banjo_fp_profile_tests can ask what Jolt's objects actually do with a
+    # NaN, an infinity, a signed zero and a product that could be fused.
+    target_sources(Jolt PRIVATE src/numeric/FpProbeJolt.cpp)
 
     add_library(
         banjo_runtime
         src/physics/TetrahedronContact.cpp
         src/rigid/DrumRope.cpp
         src/rigid/JoltWorld.cpp
-        src/sim/RollingBallExperiment.cpp)
+        src/sim/RollingBallExperiment.cpp
+        src/numeric/FpProbeRuntime.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
     # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, a
@@ -819,14 +829,17 @@ if(BANJO_BUILD_TESTS)
     banjo_enable_warnings(banjo_tests)
     add_test(NAME banjo_tests COMMAND banjo_tests)
 
-    # The floating-point model's own check (cmake/FloatingPointModel.cmake):
-    # how it reads compiler options, and that a build whose targets break the
-    # model does not configure.
-    add_test(NAME banjo_fp_model_guard_tests
-             COMMAND ${CMAKE_COMMAND} -DBANJO_FP_MODEL_FAMILY=${BANJO_FP_MODEL_FAMILY}
-                     "-DGUARD_GENERATOR=${CMAKE_GENERATOR}"
-                     -DGUARD_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/fp_model_guard
-                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_model_guard_tests.cmake)
+    # The floating-point audit (scripts/check-fp-model.py). Every configuration
+    # of this build, audited from what CMake generated -- the build itself audits
+    # only the configuration it builds -- and the audit's own checks: its rules,
+    # and a fixture of builds that leave the model, each of which it must name.
+    add_test(NAME banjo_fp_model_audit
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-fp-model.py
+                     --build ${CMAKE_BINARY_DIR} --all-configs)
+    add_test(NAME banjo_fp_model_audit_tests
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_model_audit_tests.py)
+    set_tests_properties(banjo_fp_model_audit_tests PROPERTIES ENVIRONMENT
+        "BANJO_FP_FIXTURE_GENERATOR=${CMAKE_GENERATOR};BANJO_FP_FIXTURE_PLATFORM=${CMAKE_GENERATOR_PLATFORM};BANJO_FP_FIXTURE_CXX=${CMAKE_CXX_COMPILER};BANJO_FP_FIXTURE_REQUIRED=1")
 
     add_executable(banjo_material_tests tests/material_prediction_tests.cpp)
     target_link_libraries(banjo_material_tests PRIVATE banjo_core)
@@ -983,6 +996,24 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
+            # Its check against the wall clock -- a foreseen fracture's first
+            # run done inside its warning -- is a claim about the machine as much
+            # as the engine: beside other heavy work it fails on any build. It
+            # runs on its own, labelled performance, for the performance gate
+            # (scripts/run-performance-gate.py) rather than every push. The rest
+            # of the suite still reads the clock in places, so both run serially.
+            add_test(NAME banjo_live_world_deadline COMMAND banjo_live_world_tests --deadline)
+            set_tests_properties(banjo_live_world_tests banjo_live_world_deadline PROPERTIES RUN_SERIAL TRUE)
+            set_tests_properties(banjo_live_world_deadline PROPERTIES LABELS performance)
+
+            # What the build's objects -- ours, and Jolt's own -- do with NaNs,
+            # infinities, signed zeros, denormals and a product that could be
+            # fused, and what the engine's own checks make of NaNs, in the
+            # profile they were built to (docs/floating-point-model.md).
+            add_executable(banjo_fp_profile_tests tests/fp_profile_tests.cpp)
+            target_link_libraries(banjo_fp_profile_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fp_profile_tests)
+            add_test(NAME banjo_fp_profile_tests COMMAND banjo_fp_profile_tests)
 
             # Heat, chemistry and gas inside a live world: a heated gas lifting
             # a load through a real slide, a refused step taking its chemistry
@@ -1186,6 +1217,23 @@ if(BANJO_BUILD_TESTS)
         target_compile_features(banjo_runtime_tests PRIVATE cxx_std_23)
         banjo_enable_warnings(banjo_runtime_tests)
         add_test(NAME banjo_runtime_tests COMMAND banjo_runtime_tests)
+
+        # Adding a file must not change what the simulation computes: one Jolt
+        # scene, built alone and with tests/fp_link_order_extra.cpp -- our own
+        # copies of Jolt's solver and closest-point inlines -- first on the link
+        # line, where the linker meets them before Jolt's, compared bit for bit.
+        # Under one floating-point model the copies compute the same; under two,
+        # the link order chose the arithmetic (docs/floating-point-model.md).
+        add_executable(banjo_fp_link_order_plain tests/fp_link_order_harness.cpp)
+        target_link_libraries(banjo_fp_link_order_plain PRIVATE Jolt)
+        banjo_enable_warnings(banjo_fp_link_order_plain)
+        add_executable(banjo_fp_link_order_extra_first tests/fp_link_order_extra.cpp tests/fp_link_order_harness.cpp)
+        target_link_libraries(banjo_fp_link_order_extra_first PRIVATE Jolt)
+        banjo_enable_warnings(banjo_fp_link_order_extra_first)
+        add_test(NAME banjo_fp_link_order_tests
+                 COMMAND ${CMAKE_COMMAND} -DPLAIN=$<TARGET_FILE:banjo_fp_link_order_plain>
+                         -DEXTRA_FIRST=$<TARGET_FILE:banjo_fp_link_order_extra_first>
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_link_order_compare.cmake)
     endif()
 endif()
 

@@ -216,7 +216,11 @@ extern "C" {
 
 int banjo_abi_version(void) { return BANJO_ABI_VERSION; }
 
-const char *banjo_version_string(void) { return "banjo " __DATE__; }
+// The floating-point profile the library was compiled to (cmake/FloatingPointModel.cmake).
+#ifndef BANJO_FP_PROFILE
+#error "BANJO_FP_PROFILE is not defined: cmake/FloatingPointModel.cmake names the profile"
+#endif
+const char *banjo_version_string(void) { return "banjo " __DATE__ ", floating-point profile " BANJO_FP_PROFILE; }
 
 const char *banjo_last_error(void) { return g_error.c_str(); }
 

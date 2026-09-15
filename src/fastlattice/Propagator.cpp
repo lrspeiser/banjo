@@ -1,6 +1,7 @@
 // Algorithm 3: the substep as a map, probed from the engine's own backend.
 
 #include "fastlattice/Propagator.hpp"
+#include "numeric/FpProfile.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -27,6 +28,10 @@ std::uint64_t fnv1a(const std::string &text) {
     }
     return hash;
 }
+
+// What a cached propagator is keyed by: its scene, and the numerical profile
+// it was computed under, so one made by a build with another is not used.
+std::uint64_t cacheSceneKey(const std::string &scene) { return fnv1a(scene) ^ banjo::fp::profileHash(); }
 
 } // namespace
 
@@ -375,7 +380,7 @@ std::vector<ConeGrowth> measureCone(SubstepMap &map, const double *x0, std::uint
 
 std::string PropagatorCacheKey::fileName() const {
     std::ostringstream name;
-    name << "algo3-" << std::hex << fnv1a(scene) << std::dec << "-p" << power << ".bin";
+    name << "algo3-" << std::hex << cacheSceneKey(scene) << std::dec << "-p" << power << ".bin";
     return name.str();
 }
 
@@ -394,7 +399,7 @@ bool loadPropagator(const std::filesystem::path &dir, const PropagatorCacheKey &
     in.read(reinterpret_cast<char *>(&n), sizeof(n));
     in.read(reinterpret_cast<char *>(&scene_hash), sizeof(scene_hash));
     if (!in || magic != kCacheMagic || version != kCacheVersion || power != key.power ||
-        scene_hash != fnv1a(key.scene) || n == 0 || n > 200000)
+        scene_hash != cacheSceneKey(key.scene) || n == 0 || n > 200000)
         return false;
     out.n = static_cast<std::size_t>(n);
     out.power = power;
@@ -419,7 +424,7 @@ bool storePropagator(const std::filesystem::path &dir, const PropagatorCacheKey 
         if (!out) return false;
         const std::uint64_t magic = kCacheMagic;
         const std::uint32_t version = kCacheVersion, power = p.power;
-        const std::uint64_t n = p.n, scene_hash = fnv1a(key.scene);
+        const std::uint64_t n = p.n, scene_hash = cacheSceneKey(key.scene);
         out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
         out.write(reinterpret_cast<const char *>(&version), sizeof(version));
         out.write(reinterpret_cast<const char *>(&power), sizeof(power));

@@ -2,191 +2,114 @@
 #
 # An inline function -- a Jolt constraint part or vector operator, a helper in
 # one of our own headers, a std:: template -- is compiled into every object
-# file that uses it, and the linker keeps ONE copy of it: the first it meets.
-# When two objects are compiled under different floating-point rules, which
-# copy survives, and so what the arithmetic gives, depends on link order.
-# Adding rigid/DrumRope.cpp once moved banjo_blade_tests' cut from 4.676 J to
-# 4.192 J that way. Measured on 9317a5b, where only that file had been fixed,
-# Jolt's own solver ran JoltWorld.cpp's /fp:precise copy of
-# MotionProperties::GetInverseInertiaForRotation, while our tetrahedron
-# contact ran Jolt's /fp:fast copies of its GJK and EPA routines
-# (docs/floating-point-model.md).
+# file that uses it, and wherever the compiler does not inline it the linker
+# keeps ONE copy, the first it meets. When two objects are compiled under
+# different floating-point rules, which copy runs, and so what the arithmetic
+# gives, depends on link order. Adding rigid/DrumRope.cpp once moved
+# banjo_blade_tests' cut from 4.676 J to 4.192 J that way, and on 9317a5b
+# Jolt's own solver ran JoltWorld.cpp's copy of
+# MotionProperties::GetInverseInertiaForRotation while our tetrahedron contact
+# ran Jolt's /fp:fast GJK and EPA (docs/floating-point-model.md).
 #
-# So every C++ object in the build is compiled to one model: IEEE arithmetic in
-# the order the source writes it, with no fused multiply-add the source did not
-# ask for and no reassociation.
+# So every C++ object in the build compiles to one profile, banjo-cpu-precise-v1:
+# IEEE arithmetic in the order the source writes it, no fused multiply-add the
+# source did not ask for, no reassociation, special values kept.
 #
-#   MSVC        /fp:precise (Visual Studio 2022 does not contract under it),
-#               never /fp:fast, /fp:strict or /fp:contract
-#   GCC, Clang  -ffp-contract=off, and nothing from -ffast-math
+#   MSVC's cl         /fp:precise, never /fp:fast, /fp:strict or /fp:contract
+#   GCC, and Clang    -fno-fast-math -ffp-contract=off, and nothing else from
+#   with its own      fast math
+#   front end
+#   anything else     no profile: refused rather than guessed at
 #
-# Jolt compiles itself /fp:fast (-ffp-contract=fast on GCC). The model is put
-# on this directory before Jolt is added, so on every command line it comes
-# after Jolt's own flags and wins there too. Jolt's FMA intrinsics
-# (JPH_USE_FMADD) are explicit instructions, the same in every object, and stay.
+# The options go on this directory before Jolt is added, so on Jolt's command
+# lines they come after Jolt's own /fp:fast (-ffp-contract=fast) and win.
+# Explicit fused multiply-adds -- std::fma, Jolt's FMA intrinsics under
+# JPH_USE_FMADD -- are instructions the source asked for, the same in every
+# object, and stay.
 #
-# Include this before the first target. It applies the model and, once the
-# directory that included it has been read, checks every target and every C++
-# file of every target, Jolt's included. A target or file that has been given a
-# floating-point option of its own stops the configure, and is named.
+# Nothing here predicts what CMake will generate. The build has a target,
+# banjo_fp_model_audit, that every compiled target waits for. It reads what
+# CMake did generate -- its File API reply, the Ninja or Makefile commands or
+# the Visual Studio projects, and the environment the build runs in -- with
+# scripts/check-fp-model.py, and stops the build, naming each file, if any C++
+# file would compile outside the profile. Include this before the first target.
 
 include_guard(GLOBAL)
 
-# How this compiler spells the options. tests/fp_model_guard sets it to check
-# the guard without a compiler.
-if(NOT DEFINED BANJO_FP_MODEL_FAMILY)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        set(BANJO_FP_MODEL_FAMILY MSVC)
-    else()
-        set(BANJO_FP_MODEL_FAMILY GNU)
-    endif()
-endif()
-if(BANJO_FP_MODEL_FAMILY STREQUAL "MSVC")
-    set(BANJO_FP_MODEL_OPTION "/fp:precise")
+set(BANJO_FP_PROFILE "banjo-cpu-precise-v1")
+set(_banjo_fp_auditor "${CMAKE_CURRENT_LIST_DIR}/../scripts/check-fp-model.py")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(BANJO_FP_FAMILY msvc)
+    set(BANJO_FP_OPTIONS "/fp:precise")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
+       AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set(BANJO_FP_FAMILY gnu)
+    # Fast math off first, then contraction: -fno-fast-math puts back what
+    # fast math changed, and the last -ffp-contract is the one that counts.
+    set(BANJO_FP_OPTIONS "-fno-fast-math;-ffp-contract=off")
 else()
-    set(BANJO_FP_MODEL_OPTION "-ffp-contract=off")
+    message(FATAL_ERROR
+        "Floating-point model: there is no validated profile for the C++ compiler "
+        "${CMAKE_CXX_COMPILER_ID} with the ${CMAKE_CXX_COMPILER_FRONTEND_VARIANT} front end. "
+        "cmake/FloatingPointModel.cmake has profiles for MSVC's cl and for GCC and Clang "
+        "with their own front end. Add one here, with its rules in scripts/check-fp-model.py, "
+        "before building with this compiler.")
+endif()
+foreach(option IN LISTS BANJO_FP_OPTIONS)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${option}>)
+endforeach()
+# A Ninja or Makefile build's own commands, which the audit reads beside
+# CMake's account of them. Visual Studio ignores it; its projects are read.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# What the audit needs besides CMake's own account: which profile, for which
+# compiler, under which generator.
+get_property(_banjo_fp_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(_banjo_fp_multi)
+    set(_banjo_fp_multi true)
+else()
+    set(_banjo_fp_multi false)
+endif()
+string(JOIN "\", \"" _banjo_fp_options_json ${BANJO_FP_OPTIONS})
+file(WRITE "${CMAKE_BINARY_DIR}/banjo-fp-profile.json"
+"{
+  \"profile\": \"${BANJO_FP_PROFILE}\",
+  \"family\": \"${BANJO_FP_FAMILY}\",
+  \"options\": [\"${_banjo_fp_options_json}\"],
+  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",
+  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",
+  \"frontend\": \"${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}\",
+  \"generator\": \"${CMAKE_GENERATOR}\",
+  \"platform\": \"${CMAKE_GENERATOR_PLATFORM}\",
+  \"build_type\": \"${CMAKE_BUILD_TYPE}\",
+  \"multi_config\": ${_banjo_fp_multi}
+}
+")
+
+# CMake's own account of what it generated: every configuration's targets, the
+# files each compiles, and the ordered fragments of every compile and link
+# command. Asked for here so that it is written at the end of this same run.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.27)
+    cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2 TOOLCHAINS 1)
+else()
+    # Read at the start of the next run: the first build after a first
+    # configure stops, and says to configure once more.
+    file(WRITE "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2" "")
+    file(WRITE "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/toolchains-v1" "")
 endif()
 
-# banjo_fp_model_verdict(<out> <option>...)
-#
-# Reads compiler options in command-line order, as the compiler does -- the
-# last of a kind wins -- and sets <out> to "" if they end in the model, or else
-# to what breaks it.
-function(banjo_fp_model_verdict out)
-    set(unsafe "")
-    if(BANJO_FP_MODEL_FAMILY STREQUAL "MSVC")
-        set(model "precise")            # MSVC's default
-        set(contract "")
-        foreach(option IN LISTS ARGN)
-            if(option MATCHES "^[-/]fp:(precise|fast|strict)$")
-                set(model "${CMAKE_MATCH_1}")
-            elseif(option MATCHES "^[-/]fp:contract$")
-                set(contract "${option}")
-            endif()
-        endforeach()
-        if(NOT model STREQUAL "precise")
-            set(unsafe "/fp:${model}")
-        elseif(contract)
-            set(unsafe "${contract}")
-        endif()
-    else()
-        set(contract "")                # GCC contracts unless told not to
-        set(fast "")
-        foreach(option IN LISTS ARGN)
-            if(option MATCHES "^-ffp-contract=(off|on|fast)$")
-                set(contract "${CMAKE_MATCH_1}")
-            elseif(option MATCHES "^-ffp-model=(precise|strict)$")
-                if(CMAKE_MATCH_1 STREQUAL "strict")
-                    set(contract "off")
-                else()
-                    set(contract "on")
-                endif()
-            elseif(option STREQUAL "-fno-fast-math")
-                set(fast "")
-            elseif(option MATCHES "^-f(fast-math|unsafe-math-optimizations|associative-math|reciprocal-math|finite-math-only|no-signed-zeros|cx-limited-range)$"
-                   OR option MATCHES "^-ffp-model=(fast|aggressive)$" OR option STREQUAL "-Ofast")
-                set(fast "${option}")
-            endif()
-        endforeach()
-        if(fast)
-            set(unsafe "${fast}")
-        elseif(NOT contract STREQUAL "off")
-            if(contract)
-                set(unsafe "-ffp-contract=${contract}")
-            else()
-                set(unsafe "no -ffp-contract=off, so the compiler contracts")
-            endif()
-        endif()
-    endif()
-    set(${out} "${unsafe}" PARENT_SCOPE)
-endfunction()
-
-# banjo_fp_model_options(<out> <item>...)
-#
-# The items that can change the model, out of a list of compile options or
-# flags, as they read for C++ with this compiler. A generator expression that
-# only chooses a language, a compiler, a configuration or the build tree is
-# read for C++ and every configuration; one it cannot read stops the configure
-# rather than pass unchecked.
-function(banjo_fp_model_options out)
-    set(result "")
-    foreach(item IN LISTS ARGN)
-        if(NOT item MATCHES "fp:|fp-contract|fp-model|fast-math|Ofast|unsafe-math|associative-math|reciprocal-math|finite-math|signed-zeros|cx-limited")
-            continue()
-        endif()
-        _banjo_fp_model_unwrap("${item}" option)
-        if(NOT option STREQUAL "")
-            list(APPEND result "${option}")
-        endif()
-    endforeach()
-    set(${out} "${result}" PARENT_SCOPE)
-endfunction()
-
-# What an option given as a generator expression gives C++ with this compiler,
-# in any configuration: $<condition:value> with a condition on the language,
-# the compiler or the configuration, and $<BUILD_INTERFACE:value>. Sets <out>
-# to the value, or to "" when it gives C++ nothing here.
-function(_banjo_fp_model_unwrap item out)
-    set(value "${item}")
-    while(value MATCHES "^\\$<")
-        if(value MATCHES "^\\$<BUILD_INTERFACE:(.*)>$")
-            set(value "${CMAKE_MATCH_1}")
-            continue()
-        elseif(value MATCHES "^\\$<INSTALL_INTERFACE:")
-            set(value "")
-            break()
-        elseif(NOT value MATCHES "^\\$<\\$<")
-            message(FATAL_ERROR "Floating-point model: the option ${item} is a generator expression "
-                    "this check cannot read (cmake/FloatingPointModel.cmake). Write it plainly.")
-        endif()
-        # The condition is a generator expression of its own: find its end.
-        string(LENGTH "${value}" length)
-        set(depth 0)
-        set(close -1)
-        set(index 2)
-        while(index LESS length)
-            string(SUBSTRING "${value}" ${index} 2 pair)
-            if(pair STREQUAL "$<")
-                math(EXPR depth "${depth} + 1")
-                math(EXPR index "${index} + 2")
-                continue()
-            endif()
-            string(SUBSTRING "${value}" ${index} 1 char)
-            if(char STREQUAL ">")
-                math(EXPR depth "${depth} - 1")
-                if(depth EQUAL 0)
-                    set(close ${index})
-                    break()
-                endif()
-            endif()
-            math(EXPR index "${index} + 1")
-        endwhile()
-        math(EXPR colon "${close} + 1")
-        string(SUBSTRING "${value}" ${colon} 1 char)
-        if(close LESS 0 OR NOT char STREQUAL ":")
-            message(FATAL_ERROR "Floating-point model: the option ${item} is a generator expression "
-                    "this check cannot read (cmake/FloatingPointModel.cmake). Write it plainly.")
-        endif()
-        math(EXPR condition_length "${close} - 1")
-        string(SUBSTRING "${value}" 2 ${condition_length} condition)
-        math(EXPR start "${close} + 2")
-        math(EXPR value_length "${length} - ${start} - 1")
-        string(SUBSTRING "${value}" ${start} ${value_length} value)
-        if(condition MATCHES "COMPILE_LANG(UAGE|_AND_ID):([^:>]*)")
-            if(NOT CMAKE_MATCH_2 MATCHES "(^|,)CXX(,|$)")
-                set(value "")
-                break()
-            endif()
-        endif()
-        if(CMAKE_CXX_COMPILER_ID AND condition MATCHES "CXX_COMPILER_ID:([^:>]*)")
-            if(NOT CMAKE_MATCH_1 MATCHES "(^|,)${CMAKE_CXX_COMPILER_ID}(,|$)")
-                set(value "")
-                break()
-            endif()
-        endif()
-    endwhile()
-    set(${out} "${value}" PARENT_SCOPE)
-endfunction()
+find_package(Python3 COMPONENTS Interpreter)
+if(NOT Python3_Interpreter_FOUND)
+    message(FATAL_ERROR "Floating-point model: the build audits its own compile commands with "
+                        "scripts/check-fp-model.py, which needs Python 3.")
+endif()
+add_custom_target(banjo_fp_model_audit ALL
+    COMMAND "${Python3_EXECUTABLE}" "${_banjo_fp_auditor}"
+            --build "${CMAKE_BINARY_DIR}" --config "$<CONFIG>" --quiet
+            --manifest "${CMAKE_BINARY_DIR}/fp-model-audit$<$<BOOL:$<CONFIG>>:-$<CONFIG>>.json"
+    COMMENT "Floating-point model: auditing the commands CMake generated (${BANJO_FP_PROFILE})"
+    VERBATIM)
 
 function(_banjo_fp_model_targets directory out)
     get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
@@ -198,128 +121,16 @@ function(_banjo_fp_model_targets directory out)
     set(${out} "${targets}" PARENT_SCOPE)
 endfunction()
 
-# The options a target is given by what it links (their usage requirements),
-# followed through the libraries those link in turn.
-function(_banjo_fp_model_usage target out)
-    set(options "")
-    set(seen "")
-    get_target_property(pending ${target} LINK_LIBRARIES)
-    while(pending)
-        list(POP_FRONT pending item)
-        if(item MATCHES "^\\$<LINK_ONLY:(.*)>$" OR item MATCHES "^\\$<BUILD_INTERFACE:(.*)>$")
-            set(item "${CMAKE_MATCH_1}")
-        endif()
-        if(NOT TARGET "${item}" OR item IN_LIST seen)
-            continue()
-        endif()
-        list(APPEND seen "${item}")
-        get_target_property(aliased "${item}" ALIASED_TARGET)
-        if(aliased)
-            set(item "${aliased}")
-        endif()
-        get_target_property(interface "${item}" INTERFACE_COMPILE_OPTIONS)
-        if(interface)
-            list(APPEND options ${interface})
-        endif()
-        get_target_property(more "${item}" INTERFACE_LINK_LIBRARIES)
-        if(more)
-            list(APPEND pending ${more})
-        endif()
-    endwhile()
-    set(${out} "${options}" PARENT_SCOPE)
-endfunction()
-
-# Checks every target under this directory; see the top of this file.
-function(banjo_check_fp_model)
-    if(CMAKE_CONFIGURATION_TYPES)
-        set(configurations ${CMAKE_CONFIGURATION_TYPES})
-    else()
-        set(configurations "${CMAKE_BUILD_TYPE}")
-    endif()
+# Once the directory that included this has been read: every target that
+# compiles anything, Jolt's included, waits for the audit.
+function(_banjo_fp_model_audit_first)
     _banjo_fp_model_targets("${CMAKE_CURRENT_SOURCE_DIR}" targets)
-    set(broken "")
-    set(checked 0)
     foreach(target IN LISTS targets)
         get_target_property(type ${target} TYPE)
         get_target_property(imported ${target} IMPORTED)
-        if(imported OR NOT type MATCHES "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
-            continue()
+        if(NOT imported AND type MATCHES "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+            add_dependencies(${target} banjo_fp_model_audit)
         endif()
-        get_target_property(directory ${target} SOURCE_DIR)
-        get_target_property(sources ${target} SOURCES)
-        get_target_property(target_options ${target} COMPILE_OPTIONS)
-        get_target_property(target_flags ${target} COMPILE_FLAGS)
-        _banjo_fp_model_usage(${target} usage)
-        get_directory_property(language_flags DIRECTORY "${directory}" DEFINITION CMAKE_CXX_FLAGS)
-        separate_arguments(language_flags UNIX_COMMAND "${language_flags}")
-        if(NOT target_options)
-            set(target_options "")
-        endif()
-        if(NOT target_flags)
-            set(target_flags "")
-        endif()
-        separate_arguments(target_flags UNIX_COMMAND "${target_flags}")
-        foreach(source IN LISTS sources)
-            if(source MATCHES "\\$<")
-                continue()
-            endif()
-            cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${directory}" NORMALIZE OUTPUT_VARIABLE path)
-            get_property(language SOURCE "${path}" TARGET_DIRECTORY ${target} PROPERTY LANGUAGE)
-            if(language)
-                if(NOT language STREQUAL "CXX")
-                    continue()
-                endif()
-            elseif(NOT path MATCHES "\\.(cpp|cc|cxx|c\\+\\+|C|ixx)$")
-                continue()
-            endif()
-            get_property(source_options SOURCE "${path}" TARGET_DIRECTORY ${target} PROPERTY COMPILE_OPTIONS)
-            get_property(source_flags SOURCE "${path}" TARGET_DIRECTORY ${target} PROPERTY COMPILE_FLAGS)
-            separate_arguments(source_flags UNIX_COMMAND "${source_flags}")
-            math(EXPR checked "${checked} + 1")
-            foreach(configuration IN LISTS configurations)
-                set(configuration_flags "")
-                if(configuration)
-                    string(TOUPPER "${configuration}" upper)
-                    get_directory_property(configuration_flags DIRECTORY "${directory}"
-                                           DEFINITION CMAKE_CXX_FLAGS_${upper})
-                    separate_arguments(configuration_flags UNIX_COMMAND "${configuration_flags}")
-                endif()
-                # The order a command line has them in: the language's flags,
-                # the configuration's, the target's own and what it links, and
-                # last the file's.
-                banjo_fp_model_options(options ${language_flags} ${configuration_flags} ${target_flags}
-                                       ${target_options} ${usage} ${source_flags} ${source_options})
-                banjo_fp_model_verdict(verdict ${options})
-                if(verdict)
-                    set(shown "${path}")
-                    cmake_path(IS_PREFIX CMAKE_SOURCE_DIR "${path}" NORMALIZE inside)
-                    if(inside)
-                        cmake_path(RELATIVE_PATH path BASE_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE shown)
-                    endif()
-                    list(APPEND broken "  ${target}: ${shown} (${configuration}): ${verdict}")
-                    break()
-                endif()
-            endforeach()
-        endforeach()
     endforeach()
-    if(broken)
-        list(LENGTH broken count)
-        list(SUBLIST broken 0 20 shown)
-        string(JOIN "\n" shown ${shown})
-        message(FATAL_ERROR
-            "Floating-point model: ${count} C++ file(s) would compile under rules other than the "
-            "rest of the build, so which copy of an inline function the linker keeps -- and what "
-            "the arithmetic gives -- would depend on link order:\n${shown}\n"
-            "Everything linked into the engine uses ${BANJO_FP_MODEL_OPTION} and nothing from "
-            "fast math. Take the option off the target or the file; the reasons are in "
-            "cmake/FloatingPointModel.cmake and docs/floating-point-model.md.")
-    endif()
-    message(STATUS "Floating-point model: ${checked} C++ files checked, all ${BANJO_FP_MODEL_OPTION}")
 endfunction()
-
-# tests/fp_model_guard_tests.cmake includes this as a script, for the
-# functions alone.
-if(NOT CMAKE_SCRIPT_MODE_FILE)
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${BANJO_FP_MODEL_OPTION}>)
-    cmake_language(DEFER CALL banjo_check_fp_model)
-endif()
+cmake_language(DEFER CALL _banjo_fp_model_audit_first)
