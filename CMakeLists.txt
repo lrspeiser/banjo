@@ -233,20 +233,34 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     # directory where no target of ours inherits it -- by the same rules. (Its
     # architecture flags, /arch:AVX2 or -mavx2 and the rest, are PUBLIC on the
     # Jolt target and reach every target of ours already.)
+    #
+    # And with Jolt's RTTI. Jolt is built without it (CPP_RTTI_ENABLED), so its
+    # classes have no type information; a class of ours derived from one, built
+    # with RTTI, asks for its base's, and GCC's link failed for want of
+    # `typeinfo for JPH::TwoBodyConstraint`. MSVC linked it; the rule is the
+    # same for both.
     if (MSVC)
         if (CROSS_PLATFORM_DETERMINISTIC)
-            set(banjo_jolt_fp "/fp:precise;/fp:except-")
+            set(banjo_jolt_flags "/fp:precise;/fp:except-")
         else()
-            set(banjo_jolt_fp "/fp:fast;/fp:except-")
+            set(banjo_jolt_flags "/fp:fast;/fp:except-")
         endif()
-    elseif (CROSS_PLATFORM_DETERMINISTIC OR NOT USE_FMADD)
-        set(banjo_jolt_fp "-ffp-contract=off")
-    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86")
-        set(banjo_jolt_fp "-ffp-contract=fast")
+        if (NOT CPP_RTTI_ENABLED)
+            list(APPEND banjo_jolt_flags "/GR-")
+        endif()
     else()
-        set(banjo_jolt_fp "-ffp-contract=on")
+        if (CROSS_PLATFORM_DETERMINISTIC OR NOT USE_FMADD)
+            set(banjo_jolt_flags "-ffp-contract=off")
+        elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86")
+            set(banjo_jolt_flags "-ffp-contract=fast")
+        else()
+            set(banjo_jolt_flags "-ffp-contract=on")
+        endif()
+        if (NOT CPP_RTTI_ENABLED)
+            list(APPEND banjo_jolt_flags "-fno-rtti")
+        endif()
     endif()
-    set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "${banjo_jolt_fp}")
+    set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "${banjo_jolt_flags}")
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
     banjo_enable_warnings(banjo_runtime)
 
