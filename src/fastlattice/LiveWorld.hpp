@@ -330,6 +330,9 @@ struct LiveJoint {
     // other kind.
     double radius_m{}, wound_m{};
     Vec3 leaves_m{}, meets_m{};
+    // Which way the drum turns to take its rope on: +1 the positive way about
+    // its axle, -1 the other. Zero for every other kind.
+    int winds{0};
     // Where it is now, in the world, for a host that wants to draw it. For a
     // slide, the point is where the travel is measured FROM -- where the thing
     // was built -- not where it has got to.

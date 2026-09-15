@@ -89,6 +89,9 @@ void aFlywheelSpunUpFollowsTheMotorsLine() {
     require(world->energyStore("battery", "post", 1.0, 2.0) == 0, "a store took more than it holds");
     const double inertia = world->inertiaAbout("flywheel", kUp);
     require(inertia > 0.0 && std::isfinite(inertia), "the flywheel has no inertia about its axle");
+    // Anchored scenery does not turn: as hard to turn as anything can be. (Asked
+    // of Jolt unchecked, the question killed the process.)
+    require(std::isinf(world->inertiaAbout("post", kUp)), "the anchored post has an inertia that could be turned");
     // The line makes a first-order spin-up, w(t) = w0 (1 - exp(-t / T)), with
     // T = J w0 / stall.
     const double lag = inertia * kUnloaded / kStall;

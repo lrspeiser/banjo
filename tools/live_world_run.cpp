@@ -392,6 +392,7 @@ nlohmann::json jointsOf(const LiveWorld &world) {
             said["length_m"] = tidy(joint.upper);
             said["wound_m"] = tidy(joint.wound_m);
             said["radius_m"] = tidy(joint.radius_m);
+            said["winds"] = joint.winds;
             said["tension_n"] = tidy(joint.tension_n);
             said["leaves"] = vec(joint.leaves_m);
             said["meets"] = vec(joint.meets_m);

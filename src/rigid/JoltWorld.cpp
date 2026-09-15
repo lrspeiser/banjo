@@ -1734,6 +1734,15 @@ double JoltWorld::inertiaAbout(MatterBodyId body_id, const Vec3 &axis_world) con
     const double reach = std::sqrt(axis_world.x * axis_world.x + axis_world.y * axis_world.y +
                                    axis_world.z * axis_world.z);
     if (!(reach > 1e-12)) throw std::invalid_argument("an axis needs a direction");
+    // A body that does not move -- anchored scenery is static -- has no motion
+    // properties, and Jolt's GetInverseInertia reads them unchecked in Release:
+    // asked about the post a hoist stands on, the process died (found through
+    // the C API, where it showed as a hang). It is as hard to turn as anything
+    // can be.
+    {
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+        if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return HUGE_VAL;
+    }
     auto &bodies = impl_->physics_->GetBodyInterface();
     // The world-frame inverse inertia, inverted back. A body that does not
     // turn at all has none to invert.

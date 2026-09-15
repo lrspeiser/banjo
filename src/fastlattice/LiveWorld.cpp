@@ -3211,6 +3211,7 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             if (joint.kind == JoltWorld::JointKind::Drum) {
                 const JoltWorld::DrumReport rope = impl_->world->drumState(joint.rigid);
                 said.radius_m = joint.radius_m;
+                said.winds = joint.winds;
                 said.wound_m = rope.wound_m;
                 said.leaves_m = rope.leaves_m;
                 said.meets_m = rope.meets_m;
