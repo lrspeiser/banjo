@@ -15,7 +15,7 @@
   - The page shows the measurements under the answer.
 - The guide:
   - a thing to take goes close in front of the person;
-  - a structure goes 6 m out, across their view (`structure_middle_m`, `across_the_view`), at the size its use needs;
+  - a structure goes 6 m out, across their view (`structure_middle_m`, `across_the_view`), at the size its use needs -- further out, or beside, when something already stands in the 12 x 3 m strip along its line;
   - it reads what a ramp, a bridge or a stair is for;
   - it has three worked structures: a ski jump, a staircase and a bridge;
   - the actions nudge asks only about things to take.

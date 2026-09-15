@@ -2813,12 +2813,16 @@ def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
                      "a_board_along_it": f"rotation_deg [0, {yaw:g}, t]: tilted t degrees, rising along "
                                          f"the line for t above 0 and falling for t below"},
             "must": constructions.said(record),
-            "note": "Build it now, as anchored parts along its line from start_m, the way it faces -- a "
-                    "ramp as boxes laid end to end along its profile, each tilted to follow it and meeting "
-                    "the next, with posts from the ground up to what is raised. Everything you add from now "
-                    "is a part of it. check_construction measures it against what it must do, and the room "
-                    "measures it again when you finish: it is not done until every requirement passes, and "
-                    "if one cannot be met, say which and why rather than calling it done."}
+            # Declared, the room's chat asked "Shall I build the anchored boards
+            # and supporting posts now?" three times and built nothing.
+            "note": "Declaring it built nothing: nothing of it is there until add_object has been called for "
+                    "its parts. They asked for it, so build it now, in this turn, without asking whether to: "
+                    "its parts anchored, along its line from start_m the way it faces -- a ramp as boards laid "
+                    "end to end along its profile, each tilted to follow it and meeting the next, with posts "
+                    "from the ground up to what is raised. Everything you add from now on is a part of it. "
+                    "check_construction measures it against what it must do, and the room measures it again "
+                    "when you answer: until every requirement passes it is not done, and if one cannot be met, "
+                    "say which and why rather than calling it done."}
 
 
 def tool_check_construction(args: dict[str, Any]) -> dict[str, Any]:

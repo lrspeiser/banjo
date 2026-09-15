@@ -63,12 +63,18 @@ CLAIMS = re.compile(r"\b(built|made|added|placed|put|set up|dug|heaped|hung|laid
 # declared to do -- at most MAX_REPAIRS times a turn. After that the answer
 # starts "Not finished:" with what failed. The owner's review of 2026-09-15:
 # the engine accepting a thing is not the thing doing what was asked.
+# Measured, 2026-09-15: asked for a long ski ramp, the chat declared it and then
+# asked "Shall I build the anchored boards and supporting posts now?", and
+# answered the note with "Proceed to build?" and "Proceeding to build." -- so
+# the note says they asked for it, and that declaring built nothing.
 NOT_FINISHED = ("A note from the room, not from the person: what you declared was measured, and it does "
-                "not yet do what it was declared to do -- {failed}. The measurements are below. Repair "
-                "what fails with the tools: move, add or take out its parts. Never declare it smaller, "
-                "which the room refuses. If a requirement cannot be met here, say which and why rather "
-                "than calling it done. Then answer the person as you were going to, without mentioning "
-                "this note.")
+                "not yet do what it was declared to do -- {failed}.{nothing} The measurements are below. "
+                "They asked for it: do not ask them whether to go on. Build or repair it now with the "
+                "tools -- add, move or take out its parts -- and never declare it smaller, which the room "
+                "refuses. Answer the person only once every requirement passes, or to say which one "
+                "cannot be met here and why, without mentioning this note.")
+NOTHING_BUILT = (" Nothing of it is built: declaring it built nothing, and nothing is there until add_object "
+                 "has been called for its parts.")
 MAX_REPAIRS = 2
 # Said to the chat of a call that works the running room (room_world.LIVE)
 # made after it changed the room this turn: the change goes into the running
@@ -180,8 +186,9 @@ def _structures() -> str:
         "reaches right across. It goes on clear ground in front of the person, its line",
         "across their view so they see it from the side: the_person's",
         "structure_middle_m is its middle and",
-        "across_the_view the way its line runs. Then build it of ANCHORED parts along",
-        "that line, and nothing else until it is done:",
+        "across_the_view the way its line runs. Then build it at once, in the same",
+        "turn, without asking whether to -- they asked for it, and declaring it built",
+        "nothing -- of ANCHORED parts along that line, and nothing else until it is done:",
         "- its surface as boards laid end to end along its profile, each tilted to",
         "  follow it and meeting the next, none more than 4 m long (no object is):",
         "  plan_construction's answer says where a point s m along its line and a m to",
@@ -201,6 +208,9 @@ def _structures() -> str:
         "until every requirement passes. If one fails, repair that: never declare it",
         "smaller, which the room refuses. If one cannot be met here -- the cells left",
         "will not hold it -- say which requirement and why.",
+        "When one of the worked structures below is what they asked for, declare it as",
+        "it says and build it from its numbers. A \"long\" ski ramp is the worked ski",
+        "jump unless they gave a length.",
         "Worked structures that passed every check, their parts anchored oak. s is how",
         "far along its line from its start a part's middle is, aside how far to its",
         "right (none: on the line), y its middle's height above the ground at the start,",
@@ -1573,7 +1583,17 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                          + ("What I had built by then is in the room." if changed
                             else "Nothing in the room was changed."))
                 break
-            result = _call(api_key, model, conversation)
+            # How long each round's answer took, kept with the turn: asked to build
+            # a ski jump it had just declared, the model's second round passed the
+            # 90 s timeout, and the turn's log said only that it failed.
+            asked_at = time.perf_counter()
+            try:
+                result = _call(api_key, model, conversation)
+            except ValueError as failure:
+                if trace is not None:
+                    trace.append({"round": turn + 1, "failed": str(failure),
+                                  "took_s": round(time.perf_counter() - asked_at, 1), "calls": []})
+                raise
             rounds = turn + 1
             spent = result.get("usage") or {}
             usage["input_tokens"] += int(spent.get("input_tokens") or 0)
@@ -1606,7 +1626,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                     if content.get("type") == "output_text":
                         said.append(content.get("text", ""))
             round_record: dict[str, Any] = {"round": rounds, "said": "".join(said).strip(),
-                                            "calls": []}
+                                            "calls": [], "took_s": round(time.perf_counter() - asked_at, 1)}
             if this_round_asked_again:
                 round_record["asked_again"] = True
             if trace is not None:
@@ -1625,7 +1645,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                     conversation.extend(o for o in outputs
                                         if o.get("type") in ("reasoning", "message"))
                     conversation.append({"role": "user", "content": NOT_FINISHED.format(
-                        failed="; ".join(constructions.summary(c) for c in failing))
+                        failed="; ".join(constructions.summary(c) for c in failing),
+                        nothing=NOTHING_BUILT if any("parts" in c["failed"] for c in failing) else "")
                         + "\n" + json.dumps({"measured": failing}, allow_nan=False)})
                     continue
                 # Made something and gave it nothing to do: asked once more.
