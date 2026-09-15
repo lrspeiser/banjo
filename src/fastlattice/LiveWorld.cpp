@@ -257,6 +257,8 @@ struct StrokeHand {
 struct LiveWorld::Pending {
     std::string name;
     double window_s{};
+    // The step the run is taken at: its own lattice's, as it is (prepared).
+    double dt_s{};
     // Set when prepare decided there was nothing to run -- an anchored body, a
     // name that is not there, something in a hand. `answer` is what fracture()
     // would have returned.
@@ -3245,7 +3247,8 @@ void LiveWorld::dropGuess(const char *why) {
     if (!impl_->guessing) return;
     if (impl_->guess_worker.valid()) impl_->guess_worker.get();   // let it finish, then bin it
     impl_->delays.push_back({impl_->time_s, impl_->guessing->name, why, 0.0,
-                             impl_->guessing->cost_ms});
+                             impl_->guessing->cost_ms, impl_->guessing->dt_s,
+                             impl_->guessing->status.total_steps});
     impl_->guessing.reset();
 }
 
@@ -3785,6 +3788,8 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
     impl_->pending = prepared(name, window_s);
 }
 
+double LiveWorld::sceneLatticeStep_s() const { return impl_->setup ? impl_->setup->dt_s : 0.0; }
+
 std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                                                         double window_s,
                                                         const Foresight *guess) {
@@ -4088,9 +4093,25 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         island_state.plastic_extension[k] = island.plastic_extension_m[o];
         island_state.plastic_strain[k] = island.plastic_strain_m[o];
     }
+    // The step this run is taken at: the one ITS lattice needs -- the bodies in
+    // it, as heat and earlier breaks have left them -- at the scene's fraction of
+    // it (dt_factor), which is the step they would take in a room of their own.
+    // The scene's step is set at open by the stiffest, lightest thing anywhere in
+    // the room, so an alumina cup on a shelf made every run in the room, of oak
+    // or glass or ice, take that cup's step: 1.7 times as many steps for a glass
+    // pane under an iron ball. Not for the same answer, though. A break near its
+    // bar comes out one way or the other by the step: the pane under the ball in
+    // tests/scene_joint_tests.cpp, dropped from 5 m, broke into five pieces or
+    // one at steps within 20% of the room's with no trend between them, and into
+    // 13 at half the room's step. What the room no longer does is pick the step.
+    // A body heat has left lighter, which rings faster than it did cold, gets
+    // the shorter step it needs, where the scene's cold one was too long.
+    const double own_limit_s = latticeStateSubstepLimit(island_state);
+    const double dt_s = own_limit_s > 0.0 ? impl_->request.dt_factor * own_limit_s : setup.dt_s;
+    job.dt_s = dt_s;
 
     // The island alone: no striker, the same support planes the scene uses.
-    StepSettings<double> settings = buildSettings(setup, island.origin);
+    StepSettings<double> settings = buildSettings(setup, island.origin, dt_s);
     // Yield from the struck body's OWN material.
     //
     // buildSettings takes it from the scene's default matter, because there is
@@ -4173,7 +4194,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
 
     const auto stepsFor = [&](double seconds) {
         return static_cast<std::uint64_t>(
-            std::max<long long>(0, std::llround(seconds / setup.dt_s)));
+            std::max<long long>(0, std::llround(seconds / dt_s)));
     };
     // A sustained load: supports and forces instead of a striker and a wave.
     std::unique_ptr<LatticeBackend> backend;
@@ -4941,7 +4962,8 @@ bool LiveWorld::beginFracture(const std::string &name, double window_s) {
     // rather than most of a second later.
     if (!impl_->pending && adoptGuess(name)) {
         impl_->delays.push_back({impl_->time_s, name, "foreseen",
-                                 impl_->guess_error_pct, impl_->pending->cost_ms});
+                                 impl_->guess_error_pct, impl_->pending->cost_ms,
+                                 impl_->pending->dt_s, impl_->pending->status.total_steps});
         repin();
         return true;
     }
@@ -4992,7 +5014,8 @@ std::size_t LiveWorld::finishFracture() {
     // `lead_ms` here is how long it sat in the queue before a worker took it;
     // `cost_ms` is what the run itself cost. Neither was paid by the caller.
     impl_->delays.push_back({impl_->time_s, impl_->pending->name, "precomputed",
-                             impl_->pending->waited_ms, impl_->pending->cost_ms});
+                             impl_->pending->waited_ms, impl_->pending->cost_ms,
+                             impl_->pending->dt_s, impl_->pending->status.total_steps});
     // Which slots the apply is about to empty, read by name rather than by
     // trusting what the island said it would drop: a body that held drops
     // nothing, and a body that came apart drops its whole island. Names are
@@ -5026,7 +5049,8 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // the same step for ever.
     if (adoptGuess(name)) {
         impl_->delays.push_back({impl_->time_s, name, "foreseen",
-                                 impl_->guess_error_pct, impl_->pending->cost_ms});
+                                 impl_->guess_error_pct, impl_->pending->cost_ms,
+                                 impl_->pending->dt_s, impl_->pending->status.total_steps});
         impl_->held_through.insert(name);
         const std::size_t early = applyPending();
         impl_->pending.reset();
@@ -5037,7 +5061,8 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     if (!impl_->pending->settled) {
         work(*impl_->pending);
         impl_->delays.push_back({impl_->time_s, name, "blocked", 0.0,
-                                 impl_->pending->cost_ms});
+                                 impl_->pending->cost_ms, impl_->pending->dt_s,
+                                 impl_->pending->status.total_steps});
     }
     const std::size_t pieces = applyPending();
     impl_->pending.reset();

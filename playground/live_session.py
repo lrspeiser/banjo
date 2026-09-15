@@ -178,6 +178,9 @@ class Session:
         # stalls leaves a trace behind rather than only an impression.
         for wait in state.get("waits") or ():
             kind = wait.get("kind", "?")
+            # A lattice run says the step it was taken at and how many it took.
+            ran = (f", {wait['steps']} steps of {wait.get('step_us', 0.0):.2f} us"
+                   if wait.get("steps") else "")
             if kind == "foreseen":
                 _log.info("banjo: %s coming in %.0f ms (t=%.2f s)",
                           wait.get("object"), wait.get("lead_ms", 0.0), wait.get("at_s", 0.0))
@@ -186,13 +189,13 @@ class Session:
                 # Rolling the two together made the log report a 30 ms fracture
                 # as a 4 second one.
                 queued = wait.get("lead_ms", 0.0)
-                _log.info("banjo: %s %s, %.0f ms of run%s (t=%.2f s)",
-                          kind, wait.get("object"), wait.get("cost_ms", 0.0),
+                _log.info("banjo: %s %s, %.0f ms of run%s%s (t=%.2f s)",
+                          kind, wait.get("object"), wait.get("cost_ms", 0.0), ran,
                           f", {queued:.0f} ms queued" if queued >= 1.0 else "",
                           wait.get("at_s", 0.0))
             else:
-                _log.info("banjo: %s %s, %.0f ms (t=%.2f s)",
-                          kind, wait.get("object"), wait.get("cost_ms", 0.0),
+                _log.info("banjo: %s %s, %.0f ms%s (t=%.2f s)",
+                          kind, wait.get("object"), wait.get("cost_ms", 0.0), ran,
                           wait.get("at_s", 0.0))
         # Every reply, not only the page's steps: the engine hands a closed
         # ground-work record over in exactly one reply and then forgets it, and

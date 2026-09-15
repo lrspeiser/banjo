@@ -231,7 +231,14 @@ void aPinSurvivesSomethingElseBreaking() {
     ball.shape = BodyShape::Sphere;
     ball.material = MaterialPreset::Iron;
     ball.dimensions_m = {0.2, 0.2, 0.2};
-    ball.center_m = {-1.0, 5.0, 0.0};
+    // Dropped from 8 m, to arrive at about 12.4 m/s. From 5 m (9.7 m/s against
+    // the pane's 4.5 m/s breaking bar) whether the pane came apart was down to
+    // the lattice's step: one piece or five at steps within 20% of the room's,
+    // with no trend between them, and one piece at the step its own run takes.
+    // This test is about the pin, and a premise that holds by luck proves
+    // nothing about it. From 8 m the pane broke into 6 to 13 pieces at every
+    // step tried from 0.8 to 1.2 times the room's.
+    ball.center_m = {-1.0, 8.0, 0.0};
     request.bodies.push_back(pane);
     request.bodies.push_back(ball);
 

@@ -683,6 +683,10 @@ struct LiveDelay {
     double lead_ms{};
     // What it cost, for "blocked" and "precomputed".
     double cost_ms{};
+    // For a lattice run: the step it was taken at -- its own lattice's -- and
+    // how many of them it took.
+    double step_s{};
+    std::uint64_t steps{};
 };
 
 // What the lattice actually did when it was run. The bounds above say what is
@@ -822,6 +826,12 @@ public:
     // forgetDelays(). A host that never looks at this cannot tell a world that
     // is keeping up from one that is stalling twice a second.
     [[nodiscard]] std::vector<LiveDelay> delays() const;
+
+    // The step the scene's lattice was built to take, which the stiffest,
+    // lightest thing anywhere in it sets at open. A run is taken at its own
+    // lattice's step instead (LiveDelay::step_s): no shorter than this, unless
+    // heat has left its bodies lighter than they were cold.
+    [[nodiscard]] double sceneLatticeStep_s() const;
 
     // Sweep up the loose pieces within `radius_m` of a point and say what they
     // were made of, added up by material.

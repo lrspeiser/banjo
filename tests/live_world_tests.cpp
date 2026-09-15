@@ -1696,6 +1696,89 @@ void aHotThingSetAsideKeepsItsHeat() {
     require(again.fuel_kg < away.fuel_kg, "the block did not burn on once it was back");
 }
 
+// A break is worked out at the step its own lattice needs, whatever else is in
+// the room (LiveWorld::prepared). The scene's step is set at open by the
+// stiffest, lightest thing anywhere in it. An alumina cup rings about twice as
+// fast as iron or glass, and every run in the room used to take its step: the
+// same pane broken by the same ball took about twice as many steps with a cup on
+// the far side of the room, and the owner's rule is that nothing may run more
+// than a tenth slower than real time. Now the run is taken at the same step with
+// or without the cup, and takes the same number of steps.
+//
+// The pieces are not asserted, because the room's other bodies still reach the
+// break through the rigid phase before the contact. Measured on this scene, the
+// ball arrived at the pane differing in its last digits: its x was 7.1e-19 m
+// alone and -2.5e-18 m with an iron block where the cup is. The pane broke into
+// 81 pieces alone, 69 with the iron block and 50 with the cup, each the same
+// every time. Fracture is chaotic. What this change takes away is the room's
+// hold on the step, the part of its influence that cost time.
+struct PaneBroken {
+    double scene_step_s{}, run_step_s{};
+    std::uint64_t run_steps{};
+    std::size_t pieces{};
+};
+
+PaneBroken breakThePane(bool cup_across_the_room) {
+    TileImpactRequest r = paneAndBall(3.0);
+    if (cup_across_the_room) {
+        SceneBody cup;
+        cup.name = "alumina cup";
+        cup.shape = BodyShape::Box;
+        cup.material = MaterialPreset::Ceramic;
+        cup.dimensions_m = {0.10, 0.12, 0.10};
+        cup.center_m = {1.5, 0.06, 0.0};
+        r.bodies.push_back(cup);
+    }
+    const auto live = LiveWorld::open(r);
+    live->foreseeCollisions(0.0);
+    PaneBroken out{};
+    out.scene_step_s = live->sceneLatticeStep_s();
+    bool started = false;
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    for (int i = 0; (!started || live->fracturePending()) && std::chrono::steady_clock::now() < give_up; ++i) {
+        live->step(1.0 / 240.0);
+        if (!started) {
+            if (i > 20000) break;           // it was never going to break
+            const std::vector<std::string> waiting = live->breakable();
+            if (std::find(waiting.begin(), waiting.end(), "pane") != waiting.end())
+                started = live->beginFracture("pane");
+            continue;
+        }
+        if (live->fracturePending()) {
+            if (!live->fractureReady()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            out.pieces = live->finishFracture();
+        }
+    }
+    for (const LiveDelay &delay : live->delays()) {
+        if (delay.steps == 0 || delay.object != "pane") continue;
+        out.run_step_s = delay.step_s;
+        out.run_steps = delay.steps;
+    }
+    return out;
+}
+
+void aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom() {
+    const PaneBroken alone = breakThePane(false);
+    const PaneBroken with_cup = breakThePane(true);
+    std::cout << "  the room's step: " << 1.0e6 * alone.scene_step_s << " us alone, "
+              << 1.0e6 * with_cup.scene_step_s << " us with the cup across it\n"
+              << "  the pane's run: " << alone.run_steps << " steps of " << 1.0e6 * alone.run_step_s
+              << " us alone; " << with_cup.run_steps << " steps of " << 1.0e6 * with_cup.run_step_s
+              << " us with the cup (" << alone.pieces << " and " << with_cup.pieces << " pieces)\n";
+    require(alone.pieces > 1 && with_cup.pieces > 1, "the pane did not break, so this proves nothing");
+    require(with_cup.scene_step_s < 0.9 * alone.scene_step_s,
+            "the cup did not set the room a shorter step, so this proves nothing");
+    require(alone.run_step_s > 0.0 && with_cup.run_step_s == alone.run_step_s,
+            "the pane's run was taken at a different step with a cup across the room");
+    require(with_cup.run_steps == alone.run_steps,
+            "the pane's run took a different number of steps with a cup across the room");
+    require(with_cup.run_step_s > with_cup.scene_step_s,
+            "the pane's run was taken at the room's step, not its own lattice's");
+}
+
 int main() {
     try {
         aWorldOpensIntactAndNamed();
@@ -1724,6 +1807,8 @@ int main() {
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
         theWorldKeepsRunningWhileAFractureIsWorkedOut();
         std::cout << "[PASS] the world keeps running while a fracture is worked out\n";
+        aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom();
+        std::cout << "[PASS] a break is taken at its own step, whatever else is in the room\n";
         aSecondBreakDoesNotStopTheClock();
         std::cout << "[PASS] a second break does not stop the clock\n";
         theWorldSeesACollisionComing();

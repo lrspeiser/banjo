@@ -21,6 +21,23 @@ const char *latticePhaseName(unsigned phase) {
     return phase < kPhaseCount ? names[phase] : "unknown";
 }
 
+double latticeStateSubstepLimit(const LatticeState &state) {
+    if (state.adj_offsets.size() != static_cast<std::size_t>(state.node_count) + 1U) return 0.0;
+    double fastest_rad_s = 0.0;
+    for (std::uint32_t i = 0; i < state.node_count; ++i) {
+        const double mass_kg = state.mass[i];
+        if (!(mass_kg > 0.0)) continue;
+        double stiffness_n_m = 0.0;
+        for (std::uint32_t a = state.adj_offsets[i]; a < state.adj_offsets[i + 1U]; ++a) {
+            const std::uint32_t k = state.adj_bonds[a];
+            if (!state.alive[k] || !(state.compliance[k] > 0.0)) continue;
+            stiffness_n_m += 1.0 / state.compliance[k];
+        }
+        if (stiffness_n_m > 0.0) fastest_rad_s = std::max(fastest_rad_s, std::sqrt(stiffness_n_m / mass_kg));
+    }
+    return fastest_rad_s > 0.0 ? 2.0 / fastest_rad_s : 0.0;
+}
+
 LatticeState buildLatticeState(
     const ActiveMatter &matter, const LatticeSchedule &schedule, const Vec3 &origin) {
     if (matter.asset == nullptr) throw std::invalid_argument("lattice state needs an asset");

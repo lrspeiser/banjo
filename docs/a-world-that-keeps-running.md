@@ -668,6 +668,19 @@ banjo: precomputed glass plate 20mm, 815 ms (t=38.13 s)
 banjo: precomputed glass plate 20mm piece 3, 6 ms (t=38.13 s)
 ```
 
+A wait that is a lattice run also says the step the run was taken at and how
+many steps it took (`step_us` and `steps`). The step is the run's own
+lattice's, not the room's (LiveWorld::prepared). The log line gains `, N steps
+of S us`. Measured in `live_world_tests`: the pane broken by the ball ran 5,275
+steps of 1.36 us, with or without an alumina cup on the far side of the room.
+The cup sets the room's own step at 0.80 us, and every run in the room used to
+take that step. Another step is not the same answer where a break is near its
+bar. In `scene_joint_tests`, a glass pane under an iron ball dropped 5 m broke
+into five pieces at the room's step. It stayed whole at its own step, 1.08
+times the room's, and at steps from 0.8 to 1.2 times the room's it gave one
+piece or five, with no trend. That test's ball now drops from 8 m. The C
+library's `banjo_delay` is unchanged.
+
 Four kinds. `foreseen` is a collision seen coming, with how long the warning was.
 `held` is a pair pinned while its answer is worked out. `precomputed` is an
 answer that landed without the caller waiting -- the cost is what it *would* have

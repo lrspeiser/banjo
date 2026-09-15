@@ -29,8 +29,16 @@ what lets them meet.
 
 ## What had to follow
 
-- **One clock.** The substep is the smallest bound any body asks for, measured
-  per body against its own material. A stiff light object sets it for everyone.
+- **One clock.** The scene's substep is the smallest bound any body asks for,
+  measured per body against its own material. A stiff light object sets it for
+  the scene. A live room's fracture run is taken at its own lattice's step
+  instead (LiveWorld::prepared, `latticeStateSubstepLimit`): the smallest
+  bound among the bodies in that run, as heat and earlier breaks have left
+  their cells and bonds, at the scene's fraction of it. So a stiff light
+  object sets the step only for the runs it is in. That does not make the
+  answer the same at another step: a break near its bar comes out one way or
+  the other by the step (tests/scene_joint_tests.cpp, the pane under the
+  ball). What the rest of the room no longer does is pick the step.
 - **One schedule.** Slab decomposition reads a box's z layers and a merged
   lattice has no single version of those, so it takes the one-block schedule.
   The bond colouring is where the parallelism is and that is unchanged.

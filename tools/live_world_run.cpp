@@ -740,10 +740,18 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     // to this, so nothing that drives the room could see any of it. A log
     // nobody can read is not a log.
     nlohmann::json waits = nlohmann::json::array();
-    for (const LiveDelay &delay : world.delays())
-        waits.push_back({{"at_s", delay.at_s}, {"object", delay.object},
-                         {"kind", delay.kind}, {"lead_ms", delay.lead_ms},
-                         {"cost_ms", delay.cost_ms}});
+    for (const LiveDelay &delay : world.delays()) {
+        nlohmann::json wait{{"at_s", delay.at_s}, {"object", delay.object},
+                            {"kind", delay.kind}, {"lead_ms", delay.lead_ms},
+                            {"cost_ms", delay.cost_ms}};
+        // A lattice run: the step it was taken at, its own lattice's, and how
+        // many it took.
+        if (delay.steps > 0) {
+            wait["step_us"] = 1.0e6 * delay.step_s;
+            wait["steps"] = delay.steps;
+        }
+        waits.push_back(std::move(wait));
+    }
     if (!waits.empty()) state["waits"] = std::move(waits);
     // Every edge contact since the last reply that carried them: the open ones
     // as they now stand, the closed ones one last time. The caller forgets the

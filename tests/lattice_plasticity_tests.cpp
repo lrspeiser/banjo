@@ -733,8 +733,32 @@ void backendsAgreeThroughYield() {
 
 } // namespace
 
+// A live run is taken at the step its own lattice needs (LiveWorld::prepared),
+// measured from the state it runs: latticeStateSubstepLimit. Whole, a state's
+// limit is the resolution limit's own rule, number for number. A broken bond
+// carries nothing, so a state with bonds gone is no stiffer and may take a
+// longer step, and one with no bond left has no limit at all.
+void aStateIsTakenAtItsOwnLimit() {
+    Coupon coupon(MaterialPreset::Iron, 24, 0.01, 0.05, false);
+    const double rule = measureLatticeResolutionLimit(*coupon.asset, coupon.compiled).explicit_substep_limit_s;
+    const double own = latticeStateSubstepLimit(coupon.state);
+    if (!(rule > 0.0) || std::abs(own - rule) > 1.0e-12 * rule)
+        throw std::runtime_error("a whole state's own limit is not the resolution limit's rule: " +
+                                 std::to_string(own) + " s against " + std::to_string(rule) + " s");
+    LatticeState half = coupon.state;
+    for (std::uint32_t k = 0; k < half.bond_count; k += 2) half.alive[k] = 0;
+    if (!(latticeStateSubstepLimit(half) >= own))
+        throw std::runtime_error("a state with half its bonds broken asked for a shorter step");
+    LatticeState none = coupon.state;
+    std::fill(none.alive.begin(), none.alive.end(), std::uint8_t{0});
+    if (latticeStateSubstepLimit(none) != 0.0)
+        throw std::runtime_error("a state with no bond left has a limit");
+}
+
 int main() {
     try {
+        aStateIsTakenAtItsOwnLimit();
+        std::cout << "[PASS] a state is taken at its own limit: the resolution limit's rule, on its live bonds\n";
         theReturnMappingIsTheNetworkLanes();
         std::cout << "[PASS] the bond's return mapping is advanceNetworkBond's, bit for bit\n";
         hardeningFollowsTheClosedForm();

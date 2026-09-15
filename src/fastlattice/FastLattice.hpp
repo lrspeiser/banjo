@@ -54,6 +54,13 @@ struct LatticeState {
 [[nodiscard]] double latticeStateElasticEnergy(const LatticeState &state);
 [[nodiscard]] double latticeStateKineticEnergy(const LatticeState &state);
 
+// The longest step a state can be taken at explicitly: 2 over its fastest
+// node's own frequency, the square root of the stiffness of that node's live
+// bonds over its mass. It is measureLatticeResolutionLimit's rule, applied to a
+// state as it is now, with its masses and bonds as heat and breaking have left
+// them. Zero when nothing in it is bonded.
+[[nodiscard]] double latticeStateSubstepLimit(const LatticeState &state);
+
 [[nodiscard]] LatticeState buildLatticeState(
     const ActiveMatter &matter, const LatticeSchedule &schedule, const Vec3 &origin);
 

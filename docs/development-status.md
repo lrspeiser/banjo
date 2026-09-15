@@ -1,5 +1,17 @@
 # Development status and handoff
 
+**A break is worked out at its own step, not the room's.** Branch `agent/trial-clock` from `ecedebb`. This is the first of the evaluation's steps toward sizes chosen per object, which the owner approved as "good for our performance either way".
+- A room's lattice has one step, set at open by the stiffest, lightest thing anywhere in it, and every live fracture run in the room took it. Now each run takes its own lattice's step (`latticeStateSubstepLimit`), at the scene's `dt_factor`. That step comes from the run's cells' masses and live bonds, as heat and earlier breaks have left them. It is the step the same bodies would take in a room of their own.
+- A run's wait says its step and how many steps it took: `step_us` and `steps` from the runner, and `, N steps of S us` in the server's log.
+- Measured alone on this machine with the scratchpad's `measure_trial_clock.py`. The bench room's iron ball was dropped 1.5 m onto its 20 mm glass plate, foresight off, stepped the way the page steps it, three times on each build:
+  - before, at the room's step: the run cost 527 ms (median), and the pieces came 547 ms after contact;
+  - after: 318 ms and 342 ms, in 5,275 steps of 1.36 µs;
+  - the pieces differ: 34 before and 20 after, each the same every time.
+- Found on the way:
+  - Another step is another answer for a break near its bar. In `scene_joint_tests`, a glass pane under an iron ball dropped 5 m broke into five pieces at the room's step and stayed whole at its own, 1.08 times the room's. At steps from 0.8 to 1.2 times the room's it gave one piece or five with no trend, and 13 at half the room's step. That test is about a pin, so its ball now drops from 8 m, which broke the pane into 6 to 13 pieces at every step tried in that range. Its assertion is unchanged.
+  - The pieces also depend on unrelated bodies, through the last digits of the rigid phase before contact. The same pane in `live_world_tests` broke into 81, 69 or 50 pieces, each the same every time.
+  - How a break's answer converges as the step shrinks is not measured yet.
+
 **The side view and the keys: E picks up, Q bags, 1–9 are the bag's slots.** Branch `agent/inventory-hands` from `9af65cb`. The owner, on 8797, after trying the bag: "there is way too much text on the screen. we need a simple chat sideview, and then all the other text needs to be in tabs in part of the side view. also it's still really hard to interact with an item. I pick it up and it goes in my bag, but then its not easy to put it back down without escaping the mouse and clicking on it." Their answers: E picks a loose thing up into the hand and puts it down again; Q bags it; the bag is numbered slots along the bottom of the view; the chat on top with tabs below; and over the view only the name of what the crosshair is on ("Iron Kettle"), its details in the side view.
 - The side view has three parts:
   - the conversation;

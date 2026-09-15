@@ -340,6 +340,10 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request);
 // copies of how the settings are assembled is two ways for that to stop being
 // true without anyone noticing.
 [[nodiscard]] StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin);
+// The same, taken at dt_s instead of the scene's own step. A live run of a few
+// bodies is taken at the step its own lattice needs (LiveWorld::prepared).
+[[nodiscard]] StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin,
+                                                 double dt_s);
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &request,
                                                           const LatticeSchedule &schedule);
 

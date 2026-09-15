@@ -199,13 +199,17 @@ std::vector<SceneBody> readSceneJson(const std::string &text) {
 
 // Declared in the header: see there for why these two are shared.
 StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin) {
+    return buildSettings(setup, origin, setup.dt_s);
+}
+
+StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin, double dt_s) {
     const TileImpactRequest &r = setup.request;
     StepSettings<double> s{};
-    s.dt = setup.dt_s;
+    s.dt = dt_s;
     s.gravity = toV3(r.gravity_m_s2);
     s.constraint_iterations = std::max(1U, r.constraint_iterations);
     s.damping_fraction = setup.compiled.bond_damping > 0.0
-        ? 1.0 - std::exp(-setup.compiled.bond_damping * setup.dt_s) : 0.0;
+        ? 1.0 - std::exp(-setup.compiled.bond_damping * dt_s) : 0.0;
     // A many-object scene has no rigid striker: every object is lattice, and
     // the one that was "dropped" is simply the one given a velocity.
     s.sphere_enabled = setup.multi_body ? 0 : 1;
