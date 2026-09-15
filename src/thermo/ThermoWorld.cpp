@@ -283,6 +283,8 @@ struct ThermoWorld::Impl {
         for (std::size_t a = 0; a < s.lumps.size(); ++a) {
             touching.resize(s.lumps.size(), 0.0);
             floor_area.resize(s.lumps.size(), 0.0);
+            // Set aside, it has no heat paths while it is away (park).
+            if (s.lumps[a].parked) continue;
             const BodyShape *sa = shape(s.lumps[a].body);
             if (sa == nullptr) continue;
             s.lumps[a].area_m2 = sa->area_m2;
@@ -307,6 +309,7 @@ struct ThermoWorld::Impl {
                 const bool contact = overlap[thin] >= -kTouchGapM && overlap[thin] <= kTouchPenetrationM &&
                                      overlap[u] > 0.001 && overlap[v] > 0.001;
                 std::size_t b = lumpOf(sb.name);
+                if (b != kNone && s.lumps[b].parked) continue;   // set aside: nothing reaches it
                 if (contact) {
                     const double area = overlap[u] * overlap[v];
                     // Already coupled from the other end, with both areas counted.
@@ -368,6 +371,7 @@ struct ThermoWorld::Impl {
         }
         for (std::size_t i = 0; i < s.lumps.size(); ++i) {
             Lump &l = s.lumps[i];
+            if (l.parked) continue;   // kept as it was put away
             const double floor = i < floor_area.size() ? floor_area[i] : 0.0;
             const double touched = i < touching.size() ? touching[i] : 0.0;
             l.exposed_area_m2 = std::max(0.2 * l.area_m2, l.area_m2 - touched - floor);
@@ -585,6 +589,9 @@ struct ThermoWorld::Impl {
         const double tamb = ambient.temperature_k;
         for (std::size_t i = 0; i < s.lumps.size(); ++i) {
             Lump &l = s.lumps[i];
+            // Set aside: nothing goes in or out of it, and nothing moves inside
+            // it either. Time stands still for it until it is back (park).
+            if (l.parked) continue;
             if (l.core_conductance_w_k > 0.0 && massKg(l.core) > 0.0) {
                 const double q = pairTransfer(temperature(l.surface), temperature(l.core),
                                               capacity(l.surface), capacity(l.core),
@@ -646,7 +653,9 @@ struct ThermoWorld::Impl {
     // that left the world without split() or remove() having been called.
     void forgetMissing() {
         for (std::size_t i = s.lumps.size(); i-- > 0;) {
-            if (shape(s.lumps[i].body) != nullptr) continue;
+            // A body set aside is out of the world without having left it
+            // (ThermoWorld::park): it is kept, and not counted leaving.
+            if (s.lumps[i].parked || shape(s.lumps[i].body) != nullptr) continue;
             leave(s.lumps[i]);
             s.lumps.erase(s.lumps.begin() + static_cast<std::ptrdiff_t>(i));
         }
@@ -936,7 +945,9 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
             w.s.regions[static_cast<std::size_t>(region)].heater_w += energy / dt_s;
         } else {
             const std::size_t lump = w.lumpOf(heater.what.target);
-            if (lump == kNone) continue;   // aimed at something that is gone
+            // Aimed at something that is gone, or set aside: it warms nothing,
+            // so nothing crosses the boundary. Its clock runs on.
+            if (lump == kNone || w.s.lumps[lump].parked) continue;
             w.s.lumps[lump].surface.internal_energy_j += energy;
             w.s.lumps[lump].heater_w += energy / dt_s;
         }
@@ -948,6 +959,7 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
 
     for (GasRegion &region : w.s.regions) w.vent(region, dt_s);
     for (Lump &lump : w.s.lumps) {
+        if (lump.parked) continue;   // set aside: nothing in it goes on
         w.react(lump, lump.surface, true, dt_s);
         if (massKg(lump.core) > 0.0) w.react(lump, lump.core, false, dt_s);
         w.replenish(lump);
@@ -967,7 +979,8 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         return t < w.model.minimum_temperature_k || t > w.model.maximum_temperature_k;
     };
     bool out = false;
-    for (const Lump &l : w.s.lumps) out = out || outside(l.surface) || outside(l.core);
+    // Not one set aside: nothing is stepping it.
+    for (const Lump &l : w.s.lumps) out = out || (!l.parked && (outside(l.surface) || outside(l.core)));
     for (const GasRegion &r : w.s.regions) out = out || outside(r.gas);
     if (out) ++w.s.ledger.out_of_range_steps;
 }
@@ -1067,6 +1080,23 @@ void ThermoWorld::remove(const std::string &body) {
     w.couple();
 }
 
+void ThermoWorld::park(const std::string &body) {
+    Impl &w = *impl_;
+    // Out of the world, so not a shape anything couples to until the host's
+    // refresh gives it back (Impl::forgetShape). What it holds stays, marked,
+    // and the heat paths are worked out again without it.
+    w.forgetShape(body);
+    const std::size_t index = w.lumpOf(body);
+    if (index != kNone) w.s.lumps[index].parked = true;
+    w.couple();
+}
+
+void ThermoWorld::unpark(const std::string &body) {
+    Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index != kNone) w.s.lumps[index].parked = false;
+}
+
 const ThermoState &ThermoWorld::state() const { return impl_->s; }
 
 void ThermoWorld::restore(const ThermoState &state) { impl_->s = state; }
@@ -1100,6 +1130,7 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
         heat.lost_w = l.lost_w;
         heat.reacting = l.fuel_use_kg_s > 0.0 || std::abs(l.heat_release_w) > 1.0;
         heat.declared = l.declared;
+        heat.parked = l.parked;
         for (std::size_t i = 0; i < w.model.size(); ++i) {
             const double kg = l.surface.kg[i] + l.core.kg[i];
             if (kg > 1.0e-9) heat.contents_kg.emplace_back(w.model[i].id, kg);
@@ -1204,6 +1235,8 @@ void ThermoWorld::receiveMechanicalWork(const std::string &body, double joules) 
 std::vector<std::pair<std::string, double>> ThermoWorld::massesToMirror(double relative) {
     std::vector<std::pair<std::string, double>> out;
     for (Lump &l : impl_->s.lumps) {
+        // Told when it is back in the world, not while it is set aside (park).
+        if (l.parked) continue;
         const double mass = Impl::lumpMass(l);
         if (l.mirrored_mass_kg >= 0.0 && std::abs(mass - l.mirrored_mass_kg) <= relative * mass) continue;
         if (!(mass > 0.0)) continue;

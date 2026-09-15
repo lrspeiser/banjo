@@ -240,7 +240,7 @@ void apply(ThermoWorld &world, const Declarations &declarations) {
 
 std::string reportJson(const ThermoWorld &world, bool with_model) {
     json bodies = json::array();
-    for (const BodyHeat &b : world.bodies())
+    for (const BodyHeat &b : world.bodies()) {
         bodies.push_back({{"name", b.body},
                           {"material", b.material},
                           {"temperature_k", b.temperature_k},
@@ -256,6 +256,9 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"reacting", b.reacting},
                           {"declared", b.declared},
                           {"contents_kg", contentsOf(b.contents_kg)}});
+        // Set aside with its body (ThermoWorld::park): held as it was put away.
+        if (b.parked) bodies.back()["set_aside"] = true;
+    }
     json regions = json::array();
     for (const RegionState &r : world.regions())
         regions.push_back({{"name", r.name},

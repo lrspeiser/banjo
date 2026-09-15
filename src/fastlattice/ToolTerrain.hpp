@@ -51,6 +51,10 @@ struct ToolTerrainHost {
     std::function<std::string(const std::string &)> material_name_of;
     std::function<double(const std::string &)> dent_of;
     std::function<bool(const std::string &)> anchored;
+    // A body set aside (LiveWorld::park): out of the world, and not gone. Its
+    // points are left as they are while it is away -- not finished, not
+    // detached -- and work again when it comes back.
+    std::function<bool(const std::string &)> parked;
 };
 
 class ToolTerrain {
@@ -70,6 +74,12 @@ public:
     [[nodiscard]] const std::vector<LiveGroundWork> &reports() const { return log_; }
     // Drop the meetings that are over; the open ones stay.
     void forget();
+    // Whether a point on this body is in the ground, held there by its bite.
+    [[nodiscard]] bool inGround(const std::string &body) const;
+    // A body about to be set aside (LiveWorld::park) leaves the ground it was
+    // on: a meeting held open while its point stayed on that ground is over,
+    // and is closed now, while the tool is still here to be looked at.
+    void setAside(const ToolTerrainHost &host, const std::string &body);
     // The motion of a bounded tool action (LiveStrike), for the hand to make.
     [[nodiscard]] std::optional<LiveStroke> plan(const ToolTerrainHost &host, const LiveStrike &strike,
                                                  const std::string &held, const Vec3 &grip_local,

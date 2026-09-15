@@ -146,6 +146,10 @@ struct Lump {
     double heater_w{};
     double gained_w{};             // from other bodies, conduction and radiation
     double lost_w{};               // to the surroundings
+    // Set aside with its body (ThermoWorld::park): out of the world, so no heat
+    // path reaches it, nothing in it reacts and no heater warms it. Kept exactly
+    // as it was put away, and still the network's -- on its ledger, not left it.
+    bool parked{};
 };
 
 struct PistonBoundary {
@@ -254,6 +258,8 @@ struct BodyHeat {
     bool reacting{};
     bool declared{};
     std::vector<std::pair<std::string, double>> contents_kg;
+    // Set aside (ThermoWorld::park): held as it was put away, out of the world.
+    bool parked{};
 };
 
 struct RegionState {
@@ -332,6 +338,16 @@ public:
     void split(const std::string &body, const std::vector<std::pair<std::string, double>> &pieces);
     // A body gone from the world with whatever it held.
     void remove(const std::string &body);
+    // A body set aside -- out of the world, not gone (LiveWorld::park) -- and
+    // brought back. While it is away its lump is kept exactly as it was put
+    // away: no heat path reaches it, nothing in it reacts, no heater warms it,
+    // and the host's refreshes do not count it as having left. Time stands
+    // still for it. It is on the ledger the whole time, because it never left
+    // the network. A body the network does not hold has nothing to keep and is
+    // only forgotten as a shape. Between steps, like refresh().
+    void park(const std::string &body);
+    // Back: coupled again by the host's next refresh, from where it is put.
+    void unpark(const std::string &body);
 
     [[nodiscard]] const ThermoState &state() const;
     void restore(const ThermoState &state);

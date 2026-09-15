@@ -669,6 +669,9 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     for (auto it = last_sent.begin(); it != last_sent.end();) {
         if (present.count(it->first)) { ++it; continue; }
         gone.push_back(it->first);
+        // A body that comes back (LiveWorld::unpark) is drawn from its cells
+        // again, so what was sent of them goes with it.
+        cells_sent_at.erase(it->first);
         it = last_sent.erase(it);
     }
     if (!only_moved) last_sent.clear();
@@ -769,6 +772,8 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
     nlohmann::json bodies = nlohmann::json::array();
     for (const banjo::thermo::BodyHeat &b : all) {
         if (bodies.size() >= 48) break;
+        // A thing set aside is not drawn, and neither is its heat.
+        if (b.parked) continue;
         if (!b.reacting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
         bodies.push_back({{"name", b.body},
                           {"t_k", round(b.temperature_k, 0.1)},
@@ -1256,6 +1261,27 @@ int main(int argc, char **argv) {
                     // anyway, which is harmless because they are already gone.
                     std::cout << reply.dump() << std::endl;
                     continue;
+                } else if (op == "park") {
+                    // Set a body aside, out of the world, kept as it is
+                    // (LiveWorld::park): the next reply names it gone.
+                    std::string why;
+                    const std::string name = command.at("name").get<std::string>();
+                    if (!world->park(name, why)) throw std::invalid_argument(why);
+                    reply["parked"] = name;
+                } else if (op == "unpark") {
+                    // And back, at rest, at `at` facing `q` (w, x, y, z) -- as a
+                    // reply's position_m and orientation_wxyz say a body is.
+                    std::string why;
+                    const std::string name = command.at("name").get<std::string>();
+                    Quat facing{1.0, 0.0, 0.0, 0.0};
+                    if (command.contains("q")) {
+                        const auto &q = command.at("q");
+                        facing = Quat{q.at(0).get<double>(), q.at(1).get<double>(),
+                                      q.at(2).get<double>(), q.at(3).get<double>()};
+                    }
+                    if (!world->unpark(name, readVec(command, "at"), facing, why))
+                        throw std::invalid_argument(why);
+                    reply["unparked"] = name;
                 } else if (op == "grab") {
                     if (!world->grab(command.at("name").get<std::string>()))
                         throw std::invalid_argument("that object cannot be picked up");

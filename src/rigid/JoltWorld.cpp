@@ -697,6 +697,11 @@ public:
                     body_interface.DestroyBody(body_id);
                 }
             }
+            // A parked body is not in the broadphase: destroyed, not removed.
+            for (const auto &[logical_id, body_id] : parked_) {
+                (void)logical_id;
+                if (!body_id.IsInvalid()) body_interface.DestroyBody(body_id);
+            }
             if (!floor_id_.IsInvalid()) {
                 body_interface.RemoveBody(floor_id_);
                 body_interface.DestroyBody(floor_id_);
@@ -1084,6 +1089,9 @@ public:
     std::unordered_map<unsigned,Joint> joints_;
     unsigned next_joint_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
+    // Bodies set aside (park): out of the broadphase and out of bodies_, not
+    // destroyed, so each comes back as the body it was (unpark).
+    std::unordered_map<MatterBodyId, JPH::BodyID> parked_;
     RigidContactDiagnostics contact_diagnostics_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
@@ -3320,6 +3328,16 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     impl_->requireConfigurationMutable();
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) {
+        // A body set aside (park) is not in the broadphase, so it is destroyed
+        // and not removed. Nothing is joined to it: park refuses a body that
+        // has anything on it, and nothing can be joined to one that is not in
+        // the world. Its shape and its contact settings go with it.
+        if (const auto set_aside = impl_->parked_.find(body_id); set_aside != impl_->parked_.end()) {
+            impl_->physics_->GetBodyInterface().DestroyBody(set_aside->second);
+            impl_->parked_.erase(set_aside);
+            impl_->cell_shapes_.erase(body_id);
+            impl_->contact_states_.erase(body_id);
+        }
         return;
     }
     releaseFromWorld(body_id);
@@ -3342,5 +3360,56 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     impl_->bodies_.erase(found);
     impl_->contact_states_.erase(body_id);
 }
+
+bool JoltWorld::park(MatterBodyId body_id, std::string &why) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) {
+        why = impl_->parked_.contains(body_id) ? "it is already set aside" : "rigid body is missing";
+        return false;
+    }
+    const bool sprung = std::any_of(impl_->springs_.begin(), impl_->springs_.end(), [&](const auto &entry) {
+        return entry.second.a == body_id || entry.second.b == body_id;
+    });
+    if (impl_->pins_.contains(body_id) || sprung || !jointsOn(body_id).empty()) {
+        why = "it is fixed or joined to something: set aside, what holds it would be holding nothing";
+        return false;
+    }
+    // What only means anything while it is in the world goes; what it IS --
+    // the cells it collides as, how it meets things -- stays with it.
+    std::erase_if(impl_->external_pairs_,
+                  [&](const auto &pair) { return pair.first == body_id || pair.second == body_id; });
+    std::erase_if(impl_->rolling_,
+                  [&](const RollingContact &c) { return c.sphere == body_id || c.other == body_id; });
+    impl_->ground_suspended_.erase(body_id);
+    impl_->before_step_.erase(body_id);
+    impl_->physics_->GetBodyInterface().RemoveBody(found->second);
+    impl_->parked_.emplace(body_id, found->second);
+    impl_->bodies_.erase(found);
+    return true;
+}
+
+bool JoltWorld::unpark(MatterBodyId body_id, const RigidSnapshot &pose, std::string &why) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->parked_.find(body_id);
+    if (found == impl_->parked_.end()) {
+        why = impl_->bodies_.contains(body_id) ? "it is not set aside" : "rigid body is missing";
+        return false;
+    }
+    JPH::BodyInterface &bodies = impl_->physics_->GetBodyInterface();
+    // At rest: with no velocity given, Jolt does not try to wake a body that is
+    // not in the broadphase yet. AddBody puts it there, awake.
+    bodies.SetPositionRotationAndVelocity(
+        found->second, toJoltPosition(pose.center_of_mass_world_m),
+        JPH::Quat(static_cast<float>(pose.orientation_world.x), static_cast<float>(pose.orientation_world.y),
+                  static_cast<float>(pose.orientation_world.z), static_cast<float>(pose.orientation_world.w)),
+        JPH::Vec3::sZero(), JPH::Vec3::sZero());
+    bodies.AddBody(found->second, JPH::EActivation::Activate);
+    impl_->bodies_.emplace(body_id, found->second);
+    impl_->parked_.erase(found);
+    return true;
+}
+
+bool JoltWorld::parked(MatterBodyId body_id) const { return impl_->parked_.contains(body_id); }
 
 } // namespace banjo

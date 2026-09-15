@@ -503,7 +503,9 @@ struct LiveBlade {
     double cut_area_m2{}, cut_work_j{};
     // What the edge is in right now, "" for nothing.
     std::string cutting;
-    // False once the body carrying it has gone -- broken up, or swept away.
+    // False once the body carrying it has gone -- broken up, or swept away --
+    // and while it is set aside (LiveWorld::park), when the edge is out of the
+    // world with it.
     bool attached{true};
 };
 
@@ -559,7 +561,9 @@ struct LiveToolPoint {
     // nothing, and how far in along its own axis.
     std::string in;
     double depth_m{};
-    // False once the body carrying it has gone -- broken up, or swept away.
+    // False once the body carrying it has gone -- broken up, or swept away --
+    // and while it is set aside (LiveWorld::park), when the point is out of the
+    // world with it.
     bool attached{true};
 };
 
@@ -719,6 +723,8 @@ public:
     // Advance by one fixed step. A host calls this at whatever rate it draws.
     void step(double dt_s);
     [[nodiscard]] double time_s() const;
+    // How many things are in the world: what poses() lists, so a thing set
+    // aside (park) is not counted until it is back.
     [[nodiscard]] std::size_t bodies() const;
 
     // Every object, in the order they were authored.
@@ -1233,6 +1239,20 @@ public:
                                                   double horizon_s) const;
     [[nodiscard]] LiveFlight previewFlight(const Vec3 &from_world_m, const Vec3 &velocity_m_s,
                                            double horizon_s, const std::string &ignoring) const;
+
+    // Set a thing aside -- put in a bag, say -- and bring it back as it was.
+    // Parked, it is out of the world: nothing meets it, no step moves it, and
+    // poses() leaves it out, so a host stops drawing it. But it is not gone: its
+    // matter, its cells, its dents and cuts and what it is made of stay with it,
+    // and unpark() puts that same thing back, at rest, where it is asked to be,
+    // facing as poses() would say it faces. Between steps only. Refused, with
+    // why, for what cannot be set aside as it is: anchored scenery, a thing on a
+    // joint, a thing breaking, a thing being cut or cutting, a tool whose point
+    // is in the ground, a gas's piston. A thing in the hand is let go first.
+    [[nodiscard]] bool park(const std::string &name, std::string &why);
+    [[nodiscard]] bool unpark(const std::string &name, const Vec3 &at_world_m, const Quat &facing_world,
+                              std::string &why);
+    [[nodiscard]] bool parked(const std::string &name) const;
 
 private:
     // Every body as the water sees it: shape, where it is, how it moves.

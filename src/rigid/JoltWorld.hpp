@@ -741,6 +741,17 @@ public:
     [[nodiscard]] MechanicalTotals mechanicalTotals(const Vec3 &gravity_m_s2 = {}) const;
     [[nodiscard]] bool contains(MatterBodyId body_id) const;
     void removeAndDestroy(MatterBodyId body_id);
+    // Set a body aside: out of the broadphase, so nothing meets it and no step
+    // or trial counts it, but not destroyed -- its shape, its cells and its
+    // contact settings stay with it -- so it can come back as it was.
+    // contains() is false while it is parked. Host thread, between steps. A
+    // body with a joint, a spring or a pin on it is not parked (why says so):
+    // what held it would be holding nothing.
+    [[nodiscard]] bool park(MatterBodyId body_id, std::string &why);
+    // Put a parked body back, at rest, at `pose`: its centre of mass and its
+    // orientation, as snapshot() gives them. Its velocities are not read.
+    [[nodiscard]] bool unpark(MatterBodyId body_id, const RigidSnapshot &pose, std::string &why);
+    [[nodiscard]] bool parked(MatterBodyId body_id) const;
 
 private:
     [[nodiscard]] PairImpulseAudit applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,

@@ -7,8 +7,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sys
+import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -16,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "playground"))
 
 import fracture_lab   # noqa: E402
+import live_session   # noqa: E402
 import room_world     # noqa: E402
 import world_room     # noqa: E402
 
@@ -83,6 +87,78 @@ class ThingsKeepWhoTheyAre(unittest.TestCase):
         reopened = room_world.open_room(spec)
         again = {b["name"]: b["id"] for b in room_world.export_spec(room_world.entry_of(reopened))["bodies"]}
         self.assertEqual(again, ids)
+
+
+ENGINE = (Path(os.environ["BANJO_BUILD_DIR"]) if os.environ.get("BANJO_BUILD_DIR")
+          else ROOT / "build" / "integration" / "Release") / \
+    ("banjo_platform_cli.exe" if os.name == "nt" else "banjo_platform_cli")
+
+
+def floor_and_ball():
+    return {"algorithm": "lattice", "cell_m": 0.02, "duration_s": 1.0,
+            "bodies": [{"name": "floor", "shape": "box", "material": "oak",
+                        "size_mm": [600, 40, 400], "center_mm": [0, 20, 0], "anchored": True},
+                       {"name": "ball", "shape": "sphere", "material": "iron",
+                        "size_mm": [100, 100, 100], "center_mm": [0, 600, 0]}]}
+
+
+class AThingSetAsideThroughTheRoom(unittest.TestCase):
+    """The room's own line to the engine (live_session, the runner's park and
+    unpark): what the inventory's bag is made of. Set aside, a thing is out of
+    the world a host is sent -- so the page stops drawing it -- and brought back
+    it is the same thing, falling where it is put."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():
+            raise unittest.SkipTest(f"{ENGINE.name} is not built")
+        cls._temp = tempfile.TemporaryDirectory()
+        cls.app = types.SimpleNamespace(engine_path=ENGINE, runs_path=Path(cls._temp.name))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def setUp(self):
+        self.live = live_session.Live()
+        self.addCleanup(self.live.shutdown)
+
+    def names(self, session):
+        return [b["name"] for b in self.live.act({"session": session, "op": "poses"})["bodies"]]
+
+    def ball(self, session):
+        state = self.live.act({"session": session, "op": "poses"})
+        return next(b for b in state["bodies"] if b["name"] == "ball")
+
+    def test_a_ball_set_aside_is_out_of_the_world_and_comes_back_where_it_is_put(self):
+        session = self.live.open(self.app, {"spec": floor_and_ball()})["session"]
+        for _ in range(20):
+            self.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        self.live.act({"session": session, "op": "park", "name": "ball"})
+        for _ in range(5):
+            self.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        self.assertEqual(self.names(session), ["floor"], "the ball is still in the world set aside")
+        with self.assertRaises(live_session.LiveError):
+            self.live.act({"session": session, "op": "grab", "name": "ball"})
+
+        self.live.act({"session": session, "op": "unpark", "name": "ball", "at": [0.1, 0.5, 0.0]})
+        back = self.ball(session)["position_m"]
+        self.assertAlmostEqual(back[0], 0.1, places=3)
+        self.assertAlmostEqual(back[1], 0.5, places=3)
+        for _ in range(20):
+            self.live.act({"session": session, "op": "step", "dt": 1 / 120.0, "n": 12})
+        landed = self.ball(session)["position_m"][1]
+        self.assertLess(landed, 0.45, "the ball brought back did not fall")
+        self.assertGreater(landed, 0.04, "the ball brought back fell through the floor")
+
+    def test_what_cannot_be_set_aside_is_refused_in_words(self):
+        session = self.live.open(self.app, {"spec": floor_and_ball()})["session"]
+        with self.assertRaises(live_session.LiveError) as caught:
+            self.live.act({"session": session, "op": "park", "name": "floor"})
+        self.assertIn("fixed", str(caught.exception))
+        with self.assertRaises(live_session.LiveError) as caught:
+            self.live.act({"session": session, "op": "unpark", "name": "ball", "at": [0.1, 0.5]})
+        self.assertIn("three numbers", str(caught.exception))
 
 
 if __name__ == "__main__":

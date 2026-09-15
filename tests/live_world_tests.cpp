@@ -1582,6 +1582,120 @@ void aTurnedBoxThatComesThroughARunKeepsItsTurn() {
 
 } // namespace
 
+// Set aside and brought back (LiveWorld::park and unpark): the inventory's bag.
+// Parked, a thing is out of the world -- nothing meets it, poses() leaves it
+// out, a hand cannot take it -- and unparked it is the same thing, at rest where
+// it is put, as heavy and as big as it was, falling and landing again.
+void aThingSetAsideComesBackAsItWas() {
+    const auto live = LiveWorld::open(ballOverFloor());
+    for (int i = 0; i < 240; ++i) live->step(1.0 / 120.0);
+    const LiveBodyPose before = named(live->poses(), "ball");
+    std::string why;
+    require(!live->park("floor", why) && !why.empty(), "anchored scenery was set aside");
+    require(live->park("ball", why), "the ball could not be set aside: " + why);
+    require(live->parked("ball"), "the world does not say the ball is set aside");
+    require(!live->park("ball", why), "a thing set aside was set aside again");
+    for (int i = 0; i < 120; ++i) live->step(1.0 / 120.0);
+    const auto away = live->poses();
+    require(away.size() == 1 && away.front().name == "floor",
+            "poses() still lists the ball while it is set aside");
+    require(!live->grab("ball"), "a hand took hold of a thing set aside");
+
+    require(live->unpark("ball", {0.1, 0.5, 0.0}, Quat{1.0, 0.0, 0.0, 0.0}, why),
+            "the ball could not be brought back: " + why);
+    require(!live->parked("ball"), "the ball is still said to be set aside");
+    require(!live->unpark("ball", {0.1, 0.5, 0.0}, Quat{1.0, 0.0, 0.0, 0.0}, why),
+            "a thing in the world was brought back again");
+    const LiveBodyPose back = named(live->poses(), "ball");
+    std::cout << "  set aside for 1 s, then back at (" << back.position_m.x << ", " << back.position_m.y
+              << ", " << back.position_m.z << "), " << back.mass_kg << " kg (was " << before.mass_kg
+              << ")\n";
+    require(std::abs(back.position_m.y - 0.5) < 1e-6 && std::abs(back.position_m.x - 0.1) < 1e-6,
+            "the ball did not come back where it was put");
+    require(std::abs(back.mass_kg - before.mass_kg) < 1e-9, "the ball came back a different weight");
+    require(std::abs(back.dimensions_m.x - before.dimensions_m.x) < 1e-12,
+            "the ball came back a different size");
+    for (int i = 0; i < 240; ++i) live->step(1.0 / 120.0);
+    const LiveBodyPose landed = named(live->poses(), "ball");
+    std::cout << "  brought back: fell to y=" << landed.position_m.y << "\n";
+    require(landed.position_m.y < 0.45, "the ball brought back did not fall");
+    require(landed.position_m.y > 0.04, "the ball brought back fell through the floor");
+
+    // In the hand: let go first, then set aside.
+    require(live->grab("ball"), "the ball could not be picked up again");
+    require(live->park("ball", why), "a held ball could not be set aside: " + why);
+    require(live->held().empty(), "the hand still holds a thing set aside");
+}
+
+// Set aside hot, and brought back: what it holds -- its heat, what it is made
+// of, its fuel -- is exactly what it held when it was put away. Nothing in it
+// goes on while it is away: it neither burns nor cools, and a heater aimed at it
+// warms nothing. It stays the thermal network's the whole time, on its ledger
+// and never counted leaving; and brought back, it burns on.
+void aHotThingSetAsideKeepsItsHeat() {
+    TileImpactRequest r = ballOverFloor();
+    SceneBody &block = r.bodies[1];
+    block.name = "block";
+    block.shape = BodyShape::Box;
+    block.material = MaterialPreset::Oak;
+    block.dimensions_m = {0.1, 0.1, 0.1};
+    block.center_m = {0.0, 0.09, 0.0};   // resting on the floor's top, at 0.04
+    r.thermo_scene_json = R"({"bodies":[{"name":"block","temperature_k":1000}]})";
+    const auto live = LiveWorld::open(r);
+    for (int i = 0; i < 60; ++i) live->step(1.0 / 120.0);
+    require(live->thermo() != nullptr && live->thermo()->holds("block"), "the block was not declared hot");
+    const auto lumpOf = [&]() {
+        for (const thermo::Lump &lump : live->thermo()->state().lumps)
+            if (lump.body == "block") return lump;
+        throw std::runtime_error("the network does not hold the block");
+    };
+    const auto heatOf = [&]() {
+        for (const thermo::BodyHeat &heat : live->thermo()->bodies())
+            if (heat.body == "block") return heat;
+        throw std::runtime_error("the network says nothing of the block");
+    };
+    // Exactly: nothing may have touched any of it.
+    const auto same = [](const thermo::Lump &a, const thermo::Lump &b) {
+        return a.surface.kg == b.surface.kg && a.core.kg == b.core.kg &&
+               a.surface.internal_energy_j == b.surface.internal_energy_j &&
+               a.core.internal_energy_j == b.core.internal_energy_j && a.initial_kg == b.initial_kg &&
+               a.peak_surface_k == b.peak_surface_k && a.peak_core_k == b.peak_core_k &&
+               a.layer_fuel_kg == b.layer_fuel_kg;
+    };
+    const thermo::BodyHeat was = heatOf();
+    require(was.reacting, "the block at 1000 K was not burning");
+    const LiveBodyPose before = named(live->poses(), "block");
+    const thermo::Lump put_away = lumpOf();
+    const double left_kg = live->thermo()->ledger().left_kg;
+
+    std::string why;
+    require(live->park("block", why), "the hot block could not be set aside: " + why);
+    require(live->thermo()->holds("block"), "the network let go of the block as it was set aside");
+    require(same(lumpOf(), put_away), "setting the block aside changed what it holds");
+    (void)live->heat("block", 2000.0, 0.5);
+    const double heater_in_j = live->thermo()->ledger().heater_in_j;
+    for (int i = 0; i < 120; ++i) live->step(1.0 / 120.0);
+    const thermo::BodyHeat away = heatOf();
+    require(away.parked && !away.reacting, "the block was said to be burning while it was set aside");
+    require(same(lumpOf(), put_away), "what the block holds changed while it was set aside");
+    const thermo::Ledger ledger = live->thermo()->ledger();
+    require(ledger.left_kg == left_kg, "the block was counted leaving the network as it was set aside");
+    require(ledger.heater_in_j == heater_in_j, "a heater warmed the block while it was set aside");
+    require(std::abs(ledger.residualJ()) < 1e-9 * std::abs(ledger.storedJ()), "the ledger does not close");
+
+    require(live->unpark("block", {0.15, 0.091, 0.0}, Quat{1.0, 0.0, 0.0, 0.0}, why),
+            "the block could not be brought back: " + why);
+    require(same(lumpOf(), put_away), "bringing the block back changed what it holds");
+    const LiveBodyPose back = named(live->poses(), "block");
+    require(std::abs(back.mass_kg - before.mass_kg) < 1e-9, "the block came back a different weight");
+    for (int i = 0; i < 60; ++i) live->step(1.0 / 120.0);
+    const thermo::BodyHeat again = heatOf();
+    std::cout << "  set aside at " << was.temperature_k << " K holding " << 1000.0 * was.fuel_kg
+              << " g of fuel; after 1 s away " << away.temperature_k << " K and " << 1000.0 * away.fuel_kg
+              << " g; back for 0.5 s, " << again.temperature_k << " K and " << 1000.0 * again.fuel_kg << " g\n";
+    require(again.fuel_kg < away.fuel_kg, "the block did not burn on once it was back");
+}
+
 int main() {
     try {
         aWorldOpensIntactAndNamed();
@@ -1642,6 +1756,10 @@ int main() {
         std::cout << "[PASS] something lifted out of a settled world still falls\n";
         theGroundCatchesThingsWhereverTheyAreDropped();
         std::cout << "[PASS] the ground catches things wherever they are dropped\n";
+        aThingSetAsideComesBackAsItWas();
+        std::cout << "[PASS] a thing set aside is out of the world and comes back as it was\n";
+        aHotThingSetAsideKeepsItsHeat();
+        std::cout << "[PASS] a hot thing set aside keeps exactly what it holds, and burns on once it is back\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";

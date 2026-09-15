@@ -152,6 +152,7 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
     };
     const std::optional<MatterBodyId> id = host.id_of(body);
+    if (host.parked && host.parked(body)) return refuse("it is set aside: bring it back into the world first");
     if (!id || !host.world->contains(*id)) return refuse("there is nothing called that in the scene");
     if (host.anchored && host.anchored(body))
         return refuse("that is anchored scenery: nobody can swing it, so its point would never go anywhere");
@@ -261,6 +262,16 @@ void ToolTerrain::forget() {
     }
 }
 
+bool ToolTerrain::inGround(const std::string &body) const {
+    return std::any_of(points_.begin(), points_.end(),
+                       [&](const Point &p) { return p.body == body && p.joint != 0; });
+}
+
+void ToolTerrain::setAside(const ToolTerrainHost &host, const std::string &body) {
+    for (Point &p : points_)
+        if (p.body == body) closeNote(host, p);
+}
+
 // ---- a body rebuilt, and a body made a tool -----------------------------------
 
 void ToolTerrain::follow(const ToolTerrainHost &host, Point &p, MatterBodyId now) {
@@ -327,6 +338,9 @@ void ToolTerrain::prepare(const ToolTerrainHost &host, double dt_s) {
     JoltWorld &world = *host.world;
     for (Point &p : points_) {
         if (!p.attached) continue;
+        // Set aside (LiveWorld::park), it is out of the world and not gone:
+        // left as it is, neither finished nor detached, until it is back.
+        if (host.parked && host.parked(p.body)) continue;
         const std::optional<MatterBodyId> id = host.id_of(p.body);
         if (!id || !world.contains(*id)) {
             finish(host, p, false);
@@ -568,6 +582,7 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
     JoltWorld &world = *host.world;
     for (Point &p : points_) {
         if (p.joint == 0) continue;
+        if (host.parked && host.parked(p.body)) continue;   // set aside: not gone
         const std::optional<MatterBodyId> id = host.id_of(p.body);
         if (!id || !world.contains(*id) || !world.hasJoint(p.joint) || host.environment == nullptr) {
             finish(host, p, id && world.contains(*id));

@@ -59,6 +59,34 @@ hand.
   - an installed thing is operated;
   - a thing in reach but too heavy to lift says so.
 
+## The record as built (playground/inventory.py)
+
+- **`items_of(spec)`** works the items out from the room's spec every time, so
+  they are never kept twice:
+  - it joins every body of a join group, and both ends of every joint;
+  - an item is installed when any part is anchored;
+  - it is `one_piece` when the engine holds it as one body joined to nothing,
+    which is what can be set aside as it is;
+  - its id is the smallest id among its bodies, and its name is its first part's
+    name, which is also the engine's name for a join group's piece.
+- **`Inventory`** is the record: `{revision, dominant, hands: {right, left},
+  stowed: [ids]}`. An item not in it is in the world.
+- **The ops:**
+  - `take`: from the world into the inventory;
+  - `take_up`: into a free hand, the dominant hand first. With both hands full it
+    goes into the inventory instead, so what is being used is never dropped or
+    replaced;
+  - `equip`: from the inventory into a free hand. With both hands full it is
+    refused;
+  - `stow`: from a hand into the inventory;
+  - `drop`: from a hand or the inventory into the world.
+- **`request(id, expected_revision, op, item, items, act)`:**
+  - it answers a repeated id as the first time, without acting again;
+  - it refuses a stale revision, with the record as it is now;
+  - it asks `act(plan)` to do the room's part, meaning park, unpark, the hand or
+    putting the thing down, and changes nothing if that raises;
+  - it keeps the last 64 answers.
+
 ## Transactions
 
 - `POST /api/world/inventory {session, request, expected_revision, op, item,
@@ -114,16 +142,33 @@ hand.
     - Only between steps, behind the guard on changes, never inside the
       reversible trial. Jolt's saved state covers only the bodies in the
       broadphase, and adding or removing one inside a trial throws.
-    - `wake`, the hand's push and `applyRigidState` skip a parked body.
+    - JoltWorld keeps throwing when asked about a body it no longer holds.
+      LiveWorld guards every call instead (13 of them were unguarded), so a
+      mistake shows up as an error, never as a body quietly doing nothing.
     - The loops over every body (`contactPairUpperBound`, `mechanicalTotals`)
-      leave it out.
+      leave it out. So a thing's energy leaves the world's account when it is
+      set aside, and comes back with it.
+    - `removeAndDestroy` destroys a parked body too, so nothing can leak one.
   - **LiveWorld:**
     - A parked slot is left out of `poses()`, so the runner says it is gone and
       the page stops drawing it.
     - It is left out of foresight, fracture, the surveys, heat and water:
       `contains()` says no.
-    - The hand lets go of it first.
-    - In the first slice, only a body with no attached joints is parked.
+    - The hand lets go of it first, and any stroke on it stops.
+    - A parked body is recorded by name, since names survive the reindexing
+      that happens when bodies break.
+    - It is refused, with the reason in words, when it is:
+      - anchored ("fixed in place");
+      - named by any joint;
+      - part of a fracture that is running, queued or guessed;
+      - being cut;
+      - carrying a tool point that is in the ground.
+    - Its heat, contents and fuel stay exactly as they were. It is coupled to
+      nothing while it is set aside: time stands still for it thermally. Before
+      this, the heat network would have forgotten the thing and booked its heat
+      as leaving the world.
+    - A tool's point is skipped while its tool is parked, not detached, so it
+      works again when the tool comes back.
   - **The runner, the C API and the Python binding:**
     - The runner gets `park {name}` and `unpark {name, at, q}`.
     - The C API and the Python binding get the same, for the MCP and the

@@ -713,6 +713,31 @@ class Live:
             return session.send(op=op)
         if op == "grab":
             return session.send(op="grab", name=str(body.get("name", "")))
+        if op == "park":
+            # Set aside, out of the world, kept as it is (LiveWorld::park): the
+            # inventory's bag. Refused, with why, for what cannot be.
+            name = str(body.get("name", ""))
+            if not name:
+                raise LiveError("park needs the name of what to set aside")
+            return session.send(op="park", name=name)
+        if op == "unpark":
+            # And back, at rest, at `at`, facing `q` (w, x, y, z; upright if not
+            # said) -- as a reply's position_m and orientation_wxyz say a body is.
+            name = str(body.get("name", ""))
+            if not name:
+                raise LiveError("unpark needs the name of what to bring back")
+            at = body.get("at")
+            if not isinstance(at, list) or len(at) != 3:
+                raise LiveError("unpark needs where to put it: three numbers")
+            q = body.get("q", [1.0, 0.0, 0.0, 0.0])
+            if not isinstance(q, list) or len(q) != 4:
+                raise LiveError("unpark's facing is four numbers, w x y z")
+            spot = [float(v) for v in at]
+            facing = [float(v) for v in q]
+            size = math.sqrt(sum(v * v for v in facing))
+            if not all(math.isfinite(v) for v in spot + facing) or not size > 0.0:
+                raise LiveError("unpark was given a place or a facing that is not a number")
+            return session.send(op="unpark", name=name, at=spot, q=[v / size for v in facing])
         if op == "move":
             to = body.get("to")
             if not isinstance(to, list) or len(to) != 3:
