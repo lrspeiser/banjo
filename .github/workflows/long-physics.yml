@@ -38,12 +38,15 @@ jobs:
       - uses: actions/checkout@v5
 
       # HEADLESS brings in banjo_platform, which these suites are built on; it
-      # needs no display, unlike the lab.
+      # needs no display, unlike the lab. The lab is ON by default, and its
+      # raylib looks for X11, which this runner does not have: left on, every
+      # job stopped at Configure ("Could NOT find X11"), so nothing here ran.
       - name: Configure
         run: >-
           cmake -S . -B build/ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBANJO_BUILD_HEADLESS=ON
+          -DBANJO_BUILD_LAB=OFF
           -DBANJO_BUILD_TESTS=ON
           -DBANJO_LONG_TEST_TIMEOUT_S=19800
 
@@ -64,6 +67,7 @@ jobs:
           cmake -S . -B build/ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBANJO_BUILD_HEADLESS=ON
+          -DBANJO_BUILD_LAB=OFF
 
       - name: Build
         run: cmake --build build/ci --parallel 2 --target banjo_playground_record banjo_platform_cli
