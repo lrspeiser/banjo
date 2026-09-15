@@ -1343,6 +1343,9 @@ class Handler(BaseHTTPRequestHandler):
                 # turn is in room.chat: both are kept, so a restart has them.
                 room_store.keep(app,room)
                 remember_chat(app,message,trace,answer,None,_now()-began,person)
+                # What the chat worked on the room after changing it, held back
+                # until the change is in it (world_chat.HELD_BACK).
+                held=answer.pop("deferred",None) or []
                 if answer.pop("changed",False):
                     if app.room.bodies():
                         # Objects cannot be added to or taken out of a running
@@ -1367,6 +1370,13 @@ class Handler(BaseHTTPRequestHandler):
                         # gate that does not swing reads as broken physics.
                         if opened.get("joint_problems"):
                             answer["joint_problems"]=opened["joint_problems"]
+                        # Now it is: done on the room with the change in it.
+                        then=[]
+                        for call in held:
+                            try: done=_chat_live(app,call["name"],call["args"],body.get("person"))
+                            except Exception as failure: done={"error":str(failure)[:300]}
+                            then.append({"name":call["name"],**done})
+                        if then: answer["then"]=then
                     else:
                         # Nothing left to open, and a world needs at least one
                         # body. The running one stays up rather than being

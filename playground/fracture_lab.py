@@ -399,7 +399,7 @@ LIMITS = {
 # `machines` too (docs/machine-world.md), which is not in DEFAULT because a room
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
-FIELDS = set(DEFAULT) | {"request_id", "machines"}
+FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
@@ -842,6 +842,42 @@ ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "
                       "degrees", "stop", "speed_m_s", "power_w", "seconds", "command", "brake"}
 ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
                        "from", "offset_m"}
+
+
+def normalise_constructions(constructions: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check the structures a room's chat declared (docs/building-from-language.md,
+    mcp/constructions.py): each its name, kind, how the request was read, where
+    its line starts and which way it runs, and what it must do, in numbers --
+    with those of its parts still in the room. Only their shape is checked here:
+    what they must do is measured when the structure is next checked."""
+    import math
+    if not isinstance(constructions, list):
+        raise ValueError("constructions must be a list")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    for i, c in enumerate(constructions):
+        if not isinstance(c, dict):
+            raise ValueError(f"construction {i} is not an object")
+        name = " ".join(str(c.get("name") or "").split())[:60]
+        if not name or any(o["name"] == name for o in out):
+            raise ValueError(f"construction {i} needs a name of its own")
+        start, facing, requirements = c.get("start_m"), c.get("facing"), c.get("requirements")
+        numbers = lambda v, n: (isinstance(v, list) and len(v) == n  # noqa: E731
+                                and all(isinstance(x, (int, float)) and math.isfinite(x) for x in v))
+        if not numbers(start, 2) or not numbers(facing, 3):
+            raise ValueError(f"construction {name!r} needs start_m [x, z] and facing [x, 0, z]")
+        if (not isinstance(requirements, dict)
+                or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in requirements.values())):
+            raise ValueError(f"construction {name!r}: what it must do is numbers")
+        out.append({"name": name, "kind": str(c.get("kind") or "structure"),
+                    "scale": "model" if c.get("scale") == "model" else "full",
+                    "reading": " ".join(str(c.get("reading") or "").split())[:240],
+                    "start_m": [float(v) for v in start], "facing": [float(v) for v in facing],
+                    "requirements": {str(k): float(v) for k, v in requirements.items()},
+                    "parts": [str(p) for p in c.get("parts") or [] if str(p) in named]})
+    if len(out) > 32:
+        raise ValueError("a room may hold at most 32 declared constructions")
+    return out
 
 
 def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1744,6 +1780,13 @@ def validate(spec: Any) -> dict[str, Any]:
                                                     result["joints"])
         else:
             result.pop("machines", None)
+        # The structures its chat declared, each with what it must do and its
+        # parts (docs/building-from-language.md). Like the machines, only in a
+        # room that has one: a room without keeps the document it had.
+        if result.get("constructions"):
+            result["constructions"] = normalise_constructions(result["constructions"], result["bodies"])
+        else:
+            result.pop("constructions", None)
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))

@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
 import progression  # noqa: E402
+import constructions  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER = {"name": "banjo", "version": "1.0.0"}
@@ -868,6 +869,14 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         "note": "A world is opened from a scene, so adding an object opens it again "
                 "from the start: anything in flight is back where it was authored, "
                 "and every joint is hung again."}
+    # A side over 4 m is made 4 m (_scene), and said: a model asked for a 7 m
+    # board got a 4 m one and nothing told it, so the ramp it described was
+    # not the one in the room.
+    asked = item.get("size_m")
+    if isinstance(asked, (list, tuple)) and any(isinstance(v, (int, float)) and v > 4.0 + 1e-9 for v in asked):
+        answer["size_cut"] = {"asked_m": [float(v) for v in asked], "made_m": list(added["dimensions_m"]),
+                              "note": "no object is more than 4 m along a side, so it was made 4 m: build a "
+                                      "longer thing from several laid end to end, or say it is shorter"}
     if rests:
         answer["set_down"] = rests
     if seated:
@@ -2729,6 +2738,93 @@ def tool_operate(args: dict[str, Any]) -> dict[str, Any]:
     if hoist:
         answer["travel_m"] = [control["top_out_m"], control["bottom_out_m"]]
     return answer
+
+
+# ---------------------------------------------------------------------------
+# Structures, declared before they are built (constructions.py,
+# docs/building-from-language.md)
+# ---------------------------------------------------------------------------
+
+def _constructions(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return entry.setdefault("constructions", {})
+
+
+def _ground_at(entry: dict[str, Any]) -> Any:
+    """The height of the ground at a point: the terrain's, or the floor's."""
+    if _has_terrain(entry):
+        world = entry["world"]
+
+        def at(x: float, z: float) -> float:
+            here = world.survey(x, z)
+            return float(here.get("ground_m", 0.0)) if here.get("on_the_ground") else 0.0
+        return at
+    return lambda x, z: 0.0
+
+
+def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
+    """Declare a structure before building it: its kind, how the request was
+    read, where its line runs, and what it must do."""
+    entry = _world(args.get("world_id"))
+    _live(entry)
+    name = " ".join(str(args.get("name") or "").split())[:60]
+    if not name:
+        raise Refused("name is what to call the structure, like 'ski jump': it is checked by that name")
+    names = {b["name"] for b in entry["scene"]["bodies"]}
+    existing = _constructions(entry).get(name)
+    try:
+        record = constructions.plan(existing, args, names)
+    except ValueError as why:
+        raise Refused(str(why)) from None
+    # What was added since the last declaration is that one's; from now on,
+    # what is added is this one's -- so a turn that builds two ramps gives
+    # each its own parts.
+    for other in _constructions(entry).values():
+        if other.get("before") is not None:
+            other["parts"] = constructions.parts_now(other, names)
+            del other["before"]
+    if existing is not None:
+        record["parts"] = list(existing["parts"])
+    record["name"] = name
+    _constructions(entry)[name] = record
+    # Where a part along its line goes and how it is turned, worked out here
+    # rather than by the caller: rotation_deg turns z first, then y, so a board
+    # [0, yaw, t] lies along the line tilted t degrees, rising along it for t > 0.
+    (x0, z0), (ux, uz) = record["start_m"], (record["facing"][0], record["facing"][2])
+    yaw = round(math.degrees(math.atan2(-uz, ux)), 2) + 0.0
+    return {"construction": name, "kind": record["kind"], "reading": record["reading"],
+            "line": {"start_m": record["start_m"], "facing": record["facing"],
+                     "a_point_s_m_along_it": f"[{x0:g} + s * {ux:g}, {z0:g} + s * {uz:g}]",
+                     "yaw_deg": yaw,
+                     "a_board_along_it": f"rotation_deg [0, {yaw:g}, t]: tilted t degrees, rising along "
+                                         f"the line for t above 0 and falling for t below"},
+            "must": constructions.said(record),
+            "note": "Build it now, as anchored parts along its line from start_m, the way it faces -- a "
+                    "ramp as boxes laid end to end along its profile, each tilted to follow it and meeting "
+                    "the next, with posts from the ground up to what is raised. Everything you add from now "
+                    "is a part of it. check_construction measures it against what it must do, and the room "
+                    "measures it again when you finish: it is not done until every requirement passes, and "
+                    "if one cannot be met, say which and why rather than calling it done."}
+
+
+def tool_check_construction(args: dict[str, Any]) -> dict[str, Any]:
+    """Measure a declared structure against what it must do."""
+    entry = _world(args.get("world_id"))
+    world = _live(entry)
+    name = " ".join(str(args.get("name") or "").split())[:60]
+    record = _constructions(entry).get(name)
+    if record is None:
+        have = sorted(_constructions(entry))
+        raise Refused(f"there is no construction called {name!r}"
+                      + (f": this world has {', '.join(have)}" if have else
+                         ": declare one with plan_construction first"))
+    extra = args.get("parts")
+    if isinstance(extra, list):
+        record["parts"] = sorted(set(record["parts"]) | {str(p) for p in extra})
+    result = constructions.check(record, world, _ground_at(entry), {b["name"] for b in entry["scene"]["bodies"]})
+    result["construction"] = name
+    result["reading"] = record["reading"]
+    record["last_check"] = result
+    return result
 
 
 def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
@@ -6952,6 +7048,58 @@ TOOLS = [
                                                      "it turns it on."},
          "setting": {"type": "number",
                      "description": "0 to 1. Left out, it stays as it was: 1 when made."}}}},
+    {"name": "plan_construction",
+     "description": "Declare a STRUCTURE before you build it -- a ski jump, a downhill ramp, an "
+                    "access ramp or another structure -- so the room holds it to what the person "
+                    "asked for. Give its kind; a reading, one sentence saying how you read the "
+                    "request, which the person sees; where its line starts on the ground (start_m "
+                    "[x, z], a ramp's raised end) and the level way it runs (facing); and its size "
+                    "(length_m, width_m, and height_m: a ramp's start height or an access ramp's "
+                    "rise). The kind brings what it must do, in numbers the room measures. A "
+                    "ski_jump is at least 6 m long, its start at least 2 m up and at least a fifth "
+                    "of its length; it comes down from its start, is one surface with no gap or "
+                    "step, rises at least 5 degrees over its last metre to take off, stands every "
+                    "part on the ground or on another part, and has 3 m clear beyond its end. You "
+                    "may ask for more than a kind's least, never less, and declared again it can be "
+                    "raised, never lowered. scale model is only for one the person asked to be "
+                    "small. Everything you add after declaring it, in the same turn, is a part of it, "
+                    "until you declare another. "
+                    "The answer says where a point s m along its line is and how a board along it "
+                    "is turned.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "name", "kind", "reading", "facing"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string", "description": "What to call it, like 'ski jump'."},
+         "kind": {"type": "string", "enum": list(constructions.KINDS)},
+         "reading": {"type": "string",
+                     "description": "One sentence saying how you read the request, like 'A downhill ski "
+                                    "jump with a raised start and an upward takeoff'."},
+         "start_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                     "description": "Where its line starts on the ground, [x, z]: a ramp's raised end. "
+                                    "Give this or middle_m."},
+         "middle_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                      "description": "Or where the middle of its line is on the ground, [x, z]: its start "
+                                     "is then worked out from its length and facing."},
+         "facing": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+                    "description": "The level way its line runs from start_m, like the person's facing "
+                                   "[x, 0, z]."},
+         "length_m": {"type": "number", "description": "Along its line, in metres."},
+         "width_m": {"type": "number", "description": "Across it, in metres."},
+         "height_m": {"type": "number",
+                      "description": "A ramp's start above the ground, or an access ramp's rise."},
+         "scale": {"type": "string", "enum": ["full", "model"],
+                   "description": "full, a person's size; model only when they asked for a small one."}}}},
+    {"name": "check_construction",
+     "description": "Measure a declared structure (plan_construction) against what it must do, "
+                    "from the world's own geometry: rays cast straight down onto it along its line, "
+                    "the ground under it and what stands around it. The answer gives each "
+                    "requirement with what was required and what was measured, and whether all "
+                    "passed. Repair what fails; it is not done until every one passes.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
+         "world_id": {"type": "string"}, "name": {"type": "string"},
+         "parts": {"type": "array", "items": {"type": "string"},
+                   "description": "Things built before it was declared that are part of it."}}}},
     {"name": "use_action",
      "description": "Press one of a thing's actions (offer_actions), by its label or its number "
                     "from 1: what the person's E does in the playground. There the room itself "
@@ -7752,6 +7900,8 @@ HANDLERS = {
     "drive": tool_drive,
     "control": tool_control,
     "operate": tool_operate,
+    "plan_construction": tool_plan_construction,
+    "check_construction": tool_check_construction,
     "interaction": tool_interaction,
     "duplicate": tool_duplicate,
     "build_recipe": tool_build_recipe,

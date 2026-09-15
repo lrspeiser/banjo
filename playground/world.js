@@ -5046,6 +5046,40 @@ function say(who, text, did) {
   return turn;
 }
 
+// What a structure the chat declared was measured to do, under its answer
+// (docs/building-from-language.md): each requirement with what it needs and
+// what the room measured. Whether it is finished is the room's to say, not the
+// chat's -- a board named "ramp" is not a ski jump.
+function sayChecked(turn, checked) {
+  for (const c of checked) {
+    const box = document.createElement("div");
+    box.className = `checked ${c.passed ? "passed" : "failed"}`;
+    const head = document.createElement("p");
+    head.className = "checked-head";
+    head.textContent = `${c.construction}: ${c.passed ? "does what it was declared to do" : "not finished"}`;
+    const list = document.createElement("ul");
+    for (const r of c.results || []) {
+      const row = document.createElement("li");
+      row.className = r.passed ? "ok" : "no";
+      row.textContent = `${r.passed ? "✓" : "✗"} ${r.requirement}: ${r.measured} (needs ${r.required})`;
+      list.append(row);
+    }
+    box.append(head, list);
+    turn.append(box);
+  }
+  $("chat").scrollTop = $("chat").scrollHeight;
+}
+
+// What the chat worked on the room once its change was in it: held back until
+// then, because before it the running room did not have the change.
+function sayThen(turn, then) {
+  const line = document.createElement("p");
+  line.className = "did";
+  line.textContent = "then, on the room with the change in it: " + then.map((t) =>
+    t.error ? `${t.name} could not be done (${t.error})` : `${t.name} done`).join(", ");
+  turn.append(line);
+}
+
 // The room is working on it, and looks like it.
 //
 // The model takes anywhere from a couple of seconds to half a minute -- it
@@ -5139,7 +5173,9 @@ $("ask").addEventListener("submit", async (e) => {
       person: whereIAm(),
     });
     waiting.done();
-    say("world", answer.reply || "(nothing to say)", answer.did);
+    const turn = say("world", answer.reply || "(nothing to say)", answer.did);
+    if (answer.then && answer.then.length) sayThen(turn, answer.then);
+    if (answer.checked && answer.checked.length) sayChecked(turn, answer.checked);
     if (answer.reopened) adoptRebuilt(answer);
   } catch (error) {
     waiting.done();

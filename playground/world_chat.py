@@ -33,6 +33,7 @@ from urllib import error, request
 
 import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
+import constructions  # noqa: E402  (mcp/, the same)
 
 # Rounds, not calls. A round can carry several calls, and a gate on a hinge with
 # a wheel to open it -- posts, leaf, wheel, handle, the joints, and a try of it
@@ -57,6 +58,30 @@ NOTHING_DONE = ("A note from the room, not from the person: nothing in the room 
                 "to be made or changed, do it now with the tools; if not, answer as you were "
                 "going to, without mentioning this note.")
 CLAIMS = re.compile(r"\b(built|made|added|placed|put|set up|dug|heaped|hung|laid)\b", re.IGNORECASE)
+# Said to the chat when a structure it declared or changed this turn
+# (plan_construction) is measured as it answers and does not yet do what it was
+# declared to do -- at most MAX_REPAIRS times a turn. After that the answer
+# starts "Not finished:" with what failed. The owner's review of 2026-09-15:
+# the engine accepting a thing is not the thing doing what was asked.
+NOT_FINISHED = ("A note from the room, not from the person: what you declared was measured, and it does "
+                "not yet do what it was declared to do -- {failed}. The measurements are below. Repair "
+                "what fails with the tools: move, add or take out its parts. Never declare it smaller, "
+                "which the room refuses. If a requirement cannot be met here, say which and why rather "
+                "than calling it done. Then answer the person as you were going to, without mentioning "
+                "this note.")
+MAX_REPAIRS = 2
+# Said to the chat of a call that works the running room (room_world.LIVE)
+# made after it changed the room this turn: the change goes into the running
+# room as the turn ends, so the call is made then, on the room with the change
+# in it. Measured: asked to wind a hoist up onto a block it had just added, the
+# chat pressed "Wind it up" on the running room, where the block was not yet,
+# and described the crate stopping on it from its own copy.
+HELD_BACK = ("held back until you answer: your change this turn goes into the running room as the "
+             "turn ends, and this is done to it then, with the change in it. What it does there is "
+             "not measured yet, so do not describe it as done -- say it will be.")
+# Where a structure goes when the person did not say: its middle this far in
+# front of them, its line across their view, so they see it from the side.
+STRUCTURE_OUT_M = 6.0
 
 def _things_on_joints() -> str:
     """THINGS BUILT BY RECIPE, as the guide says it: the MCP's own recipes,
@@ -81,6 +106,76 @@ def _things_on_joints() -> str:
     return "\n".join(lines)
 
 
+# A ski jump built along its line from its start, as the guide gives it: each
+# part's size, how far along the line its middle is, its height above the
+# ground at the start, and its tilt, on the room's 40 mm grid -- every side a
+# whole number of cells, since the room rounds sizes to cells and a post a hair
+# too tall would overlap the deck, and each post as tall as fits under the
+# underside of the board over it. Its top runs from 2.4 m up down to 0.6 m 5 m
+# along, then turns up at 10 degrees for 1.5 m. No object is more than 4 m
+# along a side, so the run down is two boards, end to end and 1 cm apart.
+# tests/chat_history_tests.py builds it along two lines and measures it: it
+# passes every check of a ski_jump.
+SKI_JUMP_EXAMPLE = (
+    {"name": "in-run 1", "size_m": [2.64, 0.04, 0.6], "s_m": 1.2352, "y_m": 1.934, "tilt_deg": -19.8},
+    {"name": "in-run 2", "size_m": [2.68, 0.04, 0.6], "s_m": 3.7473, "y_m": 1.0296, "tilt_deg": -19.8},
+    {"name": "takeoff", "size_m": [1.52, 0.04, 0.6], "s_m": 5.7768, "y_m": 0.7068, "tilt_deg": 10.0},
+    {"name": "post 1", "size_m": [0.08, 2.24, 0.08], "s_m": 0.2, "y_m": 1.12, "tilt_deg": 0.0},
+    {"name": "post 2", "size_m": [0.08, 1.44, 0.08], "s_m": 2.4339, "y_m": 0.72, "tilt_deg": 0.0},
+    {"name": "post 3", "size_m": [0.08, 0.64, 0.08], "s_m": 4.7149, "y_m": 0.32, "tilt_deg": 0.0},
+    {"name": "post 4", "size_m": [0.08, 0.76, 0.08], "s_m": 6.3718, "y_m": 0.38, "tilt_deg": 0.0})
+SKI_JUMP_DECLARED = {"kind": "ski_jump", "length_m": 6.5, "width_m": 0.6, "height_m": 2.4}
+
+
+def _structures() -> str:
+    """STRUCTURES, as the guide says it, with the worked ski jump."""
+    rows = []
+    for part in SKI_JUMP_EXAMPLE:
+        size = ", ".join(f"{v:g}" for v in part["size_m"])
+        rows.append(f"  {part['name']:<8} [{size}] at s {part['s_m']:g}, y {part['y_m']:g}"
+                    + (f", t {part['tilt_deg']:g}" if part["tilt_deg"] else ""))
+    return "\n".join([
+        "STRUCTURES. A ramp to ride or jump, a bridge, a stair, a tower -- something",
+        "people use where it stands, not a thing to take -- is a STRUCTURE, and is built",
+        "to do what it is for. Before building one, declare it with plan_construction:",
+        "its kind; reading, one sentence on how you read the request, which the person",
+        "sees; its line on the ground (middle_m or start_m, and facing); and its size.",
+        "Read what it is FOR. \"A ski ramp\", \"a ski jump\" or \"a jump\" is a ski_jump: a",
+        "raised start, a run down, and a takeoff that turns up at its end. \"A ramp to",
+        "sled down\" or \"a slide\" is a downhill_ramp; \"a ramp up to the door\" is an",
+        "access_ramp; anything else is a structure. Build it the size its use needs, not",
+        "the size of a hand: a ski jump is at least 6 m long with its start at least 2 m",
+        "up. It goes on clear ground in front of the person, its line across their view",
+        "so they see it from the side: the_person's structure_middle_m is its middle and",
+        "across_the_view the way its line runs. Then build it of ANCHORED parts along",
+        "that line, and nothing else until it is done:",
+        "- its surface as boards laid end to end along its profile, each tilted to",
+        "  follow it and meeting the next, none more than 4 m long (no object is):",
+        "  plan_construction's answer says where a point s m along its line is, and",
+        "  the rotation_deg of a board along it;",
+        "- posts from the ground up to the underside of what is raised: under its",
+        "  raised start, and at most 2.5 m apart;",
+        "- nothing in its way beyond its end.",
+        "In the valley the ground is not level: survey under its start and under each",
+        "post. Its heights are above the ground at its start, and each post runs from",
+        "the ground under it up to the underside of what it holds.",
+        "It is measured when you answer: rays cast down along its line find its surface,",
+        "and every requirement is checked -- how long, wide and high it is, that it comes",
+        "down, that it turns up at its end, that every part stands on the ground or on",
+        "another part. check_construction measures it whenever you ask. It is not done",
+        "until every requirement passes. If one fails, repair that: never declare it",
+        "smaller, which the room refuses. If one cannot be met here -- the cells left",
+        "will not hold it -- say which requirement and why.",
+        "A ski jump that passed every check, its parts anchored oak (s is how far along",
+        "its line from its start a part's middle is; y is its middle's height above the",
+        "ground at the start; t is a board's tilt, for the rotation_deg the answer",
+        "gives):",
+        *rows,
+        f"declared: plan_construction kind {SKI_JUMP_DECLARED['kind']}, length_m "
+        f"{SKI_JUMP_DECLARED['length_m']:g}, width_m {SKI_JUMP_DECLARED['width_m']:g}, height_m "
+        f"{SKI_JUMP_DECLARED['height_m']:g}. At 0.04 m cells it costs about 3,100 cells."])
+
+
 GUIDE = """You are the room. Someone is standing in a physics simulation, talking
 to you, and you build what they ask for out of real matter with the tools you
 have. The engine is real: every object is cells of a material that can bend,
@@ -102,7 +197,8 @@ have in their hand (holding), and what they carry (carrying: each material and
 its kg -- the soil a pick broke out, what they swept up). "This", "it" and
 "this one" mean what they
 are holding -- or, holding nothing, what they are looking at: call the tools
-with that name. EVERYTHING YOU MAKE goes on the ground close in front of them,
+with that name. A THING TO TAKE -- anything a person picks up, carries or uses
+in the hand -- goes on the ground close in front of them,
 where they can see it and take it, unless they said where: put_new_things_m is
 a list of clear places on the ground there, [x, z], the best first. The first
 thing you make goes at the first of them, a second thing at the second, beside
@@ -126,7 +222,9 @@ facing, by half its depth less half a metre, so it does not touch them. When
 put_new_things_m is empty the ground near them is taken: say so and ask where.
 Otherwise never ask where, or whether, before building what they asked for --
 unless they asked you to ask: build it at once at the first of
-put_new_things_m, and say where it went.
+put_new_things_m, and say where it went. A STRUCTURE -- a ramp to ride, a
+bridge, a stair, a tower -- is not a thing to take: see STRUCTURES for where it
+goes and how big it is.
 "There", "over there" and "that" mean what they are looking at. If the point in front of them is water or a steep
 bank, use one_metre_to_the_left_m or one_metre_to_the_right_m instead, whichever
 survey says is dry and level. Without the_person you do not know where they
@@ -290,8 +388,8 @@ takes hold; E puts down; / talks to you.
 
 {THINGS_ON_JOINTS}
 
-AT AN ANGLE. A ramp, a leaning plank -- anything not square to the room -- is
-one object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
+AT AN ANGLE. A leaning plank, a chute, one board of a ramp -- anything not square
+to the room -- is an object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
 its x side, y turns it about the vertical and z tilts its x side up. Together
 they turn it about its own x axis first, then its own y as that has turned, then
 its own z; the same as z, then y, then x about the room's fixed axes. So give a
@@ -306,7 +404,10 @@ Check that is what you meant before you say what you made, and if it is not,
 take it out and add it again. In objects and objects_now a box that is not
 square to the room has the rotation_deg it stands at now; one without is square.
 A tilted thing with nothing holding it slides or falls flat: anchor a ramp, or
-lean a plank on something that holds it.
+lean a plank on something that holds it. A slope a ball rolls down is one
+anchored board tilted a few degrees; a ramp to ride or jump is a STRUCTURE.
+
+{STRUCTURES}
 
 MATERIALS. There are eight: iron, aluminum, glass, ceramic, oak, rubber, ice
 and concrete (list_materials says what each does). Asked for anything else --
@@ -885,7 +986,7 @@ world again from what you authored, so try it after your last change.
 ANSWER in two or three plain sentences: what you built, from what, and what you
 measured when you tried it. Name things by what they are made of. Never say
 something works, broke, bent or bounced unless a tool told you it did."""
-GUIDE = GUIDE.replace("{THINGS_ON_JOINTS}", _things_on_joints())
+GUIDE = GUIDE.replace("{THINGS_ON_JOINTS}", _things_on_joints()).replace("{STRUCTURES}", _structures())
 
 
 def ran_out(result: dict[str, Any]) -> bool:
@@ -978,10 +1079,56 @@ def _now(live_state: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _structure_place(person: dict[str, Any]) -> tuple[list[float], list[float]]:
+    """Where a structure goes when they did not say: its middle STRUCTURE_OUT_M
+    in front of them, and its line across their view -- along whichever of the
+    room's x and z is nearest to that, so its boards turn only by their tilt
+    and a quarter turn."""
+    sx, _, sz = person["standing_m"]
+    fx, _, fz = person["facing"]
+    across = (-fz, fx)     # their right, as one_metre_to_the_right_m has it
+    if abs(across[0]) >= abs(across[1]):
+        way = [1.0 if across[0] > 0 else -1.0, 0.0, 0.0]
+    else:
+        way = [0.0, 0.0, 1.0 if across[1] > 0 else -1.0]
+    return [round(sx + fx * STRUCTURE_OUT_M, 2), round(sz + fz * STRUCTURE_OUT_M, 2)], way
+
+
+def _constructions_due(entry: dict[str, Any], declared_now: set[str], changed_names: set[str]) -> list[str]:
+    """The structures to measure as a turn ends: those it declared, and those
+    it added a part to, moved, turned or took one out of."""
+    names_now = {b["name"] for b in entry["scene"]["bodies"]}
+    return [name for name, record in (entry.get("constructions") or {}).items()
+            if name in declared_now
+            or (set(record.get("parts") or ()) | set(constructions.parts_now(record, names_now))) & changed_names]
+
+
+def _measured(world_id: str, entry: dict[str, Any], declared_now: set[str],
+              changed_names: set[str]) -> list[dict[str, Any]]:
+    """Each structure this turn declared or changed, measured as it stands."""
+    out = []
+    for name in _constructions_due(entry, declared_now, changed_names):
+        checked = room_world.call(world_id, "check_construction", {"name": name})
+        if "error" not in checked:
+            out.append(checked)
+    return out
+
+
+def _loose(entry: dict[str, Any], made_names: list[str]) -> list[str]:
+    """Of what this turn made, what a person could take: not anchored, and not
+    a part of a structure."""
+    bodies = {b["name"]: b for b in entry["scene"]["bodies"]}
+    parts = {p for record in (entry.get("constructions") or {}).values()
+             for p in constructions.parts_now(record, set(bodies))}
+    return [n for n in made_names if n in bodies and not bodies[n].get("anchored") and n not in parts]
+
+
 def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     """One line for the person, under the answer, per change that was made."""
     if name == "use_action":
         return f"pressed {answer.get('action') or args.get('action')} on {args.get('name')}"
+    if name == "plan_construction":
+        return f"declared {answer.get('construction')}: {answer.get('reading')}"
     if name == "add_object":
         return f"added {answer.get('added')}"
     if name == "remove_object":
@@ -1303,6 +1450,13 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         if entry.get("actions"):
             opening["actions_offered"] = {name: [action["label"] for action in actions]
                                           for name, actions in entry["actions"].items()}
+        # And the structures declared in it, with what each must do, so a later
+        # turn holds one to it rather than declaring it again.
+        if entry.get("constructions"):
+            opening["structures_declared"] = [
+                {"name": name, "kind": record["kind"], "reading": record["reading"],
+                 "must": constructions.said(record), "parts": record.get("parts") or []}
+                for name, record in entry["constructions"].items()]
         # Where the person is: what "near me" and "over there" refer to. A
         # model that cannot see the room has no other way to know.
         person = where_the_person_is(person)
@@ -1310,6 +1464,9 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             # Where something made for them goes when they do not say where.
             person["put_new_things_m"] = clear_spots(person, live_state.get("bodies", []),
                                                      grid_m=float(entry["cell_m"]))
+            # And where a structure goes: not in their hand's reach, but out in
+            # front of them with its line across their view.
+            person["structure_middle_m"], person["across_the_view"] = _structure_place(person)
             opening["the_person"] = person
         # What they know, as it stands, so that what the chat says of their
         # notebook is what it holds. Left to ask read_knowledge, the model once
@@ -1331,10 +1488,19 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         conversation: list[dict[str, Any]] = _earlier_turns(history) + [
             {"role": "user", "content": json.dumps(opening, allow_nan=False)}]
         did: list[str] = []
-        changed = offered = reminded = made = worked = recorded = False
+        changed = offered = reminded = worked = recorded = False
         usage = {"input_tokens": 0, "output_tokens": 0}
         reply = ""
         rounds = 0
+        # What this turn declared (plan_construction), made and changed, by
+        # name: the structures it touched are measured before it is called
+        # done. And the calls that work the running room held back until a
+        # change this turn is in it (HELD_BACK).
+        declared_now: set[str] = set()
+        made_names: list[str] = []
+        changed_names: set[str] = set()
+        repairs = 0
+        deferred: list[dict[str, Any]] = []
 
         asked_again = False
         for turn in range(MAX_ROUNDS):
@@ -1384,13 +1550,30 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
 
             if not calls:
                 reply = "".join(said).strip() or "Done."
+                # A structure it declared or changed this turn is measured
+                # before the turn is done, and what fails goes back to it, at
+                # most MAX_REPAIRS times a turn (NOT_FINISHED).
+                failing = [c for c in _measured(world_id, entry, declared_now, changed_names)
+                           if not c.get("passed")]
+                if failing and repairs < MAX_REPAIRS:
+                    repairs += 1
+                    round_record["repair_asked"] = [c["construction"] for c in failing]
+                    conversation.extend(o for o in outputs
+                                        if o.get("type") in ("reasoning", "message"))
+                    conversation.append({"role": "user", "content": NOT_FINISHED.format(
+                        failed="; ".join(constructions.summary(c) for c in failing))
+                        + "\n" + json.dumps({"measured": failing}, allow_nan=False)})
+                    continue
                 # Made something and gave it nothing to do: asked once more.
                 # Asked for a latched gate, the chat spent 21 calls on where its
                 # posts went and answered without offer_actions, so the gate had
                 # nothing on its menu but the page's own turns. Only for things
                 # made: asked after digging a channel, it told the person "You're
                 # right" and offered to put a marker post up to hang actions on.
-                if made and not offered and not reminded:
+                # And only for a thing to take: asked for a ski ramp, the chat
+                # was asked this and gave its anchored board a "Use the ramp"
+                # action, so a structure's parts and scenery are not asked about.
+                if _loose(entry, made_names) and not offered and not reminded:
                     reminded = True
                     conversation.extend(o for o in outputs
                                         if o.get("type") in ("reasoning", "message"))
@@ -1422,7 +1605,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                     args = {}
                 if not isinstance(args, dict):
                     args = {}
-                if name == "use_action" and live is not None:
+                # After a change this turn the running room is not yet the room
+                # the model's copy is: what works it is held back until the
+                # change is in it (HELD_BACK), and done then by the server.
+                held = changed and live is not None and name in room_world.LIVE
+                if name == "use_action" and held:
+                    deferred.append({"name": name, "args": dict(args)})
+                    answer = {"used": args.get("name"), "action": args.get("action"), "held_back": HELD_BACK}
+                elif name == "use_action" and live is not None:
                     # A thing's action, pressed on the room as it stands -- the
                     # page's own action runner, as the person's E runs it. The
                     # model's copy is the room as it was made, which is not
@@ -1430,20 +1620,26 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                     answer = live(name, args)
                 else:
                     answer = room_world.call(world_id, name, args)
+                    told = None
                     if name == "drive" and live is not None and "error" not in answer:
                         # Told in the model's copy, which writes it into the
                         # room, and told to the running room's motor.
-                        answer = {**answer, **live(name, {**args, "command": answer["command"],
-                                                          "brake": answer["brake"]})}
+                        told = {**args, "command": answer["command"], "brake": answer["brake"]}
                     if name == "operate" and live is not None and "error" not in answer:
                         # The same for a machine's controller: what the
                         # model's copy made of the words -- power, a
                         # direction, a setting -- told to the running room's.
-                        answer = {**answer, **live(name, {**args, **answer["told"]})}
+                        told = {**args, **answer["told"]}
+                    if told is not None and held:
+                        deferred.append({"name": name, "args": told})
+                        answer = {**answer, "held_back": HELD_BACK}
+                    elif told is not None:
+                        answer = {**answer, **live(name, told)}
                 if name in room_world.LIVE and "error" not in answer:
                     worked = True
                     recorded = recorded or name in ("drive", "operate")
-                    did.append(_did(name, args, answer))
+                    did.append(_did(name, args, answer)
+                               + (" once the change was in" if answer.get("held_back") else ""))
                 if name in room_world.AUTHORING and "error" not in answer:
                     changed = True
                     did.append(_did(name, args, answer))
@@ -1452,8 +1648,17 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 # asked to offer actions no step can drive.
                 if name in ("offer_actions", "interaction") and "error" not in answer:
                     offered = True
-                if name in ("add_object", "duplicate") and "error" not in answer:
-                    made = True
+                if "error" not in answer:
+                    # What it declared, made and changed, by name.
+                    if name == "plan_construction":
+                        declared_now.add(str(answer.get("construction")))
+                    if name == "add_object" and answer.get("added"):
+                        made_names.append(str(answer["added"]))
+                    if name == "duplicate":
+                        made_names.extend(str(n) for n in answer.get("copied") or [])
+                    changed_names.update(str(answer[key]) for key in ("added", "removed", "moved", "turned")
+                                         if isinstance(answer.get(key), str))
+                    changed_names.update(str(n) for n in answer.get("copied") or [])
                 round_record["calls"].append({"name": name, "arguments": args,
                                               "answer": answer})
                 conversation.append({"type": "function_call_output",
@@ -1464,6 +1669,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                      + ("What I had built by then is in the room." if changed
                         else "Nothing in the room was changed."))
 
+        # What it declared or changed, as it stands now. What still fails is
+        # said first, whatever the answer says.
+        checked = _measured(world_id, entry, declared_now, changed_names)
+        still_failing = [c for c in checked if not c.get("passed")]
+        if still_failing:
+            reply = ("Not finished: " + "; ".join(constructions.summary(c) for c in still_failing) + ".\n\n"
+                     + reply).strip()
+
         if changed or recorded:
             # What a motor was told is written into the room either way, so it
             # goes on doing it if the room is opened again; only a change to
@@ -1471,8 +1684,11 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             room.spec = room_world.export_spec(entry)
         # And where the person was, as the model was told it -- with the
         # places it was given for new things -- for the turn's log.
+        # And what was measured, for the page to show under the answer, and
+        # the calls held back for the server to make once the change is in.
         return {"reply": reply, "did": did, "changed": changed, "worked": worked,
                 "wall_s": round(time.perf_counter() - started, 2), "rounds": rounds,
-                "usage": usage, "the_person": opening.get("the_person")}
+                "usage": usage, "the_person": opening.get("the_person"),
+                "checked": checked, "deferred": deferred}
     finally:
         room_world.close_room(world_id)

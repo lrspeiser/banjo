@@ -11,6 +11,7 @@ was sent.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import unittest
@@ -386,6 +387,318 @@ class WorkingTheRoomAsItStands(unittest.TestCase):
         # Written into the room, as a motor's command is.
         control = room.spec["machines"]["controls"][0]
         self.assertEqual((control["name"], control["power"], control["direction"]), ("hoist", True, 1))
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_what_works_the_running_room_after_a_change_waits_for_the_change(self):
+        """Asked to wind a hoist up onto a block it had just added, the chat
+        pressed "Wind it up" on the running room, where the block was not yet --
+        the change goes in as the turn ends -- and described the crate stopping
+        on it from its own copy. A call that works the running room after a
+        change in the same turn is held back, for the server to make once the
+        change is in."""
+        rounds = iter([
+            [_function_call("c1", "add_object", {"object": {
+                "name": "stop block", "shape": "box", "material": "oak", "size_m": [0.3, 0.3, 0.3],
+                "position_m": [6.0, 6.0], "anchored": True}})],
+            [_function_call("c2", "use_action", {"name": "hoist: drum", "action": "Wind it up"})],
+            [_function_call("c3", "drive", {"part": "hoist: drum", "command": 0.5})],
+            _message("It will wind up once the block is in.")])
+
+        def model(api_key, model_name, conversation):
+            return {"status": "completed", "usage": {}, "output": next(rounds)}
+
+        worked: list = []
+
+        def live(name, args):
+            worked.append(name)
+            return {"in_the_room": "told"}
+
+        room = world_room.Room("tests-machines")
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", room, {"bodies": []},
+                                    "put a block under the crate and wind it up onto it", [], live=live)
+        finally:
+            world_chat._call = real
+        self.assertEqual(worked, [], "the running room was worked before the block was in it")
+        self.assertTrue(answer["changed"])
+        self.assertEqual([held["name"] for held in answer["deferred"]], ["use_action", "drive"])
+        self.assertEqual(answer["deferred"][0]["args"], {"name": "hoist: drum", "action": "Wind it up"})
+        told = answer["deferred"][1]["args"]
+        self.assertEqual((told["command"], told["brake"]), (0.5, False))
+        self.assertIn("pressed Wind it up on hoist: drum once the change was in", answer["did"])
+
+
+def _function_call(call_id: str, name: str, args: dict) -> dict:
+    return {"type": "function_call", "call_id": call_id, "name": name, "arguments": json.dumps(args)}
+
+
+def _message(text: str) -> list[dict]:
+    return [{"type": "message", "content": [{"type": "output_text", "text": text}]}]
+
+
+CELL = 0.04
+
+
+def _board(name: str, start: list, facing: list, top_s: float, top_y: float, angle: float,
+           length: float, width: float, thick: float = 0.04):
+    """An anchored oak board along a line on the ground (start [x, z], facing),
+    whose top starts top_s along it at top_y and runs `length` -- made a whole
+    number of cells -- at `angle` degrees; and the height of its underside at s
+    along the line."""
+    length = round(length / CELL) * CELL
+    a = math.radians(angle)
+    s = top_s + math.cos(a) * length / 2 + math.sin(a) * thick / 2
+    y = top_y + math.sin(a) * length / 2 - math.cos(a) * thick / 2
+    yaw = math.degrees(math.atan2(-facing[2], facing[0]))
+    made = {"name": name, "shape": "box", "material": "oak", "size_m": [length, thick, width],
+            "position_m": [start[0] + facing[0] * s, y, start[1] + facing[2] * s],
+            "rotation_deg": [0, yaw, angle], "anchored": True}
+    return made, (lambda at: top_y + (at - top_s) * math.tan(a) - thick / math.cos(a))
+
+
+def _post(name: str, start: list, facing: list, s: float, under: float, aside: float = 0.0,
+          short_by: float = 0.0) -> dict:
+    """An anchored 80 mm square post s along the line and `aside` of it, from
+    the ground to as high as fits under `under` in whole cells, less short_by."""
+    height = math.floor(under / CELL + 1e-9) * CELL - short_by
+    return {"name": name, "shape": "box", "material": "oak", "size_m": [0.08, height, 0.08],
+            "position_m": [start[0] + facing[0] * s - facing[2] * aside, height / 2,
+                           start[1] + facing[2] * s + facing[0] * aside], "anchored": True}
+
+
+class AStructureIsHeldToWhatItWasDeclaredToDo(unittest.TestCase):
+    """The owner's review of 2026-09-15 (docs/building-from-language.md): asked
+    for a long ski ramp, both chats built one tilted board and called it a ski
+    ramp, and the room accepted it. A structure is declared before it is built
+    (plan_construction) and measured against what its kind must do from the
+    world's own geometry (check_construction) -- in the room's own MCP world,
+    as the chat builds it. Done when a flat board cannot satisfy a ski-jump
+    request merely by being named "ramp"."""
+
+    def setUp(self):
+        if not (LIBRARY and Path(LIBRARY).is_file()):
+            self.skipTest("the library is not built")
+        self.world_id = room_world.open_room(world_room.Room("yard").spec)
+        self.addCleanup(room_world.close_room, self.world_id)
+
+    def call(self, tool: str, /, **args) -> dict:
+        answer = room_world.call(self.world_id, tool, args)
+        self.assertNotIn("error", answer, f"{tool} refused")
+        return answer
+
+    def refused(self, tool: str, /, **args) -> str:
+        answer = room_world.call(self.world_id, tool, args)
+        self.assertIn("error", answer, f"{tool} was expected to refuse")
+        return answer["error"]
+
+    def build_the_guides_ski_jump(self, name: str, start: list, facing: list) -> dict:
+        planned = self.call("plan_construction", name=name, reading="a ski jump", start_m=start, facing=facing,
+                            **world_chat.SKI_JUMP_DECLARED)
+        for part in world_chat.SKI_JUMP_EXAMPLE:
+            self.call("add_object", object={
+                "name": f"{name} {part['name']}", "shape": "box", "material": "oak", "size_m": part["size_m"],
+                "position_m": [start[0] + facing[0] * part["s_m"], part["y_m"], start[1] + facing[2] * part["s_m"]],
+                "rotation_deg": [0, planned["line"]["yaw_deg"], part["tilt_deg"]], "anchored": True})
+        return self.call("check_construction", name=name)
+
+    def test_a_board_named_a_ramp_is_not_a_ski_jump(self):
+        """The lab's own baseline: one 1600 x 600 x 100 mm oak board tilted 12
+        degrees, named "ramp", declared a ski jump of the kind's own size."""
+        self.call("plan_construction", name="ski ramp", kind="ski_jump", reading="a long ski jump",
+                  start_m=[0.0, 0.0], facing=[1, 0, 0])
+        self.call("add_object", object={"name": "ramp", "shape": "box", "material": "oak", "size_m": [1.6, 0.1, 0.6],
+                                        "position_m": [0.78, 0.0], "rotation_deg": [0, 0, -12], "anchored": True})
+        checked = self.call("check_construction", name="ski ramp")
+        self.assertFalse(checked["passed"])
+        self.assertEqual(checked["failed"], ["length", "width", "start height", "coming down", "takeoff"])
+
+    def test_a_ramp_as_long_and_high_as_a_ski_jump_that_never_turns_up_is_not_one(self):
+        """Two boards end to end on posts, 6.5 m from 2.4 m up: everything a
+        ski jump must be but its takeoff."""
+        start, facing = [0.0, 0.0], [1, 0, 0]
+        self.call("plan_construction", name="ski jump", kind="ski_jump", reading="a ski jump",
+                  start_m=start, facing=facing, length_m=6.5, width_m=0.6, height_m=2.4)
+        one, under_one = _board("run 1", start, facing, 0.0, 2.4, -19.8, 3.48, 0.6)
+        end = (3.48 * math.cos(math.radians(19.8)), 2.4 - 3.48 * math.sin(math.radians(19.8)))
+        two, under_two = _board("run 2", start, facing, end[0] + 0.01, end[1], -19.8, 3.48, 0.6)
+        for part in (one, two, _post("post 1", start, facing, 0.2, under_one(0.24)),
+                     _post("post 2", start, facing, 3.0, under_one(3.04)),
+                     _post("post 3", start, facing, 6.2, under_two(6.24))):
+            self.call("add_object", object=part)
+        checked = self.call("check_construction", name="ski jump")
+        self.assertEqual(checked["failed"], ["takeoff"])
+        takeoff = next(r for r in checked["results"] if r["requirement"] == "takeoff")
+        self.assertEqual(takeoff["measured"], "falling 19.8 degrees")
+
+    def test_the_guides_ski_jump_passes_every_check_along_two_lines(self):
+        """The worked ski jump the room's guide gives, built from its numbers
+        along +x and along +z, with the turn plan_construction's answer gives."""
+        for name, start, facing in (("jump along x", [0.0, 0.0], [1, 0, 0]),
+                                    ("jump along z", [10.0, 0.0], [0, 0, 1])):
+            with self.subTest(name=name):
+                checked = self.build_the_guides_ski_jump(name, start, facing)
+                self.assertTrue(checked["passed"], checked["failed"])
+                self.assertEqual(len(checked["results"]), 9)
+                self.assertEqual(len(checked["parts"]), len(world_chat.SKI_JUMP_EXAMPLE))
+
+    def test_a_board_on_four_feet_two_taller_is_a_downhill_ramp(self):
+        """The owner's question, 2026-09-15: "a ski ramp could also be a rotated
+        board on a base of 4 feet with two higher than the others". It is judged
+        by what it does, not its shape."""
+        start, facing, length = [0.0, 0.0], [1, 0, 0], 3.6
+        self.call("plan_construction", name="board on feet", kind="downhill_ramp",
+                  reading="a board on four feet, two taller than the others", start_m=start, facing=facing,
+                  length_m=length, width_m=0.8, height_m=1.2)
+        deck, under = _board("board", start, facing, 0.0, 1.2, -15.0, length / math.cos(math.radians(15)), 0.8)
+        self.call("add_object", object=deck)
+        feet = [_post(f"foot {i}", start, facing, s, under(s + 0.04), aside)
+                for i, (s, aside) in enumerate(((0.3, 0.32), (0.3, -0.32), (3.3, 0.32), (3.3, -0.32)), 1)]
+        for foot in feet:
+            self.call("add_object", object=foot)
+        self.assertEqual(len({foot["size_m"][1] for foot in feet}), 2, "two feet taller than the other two")
+        checked = self.call("check_construction", name="board on feet")
+        self.assertTrue(checked["passed"], checked["failed"])
+
+    def test_a_post_short_of_what_it_holds_up_does_not_hold_it_up(self):
+        """A level box round a tilted board is far bigger than the board: a post
+        half a metre short of its underside would have counted as touching it."""
+        start, facing = [0.0, 0.0], [1, 0, 0]
+        self.call("plan_construction", name="ramp", kind="downhill_ramp", reading="a ramp",
+                  start_m=start, facing=facing, length_m=3.5, width_m=0.8, height_m=1.2)
+        deck, under = _board("high board", start, facing, 0.0, 1.6, -10.0, 3.6 / math.cos(math.radians(10)), 0.8)
+        self.call("add_object", object=deck)
+        self.call("add_object", object=_post("short post 1", start, facing, 0.3, under(0.34), short_by=0.5))
+        self.call("add_object", object=_post("short post 2", start, facing, 3.3, under(3.34), short_by=0.5))
+        checked = self.call("check_construction", name="ramp")
+        self.assertEqual(checked["failed"], ["supported"])
+        self.assertIn("high board", next(r for r in checked["results"] if r["requirement"] == "supported")["measured"])
+
+    def test_what_it_must_do_is_raised_never_lowered(self):
+        self.call("plan_construction", name="jump", kind="ski_jump", reading="a ski jump", start_m=[0.0, 0.0],
+                  facing=[1, 0, 0], length_m=6.5, width_m=0.6, height_m=2.4)
+        self.assertIn("never lowered", self.refused("plan_construction", name="jump", kind="ski_jump",
+                                                    reading="a ski jump", start_m=[0.0, 0.0], facing=[1, 0, 0],
+                                                    length_m=6.5, width_m=0.6, height_m=2.1))
+        self.assertIn("another name", self.refused("plan_construction", name="jump", kind="downhill_ramp",
+                                                   reading="a ramp", start_m=[0.0, 0.0], facing=[1, 0, 0]))
+        self.assertIn("at least 6 m long", self.refused("plan_construction", name="small jump", kind="ski_jump",
+                                                        reading="a ski jump", start_m=[0.0, 0.0],
+                                                        facing=[1, 0, 0], length_m=4.0))
+        raised = self.call("plan_construction", name="jump", kind="ski_jump", reading="a higher ski jump",
+                           start_m=[0.0, 0.0], facing=[1, 0, 0], length_m=6.5, width_m=0.6, height_m=2.6)
+        self.assertIn("its start at least 2.6 m above the ground there", raised["must"])
+
+    def test_a_declared_structure_is_kept_with_the_room_and_takes_nothing_made_later(self):
+        self.assertTrue(self.build_the_guides_ski_jump("jump", [0.0, 0.0], [1, 0, 0])["passed"])
+        spec = room_world.export_spec(room_world.entry_of(self.world_id))
+        kept = spec["constructions"]
+        self.assertEqual([(c["name"], c["kind"], len(c["parts"])) for c in kept],
+                         [("jump", "ski_jump", len(world_chat.SKI_JUMP_EXAMPLE))])
+        again = room_world.open_room(spec)
+        self.addCleanup(room_world.close_room, again)
+        room_world.call(again, "add_object", {"object": {"name": "later ball", "shape": "sphere",
+                                                         "material": "rubber", "size_m": [0.2, 0.2, 0.2],
+                                                         "position_m": [20.0, 20.0]}})
+        checked = room_world.call(again, "check_construction", {"name": "jump"})
+        self.assertTrue(checked["passed"], checked.get("failed"))
+        self.assertNotIn("later ball", checked["parts"])
+
+    def test_a_side_over_four_metres_is_said_to_be_cut(self):
+        answer = self.call("add_object", object={"name": "long plank", "shape": "box", "material": "oak",
+                                                 "size_m": [7.0, 0.04, 0.3], "position_m": [0.0, 20.0]})
+        self.assertEqual(answer["size_cut"]["made_m"][0], 4.0)
+
+
+class ATurnIsNotDoneWhileItsStructureFails(unittest.TestCase):
+    """As the room's chat answers, a structure it declared that turn is
+    measured; one that fails goes back to it, at most MAX_REPAIRS times, and
+    after that its answer starts "Not finished:". "The engine accepted it" is
+    not "it does what was asked"."""
+
+    def ask(self, rounds: list, message: str) -> tuple[dict, list, world_room.Room]:
+        replies = iter(rounds)
+        sent: list[list[dict]] = []
+
+        def model(api_key, model_name, conversation):
+            sent.append(list(conversation))
+            return {"status": "completed", "usage": {}, "output": next(replies)}
+
+        room = world_room.Room("yard")
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", room, {"bodies": []}, message, [])
+        finally:
+            world_chat._call = real
+        return answer, sent, room
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_a_ski_jump_built_as_one_board_is_not_finished(self):
+        answer, sent, room = self.ask([
+            [_function_call("c1", "plan_construction", {"name": "ski ramp", "kind": "ski_jump",
+                                                         "reading": "a long ski jump", "start_m": [0.0, 0.0],
+                                                         "facing": [1, 0, 0]})],
+            [_function_call("c2", "add_object", {"object": {
+                "name": "ramp", "shape": "box", "material": "oak", "size_m": [1.6, 0.1, 0.6],
+                "position_m": [0.78, 0.0], "rotation_deg": [0, 0, -12], "anchored": True}})],
+            _message("I built you a long ski ramp."),
+            _message("It is a fine ski ramp."),
+            _message("Here is your ski ramp.")], "Build a long ski ramp.")
+        notes = [m for m in sent[-1] if isinstance(m, dict) and "does not yet do what it was declared to do"
+                 in str(m.get("content", ""))]
+        self.assertEqual(len(notes), world_chat.MAX_REPAIRS)
+        self.assertEqual(len(sent), 3 + world_chat.MAX_REPAIRS)
+        self.assertTrue(answer["reply"].startswith("Not finished: ski ramp: "), answer["reply"])
+        self.assertIn("takeoff falling 12.0 degrees", answer["reply"])
+        self.assertTrue(answer["reply"].endswith("Here is your ski ramp."))
+        self.assertEqual([(c["construction"], c["passed"]) for c in answer["checked"]], [("ski ramp", False)])
+        # An anchored board is not a thing to take: it is not asked for actions.
+        self.assertFalse([m for m in sent[-1] if isinstance(m, dict)
+                          and m.get("content") == world_chat.NOTHING_OFFERED])
+        # The room keeps what was declared, and its part.
+        self.assertEqual([(c["name"], c["kind"], c["parts"]) for c in room.spec["constructions"]],
+                         [("ski ramp", "ski_jump", ["ramp"])])
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_the_guides_ski_jump_built_in_a_turn_is_finished(self):
+        parts = [_function_call(f"p{i}", "add_object", {"object": {
+            "name": part["name"], "shape": "box", "material": "oak", "size_m": part["size_m"],
+            "position_m": [part["s_m"], part["y_m"], 0.0], "rotation_deg": [0, 0, part["tilt_deg"]],
+            "anchored": True}}) for i, part in enumerate(world_chat.SKI_JUMP_EXAMPLE)]
+        answer, sent, _ = self.ask([
+            [_function_call("c1", "plan_construction", {"name": "ski jump", "reading": "a ski jump",
+                                                         "start_m": [0.0, 0.0], "facing": [1, 0, 0],
+                                                         **world_chat.SKI_JUMP_DECLARED})],
+            parts,
+            _message("Built a ski jump.")], "Build a long ski ramp.")
+        self.assertEqual(answer["reply"], "Built a ski jump.")
+        self.assertEqual([(c["construction"], c["passed"]) for c in answer["checked"]], [("ski jump", True)])
+        self.assertEqual(len(sent), 3, "a structure that passes is not sent back")
+
+
+class TheGuidesSayWhatARampIsFor(unittest.TestCase):
+    """The review found both prompts building every ramp as one board, and the
+    lab's cell arithmetic out by five."""
+
+    def test_a_ramp_is_read_for_what_it_is_for(self):
+        import scene_chat
+        lab = " ".join(scene_chat.SYSTEM.split())
+        self.assertNotIn("A ramp is one anchored box", lab)
+        self.assertIn("read what the ramp is FOR", lab)
+        room = " ".join(world_chat.GUIDE.split())
+        self.assertNotIn("EVERYTHING YOU MAKE goes on the ground", room)
+        for words in ("A THING TO TAKE", "STRUCTURES.", "plan_construction", "ski_jump", "structure_middle_m",
+                      "across_the_view", "none more than 4 m long"):
+            self.assertIn(words, room)
+
+    def test_the_lab_is_told_what_cells_cost_rightly(self):
+        import scene_chat
+        lab = " ".join(scene_chat.SYSTEM.split())
+        self.assertIn(f"30 x 2 x 12 = {(600 // 20) * (40 // 20) * (240 // 20)} cells", lab)
+        self.assertIn(f"2 x (100 x 3 x 20) = {2 * (2000 // 20) * (60 // 20) * (400 // 20)}", lab)
+        self.assertIn(f"is {(12000 // 20) * (2000 // 20) * (80 // 20)} cells at 20 mm, and "
+                      f"{(12000 // 40) * (2000 // 40) * (80 // 40)} at 40 mm", lab)
+        self.assertNotIn("60000", lab)
 
 
 if __name__ == "__main__":

@@ -80,6 +80,7 @@ broke.
 | `drum` | a rope that **winds onto a drum**: from a drum on a pin of its own to a load, off the drum's rim at its tangent, so what is off the drum changes by the radius times the turn, for as many turns as there is rope. In metres like every joint: the drum's centre and axle, `radius_m`, where the rope is made off on the load, `length_m` and `out_m` (0: as it hangs); `winds`, when left out, is worked out from the side the load hangs on. Refused for a load over the drum itself, less rope out than the span it has to run, and a rope shorter than what is off the drum; warned for a drum on no pin and a rope that does not hang straight down ([Machines](#machines)) |
 | `store` / `motor` / `drive` | a **battery** in a named thing, in joules, volts and watts; a DC **motor** on a pin named by the two things it joins, wired to a battery by name, given by its stall torque, its unloaded speed in turns a minute and its brake; and what a motor is **told** from now on, found by the thing it turns: a command from -1 to 1, and its brake. `run` and `describe_world` say what each battery gave and each motor did ([Machines](#machines)) |
 | `control` / `operate` | a **controller** for a motor, named by the two things its pin joins -- a hoist's when the drum it turns has a rope on it, its travel the rope out at the top and at the bottom -- and **working** it as the person's panel does: `direction` raise, lower or stop (forward or reverse for a shaft), `power`, and a drive `setting`, the machine found by its name or any part of it. It slows for each end of a hoist's travel and stops at it, stops a motor that gets nowhere, and says what stands in its way ([A machine's controller](#a-machines-controller)) |
+| `plan_construction` / `check_construction` | declare a **structure** before building it -- `ski_jump`, `downhill_ramp`, `access_ramp` or `structure` -- with one sentence on how the request was read, where its line runs on the ground and its size; the kind brings what it must do, in numbers, and declared again it can be raised, never lowered. `check_construction` measures what was built against that from the world's own geometry -- rays cast straight down along its line, the ground under it, the bodies around it -- and answers each requirement with what was required and what was measured. A flat board declared a ski jump fails its takeoff. In the playground's room, the chat's structures are measured as it answers, and its answer starts "Not finished:" while one fails ([Structures](#structures)) |
 | `use_action` | press one of a thing's **actions** (`offer_actions`), by its label or its number from 1: what the person's E does. In the playground's room the room runs it **as it stands** -- a hoist wound up from where its crate hangs -- and nothing is opened again, so nothing goes back to where it was made; `drive` there tells the running room's motor too. In the MCP's own world a drive step tells the motor, and an action with a step the person's hand takes is refused ([Machines](#machines)) |
 | `interaction` | say how a person **uses** a thing you built — draw-and-release, a bow; or swing-and-lever, a tool with a `tool_point` swung into the ground and levered, tried by being swung into the nearest level soil, levered out, and swung onto the nearest bare rock — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
 | `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
@@ -579,6 +580,54 @@ room left winding winds on. `operate` is one of the calls that work the room as
 it stands (`room_world.LIVE`): the running room's machine is told, and the room
 is not opened again. The page's panel goes to the same controller by a route
 of its own, `POST /api/world/machine`, with the page's own sender and count.
+
+## Structures
+
+The owner's review of 2026-09-15: asked for "a long ski ramp", the
+playground's chats each built one tilted board, called it a ski ramp, and
+nothing asked whether it was one. A structure is now declared before it is
+built and measured against what it must do
+([building-from-language.md](../building-from-language.md)).
+
+- `plan_construction`:
+  - a `name`, and a `kind`: `ski_jump`, `downhill_ramp`, `access_ramp`, or
+    `structure` for anything else;
+  - `reading`: one sentence on how the request was read, which the person sees;
+  - its line: `start_m` [x, z] (a ramp's raised end) or `middle_m`, and
+    `facing`;
+  - its size: `length_m`, `width_m` and `height_m` (a ramp's start height, an
+    access ramp's rise), and `scale` `model` for one asked to be small.
+
+  The answer says what it must do in words (`must`), where a point `s` m along
+  its line is, and the `rotation_deg` of a board along it: `[0, yaw_deg, t]`,
+  tilted `t` degrees. Everything added after it, until another is declared, is
+  one of its parts. Refused: less than the kind's least (a ski jump is at least
+  6 m long, its start at least 2 m up and a fifth of its length); declared
+  again, a lower requirement or another kind.
+- `check_construction`: its `name`, and `parts` built before it was declared.
+  The answer gives `passed`, `failed`, and each requirement with `required` and
+  `measured`.
+
+| kind | what it must do |
+|---|---|
+| `ski_jump` | its length, width and start height; one surface along it, with no gap or step over 5 cm; coming down by at least half its start height; rising at least 5 degrees over its last metre; every part anchored; every part standing on the ground, on scenery or on another part; 3 m clear beyond its end |
+| `downhill_ramp` | its length, width and start height; one surface; coming down; anchored; supported |
+| `access_ramp` | its length, width and rise; no steeper than 7.2 degrees (one in eight) over any half metre; one surface; anchored; supported |
+| `structure` | its length and width along its line; supported |
+
+It is measured from the world's own geometry. Rays are cast straight down every
+centimetre along its line, and meet it as the solver collides it -- a tilted
+board as its exact box. Two parts touch when their turned boxes come within
+6 cm (a separating-axis test), a part stands on the ground when a corner is
+within 6 cm of the ground under it, and the runout is the box beyond its end,
+as wide as it and 2.5 m high.
+
+In the playground's room, `plan_construction` changes what the room is
+(`room_world.AUTHORING`), and the room keeps each declaration with its parts.
+As the chat answers, each structure it declared or changed that turn is
+measured; one that fails goes back to it with the measurements, at most twice,
+and after that its answer starts "Not finished:" with what failed. The page
+shows the measurements under the answer.
 
 ## What a session looks like
 

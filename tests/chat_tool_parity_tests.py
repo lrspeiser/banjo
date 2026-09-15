@@ -173,8 +173,14 @@ class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
                                         world_chat.NEW_THING_APART_M)
         self.assertEqual(spots[0], [-0.8, 2.0], "beside the table before past it")
         self.assertIn("put_new_things_m", world_chat.GUIDE)
-        self.assertIn("EVERYTHING YOU MAKE goes on the ground close in front of them",
-                      world_chat.GUIDE)
+        # A thing to take, that is: a structure goes where there is room for
+        # it, the size its use needs (STRUCTURES; the owner's review of
+        # 2026-09-15, docs/building-from-language.md).
+        guide = " ".join(world_chat.GUIDE.split())
+        self.assertIn("A THING TO TAKE -- anything a person picks up, carries or uses in the hand -- goes "
+                      "on the ground close in front of them", guide)
+        self.assertIn("A STRUCTURE -- a ramp to ride, a bridge, a stair, a tower -- is not a thing to take",
+                      guide)
 
     def test_new_places_are_on_the_rooms_cell_grid(self):
         """A recipe worked out from the place keeps a joined piece on the grid:

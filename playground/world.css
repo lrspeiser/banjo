@@ -149,6 +149,15 @@ html, body {
                          font-variant-numeric: tabular-nums; }
 .turn .did { margin: 4px 0 0; font-size: 12px; color: var(--dim); }
 .turn .did code { color: var(--warm); font-size: 11px; }
+/* What a declared structure was measured to do, under the answer. */
+.turn .checked { margin: 6px 0 0; padding: 6px 8px; border: 1px solid var(--edge);
+                 border-radius: 4px; font-size: 12px; }
+.turn .checked.passed { border-color: var(--y); }
+.turn .checked.failed { border-color: var(--x); }
+.turn .checked .checked-head { margin: 0 0 4px; font-weight: 600; white-space: normal; }
+.turn .checked ul { margin: 0; padding: 0; list-style: none; }
+.turn .checked li { margin: 1px 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+.turn .checked li.no { color: var(--x); }
 
 #ask { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--edge); }
 #ask input {

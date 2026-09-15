@@ -750,6 +750,51 @@ class AChangeKeepsTheRoomAsItStood(unittest.TestCase):
                          "the change told the motor the chat's old command again")
         self.assertEqual(self.as_it_stands(state), before, "the hoist, its battery or the ball is not as it stood")
 
+    def test_what_the_chat_works_after_its_change_is_done_once_the_change_is_in(self):
+        """The chat's drive after a change of its own in the same turn is held
+        back (world_chat.HELD_BACK): the running room does not have the change
+        until the turn ends. Measured before: asked to wind a hoist up onto a
+        block it had just added, the chat wound the running room, where the
+        block was not yet. The server tells the motor once the room is open
+        again with the change in it, and says so under `then`."""
+        import world_chat
+        from unittest import mock
+        session, _ = self.wound_up_and_moved()
+        calls: list = []
+
+        def model(api_key, model_name, conversation):
+            calls.append(len(conversation))
+            if len(calls) == 1:
+                return {"status": "completed", "usage": {}, "output": [{
+                    "type": "function_call", "call_id": "c1", "name": "add_object",
+                    "arguments": json.dumps({"object": {"name": "new crate", "shape": "box", "material": "oak",
+                                                        "size_m": [0.3, 0.3, 0.3], "position_m": [0.6, 0.6]}})}]}
+            if len(calls) == 2:
+                return {"status": "completed", "usage": {}, "output": [{
+                    "type": "function_call", "call_id": "d1", "name": "drive",
+                    "arguments": json.dumps({"part": "drum", "command": 1})}]}
+            return {"status": "completed", "usage": {}, "output": [{
+                "type": "message", "content": [{"type": "output_text", "text": "It will wind once the crate is in."}]}]}
+
+        with mock.patch.object(world_chat, "_call", model):
+            status, answer = self.post("/api/world/ask", {"session": session.id,
+                                                          "message": "put a crate beside the hoist, then wind it up"})
+        self.assertEqual(status, 200, answer)
+        self.assertTrue(answer.get("reopened"), answer)
+        self.assertEqual([done["name"] for done in answer.get("then") or []], ["drive"], answer)
+        self.assertNotIn("error", answer["then"][0])
+        live = self.app.live.session
+        self.assertIsNot(live, session)
+        self.assertIn("new crate", {b["name"] for b in live.state["bodies"]})
+
+        def crate_y() -> float:
+            return next(b for b in live.state["bodies"] if b["name"] == "crate")["position_m"][1]
+
+        y0 = crate_y()
+        self.step(live, 0.5)
+        self.assertGreater(crate_y() - y0, 0.1, "the held-back drive did not wind the hoist in the room as changed")
+        self.assertEqual(live.state["machines"]["motors"][0]["state"], "driving")
+
 
 @unittest.skipIf(ENGINE is None, "the live world runner is not built")
 class AMotorCommandLeavesTheHandAlone(unittest.TestCase):

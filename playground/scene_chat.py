@@ -109,14 +109,15 @@ bigger over making cells smaller: an object needs to be at least two or three
 cells on its smallest side to behave like a solid at all, so a 20 mm cell wants
 objects of 40 mm and up.
 
-COUNT THE CELLS BEFORE YOU ANSWER. Nothing tells you the total after the fact
-except a refusal, so do the arithmetic yourself: a box is
-(length/cell) x (width/cell) x (height/cell), so 600 x 40 x 240 mm at 20 mm is
-30 x 2 x 12 = 720 cells; a sphere of diameter d is a little over half of
-(d/cell) cubed. Add them up and keep the total under 16000. Long objects are
-what blow this: two 2000 x 60 x 400 mm ramps at 20 mm are 60000 cells on their
-own. If the total is too big, raise cell_mm before you answer rather than
-shrinking what was asked for -- doubling the cell divides the count by eight.
+THE CELL BUDGET. A scene is counted when it is checked, and one over the
+lane's cap of 16000 is refused with its own count and the cell size that would
+fit it: answer that by raising cell_mm, never by shrinking what was asked for --
+doubling the cell divides the count by eight. What a box costs is
+(length/cell) x (width/cell) x (height/cell): 600 x 40 x 240 mm at 20 mm is
+30 x 2 x 12 = 720 cells, and two 2000 x 60 x 400 mm boards at 20 mm are
+2 x (100 x 3 x 20) = 12000. A sphere of diameter d is a little over half of
+(d/cell) cubed. Long, wide things are what blow it: a 12 x 2 m deck 80 mm thick
+is 240000 cells at 20 mm, and 30000 at 40 mm.
 
 A BALL IS DRAWN AS A BALL. A sphere that stays whole is drawn at the diameter
 you asked for, not as the cubes it is built from, so you never need a smaller
@@ -173,12 +174,19 @@ then y, then x about the room's fixed axes. So give a thing its length along x:
 [0, 30, 12] turns a box 30 degrees about the vertical and tilts its x side up
 12 degrees, a ramp rising along its length, facing 30 degrees round; [10, 0, 15]
 leans it 10 degrees about its x side and then tilts that side up 15 degrees, so
-against the level it rises 14.8. Use it
-for a ramp rather than building a staircase of boxes: a stack of steps collides
-with itself and with whatever stands on it, and a ball bounces down it instead
-of rolling. A ramp is one anchored box with a rotation of a few degrees. Note
-that a tilted box reaches higher at one end than its centre, so put what sits on
-it above the surface at that end, not above the centre.
+against the level it rises 14.8. Use it for a slope something rolls or slides
+down -- a lane, a chute -- which is one anchored box tilted a few degrees, not a
+staircase of boxes: a stack of steps collides with itself and with whatever
+stands on it, and a ball bounces down it instead of rolling. Not every ramp is
+that slope: read what the ramp is FOR. A ramp to ride or jump -- a ski jump, a
+sled run, a skate ramp -- is a structure: a raised start standing on supports,
+a run down, and, for a jump, a takeoff that turns up at its end. Build it as
+anchored boxes laid end to end along that profile, each tilted to follow it and
+meeting the next, with posts from the ground up to what is raised. An access
+ramp is a gentle slope up to a height, no steeper than one in eight. Say in the
+explanation which kind you built, how long it is and how high its start is.
+Note that a tilted box reaches higher at one end than its centre, so put what
+sits on it above the surface at that end, not above the centre.
 
 RESTING. Objects do not settle into place before the run; they start exactly
 where you put them. Do not work out heights yourself. Whenever an object stands

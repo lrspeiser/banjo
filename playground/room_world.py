@@ -85,7 +85,11 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # A machine is part of what the room IS (docs/machine-world.md): a
              # rope on a drum is a joint, and a battery, a motor and the
              # controller it is worked by are its `machines`.
-             "drum", "store", "motor", "control"}
+             "drum", "store", "motor", "control",
+             # And a structure's declaration -- its kind and what it must do --
+             # is kept with the room, so it is held to it in every later turn
+             # (docs/building-from-language.md).
+             "plan_construction"}
 
 # The calls that work what is in the room as it stands, the way the person's E
 # and their panel do: the chat pressing one of a thing's actions, telling a
@@ -331,6 +335,12 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
                for action in actions if _names_in(action) <= names]
     if offered:
         spec["actions"] = offered
+    # The structures its chat declared (plan_construction), each with what it
+    # must do and its parts as the room stands.
+    declared = [constructions_spec(name, record, names)
+                for name, record in (entry.get("constructions") or {}).items()]
+    if declared:
+        spec["constructions"] = declared
     # The ground as it was made and every edit since, and the rivers. Water
     # carried from a running world is never part of what the room IS: it is
     # handed to the one open at the moment it is reopened, and no further.
@@ -372,6 +382,15 @@ def machines_spec(machines: dict[str, Any], names: set[str],
     if not stores and not motors:
         return {}
     return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {})}
+
+
+def constructions_spec(name: str, record: dict[str, Any], names: set[str]) -> dict[str, Any]:
+    """A declared structure (mcp/constructions.py) as the room keeps it: nothing
+    in it is a length on the room's grid, so it is in metres as declared."""
+    return {"name": name, "kind": record["kind"], "scale": record["scale"], "reading": record["reading"],
+            "start_m": list(record["start_m"]), "facing": list(record["facing"]),
+            "requirements": dict(record["requirements"]),
+            "parts": banjo_mcp.constructions.parts_now(record, names)}
 
 
 def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
@@ -527,6 +546,14 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
                                                      "actions": actions})
             except banjo_mcp.Refused:
                 continue
+        # And the structures its chat declared, each with what it must do and
+        # the parts it has. Nothing made from now on joins one unless it is
+        # declared again: a ball added next week is not part of the ski jump.
+        for declared in validated.get("constructions", []):
+            banjo_mcp._constructions(entry)[declared["name"]] = {
+                "name": declared["name"],
+                **{k: declared[k] for k in ("kind", "scale", "reading", "start_m", "facing", "requirements",
+                                            "parts")}}
     except Exception:
         close_room(world_id)
         raise
