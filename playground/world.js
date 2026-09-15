@@ -5342,6 +5342,10 @@ async function open({ again = false } = {}) {
     // to mean "unchanged" -- which it does in a step's reply -- it left the last
     // room's pins drawn in the air over this one.
     drawJoints(data.joints || []);
+    // Its batteries and motors likewise: none said means none, and a hoist
+    // opened again says its own, so its rope and its panel are there before
+    // the first step rather than the last room's.
+    followMachines(data.machines);
     drawRopes();
     clearHeat();
     // The room as it stood: rejoined on a reload, or opened again whole from

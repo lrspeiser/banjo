@@ -1279,12 +1279,17 @@ int main(int argc, char **argv) {
             if (!snapshot_path.empty()) {
                 // Opened again from a saved world, it already has its pins,
                 // edges and points -- where they were, not where the scene
-                // first put them -- so the opening says them, as a poses
-                // reply does, for a host that must not declare them again.
+                // first put them -- and its batteries and motors, so the
+                // opening says them, as a poses reply does, for a host that
+                // must not declare them again. Without its machines here, a
+                // host that opened a hoist again could not find its motor
+                // until the first step.
                 opening["restored"] = restoredJson(world->restored());
                 opening["joints"] = jointsOf(*world);
                 opening["blades"] = bladesOf(*world);
                 opening["tool_points"] = toolPointsOf(*world);
+                if (nlohmann::json machines = machinesOf(*world); !machines.is_null())
+                    opening["machines"] = std::move(machines);
             }
             std::cout << opening.dump() << std::endl;
         }

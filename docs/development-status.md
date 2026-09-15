@@ -22,6 +22,7 @@
     - The wider hazard is its own task.
   - A saved hoist opened again said its braked motor was coasting until its first step, and its rope read 2.5 nm more out than was saved. The drum's turn since a step began was worked out in float, and a drum that had not turned at all came out turned 2.5e-8 rad. It is now worked out in double, and the saved world keeps the rope's own tally and what each motor said of its last step.
   - A braked hoist left alone does not creep: stepped for ten minutes it went to sleep, and the crate, the drum and the rope moved not at all.
+  - A hoist opened again from a saved world had no machines in its opening. The runner said a restored world's pins, edges and points, but not its batteries and motors, so a host could not find the motor, and the page could not draw the rope or the panel, until the first step. The opening says them now, and the page takes them as it opens a room, as it takes its pins.
 - Tests:
   - `motor_tests` 8:
     - a flywheel's spin-up is within 0.14% of the line, and its work is the spin to 0.33%;
@@ -33,7 +34,15 @@
     - the hoist: rise = r × turn, and the motor's work is height plus motion to 0.26%;
     - a restart round trip: the battery's charge, the motor's account and brake and what it said of its last step, the rope off the drum and on it, and the crate's height all come back exactly, and it winds on after.
   - `banjo_ffi_tests` 22, through the library: the flywheel and the hoist give motor_tests' numbers, what is not a machine is refused, and a saved hoist opens again exactly as it was saved and winds on (0.2691 m in 0.5 s, the battery giving the 301.728 J the motor drew).
-  - `machine_room_tests` 5, through the live session and the runner: driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J; an action drives it through `server.run_action`; and the test room is a hoist.
+  - `machine_room_tests` 6, through the live session and the runner:
+    - driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J;
+    - an action drives it through `server.run_action`, and the test room is a hoist;
+    - saved and opened again as a restarted server opens it, it came back braked, with one battery (149.6 J given) and one motor, and 1.2448 m of rope out, all as saved; the room's action then wound it on 0.2547 m.
+  - In the page through a restart (scratchpad headless_hoist_restart.py, on a server of my own):
+    - wound up 0.863 m and braked, then the server was killed outright and started again;
+    - after a reload the crate hung at 1.2877 m (1.2878 m when saved), braked, with the battery at 430.1 J given and 0.6372 m of rope out, as saved, and the drum's details said "its motor's brake is on";
+    - E wound it on 0.717 m, the battery giving what the motor drew (1022.7 J in all);
+    - 99.1% of realtime after the restart, and no page errors.
   - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 3 and fracture_lab all pass.
   - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
 - Not yet:

@@ -276,7 +276,7 @@ A room's spec gains three things, which `playground/live_session.py` opens.
 
 The runner (`tools/live_world_run.cpp`) takes the operations `store`,
 `motor`, `drive` and `drum`. Every step that has any machines carries
-`machines`:
+`machines`, and so does the opening of a world opened again from a saved one:
 
 - each store's charge and what it has given;
 - each motor's state, readings and account, and the two things its pin joins;
