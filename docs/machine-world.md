@@ -253,6 +253,75 @@ Owner rules 4 and 6 mean this goes through every layer:
 - the page's panel and switch;
 - the API-docs and chat-tool parity tests.
 
+## Operating a machine: its controller and its panel
+
+The owner's review, 2026-09-15: "Operate in the world. Design and test on a
+workbench. Use the same machine definitions, controller, and physics underneath
+both." A powered machine is worked from a panel, like an appliance, not by
+grabbing its drum or pressing E through a list of actions: the Machines panel
+reads out, and E's choice goes back to the first whenever the crosshair or the
+hand changes, so pressing E again is not "stop what I just started". The panel
+and the controller come before the workbench.
+
+**One machine, one definition.** The room's `machines` block gains `controls`:
+each a machine by name, the motor it drives (by the two things its pin joins),
+the parts that make it up (selecting any selects the whole machine), and what
+its directions mean -- for a hoist, which way raises and its travel limits as
+rope out; for a shaft, which way is forward. The chat's `build_recipe "hoist"`
+writes one; a room can too.
+
+**The controller runs in the engine, at the step rate** (planned above as
+"readings and a controller"). It takes intentions -- power on or off, forward,
+reverse, stop and hold, a drive setting, and later jog and move to a target --
+and turns them into the motor's command and brake before each step. It governs
+effort; the physics decides motion: it never sets a pose, and an overloaded
+motor is never given more torque than its line.
+- A hoist stops at its travel limits, slowing near them, and holds on its brake.
+- Reversing is a bounded sequence: stop, then the other way.
+- Every command carries a sequence number, per machine. A command older than
+  the last one applied is dropped, so a delayed "raise" cannot restart a
+  machine after a newer "stop"; states are said outright (power false), never
+  toggled.
+- It reports four things apart: **enabled** (power), **commanded** (what was
+  asked), **measured** (what the shaft and load are doing) and **condition**
+  (what stands in the way): brake holding, at the upper or lower limit, no
+  progress under load, power limited, battery empty, or another controller or
+  the hand working it. "Command accepted" is never shown as motion.
+- A stop goes straight to the machine: not through a thing's action program,
+  the chat or the hand, and it is acknowledged when the engine has applied it.
+
+**Machines are addressed by identity.** The panel and the controller name a
+machine and its motor by id, never "the first motor that turns this part".
+
+**The panel.** Selecting a part of a machine selects the whole machine, and its
+panel stays until it is closed or another thing is selected:
+- Power, on and off;
+- for a hoist **Lower · Stop & hold · Raise**, for a shaft **Reverse · Stop ·
+  Forward** -- "Stop & hold" only where there is a brake, otherwise "Stop --
+  it will coast";
+- a **Drive setting** (a share of the battery's voltage, not a speed), with the
+  measured turns a minute beside it;
+- the four readings above, in words.
+E on a machine opens its panel; E still picks up, places and uses ordinary
+things. Working a machine by hand becomes an advanced choice. The buttons are
+real buttons, with focus and pressed and disabled states.
+
+**Increments.**
+1. Control ownership and commands: an action lets go only of what it took hold
+   of (a drive pressed with a ball in the hand dropped it); machines and motors
+   by id; a machine-command path of its own, ordered and acknowledged.
+2. The controller and the panel, with hoist limits and truthful conditions;
+   then the direction on the machine -- an arrow in the shaft's own frame and a
+   stripe on the drum that turns with it.
+3. The workbench: an orbit camera, "inspect the installed machine" (the real
+   one, running) and "design and test a draft" (a copy that cannot touch the
+   world's battery or anything else).
+4. Designs kept as versions, and installing one without resetting the room.
+
+Release checks drive the page with real input: start, stop and reverse while
+holding an unrelated thing; two motors on one frame; both hoist limits; a
+blocked load; a reload; a start arriving late after a stop.
+
 ## The room's spelling
 
 A room's spec gains three things, which `playground/live_session.py` opens.

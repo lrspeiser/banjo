@@ -2183,6 +2183,9 @@ def run_action(app,body):
     if held and action["steps"][0]["do"] not in ("turn","slide","drive"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
+    # What the hand held before the action: the action lets go only of what it
+    # took hold of itself (below).
+    before=holding
     try:
         for index,step in enumerate(action["steps"]):
             do=step["do"]
@@ -2297,7 +2300,12 @@ def run_action(app,body):
     kept=bool(holding and ends_working and (not problem or index==len(action["steps"])-1))
     # A turn or a slide that failed part way may hold what it took hold of.
     worked=any(step["do"] in ("turn","slide") for step in action["steps"][:index+1])
-    if not kept and (holding or worked):
+    # Only what the action itself took hold of, or worked, is let go of. What
+    # the hand held before it and the action never touched -- a ball carried
+    # while a motor is told what to do -- stays in the hand: it was let go of
+    # too, so "Wind it up" pressed with a ball in the hand dropped the ball.
+    acquired=bool(holding) and holding!=before
+    if not kept and (acquired or worked):
         try: app.live.act({"session":app.live.session.id,"op":"release"})
         except ValueError: pass
     said={"action":action["label"],"done":done}

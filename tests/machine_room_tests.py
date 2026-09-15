@@ -747,6 +747,59 @@ class AChangeKeepsTheRoomAsItStood(unittest.TestCase):
         self.assertEqual(self.as_it_stands(state), before, "the hoist, its battery or the ball is not as it stood")
 
 
+@unittest.skipIf(ENGINE is None, "the live world runner is not built")
+class AMotorCommandLeavesTheHandAlone(unittest.TestCase):
+    """The owner's review, 2026-09-15: run_action lets a drive action run while
+    the hand holds something, and its cleanup then let go of whatever the hand
+    held -- "Wind it up" pressed with a ball in the hand dropped the ball. An
+    action lets go only of what it took hold of itself, or worked."""
+
+    def test_winding_stopping_and_lowering_keep_what_the_hand_holds(self):
+        import server  # noqa: E402 -- the page's own action runner
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        def step(session, seconds: float) -> None:
+            for _ in range(max(1, round(seconds / (8 / 240.0)))):
+                session.send(op="step", dt=1 / 240.0, n=8)
+
+        spec = hoist_room()
+        spec["bodies"].append({"name": "ball", "shape": "sphere", "material": "rubber",
+                               "size_mm": [120, 120, 120], "center_mm": [800, 60, 600]})
+        spec["actions"] = [{"body": "drum", "label": "Wind it up", "steps": [{"do": "drive", "command": 1.0}]},
+                           {"body": "drum", "label": "Stop", "steps": [{"do": "drive", "command": 0.0}]},
+                           {"body": "drum", "label": "Let it down", "steps": [{"do": "drive", "command": -0.3}]}]
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        live.open(App(), {"spec": spec})
+        session = live.session
+        step(session, 0.3)
+        session.send(op="grab", name="ball")
+        step(session, 0.3)
+        self.assertEqual((session.state.get("hand") or {}).get("holding"), "ball", "the hand did not take the ball")
+
+        class Room:
+            pass
+
+        class Server:
+            pass
+
+        room, app = Room(), Server()
+        room.spec = spec
+        app.live, app.room = live, room
+        for index, state in ((0, "driving"), (1, "braking"), (2, "driving"), (1, "braking")):
+            label = spec["actions"][index]["label"]
+            answer = server.run_action(app, {"object": "drum", "action": index})
+            self.assertFalse(answer.get("refused"), answer)
+            step(session, 0.3)
+            self.assertEqual(session.state["machines"]["motors"][0]["state"], state, f"{label} did not reach the motor")
+            self.assertEqual((session.state.get("hand") or {}).get("holding"), "ball",
+                             f"pressing {label!r} let go of the ball in the hand")
+
+
 class TheTestRoomIsAHoist(unittest.TestCase):
     """The tests-machines room (playground/rooms/tests-machines.json), which
     the page opens by link: a hoist that the room's own checks take as it is."""
