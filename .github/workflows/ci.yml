@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+# Workshop development is intentionally iterative. A new commit makes older
+# runs for the same head branch obsolete; cancel them so the newest design is
+# what gets a runner instead of queueing behind stale intermediates.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   source-registration:
     runs-on: ubuntu-24.04
