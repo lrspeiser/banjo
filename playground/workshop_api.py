@@ -2,17 +2,17 @@
 
 Every design decision lives in ``mcp/workshop.py``.  This module turns it into
 the answers ``/api/workshop/*`` gives, so the page can render candidates without
-knowing how a leg is laid out, and a later agent lane (docs/workshop-next.md
-stage 4) can call exactly the same operations.
+knowing how a leg is laid out, and an agent lane can call exactly the same
+operations.
 
-Nothing here opens the engine, steps physics or touches a live room.  The
-workshop's whole point is that exploring a candidate costs the world nothing.
+Nothing here opens the engine, steps physics or mutates a live room. Exploration
+is pure computation. Saved designs and feedback are durable Workshop records,
+not world edits.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-import re
 import sys
 import threading
 import time
@@ -33,12 +33,10 @@ from mcp.workshop import (  # noqa: E402
     materialize,
     variants,
 )
+import workshop_store  # noqa: E402
 
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 _lock = threading.Lock()
 
-#: What a fresh bench offers for each assembly: the two parameters whose
-#: difference a person can actually see, swept into a first set of candidates.
 SEED_SWEEPS: dict[str, dict[str, list[Any]]] = {
     "table": {"leg_style": ["straight", "splayed", "tapered"],
               "leg_section_m": [0.045, 0.065]},
@@ -52,7 +50,6 @@ SEED_SWEEPS: dict[str, dict[str, list[Any]]] = {
     "cart": {"wheel_diameter_m": [0.22, 0.32, 0.42], "deck_height_m": [0.3, 0.42]},
 }
 
-#: What "more like this" nudges, per assembly, and by how much.
 NUDGES: dict[str, list[tuple[str, list[float]]]] = {
     "table": [("leg_section_m", [-0.015, -0.007, 0.0, 0.007, 0.015, 0.025]),
               ("splay_deg", [0.0, 3.0, 6.0, 9.0, 12.0, 15.0])],
@@ -85,7 +82,7 @@ def _kind(body: dict[str, Any], fallback: str = "table") -> str:
     kind = body.get("kind", fallback)
     if not isinstance(kind, str):
         raise ValueError("kind must be the name of an assembly")
-    assembly(kind)  # raises KeyError naming what the workshop does know
+    assembly(kind)
     return kind
 
 
@@ -104,7 +101,6 @@ def _generation(body: dict[str, Any]) -> int:
 
 
 def _label(kind: str, values: dict[str, Any], spec) -> str:
-    """A short name for a candidate, made of what actually varies."""
     known = {p.name for p in spec.parameters}
     bits = []
     if "leg_style" in known:
@@ -141,38 +137,51 @@ def _spread(kind: str, base: dict[str, Any], sweeps: dict[str, list[Any]],
 
 
 def library(app: Any = None, body: Any = None) -> dict[str, Any]:
-    """Everything the bench can make, and every family it makes it from."""
     return {
         "schema": WORKSHOP_SCHEMA,
         "families": ComponentLibrary().described(),
         "assemblies": assemblies(),
         "seeds": {k: sorted(v) for k, v in SEED_SWEEPS.items()},
+        "saved_designs": workshop_store.list_saved(_store(app)) if app is not None else [],
     }
 
 
 def open_workshop(app: Any, body: Any) -> dict[str, Any]:
-    """Open a bench against a frozen world revision, with a first set to look at."""
     body = _object(body)
-    kind = _kind(body)
-    revision = str(body.get("world_revision") or "unopened-world")
+    generation = _generation(body)
+    saved_id = body.get("saved_design_id")
+    saved = None
+    if saved_id:
+        saved, design = workshop_store.load(_store(app), str(saved_id))
+        kind = str(saved["kind"])
+        spec = assembly(kind)
+        candidates_out = [_candidate(design, spec)]
+        revision = str(body.get("world_revision") or saved.get("world_revision")
+                       or "unopened-world")
+        target = str(body.get("target") or saved.get("label") or design.design_id)
+    else:
+        kind = _kind(body)
+        revision = str(body.get("world_revision") or "unopened-world")
+        target = str(body.get("target") or kind)
+        candidates_out = _spread(kind, _parameters(body),
+                                 SEED_SWEEPS.get(kind, {}), generation)
+
     session = WorkshopSession(
         session_id=str(body.get("session_id") or ("bench-%d" % int(time.time() * 1000))),
         world_revision=revision,
-        target=str(body.get("target") or kind))
-    generation = _generation(body)
+        target=target)
     return {
         "schema": WORKSHOP_SCHEMA,
         "session": session.described(),
-        **library(),
+        **library(app),
         "kind": kind,
         "generation": generation,
-        "candidates": _spread(kind, _parameters(body),
-                              SEED_SWEEPS.get(kind, {}), generation),
+        "candidates": candidates_out,
+        **({"saved_design": saved} if saved else {}),
     }
 
 
 def candidates(app: Any, body: Any) -> dict[str, Any]:
-    """A fresh set for one assembly: the bench's Reset, and its Object picker."""
     body = _object(body)
     kind = _kind(body)
     generation = _generation(body)
@@ -186,7 +195,6 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
 
 
 def more_like_this(app: Any, body: Any) -> dict[str, Any]:
-    """Six candidates around the one that was chosen."""
     body = _object(body)
     kind = _kind(body)
     spec = assembly(kind)
@@ -207,7 +215,9 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
                 moved = min(parameter.high, moved)
             values[name] = moved
         if kind in {"table", "stool", "bench", "chair"} and values.get("splay_deg"):
-            values["leg_style"] = "splayed" if base["leg_style"] == "straight" else base["leg_style"]
+            values["leg_style"] = ("splayed"
+                                   if base["leg_style"] == "straight"
+                                   else base["leg_style"])
         design = assemble(kind, design_id="%s-g%d-v%d" % (kind, generation, index + 1),
                           parameters=values)
         made.append(_candidate(design, spec))
@@ -216,7 +226,6 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
 
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
-    """Snap one chosen candidate to the cell grid. Still not committed."""
     body = _object(body)
     kind = _kind(body)
     design = assemble(kind, design_id=str(body.get("design_id") or kind),
@@ -231,37 +240,58 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
 
 
 def remember(app: Any, body: Any) -> dict[str, Any]:
-    """Keep one feedback record, so a preference outlives the browser that gave it.
-
-    localStorage made feedback a note on one machine. Evidence about a design
-    belongs with the design (docs/workshop-next.md stage 3).
-    """
     body = _object(body)
     kind = _kind(body)
-    design_id = str(body.get("design_id") or kind)
-    if not _SAFE_ID.match(design_id):
-        raise ValueError("design_id must be letters, digits, dot, dash or underscore")
+    design_id = workshop_store.safe_design_id(body.get("design_id") or kind)
     design = assemble(kind, design_id=design_id, parameters=_parameters(body))
+
     rating = body.get("rating")
     if rating not in (None, "") and int(rating) not in range(1, 6):
         raise ValueError("rating must be 1 through 5")
-    record = feedback(design,
-                      rating=int(rating) if rating not in (None, "") else None,
-                      selected=bool(body.get("selected", True)),
-                      note=str(body.get("note", ""))[:2000])
-    record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    record["fingerprint"] = materialize(design)["fingerprint"]
+    note = str(body.get("note", ""))[:2000]
+    wants_feedback = rating not in (None, "") or bool(note) or "selected" in body
+
+    record = None
     where = _store(app) / "feedback.jsonl"
-    with _lock:
-        with where.open("a", encoding="utf-8") as out:
-            out.write(json.dumps(record, sort_keys=True) + "\n")
-        with where.open(encoding="utf-8") as back:
-            kept = sum(1 for _ in back)
-    return {"schema": WORKSHOP_SCHEMA, "saved": record, "kept": kept}
+    if wants_feedback:
+        record = feedback(design,
+                          rating=int(rating) if rating not in (None, "") else None,
+                          selected=bool(body.get("selected", True)),
+                          note=note)
+        record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        record["fingerprint"] = materialize(design)["fingerprint"]
+        with _lock:
+            with where.open("a", encoding="utf-8") as out:
+                out.write(json.dumps(record, sort_keys=True) + "\n")
+
+    saved_design = None
+    if body.get("save_design"):
+        saved_design = workshop_store.save(
+            _store(app), design,
+            label=str(body.get("label") or design_id),
+            parent_design_id=(str(body["parent_design_id"])
+                              if body.get("parent_design_id") else None),
+            world_revision=(str(body["world_revision"])
+                            if body.get("world_revision") else None),
+        )
+
+    kept = 0
+    if where.exists():
+        with _lock:
+            with where.open(encoding="utf-8") as back:
+                kept = sum(1 for line in back if line.strip())
+    designs = workshop_store.list_saved(_store(app))
+    return {
+        "schema": WORKSHOP_SCHEMA,
+        "saved": record,
+        "design": saved_design,
+        "kept": kept,
+        "designs_kept": len(designs),
+        "saved_designs": designs,
+    }
 
 
 def remembered(app: Any, body: Any = None) -> dict[str, Any]:
-    """Every feedback record this bench has kept, newest first."""
     where = _store(app) / "feedback.jsonl"
     rows: list[dict[str, Any]] = []
     if where.exists():
@@ -275,4 +305,11 @@ def remembered(app: Any, body: Any = None) -> dict[str, Any]:
                 except ValueError:
                     continue
     rows.reverse()
-    return {"schema": WORKSHOP_SCHEMA, "kept": len(rows), "feedback": rows[:200]}
+    designs = workshop_store.list_saved(_store(app))
+    return {
+        "schema": WORKSHOP_SCHEMA,
+        "kept": len(rows),
+        "feedback": rows[:200],
+        "designs_kept": len(designs),
+        "saved_designs": designs,
+    }
