@@ -1,5 +1,5 @@
 // Workshop Mode: one browser state for selection, component edits, bounded chat,
-// reusable library items, whole-design variants, and live material cost.
+// reusable library items, functional tests, whole-design variants, and live material cost.
 import * as THREE from "/vendor/three.module.js";
 
 const $ = (q) => document.querySelector(q);
@@ -63,6 +63,7 @@ const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0, plans: {},
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
   selectedPart: null, openedLibraryItem: null,
+  benchTests: [], benchPresets: [], selectedBenchTest: null,
 };
 function chosen() { return bench.candidates[bench.selected]; }
 function selectedPart() {
@@ -212,7 +213,7 @@ stage.addEventListener("drop", (event) => {
 });
 
 // ---------------------------------------------------------------------------
-// DOM helpers and component editor
+// DOM helpers, component editor and general functional test bench
 // ---------------------------------------------------------------------------
 function make(tag, attrs = {}, text = "") {
   const element = document.createElement(tag);
@@ -286,12 +287,30 @@ function installEditor() {
     make("input", { id: "ws-component-chat-text", type: "text", placeholder: "make all the legs thinner" }),
     make("button", { type: "submit", class: "ws-action" }, "Change"));
   editor.append(chat);
-  const firstHeading = right.querySelector("h3");
-  right.insertBefore(editor, firstHeading);
+  right.insertBefore(editor, right.querySelector("h3"));
 
   const bom = make("section", { id: "ws-bom-box" });
   bom.append(make("h3", {}, "Materials"), make("div", { id: "ws-bom" }));
   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
+
+  const testBox = make("section", { id: "ws-test-bench" });
+  testBox.append(
+    make("h3", {}, "Test bench"),
+    make("p", { class: "ws-feedback-count" }, "Run the selected object beside an isolated functional fixture. The outside world does not advance."));
+  const testPicker = make("select", { id: "ws-bench-test", "aria-label": "Functional test" });
+  const pickerLabel = make("label", { class: "ws-field" }, "Test");
+  pickerLabel.append(testPicker); testBox.append(pickerLabel);
+  testBox.append(make("div", { id: "ws-bench-controls" }));
+  const testActions = make("div", { class: "ws-row" });
+  testActions.append(
+    make("button", { id: "ws-run-bench", type: "button", class: "ws-action primary" }, "Run test"),
+    make("button", { id: "ws-save-bench-preset", type: "button", class: "ws-action" }, "Save preset"));
+  testBox.append(testActions);
+  const presetName = make("input", { id: "ws-bench-preset-name", type: "text", maxlength: "120", placeholder: "Half-speed lift" });
+  const presetLabel = make("label", { class: "ws-field" }, "Preset name");
+  presetLabel.append(presetName); testBox.append(presetLabel);
+  testBox.append(make("div", { id: "ws-bench-presets" }), make("div", { id: "ws-bench-result" }));
+  right.insertBefore(testBox, $("#ws-save-design").parentElement.previousElementSibling || $("#ws-save-design").parentElement);
 
   actions.querySelectorAll("button").forEach((button) => {
     button.onclick = () => guard(button, () => editSelected(button.dataset.componentEdit));
@@ -301,6 +320,13 @@ function installEditor() {
   chat.onsubmit = (event) => {
     event.preventDefault(); guard(chat.querySelector("button"), chatEdit);
   };
+  testPicker.onchange = () => {
+    bench.selectedBenchTest = testPicker.value;
+    renderBenchControls();
+    $("#ws-bench-result").replaceChildren();
+  };
+  $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
+  $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
 }
 installEditor();
 
@@ -330,9 +356,7 @@ async function chatEdit() {
     component_chat: { part_name: selected, message },
   });
   took(answer, selected);
-  if (answer.workshop_chat && answer.workshop_chat.scope) {
-    $("#ws-edit-scope").value = answer.workshop_chat.scope;
-  }
+  if (answer.workshop_chat && answer.workshop_chat.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
   if (answer.workshop_chat && answer.workshop_chat.reply) say(answer.workshop_chat.reply);
   input.value = "";
 }
@@ -341,10 +365,7 @@ async function saveSelectedComponent() {
   if (!part) throw new Error("Click the component you want to save first.");
   const name = $("#ws-component-name").value.trim() || `${part.material} ${part.role}`;
   const answer = await api("/api/workshop/library", {
-    action: "save_component",
-    ...candidateBody(),
-    part_name: part.name,
-    name,
+    action: "save_component", ...candidateBody(), part_name: part.name, name,
   });
   bench.personalLibrary = answer.personal_library || [];
   bench.pricebook = answer.pricebook || bench.pricebook;
@@ -357,13 +378,149 @@ async function reuseLibraryComponent(itemId) {
   const selected = bench.selectedPart;
   const answer = await api("/api/workshop/candidates", {
     ...candidateBody(),
-    reuse_library_item: {
-      item_id: itemId,
-      part_name: selected,
-      scope: $("#ws-edit-scope").value,
-    },
+    reuse_library_item: { item_id: itemId, part_name: selected, scope: $("#ws-edit-scope").value },
   });
   took(answer, selected);
+}
+
+// ---------------------------------------------------------------------------
+// Functional bench controls/results
+// ---------------------------------------------------------------------------
+function benchDefinition(name = bench.selectedBenchTest) {
+  return bench.benchTests.find((item) => item.test === name) || null;
+}
+function renderBenchCatalog() {
+  const picker = $("#ws-bench-test");
+  picker.replaceChildren();
+  for (const test of bench.benchTests) picker.append(make("option", { value: test.test }, test.name));
+  if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) {
+    bench.selectedBenchTest = bench.benchTests[0] ? bench.benchTests[0].test : null;
+  }
+  if (bench.selectedBenchTest) picker.value = bench.selectedBenchTest;
+  picker.disabled = !bench.benchTests.length;
+  $("#ws-run-bench").disabled = !bench.benchTests.length;
+  $("#ws-save-bench-preset").disabled = !bench.benchTests.length;
+  renderBenchControls();
+  renderBenchPresets();
+}
+function renderBenchControls(values = null) {
+  const root = $("#ws-bench-controls");
+  root.replaceChildren();
+  const definition = benchDefinition();
+  if (!definition) {
+    root.append(make("p", { class: "ws-feedback-count" }, "No functional tests are available."));
+    return;
+  }
+  root.append(make("p", { class: "ws-feedback-count" }, definition.about));
+  for (const control of definition.controls || []) {
+    const label = make("label", { class: "ws-field" }, `${control.label}${control.unit ? ` (${control.unit})` : ""}`);
+    let input;
+    const chosenValue = values && Object.prototype.hasOwnProperty.call(values, control.name)
+      ? values[control.name] : control.default;
+    if (control.type === "boolean") {
+      input = make("input", { type: "checkbox", "data-bench-control": control.name });
+      input.checked = Boolean(chosenValue);
+    } else if (control.type === "select") {
+      input = make("select", { "data-bench-control": control.name });
+      (control.choices || []).forEach((choice, index) => {
+        const option = make("option", { value: String(choice) },
+          (control.choice_labels || [])[index] || String(choice));
+        option.selected = String(choice) === String(chosenValue);
+        input.append(option);
+      });
+      input.dataset.valueType = typeof control.default;
+    } else {
+      input = make("input", {
+        type: "number", value: String(chosenValue ?? ""),
+        min: String(control.min ?? ""), max: String(control.max ?? ""), step: String(control.step ?? "any"),
+        "data-bench-control": control.name,
+      });
+      input.dataset.valueType = "number";
+    }
+    label.append(input); root.append(label);
+  }
+  for (const limitation of definition.limitations || []) {
+    root.append(make("p", { class: "ws-feedback-count" }, `Limit: ${limitation}`));
+  }
+}
+function benchConfig() {
+  const definition = benchDefinition();
+  if (!definition) throw new Error("Choose a test first.");
+  const out = {};
+  for (const control of definition.controls || []) {
+    const input = document.querySelector(`[data-bench-control="${control.name}"]`);
+    if (!input) continue;
+    if (control.type === "boolean") out[control.name] = input.checked;
+    else if (control.type === "number") out[control.name] = Number(input.value);
+    else if (typeof control.default === "number") out[control.name] = Number(input.value);
+    else out[control.name] = input.value;
+  }
+  return out;
+}
+function renderBenchPresets() {
+  const root = $("#ws-bench-presets"); root.replaceChildren();
+  const relevant = bench.benchPresets.filter((preset) => preset.test === bench.selectedBenchTest);
+  if (!relevant.length) return;
+  root.append(make("p", { class: "ws-feedback-count" }, "Saved test controls"));
+  const row = make("div", { class: "ws-row" });
+  for (const preset of relevant) {
+    const button = make("button", { type: "button", class: "ws-action" }, preset.name);
+    button.onclick = () => {
+      renderBenchControls(preset.config || {});
+      $("#ws-bench-preset-name").value = preset.name;
+    };
+    row.append(button);
+  }
+  root.append(row);
+}
+function celsius(k) {
+  return k == null ? "—" : `${(Number(k) - 273.15).toFixed(1)} °C`;
+}
+function renderBenchResult(result) {
+  const root = $("#ws-bench-result"); root.replaceChildren();
+  if (!result) return;
+  const card = make("div", { class: "ws-note" });
+  if (result.test === "kettle_heat") {
+    const m = result.measured || {};
+    card.append(
+      make("strong", {}, `Water: ${celsius(m.water_start_k)} → ${celsius(m.water_end_k)}`),
+      make("p", {}, `Kettle bottom ${celsius(m.kettle_bottom_k)} · heater plate ${celsius(m.heater_plate_k)}`));
+    const heaterIn = m.ledger && m.ledger.heater_in_j;
+    if (heaterIn != null) card.append(make("p", {}, `External heat added: ${(Number(heaterIn) / 1000).toFixed(1)} kJ`));
+  } else if (result.test === "machine_control") {
+    const m = result.measured || {}, control = m.control || {}, motor = m.motor || {}, battery = m.battery || {};
+    card.append(
+      make("strong", {}, `Controller: ${control.condition || "—"}`),
+      make("p", {}, `Power ${control.power ? "on" : "off"} · direction ${control.direction ?? "—"} · setting ${control.setting == null ? "—" : `${(Number(control.setting) * 100).toFixed(0)}%`}`),
+      make("p", {}, `Speed ${Number(control.speed_rpm || 0).toFixed(1)} rpm · load moved ${Number(m.load_delta_y_m || 0).toFixed(3)} m`),
+      make("p", {}, `Motor ${Number(motor.power_w || 0).toFixed(1)} W · battery supplied ${Number(battery.given_j || 0).toFixed(1)} J`));
+  }
+  root.append(card);
+  for (const limitation of result.limitations || []) root.append(make("p", { class: "ws-feedback-count" }, limitation));
+  const details = make("details", { class: "ws-family" });
+  details.append(make("summary", {}, "Measured evidence"));
+  const pre = make("pre"); pre.textContent = JSON.stringify(result, null, 2); details.append(pre);
+  root.append(details);
+}
+async function runBenchTest() {
+  const definition = benchDefinition();
+  if (!definition) throw new Error("Choose a test first.");
+  const answer = await api("/api/workshop/plan", {
+    ...candidateBody(),
+    bench_test: { test: definition.test, config: benchConfig() },
+  });
+  renderBenchResult(answer.bench);
+}
+async function saveBenchPreset() {
+  const definition = benchDefinition();
+  if (!definition) throw new Error("Choose a test first.");
+  const name = $("#ws-bench-preset-name").value.trim() || `${definition.name} preset`;
+  const answer = await api("/api/workshop/library", {
+    action: "save_bench_preset", name, test: definition.test, config: benchConfig(),
+  });
+  bench.benchPresets = answer.bench_presets || [];
+  renderBenchPresets();
+  say(`Saved test preset ${name}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -538,9 +695,7 @@ function show(reframe = true) {
     said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing.`);
   }
   const stat = ((candidate.analytical || {}).static_loads || [])[0];
-  if (stat) {
-    said.push(`Analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
-  }
+  if (stat) said.push(`Analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
   checks.textContent = said.join(" ");
   $("#ws-plan").hidden = true;
 }
@@ -550,9 +705,7 @@ async function fingerprints() {
   await Promise.all(bench.candidates.map(async (candidate) => {
     try {
       const plan = await api("/api/workshop/plan", {
-        kind: bench.kind,
-        design_id: candidate.design_id,
-        parameters: candidate.parameters,
+        kind: bench.kind, design_id: candidate.design_id, parameters: candidate.parameters,
         component_overrides: candidate.component_overrides || {},
       });
       bench.plans[candidate.design_id] = plan.fingerprint;
@@ -574,6 +727,9 @@ function took(answer, keepPart = null) {
     renderUserLibrary();
   }
   if (answer.pricebook) bench.pricebook = answer.pricebook;
+  if (answer.bench_tests) bench.benchTests = answer.bench_tests;
+  if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
+  renderBenchCatalog();
   cards();
   show();
   fingerprints();
@@ -595,15 +751,11 @@ $("#ws-more").onclick = (event) => guard(event.currentTarget, async () => {
 });
 $("#ws-reset-variants").onclick = (event) => guard(event.currentTarget, async () => {
   bench.openedLibraryItem = null;
-  took(await api("/api/workshop/candidates", {
-    kind: bench.kind, generation: bench.generation + 1,
-  }));
+  took(await api("/api/workshop/candidates", { kind: bench.kind, generation: bench.generation + 1 }));
 });
 $("#ws-archetype").onchange = (event) => guard(null, async () => {
   bench.openedLibraryItem = null;
-  took(await api("/api/workshop/candidates", {
-    kind: event.target.value, generation: bench.generation + 1,
-  }));
+  took(await api("/api/workshop/candidates", { kind: event.target.value, generation: bench.generation + 1 }));
 });
 $("#ws-materialize").onclick = (event) => guard(event.currentTarget, async () => {
   const plan = await api("/api/workshop/plan", candidateBody());
@@ -618,9 +770,7 @@ $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () =>
   const candidate = chosen();
   const label = $("#ws-save-name").value.trim() || candidate.label || candidate.design_id;
   const answer = await api("/api/workshop/feedback", {
-    ...candidateBody(),
-    save_design: true,
-    label,
+    ...candidateBody(), save_design: true, label,
     library_item_id: bench.openedLibraryItem || null,
     world_revision: bench.session && bench.session.world_revision !== "unopened-world"
       ? bench.session.world_revision : null,
@@ -629,16 +779,15 @@ $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () =>
     bench.personalLibrary = answer.personal_library;
     renderUserLibrary();
   }
+  if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   const saved = answer.library_item || answer.design;
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
   $("#ws-save-status").textContent = saved ? `saved v${saved.version || saved.revision}` : "saved";
 });
 $("#ws-save-feedback").onclick = (event) => guard(event.currentTarget, async () => {
   const answer = await api("/api/workshop/feedback", {
-    ...candidateBody(),
-    rating: $("#ws-rating").value || null,
-    note: $("#ws-note").value.trim(),
-    selected: true,
+    ...candidateBody(), rating: $("#ws-rating").value || null,
+    note: $("#ws-note").value.trim(), selected: true,
   });
   $("#ws-note").value = "";
   $("#ws-rating").value = "";
@@ -678,6 +827,8 @@ async function start() {
   savedDesigns(answer.saved_designs || []);
   bench.personalLibrary = answer.personal_library || [];
   bench.pricebook = answer.pricebook || null;
+  bench.benchTests = answer.bench_tests || [];
+  bench.benchPresets = answer.bench_presets || [];
   renderUserLibrary();
   took(answer);
 
@@ -686,7 +837,10 @@ async function start() {
     $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary;
     bench.pricebook = remembered.pricebook || bench.pricebook;
+    bench.benchTests = remembered.bench_tests || bench.benchTests;
+    bench.benchPresets = remembered.bench_presets || bench.benchPresets;
     renderUserLibrary();
+    renderBenchCatalog();
     show(false);
   } catch { /* history is optional */ }
 }
