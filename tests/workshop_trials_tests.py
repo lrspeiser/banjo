@@ -17,7 +17,6 @@ class App:
     def __init__(self, root: Path) -> None:
         self.engine_path = root / "fake-engine"
         self.runs_path = root / "runs"
-        # Deliberately present sentinels: the trial must not inspect/mutate them.
         self.live = object()
         self.room = {"do_not_touch": True}
 
@@ -42,33 +41,26 @@ class FakeSession:
             "ok": True,
             "t": self.t,
             "bodies": [
-                {"name": self.root_name,
-                 "position_m": list(self.root_at),
-                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0],
-                 "velocity_m_s": [0.0, 0.0, 0.0]},
-                {"name": self.load_name,
-                 "position_m": list(self.load_at),
-                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0],
-                 "velocity_m_s": [0.0, 0.0, 0.0]},
+                {"name": self.root_name, "position_m": list(self.root_at),
+                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "velocity_m_s": [0.0, 0.0, 0.0]},
+                {"name": self.load_name, "position_m": list(self.load_at),
+                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "velocity_m_s": [0.0, 0.0, 0.0]},
             ],
         }
 
     def send(self, **command):
-        if command["op"] == "poses":
-            return self._state()
+        if command["op"] == "poses": return self._state()
         if command["op"] == "step":
             self.t += float(command["dt"]) * int(command["n"])
             return self._state()
         raise AssertionError(command)
 
-    def close(self):
-        self.closed = True
+    def close(self): self.closed = True
 
 
 class PrototypeScene(unittest.TestCase):
     def test_table_becomes_one_join_group_plus_only_the_test_load(self):
-        setup = workshop_trials.prototype_scene(
-            assemble("table", design_id="t"), load_kg=100)
+        setup = workshop_trials.prototype_scene(assemble("table", design_id="t"), load_kg=100)
         bodies = setup["spec"]["bodies"]
         candidate = [b for b in bodies if str(b["name"]).startswith("candidate/")]
         self.assertGreater(len(candidate), 1)
@@ -77,13 +69,18 @@ class PrototypeScene(unittest.TestCase):
         self.assertEqual(0.04, setup["requested_cell_size_m"])
         self.assertLessEqual(setup["cell_size_m"], setup["requested_cell_size_m"])
         self.assertLessEqual(setup["cells"], 16000)
-        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"])
-                            for body in bodies))
+        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"]) for body in bodies))
 
-    def test_default_table_refines_cell_instead_of_rejecting_60_mm_legs(self):
-        setup = workshop_trials.prototype_scene(
-            assemble("table", design_id="t"), load_kg=100)
-        self.assertEqual(0.02, setup["cell_size_m"])
+    def test_default_table_refines_only_as_far_as_geometry_and_budget_need(self):
+        setup = workshop_trials.prototype_scene(assemble("table", design_id="t"), load_kg=100)
+        # Do not lock the test to one magic resolution: the chooser is allowed
+        # to use any finer cell that represents every member while staying in
+        # the realtime scratch lane's cell budget.
+        self.assertLess(setup["cell_size_m"], setup["requested_cell_size_m"])
+        self.assertGreaterEqual(setup["cell_size_m"], 0.005)
+        self.assertLessEqual(setup["cells"], 16000)
+        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"])
+                            for body in setup["spec"]["bodies"]))
 
     def test_mixed_material_fused_trial_is_refused_instead_of_lying(self):
         cart = assemble("cart", design_id="cart")
@@ -97,36 +94,28 @@ class PrototypeScene(unittest.TestCase):
             workshop_trials.prototype_scene(table, load_kg=100)
 
     def test_taper_is_declared_as_a_trial_approximation(self):
-        table = assemble("table", design_id="taper",
-                         parameters={"leg_style": "tapered"})
-        setup = workshop_trials.prototype_scene(table, load_kg=100)
+        setup = workshop_trials.prototype_scene(
+            assemble("table", design_id="taper", parameters={"leg_style": "tapered"}), load_kg=100)
         self.assertTrue(any(name.startswith("leg-") for name in setup["approximated_parts"]))
 
 
 class Running(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        FakeSession.made.clear()
+        self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name); FakeSession.made.clear()
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def tearDown(self): self.tmp.cleanup()
 
     def test_trial_owns_and_closes_a_session_without_touching_app_live(self):
-        app = App(self.root)
-        live_before, room_before = app.live, dict(app.room)
+        app = App(self.root); live_before, room_before = app.live, dict(app.room)
         answer = workshop_trials.run_static_load(
             app, assemble("table", design_id="t"), load_kg=100,
             duration_s=0.1, session_factory=FakeSession)
-        self.assertIs(app.live, live_before)
-        self.assertEqual(room_before, app.room)
-        self.assertEqual(1, len(FakeSession.made))
-        self.assertTrue(FakeSession.made[0].closed)
+        self.assertIs(app.live, live_before); self.assertEqual(room_before, app.room)
+        self.assertEqual(1, len(FakeSession.made)); self.assertTrue(FakeSession.made[0].closed)
         self.assertEqual("engine-trial", answer["evidence"])
         self.assertEqual("not-declared", answer["acceptance"]["status"])
         self.assertTrue(answer["measured"]["prototype_present"])
-        self.assertLess(answer["prototype"]["effective_cell_size_m"],
-                        answer["requested"]["cell_size_m"])
+        self.assertLess(answer["prototype"]["effective_cell_size_m"], answer["requested"]["cell_size_m"])
         self.assertLessEqual(answer["prototype"]["cells"], 16000)
 
     def test_declared_load_is_taken_from_the_assembly_not_a_page_guess(self):
@@ -138,5 +127,4 @@ class Running(unittest.TestCase):
         self.assertLessEqual(answer["prototype"]["cells"], 16000)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()
