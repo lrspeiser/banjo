@@ -141,6 +141,21 @@ def read_obj(path: Path) -> dict[str, Any]:
     return {"vertices": vertices, "triangles": triangles}
 
 
+def read_mesh(path: Path) -> dict[str, Any]:
+    """Triangles from this file, by whichever reader handles its format.
+
+    OBJ is read here, with the standard library, and that is the path this
+    compiler supports. Anything else is an optional reader in asset_readers.py
+    that needs a package which may not be installed, so the import is deferred:
+    neither this module nor its suite ever requires one.
+    """
+    if Path(path).suffix.lower() == ".obj":
+        return read_obj(Path(path))
+    import asset_readers
+
+    return asset_readers.read_mesh(Path(path))
+
+
 def scaled(mesh: dict[str, Any], unit: str) -> dict[str, Any]:
     """The same mesh in metres, by the unit the assembly DECLARED."""
     if unit not in UNIT_M:
@@ -696,7 +711,7 @@ def compile_assembly(document: dict[str, Any], base: Path) -> dict[str, Any]:
                                      "material": declared.get("material"),
                                      "mesh": declared.get("mesh")}
             continue
-        mesh = read_obj(base / declared["mesh"])
+        mesh = read_mesh(base / declared["mesh"])
         material = declared.get("material")
         key = content_key(mesh, unit, cell_m, horizon, material)
         if key not in conversions:

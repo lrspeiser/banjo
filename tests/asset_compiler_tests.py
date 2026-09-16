@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import asset_compiler as ac  # noqa: E402
 import asset_fixtures as af  # noqa: E402
+import asset_readers as ar  # noqa: E402
 
 CELL_M = af.CELL_MM / 1000.0
 
@@ -317,6 +318,54 @@ class WhatTheGeneratorWouldBeHanded(FixtureTestCase):
         self.assertEqual(sorted(spanning), [(0, 0, 2), (0, 2, 0), (2, 0, 0)])
         self.assertEqual(ac.interior_offsets((2, 0, 0)), ((1, 0, 0),))
         self.assertEqual(ac.interior_offsets((1, 1, 0)), ())
+
+
+class TheReaderInterface(FixtureTestCase):
+    """One entry point, whatever the format, and an honest answer about which
+    formats this interpreter can actually open."""
+
+    def test_obj_is_read_with_no_package_installed_at_all(self):
+        self.assertTrue(ar.available()["obj"])
+        mesh = ar.read_mesh(self.fixtures / "block.obj")
+        self.assertEqual(len(mesh["triangles"]), 12)
+
+    def test_a_format_with_no_reader_names_what_it_would_need(self):
+        with self.assertRaises(ValueError) as refused:
+            ar.read_mesh(self.fixtures / "assembly.iges")
+        self.assertIn(".iges", str(refused.exception))
+
+
+@unittest.skipUnless(ar.available()["step"],
+                     "Open Cascade (cadquery-ocp) is not installed in this interpreter")
+class ReadingASolidRatherThanAMesh(FixtureTestCase):
+    """The STEP path, when the package is there.
+
+    No CAD file may be downloaded, so the fixture is written by the same
+    library that reads it: what is under test is this compiler's tessellation
+    and winding, not Open Cascade's file format.
+    """
+
+    def test_a_step_solid_converts_to_the_same_cells_as_the_same_box_in_obj(self):
+        step = ar.write_step_box(self.fixtures / "block.step", af.BLOCK_MM)
+        mesh = ac.scaled(ar.read_mesh(step), af.UNIT)
+        report = ac.mesh_report(mesh)
+        # Every face of an OCCT box comes back REVERSED and its nodes are in
+        # the face's own frame, so a reader that ignored either would produce a
+        # closed mesh of negative volume or a scrambled one.
+        self.assertTrue(report["closed"])
+        self.assertAlmostEqual(report["volume_m3"] * 1e9, af.ANALYTIC_VOLUME_MM3["block"], places=6)
+        self.assertEqual(ac.occupancy(mesh, CELL_M)["cells"],
+                         ac.occupancy(self.mesh("block"), CELL_M)["cells"],
+                         "the same box through STEP and through OBJ gave different cells")
+
+    def test_an_assembly_can_name_a_step_part(self):
+        ar.write_step_box(self.fixtures / "block.step", af.BLOCK_MM)
+        document = self.document("block")
+        document["parts"]["block"]["mesh"] = "block.step"
+        blueprint = ac.compile_assembly(document, self.fixtures)
+        self.assertEqual(self.categories(blueprint), [])
+        conversion = blueprint["conversions"][blueprint["parts"]["block"]["conversion"]]
+        self.assertEqual(conversion["occupancy"]["count"], 1920)
 
 
 if __name__ == "__main__":

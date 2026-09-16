@@ -33,6 +33,11 @@ _deps/
 __pycache__/
 *.pyc
 
+# A virtual environment for a lane that needs packages of its own. It stays out
+# of the system interpreter, which runs the engine's suites in other worktrees:
+# a transitive numpy upgrade there would break a lane nobody was working on.
+.venv*/
+
 # Local credentials
 .env
 .env.*

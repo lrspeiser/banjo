@@ -1,0 +1,47 @@
+# Packages for the asset compiler's OPTIONAL readers only.
+#
+# tools/asset_compiler.py itself needs none of this: the OBJ path, the
+# occupancy, the bond check and the whole test suite run on the standard
+# library alone, and that is the supported path. Everything here buys one
+# thing, reading a format the standard library cannot: STEP, and the common
+# binary mesh formats.
+#
+# INSTALL INTO A VIRTUAL ENVIRONMENT INSIDE THIS WORKTREE, NEVER THE SYSTEM
+# INTERPRETER. The system interpreter runs the engine's suites in the other
+# worktrees, and numpy is already present there; a transitive upgrade pulled in
+# by one of these would break a lane nobody was working on.
+#
+#     python -m venv .venv-asset
+#     .venv-asset/Scripts/python -m pip install -r tools/asset-compiler-requirements.txt
+#
+# Measured on Windows, CPython 3.13.5, 2026-09-15:
+#
+# - pythonocc-core has NO distribution for this platform at all: pip reports
+#   "from versions: none". It is conda-oriented. Open Cascade IS reachable
+#   here, as cadquery-ocp, which ships a cp313 win_amd64 wheel.
+# - openvdb likewise has NO distribution: "from versions: none". There is no
+#   sparse-volume package to use on this platform, so narrow-band level sets
+#   are not available and nothing here pretends otherwise.
+# - cadquery-ocp pulls vtk and matplotlib in transitively, which is most of the
+#   628 MB the environment occupies. Neither is used by this compiler, and
+#   neither can be dropped without dropping Open Cascade with them.
+#
+# Pinned exactly as resolved, so a second machine gets the same environment.
+
+cadquery-ocp==8.0.1.0.0
+cadquery-ocp-proxy==8.0.1.0.0
+trimesh==5.1.0
+
+# Resolved transitively by the two above, pinned so the set is reproducible.
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.65.0
+kiwisolver==1.5.1
+matplotlib==3.11.2
+numpy==2.5.3
+packaging==26.3
+pillow==12.3.0
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+six==1.17.0
+vtk==9.6.2
