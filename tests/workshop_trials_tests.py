@@ -74,7 +74,15 @@ class PrototypeScene(unittest.TestCase):
         self.assertGreater(len(candidate), 1)
         self.assertEqual({"workshop-prototype"}, {b["join"] for b in candidate})
         self.assertEqual("workshop/test-load", bodies[-1]["name"])
-        self.assertEqual(0.04, setup["cell_size_m"])
+        self.assertEqual(0.04, setup["requested_cell_size_m"])
+        self.assertLessEqual(setup["cell_size_m"], setup["requested_cell_size_m"])
+        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"])
+                            for body in bodies))
+
+    def test_default_table_refines_cell_instead_of_rejecting_60_mm_legs(self):
+        setup = workshop_trials.prototype_scene(
+            assemble("table", design_id="t"), load_kg=100)
+        self.assertEqual(0.02, setup["cell_size_m"])
 
     def test_mixed_material_fused_trial_is_refused_instead_of_lying(self):
         cart = assemble("cart", design_id="cart")
@@ -116,12 +124,15 @@ class Running(unittest.TestCase):
         self.assertEqual("engine-trial", answer["evidence"])
         self.assertEqual("not-declared", answer["acceptance"]["status"])
         self.assertTrue(answer["measured"]["prototype_present"])
+        self.assertLess(answer["prototype"]["effective_cell_size_m"],
+                        answer["requested"]["cell_size_m"])
 
     def test_declared_load_is_taken_from_the_assembly_not_a_page_guess(self):
         answer = workshop_trials.run_declared_static_load(
             App(self.root), assemble("chair", design_id="chair"),
             duration_s=0.1, session_factory=FakeSession)
         self.assertEqual(120.0, answer["requested"]["load_kg"])
+        self.assertLessEqual(answer["prototype"]["effective_cell_size_m"], 0.02)
 
 
 if __name__ == "__main__":
