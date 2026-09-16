@@ -149,6 +149,45 @@ def normalize_tags(value: Any) -> dict[str, list[str]]:
     return out
 
 
+def infer_tags(item_type: str, payload: Any) -> dict[str, list[str]] | None:
+    """Derive searchable semantics from known physical recipe payloads.
+
+    ``None`` means the payload is not a semantic recipe we understand, so an
+    update must preserve any tags already stored for that item.  A known recipe
+    returns a complete tag set (possibly empty), allowing its physics index to
+    evolve with the actual saved component/design rather than stale metadata.
+    """
+    if not isinstance(payload, dict):
+        return None
+    schema = str(payload.get("schema") or "")
+
+    if item_type == "component" and schema == "banjo.workshop-component-recipe.v1":
+        ports = payload.get("ports") or []
+        interfaces = [str(port.get("kind")) for port in ports
+                      if isinstance(port, dict) and port.get("kind")]
+        return normalize_tags({
+            "physics": payload.get("physics_tags") or [],
+            "capability": payload.get("capabilities") or [],
+            "interface": interfaces,
+            "role": [payload["role"]] if payload.get("role") else [],
+            "family": [payload["family"]] if payload.get("family") else [],
+        })
+
+    if item_type == "assembly" and schema == "banjo.workshop-assembly-recipe.v1":
+        # Import lazily: library storage is used by Workshop's API, while these
+        # adapters also know how to rebuild a recipe through authoritative
+        # Workshop geometry. Keeping it lazy avoids turning module import order
+        # into part of the persistence contract.
+        from mcp import workshop_components, workshop_graph
+        from mcp.product_graph import physics_tags
+        design, _ = workshop_components.design_from_spec(payload)
+        return normalize_tags(physics_tags(workshop_graph.product(design)))
+
+    if schema == "banjo.product-graph.v1" and isinstance(payload.get("physics_tags"), dict):
+        return normalize_tags(payload["physics_tags"])
+    return None
+
+
 def _tags(db: sqlite3.Connection, who: str, item_id: str) -> dict[str, list[str]]:
     rows = db.execute("""SELECT namespace,value FROM workshop_library_tags
                        WHERE owner_id=? AND item_id=? ORDER BY namespace,value""",
@@ -167,7 +206,7 @@ def save_item(app: Any, *, item_type: str, name: str, payload: dict[str, Any],
     if not name: raise ValueError("library item needs a name")
     ident = _id(item_id)
     who, now, encoded = owner_id(app), _now(), _payload(payload)
-    checked_tags = normalize_tags(tags) if tags is not None else None
+    checked_tags = normalize_tags(tags) if tags is not None else infer_tags(item_type, payload)
     with _connect(app) as db:
         before = db.execute(
             "SELECT current_version FROM workshop_library_items WHERE item_id=? AND owner_id=?",
