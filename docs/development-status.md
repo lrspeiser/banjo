@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**What is not done** is written down in [what-is-not-done.md](what-is-not-done.md): the increments that were not reached, the owner's placement rule where it is only half built, the four changes that millions of cells would need, what the asset compiler cannot yet do, two engine defects recorded and not fixed, and the things that are easy to misread as finished.
+
 **The room lays a structure out on the ground itself.** Branch `agent/structure-builder`, from `a598d2f`. Increment 2 of [building-from-language.md](building-from-language.md): asked for a long ski ramp in the valley, the chat laid the guide's flat-ground ski jump on a hillside, patched it for 30 rounds and ended "Not finished". Code now works out every part.
 - `build_structure` (MCP) takes a declared construction and builds it: boards along its profile, none over 4 m, and posts from the ground under them up to what they hold, every height from a survey under its line, every side a whole number of cells. It then measures it and answers with the verdict. Nothing is left half built: a part that will not go in takes the rest out again.
 - `constructions.design` holds the four rules the probes established: a deck clears the water while a post stands on the ground; a standing part is sized from the highest ground under its whole footprint (where the room seats it); a post is sized against the underside over its whole width; and the width check samples either side of each quarter, because boards laid end to end leave a centimetre between them.
