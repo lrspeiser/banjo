@@ -39,6 +39,7 @@ import room_store
 import inventory_room
 import tool_use
 import access_gate
+import workshop_api
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1129,6 +1130,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
+                "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
@@ -1171,6 +1173,17 @@ class Handler(BaseHTTPRequestHandler):
             # setup. Nothing is executed, so the panel can show what a run would
             # cost before anyone commits to waiting for it.
             if path=="/api/builder/preview": return self.send(builder.describe(body))
+            # The Workshop bench (docs/workshop-mode.md, docs/workshop-next.md).
+            # Every one of these is pure computation over mcp/workshop.py: no
+            # engine, no room, no inventory. The page renders what they return
+            # and decides no geometry of its own.
+            if path=="/api/workshop/open": return self.send(workshop_api.open_workshop(self.server.app,body))
+            if path=="/api/workshop/candidates": return self.send(workshop_api.candidates(self.server.app,body))
+            if path=="/api/workshop/more": return self.send(workshop_api.more_like_this(self.server.app,body))
+            if path=="/api/workshop/plan": return self.send(workshop_api.plan(self.server.app,body))
+            if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.server.app,body))
+            if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.server.app,body))
+            if path=="/api/workshop/library": return self.send(workshop_api.library(self.server.app,body))
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.

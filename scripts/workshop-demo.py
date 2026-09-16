@@ -6,8 +6,8 @@ Run from the repository root:
     python scripts/workshop-demo.py
 
 This demo never opens Banjo's physics engine and never mutates a live world.
-It exists to make the first workshop slice easy to inspect locally before the
-browser view and scratch-world test runner land.
+It reads the same model the page and the agent read, so what it prints is what
+they see.
 """
 
 from __future__ import annotations
@@ -22,9 +22,10 @@ sys.path.insert(0, str(ROOT))
 from mcp.workshop import (
     ComponentLibrary,
     WorkshopSession,
+    assemble,
+    assemblies,
     feedback,
     materialize,
-    rectangular_four_leg_frame,
     variants,
 )
 
@@ -35,50 +36,48 @@ def main() -> None:
         world_revision="demo-frozen-world-r1",
         target="new table",
     )
+    print("workshop session:", json.dumps(session.described()))
+    print()
+
     library = ComponentLibrary()
-    base = rectangular_four_leg_frame(
-        design_id="work-table",
-        purpose="a stable workshop table",
-        top_size_m=(1.20, 0.05, 0.70),
-        top_height_m=0.78,
-        material="oak",
-        library=library,
-    )
-    candidates = variants(base, {
-        "leg_style": ["straight", "splayed", "tapered"],
-        "top_profile": ["square", "rounded"],
-    })
+    print("component families:", ", ".join(library.families()))
+    print("assemblies:        ", ", ".join(a["assembly"] for a in assemblies()))
+    print()
 
-    chosen = candidates[1]
-    print("SESSION")
-    print(json.dumps({
-        "session_id": session.session_id,
-        "world_revision": session.world_revision,
-        "target": session.target,
-        "outside_paused": session.outside_paused,
-        "component_families": library.families(),
-    }, indent=2))
+    base = assemble("table", design_id="work-table", purpose="a sturdy shop table",
+                    parameters={"width_m": 1.4, "depth_m": 0.8, "height_m": 0.9,
+                                "leg_section_m": 0.07, "aprons": 1},
+                    library=library)
+    measured = base.measure()
+    print("base candidate: %d parts, %.1f kg, base %.2f x %.2f m, tips at %.1f deg"
+          % (len(base.parts), measured["mass_kg"], *measured["support_footprint_m"],
+             measured["tip_angle_deg"]))
+    print()
 
-    print("\nBASE WIREFRAME")
-    print(json.dumps(base.wireframe(), indent=2))
+    print("candidates, and what each one measures:")
+    made = variants(base, {"leg_style": ["straight", "splayed", "tapered"],
+                           "leg_section_m": [0.05, 0.08]})
+    plans = {}
+    for candidate in made:
+        m, plan = candidate.measure(), materialize(candidate)
+        plans.setdefault(plan["fingerprint"], []).append(candidate.design_id)
+        print("  %-16s %-8s %3.0f mm legs  %6.1f kg  base %.2f x %.2f m  tips at %4.1f deg"
+              % (candidate.design_id, candidate.parameters["leg_style"],
+                 candidate.parameters["leg_section_m"] * 1000, m["mass_kg"],
+                 *m["support_footprint_m"], m["tip_angle_deg"]))
+    together = [ids for ids in plans.values() if len(ids) > 1]
+    if together:
+        print("  at a 40 mm cell these arrive as one object:",
+              "; ".join(", ".join(ids) for ids in together))
+    print()
 
-    print("\nVARIANTS")
-    for candidate in candidates:
-        print(json.dumps({
-            "design_id": candidate.design_id,
-            "changes": candidate.lineage["changes"],
-        }, sort_keys=True))
-
-    print("\nUSER FEEDBACK")
-    print(json.dumps(feedback(
-        chosen,
-        rating=5,
-        selected=True,
-        note="Use this direction; next make the legs visually lighter.",
-    ), indent=2))
-
-    print("\nMATERIALIZATION PLAN")
-    print(json.dumps(materialize(chosen, cell_size_m=0.04), indent=2))
+    steadiest = max(made, key=lambda d: d.measure()["tip_angle_deg"])
+    print("hardest to tip:", steadiest.design_id)
+    print("feedback:", json.dumps(feedback(steadiest, rating=5, selected=True,
+                                           note="widest base of the six")))
+    print()
+    print("materialization plan for it:")
+    print(json.dumps(materialize(steadiest), indent=2))
 
 
 if __name__ == "__main__":
