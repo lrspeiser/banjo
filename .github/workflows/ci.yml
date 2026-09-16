@@ -9,9 +9,30 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-
       - name: Check every source under src/ and tests/ is in a CMake target
         run: python3 scripts/check-source-registration.py
+
+  workshop-fast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check Workshop browser and model
+        env:
+          OPENAI_API_KEY: ""
+        run: |
+          node --check playground/workshop.js
+          python3 tests/workshop_tests.py -v
+          python3 tests/workshop_api_tests.py -v
+          python3 tests/workshop_store_tests.py -v
+          python3 tests/workshop_persistence_api_tests.py -v
+          python3 tests/workshop_agent_tests.py -v
+          python3 tests/workshop_statics_tests.py -v
+          python3 tests/workshop_material_catalog_tests.py -v
+          python3 tests/workshop_trials_tests.py -v
+          python3 tests/workshop_components_tests.py -v
+          python3 tests/workshop_library_tests.py -v
+          python3 tests/workshop_component_api_tests.py -v
+          python3 tests/workshop_chat_tests.py -v
 
   build-test-and-capture:
     runs-on: ubuntu-24.04
@@ -43,13 +64,6 @@ jobs:
       - name: Build
         run: cmake --build build/ci --parallel 2
 
-      # The five suites labelled `long` cost up to an hour or more each and
-      # run in long-physics.yml instead, nightly and on demand. The one labelled
-      # `performance` (banjo_live_world_deadline) is a claim about the machine as
-      # much as the engine, which a four-core runner cannot test; it runs on the
-      # declared desktop (scripts/run-performance-gate.py). A selection that
-      # matches no test fails rather than passing empty, and the JUnit keeps
-      # each test's whole output, so the numbers it printed can be compared.
       - name: Test core and material laws
         run: >-
           ctest --test-dir build/ci --output-on-failure --no-tests=error
@@ -61,6 +75,7 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
+          node --check playground/workshop.js
           python3 tests/playground_tests.py -v
           python3 tests/playground_control_tests.py -v
           python3 tests/playground_browser_api_tests.py -v
@@ -73,20 +88,12 @@ jobs:
           python3 tests/room_trace_tests.py -v
           python3 tests/room_store_tests.py -v
           python3 tests/access_gate_tests.py -v
-          # With the library the build step made, so the turns that run the
-          # room's own tools -- and the chat asking again once an answer ran
-          # out -- are tested rather than skipped.
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/chat_history_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/actions_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/tool_use_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
-          # The offline asset compiler: no engine, no library and no packages,
-          # so it belongs with the suites that need none of the three.
           python3 tests/asset_compiler_tests.py -v
-          # Workshop's semantic design/model/API are pure computation. The
-          # scratch-trial suite uses a fake isolated session; no live room is
-          # opened by these unit tests.
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
@@ -95,25 +102,18 @@ jobs:
           python3 tests/workshop_statics_tests.py -v
           python3 tests/workshop_material_catalog_tests.py -v
           python3 tests/workshop_trials_tests.py -v
+          python3 tests/workshop_components_tests.py -v
+          python3 tests/workshop_library_tests.py -v
+          python3 tests/workshop_component_api_tests.py -v
+          python3 tests/workshop_chat_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
-          # A battery hoist in a room, on the engine's runner: built from the
-          # room's spelling and by the chat's own tools, worked by its actions,
-          # and opened again from a saved world. Absolute paths: the runner is
-          # started from its run's folder.
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
-          # The world page as a person uses it, in headless Chrome on the real
-          # engine: a reload keeps the room, and a restart gives it back as it
-          # stood. Required here, so a browser that went missing fails the
-          # build instead of the test skipping.
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/world_page_journey_tests.py -v
-          # The plate drop (-k plate) took 48 minutes through the network lane
-          # on a fast desktop and runs in long-physics.yml; these are the two
-          # quick cases.
           python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
 
       - name: Generate deterministic scenario projections
@@ -142,9 +142,6 @@ jobs:
             build/ci/ball-scenarios.csv
           if-no-files-found: error
 
-      # What ran, what the floating-point audit found in the build's generated
-      # commands, and which profile the build was compiled to -- kept whether the
-      # job passed or not.
       - name: Keep the test and floating-point evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,6 +149,7 @@ jobs:
           name: banjo-ci-evidence-${{ github.sha }}
           path: |
             ctest-results.xml
+            build/ci/banjo-fp-profile.json
             build/ci/banjo-fp-profile.json
             build/ci/fp-model-audit-Release.json
           if-no-files-found: warn
