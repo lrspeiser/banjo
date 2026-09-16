@@ -6,6 +6,16 @@
 <title>Banjo — a room you can walk around in</title>
 <link rel="stylesheet" href="/world.css">
 <link rel="stylesheet" href="/workshop.css">
+<style>
+.ws-chat-intro{margin:.35rem 0 .55rem!important;color:#9fb0c3!important}
+#ws-chat-log{display:grid;gap:.5rem;min-height:120px;max-height:340px;overflow:auto;margin:.45rem 0;padding:.55rem;border:1px solid #303b49;border-radius:.55rem;background:#0a1017;scroll-behavior:smooth}
+.ws-chat-message{max-width:92%;padding:.5rem .58rem;border:1px solid #34404e;border-radius:.55rem;background:#111b26;font-size:.79rem;line-height:1.4;overflow-wrap:anywhere}
+.ws-chat-message.user{justify-self:end;margin-left:1.25rem;background:#1a2a38;border-color:#43576b}.ws-chat-message.assistant{justify-self:start;margin-right:1.25rem}.ws-chat-message.working{opacity:.82;border-style:dashed}
+.ws-chat-who{display:block;margin-bottom:.18rem;color:#91a6bb;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.ws-chat-body{white-space:pre-wrap}
+.ws-chat-status{min-height:1.15rem;margin:.2rem 0 .4rem;color:#9ed4ad;font-size:.7rem}.ws-chat-tools{margin-top:.4rem;border-top:1px solid #2e3946;padding-top:.3rem;color:#aebbc9;font-size:.7rem}.ws-chat-tools summary{cursor:pointer;color:#95abc0}.ws-chat-tools ul{margin:.35rem 0 0;padding-left:1.15rem}.ws-chat-tools li{margin:.18rem 0}.ws-chat-tools li.bad{color:#e9a0a0}
+.ws-component-chat{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.4rem;align-items:end}.ws-component-chat textarea{box-sizing:border-box;width:100%;min-height:64px;max-height:180px;resize:vertical;border:1px solid #3d4958;border-radius:.4rem;background:#0d141c;color:#e6edf5;padding:.5rem;font:inherit;line-height:1.35}.ws-component-chat textarea:focus{outline:2px solid #6d89a5;outline-offset:1px}.ws-component-chat button[disabled],.ws-component-chat textarea[disabled]{opacity:.6}
+@media(max-width:650px){#ws-chat-log{max-height:42vh}.ws-component-chat{grid-template-columns:1fr}.ws-component-chat button{justify-self:end}}
+</style>
 </head>
 <body>
 <canvas id="stage"></canvas><div id="crosshair" aria-hidden="true"><span></span></div><div id="label" hidden><strong id="label-name"></strong></div><ol id="hotbar" aria-label="Your bag, by number key" hidden></ol>
@@ -29,5 +39,32 @@
 const asked=new URLSearchParams(location.search);
 if(!asked.has("workshop")){await import("/world.js")}
 else{document.body.classList.add("workshop-mode");document.querySelector("#design-workshop").hidden=false;await import("/workshop.js")}
+</script>
+<script type="module">
+if(new URLSearchParams(location.search).has("workshop")){
+  const ready=()=>document.querySelector("#ws-component-chat");
+  if(!ready())await new Promise(resolve=>{const observer=new MutationObserver(()=>{if(ready()){observer.disconnect();resolve()}});observer.observe(document.documentElement,{childList:true,subtree:true})});
+  const $=q=>document.querySelector(q),form=$("#ws-component-chat"),oldInput=$("#ws-component-chat-text");
+  const history=[];let keyConfigured=false,pendingBubble=null,pendingOriginal="";
+  const el=(tag,attrs={},text="")=>{const node=document.createElement(tag);for(const [key,value] of Object.entries(attrs)){if(key==="class")node.className=value;else node.setAttribute(key,value)}if(text)node.textContent=text;return node};
+  const heading=form.previousElementSibling;if(heading&&heading.tagName==="H3")heading.textContent="Workshop assistant";
+  const intro=el("p",{class:"ws-chat-intro"},"Ask about the object or tell Workshop what to change. It can inspect components, 3D positions, interfaces, physics, tests, materials and My Library, then use several tools in one turn.");
+  const log=el("div",{id:"ws-chat-log",role:"log","aria-live":"polite","aria-label":"Workshop assistant conversation"});
+  const status=el("div",{id:"ws-chat-status",class:"ws-chat-status","aria-live":"polite"});
+  form.parentElement.insertBefore(intro,form);form.parentElement.insertBefore(log,form);form.parentElement.insertBefore(status,form.nextSibling);
+  const textarea=el("textarea",{id:"ws-component-chat-text",rows:"3",maxlength:"4000",placeholder:"Try: make all four legs longer and thinner, then tell me what that does to stability","aria-label":"Message Workshop assistant"});oldInput.replaceWith(textarea);
+  const send=form.querySelector("button[type=submit]");if(send)send.textContent="Send";
+  function appendMessage(role,text,options={}){const row=el("div",{class:`ws-chat-message ${role}${options.working?" working":""}`});row.append(el("span",{class:"ws-chat-who"},role==="user"?"You":"Workshop"),el("div",{class:"ws-chat-body"},text));if(options.tools&&options.tools.length){const details=el("details",{class:"ws-chat-tools"});details.append(el("summary",{},`${options.tools.length} Workshop tool step${options.tools.length===1?"":"s"}`));const list=el("ul");for(const step of options.tools)list.append(el("li",{class:step.ok===false?"bad":""},`${step.tool}: ${step.summary||"done"}`));details.append(list);row.append(details)}log.append(row);log.scrollTop=log.scrollHeight;return row}
+  function finishWorking(){if(pendingBubble)pendingBubble.remove();pendingBubble=null;pendingOriginal="";status.textContent="";textarea.disabled=false;if(send)send.disabled=false}
+  function assistant(text,tools=[]){const clean=String(text||"").trim()||"Done.";appendMessage("assistant",clean,{tools});history.push({role:"assistant",content:clean});if(history.length>20)history.splice(0,history.length-20)}
+  appendMessage("assistant","I can work on the whole design or a selected component. Tell me what you want changed, or ask me to inspect the geometry or physics first.");
+  fetch("/api/status").then(r=>r.json()).then(answer=>{keyConfigured=Boolean(answer.key_configured)}).catch(()=>{keyConfigured=false});
+  function selectedComponentName(){const text=$("#ws-selected-part")?.textContent||"";if(!text||/^Click a part/i.test(text))return null;return text.split(" · ")[0].trim()||null}
+  function deicticEditWithoutSelection(message){if(selectedComponentName())return false;const edit=/\b(longer|shorter|thicker|thinner|wider|narrower|material|iron|oak|aluminum|aluminium)\b/i.test(message),deictic=/\b(this|that|it|selected|the part)\b/i.test(message),semanticSet=/\b(legs?|wheels?|posts?|beams?|braces?|aprons?|stretchers?|axles?|handles?|tops?|surfaces?|panels?|shelves?)\b/i.test(message);return edit&&deictic&&!semanticSet}
+  function conversationContext(current){if(!keyConfigured)return current;const prior=history.slice(0,-1).slice(-10),lines=prior.map(row=>`${row.role==="user"?"User":"Workshop"}: ${row.content}`),selection=selectedComponentName(),selectionLine=selection?`The user currently has component ${selection} selected in the 3D Workshop.`:"No component is selected in the 3D Workshop. If the API transports a placeholder component, do not treat it as a user selection.";return ["WORKSHOP CONVERSATION CONTEXT (use this for references such as 'those' or 'a little more'):",...lines,selectionLine,`CURRENT USER REQUEST: ${current}`].join("\n")}
+  form.addEventListener("submit",event=>{const message=textarea.value.trim();if(!message)return;if(deicticEditWithoutSelection(message)){event.preventDefault();event.stopImmediatePropagation();assistant("Which component do you mean? Click it in the 3D view, or name the group—for example, ‘all the legs’.");return}if(!selectedComponentName())$("#ws-parts .ws-part-link")?.click();pendingOriginal=message;history.push({role:"user",content:message});if(history.length>20)history.splice(0,history.length-20);appendMessage("user",message);pendingBubble=appendMessage("assistant","Working… inspecting the design and choosing Workshop tools.",{working:true});status.textContent="Working — the design stays unchanged until this turn completes.";textarea.disabled=true;if(send)send.disabled=true},true);
+  const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if(url.includes("/api/workshop/candidates")&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&requestBody.component_chat);if(isChat&&pendingOriginal){requestBody.component_chat.message=conversationContext(pendingOriginal);init={...init,body:JSON.stringify(requestBody)};status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&answer.workshop_chat){const chat=answer.workshop_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[])}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the Workshop agent: ${problem.message||problem}`)}throw problem}};
+  textarea.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(!textarea.disabled)form.requestSubmit()}});
+}
 </script>
 </body></html>
