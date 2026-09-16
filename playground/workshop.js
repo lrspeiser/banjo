@@ -289,7 +289,17 @@ function show() {
     checks.classList.add("warn");
     said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing: their heads are off the top.`);
   }
-  said.push("Static-load and tip physics are specified but not yet measured by a trial.");
+  const analytical = candidate.analytical || {};
+  const staticCheck = (analytical.static_loads || [])[0];
+  if (staticCheck) {
+    const max = staticCheck.max_support;
+    said.push(`Analytical ${staticCheck.external_load_kg} kg load: ${max.name} carries the most at about ${max.equivalent_load_kg} kg equivalent. This is rigid equilibrium only, not a strength result.`);
+  }
+  for (const limitation of analytical.limitations || []) {
+    checks.classList.add("warn");
+    said.push(`Analytical load share unavailable: ${limitation}.`);
+  }
+  said.push("Physical static-load and tip trials have not run yet; those will be separate engine evidence.");
   checks.textContent = said.join(" ");
   $("#ws-plan").hidden = true;
 }
