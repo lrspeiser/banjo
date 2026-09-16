@@ -31,9 +31,6 @@ def _box_body(name: str, part, *, shift_y: float, join: str) -> dict[str, Any]:
     if not engine_materials.known(material):
         raise ValueError(
             f"{part.material!r} has no Banjo engine material preset; the prototype cannot be run")
-    # fracture_lab.validate consumes the authored scene spelling (millimetres),
-    # then normalizes it for the live runner. Passing its post-normalization
-    # dimensions_m/center_m spelling here made every scratch trial invalid.
     return {
         "name": name,
         "shape": "box",
@@ -47,6 +44,29 @@ def _box_body(name: str, part, *, shift_y: float, join: str) -> dict[str, Any]:
         "join": join,
         "rotation_deg": [float(v) for v in part.rotation_deg],
     }
+
+
+def _fits_cell(body: dict[str, Any], cell_m: float) -> bool:
+    """Mirror fracture_lab's 20% box-extent substitution guard."""
+    if body.get("shape") in {"sphere", "cone"}:
+        return True
+    for want in body.get("size_mm") or []:
+        want = float(want)
+        got = max(1, round(want / 1000.0 / cell_m)) * cell_m * 1000.0
+        if abs(got - want) > 0.2 * want + 1e-9:
+            return False
+    return True
+
+
+def _effective_cell(requested_m: float, bodies: list[dict[str, Any]]) -> float:
+    """Use the coarsest requested-or-finer standard cell that represents all boxes."""
+    choices = {float(requested_m)}
+    choices.update(cell for cell in (0.04, 0.02, 0.01, 0.005) if cell <= requested_m + 1e-12)
+    for cell in sorted(choices, reverse=True):
+        if 0.005 <= cell <= 0.1 and all(_fits_cell(body, cell) for body in bodies):
+            return cell
+    raise ValueError(
+        "this Workshop prototype has features too thin for the 5 mm scratch-physics cell floor")
 
 
 def _target_part(design: WorkshopDesign, on: str):
@@ -65,10 +85,10 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
     """Candidate + one weight, in a local scratch scene."""
     design.validate()
     load_kg = float(load_kg)
-    cell = float(cell_size_m)
+    requested_cell = float(cell_size_m)
     if not isfinite(load_kg) or load_kg <= 0:
         raise ValueError("load_kg must be a finite positive number")
-    if not isfinite(cell) or not 0.005 <= cell <= 0.1:
+    if not isfinite(requested_cell) or not 0.005 <= requested_cell <= 0.1:
         raise ValueError("scratch trial cell_size_m must be 5 to 100 mm")
 
     materials = {engine_materials.canonical(p.material) for p in design.parts}
@@ -90,10 +110,6 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
     target = _target_part(design, on)
     highest = max(c[1] for c in target.corners_m()) + shift_y
     side = (load_kg / engine_materials.density(_LOAD_MATERIAL)) ** (1.0 / 3.0)
-    if side < 2 * cell:
-        raise ValueError(
-            f"{load_kg:g} kg of {_LOAD_MATERIAL} is only {side * 1000:.1f} mm across at "
-            f"a {cell * 1000:.0f} mm cell; use a finer trial cell or a larger load")
     load_name = "workshop/test-load"
     bodies.append({
         "name": load_name,
@@ -107,6 +123,11 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
         "anchored": False,
         "rotation_deg": [0.0, 0.0, 0.0],
     })
+    cell = _effective_cell(requested_cell, bodies)
+    if side < 2 * cell:
+        raise ValueError(
+            f"{load_kg:g} kg of {_LOAD_MATERIAL} is only {side * 1000:.1f} mm across at "
+            f"a {cell * 1000:.0f} mm cell; use a finer trial cell or a larger load")
     spec = fracture_lab.validate({
         "algorithm": "lattice",
         "cell_m": cell,
@@ -121,6 +142,7 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
         "load_on": on,
         "approximated_parts": approximated,
         "shift_y_m": shift_y,
+        "requested_cell_size_m": requested_cell,
         "cell_size_m": cell,
     }
 
@@ -184,6 +206,12 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
         qb = b.get("orientation_wxyz") or [1, 0, 0, 0]
         turned = _quat_angle_deg(qa, qb)
 
+    limitations = (["non-box Workshop parts use their occupied box in this first gross-load trial"]
+                   if setup["approximated_parts"] else [])
+    if setup["cell_size_m"] != setup["requested_cell_size_m"]:
+        limitations.append(
+            f"scratch cell refined from {setup['requested_cell_size_m'] * 1000:g} mm to "
+            f"{setup['cell_size_m'] * 1000:g} mm so the candidate geometry is representable")
     return {
         "schema": TRIAL_SCHEMA,
         "evidence": "engine-trial",
@@ -196,6 +224,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "approximated_parts": setup["approximated_parts"],
             "body_count": len(setup["spec"].get("bodies") or []),
             "one_material_join": True,
+            "effective_cell_size_m": setup["cell_size_m"],
         },
         "measured": {
             "clock_s": round(float(final.get("t", 0.0)), 6),
@@ -212,8 +241,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "why": ("the assembly declares the load to try, but not a displacement/rotation/failure "
                     "tolerance; this result is evidence, not an invented pass/fail"),
         },
-        "limitations": (["non-box Workshop parts use their occupied box in this first gross-load trial"]
-                        if setup["approximated_parts"] else []),
+        "limitations": limitations,
     }
 
 
