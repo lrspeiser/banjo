@@ -83,6 +83,15 @@ def _connect(app: Any) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, material)
         );
+        CREATE TABLE IF NOT EXISTS workshop_bench_presets (
+            owner_id TEXT NOT NULL,
+            preset_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            test_name TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(owner_id, preset_id)
+        );
     """)
     who, now = owner_id(app), _now()
     for material, price in DEFAULT_PRICES.items():
@@ -191,6 +200,43 @@ def set_price(app: Any, material: str, price_per_kg: float, currency: str = "cre
                     price_per_kg=excluded.price_per_kg,currency=excluded.currency,updated_at=excluded.updated_at""",
                    (owner_id(app), material, price, currency, _now()))
     return pricebook(app)
+
+
+def save_bench_preset(app: Any, *, name: str, test_name: str, config: dict[str, Any],
+                      preset_id: str | None = None) -> dict[str, Any]:
+    label = " ".join(str(name).split())[:160]
+    if not label:
+        raise ValueError("bench preset needs a name")
+    ident = _id(preset_id).replace("lib-", "test-", 1) if preset_id is None else _id(preset_id)
+    encoded = _payload(config)
+    now = _now()
+    with _connect(app) as db:
+        db.execute("""INSERT INTO workshop_bench_presets(owner_id,preset_id,name,test_name,config_json,updated_at)
+                    VALUES (?,?,?,?,?,?) ON CONFLICT(owner_id,preset_id) DO UPDATE SET
+                    name=excluded.name,test_name=excluded.test_name,config_json=excluded.config_json,updated_at=excluded.updated_at""",
+                   (owner_id(app), ident, label, str(test_name)[:80], encoded, now))
+    return load_bench_preset(app, ident)
+
+
+def load_bench_preset(app: Any, preset_id: str) -> dict[str, Any]:
+    ident = _id(preset_id)
+    with _connect(app) as db:
+        row = db.execute("SELECT * FROM workshop_bench_presets WHERE owner_id=? AND preset_id=?",
+                         (owner_id(app), ident)).fetchone()
+    if row is None:
+        raise FileNotFoundError(f"there is no Workshop test preset {ident}")
+    return {"preset_id": row["preset_id"], "name": row["name"], "test": row["test_name"],
+            "config": json.loads(row["config_json"]), "updated_at": row["updated_at"]}
+
+
+def list_bench_presets(app: Any, *, limit: int = 100) -> list[dict[str, Any]]:
+    with _connect(app) as db:
+        rows = db.execute("""SELECT * FROM workshop_bench_presets WHERE owner_id=?
+                           ORDER BY updated_at DESC,preset_id LIMIT ?""",
+                          (owner_id(app), max(1, min(500, int(limit))))).fetchall()
+    return [{"preset_id": row["preset_id"], "name": row["name"], "test": row["test_name"],
+             "config": json.loads(row["config_json"]), "updated_at": row["updated_at"]}
+            for row in rows]
 
 
 def bill_of_materials(app: Any, design: WorkshopDesign) -> dict[str, Any]:
