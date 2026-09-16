@@ -1,13 +1,9 @@
 """Independent component edits on top of Workshop assemblies.
 
-An assembly remains the deterministic source of its ordinary geometry.  Edits to
+An assembly remains the deterministic source of its ordinary geometry. Edits to
 one selected component are recorded as absolute, local component overrides keyed
-by part name.  Rebuilding therefore starts from the current assembly recipe and
-reapplies only the user's explicit component changes.
-
-This is intentionally not a second geometry system: overrides still become
-``WirePart`` objects and all mass, balance and materialization measurements go
-through ``mcp.workshop``.
+by part name. Rebuilding starts from the current assembly recipe and reapplies
+only the user's explicit component changes.
 """
 from __future__ import annotations
 
@@ -68,19 +64,16 @@ def checked_overrides(value: Any) -> dict[str, dict[str, Any]]:
 
 def _changed(part: WirePart, patch: dict[str, Any]) -> WirePart:
     return WirePart(
-        name=part.name,
-        role=part.role,
+        name=part.name, role=part.role,
         size_m=tuple(patch.get("size_m", part.size_m)),
         center_m=tuple(patch.get("center_m", part.center_m)),
         material=str(patch.get("material", part.material)),
         rotation_deg=tuple(patch.get("rotation_deg", part.rotation_deg)),
-        shape=str(patch.get("shape", part.shape)),
-        family=part.family,
+        shape=str(patch.get("shape", part.shape)), family=part.family,
     )
 
 
 def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
-    """Return the same assembly with explicit per-part geometry/material edits."""
     patches = checked_overrides(overrides)
     known = {part.name for part in design.parts}
     missing = sorted(set(patches) - known)
@@ -88,14 +81,10 @@ def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
         raise ValueError("component override names part(s) not in this design: " + ", ".join(missing))
     parts = [_changed(part, patches.get(part.name, {})) for part in design.parts]
     return WorkshopDesign(
-        design_id=design.design_id,
-        purpose=design.purpose,
-        parts=parts,
+        design_id=design.design_id, purpose=design.purpose, parts=parts,
         parameters=deepcopy(design.parameters),
         lineage={**deepcopy(design.lineage), "component_overrides": deepcopy(patches)},
-        tests=deepcopy(design.tests),
-        notes=list(design.notes),
-        kind=design.kind,
+        tests=deepcopy(design.tests), notes=list(design.notes), kind=design.kind,
     ).validate()
 
 
@@ -109,8 +98,7 @@ def design_from_spec(spec: Any) -> tuple[WorkshopDesign, dict[str, dict[str, Any
     if not isinstance(parameters, dict):
         raise ValueError("candidate parameters must be an object")
     base = assemble(
-        kind,
-        design_id=str(spec.get("design_id") or kind),
+        kind, design_id=str(spec.get("design_id") or kind),
         purpose=(str(spec["purpose"]) if spec.get("purpose") else None),
         parameters=parameters,
     )
@@ -126,25 +114,17 @@ def _length_changed(part: WirePart, factor: float) -> tuple[list[float], list[fl
     if part.role not in {"leg", "post"}:
         return size, list(part.center_m)
     a, b = part.ends_m()
-    # A leg hangs from its head, a post stands from its foot.
     if part.role == "leg":
         anchor = a if a[1] >= b[1] else b
         other = b if anchor is a else a
-        sign = -1.0
     else:
         anchor = a if a[1] <= b[1] else b
         other = b if anchor is a else a
-        sign = 1.0
     dx, dy, dz = (other[i] - anchor[i] for i in range(3))
     length = sqrt(dx * dx + dy * dy + dz * dz) or 1.0
     ux, uy, uz = dx / length, dy / length, dz / length
-    # For a leg the existing vector already points from head to foot. For a
-    # post it points from foot to head; sign is retained only as documentation
-    # of the anchoring convention and the vector itself determines direction.
-    _ = sign
     end = (anchor[0] + ux * new, anchor[1] + uy * new, anchor[2] + uz * new)
-    center = [(anchor[i] + end[i]) / 2 for i in range(3)]
-    return size, center
+    return size, [(anchor[i] + end[i]) / 2 for i in range(3)]
 
 
 def _thickness(part: WirePart, factor: float) -> list[float]:
@@ -153,9 +133,6 @@ def _thickness(part: WirePart, factor: float) -> list[float]:
         size[0] = max(0.003, min(10.0, size[0] * factor))
         size[2] = max(0.003, min(10.0, size[2] * factor))
         return size
-    # Tops are locally y-thick; upright panels tend to have their smallest x/z
-    # extent as thickness. Pick the smallest dimension rather than baking a
-    # family-specific orientation into the editor.
     axis = min(range(3), key=lambda i: size[i])
     size[axis] = max(0.003, min(10.0, size[axis] * factor))
     return size
@@ -176,7 +153,6 @@ def _selected(design: WorkshopDesign, part_name: str, scope: str) -> list[WirePa
 
 def edit(spec: Any, *, part_name: str, action: str, scope: str = "this",
          amount: float = 0.12, material: str | None = None) -> tuple[WorkshopDesign, dict[str, dict[str, Any]], list[str]]:
-    """Apply one general edit to a selected component or its similar siblings."""
     if action not in EDIT_ACTIONS:
         raise ValueError("action must be " + ", ".join(EDIT_ACTIONS))
     amount = float(amount)
@@ -207,7 +183,10 @@ def edit(spec: Any, *, part_name: str, action: str, scope: str = "this",
             patch["material"] = chosen
         updated[part.name] = patch
         changed_names.append(part.name)
-    base = assemble(design.kind or "", design_id=f"{design.design_id}-edit",
+    # Identity belongs to the design being edited; lineage records the mutation.
+    # Appending -edit on every click eventually made long editing sessions
+    # impossible to save under the bounded design-id contract.
+    base = assemble(design.kind or "", design_id=design.design_id,
                     purpose=design.purpose, parameters=design.parameters)
     edited = apply_overrides(base, updated)
     edited.lineage = {**edited.lineage, "parent": design.design_id,
@@ -224,18 +203,14 @@ def component_recipe(design: WorkshopDesign, part_name: str) -> dict[str, Any]:
         "schema": "banjo.workshop-component-recipe.v1",
         "source_design_id": design.design_id,
         "source_part_name": part.name,
-        "family": part.family,
-        "role": part.role,
-        "shape": part.shape,
+        "family": part.family, "role": part.role, "shape": part.shape,
         "size_m": [float(v) for v in part.size_m],
-        "material": part.material,
-        "interfaces": interfaces,
+        "material": part.material, "interfaces": interfaces,
     }
 
 
 def replace_with_recipe(spec: Any, *, part_name: str, recipe: Any,
                         scope: str = "this") -> tuple[WorkshopDesign, dict[str, dict[str, Any]], list[str]]:
-    """Reuse a saved component recipe at the selected assembly attachment."""
     if not isinstance(recipe, dict) or recipe.get("schema") != "banjo.workshop-component-recipe.v1":
         raise ValueError("that library item is not a reusable Workshop component")
     design, overrides = design_from_spec(spec)
@@ -249,10 +224,8 @@ def replace_with_recipe(spec: Any, *, part_name: str, recipe: Any,
     names: list[str] = []
     for part in targets:
         patch = dict(updated.get(part.name) or {})
-        new_size = list(size)
-        center = list(part.center_m)
+        new_size, center = list(size), list(part.center_m)
         if part.role in {"leg", "post"}:
-            # Reuse the saved section/length, but keep the target attachment end.
             factor = new_size[1] / float(part.size_m[1])
             new_size, center = _length_changed(part, factor)
             new_size[0], new_size[2] = size[0], size[2]
@@ -261,7 +234,7 @@ def replace_with_recipe(spec: Any, *, part_name: str, recipe: Any,
                      shape=str(recipe.get("shape") or part.shape))
         updated[part.name] = patch
         names.append(part.name)
-    base = assemble(design.kind or "", design_id=f"{design.design_id}-reuse",
+    base = assemble(design.kind or "", design_id=design.design_id,
                     purpose=design.purpose, parameters=design.parameters)
     edited = apply_overrides(base, updated)
     edited.lineage = {**edited.lineage, "parent": design.design_id,
