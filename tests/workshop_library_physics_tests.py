@@ -11,6 +11,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "playground"))
 
 import workshop_library  # noqa: E402
+from mcp import workshop_components  # noqa: E402
+from mcp.workshop import assemble  # noqa: E402
 
 
 class PhysicsTaggedLibrary(unittest.TestCase):
@@ -43,6 +45,32 @@ class PhysicsTaggedLibrary(unittest.TestCase):
         either = workshop_library.find_items(
             self.app, tags={"physics": ["rotor", "beam"]}, match_all=False)
         self.assertEqual({"a", "b"}, {row["item_id"] for row in either})
+
+    def test_real_component_recipe_is_tagged_without_caller_supplied_metadata(self):
+        cart = assemble("cart", design_id="tag-cart")
+        wheel = next(part for part in cart.parts if part.role == "wheel")
+        recipe = workshop_components.component_recipe(cart, wheel.name)
+        item = workshop_library.save_item(
+            self.app, item_type="component", name="Reusable wheel", payload=recipe,
+            family=recipe.get("family"), role=recipe.get("role"), item_id="wheel")
+        self.assertTrue({"rotor", "rolling_contact"} <= set(item["tags"]["physics"]))
+        self.assertIn("shaft", item["tags"]["interface"])
+        self.assertIn("rotates", item["tags"]["capability"])
+        self.assertEqual(["wheel"], item["tags"]["role"])
+
+    def test_real_assembly_recipe_is_tagged_from_its_product_physics(self):
+        payload = {
+            "schema": "banjo.workshop-assembly-recipe.v1",
+            "kind": "cart", "design_id": "saved-cart", "purpose": None,
+            "parameters": {}, "component_overrides": {},
+        }
+        item = workshop_library.save_item(
+            self.app, item_type="assembly", name="Rolling platform", payload=payload,
+            item_id="cart")
+        self.assertIn("rolling_contact", item["tags"]["physics"])
+        self.assertIn("bearing", item["tags"]["relationship"])
+        self.assertIn("cart_roll", item["tags"]["test"])
+        self.assertIn("shaft", item["tags"]["interface"])
 
     def test_updating_without_tags_preserves_existing_semantics(self):
         workshop_library.save_item(
