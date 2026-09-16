@@ -58,15 +58,30 @@ def _fits_cell(body: dict[str, Any], cell_m: float) -> bool:
     return True
 
 
+def _cell_count(bodies: list[dict[str, Any]], cell_m: float) -> int:
+    return sum(fracture_lab.body_cells(body, cell_m) for body in bodies)
+
+
 def _effective_cell(requested_m: float, bodies: list[dict[str, Any]]) -> float:
-    """Use the coarsest requested-or-finer standard cell that represents all boxes."""
-    choices = {float(requested_m)}
-    choices.update(cell for cell in (0.04, 0.02, 0.01, 0.005) if cell <= requested_m + 1e-12)
-    for cell in sorted(choices, reverse=True):
-        if 0.005 <= cell <= 0.1 and all(_fits_cell(body, cell) for body in bodies):
+    """Choose the coarsest requested-or-finer cell that fits geometry and lane budget.
+
+    Workshop dimensions are continuous while the scratch lattice is discrete.
+    Refining only to 20/10/5 mm rejected common 24 mm members or made an entire
+    chair exceed the 16k-cell instant-run lane. Search at 0.5 mm increments so
+    the trial can find a representable cell without changing the requested
+    object or silently exceeding the engine's declared lane budget.
+    """
+    cap = int(fracture_lab.ALGORITHMS["lattice"]["max_cells"])
+    top_mm = int(round(float(requested_m) * 2000.0))  # half-mm units
+    floor_mm = int(round(0.005 * 2000.0))
+    for units in range(top_mm, floor_mm - 1, -1):
+        cell = units / 2000.0
+        if not all(_fits_cell(body, cell) for body in bodies):
+            continue
+        if _cell_count(bodies, cell) <= cap:
             return cell
     raise ValueError(
-        "this Workshop prototype has features too thin for the 5 mm scratch-physics cell floor")
+        "this Workshop prototype cannot fit both the 5 mm geometry floor and the scratch lane's cell budget")
 
 
 def _target_part(design: WorkshopDesign, on: str):
@@ -127,7 +142,7 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
     if side < 2 * cell:
         raise ValueError(
             f"{load_kg:g} kg of {_LOAD_MATERIAL} is only {side * 1000:.1f} mm across at "
-            f"a {cell * 1000:.0f} mm cell; use a finer trial cell or a larger load")
+            f"a {cell * 1000:.1f} mm cell; use a finer trial cell or a larger load")
     spec = fracture_lab.validate({
         "algorithm": "lattice",
         "cell_m": cell,
@@ -144,6 +159,7 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
         "shift_y_m": shift_y,
         "requested_cell_size_m": requested_cell,
         "cell_size_m": cell,
+        "cells": int(spec.get("cells", _cell_count(bodies, cell))),
     }
 
 
@@ -211,7 +227,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
     if setup["cell_size_m"] != setup["requested_cell_size_m"]:
         limitations.append(
             f"scratch cell refined from {setup['requested_cell_size_m'] * 1000:g} mm to "
-            f"{setup['cell_size_m'] * 1000:g} mm so the candidate geometry is representable")
+            f"{setup['cell_size_m'] * 1000:g} mm so geometry fits within the lane budget")
     return {
         "schema": TRIAL_SCHEMA,
         "evidence": "engine-trial",
@@ -225,6 +241,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "body_count": len(setup["spec"].get("bodies") or []),
             "one_material_join": True,
             "effective_cell_size_m": setup["cell_size_m"],
+            "cells": setup["cells"],
         },
         "measured": {
             "clock_s": round(float(final.get("t", 0.0)), 6),
