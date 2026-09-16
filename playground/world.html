@@ -28,6 +28,9 @@
 <button class="ws-action" id="ws-more" type="button">More like this</button>
 <button class="ws-action" id="ws-reset-variants" type="button">Reset set</button>
 </div>
+<h2>Saved designs</h2>
+<p>Explicitly saved recipes reopen through the current component library, with their lineage and source-world revision.</p>
+<div id="ws-saved-designs"></div>
 <h2>Library</h2>
 <p>The families every candidate is composed from, with the bounds each one accepts.</p>
 <div id="ws-library"></div>
@@ -54,6 +57,9 @@
 <ul id="ws-parts"></ul>
 <h3>Cheap checks</h3>
 <p class="ws-note" id="ws-checks"></p>
+<h3>Save design</h3>
+<label class="ws-field">Name<input id="ws-save-name" type="text" maxlength="80" placeholder="shop-table"></label>
+<div class="ws-row"><button class="ws-action primary" id="ws-save-design" type="button">Save design</button><span class="ws-feedback-count" id="ws-save-status"></span></div>
 <h3>Feedback</h3>
 <label class="ws-field">Rating<select id="ws-rating"><option value="">&mdash;</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
 <label class="ws-field">Note<textarea id="ws-note" rows="3" placeholder="I like this direction, but..."></textarea></label>
