@@ -1,14 +1,8 @@
 """The Workshop's server side: one model, read by the page and by the agent.
 
-Every design decision lives in ``mcp/workshop.py``. This module turns it into
-the answers ``/api/workshop/*`` gives, so the page can render candidates without
-knowing how a leg is laid out, and an agent lane can call exactly the same
-operations.
-
-Normal Workshop operations are pure computation and never touch a live room.
-The one explicit exception is ``plan(..., run_trial=true)``, which delegates to
-``workshop_trials``; that module owns a separate scratch LiveWorld and never
-borrows ``app.live`` or writes ``app.room``.
+Ordinary Workshop operations are pure design computation. Explicit physical
+trials delegate to ``workshop_trials``, which owns a separate scratch LiveWorld.
+Personal component/design recipes and the pricebook live in ``workshop_library``.
 """
 from __future__ import annotations
 
@@ -23,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from mcp import engine_materials  # noqa: E402
 from mcp.workshop import (  # noqa: E402
     WORKSHOP_SCHEMA,
     ComponentLibrary,
@@ -35,6 +30,8 @@ from mcp.workshop import (  # noqa: E402
     variants,
 )
 from mcp.workshop_statics import declared_statics  # noqa: E402
+from mcp import workshop_components  # noqa: E402
+import workshop_library  # noqa: E402
 import workshop_store  # noqa: E402
 
 _lock = threading.Lock()
@@ -69,7 +66,15 @@ NUDGES: dict[str, list[tuple[str, list[float]]]] = {
 
 
 def _store(app: Any) -> Path:
-    where = Path(getattr(app, "workshop_store", ROOT / "build" / "workshop"))
+    explicit = getattr(app, "workshop_store", None)
+    if explicit:
+        where = Path(explicit)
+    elif getattr(app, "runs_path", None) is not None:
+        # Hosted Render/Fly runs are /data/runs, so saved Workshop JSON is also
+        # on the persistent volume rather than inside the ephemeral image.
+        where = Path(app.runs_path).resolve().parent / "workshop"
+    else:
+        where = ROOT / "build" / "workshop"
     where.mkdir(parents=True, exist_ok=True)
     return where
 
@@ -119,18 +124,22 @@ def _label(kind: str, values: dict[str, Any], spec) -> str:
     return " · ".join(bits) or kind
 
 
-def _candidate(design, spec) -> dict[str, Any]:
+def _candidate(app: Any, design, spec, overrides: Any = None) -> dict[str, Any]:
+    engine_materials.synchronize_workshop_model()
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
+    wire["component_overrides"] = workshop_components.checked_overrides(overrides)
     try:
         wire["analytical"] = {"static_loads": declared_statics(design), "limitations": []}
     except ValueError as problem:
         wire["analytical"] = {"static_loads": [], "limitations": [str(problem)]}
+    wire["bom"] = workshop_library.bill_of_materials(app, design)
     return wire
 
 
-def _spread(kind: str, base: dict[str, Any], sweeps: dict[str, list[Any]],
-            generation: int, purpose: str | None = None) -> list[dict[str, Any]]:
+def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[Any]],
+            generation: int, purpose: str | None = None,
+            overrides: Any = None) -> list[dict[str, Any]]:
     spec = assembly(kind)
     root = assemble(kind, design_id="%s-g%d" % (kind, generation), purpose=purpose,
                     parameters=base)
@@ -138,17 +147,58 @@ def _spread(kind: str, base: dict[str, Any], sweeps: dict[str, list[Any]],
     out = []
     for index, design in enumerate(made, 1):
         design.design_id = "%s-g%d-v%d" % (kind, generation, index)
-        out.append(_candidate(design, spec))
+        checked = workshop_components.checked_overrides(overrides)
+        design = workshop_components.apply_overrides(design, checked)
+        out.append(_candidate(app, design, spec, checked))
     return out
 
 
 def library(app: Any = None, body: Any = None) -> dict[str, Any]:
+    body = body if isinstance(body, dict) else {}
+    if app is not None:
+        action = body.get("action")
+        if action == "load":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "library_item": workshop_library.load_item(app, str(body.get("item_id") or ""))}
+        if action == "set_price":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "pricebook": workshop_library.set_price(
+                        app, str(body.get("material") or ""), float(body.get("price_per_kg")),
+                        str(body.get("currency") or "credits"))}
+        if action == "save_component":
+            design, _ = workshop_components.design_from_spec(body)
+            recipe = workshop_components.component_recipe(design, str(body.get("part_name") or ""))
+            item = workshop_library.save_item(
+                app, item_type="component", name=str(body.get("name") or body.get("part_name") or "component"),
+                payload=recipe, family=recipe.get("family"), role=recipe.get("role"),
+                item_id=(str(body["item_id"]) if body.get("item_id") else None))
+            return {"schema": WORKSHOP_SCHEMA, "library_item": item,
+                    "personal_library": workshop_library.list_items(app),
+                    "pricebook": workshop_library.pricebook(app)}
+        if action == "save_design":
+            design, overrides = workshop_components.design_from_spec(body)
+            payload = {
+                "schema": "banjo.workshop-assembly-recipe.v1",
+                "kind": design.kind,
+                "design_id": design.design_id,
+                "purpose": design.purpose,
+                "parameters": dict(design.parameters),
+                "component_overrides": overrides,
+            }
+            item = workshop_library.save_item(
+                app, item_type="assembly", name=str(body.get("name") or design.design_id),
+                payload=payload, item_id=(str(body["item_id"]) if body.get("item_id") else None))
+            return {"schema": WORKSHOP_SCHEMA, "library_item": item,
+                    "personal_library": workshop_library.list_items(app),
+                    "pricebook": workshop_library.pricebook(app)}
     return {
         "schema": WORKSHOP_SCHEMA,
         "families": ComponentLibrary().described(),
         "assemblies": assemblies(),
         "seeds": {k: sorted(v) for k, v in SEED_SWEEPS.items()},
         "saved_designs": workshop_store.list_saved(_store(app)) if app is not None else [],
+        "personal_library": workshop_library.list_items(app) if app is not None else [],
+        "pricebook": workshop_library.pricebook(app) if app is not None else {},
     }
 
 
@@ -156,34 +206,38 @@ def open_workshop(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body)
     generation = _generation(body)
     saved_id = body.get("saved_design_id")
+    library_id = body.get("library_item_id")
     saved = None
-    if saved_id:
+    library_item = None
+    if library_id:
+        library_item = workshop_library.load_item(app, str(library_id))
+        if library_item["item_type"] != "assembly":
+            raise ValueError("only an assembly library item can open as the whole Workshop design")
+        payload = library_item["payload"]
+        design, overrides = workshop_components.design_from_spec(payload)
+        kind = str(design.kind)
+        candidates_out = [_candidate(app, design, assembly(kind), overrides)]
+        revision, target = "personal-library", library_item["name"]
+    elif saved_id:
         saved, design = workshop_store.load(_store(app), str(saved_id))
         kind = str(saved["kind"])
-        spec = assembly(kind)
-        candidates_out = [_candidate(design, spec)]
-        revision = str(body.get("world_revision") or saved.get("world_revision")
-                       or "unopened-world")
+        candidates_out = [_candidate(app, design, assembly(kind), {})]
+        revision = str(body.get("world_revision") or saved.get("world_revision") or "unopened-world")
         target = str(body.get("target") or saved.get("label") or design.design_id)
     else:
         kind = _kind(body)
         revision = str(body.get("world_revision") or "unopened-world")
         target = str(body.get("target") or kind)
-        candidates_out = _spread(kind, _parameters(body),
-                                 SEED_SWEEPS.get(kind, {}), generation)
+        candidates_out = _spread(app, kind, _parameters(body), SEED_SWEEPS.get(kind, {}), generation)
 
     session = WorkshopSession(
         session_id=str(body.get("session_id") or ("bench-%d" % int(time.time() * 1000))),
-        world_revision=revision,
-        target=target)
+        world_revision=revision, target=target)
     return {
-        "schema": WORKSHOP_SCHEMA,
-        "session": session.described(),
-        **library(app),
-        "kind": kind,
-        "generation": generation,
-        "candidates": candidates_out,
+        "schema": WORKSHOP_SCHEMA, "session": session.described(), **library(app),
+        "kind": kind, "generation": generation, "candidates": candidates_out,
         **({"saved_design": saved} if saved else {}),
+        **({"library_item": library_item} if library_item else {}),
     }
 
 
@@ -191,13 +245,40 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body)
     kind = _kind(body)
     generation = _generation(body)
+    current = {
+        "kind": kind, "design_id": str(body.get("design_id") or f"{kind}-g{generation}"),
+        "purpose": body.get("purpose"), "parameters": _parameters(body),
+        "component_overrides": body.get("component_overrides") or {},
+    }
+    if isinstance(body.get("component_edit"), dict):
+        edit = body["component_edit"]
+        design, overrides, names = workshop_components.edit(
+            current, part_name=str(edit.get("part_name") or ""),
+            action=str(edit.get("action") or ""), scope=str(edit.get("scope") or "this"),
+            amount=float(edit.get("amount", 0.12)),
+            material=(str(edit["material"]) if edit.get("material") else None))
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation + 1,
+                "candidates": [_candidate(app, design, assembly(kind), overrides)],
+                "component_edit": {"changed": names, "action": edit.get("action")}}
+    if isinstance(body.get("reuse_library_item"), dict):
+        reuse = body["reuse_library_item"]
+        item = workshop_library.load_item(app, str(reuse.get("item_id") or ""))
+        if item["item_type"] != "component":
+            raise ValueError("drag a component library item onto a selected component")
+        design, overrides, names = workshop_components.replace_with_recipe(
+            current, part_name=str(reuse.get("part_name") or ""), recipe=item["payload"],
+            scope=str(reuse.get("scope") or "this"))
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation + 1,
+                "candidates": [_candidate(app, design, assembly(kind), overrides)],
+                "reused_library_item": {"item_id": item["item_id"], "changed": names}}
+
     sweeps = body.get("sweeps")
     if sweeps is not None and not isinstance(sweeps, dict):
         raise ValueError("sweeps must be a JSON object of parameter to values")
     return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation,
-            "candidates": _spread(kind, _parameters(body),
+            "candidates": _spread(app, kind, _parameters(body),
                                   sweeps if sweeps is not None else SEED_SWEEPS.get(kind, {}),
-                                  generation)}
+                                  generation, overrides=body.get("component_overrides"))}
 
 
 def more_like_this(app: Any, body: Any) -> dict[str, Any]:
@@ -205,6 +286,7 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
     kind = _kind(body)
     spec = assembly(kind)
     base = spec.checked(_parameters(body))
+    overrides = workshop_components.checked_overrides(body.get("component_overrides"))
     generation = _generation(body) + 1
     known = {p.name: p for p in spec.parameters}
     made: list[dict[str, Any]] = []
@@ -221,21 +303,21 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
                 moved = min(parameter.high, moved)
             values[name] = moved
         if kind in {"table", "stool", "bench", "chair"} and values.get("splay_deg"):
-            values["leg_style"] = ("splayed"
-                                   if base["leg_style"] == "straight"
-                                   else base["leg_style"])
+            values["leg_style"] = "splayed" if base["leg_style"] == "straight" else base["leg_style"]
         design = assemble(kind, design_id="%s-g%d-v%d" % (kind, generation, index + 1),
                           parameters=values)
-        made.append(_candidate(design, spec))
+        design = workshop_components.apply_overrides(design, overrides)
+        made.append(_candidate(app, design, spec, overrides))
     return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation,
             "candidates": made}
 
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body)
-    kind = _kind(body)
-    design = assemble(kind, design_id=str(body.get("design_id") or kind),
-                      parameters=_parameters(body))
+    design, _ = workshop_components.design_from_spec({
+        "kind": _kind(body), "design_id": str(body.get("design_id") or _kind(body)),
+        "parameters": _parameters(body), "component_overrides": body.get("component_overrides") or {},
+    })
     try:
         cell = float(body.get("cell_size_m", 0.04))
     except (TypeError, ValueError):
@@ -243,9 +325,8 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     if not 0.002 <= cell <= 0.5:
         raise ValueError("cell_size_m must be between 2 mm and 500 mm")
     answer = materialize(design, cell_size_m=cell)
+    answer["bom"] = workshop_library.bill_of_materials(app, design)
     if body.get("run_trial"):
-        # Imported only for this explicit request. workshop_trials owns a new
-        # Session and is tested to leave app.live/app.room unchanged.
         import workshop_trials
         try:
             duration = float(body.get("duration_s", 2.0))
@@ -260,21 +341,21 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body)
     kind = _kind(body)
     design_id = workshop_store.safe_design_id(body.get("design_id") or kind)
-    design = assemble(kind, design_id=design_id, parameters=_parameters(body))
-
+    design, overrides = workshop_components.design_from_spec({
+        "kind": kind, "design_id": design_id, "parameters": _parameters(body),
+        "component_overrides": body.get("component_overrides") or {},
+    })
     rating = body.get("rating")
     if rating not in (None, "") and int(rating) not in range(1, 6):
         raise ValueError("rating must be 1 through 5")
     note = str(body.get("note", ""))[:2000]
     wants_feedback = rating not in (None, "") or bool(note) or "selected" in body
-
     record = None
     where = _store(app) / "feedback.jsonl"
     if wants_feedback:
         record = feedback(design,
                           rating=int(rating) if rating not in (None, "") else None,
-                          selected=bool(body.get("selected", True)),
-                          note=note)
+                          selected=bool(body.get("selected", True)), note=note)
         record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         record["fingerprint"] = materialize(design)["fingerprint"]
         with _lock:
@@ -282,15 +363,21 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
                 out.write(json.dumps(record, sort_keys=True) + "\n")
 
     saved_design = None
+    library_item = None
     if body.get("save_design"):
-        saved_design = workshop_store.save(
-            _store(app), design,
-            label=str(body.get("label") or design_id),
-            parent_design_id=(str(body["parent_design_id"])
-                              if body.get("parent_design_id") else None),
-            world_revision=(str(body["world_revision"])
-                            if body.get("world_revision") else None),
-        )
+        # Legacy JSON remains for unedited recipes. Any component-level edit is
+        # saved in the SQLite personal library, where overrides are first-class.
+        if not overrides:
+            saved_design = workshop_store.save(
+                _store(app), design, label=str(body.get("label") or design_id),
+                parent_design_id=(str(body["parent_design_id"]) if body.get("parent_design_id") else None),
+                world_revision=(str(body["world_revision"]) if body.get("world_revision") else None))
+        payload = {"schema": "banjo.workshop-assembly-recipe.v1", "kind": kind,
+                   "design_id": design_id, "purpose": design.purpose,
+                   "parameters": dict(design.parameters), "component_overrides": overrides}
+        library_item = workshop_library.save_item(
+            app, item_type="assembly", name=str(body.get("label") or design_id), payload=payload,
+            item_id=(str(body["library_item_id"]) if body.get("library_item_id") else None))
 
     kept = 0
     if where.exists():
@@ -298,14 +385,9 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
             with where.open(encoding="utf-8") as back:
                 kept = sum(1 for line in back if line.strip())
     designs = workshop_store.list_saved(_store(app))
-    return {
-        "schema": WORKSHOP_SCHEMA,
-        "saved": record,
-        "design": saved_design,
-        "kept": kept,
-        "designs_kept": len(designs),
-        "saved_designs": designs,
-    }
+    return {"schema": WORKSHOP_SCHEMA, "saved": record, "design": saved_design,
+            "library_item": library_item, "kept": kept, "designs_kept": len(designs),
+            "saved_designs": designs, "personal_library": workshop_library.list_items(app)}
 
 
 def remembered(app: Any, body: Any = None) -> dict[str, Any]:
@@ -323,10 +405,7 @@ def remembered(app: Any, body: Any = None) -> dict[str, Any]:
                     continue
     rows.reverse()
     designs = workshop_store.list_saved(_store(app))
-    return {
-        "schema": WORKSHOP_SCHEMA,
-        "kept": len(rows),
-        "feedback": rows[:200],
-        "designs_kept": len(designs),
-        "saved_designs": designs,
-    }
+    return {"schema": WORKSHOP_SCHEMA, "kept": len(rows), "feedback": rows[:200],
+            "designs_kept": len(designs), "saved_designs": designs,
+            "personal_library": workshop_library.list_items(app),
+            "pricebook": workshop_library.pricebook(app)}
