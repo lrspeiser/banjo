@@ -38,7 +38,9 @@ class Opening(unittest.TestCase):
         self.assertTrue(answer["session"]["outside_paused"])
         self.assertEqual(6, len(answer["candidates"]))
         self.assertGreaterEqual(len(answer["families"]), 10)
-        self.assertEqual(6, len(answer["assemblies"]))
+        assembly_names = {row["assembly"] for row in answer["assemblies"]}
+        self.assertGreaterEqual(len(assembly_names), 6)
+        self.assertIn("table", assembly_names)
 
     def test_every_candidate_arrives_measured_and_ready_to_draw(self):
         answer = workshop_api.open_workshop(self.app, {"kind": "table"})
