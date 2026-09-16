@@ -48,9 +48,16 @@ def available() -> dict[str, bool]:
     return {"obj": True, "step": _installed("OCP"), "mesh": _installed("trimesh")}
 
 
-def read_mesh(path: Path, *, deflection_mm: float = DEFAULT_DEFLECTION_MM,
+def read_mesh(path: Path, *, solid: str | None = None,
+              deflection_mm: float = DEFAULT_DEFLECTION_MM,
               angular_deflection_rad: float = DEFAULT_ANGULAR_DEFLECTION_RAD) -> dict[str, Any]:
-    """Triangles from whatever this file is, by the reader that handles it."""
+    """Triangles from whatever this file is, by the reader that handles it.
+
+    `solid` names one labelled solid inside a STEP assembly, by its XCAF entry
+    (the "0:1:1:3" form). That is what lets a part be converted once: the five
+    solids of an assembly are read as five parts, not as the eighteen shapes
+    its instances flatten to.
+    """
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".obj":
@@ -59,7 +66,7 @@ def read_mesh(path: Path, *, deflection_mm: float = DEFAULT_DEFLECTION_MM,
         if not available()["step"]:
             raise ValueError(f"{path.name}: reading STEP needs Open Cascade; install "
                              "tools/asset-compiler-requirements.txt into a virtual environment")
-        return read_step(path, deflection_mm=deflection_mm,
+        return read_step(path, solid=solid, deflection_mm=deflection_mm,
                          angular_deflection_rad=angular_deflection_rad)
     if suffix in MESH_SUFFIXES:
         if not available()["mesh"]:
@@ -122,7 +129,8 @@ def tessellate(shape, *, deflection_mm: float = DEFAULT_DEFLECTION_MM,
     return {"vertices": vertices, "triangles": triangles}
 
 
-def read_step(path: Path, *, deflection_mm: float = DEFAULT_DEFLECTION_MM,
+def read_step(path: Path, *, solid: str | None = None,
+              deflection_mm: float = DEFAULT_DEFLECTION_MM,
               angular_deflection_rad: float = DEFAULT_ANGULAR_DEFLECTION_RAD) -> dict[str, Any]:
     """A STEP solid, tessellated.
 
@@ -136,12 +144,161 @@ def read_step(path: Path, *, deflection_mm: float = DEFAULT_DEFLECTION_MM,
     from OCP.IFSelect import IFSelect_ReturnStatus
     from OCP.STEPControl import STEPControl_Reader
 
+    if solid is not None:
+        return tessellate(_labelled_shape(path, solid), deflection_mm=deflection_mm,
+                          angular_deflection_rad=angular_deflection_rad)
     reader = STEPControl_Reader()
     if reader.ReadFile(str(path)) != IFSelect_ReturnStatus.IFSelect_RetDone:
         raise ValueError(f"{path.name}: Open Cascade would not read this as STEP")
     reader.TransferRoots()
     return tessellate(reader.OneShape(), deflection_mm=deflection_mm,
                       angular_deflection_rad=angular_deflection_rad)
+
+
+# One parsed document per file. Reading the AS1 bracket assembly costs 15 ms to
+# parse and 33 ms to transfer, and the compiler asks for five solids out of it
+# and then walks it for the instances: without this the 48 ms would be paid six
+# times over for one file that has not changed.
+_DOCUMENTS: dict[tuple[str, int, float], Any] = {}
+
+
+def _document(path: Path):
+    """The XCAF document for this file, parsed once.
+
+    XCAF rather than STEPControl_Reader because the plain reader answers with
+    one flattened shape: the AS1 assembly comes back as 18 solids with the
+    instance transforms already baked in, and the fact that 8 of them are the
+    same nut is gone. The product structure is the thing worth having.
+    """
+    from OCP.IFSelect import IFSelect_ReturnStatus
+    from OCP.STEPCAFControl import STEPCAFControl_Reader
+    from OCP.TCollection import TCollection_ExtendedString
+    from OCP.TDocStd import TDocStd_Document
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool
+
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_size, stat.st_mtime)
+    cached = _DOCUMENTS.get(key)
+    if cached is not None:
+        return cached
+    document = TDocStd_Document(TCollection_ExtendedString("banjo-asset"))
+    reader = STEPCAFControl_Reader()
+    reader.SetNameMode(True)
+    if reader.ReadFile(str(path)) != IFSelect_ReturnStatus.IFSelect_RetDone:
+        raise ValueError(f"{path.name}: Open Cascade would not read this as STEP")
+    if not reader.Transfer(document):
+        raise ValueError(f"{path.name}: Open Cascade read the file but transferred no shape")
+    _DOCUMENTS[key] = (document, XCAFDoc_DocumentTool.ShapeTool_s(document.Main()))
+    return _DOCUMENTS[key]
+
+
+def _entry(label) -> str:
+    from OCP.TCollection import TCollection_AsciiString
+    from OCP.TDF import TDF_Tool
+
+    text = TCollection_AsciiString()
+    TDF_Tool.Entry_s(label, text)
+    return text.ToCString()
+
+
+def _name(label) -> str:
+    from OCP.TDataStd import TDataStd_Name
+
+    attribute = TDataStd_Name()
+    if label.FindAttribute(TDataStd_Name.GetID_s(), attribute):
+        return attribute.Get().ToExtString()
+    return ""
+
+
+def _labelled_shape(path: Path, solid: str):
+    from OCP.TDF import TDF_Label
+    from OCP.TDF import TDF_Tool
+
+    document, tool = _document(Path(path))
+    label = TDF_Label()
+    TDF_Tool.Label_s(document.GetData(), solid, label)
+    if label.IsNull():
+        raise ValueError(f"{Path(path).name}: no shape is labelled {solid!r}")
+    return tool.GetShape_s(label)
+
+
+def _quarter_turn_degrees(matrix: tuple[float, ...]) -> tuple[float, float, float]:
+    """The x, y, z turns that build this rotation, or a refusal.
+
+    Searched rather than solved. Extracting Euler angles from a matrix has
+    branches at the poles that are easy to get subtly wrong, and there are only
+    64 combinations of quarter turns to try; comparing against the same
+    rotation_matrix the placer uses means the answer agrees with the placer by
+    construction rather than by argument.
+    """
+    from asset_compiler import rotation_matrix
+
+    for x in (0.0, 90.0, 180.0, 270.0):
+        for y in (0.0, 90.0, 180.0, 270.0):
+            for z in (0.0, 90.0, 180.0, 270.0):
+                built = rotation_matrix((x, y, z))
+                if all(abs(built[r][c] - matrix[r * 3 + c]) < 1.0e-9 for r in range(3)
+                       for c in range(3)):
+                    return (x, y, z)
+    raise ValueError(f"the instance rotation {matrix} is not a quarter turn about each axis, so it "
+                     "cannot be re-indexed onto the shared grid; it would have to be voxelised "
+                     "again in world space, which is a different cell count")
+
+
+def step_assembly(path: Path, *, unit: str = "mm") -> dict[str, Any]:
+    """The canonical assembly this STEP file declares: unique parts, and placements.
+
+    Every solid the product structure names once becomes one part, and every
+    leaf of the assembly tree becomes one instance carrying the transform
+    accumulated from the root. A sub-assembly used twice is walked twice, so
+    the instance count is the number of solids that end up in the world rather
+    than the number of parent-to-child links the file declares. Measured on the
+    AS1 bracket assembly: 5 parts, 13 declared usage links and 18 placements,
+    8 of them the same nut.
+
+    No rights are invented here: a STEP file does not say who may use it, so
+    the caller supplies that and an assembly without it is reported
+    `rights_unverified` like any other.
+    """
+    from OCP.TDF import TDF_Label
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.collections import Sequence_TDF_Label
+
+    path = Path(path)
+    _, tool = _document(path)
+    parts: dict[str, dict[str, Any]] = {}
+    instances: list[dict[str, Any]] = []
+
+    def walk(label, location, trail: str) -> None:
+        if tool.IsAssembly_s(label):
+            components = Sequence_TDF_Label()
+            tool.GetComponents_s(label, components)
+            for index in range(1, components.Length() + 1):
+                component = components.Value(index)
+                referred = TDF_Label()
+                if not tool.GetReferredShape_s(component, referred):
+                    continue
+                walk(referred, location.Multiplied(tool.GetLocation_s(component)),
+                     f"{trail}/{_name(component) or index}")
+            return
+        entry = _entry(label)
+        part_id = _name(label) or entry.replace(":", "-")
+        parts.setdefault(part_id, {"mesh": path.name, "solid": entry, "unit": unit})
+        transform = location.Transformation()
+        rotation = tuple(transform.Value(row, column) for row in (1, 2, 3) for column in (1, 2, 3))
+        instances.append({
+            "id": trail.lstrip("/") or part_id,
+            "part": part_id,
+            "translation_mm": [transform.Value(row, 4) for row in (1, 2, 3)],
+            "rotation_deg": list(_quarter_turn_degrees(rotation)),
+        })
+
+    free = Sequence_TDF_Label()
+    tool.GetFreeShapes(free)
+    for index in range(1, free.Length() + 1):
+        root = free.Value(index)
+        walk(root, TopLoc_Location(), f"/{_name(root) or index}")
+    return {"schema": "banjo.asset-assembly.v1", "parts": parts, "instances": instances}
 
 
 def read_with_trimesh(path: Path) -> dict[str, Any]:

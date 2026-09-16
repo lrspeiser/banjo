@@ -115,7 +115,7 @@ Every failure carries a measured detail, and a failure never repairs the part.
 |---|---|
 | `rights_unverified` | the assembly declares no rights record; the blueprint is marked not publishable |
 | `units_ambiguous` | a part declares no unit, or one outside {m, cm, mm, in} |
-| `invalid_solid` | the mesh is not closed, or the three axis scans disagree about a cell |
+| `invalid_solid` | the mesh is not closed: an edge is traversed unevenly, or the signed volume is not positive. A closed mesh is never refused for what the scan makes of it |
 | `feature_below_resolution` | the part's thin dimension is below one cell, measured as a volume-weighted thickness |
 | `required_gap_lost` | two occupied cells within the bond horizon are separated only by empty cells, so the generator would bond through the void |
 | `material_unknown` | the part declares no material, or one outside the engine's catalogue |
@@ -278,6 +278,87 @@ file's own units to millimetres as it reads, so a STEP part must be declared
 against each other is not done, which means a part declared wrongly is caught
 by nothing -- exactly the hole `units_ambiguous` exists to close, and the first
 thing to add to this reader.
+
+## A real assembly: does this help, or take forever?
+
+Measured on the AS1 bracket assembly (`as1-oc-214.stp`, 441,968 bytes, AP214,
+written by Open Cascade 6.1 in 2008, MIT-licensed from the stepcode
+repository), on the worktree's own virtual environment. Its Part 21 text
+declares 9 PRODUCT entities, 5 MANIFOLD_SOLID_BREP and 13
+NEXT_ASSEMBLY_USAGE_OCCURRENCE, which was read from the file before any of this
+ran and is what the numbers below are checked against.
+
+**It does not take forever.** The whole file becomes a blueprint in well under a
+second at every resolution tried:
+
+| cell | cells placed | wall | read | convert | place | connections | snap |
+|---|---|---|---|---|---|---|---|
+| 10 mm | 724 | 0.026 s | 50% | 37% | 4% | 2% | 5.00 mm |
+| 5 mm | 6,216 | 0.057 s | 23% | 50% | 14% | 9% | 2.50 mm |
+| 3 mm | 29,080 | 0.203 s | 7% | 60% | 19% | 13% | 1.50 mm |
+| 2 mm | 95,292 | 0.578 s | 2% | 59% | 22% | 16% | 1.00 mm |
+
+**Where the time actually goes.** Parsing dominates, and it is a fixed toll:
+reading the file and walking its product structure costs **440 ms**, paid once
+whatever the cell size, and tessellating all five solids to 2,052 triangles
+costs **25 ms**. At a 10 mm cell that parse is seventeen times the entire
+compile. Everything after it scales with cells, so the two cross at about 3 mm;
+below that the compile dominates and the parse is a rounding error. Inside the
+compile at 2 mm: occupancy 23%, the gap check 14%, mass properties 8%, the
+collision proxy 8%, mesh validation 0.5%.
+
+So the honest answer to "does it help" is that the conversion is not the
+expensive part of anything. A single break of one glass plate in the live room
+costs more than compiling this entire assembly.
+
+**Instancing pays exactly as intended.** Five solids are converted, eighteen
+placements are made:
+
+| part | cells at 5 mm | placed | in the world |
+|---|---|---|---|
+| nut | 10 | 8 | 80 |
+| bolt | 28 | 6 | 168 |
+| l-bracket | 776 | 2 | 1,552 |
+| rod | 160 | 1 | 160 |
+| plate | 4,256 | 1 | 4,256 |
+
+Thirteen and eighteen are both right and count different things. The thirteen
+are the parent-to-child links the file declares; the eighteen are the solids
+that end up in a world, because `l-bracket-assembly` is used twice and each use
+brings its three `nut-bolt-assembly` instances with it. The file names the nut
+in three usage links and the world gets eight nuts. A compiler reporting
+thirteen would be describing the file rather than the scene.
+
+**Four things this file taught that the fixtures could not.**
+
+1. **Real placements never land on the grid.** The worst instance snap is
+   exactly half a cell at every resolution -- 5.00, 2.50, 1.50, 1.00 mm -- because
+   CAD positions like 62.00961894 mm have no reason to be a whole number of
+   cells. Every instance is displaced by up to half a cell before anything else
+   happens.
+2. **The resolution squeeze is real, not a fixture's contrivance.** The nut is
+   3 mm thick, so it needs a cell of 3 mm or less to exist at all: at 5 mm it is
+   10 cells and +87.78% volume, and at 10 mm it vanishes entirely and is
+   refused rather than dropped. But at 3 mm the assembly is 29,080 cells, which
+   is 1.8 times the room's 16,000. **There is no cell size at which this
+   assembly is both resolved and affordable**, and one cell size per scene is
+   what makes that so.
+3. **Fasteners interpenetrate by design.** A bolt through a hole shares cells
+   with the bracket and the plate, so `connection_ambiguous` fires 10 to 22
+   times depending on resolution. The compiler is right that it cannot tell a
+   joint from an interference, and AP214 does not carry the mates that would
+   settle it: the assembly structure says a bolt is *in* a nut-bolt-assembly,
+   never that it is threaded into anything. Connections have to come from
+   somewhere other than the STEP file.
+4. **Bolt holes weld shut at coarse cells.** The plate loses 32 bonds to the
+   void at 5 mm, 28 at 3 mm and none at 2 mm, as its holes grow wider than the
+   bond horizon. The failure is resolution-dependent, which is exactly why it is
+   reported with a count rather than a yes or no.
+
+**What this file does not show.** It is a bracket assembly: it exercises
+instancing, nested sub-assemblies and product structure thoroughly, and
+traversal not at all. Nothing here validates anything a person walks on, stands
+on or breaks.
 
 ## Why the gap check exists
 

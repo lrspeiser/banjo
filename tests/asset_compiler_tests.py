@@ -14,7 +14,9 @@ reproduction to the numbers that file states.
 """
 from __future__ import annotations
 
+from collections import Counter
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -260,6 +262,23 @@ class WhatIsRefusedRatherThanRepaired(FixtureTestCase):
         self.assertEqual(blueprint["cell_budget"], ac.ROOM_CELL_BUDGET)
         self.assertNotIn("editable_voxels", blueprint["validation"]["capabilities"])
 
+    def test_a_mesh_with_a_missing_face_is_refused_as_an_invalid_solid(self):
+        """Closure is the one thing the scan cannot do without.
+
+        This is what invalid_solid is for, and it is all it is for. A closed
+        mesh whose scan rows graze a curved surface is not this: the count of
+        such rows moves with the cell size, and the mesh is closed on every
+        measure the compiler has.
+        """
+        broken = af.solid_block()
+        broken["triangles"] = broken["triangles"][:-2]
+        path = af.write_obj(self.fixtures / "broken.obj", broken)
+        document = self.document("block")
+        document["parts"]["block"]["mesh"] = path.name
+        blueprint = ac.compile_assembly(document, self.fixtures)
+        self.assertIn("invalid_solid", self.categories(blueprint))
+        self.assertNotIn("static_collision", blueprint["validation"]["capabilities"])
+
     def test_an_undeclared_unit_is_refused_rather_than_guessed(self):
         document = self.document("block")
         document["parts"]["block"].pop("unit")
@@ -366,6 +385,89 @@ class ReadingASolidRatherThanAMesh(FixtureTestCase):
         self.assertEqual(self.categories(blueprint), [])
         conversion = blueprint["conversions"][blueprint["parts"]["block"]["conversion"]]
         self.assertEqual(conversion["occupancy"]["count"], 1920)
+
+
+STEP_ASSEMBLY = Path(os.environ.get("BANJO_STEP_ASSEMBLY", "")) if os.environ.get(
+    "BANJO_STEP_ASSEMBLY") else None
+
+
+@unittest.skipUnless(ar.available()["step"] and STEP_ASSEMBLY and STEP_ASSEMBLY.is_file(),
+                     "needs Open Cascade and a STEP assembly named by BANJO_STEP_ASSEMBLY")
+class AWholeAssemblyFromOneFile(unittest.TestCase):
+    """The AS1 bracket assembly: the case the instancing is actually for.
+
+    Five solids are placed eighteen times, and eight of those placements are the
+    same nut. The numbers below were read from the file's own Part 21 text
+    before any of this ran: 9 PRODUCT entities, 5 MANIFOLD_SOLID_BREP, and 13
+    NEXT_ASSEMBLY_USAGE_OCCURRENCE.
+
+    Thirteen and eighteen are both right and they count different things. The
+    thirteen are the parent-to-child links the file declares; the eighteen are
+    the solids that end up in a world, because a sub-assembly used twice
+    contributes its contents twice. A compiler that reported thirteen would be
+    describing the file, not the scene.
+    """
+
+    def test_the_product_structure_gives_five_parts_and_eighteen_placements(self):
+        document = ar.step_assembly(STEP_ASSEMBLY)
+        self.assertEqual(sorted(document["parts"]), ["bolt", "l-bracket", "nut", "plate", "rod"])
+        self.assertEqual(len(document["instances"]), 18)
+
+    def test_the_nut_is_one_definition_placed_eight_times(self):
+        document = ar.step_assembly(STEP_ASSEMBLY)
+        placements = Counter(instance["part"] for instance in document["instances"])
+        self.assertEqual(dict(placements),
+                         {"nut": 8, "bolt": 6, "l-bracket": 2, "rod": 1, "plate": 1})
+        # The file names the nut in three usage links; two of them are inside a
+        # sub-assembly that is itself used three times inside another used
+        # twice, which is how three becomes eight.
+        self.assertEqual(sum(1 for i in document["instances"] if i["part"] == "nut"), 8)
+
+    def test_every_part_is_converted_once_however_often_it_is_placed(self):
+        document = ar.step_assembly(STEP_ASSEMBLY)
+        document["cell_size_m"] = 0.005
+        document["rights"] = {"source": "stepcode", "licence": "MIT"}
+        blueprint = ac.compile_assembly(document, STEP_ASSEMBLY.parent)
+        validation = blueprint["validation"]
+        self.assertEqual(validation["conversions_run"], 5,
+                         "a part was converted more than once")
+        self.assertEqual(validation["instances"], 18)
+        # One conversion serves all eight nuts: measured at a 5 mm cell the nut
+        # is 10 cells, so the blueprint holds 10 and the world gets 80.
+        nut = blueprint["conversions"][blueprint["parts"]["nut"]["conversion"]]
+        self.assertEqual(nut["occupancy"]["count"], 10)
+        self.assertEqual(sum(i["cells"] for i in blueprint["instances"] if i["part"] == "nut"), 80)
+        self.assertEqual(validation["cells_total"], 6216)
+
+    def test_a_sound_cad_solid_is_not_condemned_for_a_grazing_scan_row(self):
+        """All five solids are closed with no unpaired edge, and their volumes
+        agree with Open Cascade's own to better than 0.6%. Rows that enter the
+        solid and never leave it are the scan meeting a B-spline surface
+        edge-on, and their count moves with the cell size -- 1 at 10 mm, 5 at
+        5 mm, 3 at 3 mm -- so they are reported and voted on rather than
+        treated as a broken mesh.
+        """
+        document = ar.step_assembly(STEP_ASSEMBLY)
+        for part_id, declared in document["parts"].items():
+            report = ac.mesh_report(ac.scaled(ar.read_mesh(STEP_ASSEMBLY, solid=declared["solid"]), "mm"))
+            self.assertTrue(report["closed"], part_id)
+            self.assertEqual(report["unpaired_edges"], 0, part_id)
+        document["cell_size_m"] = 0.005
+        document["rights"] = {"source": "stepcode", "licence": "MIT"}
+        blueprint = ac.compile_assembly(document, STEP_ASSEMBLY.parent)
+        categories = {failure["category"] for failure in blueprint["validation"]["failures"]}
+        self.assertNotIn("invalid_solid", categories)
+
+    def test_every_placement_is_a_quarter_turn_so_re_indexing_is_exact(self):
+        """Measured: 8 distinct orientations, every one a multiple of 90 degrees.
+
+        That is what lets an instance be a re-index of the single conversion
+        rather than a second voxelisation of the moved solid.
+        """
+        document = ar.step_assembly(STEP_ASSEMBLY)
+        for instance in document["instances"]:
+            for angle in instance["rotation_deg"]:
+                self.assertEqual(angle % 90, 0, instance["id"])
 
 
 if __name__ == "__main__":
