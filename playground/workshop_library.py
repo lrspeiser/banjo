@@ -1,11 +1,8 @@
 """Personal Workshop component/design library backed by SQLite.
 
-Banjo currently has one hosted owner rather than account identities.  Every row
+Banjo currently has one hosted owner rather than account identities. Every row
 still carries ``owner_id`` now, so multi-user authentication can later replace
 the default ``owner`` without changing the library schema.
-
-The database lives beside the playground's persistent runs directory by default:
-Render uses /data/runs, therefore this becomes /data/banjo.db.
 """
 from __future__ import annotations
 
@@ -22,38 +19,32 @@ from mcp.workshop import WorkshopDesign
 
 LIBRARY_SCHEMA = "banjo.workshop-library.v1"
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
-
-# A starter in-world pricebook, deliberately denominated in credits rather than
-# claiming current retail dollars. It is user-configurable in the database.
 DEFAULT_PRICES = {
-    "oak": 3.00,
-    "iron": 1.20,
-    "aluminum": 4.00,
-    "glass": 1.50,
-    "alumina ceramic": 6.00,
-    "rubber": 2.50,
-    "ice": 0.10,
-    "concrete": 0.15,
+    "oak": 3.00, "iron": 1.20, "aluminum": 4.00, "glass": 1.50,
+    "alumina ceramic": 6.00, "rubber": 2.50, "ice": 0.10, "concrete": 0.15,
 }
 
 
 def owner_id(app: Any) -> str:
-    value = str(getattr(app, "workshop_owner_id", "owner") or "owner")
-    return value[:120]
+    return str(getattr(app, "workshop_owner_id", "owner") or "owner")[:120]
 
 
 def db_path(app: Any) -> Path:
     explicit = getattr(app, "workshop_db", None)
     if explicit:
         path = Path(explicit)
+    elif getattr(app, "runs_path", None) is not None:
+        path = Path(app.runs_path).resolve().parent / "banjo.db"
+    elif getattr(app, "workshop_store", None) is not None:
+        path = Path(app.workshop_store).resolve() / "banjo.db"
     else:
-        runs = getattr(app, "runs_path", None)
-        if runs is not None:
-            path = Path(runs).resolve().parent / "banjo.db"
-        else:
-            path = Path(__file__).resolve().parents[1] / "build" / "workshop" / "banjo.db"
+        path = Path(__file__).resolve().parents[1] / "build" / "workshop" / "banjo.db"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _connect(app: Any) -> sqlite3.Connection:
@@ -93,18 +84,13 @@ def _connect(app: Any) -> sqlite3.Connection:
             PRIMARY KEY(owner_id, material)
         );
     """)
-    who = owner_id(app)
-    now = _now()
+    who, now = owner_id(app), _now()
     for material, price in DEFAULT_PRICES.items():
         db.execute("""INSERT OR IGNORE INTO workshop_material_prices
                     (owner_id, material, price_per_kg, currency, updated_at)
                     VALUES (?, ?, ?, 'credits', ?)""", (who, material, price, now))
     db.commit()
     return db
-
-
-def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _id(value: Any | None = None) -> str:
@@ -161,54 +147,41 @@ def load_item(app: Any, item_id: str) -> dict[str, Any]:
                          (ident, who)).fetchone()
     if row is None:
         raise FileNotFoundError(f"there is no library item {ident}")
-    return {
-        "schema": LIBRARY_SCHEMA,
-        "item_id": row["item_id"], "owner_id": row["owner_id"],
-        "item_type": row["item_type"], "name": row["name"],
-        "family": row["family"], "role": row["role"],
-        "version": row["current_version"],
-        "payload": json.loads(row["payload_json"]),
-        "created_at": row["created_at"], "updated_at": row["updated_at"],
-    }
+    return {"schema": LIBRARY_SCHEMA, "item_id": row["item_id"], "owner_id": row["owner_id"],
+            "item_type": row["item_type"], "name": row["name"], "family": row["family"],
+            "role": row["role"], "version": row["current_version"],
+            "payload": json.loads(row["payload_json"]), "created_at": row["created_at"],
+            "updated_at": row["updated_at"]}
 
 
 def list_items(app: Any, *, item_type: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
     who = owner_id(app)
-    query = "SELECT * FROM workshop_library_items WHERE owner_id=?"
-    args: list[Any] = [who]
+    query, args = "SELECT * FROM workshop_library_items WHERE owner_id=?", [who]
     if item_type:
         if item_type not in {"component", "assembly"}:
             raise ValueError("item_type must be component or assembly")
-        query += " AND item_type=?"
-        args.append(item_type)
-    query += " ORDER BY updated_at DESC, item_id LIMIT ?"
-    args.append(max(1, min(1000, int(limit))))
+        query += " AND item_type=?"; args.append(item_type)
+    query += " ORDER BY updated_at DESC, item_id LIMIT ?"; args.append(max(1, min(1000, int(limit))))
     with _connect(app) as db:
         rows = db.execute(query, args).fetchall()
-    return [{
-        "item_id": r["item_id"], "item_type": r["item_type"], "name": r["name"],
-        "family": r["family"], "role": r["role"], "version": r["current_version"],
-        "updated_at": r["updated_at"], "payload": json.loads(r["payload_json"]),
-    } for r in rows]
+    return [{"item_id": r["item_id"], "item_type": r["item_type"], "name": r["name"],
+             "family": r["family"], "role": r["role"], "version": r["current_version"],
+             "updated_at": r["updated_at"], "payload": json.loads(r["payload_json"])} for r in rows]
 
 
 def pricebook(app: Any) -> dict[str, Any]:
-    who = owner_id(app)
     with _connect(app) as db:
         rows = db.execute("""SELECT material,price_per_kg,currency,updated_at
                            FROM workshop_material_prices WHERE owner_id=? ORDER BY material""",
-                          (who,)).fetchall()
-    return {
-        "currency": "credits",
-        "basis": "starter in-world pricebook; user-configurable, not a retail-price claim",
-        "materials": [{"material": r["material"], "price_per_kg": r["price_per_kg"],
-                       "currency": r["currency"], "updated_at": r["updated_at"]} for r in rows],
-    }
+                          (owner_id(app),)).fetchall()
+    return {"currency": "credits",
+            "basis": "starter in-world pricebook; user-configurable, not a retail-price claim",
+            "materials": [{"material": r["material"], "price_per_kg": r["price_per_kg"],
+                           "currency": r["currency"], "updated_at": r["updated_at"]} for r in rows]}
 
 
 def set_price(app: Any, material: str, price_per_kg: float, currency: str = "credits") -> dict[str, Any]:
-    material = engine_materials.canonical(material)
-    price = float(price_per_kg)
+    material, price = engine_materials.canonical(material), float(price_per_kg)
     if price < 0 or price > 1e9:
         raise ValueError("price_per_kg must be between 0 and 1e9")
     currency = str(currency or "credits")[:24]
@@ -225,35 +198,22 @@ def bill_of_materials(app: Any, design: WorkshopDesign) -> dict[str, Any]:
     grouped: dict[str, dict[str, Any]] = {}
     for part in design.parts:
         material = engine_materials.canonical(part.material)
-        try:
-            density = engine_materials.density(material)
-        except KeyError:
-            # Display-only legacy materials stay measurable but explicitly unpriced.
-            density = None
+        try: density = engine_materials.density(material)
+        except KeyError: density = None
         mass = part.volume_m3() * density if density is not None else part.mass_kg()
         row = grouped.setdefault(material, {"material": material, "mass_kg": 0.0,
                                              "volume_m3": 0.0, "parts": 0,
                                              "price_per_kg": None, "cost": None})
-        row["mass_kg"] += mass
-        row["volume_m3"] += part.volume_m3()
-        row["parts"] += 1
-    total = 0.0
-    unpriced: list[str] = []
+        row["mass_kg"] += mass; row["volume_m3"] += part.volume_m3(); row["parts"] += 1
+    total, unpriced = 0.0, []
     for material, row in grouped.items():
-        price = prices.get(material)
-        row["mass_kg"] = round(row["mass_kg"], 4)
+        price = prices.get(material); row["mass_kg"] = round(row["mass_kg"], 4)
         row["volume_m3"] = round(row["volume_m3"], 6)
         if price:
             row["price_per_kg"] = float(price["price_per_kg"])
-            row["cost"] = round(row["mass_kg"] * row["price_per_kg"], 2)
-            total += row["cost"]
-        else:
-            unpriced.append(material)
-    return {
-        "schema": "banjo.workshop-bom.v1",
-        "currency": "credits",
-        "basis": "starter in-world material pricebook; excludes fabrication, tools, energy and waste",
-        "materials": sorted(grouped.values(), key=lambda r: r["material"]),
-        "material_cost": round(total, 2),
-        "unpriced_materials": sorted(unpriced),
-    }
+            row["cost"] = round(row["mass_kg"] * row["price_per_kg"], 2); total += row["cost"]
+        else: unpriced.append(material)
+    return {"schema": "banjo.workshop-bom.v1", "currency": "credits",
+            "basis": "starter in-world material pricebook; excludes fabrication, tools, energy and waste",
+            "materials": sorted(grouped.values(), key=lambda r: r["material"]),
+            "material_cost": round(total, 2), "unpriced_materials": sorted(unpriced)}
