@@ -34,10 +34,12 @@ LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 PAGES = frozenset({"/", "/index.html", "/world", "/world.html"})
 WRONG_PASSWORD_DELAY_S = 1.0
 # The same policy the server's other answers carry: nothing inline, nothing
-# from anywhere else. The world page has one deliberately inline module which
-# chooses between the normal room driver and the isolated Workshop. Rather than
-# weakening this policy with unsafe-inline, authorize exactly that module by its
-# SHA-256 hash when /world is served; see _install_world_script_csp_hash().
+# from anywhere else. The world page has one deliberately inline module, which
+# chooses between the normal room driver and the isolated Workshop, and one
+# deliberately inline stylesheet, which is the Workshop's whole layout. Rather
+# than weakening this policy with unsafe-inline, authorize exactly those two
+# blocks by their SHA-256 hashes when /world is served; see
+# _install_world_csp_hashes().
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
        "connect-src 'self'; frame-ancestors 'none'")
 _lock = threading.Lock()
@@ -57,30 +59,46 @@ button { border: 0; background: #2f6fb3; color: #fff; cursor: pointer; }
 """
 
 
-def _world_inline_module_hash() -> str | None:
-    """CSP source hash for the exact inline module in world.html, if present."""
+def _world_inline_hashes(pattern: str) -> list[str]:
+    """CSP source hashes for world.html's inline blocks matching `pattern`.
+
+    The hash covers a block's exact text content, which is what the browser
+    hashes too: an HTML parser normalizes CRLF to LF before tokenizing, and
+    read_text() does the same, so a CRLF checkout still agrees.
+    """
     try:
         text = (Path(__file__).resolve().parent / "world.html").read_text(encoding="utf-8")
     except OSError:
-        return None
-    match = re.search(r'<script\s+type=["\']module["\']>(.*?)</script>', text, re.DOTALL)
-    if not match:
-        return None
-    digest = hashlib.sha256(match.group(1).encode("utf-8")).digest()
-    return "'sha256-" + base64.b64encode(digest).decode("ascii") + "'"
+        return []
+    found = []
+    for match in re.finditer(pattern, text, re.DOTALL):
+        digest = hashlib.sha256(match.group(1).encode("utf-8")).digest()
+        found.append("'sha256-" + base64.b64encode(digest).decode("ascii") + "'")
+    return found
 
 
-def _install_world_script_csp_hash() -> None:
-    """Authorize only world.html's exact inline bootstrap, without unsafe-inline.
+def _install_world_csp_hashes() -> None:
+    """Authorize world.html's exact inline blocks, without unsafe-inline.
+
+    The world page has one inline module, which chooses between the normal room
+    driver and the isolated Workshop, and one inline stylesheet, which is the
+    Workshop's whole layout. Both must be named in the policy or the browser
+    drops them silently: with the stylesheet dropped, world.css's full-viewport
+    `#stage` canvas -- never given a WebGL context on the Workshop page, so
+    invisible -- stays on top of the Workshop and swallows every click.
 
     server.py owns the ordinary response header and access_gate owns the hosted
     login response. Both ultimately call BaseHTTPRequestHandler.send_header, so
-    wrapping it here keeps the policies aligned without duplicating the hash in
-    two places. Only /world and /world.html are changed, and only the script-src
-    directive is extended.
+    wrapping it here keeps the policies aligned without duplicating the hashes
+    in two places. Only /world and /world.html are changed, and only the
+    script-src and style-src directives are extended.
     """
-    source_hash = _world_inline_module_hash()
-    if not source_hash:
+    wanted = {
+        "script-src 'self'": _world_inline_hashes(r'<script\s+type=["\']module["\']>(.*?)</script>'),
+        "style-src 'self'": _world_inline_hashes(r"<style\b[^>]*>(.*?)</style>"),
+    }
+    wanted = {needle: hashes for needle, hashes in wanted.items() if hashes}
+    if not wanted:
         return
     original = BaseHTTPRequestHandler.send_header
     if getattr(original, "_banjo_world_csp_hash", False):
@@ -89,17 +107,18 @@ def _install_world_script_csp_hash() -> None:
     def send_header(handler: Any, keyword: str, value: str) -> None:
         if keyword.lower() == "content-security-policy":
             path = urlsplit(getattr(handler, "path", "")).path
-            if path in {"/world", "/world.html"} and source_hash not in value:
-                needle = "script-src 'self'"
-                if needle in value:
-                    value = value.replace(needle, f"{needle} {source_hash}", 1)
+            if path in {"/world", "/world.html"}:
+                for needle, hashes in wanted.items():
+                    missing = [h for h in hashes if h not in value]
+                    if missing and needle in value:
+                        value = value.replace(needle, " ".join([needle, *missing]), 1)
         original(handler, keyword, value)
 
     send_header._banjo_world_csp_hash = True  # type: ignore[attr-defined]
     BaseHTTPRequestHandler.send_header = send_header
 
 
-_install_world_script_csp_hash()
+_install_world_csp_hashes()
 
 
 def refusal(host: str, password: str | None) -> str | None:
