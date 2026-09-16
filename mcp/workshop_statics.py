@@ -1,9 +1,9 @@
 """Cheap, explicit static-load estimates for Workshop candidates.
 
-These are arithmetic checks, not engine trials.  The design's own weight and a
+These are arithmetic checks, not engine trials. The design's own weight and a
 vertical declared load are distributed over the members that touch the floor by
 the minimum-norm non-negative reaction solution satisfying vertical force and
-the two horizontal moment balances.  That is a defined rigid support model; it
+the two horizontal moment balances. That is a defined rigid support model; it
 does not claim wood stiffness, joint compliance, buckling or fracture.
 """
 from __future__ import annotations
@@ -11,7 +11,13 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
-from mcp.workshop import WorkshopDesign
+from mcp import engine_materials
+
+# Keep the cheap Workshop mass model pinned to the material presets the engine
+# will use when this candidate becomes a scratch-world trial.
+engine_materials.synchronize_workshop_model()
+
+from mcp.workshop import WorkshopDesign  # noqa: E402
 
 G_M_S2 = 9.80665
 _EPS_N = 1.0e-7
