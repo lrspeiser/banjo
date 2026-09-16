@@ -418,11 +418,22 @@ that matches no test (`--no-tests=error`), writes JUnit, and keeps the results,
 the profile and the audit, named by the commit, whether the suite passed or
 not; the plate drop keeps its log too.
 
-On `85b19ca`, which has the profile but not the audit or the probes, on GitHub's
-Ubuntu runners: the plate drop passed (55 min), and `material_showcase`
-(43 min), `contact_capacity` (63 min) and `network_adaptive` (15 min) passed.
-The results for the commit that lands are reported with it. Locally the long
-suites were started for all four builds and stopped unfinished.
+On `cff071c`, the commit that landed, on GitHub's Ubuntu runners, six of the
+seven jobs passed: `network_adaptive` (13 min), `contact_capacity` (41 min),
+`material_showcase` (44 min), the plate drop (44 min), `thermal_geometry_long`
+(2 h 09 m) and `network_skin` (4 h 07 m). `banjo_network_runtime_tests` did not
+finish. ctest stopped it at its 19,800 s (5.5 h) limit, with no check failed. It
+did the same on `85b19ca` (5 h 32 m), where the other six passed as well
+(`network_skin` 5 h 21 m, `thermal_geometry_long` 2 h 42 m).
+
+That suite has never completed on a GitHub runner: before `b9e4d27` the workflow
+could not run at all, so what it costs there was unknown. It is not this change
+slowing it down. CI's own tests take the same time before and after on the same
+kind of runner (706 s and 710 s on `4f26aad` and `48fbee4`, 711 s on `cff071c`),
+and `network_skin` ran an hour faster here than on `85b19ca`. Making the long
+suites fit the runner's budget, by sharding them rather than by asking less of
+them, is its own task. Locally the long suites were started for all four
+measurement builds and stopped unfinished.
 
 ## Adding code
 
