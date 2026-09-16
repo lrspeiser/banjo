@@ -28,6 +28,7 @@ import workshop_library
 
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
 MAX_HISTORY = 20
+MAX_MESSAGE_CHARS = 48_000
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_CALLS = 24
 
@@ -468,7 +469,10 @@ def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
             candidate: dict[str, Any], materials: list[str], library: list[dict[str, Any]],
             history: Any = None) -> dict[str, Any]:
     """Run one conversational Workshop turn and atomically update ``candidate``."""
-    message = " ".join(str(message).split())[:4000]
+    # Browser chat may include recent transcript plus the current request. Keep a
+    # generous bounded envelope, and keep its tail so CURRENT USER REQUEST (sent
+    # last by the browser) can never be crowded out by an older conversation.
+    message = " ".join(str(message).split())[-MAX_MESSAGE_CHARS:]
     if not message: raise ValueError("Workshop chat needs a message")
     selected_name = str((selected_part or {}).get("name") or "") or None
     original = deepcopy(candidate)
