@@ -291,6 +291,177 @@ def summary(checked: dict[str, Any]) -> str:
                                    for r in checked.get("results") or [] if not r["passed"])
 
 
+def _whole(v: float, cell: float) -> float:
+    """A length as a whole number of cells: what the room will build (it rounds
+    every side, and a post a hair too tall overlaps what it holds up)."""
+    return max(1, round(v / cell)) * cell
+
+
+def design(record: dict[str, Any], ground_at: Callable[[float, float], float],
+           water_at: Callable[[float, float], float | None] | None = None,
+           cell_m: float = 0.04, longest_m: float = 3.5) -> list[dict[str, Any]]:
+    """The parts of a structure that does what this declaration says, on the
+    ground as it is: each part's size, where it stands, and how it is turned.
+
+    Code works it out, not the model: measured 2026-09-15, the room's chat laid
+    the guide's flat-ground ski jump on a hillside without adding the ground's
+    height, patched it for 30 rounds and ended "Not finished". Every height here
+    comes from a survey under the line, every side is a whole number of cells,
+    and no part is longer than `longest_m` (nothing may be over 4 m).
+    """
+    kind, req = record["kind"], record["requirements"]
+    shape = KINDS[kind]
+    factor = SCALES.get(record.get("scale") or "full", 1.0)
+    ux, uz = record["facing"][0], record["facing"][2]
+    lx, lz = -uz, ux
+    x0, z0 = record["start_m"]
+    width = _whole(req["width_m"], cell_m)
+    thick = _whole(0.04 * max(factor, 0.5), cell_m)
+    post = _whole(0.08 * max(factor, 0.5), cell_m)
+    length = req["length_m"]
+
+    def at(s: float, aside: float = 0.0) -> tuple[float, float]:
+        return x0 + ux * s + lx * aside, z0 + uz * s + lz * aside
+
+    def ground(s: float, aside: float = 0.0, over_water: bool = False) -> float:
+        """What a post stands on: the ground. With over_water, the water's
+        surface where that is higher -- what a deck must clear.
+
+        Measured on the valley's river: taking the water for the ground stood a
+        staircase's risers on the surface, 0.28 m over the bed, so every one of
+        them was "resting on nothing", and its first step measured 0.49 m."""
+        x, z = at(s, aside)
+        floor = ground_at(x, z)
+        if not over_water or water_at is None:
+            return floor
+        over = water_at(x, z)
+        return floor if over is None else max(floor, over)
+
+    def stands_on(s: float, aside: float, across: float, along: float) -> float:
+        """What a part standing at s actually rests on: the HIGHEST ground under
+        its whole footprint, which is where the room seats it.
+
+        Measured: sized from the ground under its middle, every riser of a
+        staircase was lifted (4.6 mm at the first, 13.6 mm by the fifth) onto
+        the highest point under its 0.08 x 0.8 m foot, keeping its height, so
+        its top climbed into the tread above -- 60 shared cells, and the room
+        refused the sixth."""
+        return max(ground(s + du, aside + dv)
+                   for du in (-along / 2.0, 0.0, along / 2.0)
+                   for dv in (-across / 2.0, 0.0, across / 2.0))
+
+    # What its surface must clear along its whole line: the ground, and the
+    # water where there is any.
+    steps = max(2, int(length / 0.25) + 1)
+    under = [ground(length * i / steps, over_water=True) for i in range(steps + 1)]
+    base = max(under)
+    parts: list[dict[str, Any]] = []
+
+    def board(name: str, from_s: float, from_y: float, to_s: float, to_y: float) -> None:
+        """Boards laid end to end from one point of the profile to the next,
+        each tilted to follow it, none longer than longest_m, 1 cm apart."""
+        span, rise = to_s - from_s, to_y - from_y
+        angle = math.degrees(math.atan2(rise, span))
+        run = math.hypot(span, rise)
+        pieces = max(1, math.ceil((run + 0.01) / longest_m))
+        cut = _whole((run - 0.01 * (pieces - 1)) / pieces, cell_m)
+        yaw = round(math.degrees(math.atan2(-uz, ux)), 4)
+        along = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        s, y = from_s, from_y
+        for i in range(pieces):
+            mid_s, mid_y = s + along[0] * cut / 2.0, y + along[1] * cut / 2.0
+            x, z = at(mid_s + math.sin(math.radians(angle)) * thick / 2.0)
+            parts.append({"name": f"{name} {i + 1}" if pieces > 1 else name,
+                          "size_m": [round(cut, 4), thick, width],
+                          "position_m": [round(x, 4), round(mid_y - math.cos(math.radians(angle)) * thick / 2.0, 4),
+                                         round(z, 4)],
+                          "rotation_deg": [0.0, yaw, round(angle, 3)]})
+            s, y = s + along[0] * (cut + 0.01), y + along[1] * (cut + 0.01)
+
+    def props(name: str, surface: Callable[[float], float], from_s: float, to_s: float, every: float = 2.5) -> None:
+        """Posts from the ground up to the underside of what is over them, at
+        most `every` apart and under each end, each a whole number of cells."""
+        count = max(2, math.ceil((to_s - from_s) / (every * factor)) + 1)
+        for i in range(count):
+            s = from_s + (to_s - from_s) * i / (count - 1)
+            s = min(max(s, from_s + post), to_s - post)
+            for aside in ((0.0,) if width <= 3 * post else (width / 2.0 - post, -(width / 2.0 - post))):
+                floor = stands_on(s, aside, post, post)
+                # The underside over its whole width, not over its middle: down
+                # a board tilted 24.7 degrees the underside falls 1.8 cm across
+                # a post's 8 cm, and a post sized at its middle went into the
+                # board by 1.6 cm, which the room refuses.
+                head = min(surface(s - post), surface(s), surface(s + post))
+                height = _whole(head - floor, cell_m)
+                while height > 0 and floor + height > head + 1e-9:
+                    height -= cell_m
+                if height < cell_m - 1e-9:
+                    continue
+                x, z = at(s, aside)
+                parts.append({"name": f"{name} {len(parts) + 1}", "size_m": [post, round(height, 4), post],
+                              "position_m": [round(x, 4), round(height / 2.0 + floor, 4), round(z, 4)]})
+
+    if kind in ("ski_jump", "downhill_ramp", "access_ramp"):
+        if kind == "access_ramp":
+            # Up from the ground at its start to its rise, gently.
+            top = base + req["rise_m"]
+            profile = [(0.0, base + thick), (length, top)]
+        else:
+            start = base + req["start_height_m"]
+            low = base + max(0.1 * factor, thick)
+            takeoff = max(1.5 * factor, 0.2 * length) if "takeoff" in shape["checks"] else 0.0
+            profile = [(0.0, start), (length - takeoff, low)]
+            if takeoff:
+                profile.append((length, low + takeoff * math.tan(math.radians(req["takeoff_deg"] * 2.0))))
+        for i, ((from_s, from_y), (to_s, to_y)) in enumerate(zip(profile, profile[1:]), 1):
+            board("deck" if len(profile) == 2 else ("run" if i == 1 else "takeoff"), from_s, from_y, to_s, to_y)
+
+        def surface(s: float) -> float:
+            for (a_s, a_y), (b_s, b_y) in zip(profile, profile[1:]):
+                if a_s - 1e-9 <= s <= b_s + 1e-9:
+                    return a_y + (b_y - a_y) * (s - a_s) / max(b_s - a_s, 1e-9) - thick / math.cos(
+                        math.atan2(b_y - a_y, b_s - a_s))
+            return profile[-1][1] - thick
+        props("post", surface, 0.0, length)
+    elif kind == "staircase":
+        # From the ground at its foot, not from the highest ground along it:
+        # measured on a hillside, a flight based on the highest made its first
+        # step 0.49 m where every step must be 0.10 to 0.22 m.
+        base = ground(0.0)
+        rise = req["rise_m"]
+        count = max(2, math.ceil(rise / (0.18 * factor)))
+        step_rise = _whole(rise / count, cell_m)
+        while step_rise * count < rise - 1e-9:
+            step_rise += cell_m
+        going = _whole(max(req["length_m"] / count, shape["least_going_m"] * factor + cell_m), cell_m)
+        yaw = round(math.degrees(math.atan2(-uz, ux)), 4)
+        for k in range(count):
+            s = going * (k + 0.5)
+            top = base + step_rise * (k + 1)
+            x, z = at(s)
+            parts.append({"name": f"step {k + 1}", "size_m": [going, thick, width],
+                          "position_m": [round(x, 4), round(top - thick / 2.0, 4), round(z, 4)],
+                          "rotation_deg": [0.0, yaw, 0.0]})
+            floor = stands_on(s, 0.0, width, post)
+            height = _whole(top - thick - floor, cell_m)
+            while floor + height > top - thick + 1e-9:
+                height -= cell_m
+            if height >= cell_m - 1e-9:
+                parts.append({"name": f"riser {k + 1}", "size_m": [post, round(height, 4), width],
+                              "position_m": [round(x, 4), round(floor + height / 2.0, 4), round(z, 4)],
+                              "rotation_deg": [0.0, yaw, 0.0]})
+    elif kind == "bridge":
+        deck = base + req["clearance_m"] + thick
+        board("deck", 0.0, deck, length, deck)
+        props("post", lambda s: deck - thick, 0.0, length)
+    else:
+        raise ValueError(f"there is no design for a {kind.replace('_', ' ')}: build it part by part")
+    for part in parts:
+        part.setdefault("rotation_deg", [0.0, 0.0, 0.0])
+        part.update(shape="box", material="oak", anchored=True)
+    return parts
+
+
 def _frame(body: Any) -> tuple[list[float], tuple[tuple[float, ...], ...], list[float]]:
     """A body's centre, its own three axes in the world, and its half sizes."""
     w, x, y, z = (float(v) for v in body.orientation_wxyz)
@@ -458,8 +629,15 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
         # Across it at a quarter, the middle and three quarters of its run:
         # both edges of the width asked for must be on its surface.
         half = req["width_m"] / 2.0 - 0.02 * factor
-        narrow = [s for s in (first + run * f for f in (0.25, 0.5, 0.75))
-                  if surface(s, half)[2] is None or surface(s, -half)[2] is None]
+
+        def wide_at(s: float) -> bool:
+            """Both edges on it, at s or within a few centimetres: boards laid
+            end to end leave a centimetre between them, and a ray down the
+            joint met nothing."""
+            return any(surface(s + d, half)[2] is not None and surface(s + d, -half)[2] is not None
+                       for d in (0.0, 0.02 * factor, -0.02 * factor, 0.05 * factor, -0.05 * factor))
+
+        narrow = [s for s in (first + run * f for f in (0.25, 0.5, 0.75)) if not wide_at(s)]
         result("width", f"at least {req['width_m']:g} m across",
                "that wide all along it" if not narrow else
                "narrower than that at " + ", ".join(f"{s:.1f} m" for s in narrow), not narrow)

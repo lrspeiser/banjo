@@ -2825,6 +2825,51 @@ def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
                     "say which and why rather than calling it done."}
 
 
+def tool_build_structure(args: dict[str, Any]) -> dict[str, Any]:
+    """Lay a declared structure on the ground: code works out every part."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    _live(entry)
+    name = " ".join(str(args.get("name") or "").split())[:60]
+    record = _constructions(entry).get(name)
+    if record is None:
+        have = sorted(_constructions(entry))
+        raise Refused(f"there is no construction called {name!r}"
+                      + (f": this world has {', '.join(have)}" if have else
+                         ": declare one with plan_construction first"))
+    try:
+        parts = constructions.design(record, _ground_at(entry), water_at=_water_at(entry),
+                                     cell_m=float(entry["cell_m"]))
+    except ValueError as why:
+        raise Refused(str(why)) from None
+    made: list[str] = []
+    for part in parts:
+        made_name = f"{name}: {part['name']}"
+        try:
+            tool_add_object({"world_id": world_id,
+                             "object": {**{k: v for k, v in part.items() if k != "name"}, "name": made_name}})
+        except (Refused, ValueError) as why:
+            # Nothing half built: what it made is taken out again, as
+            # build_recipe does, so the room is as it was.
+            for gone in reversed(made):
+                try:
+                    tool_remove_object({"world_id": world_id, "name": gone})
+                except (Refused, ValueError):
+                    pass
+            raise Refused(f"{made_name} would not go in, so none of it was built: {why}") from None
+        made.append(made_name)
+    checked = tool_check_construction({"world_id": world_id, "name": name})
+    return {"construction": name, "built": made, "parts": len(made),
+            "cells_used": entry.get("cells", 0),
+            "cells_left": max(0, entry.get("max_cells", 0) - entry.get("cells", 0)),
+            "checked": checked,
+            "note": "the room laid it out on the ground as it is, every height from a survey under its line. "
+                    + ("It does what it was declared to do: say what was built and where."
+                       if checked.get("passed") else
+                       "It does NOT yet do what it was declared to do: repair what failed, or say which "
+                       "requirement cannot be met here and why.")}
+
+
 def tool_check_construction(args: dict[str, Any]) -> dict[str, Any]:
     """Measure a declared structure against what it must do."""
     entry = _world(args.get("world_id"))
@@ -7115,6 +7160,20 @@ TOOLS = [
                                      "rise; a bridge's deck above the ground or water under its middle."},
          "scale": {"type": "string", "enum": ["full", "model"],
                    "description": "full, a person's size; model only when they asked for a small one."}}}},
+    {"name": "build_structure",
+     "description": "Build a structure you declared with plan_construction: the room lays it out itself, "
+                    "on the ground as it is. Boards along its profile, each tilted to follow it and none "
+                    "over 4 m, and posts from the ground under them up to what they hold -- every height "
+                    "from a survey under its line, so it stands on a hillside as well as on the flat, and "
+                    "every side a whole number of cells. It then measures it and answers with what was "
+                    "built and every requirement. Nothing is left half built: if a part will not go in, "
+                    "everything it made is taken out again and the refusal is said. Use it for a ski jump, "
+                    "a downhill or access ramp, a staircase or a bridge; anything else you build part by "
+                    "part. Ask for it again after raising what it must do and it builds the bigger one "
+                    "beside what is there, so take the old one out first.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string", "description": "The construction declared with plan_construction."}}}},
     {"name": "check_construction",
      "description": "Measure a declared structure (plan_construction) against what it must do, "
                     "from the world's own geometry: rays cast straight down onto it along its line, "
@@ -7926,6 +7985,7 @@ HANDLERS = {
     "control": tool_control,
     "operate": tool_operate,
     "plan_construction": tool_plan_construction,
+    "build_structure": tool_build_structure,
     "check_construction": tool_check_construction,
     "interaction": tool_interaction,
     "duplicate": tool_duplicate,

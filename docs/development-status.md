@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**The room lays a structure out on the ground itself.** Branch `agent/structure-builder`, from `a598d2f`. Increment 2 of [building-from-language.md](building-from-language.md): asked for a long ski ramp in the valley, the chat laid the guide's flat-ground ski jump on a hillside, patched it for 30 rounds and ended "Not finished". Code now works out every part.
+- `build_structure` (MCP) takes a declared construction and builds it: boards along its profile, none over 4 m, and posts from the ground under them up to what they hold, every height from a survey under its line, every side a whole number of cells. It then measures it and answers with the verdict. Nothing is left half built: a part that will not go in takes the rest out again.
+- `constructions.design` holds the four rules the probes established: a deck clears the water while a post stands on the ground; a standing part is sized from the highest ground under its whole footprint (where the room seats it); a post is sized against the underside over its whole width; and the width check samples either side of each quarter, because boards laid end to end leave a centimetre between them.
+- The guide tells the chat to call it for a ski jump, a downhill or access ramp, a staircase or a bridge, and to build by hand only for a plain `structure` or a repair.
+- Measured, each in a room of its own: on the valley hillside (the ground along the line falls and rises by 0.76 m) a ski jump passes 9 of 9 (11 parts), a staircase 5 of 5 (12 parts), a bridge 7 of 7 (8 parts); the same three pass in the flat yard.
+- Not yet: no trial of what it is for (increment 3); the owner's placement rule still needs the room's corrections shown to the person, not only to the chat.
+
 **A structure is held to what it was declared to do.** Branch `agent/authoring-contract`, from `152c884`. The owner's review of 2026-09-15 ([building-from-language.md](building-from-language.md)): asked for "a long ski ramp", both chats built one tilted board and called it a ski ramp, and the room accepted it. This is increment 1 of four, the authoring contract, widened when the owner asked whether it was "a general purpose llm toolset or just focused on making a wooden board into a ski ramp".
 - `mcp/constructions.py`: the kinds `ski_jump`, `downhill_ramp`, `access_ramp`, `bridge`, `staircase` and `structure`, each a selection of measurements made from the world's own geometry:
   - rays cast down along its line every centimetre, which meet a tilted board as its exact box;

@@ -656,6 +656,68 @@ class AStructureIsHeldToWhatItWasDeclaredToDo(unittest.TestCase):
         self.assertEqual(answer["size_cut"]["made_m"][0], 4.0)
 
 
+class TheRoomLaysAStructureOutItself(unittest.TestCase):
+    """Increment 2 (docs/building-from-language.md): build_structure lays a
+    declared structure on the ground as it is -- boards along its profile,
+    posts from the ground under them up to what they hold -- so the chat places
+    nothing by hand. Measured before it: asked for a long ski ramp in the
+    valley, the chat laid the guide's flat-ground ski jump on a hillside,
+    patched it for 30 rounds and ended "Not finished"."""
+
+    def setUp(self):
+        if not (LIBRARY and Path(LIBRARY).is_file()):
+            self.skipTest("the library is not built")
+
+    def built(self, scene: str, name: str, **declared) -> dict:
+        """One structure in a room of its own: three of them fill a room's
+        16,000 cells, and the third is refused."""
+        world_id = room_world.open_room(world_room.SCENES[scene]())
+        self.addCleanup(room_world.close_room, world_id)
+        planned = room_world.call(world_id, "plan_construction",
+                                  {"name": name, "start_m": [2.0, -2.0], "facing": [1, 0, 0], **declared})
+        self.assertNotIn("error", planned, "the declaration was refused")
+        answer = room_world.call(world_id, "build_structure", {"name": name})
+        self.assertNotIn("error", answer, "the room would not build it")
+        return answer
+
+    def test_it_builds_each_kind_on_flat_ground(self):
+        for name, declared, parts in (
+                ("ski jump", {"kind": "ski_jump", "reading": "a ski jump", "length_m": 6.5, "width_m": 0.6,
+                              "height_m": 2.4}, 11),
+                ("stairs", {"kind": "staircase", "reading": "stairs up a metre", "height_m": 1.0,
+                            "width_m": 0.8}, 12),
+                ("bridge", {"kind": "bridge", "reading": "a bridge four metres long", "length_m": 4.0,
+                            "width_m": 1.0, "height_m": 0.5}, 8)):
+            with self.subTest(name=name):
+                answer = self.built("yard", name, **declared)
+                self.assertTrue(answer["checked"]["passed"], answer["checked"]["results"])
+                self.assertEqual(answer["parts"], parts)
+
+    def test_it_builds_a_ski_jump_on_the_valleys_hillside(self):
+        """The ground under that line falls and rises by 0.76 m; every height
+        comes from a survey under it."""
+        answer = self.built("valley", "ski jump", kind="ski_jump", reading="a ski jump", length_m=6.5,
+                            width_m=0.6, height_m=2.4)
+        checked = answer["checked"]
+        self.assertTrue(checked["passed"], checked["results"])
+        self.assertEqual(len(checked["failed"]), 0)
+
+    def test_nothing_is_left_half_built(self):
+        """A part that will not go in takes the rest out again, as
+        build_recipe does: the room is as it was."""
+        world_id = room_world.open_room(world_room.SCENES["yard"]())
+        self.addCleanup(room_world.close_room, world_id)
+        before = {b["name"] for b in room_world.entry_of(world_id)["scene"]["bodies"]}
+        room_world.call(world_id, "plan_construction",
+                        {"name": "huge jump", "kind": "ski_jump", "reading": "a very long ski jump",
+                         "start_m": [0.0, 0.0], "facing": [1, 0, 0], "length_m": 60.0, "width_m": 3.0,
+                         "height_m": 12.0})
+        answer = room_world.call(world_id, "build_structure", {"name": "huge jump"})
+        self.assertIn("error", answer, "a ski jump far past the room's cells was built")
+        self.assertIn("none of it was built", answer["error"])
+        self.assertEqual({b["name"] for b in room_world.entry_of(world_id)["scene"]["bodies"]}, before)
+
+
 class ATurnIsNotDoneWhileItsStructureFails(unittest.TestCase):
     """As the room's chat answers, a structure it declared that turn is
     measured; one that fails goes back to it, at most MAX_REPAIRS times, and

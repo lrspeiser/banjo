@@ -146,6 +146,39 @@ added after it until another is declared.
 - `add_object` says when a side over 4 m was made 4 m (`size_cut`): a 7 m board
   was quietly made 4 m.
 
+## Increment 2: code lays it on the ground
+
+`build_structure` takes a declared construction and builds it: boards along its
+profile, each tilted to follow it and none over 4 m, and posts from the ground
+under them up to what they hold. Every height comes from a survey under its
+line, so it stands on a hillside as well as on the flat, and every side is a
+whole number of cells. It then measures it and answers with the verdict.
+Nothing is left half built: a part that will not go in takes the rest out
+again.
+
+Four rules came out of building it, each from a measurement:
+
+- **A deck clears the water; a post stands on the ground.** Taking the higher
+  of the two for everything stood a staircase's risers on the valley river's
+  surface, 0.28 m above the bed, so every one was "resting on nothing" and its
+  first step measured 0.49 m.
+- **A standing part is sized from the highest ground under its whole
+  footprint**, because that is where the room seats it. Sized from the ground
+  under its middle, a staircase's risers were lifted 4.6 mm at the first and
+  13.6 mm by the fifth, their tops climbing into the tread above: 60 shared
+  cells, and the sixth was refused.
+- **A post is sized against the underside over its whole width.** Down a board
+  tilted 24.7 degrees the underside falls 1.8 cm across a post's 8 cm, and
+  posts sized at their middle went into the board by up to 1.6 cm.
+- **The width check samples a few centimetres either side of each quarter.**
+  Boards laid end to end leave a centimetre between them, and a ray straight
+  down that joint met nothing, reading as "narrower than that at 2.0 m".
+
+Measured, each in a room of its own: on the valley's hillside, where the ground
+along the line falls and rises by 0.76 m, a ski jump passes all 9 checks (11
+parts), a staircase all 5 (12 parts) and a bridge all 7 (8 parts); the same
+three pass in the flat yard.
+
 ### Not yet
 
 - The model still works out every part's place from the worked example and the

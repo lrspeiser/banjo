@@ -188,7 +188,16 @@ def _structures() -> str:
         "structure_middle_m is its middle and",
         "across_the_view the way its line runs. Then build it at once, in the same",
         "turn, without asking whether to -- they asked for it, and declaring it built",
-        "nothing -- of ANCHORED parts along that line, and nothing else until it is done:",
+        "nothing.",
+        "FOR A SKI JUMP, A DOWNHILL OR ACCESS RAMP, A STAIRCASE OR A BRIDGE, call",
+        "build_structure with its name and the room lays every part out itself, on the",
+        "ground as it is -- boards along its profile, posts from the ground under them",
+        "up to what they hold, every height from a survey under its line -- and measures",
+        "it. That is one call, and it works on a hillside, which doing it by hand does",
+        "not: laid out by hand on a slope, a ski jump came out a metre below its posts.",
+        "Build by hand only for a plain `structure`, or to repair what the check",
+        "reports. By hand, it is ANCHORED parts along that line, and nothing else until",
+        "it is done:",
         "- its surface as boards laid end to end along its profile, each tilted to",
         "  follow it and meeting the next, none more than 4 m long (no object is):",
         "  plan_construction's answer says where a point s m along its line and a m to",
@@ -471,7 +480,14 @@ at the bottom right of the screen. Squeezing it in smaller does not work.
 
 BUILDING. Call describe_world first. Give every object a different name: joints
 and every later call find things by name. Objects must not share space --
-touching is fine, and the room refuses an overlap and says by how much.
+touching is fine, and the room refuses an overlap and says by how much. Build
+where there is ROOM: refused for an overlap, put it somewhere clear rather than
+trying the same place again, and NEVER move or take away something that is
+already there to make room -- ask them first, and do it only if they say so.
+Nothing goes into the ground either: the room lifts a thing given a height
+inside the ground and says so (set_down, seated_on_the_ground), and a part of
+something you are building that it moves is no longer where your plan wants it
+-- read what it says and build from where things actually are.
 anchored: true makes scenery that never moves: posts, walls, beams, frames.
 Anything that should move must NOT be anchored. Put things where they belong
 BEFORE you join them; a joined object cannot be moved with move_object.

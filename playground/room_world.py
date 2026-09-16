@@ -89,7 +89,10 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # And a structure's declaration -- its kind and what it must do --
              # is kept with the room, so it is held to it in every later turn
              # (docs/building-from-language.md).
-             "plan_construction"}
+             "plan_construction",
+             # And building one: the room lays its parts out itself, on the
+             # ground as it is.
+             "build_structure"}
 
 # The calls that work what is in the room as it stands, the way the person's E
 # and their panel do: the chat pressing one of a thing's actions, telling a
