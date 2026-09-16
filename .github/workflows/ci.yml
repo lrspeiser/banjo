@@ -72,8 +72,6 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
           python3 tests/asset_compiler_tests.py -v
-          # Workshop semantic design, persistence, bounded agents, component
-          # editing/reuse, pricebook/BOM and isolated trial helpers.
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
@@ -85,6 +83,7 @@ jobs:
           python3 tests/workshop_components_tests.py -v
           python3 tests/workshop_library_tests.py -v
           python3 tests/workshop_component_api_tests.py -v
+          python3 tests/workshop_chat_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
