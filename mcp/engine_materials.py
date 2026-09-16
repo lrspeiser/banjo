@@ -69,8 +69,15 @@ def synchronize_workshop_model() -> None:
     left present for old saved designs but are not made physically supported.
     """
     from mcp import workshop
+    # Register EVERY engine name, not only the ones this table already had.
+    # It previously updated existing keys only, and the table spells the metal
+    # "aluminium" while the engine and the pricebook spell it "aluminum" -- so
+    # the name the bench actually offers was never registered, and
+    # WirePart.mass_kg's silent `.get(material, oak)` fallback costed an
+    # aluminium leg at oak's 700 kg/m3 instead of 2700. Mass, centre of mass,
+    # tip angle and support loads were all a factor of 3.9 out, with the part
+    # list cheerfully reading "aluminum".
     for name, values in MATERIALS.items():
-        if name in workshop.DENSITY_KG_M3:
-            workshop.DENSITY_KG_M3[name] = float(values["density_kg_m3"])
-    if "aluminium" in workshop.DENSITY_KG_M3:
-        workshop.DENSITY_KG_M3["aluminium"] = density("aluminum")
+        workshop.DENSITY_KG_M3[name] = float(values["density_kg_m3"])
+    # Keep the historical British spelling working for saved designs.
+    workshop.DENSITY_KG_M3["aluminium"] = density("aluminum")

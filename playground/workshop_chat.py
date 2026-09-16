@@ -350,12 +350,33 @@ def _call_model(app: Any, payload: dict[str, Any]) -> dict[str, Any]:
         with request.urlopen(req, timeout=60) as response:
             raw = response.read(512 * 1024 + 1)
     except error.HTTPError as exc:
-        raise ValueError(f"Workshop chat failed (HTTP {exc.code})") from None
+        # Say WHY. Discarding the body left "Workshop chat failed (HTTP 400)"
+        # as the only clue in the page, for an error whose cause was spelled
+        # out plainly in the answer we threw away.
+        try:
+            said = json.loads(exc.read().decode("utf-8", "replace")).get("error") or {}
+            because = " ".join(str(said.get("message") or "").split())[:300]
+        except Exception:
+            because = ""
+        raise ValueError(
+            f"Workshop chat failed (HTTP {exc.code})" + (f": {because}" if because else "")
+        ) from None
     except (error.URLError, TimeoutError):
         raise ValueError("Workshop chat connection failed or timed out") from None
     if len(raw) > 512 * 1024:
         raise ValueError("Workshop chat response exceeded its size budget")
     return json.loads(raw)
+
+
+def _carry(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """The model's own items to send back, when we carry the turn ourselves.
+
+    Reasoning items are left out on purpose: they refer to state the provider
+    kept, so replaying them is the same mistake as ``previous_response_id``.
+    The tool calls and any text are what the next round actually needs.
+    """
+    return [item for item in (response.get("output") or [])
+            if item.get("type") in {"function_call", "message"}]
 
 
 def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str, str]]) -> str:
@@ -393,11 +414,20 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
                 output = {"ok": False, "error": str(problem)}
             outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
                             "output": json.dumps(output, allow_nan=False)})
+        # Carry the turn forward in `input` rather than pointing at a stored
+        # response. `previous_response_id` asks the provider to recall a reply
+        # it kept, which an organization under Zero Data Retention never does:
+        # it answered "Previous response cannot be used for this organization
+        # due to Zero Data Retention" with HTTP 400, so EVERY tool-using turn
+        # failed while the first, tool-free turn of a conversation worked. The
+        # request already sets store=False, so nothing was being kept to point
+        # at in any case.
+        inputs = inputs + _carry(response) + outputs
         payload = {
             "model": getattr(app, "model", "gpt-5-mini"), "store": False,
             "max_output_tokens": 1400, "reasoning": {"effort": "medium"},
-            "instructions": instructions, "previous_response_id": response.get("id"),
-            "input": outputs, "tools": tools, "tool_choice": "auto",
+            "instructions": instructions,
+            "input": inputs, "tools": tools, "tool_choice": "auto",
         }
         response = _call_model(app, payload)
     raise ValueError("Workshop chat could not finish within its bounded reasoning loop")
