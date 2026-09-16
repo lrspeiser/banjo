@@ -1,7 +1,8 @@
 """Real-engine acceptance cases for Workshop's functional bench.
 
 CI supplies BANJO_LIVE_ENGINE after building banjo_live_world_run. These are
-small isolated worlds, not the owner's live room.
+small isolated worlds compiled from the selected Workshop products, never the
+owner's live room.
 """
 from __future__ import annotations
 
@@ -27,25 +28,41 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.app = type("App", (), {"engine_path": ENGINE, "runs_path": root / "runs"})()
-        self.design = assemble("table", design_id="bench-source")
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def tearDown(self): self.tmp.cleanup()
 
-    def test_heat_below_a_kettle_warms_its_contained_water(self):
-        result = workshop_bench.run(self.app, self.design, {
+    def test_selected_kettle_holds_water_and_heat_below_warms_it(self):
+        design = assemble("kettle", design_id="bench-kettle",
+                          parameters={"width_m": 0.28, "depth_m": 0.24,
+                                      "vessel_height_m": 0.18,
+                                      "wall_thickness_m": 0.01,
+                                      "material": "iron"})
+        result = workshop_bench.run(self.app, design, {
             "test": "kettle_heat",
-            "config": {"water_kg": 1.0, "heater_power_w": 5000.0,
-                       "duration_s": 60.0, "kettle_material": "iron"},
+            "config": {"water_kg": 1.0, "heater_power_w": 5000.0, "duration_s": 60.0},
         })
         measured = result["measured"]
+        self.assertGreater(result["design"]["capacity_l"], 1.0, result)
+        self.assertEqual("iron", result["design"]["material"], result)
         self.assertIsNotNone(measured["water_start_k"], result)
         self.assertIsNotNone(measured["water_end_k"], result)
         self.assertGreater(measured["water_end_k"], measured["water_start_k"] + 0.01, result)
         self.assertGreater((measured["ledger"] or {}).get("heater_in_j", 0), 0, result)
 
+    def test_selected_cart_moves_and_both_axles_turn_in_real_joints(self):
+        design = assemble("cart", design_id="bench-cart")
+        result = workshop_bench.run(self.app, design, {
+            "test": "cart_roll", "config": {"speed_m_s": 0.8, "duration_s": 0.4},
+        })
+        measured = result["measured"]
+        self.assertEqual(2, result["design"]["bearing_relationships"], result)
+        self.assertGreater(measured["chassis_delta_m"][2], 0.03, result)
+        self.assertEqual(2, len(measured["axle_turns"]), result)
+        self.assertTrue(all(abs(row["degrees"]) > 2.0 for row in measured["axle_turns"]), result)
+
     def test_an_edited_machine_control_moves_the_load_and_draws_energy(self):
-        result = workshop_bench.run(self.app, self.design, {
+        design = assemble("table", design_id="bench-source")
+        result = workshop_bench.run(self.app, design, {
             "test": "machine_control",
             "config": {"power": True, "direction": 1, "setting": 60.0,
                        "duration_s": 0.8, "load_kg": 20.0},
@@ -59,5 +76,4 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
         self.assertGreater(abs(measured["motor"].get("speed_rad_s", 0)), 0.01, result)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()
