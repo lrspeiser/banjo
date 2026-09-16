@@ -33,7 +33,8 @@ body.workshop-mode > :not(#design-workshop) { display: none !important; }
 .ws-top .ws-status { font-size: .8rem; color: #9ed4ad; }
 .ws-top .ws-spacer { flex: 1; }
 .ws-top a, .ws-top button, .ws-top select,
-#design-workshop button, #design-workshop select, #design-workshop textarea { font: inherit; }
+#design-workshop button, #design-workshop select, #design-workshop textarea,
+#design-workshop input { font: inherit; }
 .ws-top a {
   color: #dfe7f1; text-decoration: none; border: 1px solid #465363;
   border-radius: .4rem; padding: .38rem .65rem;
@@ -73,7 +74,7 @@ body.workshop-mode > :not(#design-workshop) { display: none !important; }
   font-size: .78rem; color: #c6d0dc; max-width: 70%;
 }
 
-#variant-list { display: grid; gap: .55rem; }
+#variant-list, #ws-saved-designs { display: grid; gap: .55rem; }
 .ws-card {
   width: 100%; text-align: left; border: 1px solid #34404e; background: #151e28;
   color: #dce5ef; border-radius: .5rem; padding: .6rem; cursor: pointer;
@@ -96,11 +97,11 @@ body.workshop-mode > :not(#design-workshop) { display: none !important; }
 .ws-metric strong { display: block; margin-top: .1rem; font-size: .88rem; }
 
 #ws-parts { margin: .3rem 0; padding-left: 1.1rem; font-size: .78rem; line-height: 1.55; color: #c5d0dc; }
-#ws-plan {
+#ws-plan, #ws-trial {
   white-space: pre-wrap; word-break: break-word;
   font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
   background: #090e14; border: 1px solid #303a47; border-radius: .4rem;
-  padding: .55rem; max-height: 230px; overflow: auto;
+  padding: .55rem; max-height: 260px; overflow: auto;
 }
 .ws-note { padding: .5rem; border-left: 3px solid #7b8796; background: #0d141c; font-size: .8rem; line-height: 1.45; }
 .ws-note.warn { border-left-color: #d9a441; }
@@ -120,14 +121,27 @@ body.workshop-mode > :not(#design-workshop) { display: none !important; }
 .ws-family dt { color: #9fb0c3; }
 .ws-family dd { margin: 0; color: #cfd9e4; }
 
+/* On a tablet the engineering pane moves below the design instead of vanishing. */
 @media (max-width: 980px) {
-  .ws-grid { grid-template-columns: 210px 1fr; }
-  .ws-right { display: none; }
+  .ws-grid {
+    grid-template-columns: 210px minmax(300px, 1fr);
+    grid-template-rows: minmax(260px, 1fr) minmax(220px, 40vh);
+  }
+  .ws-left { grid-column: 1; grid-row: 1; }
+  .ws-viewport { grid-column: 2; grid-row: 1; }
+  .ws-right {
+    display: block; grid-column: 1 / -1; grid-row: 2;
+    border-left: 0; border-top: 1px solid #2a3340;
+  }
 }
 @media (max-width: 650px) {
-  .ws-grid { grid-template-columns: 1fr; grid-template-rows: 48% 52%; }
-  .ws-left { grid-row: 2; }
-  .ws-viewport { grid-row: 1; }
-  .ws-right { display: none; }
+  body.workshop-mode { overflow: auto; }
+  #design-workshop { position: absolute; min-height: 100vh; }
+  .ws-grid { display: flex; flex-direction: column; overflow: auto; }
+  .ws-viewport { flex: 0 0 42vh; min-height: 280px; order: 1; }
+  .ws-left { flex: 0 0 auto; order: 2; }
+  .ws-right { flex: 0 0 auto; order: 3; border-left: 0; }
   .ws-top .ws-status { display: none; }
+  .ws-top { gap: .5rem; flex-wrap: wrap; }
+  .ws-top .ws-spacer { display: none; }
 }
