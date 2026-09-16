@@ -1,6 +1,6 @@
 """The Workshop's server side: one model, read by the page and by the agent.
 
-Every design decision lives in ``mcp/workshop.py``.  This module turns it into
+Every design decision lives in ``mcp/workshop.py``. This module turns it into
 the answers ``/api/workshop/*`` gives, so the page can render candidates without
 knowing how a leg is laid out, and an agent lane can call exactly the same
 operations.
@@ -33,6 +33,7 @@ from mcp.workshop import (  # noqa: E402
     materialize,
     variants,
 )
+from mcp.workshop_statics import declared_statics  # noqa: E402
 import workshop_store  # noqa: E402
 
 _lock = threading.Lock()
@@ -120,6 +121,10 @@ def _label(kind: str, values: dict[str, Any], spec) -> str:
 def _candidate(design, spec) -> dict[str, Any]:
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
+    try:
+        wire["analytical"] = {"static_loads": declared_statics(design), "limitations": []}
+    except ValueError as problem:
+        wire["analytical"] = {"static_loads": [], "limitations": [str(problem)]}
     return wire
 
 
