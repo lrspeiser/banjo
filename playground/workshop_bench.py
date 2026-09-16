@@ -153,9 +153,6 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict
     duration = _number(config, "duration_s", 120.0, 5.0, 600.0)
     bottom, walls, inner_w, inner_d, floor, rim = _kettle_dimensions(design)
     capacity_l = float(product.contents[0]["capacity_l"])
-    water_h = water_kg / engine_materials.density("ice") / (inner_w * inner_d)
-    if water_h > rim - floor + 1e-9:
-        raise ValueError(f"{water_kg:g} kg does not fit; this design holds about {capacity_l:.2f} L")
     material = engine_materials.canonical(bottom.material)
     if not engine_materials.known(material):
         raise ValueError(f"{bottom.material!r} has no engine material preset")
@@ -174,13 +171,32 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict
             "center_mm": [part.center_m[0] * 1000, (part.center_m[1] + shift_y) * 1000, part.center_m[2] * 1000],
             "rotation_deg": [float(v) for v in part.rotation_deg], "join": "kettle shell",
         })
+
+    # The ProductGraph's continuous interior volume is authoritative for vessel
+    # capacity. The lattice trial needs a small additional clearance, though:
+    # a liquid box whose mathematical face lands exactly on a wall face may
+    # round into the wall's boundary voxel. Choose the shell's representable
+    # cell first, move the proxy one cell inboard on X/Z, and increase its
+    # height so the requested water mass remains unchanged.
+    shell_cell = workshop_trials._effective_cell(0.02, bodies)
+    safe_w = inner_w - 2.0 * shell_cell
+    safe_d = inner_d - 2.0 * shell_cell
+    if min(safe_w, safe_d) <= 0:
+        raise ValueError("this kettle interior is too narrow for a cell-safe liquid proxy")
+    water_h = water_kg / engine_materials.density("ice") / (safe_w * safe_d)
+    if water_h > rim - floor + 1e-9:
+        safe_capacity_kg = safe_w * safe_d * max(0.0, rim - floor) * engine_materials.density("ice")
+        raise ValueError(
+            f"{water_kg:g} kg fits the continuous vessel but not this lattice-safe thermal proxy; "
+            f"use at most about {safe_capacity_kg:.2f} kg at this test resolution")
     bodies.append({
         "name": "water charge", "shape": "box", "material": "ice",
-        "size_mm": [inner_w * 1000, water_h * 1000, inner_d * 1000],
-        "center_mm": [0.0, (shift_y + floor + water_h / 2) * 1000, 0.0],
+        "size_mm": [safe_w * 1000, water_h * 1000, safe_d * 1000],
+        "center_mm": [bottom.center_m[0] * 1000, (shift_y + floor + water_h / 2) * 1000,
+                      bottom.center_m[2] * 1000],
         "contents": {"moisture": 1.0}, "temperature_k": 293.15,
     })
-    cell = workshop_trials._effective_cell(0.02, bodies)
+    cell = workshop_trials._effective_cell(shell_cell, bodies)
     spec = fracture_lab.validate({
         "algorithm": "lattice", "cell_m": cell, "plasticity": "on", "bodies": bodies,
         "thermo": {"heaters": [{"target": "heater plate", "power_w": power,
@@ -197,13 +213,14 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict
         "schema": BENCH_SCHEMA, "test": "kettle_heat", "evidence": "engine-trial",
         "requested": {"water_kg": water_kg, "heater_power_w": power, "duration_s": duration},
         "design": {"capacity_l": capacity_l, "material": bottom.material,
-                   "bottom_m": [round(v, 5) for v in bottom.size_m], "cell_size_m": cell},
+                   "bottom_m": [round(v, 5) for v in bottom.size_m], "cell_size_m": cell,
+                   "fluid_proxy_inset_m": round(shell_cell, 6)},
         "measured": {"water_start_k": before.get("temperature_k"), "water_end_k": after.get("temperature_k"),
                      "water_end_c": (round(float(after["temperature_k"]) - 273.15, 2) if after.get("temperature_k") is not None else None),
                      "kettle_bottom_k": shell.get("temperature_k"), "heater_plate_k": heater.get("temperature_k"),
                      "water_contents_kg": after.get("contents_kg"), "ledger": report.get("ledger")},
         "acceptance": {"status": "observed", "why": "This measures the selected vessel; no target boil time was declared."},
-        "limitations": ["Water is a contained thermal proxy; free-surface motion/sloshing is not yet simulated."],
+        "limitations": ["Water is a contained thermal proxy kept one lattice cell inboard from the side walls; free-surface motion/sloshing is not yet simulated."],
     }
 
 
