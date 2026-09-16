@@ -84,13 +84,17 @@ jobs:
           # The offline asset compiler: no engine, no library and no packages,
           # so it belongs with the suites that need none of the three.
           python3 tests/asset_compiler_tests.py -v
-          # Workshop Mode's first slice is wireframe-only Python: it forks
-          # designs from a frozen world revision and never opens the engine,
-          # so it runs with the suites that need neither library nor packages.
+          # Workshop's semantic design/model/API are pure computation. The
+          # scratch-trial suite uses a fake isolated session; no live room is
+          # opened by these unit tests.
           python3 tests/workshop_tests.py -v
-          # The Workshop's server side is the same pure computation over
-          # mcp/workshop.py, so it needs no library and no engine either.
           python3 tests/workshop_api_tests.py -v
+          python3 tests/workshop_store_tests.py -v
+          python3 tests/workshop_persistence_api_tests.py -v
+          python3 tests/workshop_agent_tests.py -v
+          python3 tests/workshop_statics_tests.py -v
+          python3 tests/workshop_material_catalog_tests.py -v
+          python3 tests/workshop_trials_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           # A battery hoist in a room, on the engine's runner: built from the
           # room's spelling and by the chat's own tools, worked by its actions,
