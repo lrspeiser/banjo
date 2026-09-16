@@ -435,6 +435,17 @@ suites fit the runner's budget, by sharding them rather than by asking less of
 them, is its own task. Locally the long suites were started for all four
 measurement builds and stopped unfinished.
 
+Run to its end on this desktop, that suite fails a check -- and it failed before
+this change too. On the landed build it ran 4 h 40 m and stopped at
+`sharp-local-damage-and-blunt-control`: "equal-volume blunt tool control must
+retain intact soft tissue", where a blunt tool of the sharp one's volume must
+leave the tissue with no broken links, no damaged links and in one piece. The
+same scenario, run alone, fails the same check on `9317a5b`, before the profile,
+exactly as it does on the landed build: both were run side by side on this
+machine, 3 h 09 m each, from identical test code and identical fixtures. So it is
+a fault of its own, older than this change, unseen because the suite has never
+run to its end anywhere. It has its own task.
+
 ## Adding code
 
 - Never give a target or a file a floating-point option. The build stops before
