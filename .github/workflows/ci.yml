@@ -9,9 +9,30 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-
       - name: Check every source under src/ and tests/ is in a CMake target
         run: python3 scripts/check-source-registration.py
+
+  workshop-fast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check Workshop browser and model
+        env:
+          OPENAI_API_KEY: ""
+        run: |
+          node --check playground/workshop.js
+          python3 tests/workshop_tests.py -v
+          python3 tests/workshop_api_tests.py -v
+          python3 tests/workshop_store_tests.py -v
+          python3 tests/workshop_persistence_api_tests.py -v
+          python3 tests/workshop_agent_tests.py -v
+          python3 tests/workshop_statics_tests.py -v
+          python3 tests/workshop_material_catalog_tests.py -v
+          python3 tests/workshop_trials_tests.py -v
+          python3 tests/workshop_components_tests.py -v
+          python3 tests/workshop_library_tests.py -v
+          python3 tests/workshop_component_api_tests.py -v
+          python3 tests/workshop_chat_tests.py -v
 
   build-test-and-capture:
     runs-on: ubuntu-24.04
@@ -128,6 +149,7 @@ jobs:
           name: banjo-ci-evidence-${{ github.sha }}
           path: |
             ctest-results.xml
+            build/ci/banjo-fp-profile.json
             build/ci/banjo-fp-profile.json
             build/ci/fp-model-audit-Release.json
           if-no-files-found: warn
