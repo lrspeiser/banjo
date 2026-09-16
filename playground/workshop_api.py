@@ -5,9 +5,10 @@ the answers ``/api/workshop/*`` gives, so the page can render candidates without
 knowing how a leg is laid out, and an agent lane can call exactly the same
 operations.
 
-Nothing here opens the engine, steps physics or mutates a live room. Exploration
-is pure computation. Saved designs and feedback are durable Workshop records,
-not world edits.
+Normal Workshop operations are pure computation and never touch a live room.
+The one explicit exception is ``plan(..., run_trial=true)``, which delegates to
+``workshop_trials``; that module owns a separate scratch LiveWorld and never
+borrows ``app.live`` or writes ``app.room``.
 """
 from __future__ import annotations
 
@@ -241,7 +242,18 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         raise ValueError("cell_size_m must be a number")
     if not 0.002 <= cell <= 0.5:
         raise ValueError("cell_size_m must be between 2 mm and 500 mm")
-    return materialize(design, cell_size_m=cell)
+    answer = materialize(design, cell_size_m=cell)
+    if body.get("run_trial"):
+        # Imported only for this explicit request. workshop_trials owns a new
+        # Session and is tested to leave app.live/app.room unchanged.
+        import workshop_trials
+        try:
+            duration = float(body.get("duration_s", 2.0))
+        except (TypeError, ValueError):
+            raise ValueError("duration_s must be a number")
+        answer["trial"] = workshop_trials.run_declared_static_load(
+            app, design, cell_size_m=cell, duration_s=duration)
+    return answer
 
 
 def remember(app: Any, body: Any) -> dict[str, Any]:
