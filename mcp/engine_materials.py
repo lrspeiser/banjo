@@ -2,7 +2,7 @@
 
 The source of truth for physics remains ``src/material/MaterialCatalog.cpp``.
 This small mirror exists so Workshop planning can use the same names and masses
-before an engine is opened.  The parity test pins every density here to the C++
+before an engine is opened. The parity test pins every density here to the C++
 catalogue values; adding a material requires changing both deliberately.
 """
 from __future__ import annotations
@@ -48,12 +48,13 @@ def density(name: str) -> float:
 
 
 def engine_name(name: str) -> str:
+    """The scene spelling for a supported material, or a clear refusal."""
     key = canonical(name)
-    try:
-        # Scene JSON accepts the preset spelling, not the long definition name.
-        return key
-    except KeyError as exc:
-        raise KeyError(f"{name!r} is not an engine material preset") from exc
+    if key not in MATERIALS:
+        raise KeyError(f"{name!r} is not an engine material preset")
+    # Scene JSON accepts the short preset spelling (oak, glass, aluminum...),
+    # while engine_name in MATERIALS records the C++ catalogue definition name.
+    return key
 
 
 def described() -> list[dict[str, Any]]:
