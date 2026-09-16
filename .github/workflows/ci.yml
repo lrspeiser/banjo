@@ -38,6 +38,7 @@ jobs:
           python3 tests/workshop_bench_api_tests.py -v
           python3 tests/workshop_graph_tests.py -v
           python3 tests/product_graph_contract_tests.py -v
+          python3 tests/product_mating_tests.py -v
 
   build-test-and-capture:
     runs-on: ubuntu-24.04
@@ -116,6 +117,7 @@ jobs:
           python3 tests/workshop_bench_api_tests.py -v
           python3 tests/workshop_graph_tests.py -v
           python3 tests/product_graph_contract_tests.py -v
+          python3 tests/product_mating_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
