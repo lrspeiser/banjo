@@ -33,6 +33,7 @@ jobs:
           python3 tests/workshop_library_tests.py -v
           python3 tests/workshop_component_api_tests.py -v
           python3 tests/workshop_chat_tests.py -v
+          python3 tests/workshop_bench_tests.py -v
 
   build-test-and-capture:
     runs-on: ubuntu-24.04
@@ -106,9 +107,12 @@ jobs:
           python3 tests/workshop_library_tests.py -v
           python3 tests/workshop_component_api_tests.py -v
           python3 tests/workshop_chat_tests.py -v
+          python3 tests/workshop_bench_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
+            python3 tests/workshop_bench_engine_tests.py -v
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \
@@ -149,7 +153,6 @@ jobs:
           name: banjo-ci-evidence-${{ github.sha }}
           path: |
             ctest-results.xml
-            build/ci/banjo-fp-profile.json
             build/ci/banjo-fp-profile.json
             build/ci/fp-model-audit-Release.json
           if-no-files-found: warn
