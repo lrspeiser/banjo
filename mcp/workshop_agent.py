@@ -2,8 +2,9 @@
 
 This module is deliberately pure. It can compose, inspect, fork, compare and
 materialize Workshop designs, but it has no live-world, inventory, machine,
-filesystem or subprocess capability. A conversational adapter may expose these
-operations to a model without also exposing Banjo's live authoring tools.
+filesystem or external process-launch capability. A conversational adapter may
+expose these operations to a model without also exposing Banjo's live authoring
+tools.
 """
 from __future__ import annotations
 
