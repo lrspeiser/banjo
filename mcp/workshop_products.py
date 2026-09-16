@@ -132,8 +132,6 @@ def _build_kettle(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w
                    (0.0, wall_y, depth / 2 - wall / 2), material=material, family="vessel"),
     ]
 
-    # Handle mounts touch the vessel wall and the vertical arms, making the U a
-    # physical load path instead of three floating decorative bars.
     section = max(0.012, wall * 2)
     handle_gap = max(0.035, wall * 3); handle_x = width / 2 + handle_gap
     low_y = wall + height * 0.40; high_y = wall + height * 0.95
@@ -173,7 +171,10 @@ def install() -> None:
             w.Parameter("width_m", "m", 0.26, 0.10, 1.0),
             w.Parameter("depth_m", "m", 0.22, 0.10, 1.0),
             w.Parameter("vessel_height_m", "m", 0.18, 0.05, 0.8),
-            w.Parameter("wall_thickness_m", "m", 0.006, 0.003, 0.05),
+            # 10 mm is fine enough to read as a kettle wall while still fitting
+            # the scratch thermomechanical lane at a 10 mm cell. Finer walls are
+            # allowed for design, but a test may require a finer cell/budget.
+            w.Parameter("wall_thickness_m", "m", 0.010, 0.005, 0.05),
             w.Parameter("material", "", "iron", choices=("iron", "aluminium", "steel")),
         ), _build_kettle, _kettle_trials)
 
