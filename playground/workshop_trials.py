@@ -31,17 +31,17 @@ def _box_body(name: str, part, *, shift_y: float, join: str) -> dict[str, Any]:
     if not engine_materials.known(material):
         raise ValueError(
             f"{part.material!r} has no Banjo engine material preset; the prototype cannot be run")
-    # The live scene currently has box/sphere/cone primitives. Workshop's
-    # tapered/cylinder skin is an appearance/semantic shape; for the first gross
-    # load trial its conservative occupied box is used and the approximation is
-    # reported by prototype_scene().
+    # fracture_lab.validate consumes the authored scene spelling (millimetres),
+    # then normalizes it for the live runner. Passing its post-normalization
+    # dimensions_m/center_m spelling here made every scratch trial invalid.
     return {
         "name": name,
         "shape": "box",
         "material": material,
-        "dimensions_m": [float(v) for v in part.size_m],
-        "center_m": [float(part.center_m[0]), float(part.center_m[1]) + shift_y,
-                     float(part.center_m[2])],
+        "size_mm": [1000.0 * float(v) for v in part.size_m],
+        "center_mm": [1000.0 * float(part.center_m[0]),
+                      1000.0 * (float(part.center_m[1]) + shift_y),
+                      1000.0 * float(part.center_m[2])],
         "velocity_m_s": [0.0, 0.0, 0.0],
         "anchored": False,
         "join": join,
@@ -74,15 +74,13 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
     materials = {engine_materials.canonical(p.material) for p in design.parts}
     unsupported = sorted(m for m in materials if not engine_materials.known(m))
     if unsupported:
-        raise ValueError("the engine has no material preset for " + ", ".join(unsupported))
+        raise ValueError("the engine has no Banjo engine material preset for " + ", ".join(unsupported))
     if len(materials) != 1:
         raise ValueError(
             "the first fused Workshop prototype supports one material only; a join group "
             "takes the first body's material, so a mixed-material trial would lie")
 
     lowest = min(c[1] for part in design.parts for c in part.corners_m())
-    # Start just clear of the engine's ground so the first contact is a settle,
-    # not an authored interpenetration.
     shift_y = -lowest + 0.002
     join = "workshop-prototype"
     bodies = [_box_body(f"candidate/{p.name}", p, shift_y=shift_y, join=join)
@@ -92,10 +90,6 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
     target = _target_part(design, on)
     highest = max(c[1] for c in target.corners_m()) + shift_y
     side = (load_kg / engine_materials.density(_LOAD_MATERIAL)) ** (1.0 / 3.0)
-    # A load smaller than two cells is a poor physical weight. Enlarge its
-    # footprint if needed and keep its mass-equivalent in the evidence; the
-    # current engine has no density override, so ordinary Workshop loads are
-    # chosen large enough that this is normally unnecessary.
     if side < 2 * cell:
         raise ValueError(
             f"{load_kg:g} kg of {_LOAD_MATERIAL} is only {side * 1000:.1f} mm across at "
@@ -105,9 +99,10 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
         "name": load_name,
         "shape": "box",
         "material": _LOAD_MATERIAL,
-        "dimensions_m": [side, side, side],
-        "center_m": [float(target.center_m[0]), highest + side / 2 + 0.002,
-                     float(target.center_m[2])],
+        "size_mm": [side * 1000.0, side * 1000.0, side * 1000.0],
+        "center_mm": [float(target.center_m[0]) * 1000.0,
+                      (highest + side / 2 + 0.002) * 1000.0,
+                      float(target.center_m[2]) * 1000.0],
         "velocity_m_s": [0.0, 0.0, 0.0],
         "anchored": False,
         "rotation_deg": [0.0, 0.0, 0.0],
@@ -135,7 +130,6 @@ def _body(state: dict[str, Any], name: str) -> dict[str, Any] | None:
 
 
 def _quat_angle_deg(a: list[float], b: list[float]) -> float:
-    # State quaternions are w,x,y,z. q and -q are the same orientation.
     dot = abs(sum(float(x) * float(y) for x, y in zip(a, b)))
     dot = max(-1.0, min(1.0, dot))
     return 2.0 * acos(dot) * 180.0 / 3.141592653589793
