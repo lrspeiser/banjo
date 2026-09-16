@@ -1,12 +1,6 @@
 // Workshop Mode's view. It draws what the server's model returns and decides
 // no geometry of its own: every size, centre and rotation in here came from
 // mcp/workshop.py through /api/workshop/* (docs/workshop-next.md stage 1).
-//
-// This file used to be an inline module inside world.html with a second, private
-// implementation of the whole design model. The two drifted -- the page dropped
-// rotation at materialization, splayed its legs the wrong way and measured the
-// support footprint from the leg centres -- which is why there is now one model
-// and this is only its renderer.
 
 import * as THREE from "/vendor/three.module.js";
 
@@ -52,8 +46,6 @@ scene.add(grid);
 
 const group = new THREE.Group();
 scene.add(group);
-// The balance point, drawn where the model says it is rather than at a guessed
-// fraction of the height, and a ring showing what holds the design up.
 const balance = new THREE.Mesh(
   new THREE.SphereGeometry(0.025, 16, 12),
   new THREE.MeshBasicMaterial({ color: 0xffd166 }));
@@ -75,11 +67,8 @@ function place() {
   camera.lookAt(target);
 }
 
-let reach = 1.5;  // the radius the current candidate needs on screen
+let reach = 1.5;
 
-// Pull back far enough for the whole candidate to fit, ACROSS as well as up:
-// this pane is taller than it is wide, so its horizontal field of view is the
-// narrower of the two and a wide table overflows if only the vertical is used.
 function frame_it() {
   const up = THREE.MathUtils.degToRad(camera.fov) / 2;
   const across = Math.atan(Math.tan(up) * Math.max(0.2, camera.aspect));
@@ -110,8 +99,8 @@ stage.addEventListener("wheel", (e) => {
 // ---------------------------------------------------------------------------
 
 const SKIN = { oak: 0x9a704d, pine: 0xc0a072, iron: 0x8d939b, steel: 0x9aa2ab,
-  aluminium: 0xb8bfc6, glass: 0x9fc6d8, concrete: 0x9a9a95, rubber: 0x3c3c42,
-  "alumina ceramic": 0xd9d4c8 };
+  aluminium: 0xb8bfc6, aluminum: 0xb8bfc6, glass: 0x9fc6d8,
+  concrete: 0x9a9a95, rubber: 0x3c3c42, "alumina ceramic": 0xd9d4c8 };
 
 let view = "wire";
 
@@ -134,9 +123,6 @@ function draw(candidate) {
   clear();
   for (const part of candidate.parts) {
     const geometry = shapeFor(part);
-    // The server's rotation is Banjo's own convention -- built z first, so
-    // Rx.Ry.Rz -- which is three.js's default Euler order, so these are the
-    // same three numbers with no second convention in between.
     const spin = new THREE.Euler(
       THREE.MathUtils.degToRad(part.rotation_deg[0]),
       THREE.MathUtils.degToRad(part.rotation_deg[1]),
@@ -197,7 +183,10 @@ function draw(candidate) {
 // The panes
 // ---------------------------------------------------------------------------
 
-let bench = { kind: "table", generation: 0, candidates: [], selected: 0, plans: {} };
+let bench = {
+  kind: "table", generation: 0, candidates: [], selected: 0, plans: {},
+  session: null, savedDesigns: [],
+};
 
 function chosen() { return bench.candidates[bench.selected]; }
 
@@ -225,6 +214,41 @@ function cards() {
     button.onclick = () => { bench.selected = i; cards(); show(); };
     root.append(button);
   });
+}
+
+function savedDesigns(rows) {
+  bench.savedDesigns = Array.isArray(rows) ? rows : [];
+  const root = $("#ws-saved-designs");
+  root.replaceChildren();
+  if (!bench.savedDesigns.length) {
+    const empty = document.createElement("p");
+    empty.className = "ws-feedback-count";
+    empty.textContent = "No saved designs yet.";
+    root.append(empty);
+    return;
+  }
+  for (const saved of bench.savedDesigns) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ws-card";
+    const name = document.createElement("strong");
+    name.textContent = saved.label || saved.design_id;
+    const facts = document.createElement("small");
+    facts.textContent = `${saved.kind} · revision ${saved.revision}`
+      + `${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`;
+    button.append(name, facts);
+    button.onclick = () => guard(button, async () => {
+      const answer = await api("/api/workshop/open", { saved_design_id: saved.design_id });
+      took(answer);
+      $("#ws-archetype").value = answer.kind;
+      $("#ws-save-name").value = saved.label || saved.design_id;
+      const url = new URL(location.href);
+      url.searchParams.set("workshop", "1");
+      url.searchParams.set("design", saved.design_id);
+      history.replaceState(null, "", url);
+    });
+    root.append(button);
+  }
 }
 
 function show() {
@@ -255,8 +279,12 @@ function show() {
   const checks = $("#ws-checks");
   checks.className = "ws-note";
   const said = [];
-  if (!m.stands_up) { checks.classList.add("bad"); said.push("It does not stand: its balance point is outside what holds it up."); }
-  else said.push(`Balanced ${m.smallest_tip_margin_m} m inside its nearest edge, so it tips at ${m.tip_angle_deg}°.`);
+  if (!m.stands_up) {
+    checks.classList.add("bad");
+    said.push("It does not stand: its balance point is outside what holds it up.");
+  } else {
+    said.push(`Balanced ${m.smallest_tip_margin_m} m inside its nearest edge, so it tips at ${m.tip_angle_deg}°.`);
+  }
   if (m.legs_not_under_the_top.length) {
     checks.classList.add("warn");
     said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing: their heads are off the top.`);
@@ -292,8 +320,6 @@ function families(described) {
 }
 
 async function fingerprints() {
-  // Ask the model which candidates arrive as the same object once snapped, so
-  // the bench can say so instead of offering six choices that make two things.
   bench.plans = {};
   await Promise.all(bench.candidates.map(async (candidate) => {
     try {
@@ -313,6 +339,8 @@ function took(answer) {
   bench.candidates = answer.candidates;
   bench.selected = 0;
   bench.plans = {};
+  if (answer.session) bench.session = answer.session;
+  if (answer.saved_designs) savedDesigns(answer.saved_designs);
   cards();
   show();
   fingerprints();
@@ -320,7 +348,7 @@ function took(answer) {
 
 async function guard(button, work) {
   const was = button && button.textContent;
-  if (button) { button.disabled = true; }
+  if (button) button.disabled = true;
   try {
     await work();
   } catch (err) {
@@ -330,6 +358,13 @@ async function guard(button, work) {
   } finally {
     if (button) { button.disabled = false; button.textContent = was; }
   }
+}
+
+function safeId(text, fallback) {
+  const id = String(text || "").trim().toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "").slice(0, 81);
+  return id || fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -355,11 +390,17 @@ $("#ws-more").onclick = (e) => guard(e.currentTarget, async () => {
 $("#ws-reset-variants").onclick = (e) => guard(e.currentTarget, async () => {
   took(await api("/api/workshop/candidates",
                  { kind: bench.kind, generation: bench.generation + 1 }));
+  const url = new URL(location.href);
+  url.searchParams.delete("design");
+  history.replaceState(null, "", url);
 });
 
 $("#ws-archetype").onchange = (e) => guard(null, async () => {
   took(await api("/api/workshop/candidates",
                  { kind: e.target.value, generation: bench.generation + 1 }));
+  const url = new URL(location.href);
+  url.searchParams.delete("design");
+  history.replaceState(null, "", url);
 });
 
 $("#ws-materialize").onclick = (e) => guard(e.currentTarget, async () => {
@@ -383,6 +424,29 @@ $("#ws-materialize").onclick = (e) => guard(e.currentTarget, async () => {
   }
 });
 
+$("#ws-save-design").onclick = (e) => guard(e.currentTarget, async () => {
+  const candidate = chosen();
+  const label = $("#ws-save-name").value.trim() || candidate.label || candidate.design_id;
+  const designId = safeId(label, candidate.design_id);
+  const answer = await api("/api/workshop/feedback", {
+    kind: bench.kind,
+    design_id: designId,
+    parameters: candidate.parameters,
+    save_design: true,
+    label,
+    parent_design_id: candidate.design_id !== designId ? candidate.design_id : null,
+    world_revision: bench.session && bench.session.world_revision !== "unopened-world"
+      ? bench.session.world_revision : null,
+  });
+  savedDesigns(answer.saved_designs);
+  const saved = answer.design;
+  $("#ws-save-name").value = saved.label || saved.design_id;
+  $("#ws-save-status").textContent = `saved revision ${saved.revision}`;
+  const url = new URL(location.href);
+  url.searchParams.set("design", saved.design_id);
+  history.replaceState(null, "", url);
+});
+
 $("#ws-save-feedback").onclick = (e) => guard(e.currentTarget, async () => {
   const candidate = chosen();
   const answer = await api("/api/workshop/feedback", {
@@ -391,7 +455,8 @@ $("#ws-save-feedback").onclick = (e) => guard(e.currentTarget, async () => {
   });
   $("#ws-note").value = "";
   $("#ws-rating").value = "";
-  $("#ws-feedback-count").textContent = `${answer.kept} kept on this bench`;
+  $("#ws-feedback-count").textContent = `${answer.kept} feedback records kept`;
+  if (answer.saved_designs) savedDesigns(answer.saved_designs);
 });
 
 function resize() {
@@ -411,7 +476,9 @@ function frame() {
 }
 
 async function start() {
-  const answer = await api("/api/workshop/open", { kind: "table" });
+  const requested = new URLSearchParams(location.search).get("design");
+  const answer = await api("/api/workshop/open",
+    requested ? { saved_design_id: requested } : { kind: "table" });
   const picker = $("#ws-archetype");
   picker.replaceChildren();
   for (const made of answer.assemblies) {
@@ -423,10 +490,16 @@ async function start() {
   }
   picker.value = answer.kind;
   families(answer.families);
+  savedDesigns(answer.saved_designs || []);
   took(answer);
+  if (answer.saved_design) {
+    $("#ws-save-name").value = answer.saved_design.label || answer.saved_design.design_id;
+    $("#ws-save-status").textContent = `revision ${answer.saved_design.revision}`;
+  }
   try {
     const kept = await api("/api/workshop/remembered", {});
-    $("#ws-feedback-count").textContent = kept.kept ? `${kept.kept} kept on this bench` : "";
+    $("#ws-feedback-count").textContent = kept.kept ? `${kept.kept} feedback records kept` : "";
+    savedDesigns(kept.saved_designs || []);
   } catch { /* the bench works without its history */ }
 }
 
