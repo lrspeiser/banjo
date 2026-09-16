@@ -33,8 +33,14 @@ class BenchAPI(unittest.TestCase):
 
     def test_opening_workshop_describes_functional_tests_and_saved_presets(self):
         opened = workshop_api.open_workshop(self.app, {"kind": "table"})
-        self.assertEqual({"kettle_heat", "machine_control"},
-                         {test["test"] for test in opened["bench_tests"]})
+        offered = {test["test"] for test in opened["bench_tests"]}
+        # Named individually rather than as a fixed set: this assertion was
+        # written when the bench had two tests and then failed every time one
+        # was added, which is a test that only measures its own age.
+        for expected in ("kettle_heat", "machine_control", "runtime_contract"):
+            self.assertIn(expected, offered)
+        for test in opened["bench_tests"]:
+            self.assertTrue(test.get("name"), f"{test['test']} needs a readable name")
         self.assertEqual([], opened["bench_presets"])
 
         saved = workshop_api.library(self.app, {

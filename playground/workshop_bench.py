@@ -183,16 +183,23 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict
     safe_d = inner_d - 2.0 * shell_cell
     if min(safe_w, safe_d) <= 0:
         raise ValueError("this kettle interior is too narrow for a cell-safe liquid proxy")
+    # The floor needs the same clearance the sides get. Insetting X and Z only
+    # left the proxy's underside sitting exactly on the vessel floor, where it
+    # rounded into the bottom's boundary voxels: "kettle-bottom" and "water
+    # charge" both claimed 352 of the same cells, which the placement check
+    # refuses because nothing settles before a run.
+    water_base = floor + shell_cell
+    headroom = rim - water_base
     water_h = water_kg / engine_materials.density("ice") / (safe_w * safe_d)
-    if water_h > rim - floor + 1e-9:
-        safe_capacity_kg = safe_w * safe_d * max(0.0, rim - floor) * engine_materials.density("ice")
+    if water_h > headroom + 1e-9:
+        safe_capacity_kg = safe_w * safe_d * max(0.0, headroom) * engine_materials.density("ice")
         raise ValueError(
             f"{water_kg:g} kg fits the continuous vessel but not this lattice-safe thermal proxy; "
             f"use at most about {safe_capacity_kg:.2f} kg at this test resolution")
     bodies.append({
         "name": "water charge", "shape": "box", "material": "ice",
         "size_mm": [safe_w * 1000, water_h * 1000, safe_d * 1000],
-        "center_mm": [bottom.center_m[0] * 1000, (shift_y + floor + water_h / 2) * 1000,
+        "center_mm": [bottom.center_m[0] * 1000, (shift_y + water_base + water_h / 2) * 1000,
                       bottom.center_m[2] * 1000],
         "contents": {"moisture": 1.0}, "temperature_k": 293.15,
     })
