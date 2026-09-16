@@ -33,8 +33,8 @@ class FakeSession:
         load = spec["bodies"][-1]
         self.root_name = root["name"]
         self.load_name = load["name"]
-        self.root_at = list(root["center_m"])
-        self.load_at = list(load["center_m"])
+        self.root_at = [float(v) / 1000.0 for v in root["center_mm"]]
+        self.load_at = [float(v) / 1000.0 for v in load["center_mm"]]
         FakeSession.made.append(self)
 
     def _state(self):
@@ -76,6 +76,7 @@ class PrototypeScene(unittest.TestCase):
         self.assertEqual("workshop/test-load", bodies[-1]["name"])
         self.assertEqual(0.04, setup["requested_cell_size_m"])
         self.assertLessEqual(setup["cell_size_m"], setup["requested_cell_size_m"])
+        self.assertLessEqual(setup["cells"], 16000)
         self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"])
                             for body in bodies))
 
@@ -126,13 +127,15 @@ class Running(unittest.TestCase):
         self.assertTrue(answer["measured"]["prototype_present"])
         self.assertLess(answer["prototype"]["effective_cell_size_m"],
                         answer["requested"]["cell_size_m"])
+        self.assertLessEqual(answer["prototype"]["cells"], 16000)
 
     def test_declared_load_is_taken_from_the_assembly_not_a_page_guess(self):
         answer = workshop_trials.run_declared_static_load(
             App(self.root), assemble("chair", design_id="chair"),
             duration_s=0.1, session_factory=FakeSession)
         self.assertEqual(120.0, answer["requested"]["load_kg"])
-        self.assertLessEqual(answer["prototype"]["effective_cell_size_m"], 0.02)
+        self.assertLess(answer["prototype"]["effective_cell_size_m"], 0.02)
+        self.assertLessEqual(answer["prototype"]["cells"], 16000)
 
 
 if __name__ == "__main__":
