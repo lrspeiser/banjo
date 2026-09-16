@@ -44,6 +44,7 @@ jobs:
           python3 tests/workshop_bench_tests.py -v
           python3 tests/workshop_bench_api_tests.py -v
           python3 tests/workshop_graph_tests.py -v
+          python3 tests/workshop_product_tests.py -v
           python3 tests/product_graph_contract_tests.py -v
           python3 tests/product_mating_tests.py -v
 
@@ -123,6 +124,7 @@ jobs:
           python3 tests/workshop_bench_tests.py -v
           python3 tests/workshop_bench_api_tests.py -v
           python3 tests/workshop_graph_tests.py -v
+          python3 tests/workshop_product_tests.py -v
           python3 tests/product_graph_contract_tests.py -v
           python3 tests/product_mating_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
