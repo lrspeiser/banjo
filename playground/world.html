@@ -5,216 +5,23 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Banjo — a room you can walk around in</title>
 <link rel="stylesheet" href="/world.css">
+<style>
+.workshop-entry{display:inline-block;margin-top:.45rem;padding:.35rem .65rem;border:1px solid currentColor;border-radius:.4rem;text-decoration:none;font:inherit}
+body.workshop-mode{margin:0;background:#0d1117;color:#e7edf4;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+body.workshop-mode> :not(#design-workshop){display:none!important}
+#design-workshop[hidden]{display:none}#design-workshop{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr;background:#0d1117}
+.ws-top{display:flex;align-items:center;gap:1rem;padding:.8rem 1rem;border-bottom:1px solid #2a3340;background:#131a23}.ws-top h1{margin:0;font-size:1.05rem}.ws-top .ws-status{font-size:.8rem;color:#9ed4ad}.ws-top .ws-spacer{flex:1}.ws-top a,.ws-top button,.ws-top select,#design-workshop button,#design-workshop select,#design-workshop textarea{font:inherit}.ws-top a{color:#dfe7f1;text-decoration:none;border:1px solid #465363;border-radius:.4rem;padding:.38rem .65rem}
+.ws-grid{min-height:0;display:grid;grid-template-columns:260px minmax(360px,1fr) 320px;grid-template-rows:1fr}.ws-pane{min-height:0;overflow:auto;padding:.85rem;border-right:1px solid #2a3340;background:#111821}.ws-right{border-right:0;border-left:1px solid #2a3340}.ws-pane h2{margin:.2rem 0 .75rem;font-size:.88rem;text-transform:uppercase;letter-spacing:.08em;color:#9ba9ba}.ws-pane h3{margin:.9rem 0 .4rem;font-size:.9rem}.ws-pane p{font-size:.82rem;line-height:1.4;color:#b7c2d0}
+.ws-viewport{position:relative;min-width:0;min-height:0;background:radial-gradient(circle at 50% 42%,#202c3a 0,#111820 55%,#0d1117 100%)}#workshop-stage{width:100%;height:100%;display:block;touch-action:none}.ws-viewbar{position:absolute;left:1rem;top:1rem;display:flex;gap:.35rem;z-index:2}.ws-viewbar button,.ws-action{border:1px solid #465363;background:#17212c;color:#e7edf4;border-radius:.4rem;padding:.42rem .65rem;cursor:pointer}.ws-viewbar button[aria-pressed="true"],.ws-action.primary{background:#dce7f5;color:#111820}.ws-caption{position:absolute;left:1rem;bottom:1rem;background:#0b1017d9;border:1px solid #303b49;border-radius:.5rem;padding:.55rem .7rem;font-size:.78rem;color:#c6d0dc;max-width:70%}
+#variant-list{display:grid;gap:.55rem}.ws-card{width:100%;text-align:left;border:1px solid #34404e;background:#151e28;color:#dce5ef;border-radius:.5rem;padding:.6rem;cursor:pointer}.ws-card strong{display:block}.ws-card small{display:block;margin-top:.2rem;color:#97a6b8;line-height:1.3}.ws-card.selected{outline:2px solid #dce7f5;outline-offset:1px}.ws-row{display:flex;gap:.4rem;flex-wrap:wrap;margin:.55rem 0}.ws-field{display:grid;gap:.28rem;margin:.55rem 0;font-size:.8rem;color:#b8c4d1}.ws-field input,.ws-field select,.ws-field textarea,#design-workshop textarea{box-sizing:border-box;width:100%;border:1px solid #3d4958;border-radius:.4rem;background:#0d141c;color:#e6edf5;padding:.45rem}.ws-metrics{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}.ws-metric{border:1px solid #303a47;border-radius:.4rem;padding:.45rem;background:#0d141c}.ws-metric span{display:block;font-size:.68rem;color:#91a0b2}.ws-metric strong{display:block;margin-top:.1rem;font-size:.88rem}#ws-parts{margin:.3rem 0;padding-left:1.1rem;font-size:.78rem;line-height:1.55;color:#c5d0dc}#ws-plan{white-space:pre-wrap;word-break:break-word;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;background:#090e14;border:1px solid #303a47;border-radius:.4rem;padding:.55rem;max-height:230px;overflow:auto}.ws-note{padding:.5rem;border-left:3px solid #7b8796;background:#0d141c}.ws-feedback-count{font-size:.72rem;color:#93a2b4}@media(max-width:900px){.ws-grid{grid-template-columns:190px 1fr}.ws-right{display:none}}@media(max-width:650px){.ws-grid{grid-template-columns:1fr;grid-template-rows:48% 52%}.ws-left{grid-row:2}.ws-viewport{grid-row:1}.ws-right{display:none}.ws-top .ws-status{display:none}}
+</style>
 </head>
 <body>
-
-<canvas id="stage"></canvas>
-
-<!-- The crosshair is the pointer. In a first-person view the mouse aims the
-     camera, so what you are pointing at is always the middle of the screen. Its
-     ring fills as a throw is wound up or a string drawn -- the engine's measured
-     share of the way; the numbers are in the side view. -->
-<div id="crosshair" aria-hidden="true"><span></span></div>
-
-<!-- Over the view, only the NAME of what the crosshair is on (the owner,
-     2026-09-14: "when you mouse over something show the name of it, like 'Iron
-     Kettle'"). What it is and what can be done with it are in the side view. -->
-<div id="label" hidden><strong id="label-name"></strong></div>
-
-<!-- The bag's first nine slots, by the number key that takes each into the hand;
-     the same number puts it back. Drawn from the server's record
-     (inventory_room.py), and shown only while the bag has something in it. -->
-<ol id="hotbar" aria-label="Your bag, by number key" hidden></ol>
-
-<!-- A machine's panel (docs/machine-world.md, "Operating a machine"): E on any
-     part of a machine opens it, and it stays until it is closed or another
-     machine is chosen. Its buttons go straight to the machine's controller in
-     the engine (POST /api/world/machine), each saying a state outright, and what
-     it reads out is the engine's: what the machine was told, what its shaft and
-     its load are measured doing, and what stands in the way. Filled by
-     showMachinePanel() in world.js. -->
-<section id="machine-panel" aria-label="Machine panel" hidden>
-  <header class="mp-head">
-    <div>
-      <p class="mp-kind" id="mp-kind">Machine</p>
-      <h2 id="mp-name">&nbsp;</h2>
-    </div>
-    <button type="button" id="mp-close" class="quiet" aria-label="Close the panel">&times;</button>
-  </header>
-  <div class="mp-power" role="group" aria-label="Power">
-    <span class="mp-label">Power</span>
-    <div class="mp-seg">
-      <button type="button" id="mp-on" aria-pressed="false">On</button>
-      <button type="button" id="mp-off" aria-pressed="true">Off</button>
-    </div>
-  </div>
-  <div class="mp-drive" role="group" aria-label="Direction">
-    <button type="button" id="mp-back" aria-pressed="false">Lower</button>
-    <button type="button" id="mp-stop" aria-pressed="true">Stop &amp; hold</button>
-    <button type="button" id="mp-ahead" aria-pressed="false">Raise</button>
-  </div>
-  <label class="mp-setting" for="mp-setting">
-    <span class="mp-label">Drive setting</span>
-    <input type="range" id="mp-setting" min="0" max="100" step="5" value="100">
-    <output id="mp-setting-value" for="mp-setting">100%</output>
-  </label>
-  <p class="mp-hint">A share of the battery's voltage, not a speed: what the machine does with it is below.</p>
-  <dl class="mp-read">
-    <dt>Enabled</dt><dd id="mp-enabled">Off</dd>
-    <dt>Commanded</dt><dd id="mp-commanded">&mdash;</dd>
-    <dt>Measured</dt><dd id="mp-measured">&mdash;</dd>
-    <dt>Condition</dt><dd id="mp-condition">&mdash;</dd>
-  </dl>
-  <p class="mp-ack" id="mp-ack" aria-live="polite"></p>
-</section>
-
-<section id="panel">
-  <header>
-    <h1>Banjo</h1>
-    <p id="panel-state">Opening the room…</p>
-    <!-- Which saved build is open, when the link names one (?qa=<run>/<case>-<trial>). -->
-    <p id="panel-build" hidden></p>
-  </header>
-
-  <!-- 1. The conversation with the room: what is asked, what it answers, and
-       what happens in the room. What the person's own hands do is said in the
-       details below, not here. -->
-  <section id="talk" aria-label="Talk to the room">
-    <div id="chat" role="log" aria-live="polite"></div>
-    <form id="ask">
-      <input id="ask-text" type="text" autocomplete="off" spellcheck="false"
-             placeholder="Press / and ask — &ldquo;make me a hoe&rdquo;">
-      <button type="submit" id="ask-send">Send</button>
-    </form>
-  </section>
-
-  <!-- 2. What the crosshair is on, or what the hand holds: what it is, what can
-       be done with it now, each with its key -- E marks the one E does and Tab
-       moves it on -- and what the last thing you did came to. Filled by
-       showDetails() in world.js. -->
-  <section id="details" aria-label="What you look at" aria-live="polite">
-    <h2 id="details-name">&nbsp;</h2>
-    <p id="details-facts"></p>
-    <div id="details-meter" hidden>
-      <span id="details-meter-label"></span>
-      <span class="meter-bar"><i id="details-meter-fill"></i></span>
-      <output id="details-meter-value"></output>
-    </div>
-    <ul id="details-actions"></ul>
-    <p id="details-note"></p>
-    <p id="details-last" hidden><span class="last-label">Last</span><span id="details-last-text"></span></p>
-  </section>
-
-  <!-- 3. Everything else, a tab at a time. -->
-  <section id="tabs">
-    <div role="tablist" aria-label="More about the room">
-      <button type="button" role="tab" id="tab-bag" aria-controls="pane-bag" aria-selected="true">Bag</button>
-      <button type="button" role="tab" id="tab-notes" aria-controls="pane-notes" aria-selected="false">Notes</button>
-      <button type="button" role="tab" id="tab-room" aria-controls="pane-room" aria-selected="false">Room</button>
-      <button type="button" role="tab" id="tab-bench" aria-controls="pane-bench" aria-selected="false">Bench</button>
-      <button type="button" role="tab" id="tab-keys" aria-controls="pane-keys" aria-selected="false">Keys</button>
-    </div>
-
-    <!-- What the person has: both hands and the bag's slots -- the server's
-         record (inventory_room.py), drawn here and never decided here -- what is
-         carried, and what in this room can be used. Filled by showInventory(). -->
-    <div role="tabpanel" id="pane-bag" aria-labelledby="tab-bag">
-      <section id="inventory" aria-label="What you have">
-        <div class="inv-row"><span class="inv-label">Right hand</span><span id="inv-right">free</span></div>
-        <div class="inv-row"><span class="inv-label">Left hand</span><span id="inv-left">free</span></div>
-        <div class="inv-row"><span class="inv-label">Bag</span><ol id="inv-bag"></ol></div>
-        <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
-        <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
-      </section>
-    </div>
-
-    <!-- What the person knows: the notebook the server keeps from what the engine
-         measured their own tools doing (docs/knowledge-and-progression.md).
-         Filled by showNotebook() in world.js; nothing on this page writes it. -->
-    <div role="tabpanel" id="pane-notes" aria-labelledby="tab-notes" hidden>
-      <section id="notebook" aria-label="Notebook">
-        <p id="notebook-empty">Nothing tried yet. What your own tools do is written here as the engine measures it.</p>
-        <ul id="notebook-list"></ul>
-      </section>
-    </div>
-
-    <!-- The room: its clock, the water and the heat as the engine reports them,
-         and the room's own buttons, each also on a key. -->
-    <div role="tabpanel" id="pane-room" aria-labelledby="tab-room" hidden>
-      <p id="room-clock">—</p>
-      <!-- The water: how much there is, what the river brings in and takes out,
-           and what it costs to run -- the columns the solver actually computed.
-           The surface drawn in the room is a picture of these numbers. -->
-      <section id="water" hidden>
-        <h3>Water</h3>
-        <p id="water-line"></p>
-        <p id="water-cost"></p>
-        <p id="water-beyond" hidden></p>
-      </section>
-      <!-- Heat, fire and gas. The glow, the flames and the gas column in the room
-           are pictures of these numbers; they are never the source of any heat
-           or force. -->
-      <!-- Batteries, motors and ropes on drums (docs/machine-world.md): what each
-           battery holds, what each motor is doing, and where the energy it drew
-           went, as the engine counted it. -->
-      <section id="machines" hidden>
-        <h3>Machines</h3>
-        <ul id="machine-list"></ul>
-        <p id="machine-note"></p>
-      </section>
-      <section id="heat" hidden>
-        <h3>Heat</h3>
-        <ul id="heat-list"></ul>
-        <p id="heat-note"></p>
-      </section>
-      <div id="room-controls">
-        <!-- Which room. The menu has one, the world; a link opens another
-             (/world?scene=yard), and a QA build's link names its build. -->
-        <select id="scene" class="quiet" aria-label="Which room">
-          <option value="world">The world</option>
-        </select>
-        <button type="button" id="dig-it" class="quiet"
-                title="F: dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground; what comes out is carried">Dig here</button>
-        <button type="button" id="heap-it" class="quiet"
-                title="H: heap up to 0.2 m³ of the sand and soil you carry where the crosshair is on the ground">Heap here</button>
-        <button type="button" id="heat-it" class="quiet"
-                title="B: 10 kW for a minute into what the crosshair is on; aimed at a piston, or through a window at the gas behind it, 800 W into the gas">Heat it</button>
-        <button type="button" id="reset" class="quiet">Start the room again</button>
-        <span id="panel-count"></span>
-      </div>
-    </div>
-
-    <!-- The workbench: the lab's recorded runs, played back as a small copy on a
-         bench in front of you while the room goes on (the owner: recorded runs
-         play "on a bench in front of you"). K opens this tab. The list and the
-         controls are world.js's; the bench and the run on it are workbench.js's. -->
-    <div role="tabpanel" id="pane-bench" aria-labelledby="tab-bench" hidden>
-      <section id="workbench" aria-label="Workbench">
-        <ul id="workbench-runs"></ul>
-        <div id="workbench-controls" hidden>
-          <p id="workbench-title"></p>
-          <div class="workbench-row">
-            <button type="button" id="workbench-play">Play</button>
-            <input type="range" id="workbench-frame" min="0" max="1000" value="0" aria-label="Where in the run">
-            <select id="workbench-speed" aria-label="How fast it plays">
-              <option value="0.1">0.1×</option>
-              <option value="0.25" selected>0.25×</option>
-              <option value="1">1×</option>
-            </select>
-          </div>
-          <p id="workbench-time"></p>
-          <button type="button" id="workbench-away" class="quiet">Put the bench away</button>
-        </div>
-      </section>
-    </div>
-
-    <!-- Every control, from the one table of bindings (interaction.js). -->
-    <div role="tabpanel" id="pane-keys" aria-labelledby="tab-keys" hidden>
-      <dl id="keys-list"></dl>
-    </div>
-  </section>
-</section>
-
-<script type="module" src="/world.js"></script>
-</body>
-</html>
+<canvas id="stage"></canvas><div id="crosshair" aria-hidden="true"><span></span></div><div id="label" hidden><strong id="label-name"></strong></div><ol id="hotbar" aria-label="Your bag, by number key" hidden></ol>
+<section id="machine-panel" aria-label="Machine panel" hidden><header class="mp-head"><div><p class="mp-kind" id="mp-kind">Machine</p><h2 id="mp-name">&nbsp;</h2></div><button type="button" id="mp-close" class="quiet" aria-label="Close the panel">&times;</button></header><div class="mp-power" role="group" aria-label="Power"><span class="mp-label">Power</span><div class="mp-seg"><button type="button" id="mp-on" aria-pressed="false">On</button><button type="button" id="mp-off" aria-pressed="true">Off</button></div></div><div class="mp-drive" role="group" aria-label="Direction"><button type="button" id="mp-back" aria-pressed="false">Lower</button><button type="button" id="mp-stop" aria-pressed="true">Stop &amp; hold</button><button type="button" id="mp-ahead" aria-pressed="false">Raise</button></div><label class="mp-setting" for="mp-setting"><span class="mp-label">Drive setting</span><input type="range" id="mp-setting" min="0" max="100" step="5" value="100"><output id="mp-setting-value" for="mp-setting">100%</output></label><p class="mp-hint">A share of the battery's voltage, not a speed: what the machine does with it is below.</p><dl class="mp-read"><dt>Enabled</dt><dd id="mp-enabled">Off</dd><dt>Commanded</dt><dd id="mp-commanded">&mdash;</dd><dt>Measured</dt><dd id="mp-measured">&mdash;</dd><dt>Condition</dt><dd id="mp-condition">&mdash;</dd></dl><p class="mp-ack" id="mp-ack" aria-live="polite"></p></section>
+<section id="panel"><header><h1>Banjo</h1><p id="panel-state">Opening the room…</p><p id="panel-build" hidden></p><a class="workshop-entry" href="/world?workshop=1" title="Pause the world and design one object in isolation">Workshop</a></header><section id="talk" aria-label="Talk to the room"><div id="chat" role="log" aria-live="polite"></div><form id="ask"><input id="ask-text" type="text" autocomplete="off" spellcheck="false" placeholder="Press / and ask — &ldquo;make me a hoe&rdquo;"><button type="submit" id="ask-send">Send</button></form></section><section id="details" aria-label="What you look at" aria-live="polite"><h2 id="details-name">&nbsp;</h2><p id="details-facts"></p><div id="details-meter" hidden><span id="details-meter-label"></span><span class="meter-bar"><i id="details-meter-fill"></i></span><output id="details-meter-value"></output></div><ul id="details-actions"></ul><p id="details-note"></p><p id="details-last" hidden><span class="last-label">Last</span><span id="details-last-text"></span></p></section><section id="tabs"><div role="tablist" aria-label="More about the room"><button type="button" role="tab" id="tab-bag" aria-controls="pane-bag" aria-selected="true">Bag</button><button type="button" role="tab" id="tab-notes" aria-controls="pane-notes" aria-selected="false">Notes</button><button type="button" role="tab" id="tab-room" aria-controls="pane-room" aria-selected="false">Room</button><button type="button" role="tab" id="tab-bench" aria-controls="pane-bench" aria-selected="false">Bench</button><button type="button" role="tab" id="tab-keys" aria-controls="pane-keys" aria-selected="false">Keys</button></div><div role="tabpanel" id="pane-bag" aria-labelledby="tab-bag"><section id="inventory" aria-label="What you have"><div class="inv-row"><span class="inv-label">Right hand</span><span id="inv-right">free</span></div><div class="inv-row"><span class="inv-label">Left hand</span><span id="inv-left">free</span></div><div class="inv-row"><span class="inv-label">Bag</span><ol id="inv-bag"></ol></div><div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div><div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div></section></div><div role="tabpanel" id="pane-notes" aria-labelledby="tab-notes" hidden><section id="notebook" aria-label="Notebook"><p id="notebook-empty">Nothing tried yet. What your own tools do is written here as the engine measures it.</p><ul id="notebook-list"></ul></section></div><div role="tabpanel" id="pane-room" aria-labelledby="tab-room" hidden><p id="room-clock">—</p><section id="water" hidden><h3>Water</h3><p id="water-line"></p><p id="water-cost"></p><p id="water-beyond" hidden></p></section><section id="machines" hidden><h3>Machines</h3><ul id="machine-list"></ul><p id="machine-note"></p></section><section id="heat" hidden><h3>Heat</h3><ul id="heat-list"></ul><p id="heat-note"></p></section><div id="room-controls"><select id="scene" class="quiet" aria-label="Which room"><option value="world">The world</option></select><button type="button" id="dig-it" class="quiet" title="F: dig a pit where the crosshair is on the ground">Dig here</button><button type="button" id="heap-it" class="quiet" title="H: heap carried sand and soil where the crosshair is on the ground">Heap here</button><button type="button" id="heat-it" class="quiet" title="B: heat what the crosshair is on">Heat it</button><button type="button" id="reset" class="quiet">Start the room again</button><span id="panel-count"></span></div></div><div role="tabpanel" id="pane-bench" aria-labelledby="tab-bench" hidden><section id="workbench" aria-label="Workbench"><ul id="workbench-runs"></ul><div id="workbench-controls" hidden><p id="workbench-title"></p><div class="workbench-row"><button type="button" id="workbench-play">Play</button><input type="range" id="workbench-frame" min="0" max="1000" value="0" aria-label="Where in the run"><select id="workbench-speed" aria-label="How fast it plays"><option value="0.1">0.1×</option><option value="0.25" selected>0.25×</option><option value="1">1×</option></select></div><p id="workbench-time"></p><button type="button" id="workbench-away" class="quiet">Put the bench away</button></div></section></div><div role="tabpanel" id="pane-keys" aria-labelledby="tab-keys" hidden><dl id="keys-list"></dl></div></section></section>
+<main id="design-workshop" hidden aria-label="Workshop design sandbox"><header class="ws-top"><h1>Banjo Workshop</h1><span class="ws-status">Outside world paused · design sandbox</span><span class="ws-spacer"></span><label>Object <select id="ws-archetype"><option value="table">Table</option><option value="chair">Chair</option></select></label><a href="/world">Back to world</a></header><div class="ws-grid"><aside class="ws-pane ws-left"><h2>Variants</h2><p>These are cheap design candidates. Selecting one changes no matter in the world.</p><div id="variant-list"></div><div class="ws-row"><button class="ws-action" id="ws-more" type="button">More like this</button><button class="ws-action" id="ws-reset-variants" type="button">Reset set</button></div></aside><section class="ws-viewport"><canvas id="workshop-stage"></canvas><div class="ws-viewbar" role="group" aria-label="Representation"><button type="button" data-view="wire" aria-pressed="true">Wire</button><button type="button" data-view="matter" aria-pressed="false">Matter</button><button type="button" data-view="skin" aria-pressed="false">Skin</button></div><div class="ws-caption" id="ws-caption">Drag to orbit · wheel to zoom · wireframe is the cheap editable design</div></section><aside class="ws-pane ws-right"><h2 id="ws-name">Candidate</h2><p id="ws-purpose"></p><div class="ws-metrics"><div class="ws-metric"><span>Parts</span><strong id="ws-part-count">—</strong></div><div class="ws-metric"><span>40 mm cell estimate</span><strong id="ws-cell-count">—</strong></div><div class="ws-metric"><span>Leg section</span><strong id="ws-section">—</strong></div><div class="ws-metric"><span>Splay</span><strong id="ws-splay">—</strong></div></div><h3>Components</h3><ul id="ws-parts"></ul><h3>Cheap checks</h3><p class="ws-note" id="ws-checks"></p><h3>Feedback</h3><label class="ws-field">Rating<select id="ws-rating"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><label class="ws-field">Note<textarea id="ws-note" rows="3" placeholder="I like this direction, but..."></textarea></label><div class="ws-row"><button class="ws-action" id="ws-save-feedback" type="button">Save feedback</button><span class="ws-feedback-count" id="ws-feedback-count"></span></div><h3>Materialization</h3><p>Only the selected candidate is snapped to matter. This preview does not debit inventory or change the live room.</p><button class="ws-action primary" id="ws-materialize" type="button">Materialize preview</button><pre id="ws-plan" hidden></pre></aside></div></main>
+<script type="module">
+const params=new URLSearchParams(location.search);if(!params.has("workshop")){await import("/world.js")}else{document.body.classList.add("workshop-mode");document.querySelector("#design-workshop").hidden=false;const THREE=await import("/vendor/three.module.js");const $=q=>document.querySelector(q),stage=$("#workshop-stage"),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.01,100),renderer=new THREE.WebGLRenderer({canvas:stage,antialias:true,alpha:true});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;scene.add(new THREE.HemisphereLight(0xffffff,0x45505c,2.1));const light=new THREE.DirectionalLight(0xffffff,2.8);light.position.set(3,5,4);scene.add(light);scene.add(new THREE.GridHelper(4,20,0x596777,0x313b47));const designGroup=new THREE.Group();scene.add(designGroup);const com=new THREE.Mesh(new THREE.SphereGeometry(.025,16,12),new THREE.MeshBasicMaterial({color:0xffd166}));scene.add(com);let yaw=.72,pitch=.42,distance=3,dragging=false,px=0,py=0;const target=new THREE.Vector3(0,.42,0);function cameraPose(){pitch=Math.max(-.15,Math.min(1.25,pitch));camera.position.set(target.x+distance*Math.cos(pitch)*Math.sin(yaw),target.y+distance*Math.sin(pitch),target.z+distance*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target)}stage.addEventListener("pointerdown",e=>{dragging=true;px=e.clientX;py=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener("pointermove",e=>{if(!dragging)return;yaw-=(e.clientX-px)*.008;pitch+=(e.clientY-py)*.008;px=e.clientX;py=e.clientY;cameraPose()});stage.addEventListener("pointerup",()=>dragging=false);stage.addEventListener("pointercancel",()=>dragging=false);stage.addEventListener("wheel",e=>{e.preventDefault();distance=Math.max(1.3,Math.min(6,distance*Math.exp(e.deltaY*.001)));cameraPose()},{passive:false});const archetypes={table:{purpose:"A stable general-purpose work surface.",width:1.2,depth:.7,height:.78,top:.05,back:false},chair:{purpose:"A seat assembled from the same reusable leg family.",width:.48,depth:.48,height:.47,top:.05,back:true}},seeds=[{label:"Straight · light",style:"straight",section:.045,splay:0},{label:"Straight · sturdy",style:"straight",section:.065,splay:0},{label:"Splayed · light",style:"splayed",section:.048,splay:6},{label:"Splayed · wide",style:"splayed",section:.058,splay:10},{label:"Tapered · light",style:"tapered",section:.05,splay:2},{label:"Tapered · sturdy",style:"tapered",section:.065,splay:3}];let variants=[],selected=0,view="wire",generation=0;function buildVariants(){const a=archetypes[$("#ws-archetype").value];variants=seeds.map((s,i)=>({...a,...s,id:`${$("#ws-archetype").value}-g${generation}-v${i+1}`,height:a.height+(i===0?-.015:i===3?.015:0)}));selected=0;renderCards();showSelected()}function moreLike(){const b=variants[selected];generation++;const ds=[-.01,-.005,0,.005,.01,.015],da=[-2,0,1,2,4,6];variants=ds.map((d,i)=>({...b,id:`${$("#ws-archetype").value}-g${generation}-v${i+1}`,label:`${b.style} · ${i+1}`,section:Math.max(.035,b.section+d),splay:Math.max(0,Math.min(15,b.splay+da[i]))}));selected=2;renderCards();showSelected()}function partsOf(c){const parts=[{name:c.back?"seat":"top",role:c.back?"seat":"top",size:[c.width,c.top,c.depth],center:[0,c.height-c.top/2,0]}],h=c.height-c.top,inset=Math.max(.045,c.section/2+.02);[[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz],i)=>parts.push({name:`leg-${i+1}`,role:"leg",style:c.style,size:[c.section,h,c.section],center:[sx*(c.width/2-inset),h/2,sz*(c.depth/2-inset)],sx,sz}));if(c.back){const postH=.48,z=c.depth/2-.045;parts.push({name:"back-left",role:"back support",size:[.035,postH,.035],center:[-c.width*.36,c.height+postH/2-.02,z]},{name:"back-right",role:"back support",size:[.035,postH,.035],center:[c.width*.36,c.height+postH/2-.02,z]},{name:"back-panel",role:"back",size:[c.width*.78,.2,.035],center:[0,c.height+.3,z]})}return parts}function estimateCells(c){const cell=.04;return partsOf(c).reduce((n,p)=>n+Math.max(1,Math.round(p.size[0]/cell))*Math.max(1,Math.round(p.size[1]/cell))*Math.max(1,Math.round(p.size[2]/cell)),0)}function renderCards(){const root=$("#variant-list");root.replaceChildren();variants.forEach((c,i)=>{const b=document.createElement("button");b.type="button";b.className="ws-card"+(i===selected?" selected":"");b.innerHTML=`<strong>${c.label}</strong><small>${Math.round(c.section*1000)} mm legs · ${c.splay}° splay · ~${estimateCells(c).toLocaleString()} cells</small>`;b.onclick=()=>{selected=i;renderCards();showSelected()};root.appendChild(b)})}function disposeGroup(){for(const o of [...designGroup.children]){designGroup.remove(o);if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose()}}function geometryFor(part,c){return part.role==="leg"&&c.style==="tapered"?new THREE.CylinderGeometry(c.section*.4,c.section*.62,part.size[1],4,1):new THREE.BoxGeometry(...part.size)}function addPart(part,c){const geom=geometryFor(part,c);if(view==="wire"){const line=new THREE.LineSegments(new THREE.EdgesGeometry(geom),new THREE.LineBasicMaterial({color:0xdce7f5}));line.position.set(...part.center);if(part.role==="leg"&&c.style==="splayed"){line.rotation.z=-part.sx*THREE.MathUtils.degToRad(c.splay);line.rotation.x=part.sz*THREE.MathUtils.degToRad(c.splay*.55)}designGroup.add(line);return}const mat=new THREE.MeshStandardMaterial({color:view==="skin"?0x9a704d:0x6f8194,roughness:view==="skin"?.72:.45,metalness:0,transparent:view==="matter",opacity:view==="matter"?.72:1,wireframe:false}),mesh=new THREE.Mesh(geom,mat);mesh.position.set(...part.center);if(part.role==="leg"&&c.style==="splayed"){mesh.rotation.z=-part.sx*THREE.MathUtils.degToRad(c.splay);mesh.rotation.x=part.sz*THREE.MathUtils.degToRad(c.splay*.55)}designGroup.add(mesh);if(view==="matter"){const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geom),new THREE.LineBasicMaterial({color:0xd9e3ed,transparent:true,opacity:.45}));edges.position.copy(mesh.position);edges.rotation.copy(mesh.rotation);designGroup.add(edges)}}function showSelected(){const c=variants[selected];disposeGroup();const parts=partsOf(c);parts.forEach(p=>addPart(p,c));target.y=c.back?.55:.42;com.position.set(0,c.height*.48,0);cameraPose();$("#ws-name").textContent=c.label;$("#ws-purpose").textContent=c.purpose;$("#ws-part-count").textContent=parts.length;$("#ws-cell-count").textContent=`~${estimateCells(c).toLocaleString()}`;$("#ws-section").textContent=`${Math.round(c.section*1000)} mm`;$("#ws-splay").textContent=`${c.splay}°`;$("#ws-parts").innerHTML=parts.map(p=>`<li><strong>${p.name}</strong> · ${p.role}${p.role==="leg"?` · family <code>leg</code>`:""}</li>`).join("");const inset=Math.max(.045,c.section/2+.02),supportX=c.width/2-inset,supportZ=c.depth/2-inset;$("#ws-checks").textContent=`Support footprint ${(supportX*2).toFixed(2)} × ${(supportZ*2).toFixed(2)} m is inside the ${c.width.toFixed(2)} × ${c.depth.toFixed(2)} m top. Static-load and tip physics are specified but not claimed by this cheap check.`;$("#ws-plan").hidden=true}function materialize(){const c=variants[selected],cell=.04,snap=v=>Math.max(cell,Math.round(v/cell)*cell),at=v=>Math.round(v/cell)*cell,plan={schema:"banjo.workshop.v1",representation:"materialization-plan",design_id:c.id,cell_size_m:cell,objects:partsOf(c).map(p=>({name:p.name,role:p.role,component_family:p.role==="leg"?"leg":null,shape:"box",material:"oak",size_m:p.size.map(snap),center_m:p.center.map(at),source:{representation:"wireframe",candidate:c.id}})),tests:[{kind:"static_load",load_kg:c.back?120:100},{kind:"tip",direction:"x"},{kind:"tip",direction:"z"}],commit:{status:"not-committed",requires:["placement validation","inventory/material allocation","fabrication energy/process validation","functional trials"]}};view="matter";document.querySelectorAll(".ws-viewbar button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.view===view)));showSelected();$("#ws-plan").hidden=false;$("#ws-plan").textContent=JSON.stringify(plan,null,2)}function saveFeedback(){const c=variants[selected],rating=$("#ws-rating").value?Number($("#ws-rating").value):null,note=$("#ws-note").value.trim(),key="banjo.workshop.feedback.v1",list=JSON.parse(localStorage.getItem(key)||"[]");list.push({schema:"banjo.workshop.v1",kind:"feedback",design_id:c.id,rating,selected:true,note,parameters:{style:c.style,section_m:c.section,splay_deg:c.splay,height_m:c.height},saved_at:new Date().toISOString()});localStorage.setItem(key,JSON.stringify(list));$("#ws-feedback-count").textContent=`${list.length} saved on this browser`;$("#ws-note").value=""}function resize(){const r=stage.getBoundingClientRect();if(!r.width||!r.height)return;renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(stage);window.addEventListener("resize",resize);function frame(){renderer.render(scene,camera);requestAnimationFrame(frame)}document.querySelectorAll(".ws-viewbar button").forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll(".ws-viewbar button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));showSelected()});$("#ws-more").onclick=moreLike;$("#ws-reset-variants").onclick=()=>{generation++;buildVariants()};$("#ws-archetype").onchange=()=>{generation++;buildVariants()};$("#ws-materialize").onclick=materialize;$("#ws-save-feedback").onclick=saveFeedback;const saved=JSON.parse(localStorage.getItem("banjo.workshop.feedback.v1")||"[]");$("#ws-feedback-count").textContent=saved.length?`${saved.length} saved on this browser`:"";cameraPose();buildVariants();resize();frame()}
+</script>
+</body></html>
