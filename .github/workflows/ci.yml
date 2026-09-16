@@ -54,6 +54,7 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
+          node --check playground/workshop.js
           python3 tests/playground_tests.py -v
           python3 tests/playground_control_tests.py -v
           python3 tests/playground_browser_api_tests.py -v
