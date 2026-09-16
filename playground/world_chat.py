@@ -1209,6 +1209,11 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"pressed {answer.get('action') or args.get('action')} on {args.get('name')}"
     if name == "plan_construction":
         return f"declared {answer.get('construction')}: {answer.get('reading')}"
+    if name == "build_structure":
+        checked = answer.get("checked") or {}
+        return (f"built {answer.get('construction')} of {answer.get('parts')} parts: "
+                + ("it does what it was declared to do" if checked.get("passed")
+                   else "not finished -- " + ", ".join(checked.get("failed") or ["nothing measured"])))
     if name == "add_object":
         return f"added {answer.get('added')}"
     if name == "remove_object":
