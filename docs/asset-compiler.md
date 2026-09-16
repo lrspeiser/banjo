@@ -133,6 +133,103 @@ Every failure carries a measured detail, and a failure never repairs the part.
 The compiler's default budget is the room's 16,000, because that is the number a
 part has to live inside to be picked up and dropped rather than benchmarked.
 
+## What was measured
+
+All of it on CPython 3.13.5 on Windows, at a 10 mm cell and a horizon of 2,
+through `tests/asset_compiler_tests.py` (20 checks) and the fixtures
+`tools/asset_fixtures.py` builds. No engine was run.
+
+| fixture | cells | solid | occupancy | error | boxes | outcome |
+|---|---|---|---|---|---|---|
+| block 200x120x80 | 1,920 | 1,920,000 mm3 | 1,920,000 mm3 | 1.1e-16 | 1 | all four flags |
+| cup 120x100x120, 20 mm wall | 928 | 928,000 mm3 | 928,000 mm3 | 1.1e-16 | 5 | 0 of 512 cavity cells filled |
+| plate 200x3x200 | 400 | 120,000 mm3 | 400,000 mm3 | +233.33% | 1 | refused: `feature_below_resolution` |
+| two 60 mm blocks, 10 mm slot | 432 | 216,000 mm3 each | exact | 1.1e-16 | 1 each | refused: `required_gap_lost`, 36 bonds |
+| tread 300x40x200, twelve times | 2,400 held, 28,800 placed | 2,400,000 mm3 | exact | 0 | 1 | one conversion; refused: `physics_budget_exceeded` |
+
+Compiling each took 11.9, 6.7, 2.9, 2.3 and 73.4 ms.
+
+**The volume budget.** Centre sampling can be wrong by one cell for every cell
+the surface crosses, so the bound is |dV| <= A h. Measured on the block:
+
+| cell | cells | error | bound A h / V | fraction of bound |
+|---|---|---|---|---|
+| 10 mm | 1,920 | +1.1e-16 | 51.67% | 0 |
+| 7 mm | 5,423 | -3.1204% | 36.17% | 0.086 |
+| 6 mm | 8,580 | -3.4750% | 31.00% | 0.112 |
+| 3 mm | 72,360 | +1.7562% | 15.50% | 0.113 |
+| 2.5 mm | 122,880 | +1.1e-16 | 12.92% | 0 |
+| 1.6 mm | 468,750 | +1.1e-16 | 8.27% | 0 |
+
+The budget the tests hold to is **0.15 of the surface bound**, against a worst
+measured 0.113. Where every face lies on a cell boundary there is no sampling
+error at all and what remains, 1.1e-16, is the last bit of 0.01 cubed against
+the divergence-theorem sum. A budget in bare percent would have been meaningless:
+the same shape is 51.67% of its own volume in surface at 10 mm and 8.27% at
+1.6 mm.
+
+**Instancing.** One conversion for twelve instances, 2,400 cells held against
+28,800 placed. Placing is exact integer re-indexing: for translations of whole
+cells and quarter turns, the placed cells are identical to voxelising the moved
+mesh again. Turned by anything else they are not, and the compiler refuses
+rather than approximating -- measured, the same tread at 45 degrees about y is
+2,484 cells against 2,400, and at 7 degrees 2,404.
+
+**The bond rule.** A horizon of 2 allows 16 offsets, and only 3 of them -- the
+two-cell steps along an axis -- can cross a cell at all; a diagonal step grazes
+a corner and passes through nothing. Working that out once per offset rather
+than per candidate pair took the staircase from 10.5 s to 73 ms.
+
+## What the engine does not have yet
+
+1. **No scene-schema reference to a compiled asset.** A body in a scene today is
+   a shape name, a `size_mm`, a material and a pose, one of box, sphere or cone
+   (`playground/fracture_lab.py`, `normalise_bodies`). There is no way to say
+   "this body is blueprint X, part Y". Two ways forward, and they are not
+   equally far: a new body kind that carries a blueprint reference and an
+   instance transform needs schema, engine and authoring work; or a blueprint
+   can be *expanded* into a join group of boxes, which needs nothing new at all,
+   because a join group is already unioned onto the shared grid and the box
+   decomposition is exactly that list. The cup is 5 boxes and the block is 1, so
+   the second route works today for parts whose decomposition is small. It will
+   not scale to a rounded part, where the decomposition is thousands of boxes,
+   and it throws away the part identity that makes one conversion serve twelve
+   instances.
+2. **One cell size per scene.** `cell_m` is a scene-level field and
+   `scene_cell_count(bodies, cell_m)` takes one, so every body shares it. A part
+   is therefore admissible only at the resolutions the scene can afford, and
+   cost goes as the cube. Measured on the staircase:
+
+   | cell | cells per tread | twelve treads | volume error | editable |
+   |---|---|---|---|---|
+   | 10 mm | 2,400 | 28,800 | 0 | no: 1.8x the 16,000 lane cap |
+   | 20 mm | 300 | 3,600 | 0 | yes |
+   | 40 mm | 40 | 480 | +6.667% | yes |
+   | 50 mm | 24 | 288 | +25.000% | no: 40 mm is below one cell |
+
+   The window in which this staircase is both affordable and resolved is 20 to
+   40 mm, and it exists only because every part in the assembly is the same
+   size. A scene holding this staircase and a 3 mm plate has no such window:
+   there is no single cell size at which both are resolved and the scene fits.
+   Until bodies can carry their own cell size, the compiler can only report
+   which parts a chosen scene resolution refuses.
+3. **No entry point that takes cells.** `generateVoxelLattice` is reachable only
+   from inside the engine; `TileImpactScene` builds its cells in C++ from
+   primitives. A blueprint cannot be handed to the engine by any external tool
+   without a C API function or a binding that takes a cell list, a cell size and
+   a material.
+4. **`buildBonds` has no occlusion test.** This slice refuses the parts it would
+   damage. The alternative, which belongs in the engine rather than here, is for
+   the generator to skip a bond whose segment crosses an unoccupied cell. That
+   is the same test this compiler runs, and at a horizon of 2 it costs 3 offsets
+   of the 16, not all of them.
+5. **Two rotation conventions to reconcile.** `rotateDegrees`
+   (`src/fastlattice/TileImpactScene.cpp:53`), which decides a tilted body's
+   cells, applies x, then y, then z; the blueprint's quarter-turn re-index uses
+   that same order deliberately. Anything finer than a quarter turn cannot be
+   re-indexed at all and needs re-voxelising in world space, which is a
+   different asset with a different cell count.
+
 ## Why the gap check exists
 
 `buildBonds` (`src/matter/Lattice.cpp:113`) bonds a node to every occupied
