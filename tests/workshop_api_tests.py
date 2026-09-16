@@ -1,7 +1,8 @@
 """The Workshop's server side: one model behind /api/workshop/*.
 
-These run the module directly, with no socket and no engine, because every
-workshop answer is pure computation over mcp/workshop.py.
+These run the module directly, with no socket and no engine, because ordinary
+workshop answers are pure computation over mcp/workshop.py. Explicit scratch
+physics has its own isolated module and tests.
 """
 from __future__ import annotations
 
@@ -133,7 +134,6 @@ class Remembering(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_feedback_outlives_the_browser_that_gave_it(self):
-        # localStorage made a preference a note on one machine.
         self.assertEqual(0, workshop_api.remembered(self.app)["kept"])
         saved = workshop_api.remember(self.app, {
             "kind": "table", "design_id": "table-g0-v3", "rating": 5,
@@ -160,10 +160,10 @@ class Remembering(unittest.TestCase):
 
 
 class NothingTouchesTheWorld(unittest.TestCase):
-    def test_the_workshop_module_never_reaches_for_the_engine(self):
+    def test_the_ordinary_workshop_api_has_no_direct_engine_dependencies(self):
         source = (ROOT / "playground" / "workshop_api.py").read_text(encoding="utf-8")
         for forbidden in ("live_session", "run_action", "subprocess", "banjo.dll",
-                          "BANJO_LIBRARY", "app.room", "world_chat"):
+                          "BANJO_LIBRARY", "world_chat"):
             self.assertNotIn(forbidden, source)
 
 
