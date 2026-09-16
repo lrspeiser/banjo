@@ -1,19 +1,10 @@
-"""Functional test fixtures for Workshop designs.
+"""Functional and compilation benches for Workshop designs.
 
-These fixtures own their own live engine sessions. They never borrow ``app.live``
-or mutate the outside room. The first two acceptance cases deliberately exercise
-systems Banjo already has end to end:
-
-* ``kettle_heat``: an iron/aluminium vessel sits on a heated plate with a
-  contained-water thermal proxy inside it. Heat reaches the water through the
-  engine's ordinary contact/conduction network and the result is the thermo
-  report/ledger. Banjo does not yet simulate free liquid/sloshing, so the water
-  proxy is said explicitly in the evidence.
-* ``machine_control``: a battery hoist with the engine's real controller. The
-  bench edits power, direction and setting, runs it, and reports the controller,
-  motor, battery, rope and load motion.
-
-A bench result is evidence, not a live-world commit and not an invented pass/fail.
+Bench operations never borrow ``app.live`` or mutate the outside room. Engine
+fixtures own scratch worlds; pure compilation benches need no engine at all.
+Examples such as the kettle and hoist exercise existing systems, while
+``runtime_contract`` is deliberately generic and compiles whatever design is
+currently on the bench into ProductGraph + PhysicsContract.
 """
 from __future__ import annotations
 
@@ -23,7 +14,8 @@ from typing import Any
 
 import fracture_lab
 import live_session
-from mcp import engine_materials
+from mcp import engine_materials, workshop_graph
+from mcp.product_contract import compile_contract
 from mcp.workshop import WorkshopDesign
 
 BENCH_SCHEMA = "banjo.workshop-bench.v1"
@@ -31,6 +23,13 @@ BENCH_SCHEMA = "banjo.workshop-bench.v1"
 
 def catalog() -> list[dict[str, Any]]:
     return [
+        {
+            "test": "runtime_contract",
+            "name": "Compile runtime physics",
+            "about": "Compile this exact design into its generic ProductGraph and reduced real-time PhysicsContract. No engine runs and nothing is committed.",
+            "controls": [],
+            "limitations": ["Only explicitly fixed relationships may collapse; geometry contact alone never removes a degree of freedom."],
+        },
         {
             "test": "kettle_heat",
             "name": "Heat water in a kettle",
@@ -96,6 +95,34 @@ def _thermo_body(report: dict[str, Any], name: str) -> dict[str, Any] | None:
     return next((b for b in report.get("bodies") or [] if b.get("name") == name), None)
 
 
+def run_contract(design: WorkshopDesign) -> dict[str, Any]:
+    product = workshop_graph.product(design)
+    product_doc = product.described()
+    contract = compile_contract(product)
+    detailed = len(product.components)
+    runtime = len(contract["runtime_bodies"])
+    mechanisms = len(contract["mechanisms"])
+    zones = len(contract["collision_zones"])
+    return {
+        "schema": BENCH_SCHEMA,
+        "test": "runtime_contract",
+        "evidence": "deterministic-compiler",
+        "summary": {
+            "detailed_components": detailed,
+            "runtime_bodies": runtime,
+            "collision_zones": zones,
+            "mechanisms": mechanisms,
+            "reduced_by": detailed - runtime,
+            "mass_kg": contract["conserved"]["mass_kg"],
+        },
+        "product_graph": product_doc,
+        "physics_contract": contract,
+        "acceptance": {"status": "observed",
+                       "why": "Compilation exposes the proposed reduction; engineering tests/evidence determine which reductions are validated."},
+        "limitations": ["A contact is not a fixing. Only declared fixed relationships may collapse into one runtime body."],
+    }
+
+
 def run_kettle(app: Any, config: dict[str, Any]) -> dict[str, Any]:
     water_kg = _number(config, "water_kg", 1.0, 0.1, 5.0)
     power = _number(config, "heater_power_w", 1800.0, 100.0, 10000.0)
@@ -104,10 +131,6 @@ def run_kettle(app: Any, config: dict[str, Any]) -> dict[str, Any]:
     if material not in {"iron", "aluminum"}:
         raise ValueError("kettle_material must be iron or aluminum")
 
-    # A compact 260 x 220 mm vessel. The shell is several boxes joined into one
-    # material piece. The water is an ice-density rigid proxy whose thermo
-    # contents are 100% moisture: its heat capacity/phase inventory is liquid
-    # water, but mechanics do not yet claim liquid motion.
     width, depth, wall, vessel_h = 0.26, 0.22, 0.006, 0.18
     plate_h = 0.02
     base_bottom = plate_h
@@ -177,8 +200,6 @@ def run_kettle(app: Any, config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _hoist_spec(load_kg: float) -> dict[str, Any]:
-    # Iron density determines the cube side so the requested test load is real
-    # rigid mass, not a number painted onto the controller.
     side = (load_kg / engine_materials.density("iron")) ** (1 / 3)
     return fracture_lab.validate({
         "algorithm": "lattice", "cell_m": 0.05, "plasticity": "on",
@@ -188,8 +209,7 @@ def _hoist_spec(load_kg: float) -> dict[str, Any]:
             {"name": "drum", "shape": "box", "material": "oak", "size_mm": [200, 200, 300],
              "center_mm": [0, 2000, 0]},
             {"name": "load", "shape": "box", "material": "iron",
-             "size_mm": [side * 1000, side * 1000, side * 1000],
-             "center_mm": [100, 450, 0]},
+             "size_mm": [side * 1000, side * 1000, side * 1000], "center_mm": [100, 450, 0]},
         ],
         "joints": [
             {"kind": "hinge", "a": "post", "b": "drum", "at_mm": [0, 2000, 0], "axis": [0, 0, 1]},
@@ -253,10 +273,7 @@ def run_machine(app: Any, config: dict[str, Any]) -> dict[str, Any]:
         "requested": {"power": power, "direction": direction, "setting": setting_pct,
                       "duration_s": duration, "load_kg": load_kg},
         "measured": {
-            "control": control_now,
-            "motor": motor,
-            "battery": store,
-            "rope": rope,
+            "control": control_now, "motor": motor, "battery": store, "rope": rope,
             "load_delta_y_m": round(float(end_load["position_m"][1]) - start_y, 5),
             "acknowledgement": ack.get("operated"),
         },
@@ -272,7 +289,9 @@ def run(app: Any, design: WorkshopDesign, request: Any) -> dict[str, Any]:
     config = request.get("config") or {}
     if not isinstance(config, dict):
         raise ValueError("bench_test.config must be an object")
-    if name == "kettle_heat":
+    if name == "runtime_contract":
+        result = run_contract(design)
+    elif name == "kettle_heat":
         result = run_kettle(app, config)
     elif name == "machine_control":
         result = run_machine(app, config)
