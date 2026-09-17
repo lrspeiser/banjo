@@ -2,8 +2,8 @@
 
 The tools here contain no Workshop business logic. They translate model-sized
 arguments into :mod:`mcp.workshop_platform` operations, so MCP uses the same
-Workshop API functions as the browser for design, library, testing and
-materialization.
+Workshop API functions as the browser for design, library, testing,
+visual compilation and materialization.
 """
 from __future__ import annotations
 
@@ -56,6 +56,18 @@ DESIGN_FIELDS = {
     "component_overrides": JSON_OBJECT,
 }
 PRODUCT_GRAPH = {"type": "object", "description": "A banjo.product-graph.v1 document."}
+SKIN = {
+    "type": "object",
+    "description": "Editable banjo.product-skin.v1 component patch. Appearance-only edits do not change matter; physical=true recompiles Matter.",
+    "properties": {
+        "profile": {"type": "string", "enum": ["design", "block", "round", "curve"]},
+        "bend_m": {"type": "number"},
+        "physical": {"type": "boolean"},
+        "roughness": {"type": "number", "minimum": 0, "maximum": 1},
+        "metalness": {"type": "number", "minimum": 0, "maximum": 1},
+        "color": {"type": "string"},
+    },
+}
 
 
 def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -67,17 +79,18 @@ TOOLS = [
      "description": "List the Workshop product/component catalog, functional test catalog, personal physics-tagged library, material pricebook and the versioned Workshop platform contract.",
      "inputSchema": _schema({})},
     {"name": "workshop_open",
-     "description": "Open a Workshop product, saved design or personal-library assembly and return measured candidates plus all catalogs needed by a client to render the design workspace.",
+     "description": "Open a Workshop product, saved design or personal-library assembly and return measured candidates plus all catalogs needed by a client to render the design workspace. Candidates include their editable skin representation.",
      "inputSchema": _schema({**DESIGN_FIELDS,
          "saved_design_id": {"type": "string"}, "library_item_id": {"type": "string"},
          "world_revision": {"type": "string"}, "target": {"type": "string"}})},
     {"name": "workshop_edit",
-     "description": "Edit a Workshop candidate through the same bounded component operations as the sim: resize or change material, reuse a saved component, or optionally ask the Workshop assistant to apply a conversational edit.",
+     "description": "Edit a Workshop candidate through the same bounded operations as the sim: resize/change material, edit a component skin (including a physical curved skin), reuse a saved component, or optionally ask the Workshop assistant to apply a conversational edit.",
      "inputSchema": _schema({**DESIGN_FIELDS,
          "part_name": {"type": "string"},
          "action": {"type": "string", "enum": ["longer", "shorter", "thicker", "thinner", "material"]},
          "scope": {"type": "string", "enum": ["this", "similar", "all"]},
          "amount": {"type": "number"}, "material": {"type": "string"},
+         "skin": SKIN,
          "library_item_id": {"type": "string"}, "message": {"type": "string"}}, ["kind", "part_name"])},
     {"name": "workshop_variants",
      "description": "Generate bounded Workshop variants from product parameters, or ask for the six deterministic more-like-this variants around one chosen candidate.",
@@ -87,15 +100,18 @@ TOOLS = [
      "description": "Compile an exact Workshop design or supplied ProductGraph into banjo.product-graph.v1 and banjo.physics-contract.v1, including relationships and runtime bodies.",
      "inputSchema": _schema({**DESIGN_FIELDS, "product_graph": PRODUCT_GRAPH})},
     {"name": "workshop_test",
-     "description": "Run a Workshop product test without touching the outside world: runtime contract, point-force probe, cart roll, kettle heat, machine control, or the assembly's declared static-load engine trial.",
+     "description": "Run a Workshop product test without touching the outside world: runtime contract, point-force probe, cart roll, kettle heat, machine control, or the assembly's declared static-load engine trial. Engine-backed tests may return banjo.workshop-physics-run.v1 playback frames.",
      "inputSchema": _schema({**DESIGN_FIELDS,
          "test": {"type": "string", "description": "One test from workshop_catalog; use declared_static_load for the assembly's authored load."},
          "config": JSON_OBJECT,
          "cell_size_m": {"type": "number"}, "duration_s": {"type": "number"},
          "evidence_id": {"type": "string"}}, ["kind", "test"])},
     {"name": "workshop_materialize",
-     "description": "Compile a selected Workshop candidate to a materialization plan and BOM; this is a preview and does not mutate a live world.",
-     "inputSchema": _schema({**DESIGN_FIELDS, "cell_size_m": {"type": "number"}}, ["kind"])},
+     "description": "Compile a selected Workshop candidate to a materialization plan and BOM. With visual=true, also return banjo.product-skin.v1 plus the sparse banjo.workshop-matter.v1 physical-cell preview used by the Workshop Matter view. This never mutates the live world.",
+     "inputSchema": _schema({**DESIGN_FIELDS,
+         "cell_size_m": {"type": "number"},
+         "visual": {"type": "boolean"},
+         "exterior_only": {"type": "boolean", "description": "Visual Matter only: return surface cells rather than all occupied cells."}}, ["kind"])},
     {"name": "workshop_library",
      "description": "Use the persistent physics-tagged Workshop library: list, load, semantic tag search, save a component or Workshop design, set material price, or save a functional-test preset.",
      "inputSchema": _schema({**DESIGN_FIELDS,
@@ -138,7 +154,7 @@ def _require_engine(test: str, *, always: bool = False) -> None:
     if (always or test in ENGINE_TESTS) and (APP.engine_path is None or not Path(APP.engine_path).is_file()):
         raise ValueError(
             f"{test} needs banjo_live_world_run. Build that target and set BANJO_LIVE_ENGINE; "
-            "runtime_contract and force_probe remain available without it.")
+            "runtime_contract, force_probe and visual Matter/Skin compilation remain available without it.")
 
 
 def tool_catalog(_args: dict[str, Any]) -> dict[str, Any]:
@@ -154,9 +170,13 @@ def tool_open(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_edit(args: dict[str, Any]) -> dict[str, Any]:
-    request = {k: v for k, v in args.items() if k not in {"part_name", "action", "scope", "amount", "material", "library_item_id", "message"}}
+    request = {k: v for k, v in args.items()
+               if k not in {"part_name", "action", "scope", "amount", "material", "skin", "library_item_id", "message"}}
     part = str(args.get("part_name") or "")
-    if args.get("message"):
+    if isinstance(args.get("skin"), dict):
+        request["skin_edit"] = {"part_name": part, "scope": str(args.get("scope") or "this"),
+                                "skin": args["skin"]}
+    elif args.get("message"):
         request["component_chat"] = {"part_name": part, "message": str(args["message"])}
     elif args.get("library_item_id"):
         request["reuse_library_item"] = {"item_id": str(args["library_item_id"]), "part_name": part,
@@ -182,7 +202,11 @@ def tool_test(args: dict[str, Any]) -> dict[str, Any]:
     request = {k: v for k, v in args.items() if k not in {"test", "config"}}
     if test == "declared_static_load":
         _require_engine("declared_static_load", always=True)
-        request["run_trial"] = True
+        # Route through the same bench catalog path as the browser so the result
+        # has the same visual playback schema.
+        request["bench_test"] = {"test": test, "config": args.get("config") or {
+            "cell_size_m": args.get("cell_size_m", 0.04),
+            "duration_s": args.get("duration_s", 2.0)}}
     else:
         _require_engine(test)
         request["bench_test"] = {"test": test, "config": args.get("config") or {}}
@@ -190,6 +214,8 @@ def tool_test(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_materialize(args: dict[str, Any]) -> dict[str, Any]:
+    if bool(args.get("visual")):
+        return workshop_platform.call(APP, "visual", args)
     return workshop_platform.call(APP, "materialize", args)
 
 
