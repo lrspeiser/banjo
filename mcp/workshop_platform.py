@@ -1,14 +1,12 @@
 """Versioned Workshop/Product platform facade shared by API and MCP clients.
 
-The browser already reaches Workshop only through ``/api/workshop/*``.  This
-module names that contract for non-browser clients and adds the generic product
-engineering operations that sit underneath Workshop (ProductGraph,
-PhysicsContract, deterministic mating, runtime refinement and evidence).
+The browser reaches Workshop through ``/api/workshop/*``. This module names
+that contract for non-browser clients and adds the generic product engineering
+operations underneath Workshop (ProductGraph, PhysicsContract, deterministic
+mating, runtime refinement and evidence).
 
-Existing HTTP behavior stays in ``playground/workshop_api.py``; MCP calls those
-same functions for every browser-visible operation rather than reimplementing
-Workshop.  Generic engineering operations are pure and live here so they can be
-promoted to HTTP without changing their semantics.
+Browser-visible behavior stays in ``playground/workshop_api.py``; MCP calls the
+same functions rather than reimplementing Workshop.
 """
 from __future__ import annotations
 
@@ -47,7 +45,7 @@ HTTP = {
 }
 
 OPERATIONS = (
-    "catalog", "open", "edit", "variants", "materialize", "test",
+    "catalog", "open", "edit", "variants", "materialize", "visual", "test",
     "library", "feedback", "remembered",
     "inspect_product", "mate_product", "runtime_decision",
     "record_evidence", "evidence_envelope",
@@ -61,6 +59,9 @@ def contract() -> dict[str, Any]:
         "product_graph_schema": PRODUCT_SCHEMA,
         "physics_contract_schema": CONTRACT_SCHEMA,
         "evidence_schema": EVIDENCE_SCHEMA,
+        "skin_schema": "banjo.product-skin.v1",
+        "matter_schema": "banjo.workshop-matter.v1",
+        "physics_run_schema": "banjo.workshop-physics-run.v1",
         "operations": list(OPERATIONS),
         "http": dict(HTTP),
         "bench_tests": workshop_bench.catalog(),
@@ -69,6 +70,8 @@ def contract() -> dict[str, Any]:
             "Scratch tests never advance or mutate the outside live world.",
             "Physical contact does not silently mean fixed.",
             "Observed evidence is not validation without explicit passed acceptance criteria.",
+            "Appearance-only skin edits add no physical properties.",
+            "A skin edit marked physical rebuilds the Workshop Matter preview.",
             "Materialization is a plan; it does not commit matter to a live world.",
         ],
     }
@@ -167,6 +170,13 @@ def call(app: Any, operation: str, args: Any = None) -> dict[str, Any]:
     if operation == "edit": return workshop_api.candidates(app, args)
     if operation == "variants":
         return workshop_api.more_like_this(app, args) if args.get("more_like_this") else workshop_api.candidates(app, args)
+    if operation == "visual":
+        options = args.get("visual") if isinstance(args.get("visual"), dict) else {}
+        request = {**args, "visual": {
+            "cell_size_m": options.get("cell_size_m", args.get("cell_size_m", 0.04)),
+            "exterior_only": bool(options.get("exterior_only", args.get("exterior_only", False))),
+        }}
+        return workshop_api.plan(app, request)
     if operation in {"materialize", "test"}: return workshop_api.plan(app, args)
     if operation == "library":
         if args.get("action") == "search":
