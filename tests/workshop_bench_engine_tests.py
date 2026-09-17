@@ -55,7 +55,16 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
             "test": "cart_roll", "config": {"speed_m_s": 0.8, "duration_s": 0.4},
         })
         measured = result["measured"]
-        self.assertEqual(2, result["design"]["bearing_relationships"], result)
+        # Four, not two: each axle is carried by TWO bearing mounts, which is
+        # how an axle is actually borne. The trial simplifies each pair into one
+        # hinge, so the design has four bearing relationships and the scratch
+        # world has two rotating joints; this asserted the realised count
+        # against the design's.
+        self.assertEqual(4, result["design"]["bearing_relationships"], result)
+        # The pins must actually be hung. Session() starts a world without
+        # them, so this trial once reported joint_count 0 with no axle turns
+        # and a chassis that slid instead of rolling.
+        self.assertGreater(measured["joint_count"], 0, result)
         self.assertGreater(measured["chassis_delta_m"][2], 0.03, result)
         self.assertEqual(2, len(measured["axle_turns"]), result)
         self.assertTrue(all(abs(row["degrees"]) > 2.0 for row in measured["axle_turns"]), result)
