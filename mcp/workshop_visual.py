@@ -1,25 +1,34 @@
-"""Workshop visual representations: editable skins and sparse physical-cell previews.
+"""Workshop visual representations: editable skins and canonical physical matter.
 
-Wire geometry remains authoritative for design intent.  A skin is a separate,
-editable render description.  When a skin edit is marked ``physical`` the same
-deterministic parametric solid is sampled onto Banjo's cell grid for the Matter
-preview; appearance-only edits never change matter.
+Wire geometry remains authoritative for design intent. A skin is a separate,
+editable render description. Matter is different: it is compiled onto Banjo's
+shared engine grid, with the same cell-centre convention used by VoxelRecipe:
+cell (i,j,k) is centred at ((i+.5)h,(j+.5)h,(k+.5)h).
 
-This module deliberately does not run physics.  Engine trials remain in
-``playground/workshop_bench.py``/``workshop_trials.py``.  The output here is the
-bridge that lets the browser show what will be handed to a detailed material
-solver once sparse compiled bodies are accepted by the live scene ABI.
+A physical skin edit changes that matter compilation. An appearance-only edit
+does not. The returned integer grid coordinates are the canonical artifact used
+by both the browser and Workshop physics adapters; no renderer-local voxel grid
+is allowed to stand in for physics.
 """
 from __future__ import annotations
 
-from math import floor, isfinite, sqrt
-from typing import Any, Iterable
+import hashlib
+import json
+from math import ceil, cos, floor, isfinite, radians, sin, sqrt
+from typing import Any
 
-from mcp.workshop import WorkshopDesign, WirePart, _rotate
+from mcp.workshop import WorkshopDesign, WirePart
 
 SKIN_SCHEMA = "banjo.product-skin.v1"
-MATTER_SCHEMA = "banjo.workshop-matter.v1"
+MATTER_SCHEMA = "banjo.workshop-matter.v2"
 MAX_PREVIEW_CELLS = 50000
+MAX_SCAN_CELLS = 2_000_000
+
+_FACE_DIRS = (
+    ("+x", (1, 0, 0)), ("-x", (-1, 0, 0)),
+    ("+y", (0, 1, 0)), ("-y", (0, -1, 0)),
+    ("+z", (0, 0, 1)), ("-z", (0, 0, -1)),
+)
 
 
 def _number(value: Any, name: str, low: float, high: float) -> float:
@@ -156,8 +165,6 @@ def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float) 
         return min(_segment_distance_sq((x, y, z), a, b)
                    for a, b in zip(samples, samples[1:])) <= radius * radius
     if part.shape == "tapered" and not skin.get("physical"):
-        # Match the design's frustum intent: narrower toward +Y, never thinner
-        # than 40% of its base dimensions.
         q = max(0.0, min(1.0, (y + h / 2) / h))
         scale = 1.0 - 0.6 * q
         return abs(y) <= h / 2 and abs(x) <= w * scale / 2 and abs(z) <= d * scale / 2
@@ -167,75 +174,137 @@ def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float) 
 def _bounds(part: WirePart, skin: dict[str, Any]) -> tuple[float, float, float]:
     w, h, d = (float(v) for v in part.size_m)
     if skin.get("physical") and _effective_profile(part, skin) == "curve":
-        bend = abs(float(skin.get("bend_m", 0.0)))
-        return w + 2*bend, h, d
+        descriptor = _skin_part(part, skin)
+        radius = float(descriptor["radius_m"])
+        points = descriptor["control_points_local_m"]
+        xs = [float(p[0]) for p in points]
+        ys = [float(p[1]) for p in points]
+        zs = [float(p[2]) for p in points]
+        return (max(xs) - min(xs) + 2 * radius,
+                max(ys) - min(ys) + 2 * radius,
+                max(zs) - min(zs) + 2 * radius)
     return w, h, d
 
 
-def _local_cells(part: WirePart, skin: dict[str, Any], cell: float) -> tuple[list[tuple[int,int,int]], tuple[float,float,float]]:
+def _inverse_rotate(rotation_deg, v: tuple[float, float, float]) -> tuple[float, float, float]:
+    """World vector -> body local, matching TileImpactScene::rotateDegrees."""
+    x, y, z = (float(q) for q in v)
+    ax, ay, az = (radians(-float(q)) for q in rotation_deg)
+    cx, sx = cos(ax), sin(ax)
+    y, z = y * cx - z * sx, y * sx + z * cx
+    cy, sy = cos(ay), sin(ay)
+    x, z = x * cy + z * sy, -x * sy + z * cy
+    cz, sz = cos(az), sin(az)
+    x, y = x * cz - y * sz, x * sz + y * cz
+    return x, y, z
+
+
+def _part_grid_cells(part: WirePart, skin: dict[str, Any], cell: float) -> list[tuple[int, int, int]]:
+    # Scan one world-grid bounding sphere, then ask the actual local solid. This
+    # is intentionally the same strategy as TileImpactScene's primitive
+    # voxelisation: global cell centre -> inverse body rotation -> inside test.
     bw, bh, bd = _bounds(part, skin)
-    nx, ny, nz = (max(1, int((v / cell) + 0.999999)) for v in (bw, bh, bd))
-    origin = (-nx * cell / 2, -ny * cell / 2, -nz * cell / 2)
-    cells: list[tuple[int,int,int]] = []
-    for i in range(nx):
-        x = origin[0] + (i + 0.5) * cell
-        for j in range(ny):
-            y = origin[1] + (j + 0.5) * cell
-            for k in range(nz):
-                z = origin[2] + (k + 0.5) * cell
-                if _inside(part, skin, x, y, z):
-                    cells.append((i, j, k))
-    return cells, origin
+    reach = 0.5 * sqrt(bw*bw + bh*bh + bd*bd) + cell
+    lo = [floor((float(part.center_m[a]) - reach) / cell) for a in range(3)]
+    hi = [ceil((float(part.center_m[a]) + reach) / cell) for a in range(3)]
+    scanned = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+    if scanned > MAX_SCAN_CELLS:
+        raise ValueError(
+            f"{part.name}: Matter scan would inspect {scanned:,} cells; use a coarser cell size")
+    out: list[tuple[int, int, int]] = []
+    for gx in range(lo[0], hi[0] + 1):
+        wx = (gx + 0.5) * cell
+        for gy in range(lo[1], hi[1] + 1):
+            wy = (gy + 0.5) * cell
+            for gz in range(lo[2], hi[2] + 1):
+                wz = (gz + 0.5) * cell
+                local = _inverse_rotate(part.rotation_deg,
+                    (wx - float(part.center_m[0]), wy - float(part.center_m[1]), wz - float(part.center_m[2])))
+                if _inside(part, skin, *local):
+                    out.append((gx, gy, gz))
+    return out
+
+
+def _digest(cell: float, occupied: dict[tuple[int, int, int], dict[str, Any]], *, identity: bool) -> str:
+    rows = []
+    for grid in sorted(occupied):
+        item = occupied[grid]
+        row: list[Any] = [*grid, item["material"]]
+        if identity:
+            row.append(sorted(item["components"]))
+        rows.append(row)
+    payload = json.dumps({"cell_size_m": cell, "cells": rows}, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def matter_document(design: WorkshopDesign, component_overrides: Any = None, *,
                     cell_size_m: float = 0.04, exterior_only: bool = False) -> dict[str, Any]:
     cell = _number(cell_size_m, "cell_size_m", 0.005, 0.2)
     overrides = skin_overrides(component_overrides)
-    output: list[dict[str, Any]] = []
+    occupied: dict[tuple[int, int, int], dict[str, Any]] = {}
     counts: dict[str, int] = {}
     physical_curves: list[str] = []
-    total = 0
-    neighbors = ((1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1))
+
     for part in design.parts:
         skin = overrides.get(part.name, {})
         if skin.get("physical") and _effective_profile(part, skin) == "curve":
             physical_curves.append(part.name)
-        local, origin = _local_cells(part, skin, cell)
-        occupied = set(local)
-        counts[part.name] = len(local)
-        total += len(local)
-        if total > MAX_PREVIEW_CELLS:
+        grids = _part_grid_cells(part, skin, cell)
+        counts[part.name] = len(grids)
+        for grid in grids:
+            existing = occupied.get(grid)
+            if existing is None:
+                occupied[grid] = {
+                    "material": part.material,
+                    "component": part.name,
+                    "components": [part.name],
+                }
+            else:
+                if existing["material"] != part.material:
+                    raise ValueError(
+                        f"Matter cell {grid} is claimed by both {existing['material']} and {part.material}; "
+                        "cross-material overlap needs an explicit physical interface")
+                if part.name not in existing["components"]:
+                    existing["components"].append(part.name)
+        if len(occupied) > MAX_PREVIEW_CELLS:
             raise ValueError(
-                f"Matter preview has more than {MAX_PREVIEW_CELLS:,} cells at {cell*1000:g} mm; use a coarser preview cell")
-        for i, j, k in local:
-            exposed = any((i+di, j+dj, k+dk) not in occupied for di,dj,dk in neighbors)
-            if exterior_only and not exposed:
-                continue
-            local_point = (origin[0] + (i+0.5)*cell,
-                           origin[1] + (j+0.5)*cell,
-                           origin[2] + (k+0.5)*cell)
-            ox, oy, oz = _rotate(part.rotation_deg, local_point)
-            output.append({
-                "component": part.name,
-                "material": part.material,
-                "center_m": [round(part.center_m[0] + ox, 6),
-                             round(part.center_m[1] + oy, 6),
-                             round(part.center_m[2] + oz, 6)],
-                "exposed": exposed,
-            })
+                f"Matter has more than {MAX_PREVIEW_CELLS:,} cells at {cell*1000:g} mm; use a coarser cell")
+
+    output: list[dict[str, Any]] = []
+    for grid in sorted(occupied):
+        item = occupied[grid]
+        faces = [name for name, (dx, dy, dz) in _FACE_DIRS
+                 if (grid[0] + dx, grid[1] + dy, grid[2] + dz) not in occupied]
+        if exterior_only and not faces:
+            continue
+        output.append({
+            "grid": list(grid),
+            "component": item["component"],
+            "components": sorted(item["components"]),
+            "material": item["material"],
+            "center_m": [round((grid[a] + 0.5) * cell, 9) for a in range(3)],
+            "exposed": bool(faces),
+            "exposed_faces": faces,
+        })
+
+    physics_hash = _digest(cell, occupied, identity=False)
+    artifact_hash = _digest(cell, occupied, identity=True)
     return {
         "schema": MATTER_SCHEMA,
         "design_id": design.design_id,
+        "grid_convention": "center=(index+0.5)*cell_size_m",
         "cell_size_m": cell,
         "cells": output,
         "component_cell_counts": counts,
-        "total_cells": total,
+        "total_cells": len(occupied),
         "shown_cells": len(output),
         "exterior_only": bool(exterior_only),
         "physical_curve_components": physical_curves,
-        "surface_error_bound_m": round(sqrt(3.0) * cell / 2.0, 6),
+        "physics_hash": physics_hash,
+        "artifact_hash": artifact_hash,
+        "surface_error_bound_m": round(sqrt(3.0) * cell / 2.0, 9),
+        "engine_ready": True,
         "limitations": [
-            "This is the deterministic Workshop physical-cell preview. Curved physical skins are voxelized here, but current scratch engine scenes still use their existing primitive/reduced body adapters until the sparse-body scene ABI is added."
+            "Matter is compiled on the engine's shared grid. Workshop's current exact-cell engine adapter may encode this set as joined grid-aligned boxes; a native sparse-body scene field remains a size/performance optimization."
         ],
     }
