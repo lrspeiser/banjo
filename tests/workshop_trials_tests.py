@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -88,18 +89,17 @@ class PrototypeScene(unittest.TestCase):
             self.assertTrue(all(n >= 1 for n in size_cells))
             self.assertTrue(all(abs(float(body["size_mm"][i]) / 1000.0 - size_cells[i] * cell) < 1e-9
                                 for i in range(3)))
-            # A run of cells [lo,hi] has centre (lo+hi+1)*h/2, so twice the
-            # centre is an integer number of cells.
             self.assertTrue(all(abs(2.0 * float(v) / 1000.0 / cell
                                     - round(2.0 * float(v) / 1000.0 / cell)) < 1e-9
                                 for v in body["center_mm"]))
         self.assertTrue(setup["matter_roundtrip_exact"])
 
     def test_mixed_material_fused_trial_is_refused_instead_of_lying(self):
-        cart = assemble("cart", design_id="cart")
-        self.assertGreater(len({p.material for p in cart.parts}), 1)
+        mixed = assemble("table", design_id="mixed")
+        mixed.parts = [replace(p, material="iron") if p.name == "top" else p for p in mixed.parts]
+        self.assertGreater(len({p.material for p in mixed.parts}), 1)
         with self.assertRaisesRegex(ValueError, "one material|mixed-material"):
-            workshop_trials.prototype_scene(cart, load_kg=100)
+            workshop_trials.prototype_scene(mixed, load_kg=100, cell_size_m=0.02)
 
     def test_engine_unknown_display_material_is_refused(self):
         table = assemble("table", design_id="pine", parameters={"material": "pine"})
@@ -108,7 +108,7 @@ class PrototypeScene(unittest.TestCase):
 
     def test_taper_is_compiled_to_cells_not_replaced_by_a_box(self):
         straight = workshop_trials.prototype_scene(
-            assemble("table", design_id="straight", parameters={"leg_style": "square"}),
+            assemble("table", design_id="straight", parameters={"leg_style": "straight"}),
             load_kg=100, cell_size_m=0.02)
         tapered = workshop_trials.prototype_scene(
             assemble("table", design_id="taper", parameters={"leg_style": "tapered"}),
