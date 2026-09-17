@@ -271,6 +271,7 @@ Workshop/Product tools.
 | `workshop_test` | Run runtime-contract, force-probe, cart, kettle, machine or declared-load tests in isolation. |
 | `workshop_materialize` | Return materialization plan and BOM without changing the live world. |
 | `workshop_library` | List/load/search/save the physics-tagged library, prices and test presets. |
+| `workshop_history` | Read saved feedback and history together with saved designs, personal library, prices and test presets, through the same remembered surface the sim uses. |
 | `workshop_mate` | Deterministically mate two ProductGraph interfaces and declare their relationship. |
 | `workshop_runtime` | Ask the adaptive runtime policy whether reduced physics is still valid or should refine. |
 | `workshop_evidence` | Record engineering evidence or aggregate explicit validated intervals. |
