@@ -6,6 +6,7 @@
 <title>Banjo — a room you can walk around in</title>
 <link rel="stylesheet" href="/world.css">
 <link rel="stylesheet" href="/workshop.css">
+<link rel="stylesheet" href="/workshop_shell.css">
 <style>
 .ws-chat-intro{margin:.35rem 0 .55rem!important;color:#9fb0c3!important}
 #ws-chat-log{display:grid;gap:.5rem;min-height:120px;max-height:340px;overflow:auto;margin:.45rem 0;padding:.55rem;border:1px solid #303b49;border-radius:.55rem;background:#0a1017;scroll-behavior:smooth}
@@ -66,5 +67,8 @@ if(new URLSearchParams(location.search).has("workshop")){
   const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if(url.includes("/api/workshop/candidates")&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&requestBody.component_chat);if(isChat&&pendingOriginal){requestBody.component_chat.message=conversationContext(pendingOriginal);init={...init,body:JSON.stringify(requestBody)};status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&answer.workshop_chat){const chat=answer.workshop_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[])}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the Workshop agent: ${problem.message||problem}`)}throw problem}};
   textarea.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(!textarea.disabled)form.requestSubmit()}});
 }
+</script>
+<script type="module">
+if(new URLSearchParams(location.search).has("workshop")) await import("/workshop_shell.js");
 </script>
 </body></html>
