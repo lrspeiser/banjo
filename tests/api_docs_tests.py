@@ -2,15 +2,17 @@
 
 The engine C ABI/Python binding, legacy world MCP, unified platform MCP and
 Workshop HTTP client all have different adapters but one rule: a capability not
-in the public docs is not a public capability.  These checks deliberately run
-without the engine; they compare declarations, schemas, routes and docs.
+in the public docs is not a public capability. These checks also exercise the
+pure Workshop platform path so a documented adapter cannot silently rot.
 """
 from __future__ import annotations
 
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -102,6 +104,28 @@ class TheDocsNameEverything(unittest.TestCase):
         self.assertEqual("banjo.product-graph.v1", answer["product_graph"]["schema"])
         self.assertEqual("banjo.physics-contract.v1", answer["physics_contract"]["schema"])
         self.assertEqual("banjo.workshop-platform.v1", answer["schema"])
+
+    def test_workshop_mcp_uses_same_open_inspect_and_library_surface(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            original = workshop_mcp_tools.APP
+            workshop_mcp_tools.APP = SimpleNamespace(
+                runs_path=root / "runs", workshop_store=root / "store", workshop_db=root / "banjo.db",
+                workshop_owner_id="api-test", engine_path=None, api_key="", model="gpt-5-mini", live=None)
+            workshop_mcp_tools.APP.runs_path.mkdir()
+            workshop_mcp_tools.APP.workshop_store.mkdir()
+            try:
+                opened = workshop_mcp_tools.tool_open({"kind": "table"})
+                self.assertTrue(opened["candidates"])
+                self.assertEqual("banjo.workshop-platform.v1", opened["platform"]["schema"])
+                inspected = workshop_mcp_tools.tool_inspect(
+                    {"kind": "table", "design_id": "mcp-table", "parameters": {}})
+                self.assertEqual("banjo.product-graph.v1", inspected["product_graph"]["schema"])
+                empty = workshop_mcp_tools.tool_library(
+                    {"action": "search", "tags": {"physics": ["rotor"]}})
+                self.assertEqual([], empty["personal_library"])
+            finally:
+                workshop_mcp_tools.APP = original
 
 
 if __name__ == "__main__":
