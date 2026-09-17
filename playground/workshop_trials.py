@@ -1,8 +1,10 @@
 """Workshop isolated trials with visual playback.
 
-The physics setup and measurements stay in ``workshop_trials_core``. This layer
-supplies a recording session factory so declared/static-load trials return the
-same measured evidence plus a timeline the Workshop can render.
+The compatibility trial implementation remains in ``workshop_trials_core`` for
+specialist callers, but the Workshop product path now runs through
+``workshop_sparse_trial``: the same canonical Matter cells shown in the viewport
+are losslessly decomposed into joined grid-aligned boxes and handed to the live
+engine. The recording wrapper is still transparent to solver behavior.
 """
 from __future__ import annotations
 
@@ -11,8 +13,9 @@ from typing import Any
 import workshop_trials_core as _core
 from workshop_trials_core import *  # noqa: F401,F403
 import workshop_recording
+import workshop_sparse_trial
 
-_BASE_RUN_STATIC = _core.run_static_load
+_BASE_RUN_STATIC = workshop_sparse_trial.run_static_load
 _BASE_SESSION = _core.live_session.Session
 
 
@@ -39,14 +42,17 @@ def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
     return result
 
 
-# Core run_declared_static_load resolves core.run_static_load at runtime.
-_core.run_static_load = run_static_load
-run_declared_static_load = _core.run_declared_static_load
-prototype_scene = _core.prototype_scene
+def run_declared_static_load(app: Any, design, **options: Any) -> dict[str, Any]:
+    trial = next((t for t in design.tests if t.get("kind") == "static_load"), None)
+    if trial is None:
+        raise ValueError("this design declares no static_load trial")
+    return run_static_load(app, design, load_kg=float(trial.get("load_kg", 0)),
+                           on=str(trial.get("on") or "top"), **options)
 
-# These private helpers were already consumed by the bench and regression tests
-# before the implementation was split into core + recording wrapper. ``import *``
-# deliberately omits underscore names, so re-export the compatibility surface
-# explicitly rather than forcing callers to know about the new internal module.
+
+# Product-facing scene preview is now the exact Matter scene. Keep the old
+# private grid helpers because kettle setup and regression tests already consume
+# them and they remain useful for legacy primitive fixtures.
+prototype_scene = workshop_sparse_trial.prototype_scene
 _fits_cell = _core._fits_cell
 _effective_cell = _core._effective_cell
