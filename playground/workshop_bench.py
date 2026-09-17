@@ -14,7 +14,6 @@ from workshop_bench_core import *  # noqa: F401,F403
 import workshop_recording
 import workshop_trials
 
-_BASE_SESSION = _core.live_session.Session
 _record_lock = threading.RLock()
 _LOAD_KINDS = {"table", "stool", "bench", "chair", "shelf-unit", "cart"}
 
@@ -57,16 +56,18 @@ def run(app: Any, design, request: Any) -> dict[str, Any]:
 
     recorders: list[workshop_recording.Recorder] = []
 
-    def factory(*args: Any, **kwargs: Any):
-        recorder = workshop_recording.wrap(_BASE_SESSION(*args, **kwargs))
-        recorders.append(recorder)
-        return recorder
-
-    # live_session is shared by Live.open and direct Session callers. Keep the
-    # swap bounded to one test so ordinary room sessions never become Workshop
-    # recordings. The current bench already serializes its scratch world work.
+    # Respect whatever Session factory is installed at call time. Existing
+    # tests and alternate execution backends replace live_session.Session; the
+    # visual recorder must wrap that selected backend rather than a class
+    # captured when this module happened to import.
     with _record_lock:
         original = _core.live_session.Session
+
+        def factory(*args: Any, **kwargs: Any):
+            recorder = workshop_recording.wrap(original(*args, **kwargs))
+            recorders.append(recorder)
+            return recorder
+
         _core.live_session.Session = factory
         try:
             result = _core.run(app, design, request)
@@ -87,3 +88,4 @@ run_force = _core.run_force
 run_cart = _core.run_cart
 run_kettle = _core.run_kettle
 run_machine = _core.run_machine
+_cart_spec = _core._cart_spec
