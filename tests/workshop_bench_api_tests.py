@@ -31,17 +31,15 @@ class BenchAPI(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_opening_workshop_describes_functional_tests_and_saved_presets(self):
+    def test_opening_workshop_describes_product_tests_and_visual_load(self):
         opened = workshop_api.open_workshop(self.app, {"kind": "table"})
-        offered = {test["test"] for test in opened["bench_tests"]}
-        # A product is offered the tests that suit it. Every test already said
-        # which kinds it was for and nothing read it, so a table was offered
-        # "Roll the cart" and a kettle "Heat contained water" was shown beside
-        # tests that could never apply to it.
+        offered = {test["test"]: test for test in opened["bench_tests"]}
         for general in ("machine_control", "runtime_contract"):
             self.assertIn(general, offered, "a test with no kinds suits anything")
         for elsewhere in ("kettle_heat", "cart_roll"):
             self.assertNotIn(elsewhere, offered, f"{elsewhere} is not for a table")
+        self.assertIn("declared_static_load", offered)
+        self.assertTrue(offered["declared_static_load"]["visual_playback"])
         self.assertIn("cart_roll",
                       {t["test"] for t in workshop_api.open_workshop(
                           self.app, {"kind": "cart"})["bench_tests"]})
@@ -72,6 +70,47 @@ class BenchAPI(unittest.TestCase):
         self.assertEqual(evidence, answer["bench"])
         self.assertEqual("candidate", run.call_args.args[1].design_id)
         self.assertEqual("machine_control", run.call_args.args[2]["test"])
+
+    def test_visual_plan_returns_real_cells_and_separate_skin(self):
+        answer = workshop_api.plan(self.app, {
+            "kind": "table", "design_id": "visual-table", "parameters": {},
+            "visual": {"cell_size_m": 0.08, "exterior_only": True},
+        })
+        self.assertEqual("banjo.product-skin.v1", answer["skin"]["schema"])
+        matter = answer["matter"]
+        self.assertEqual("banjo.workshop-matter.v1", matter["schema"])
+        self.assertGreater(matter["total_cells"], 0)
+        self.assertGreater(matter["shown_cells"], 0)
+        self.assertLessEqual(matter["shown_cells"], matter["total_cells"])
+        self.assertAlmostEqual(0.08, matter["cell_size_m"])
+        self.assertTrue(all("center_m" in cell and "component" in cell
+                            for cell in matter["cells"][:20]))
+
+    def test_physical_curve_skin_changes_matter_and_persists_in_candidate(self):
+        opened = workshop_api.open_workshop(self.app, {"kind": "cart"})
+        candidate = opened["candidates"][0]
+        handle = next(part for part in candidate["parts"] if part["role"] == "handle")
+        edited = workshop_api.candidates(self.app, {
+            "kind": "cart", "design_id": candidate["design_id"],
+            "parameters": candidate["parameters"],
+            "component_overrides": candidate.get("component_overrides") or {},
+            "skin_edit": {"part_name": handle["name"], "scope": "this",
+                          "skin": {"profile": "curve", "bend_m": 0.12,
+                                   "physical": True, "roughness": 0.4}},
+        })
+        changed = edited["candidates"][0]
+        descriptor = next(item for item in changed["skin"]["components"]
+                          if item["component"] == handle["name"])
+        self.assertEqual("bezier_tube", descriptor["kind"])
+        self.assertTrue(descriptor["physical"])
+        visual = workshop_api.plan(self.app, {
+            "kind": "cart", "design_id": changed["design_id"],
+            "parameters": changed["parameters"],
+            "component_overrides": changed["component_overrides"],
+            "visual": {"cell_size_m": 0.06},
+        })
+        self.assertIn(handle["name"], visual["matter"]["physical_curve_components"])
+        self.assertGreater(visual["matter"]["component_cell_counts"][handle["name"]], 0)
 
 
 if __name__ == "__main__":
