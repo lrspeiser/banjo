@@ -53,10 +53,32 @@ for name, handler in workshop_mcp_tools.HANDLERS.items():
     core.HANDLERS[name] = _model_error(handler)
 
 core.SERVER = {"name": "banjo-platform", "version": "1.1.0"}
+_CORE_HANDLE = core.handle
 
+
+def handle(message: dict[str, Any]) -> dict[str, Any] | None:
+    """Core protocol plus product-design guidance in the initialize handshake."""
+    reply = _CORE_HANDLE(message)
+    if message.get("method") == "initialize" and isinstance(reply, dict):
+        result = reply.get("result")
+        if isinstance(result, dict):
+            result["instructions"] = (
+                str(result.get("instructions") or "")
+                + " For product or component design, do not build trial geometry directly in the live "
+                  "world first: call workshop_catalog, open or compose the product with workshop_open, "
+                  "inspect ProductGraph/PhysicsContract with workshop_inspect, and use workshop_test "
+                  "for isolated evidence. Workshop materialization is a preview and does not mutate a "
+                  "live world. Use the ordinary world tools only when the intent is to change or run "
+                  "persistent physical reality."
+            )
+    return reply
+
+
+# core.serve/main look up core.handle at runtime; point that name at the extended
+# handshake while keeping every other bit of the mature protocol implementation.
+core.handle = handle
 TOOLS = core.TOOLS
 HANDLERS = core.HANDLERS
-handle = core.handle
 serve = core.serve
 
 
