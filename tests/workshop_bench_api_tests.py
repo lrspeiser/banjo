@@ -71,25 +71,70 @@ class BenchAPI(unittest.TestCase):
         self.assertEqual("candidate", run.call_args.args[1].design_id)
         self.assertEqual("machine_control", run.call_args.args[2]["test"])
 
-    def test_visual_plan_returns_real_cells_and_separate_skin(self):
+    def test_visual_plan_returns_canonical_engine_grid_cells_and_separate_skin(self):
         answer = workshop_api.plan(self.app, {
             "kind": "table", "design_id": "visual-table", "parameters": {},
             "visual": {"cell_size_m": 0.08, "exterior_only": True},
         })
         self.assertEqual("banjo.product-skin.v1", answer["skin"]["schema"])
         matter = answer["matter"]
-        self.assertEqual("banjo.workshop-matter.v1", matter["schema"])
+        self.assertEqual("banjo.workshop-matter.v2", matter["schema"])
+        self.assertEqual("center=(index+0.5)*cell_size_m", matter["grid_convention"])
+        self.assertTrue(matter["engine_ready"])
+        self.assertEqual(64, len(matter["physics_hash"]))
+        self.assertEqual(64, len(matter["artifact_hash"]))
         self.assertGreater(matter["total_cells"], 0)
         self.assertGreater(matter["shown_cells"], 0)
         self.assertLessEqual(matter["shown_cells"], matter["total_cells"])
         self.assertAlmostEqual(0.08, matter["cell_size_m"])
-        self.assertTrue(all("center_m" in cell and "component" in cell
-                            for cell in matter["cells"][:20]))
+        for item in matter["cells"][:20]:
+            self.assertEqual(3, len(item["grid"]))
+            self.assertEqual(3, len(item["center_m"]))
+            self.assertTrue(item["exposed"])
+            self.assertTrue(item["exposed_faces"])
+            expected = [(item["grid"][axis] + 0.5) * matter["cell_size_m"] for axis in range(3)]
+            for got, want in zip(item["center_m"], expected):
+                self.assertAlmostEqual(want, got, places=8)
 
-    def test_physical_curve_skin_changes_matter_and_persists_in_candidate(self):
+    def test_exterior_only_changes_display_not_the_physics_hash(self):
+        base = {"kind": "table", "design_id": "visual-table", "parameters": {}}
+        all_cells = workshop_api.plan(self.app, {
+            **base, "visual": {"cell_size_m": 0.04, "exterior_only": False}})["matter"]
+        exterior = workshop_api.plan(self.app, {
+            **base, "visual": {"cell_size_m": 0.04, "exterior_only": True}})["matter"]
+        self.assertEqual(all_cells["physics_hash"], exterior["physics_hash"])
+        self.assertEqual(all_cells["artifact_hash"], exterior["artifact_hash"])
+        self.assertEqual(all_cells["total_cells"], exterior["total_cells"])
+        self.assertLessEqual(exterior["shown_cells"], all_cells["shown_cells"])
+
+    def test_physical_curve_changes_canonical_matter_and_appearance_curve_does_not(self):
         opened = workshop_api.open_workshop(self.app, {"kind": "cart"})
         candidate = opened["candidates"][0]
         handle = next(part for part in candidate["parts"] if part["role"] == "handle")
+
+        baseline = workshop_api.plan(self.app, {
+            "kind": "cart", "design_id": candidate["design_id"],
+            "parameters": candidate["parameters"],
+            "component_overrides": candidate.get("component_overrides") or {},
+            "visual": {"cell_size_m": 0.04},
+        })["matter"]
+
+        cosmetic = workshop_api.candidates(self.app, {
+            "kind": "cart", "design_id": candidate["design_id"],
+            "parameters": candidate["parameters"],
+            "component_overrides": candidate.get("component_overrides") or {},
+            "skin_edit": {"part_name": handle["name"], "scope": "this",
+                          "skin": {"profile": "curve", "bend_m": 0.12,
+                                   "physical": False, "roughness": 0.4}},
+        })["candidates"][0]
+        cosmetic_matter = workshop_api.plan(self.app, {
+            "kind": "cart", "design_id": cosmetic["design_id"],
+            "parameters": cosmetic["parameters"],
+            "component_overrides": cosmetic["component_overrides"],
+            "visual": {"cell_size_m": 0.04},
+        })["matter"]
+        self.assertEqual(baseline["physics_hash"], cosmetic_matter["physics_hash"])
+
         edited = workshop_api.candidates(self.app, {
             "kind": "cart", "design_id": candidate["design_id"],
             "parameters": candidate["parameters"],
@@ -103,14 +148,15 @@ class BenchAPI(unittest.TestCase):
                           if item["component"] == handle["name"])
         self.assertEqual("bezier_tube", descriptor["kind"])
         self.assertTrue(descriptor["physical"])
-        visual = workshop_api.plan(self.app, {
+        physical = workshop_api.plan(self.app, {
             "kind": "cart", "design_id": changed["design_id"],
             "parameters": changed["parameters"],
             "component_overrides": changed["component_overrides"],
-            "visual": {"cell_size_m": 0.06},
-        })
-        self.assertIn(handle["name"], visual["matter"]["physical_curve_components"])
-        self.assertGreater(visual["matter"]["component_cell_counts"][handle["name"]], 0)
+            "visual": {"cell_size_m": 0.04},
+        })["matter"]
+        self.assertIn(handle["name"], physical["physical_curve_components"])
+        self.assertGreater(physical["component_cell_counts"][handle["name"]], 0)
+        self.assertNotEqual(baseline["physics_hash"], physical["physics_hash"])
 
 
 if __name__ == "__main__":
