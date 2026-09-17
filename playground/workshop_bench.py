@@ -277,6 +277,18 @@ def run_cart(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict[s
     speed = _number(config, "speed_m_s", 0.8, 0.1, 3.0); duration = _number(config, "duration_s", 0.5, 0.1, 1.0)
     spec, root, axle_names = _cart_spec(design, speed)
     engine, runs = _scratch(app, "cart"); session = live_session.Session(engine, spec, runs)
+    # Hang the pins. Session() starts a world from the scene document alone;
+    # only Live.open follows it with _hang(), which is where joints are actually
+    # installed ("the pins go in afterwards"). Building the session directly
+    # meant the cart's two axle hinges and four wheel fixings were never put in:
+    # the trial reported joint_count 0 and no axle turns, and the chassis slid
+    # rather than rolled -- which reads as broken physics rather than as a
+    # missing step, exactly what _hang's own docstring warns about.
+    hung = live_session.Live._hang(session, spec.get("joints") or [])
+    refused = [note for note in (hung.get("refused") or [])]
+    if refused:
+        raise ValueError("the scratch cart could not hang its bearings: "
+                         + "; ".join(str(note) for note in refused))
     try:
         start = session.send(op="poses"); before_joints = session.send(op="joints").get("joints") or []
         _advance(session, duration, dt=1 / 120.0)
@@ -302,8 +314,18 @@ def run_cart(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict[s
 
 
 def _hoist_spec(load_kg: float) -> dict[str, Any]:
+    """The scratch hoist, UNVALIDATED on purpose.
+
+    Its one caller hands this to live_session.Live.open, which validates the
+    spec itself. fracture_lab.validate is not idempotent -- it enriches what it
+    returns with cells, cells_per_axis, requested_plate_m, seated and snapped --
+    so validating here made the second pass refuse its own output with
+    "Unknown fracture lab fields". The kettle and cart benches build a spec and
+    hand it to live_session.Session, which does not re-validate; this one goes
+    through open(), so it must not pre-validate.
+    """
     side = (load_kg / engine_materials.density("iron")) ** (1 / 3)
-    return fracture_lab.validate({
+    return ({
         "algorithm": "lattice", "cell_m": 0.05, "plasticity": "on",
         "bodies": [
             {"name": "post", "shape": "box", "material": "iron", "size_mm": [100, 2000, 100], "center_mm": [-400, 1000, 0], "anchored": True},
