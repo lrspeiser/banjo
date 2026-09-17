@@ -1,0 +1,294 @@
+"""Exact-cell Workshop engine trials.
+
+Banjo's live scene already has a lossless path to an arbitrary occupied-cell set:
+grid-aligned boxes with one join name are voxelised onto the shared scene grid,
+unioned, and passed to generateVoxelLattice. This adapter decomposes the exact
+banjo.workshop-matter.v2 artifact into those boxes, proves the union round-trips
+to the same integer grid coordinates, and only then starts the engine.
+
+The joined-box encoding is an ABI bridge, not a geometry approximation. A future
+native sparse-body scene field can replace the encoding without changing the
+canonical Matter artifact or its hashes.
+"""
+from __future__ import annotations
+
+from math import isfinite
+from pathlib import Path
+from typing import Any, Callable
+
+import fracture_lab
+import live_session
+import workshop_trials_core as core
+from mcp import engine_materials, workshop_visual
+from mcp.workshop import WorkshopDesign
+
+MAX_SCENE_BOXES = 240  # leave room for fixtures under fracture_lab's scene cap
+_LOAD_MATERIAL = "iron"
+
+Grid = tuple[int, int, int]
+Box = tuple[Grid, Grid]  # inclusive min/max grid coordinates
+
+
+def _matter_overrides(design: WorkshopDesign) -> dict[str, Any]:
+    lineage = design.lineage if isinstance(design.lineage, dict) else {}
+    value = lineage.get("component_overrides") or {}
+    return value if isinstance(value, dict) else {}
+
+
+def _grid_set(matter: dict[str, Any]) -> set[Grid]:
+    out: set[Grid] = set()
+    for cell in matter.get("cells") or []:
+        grid = cell.get("grid") if isinstance(cell, dict) else None
+        if not isinstance(grid, list) or len(grid) != 3:
+            raise ValueError("Matter artifact is missing canonical grid coordinates")
+        out.add((int(grid[0]), int(grid[1]), int(grid[2])))
+    if len(out) != int(matter.get("total_cells", -1)):
+        raise ValueError("Matter artifact cell count does not match its canonical grid set")
+    return out
+
+
+def decompose_cells(cells: set[Grid]) -> list[Box]:
+    """Greedy exact rectangular decomposition; every input cell appears once."""
+    left = set(cells)
+    boxes: list[Box] = []
+    while left:
+        x0, y0, z0 = min(left)
+        x1 = x0
+        while (x1 + 1, y0, z0) in left:
+            x1 += 1
+
+        y1 = y0
+        while True:
+            ny = y1 + 1
+            if all((x, ny, z0) in left for x in range(x0, x1 + 1)):
+                y1 = ny
+            else:
+                break
+
+        z1 = z0
+        while True:
+            nz = z1 + 1
+            if all((x, y, nz) in left
+                   for x in range(x0, x1 + 1)
+                   for y in range(y0, y1 + 1)):
+                z1 = nz
+            else:
+                break
+
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                for z in range(z0, z1 + 1):
+                    left.remove((x, y, z))
+        boxes.append(((x0, y0, z0), (x1, y1, z1)))
+    return boxes
+
+
+def cells_from_boxes(boxes: list[Box]) -> set[Grid]:
+    out: set[Grid] = set()
+    for lo, hi in boxes:
+        for x in range(lo[0], hi[0] + 1):
+            for y in range(lo[1], hi[1] + 1):
+                for z in range(lo[2], hi[2] + 1):
+                    out.add((x, y, z))
+    return out
+
+
+def _box_body(name: str, box: Box, cell: float, material: str, join: str) -> dict[str, Any]:
+    lo, hi = box
+    counts = [hi[a] - lo[a] + 1 for a in range(3)]
+    # Grid cell i spans [i*h,(i+1)*h], so a rectangular run has an exact
+    # boundary-aligned centre at (lo+hi+1)*h/2.
+    centre = [(lo[a] + hi[a] + 1) * cell / 2.0 for a in range(3)]
+    return {
+        "name": name,
+        "shape": "box",
+        "material": material,
+        "size_mm": [counts[a] * cell * 1000.0 for a in range(3)],
+        "center_mm": [centre[a] * 1000.0 for a in range(3)],
+        "velocity_m_s": [0.0, 0.0, 0.0],
+        "rotation_deg": [0.0, 0.0, 0.0],
+        "anchored": False,
+        "join": join,
+    }
+
+
+def _compact_load_shape(load_kg: float, cell: float) -> tuple[int, int, int, float]:
+    per_cell = engine_materials.density(_LOAD_MATERIAL) * cell ** 3
+    target = max(1, round(load_kg / per_cell))
+    best: tuple[float, tuple[int, int, int]] | None = None
+    limit = max(2, round(target ** (1 / 3)) * 4 + 4)
+    for a in range(1, limit + 1):
+        for b in range(a, limit + 1):
+            c = max(b, round(target / (a * b)))
+            for cc in {max(b, c - 1), max(b, c), max(b, c + 1)}:
+                n = a * b * cc
+                score = abs(n - target) + 0.03 * (cc - a)
+                if best is None or score < best[0]:
+                    best = (score, (a, b, cc))
+    assert best is not None
+    a, b, c = best[1]
+    return a, b, c, a * b * c * per_cell
+
+
+def _target_name(design: WorkshopDesign, on: str) -> str:
+    part = next((p for p in design.parts if p.name == on), None)
+    if part is None:
+        part = next((p for p in design.parts if p.role == on), None)
+    if part is None and on == "top":
+        part = next((p for p in design.parts if p.name in {"top", "seat", "deck"}), None)
+    if part is None:
+        raise ValueError(f"the static load names {on!r}, but no such component/role exists")
+    return part.name
+
+
+def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
+                    cell_size_m: float = core.DEFAULT_CELL_M) -> dict[str, Any]:
+    design.validate()
+    load_kg = float(load_kg)
+    cell = float(cell_size_m)
+    if not isfinite(load_kg) or load_kg <= 0:
+        raise ValueError("load_kg must be a finite positive number")
+    if not isfinite(cell) or not 0.005 <= cell <= 0.1:
+        raise ValueError("scratch trial cell_size_m must be 5 to 100 mm")
+
+    matter = workshop_visual.matter_document(
+        design, _matter_overrides(design), cell_size_m=cell, exterior_only=False)
+    cells = _grid_set(matter)
+    if not cells:
+        raise ValueError("the selected design produced no physical Matter cells")
+
+    materials = {engine_materials.canonical(str(c.get("material") or ""))
+                 for c in matter.get("cells") or []}
+    unsupported = sorted(m for m in materials if not engine_materials.known(m))
+    if unsupported:
+        raise ValueError("the engine has no Banjo material preset for " + ", ".join(unsupported))
+    if len(materials) != 1:
+        raise ValueError(
+            "exact fused Workshop static-load testing currently requires one material; "
+            "mixed-material fixed interfaces need per-cell interface laws rather than silently taking the first material")
+    material = next(iter(materials))
+
+    boxes = decompose_cells(cells)
+    reconstructed = cells_from_boxes(boxes)
+    if reconstructed != cells:
+        raise RuntimeError("internal error: engine box decomposition changed the Matter cell set")
+    if len(boxes) > MAX_SCENE_BOXES:
+        raise ValueError(
+            f"exact Matter needs {len(boxes)} joined grid boxes at {cell*1000:g} mm; "
+            f"the current scene bridge allows {MAX_SCENE_BOXES}. Use a coarser cell until the native sparse-body field lands.")
+
+    join = "workshop-matter-" + str(matter["physics_hash"])[:12]
+    bodies = [_box_body(f"candidate/matter-{i+1}", box, cell, material, join)
+              for i, box in enumerate(boxes)]
+
+    target = _target_name(design, on)
+    target_cells = [c for c in matter.get("cells") or [] if target in (c.get("components") or [c.get("component")])]
+    if not target_cells:
+        raise ValueError(f"the exact Matter artifact has no cells for load target {target!r}")
+    target_grids = [tuple(int(v) for v in c["grid"]) for c in target_cells]
+    top_y = max(g[1] for g in target_grids)
+    centre_x = round(sum(g[0] for g in target_grids) / len(target_grids))
+    centre_z = round(sum(g[2] for g in target_grids) / len(target_grids))
+
+    na, nb, nc, actual_load_kg = _compact_load_shape(load_kg, cell)
+    x0 = centre_x - na // 2
+    z0 = centre_z - nc // 2
+    y0 = top_y + 1
+    load_box: Box = ((x0, y0, z0), (x0 + na - 1, y0 + nb - 1, z0 + nc - 1))
+    load_name = "workshop/test-load"
+    load_body = _box_body(load_name, load_box, cell, _LOAD_MATERIAL, "")
+    bodies.append(load_body)
+
+    spec = fracture_lab.validate({
+        "algorithm": "lattice",
+        "cell_m": cell,
+        "plasticity": "on",
+        "bodies": bodies,
+    })
+    return {
+        "spec": spec,
+        "root_body": bodies[0]["name"],
+        "load_body": load_name,
+        "load_kg": load_kg,
+        "actual_load_kg": actual_load_kg,
+        "load_on": on,
+        "requested_cell_size_m": cell,
+        "cell_size_m": cell,
+        "matter": matter,
+        "matter_cells": len(cells),
+        "matter_boxes": len(boxes),
+        "matter_roundtrip_exact": True,
+        "matter_physics_hash": matter["physics_hash"],
+        "matter_artifact_hash": matter["artifact_hash"],
+    }
+
+
+def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
+                    on: str = "top", cell_size_m: float = core.DEFAULT_CELL_M,
+                    duration_s: float = core.DEFAULT_DURATION_S,
+                    session_factory: Callable[..., Any] = live_session.Session) -> dict[str, Any]:
+    duration = float(duration_s)
+    if not isfinite(duration) or not 0.1 <= duration <= 10.0:
+        raise ValueError("duration_s must be between 0.1 and 10 seconds")
+    setup = prototype_scene(design, load_kg=load_kg, on=on, cell_size_m=cell_size_m)
+    engine = Path(getattr(app, "engine_path"))
+    runs = Path(getattr(app, "runs_path")) / "workshop-trials"
+    runs.mkdir(parents=True, exist_ok=True)
+    session = session_factory(engine, setup["spec"], runs)
+    try:
+        initial = session.send(op="poses")
+        final, fractures = core._run_to(session, duration)
+    finally:
+        session.close()
+
+    a = core._body(initial, setup["root_body"])
+    b = core._body(final, setup["root_body"])
+    load = core._body(final, setup["load_body"])
+    moved = turned = None
+    if a is not None and b is not None:
+        pa, pb = a.get("position_m") or [0, 0, 0], b.get("position_m") or [0, 0, 0]
+        moved = sum((float(pb[i]) - float(pa[i])) ** 2 for i in range(3)) ** 0.5
+        turned = core._quat_angle_deg(a.get("orientation_wxyz") or [1, 0, 0, 0],
+                                      b.get("orientation_wxyz") or [1, 0, 0, 0])
+
+    return {
+        "schema": core.TRIAL_SCHEMA,
+        "evidence": "engine-trial",
+        "trial": "static_load",
+        "design_id": design.design_id,
+        "requested": {"load_kg": round(float(load_kg), 4), "on": on,
+                      "duration_s": duration, "cell_size_m": float(cell_size_m)},
+        "prototype": {
+            "root_body": setup["root_body"],
+            "body_count": len(setup["spec"].get("bodies") or []),
+            "one_material_join": True,
+            "effective_cell_size_m": setup["cell_size_m"],
+            "matter_cells": setup["matter_cells"],
+            "matter_boxes": setup["matter_boxes"],
+            "matter_roundtrip_exact": setup["matter_roundtrip_exact"],
+            "matter_physics_hash": setup["matter_physics_hash"],
+            "matter_artifact_hash": setup["matter_artifact_hash"],
+            "engine_geometry": "joined-grid-boxes-exact-cell-union",
+        },
+        "measured": {
+            "clock_s": round(float(final.get("t", 0.0)), 6),
+            "prototype_present": b is not None,
+            "load_present": load is not None,
+            "prototype_displacement_m": round(moved, 6) if moved is not None else None,
+            "prototype_rotation_change_deg": round(turned, 4) if turned is not None else None,
+            "load_position_m": ([round(float(v), 6) for v in load.get("position_m", [])]
+                                if load is not None else None),
+            "fractures": fractures,
+            "requested_load_kg": round(load_kg, 4),
+            "actual_grid_load_kg": round(float(setup["actual_load_kg"]), 4),
+        },
+        "acceptance": {
+            "status": "not-declared",
+            "why": ("the assembly declares the load to try, but not a displacement/rotation/failure "
+                    "tolerance; this result is evidence, not an invented pass/fail"),
+        },
+        "limitations": [
+            "The test mass is quantized to whole lattice cells; requested and actual grid load are both reported.",
+            "The native scene schema still lacks a compact sparse-body field; joined grid boxes are a lossless encoding of the same cell artifact."
+        ],
+    }
