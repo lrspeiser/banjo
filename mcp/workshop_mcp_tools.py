@@ -97,15 +97,18 @@ TOOLS = [
      "description": "Compile a selected Workshop candidate to a materialization plan and BOM; this is a preview and does not mutate a live world.",
      "inputSchema": _schema({**DESIGN_FIELDS, "cell_size_m": {"type": "number"}}, ["kind"])},
     {"name": "workshop_library",
-     "description": "Use the persistent physics-tagged Workshop library: list, load, semantic tag search, save a component or product, set material price, or save a functional-test preset.",
+     "description": "Use the persistent physics-tagged Workshop library: list, load, semantic tag search, save a component or Workshop design, set material price, or save a functional-test preset.",
      "inputSchema": _schema({**DESIGN_FIELDS,
-         "action": {"type": "string", "enum": ["list", "load", "search", "save_component", "save_product", "set_price", "save_test_preset"]},
+         "action": {"type": "string", "enum": ["list", "load", "search", "save_component", "save_design", "set_price", "save_test_preset"]},
          "item_id": {"type": "string"}, "name": {"type": "string"}, "part_name": {"type": "string"},
-         "product_graph": PRODUCT_GRAPH, "tags": JSON_OBJECT,
+         "tags": JSON_OBJECT,
          "item_type": {"type": "string", "enum": ["component", "assembly"]},
          "match_all": {"type": "boolean"}, "limit": {"type": "integer"},
          "material": {"type": "string"}, "price_per_kg": {"type": "number"}, "currency": {"type": "string"},
          "test": {"type": "string"}, "config": JSON_OBJECT, "preset_id": {"type": "string"}}, ["action"])},
+    {"name": "workshop_history",
+     "description": "Read the Workshop's saved feedback/history together with saved designs, personal library, prices and functional-test presets through the same remembered surface the sim uses.",
+     "inputSchema": _schema({})},
     {"name": "workshop_mate",
      "description": "Deterministically mate two interfaces in an arbitrary ProductGraph and declare the physical relationship, returning the transform, updated graph and PhysicsContract.",
      "inputSchema": _schema({"product_graph": PRODUCT_GRAPH,
@@ -194,8 +197,12 @@ def tool_library(args: dict[str, Any]) -> dict[str, Any]:
     action = str(args.get("action") or "list")
     if action == "list": return workshop_platform.call(APP, "library", {})
     if action == "search": return workshop_platform.call(APP, "library", {**args, "action": "search"})
-    translated = {"save_product": "save_design", "save_test_preset": "save_bench_preset"}.get(action, action)
+    translated = {"save_test_preset": "save_bench_preset"}.get(action, action)
     return workshop_platform.call(APP, "library", {**args, "action": translated})
+
+
+def tool_history(args: dict[str, Any]) -> dict[str, Any]:
+    return workshop_platform.call(APP, "remembered", args)
 
 
 def tool_mate(args: dict[str, Any]) -> dict[str, Any]:
@@ -233,6 +240,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "workshop_test": tool_test,
     "workshop_materialize": tool_materialize,
     "workshop_library": tool_library,
+    "workshop_history": tool_history,
     "workshop_mate": tool_mate,
     "workshop_runtime": tool_runtime,
     "workshop_evidence": tool_evidence,
