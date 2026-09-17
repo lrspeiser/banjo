@@ -62,7 +62,7 @@ const target = new THREE.Vector3(0, 0.42, 0);
 const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0, plans: {},
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
-  selectedPart: null, openedLibraryItem: null,
+  selectedPart: null, forcePoint: null, openedLibraryItem: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
 };
 function chosen() { return bench.candidates[bench.selected]; }
@@ -166,6 +166,26 @@ function draw(candidate) {
   target.set(0, m.lowest_m + m.bounding_box_m[1] * 0.5, 0);
   reach = 0.5 * Math.hypot(...m.bounding_box_m);
 }
+// Where the last click landed on the product, in world metres. The force is
+// applied HERE rather than at the part's middle, so pushing the rim of a shelf
+// and pushing its centre are different questions with different answers.
+const forceArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 0.3, 0xffb347, 0.08, 0.05);
+forceArrow.visible = false;
+scene.add(forceArrow);
+
+function showForceAt(point, force_n) {
+  if (!point) { forceArrow.visible = false; return; }
+  // Length carries the magnitude: the slider's range maps onto a span that
+  // stays readable beside the product it is pushing.
+  const span = Math.max(0.12, reach * 0.9);
+  const size = span * (0.25 + 0.75 * Math.min(1, (Number(force_n) || 0) / 5000));
+  forceArrow.position.set(point[0], point[1] + size, point[2]);
+  forceArrow.setDirection(new THREE.Vector3(0, -1, 0));
+  forceArrow.setLength(size, size * 0.28, size * 0.16);
+  forceArrow.visible = true;
+}
+
 function pickPart(event) {
   const rect = stage.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -174,7 +194,32 @@ function pickPart(event) {
   const hit = raycaster.intersectObjects(group.children, false)
     .find((item) => item.object.userData && item.object.userData.partName);
   bench.selectedPart = hit ? hit.object.userData.partName : null;
+  bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
   show(false);
+  // Clicking the product IS the test, when the probe is the chosen one: the
+  // answer should arrive from the click, not from hunting for a Run button.
+  if (bench.selectedPart && bench.selectedBenchTest === "force_probe") reprobe();
+  else showForceAt(null);
+}
+
+// Re-run the point force probe for the current part, point and slider values.
+let probing = false;
+function reprobe() {
+  if (bench.selectedBenchTest !== "force_probe" || !bench.selectedPart || probing) return;
+  probing = true;
+  const config = benchConfig();
+  showForceAt(bench.forcePoint, config.force_n);
+  guard(null, async () => {
+    try {
+      const answer = await api("/api/workshop/plan", {
+        ...candidateBody(), bench_test: { test: "force_probe", config },
+      });
+      renderBenchResult(answer.bench);
+      // Draw the arrow where the probe says it pushed, so the picture and the
+      // numbers cannot disagree.
+      showForceAt(answer.bench?.target?.point_m || bench.forcePoint, config.force_n);
+    } finally { probing = false; }
+  });
 }
 stage.addEventListener("pointerdown", (event) => {
   dragging = true; dragged = false; px = event.clientX; py = event.clientY;
@@ -429,6 +474,24 @@ function renderBenchControls(values = null) {
         input.append(option);
       });
       input.dataset.valueType = typeof control.default;
+    } else if (control.type === "range") {
+      // A slider, with its value shown and the test re-run as it moves, so the
+      // arrow in the 3D view answers "how hard" while you are still dragging.
+      input = make("input", {
+        type: "range", min: String(control.min ?? 0), max: String(control.max ?? 100),
+        step: String(control.step ?? "any"), "data-bench-control": control.name,
+      });
+      // Value AFTER the bounds: a range input clamps whatever it is given to
+      // the range it has at the time, and the default range is 0-100, so
+      // setting it first turned a 500 N default into 100 N.
+      input.value = String(chosenValue ?? control.min ?? 0);
+      input.dataset.valueType = "number";
+      const shown = make("output", { class: "ws-range-value" }, String(chosenValue ?? ""));
+      const say = () => { shown.textContent = input.value; };
+      input.addEventListener("input", say);
+      input.addEventListener("change", () => { say(); reprobe(); });
+      label.append(input, shown); root.append(label);
+      continue;
     } else {
       input = make("input", {
         type: "number", value: String(chosenValue ?? ""),
@@ -455,6 +518,12 @@ function benchConfig() {
     else if (typeof control.default === "number") out[control.name] = Number(input.value);
     else out[control.name] = input.value;
   }
+  // A test that pushes on one part (the point force probe) offers no control
+  // to name it, because the part is chosen by clicking the product. Hand the
+  // chosen part over, so clicking a leg and pressing Run just works instead of
+  // asking the server to guess.
+  if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
+  if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
   return out;
 }
 function renderBenchPresets() {
@@ -837,7 +906,10 @@ async function start() {
     $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary;
     bench.pricebook = remembered.pricebook || bench.pricebook;
-    bench.benchTests = remembered.bench_tests || bench.benchTests;
+    // Not the test list. This call is the saved history, which knows nothing
+    // about which product is on the bench, so its catalog is the general one;
+    // taking it here overwrote the product's own tests a moment after they
+    // arrived, and the first thing you saw was a table offering to roll a cart.
     bench.benchPresets = remembered.bench_presets || bench.benchPresets;
     renderUserLibrary();
     renderBenchCatalog();

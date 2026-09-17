@@ -129,7 +129,8 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
     return out
 
 
-def library(app: Any = None, body: Any = None) -> dict[str, Any]:
+def library(app: Any = None, body: Any = None,
+            kind: str | None = None) -> dict[str, Any]:
     body = body if isinstance(body, dict) else {}
     if app is not None:
         action = body.get("action")
@@ -180,7 +181,7 @@ def library(app: Any = None, body: Any = None) -> dict[str, Any]:
         "saved_designs": workshop_store.list_saved(_store(app)) if app is not None else [],
         "personal_library": workshop_library.list_items(app) if app is not None else [],
         "pricebook": workshop_library.pricebook(app) if app is not None else {},
-        "bench_tests": workshop_bench.catalog(),
+        "bench_tests": workshop_bench.catalog(kind),
         "bench_presets": workshop_library.list_bench_presets(app) if app is not None else [],
     }
 
@@ -210,7 +211,7 @@ def open_workshop(app: Any, body: Any) -> dict[str, Any]:
     session = WorkshopSession(
         session_id=str(body.get("session_id") or f"bench-{int(time.time()*1000)}"),
         world_revision=revision, target=target)
-    return {"schema": WORKSHOP_SCHEMA, "session": session.described(), **library(app),
+    return {"schema": WORKSHOP_SCHEMA, "session": session.described(), **library(app, kind=kind),
             "kind": kind, "generation": generation, "candidates": candidates_out,
             **({"saved_design": saved} if saved else {}),
             **({"library_item": library_item} if library_item else {})}
@@ -235,7 +236,8 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
             materials=[m["material"] for m in book["materials"]], library=items)
         action = proposal["action"]
         if action == "none":
-            return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation,
+            return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation,
                     "candidates": [wire], "workshop_chat": proposal}
         if action == "reuse":
             item = workshop_library.load_item(app, str(proposal.get("library_item_id") or ""))
@@ -247,7 +249,8 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
             changed, new_overrides, names = workshop_components.edit(
                 current, part_name=part_name, action=action, scope=proposal["scope"], amount=0.12,
                 material=(str(proposal["material"]) if proposal.get("material") else None))
-        return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation + 1,
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation + 1,
                 "candidates": [_candidate(app, changed, assembly(kind), new_overrides)],
                 "workshop_chat": {**proposal, "changed": names}}
     if isinstance(body.get("component_edit"), dict):
@@ -256,7 +259,8 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
             current, part_name=str(edit.get("part_name") or ""), action=str(edit.get("action") or ""),
             scope=str(edit.get("scope") or "this"), amount=float(edit.get("amount", 0.12)),
             material=(str(edit["material"]) if edit.get("material") else None))
-        return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation + 1,
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation + 1,
                 "candidates": [_candidate(app, design, assembly(kind), overrides)],
                 "component_edit": {"changed": names, "action": edit.get("action")}}
     if isinstance(body.get("reuse_library_item"), dict):
@@ -267,13 +271,15 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
         design, overrides, names = workshop_components.replace_with_recipe(
             current, part_name=str(reuse.get("part_name") or ""), recipe=item["payload"],
             scope=str(reuse.get("scope") or "this"))
-        return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation + 1,
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation + 1,
                 "candidates": [_candidate(app, design, assembly(kind), overrides)],
                 "reused_library_item": {"item_id": item["item_id"], "changed": names}}
     sweeps = body.get("sweeps")
     if sweeps is not None and not isinstance(sweeps, dict):
         raise ValueError("sweeps must be a JSON object of parameter to values")
-    return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation,
+    return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation,
             "candidates": _spread(app, kind, _parameters(body),
                                   sweeps if sweeps is not None else SEED_SWEEPS.get(kind, {}),
                                   generation, overrides=body.get("component_overrides"))}
@@ -301,7 +307,8 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
         design = workshop_components.apply_overrides(
             assemble(kind, design_id=f"{kind}-g{generation}-v{index+1}", parameters=values), overrides)
         made.append(_candidate(app, design, spec, overrides))
-    return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation, "candidates": made}
+    return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+            "bench_tests": workshop_bench.catalog(kind), "generation": generation, "candidates": made}
 
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
@@ -393,5 +400,6 @@ def remembered(app: Any, body: Any = None) -> dict[str, Any]:
             "designs_kept": len(designs), "saved_designs": designs,
             "personal_library": workshop_library.list_items(app),
             "pricebook": workshop_library.pricebook(app),
+            # No product is selected on this path, so the catalog is not narrowed.
             "bench_tests": workshop_bench.catalog(),
             "bench_presets": workshop_library.list_bench_presets(app)}

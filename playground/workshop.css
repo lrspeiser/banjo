@@ -108,3 +108,7 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
   .ws-top .ws-spacer { display:none; }
   .ws-product-grid { grid-template-columns:1fr 1fr; }
 }
+
+/* The point-force slider, with its value beside it. */
+.ws-field input[type="range"] { padding: 0; accent-color: #dce7f5; }
+.ws-range-value { font-size: .76rem; color: #9fb0c3; justify-self: end; margin-top: -.15rem; }

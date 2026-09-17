@@ -21,7 +21,21 @@ from mcp.workshop import WorkshopDesign
 BENCH_SCHEMA = "banjo.workshop-bench.v1"
 
 
-def catalog() -> list[dict[str, Any]]:
+def catalog(kind: str | None = None) -> list[dict[str, Any]]:
+    """The functional tests, narrowed to the product on the bench.
+
+    Every test already says which kinds it is for; nothing read it, so a kettle
+    was offered "Roll the cart" and a table was offered "Heat contained water".
+    A test with no `kinds` is general and is offered for anything.
+    """
+    offered = _catalog()
+    if not kind:
+        return offered
+    return [test for test in offered
+            if not test.get("kinds") or kind in test["kinds"]]
+
+
+def _catalog() -> list[dict[str, Any]]:
     return [
         {
             "test": "runtime_contract", "name": "Compile runtime physics",
@@ -31,8 +45,13 @@ def catalog() -> list[dict[str, Any]]:
         },
         {
             "test": "force_probe", "name": "Point force probe",
-            "about": "Click the product in 3D, choose force and pulse duration, and inspect the authored load paths and support reactions.",
-            "controls": [],
+            "about": "Click the product in 3D to push on that spot. The arrow shows where and how hard; the load paths and support reactions below are what carries it.",
+            "controls": [
+                {"name": "force_n", "label": "Force", "unit": "N", "type": "range",
+                 "default": 500.0, "min": 10.0, "max": 5000.0, "step": 10.0},
+                {"name": "duration_s", "label": "Pulse", "unit": "s", "type": "range",
+                 "default": 0.05, "min": 0.01, "max": 2.0, "step": 0.01},
+            ],
             "limitations": ["This first layer is an analytical force-path/support calculation; dynamic stress, deflection and fracture require an engine impact trial."],
         },
         {
@@ -117,11 +136,39 @@ def run_contract(design: WorkshopDesign) -> dict[str, Any]:
 
 
 def run_force(design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
+    # This probe pushes on ONE named component, and the card offers no control
+    # to pick it: it expects the part to have been chosen in 3D first. Asked
+    # with nothing chosen it passed "" down and the person got "there is no
+    # component ''", which is the inside of the code talking rather than an
+    # instruction. Say which part to click, and name the ones there are.
+    component = str(config.get("component") or "").strip()
+    if not component:
+        names = [part.name for part in design.parts]
+        raise ValueError(
+            "Point force probe pushes on one part, so choose the part first: "
+            "click it in the 3D view, or in the Components list. "
+            "This " + (design.kind or "product") + " has "
+            + ", ".join(names[:8]) + ("..." if len(names) > 8 else ""))
+    part = next((p for p in design.parts if p.name == component), None)
+    if part is None:
+        raise ValueError(
+            f"there is no component {component!r} on this "
+            + (design.kind or "product") + "; it has "
+            + ", ".join(p.name for p in design.parts[:8]))
+    # Where to push, and which way, if the person has not dragged a point.
+    # Pressing Run after clicking a part used to fail with "point_m must be
+    # three numbers", which is the probe's argument check surfacing as the
+    # whole answer. Push on the middle of the part that was chosen, straight
+    # down, which is the load case these products are for -- and the probe
+    # echoes the point and direction it used, so the default is visible in the
+    # result rather than assumed silently.
+    point = config.get("point_m") or list(part.center_m)
+    direction = config.get("direction") or [0.0, -1.0, 0.0]
     return {
         "schema": BENCH_SCHEMA, "test": "force_probe",
         **workshop_force.probe(
-            design, component_name=str(config.get("component") or ""),
-            point_m=config.get("point_m"), direction=config.get("direction"),
+            design, component_name=component,
+            point_m=point, direction=direction,
             force_n=_number(config, "force_n", 500.0, 1.0, 100000.0),
             duration_s=_number(config, "duration_s", 0.05, 0.001, 10.0)),
     }
