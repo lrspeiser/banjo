@@ -1,6 +1,6 @@
 """Workshop isolated trials with visual playback.
 
-The physics setup and measurements stay in ``workshop_trials_core``.  This layer
+The physics setup and measurements stay in ``workshop_trials_core``. This layer
 supplies a recording session factory so declared/static-load trials return the
 same measured evidence plus a timeline the Workshop can render.
 """
@@ -43,3 +43,10 @@ def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
 _core.run_static_load = run_static_load
 run_declared_static_load = _core.run_declared_static_load
 prototype_scene = _core.prototype_scene
+
+# These private helpers were already consumed by the bench and regression tests
+# before the implementation was split into core + recording wrapper. ``import *``
+# deliberately omits underscore names, so re-export the compatibility surface
+# explicitly rather than forcing callers to know about the new internal module.
+_fits_cell = _core._fits_cell
+_effective_cell = _core._effective_cell
