@@ -58,9 +58,25 @@ class Recorder:
         self.events: list[dict[str, Any]] = []
         self.capture(getattr(session, "state", None), event="start")
 
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.session, name)
+
+    @property
+    def state(self) -> Any:
+        return getattr(self.session, "state", None)
+
+    def close(self) -> Any:
+        return self.session.close()
+
     def capture(self, state: Any, *, event: str | None = None) -> None:
         item = frame(state, event=event)
         if item is None:
+            return
+        # Replies such as `joints` can carry only the queried subsystem. Never
+        # replace a full pose frame with an empty-body reply at the same time.
+        if not item["bodies"] and not event:
+            if self.frames and isinstance(state, dict) and isinstance(state.get("joints"), list):
+                self.frames[-1]["joints"] = deepcopy(state["joints"])
             return
         if self.frames and self.frames[-1]["t_s"] == item["t_s"] and not event:
             self.frames[-1] = item
