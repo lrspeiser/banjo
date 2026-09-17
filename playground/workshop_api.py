@@ -1,9 +1,8 @@
-"""Workshop HTTP implementation with visual-matter and editable-skin extensions.
+"""Workshop HTTP implementation with visual matter, skins and physics-debug views.
 
-The mature API remains in ``workshop_api_core``.  This layer preserves every
-existing response and adds the representations the visual Workshop needs:
-separate skin descriptors, sparse physical-cell previews, and bounded skin
-edits stored alongside component overrides.
+The mature API remains in ``workshop_api_core``. This layer preserves existing
+responses and adds renderer-neutral representations used by both the browser
+and MCP-facing platform adapters.
 """
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ from typing import Any
 
 import workshop_api_core as _core
 from workshop_api_core import *  # noqa: F401,F403
-from mcp import workshop_components, workshop_visual
+from mcp import workshop_components, workshop_debug, workshop_visual
 
 
 def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -24,8 +23,6 @@ def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> d
             design, overrides = workshop_components.design_from_spec(candidate)
             candidate["skin"] = workshop_visual.skin_document(design, overrides)
         except (ValueError, KeyError):
-            # A malformed candidate must still fail at its authoritative API
-            # boundary; decoration never invents substitute geometry.
             pass
     return answer
 
@@ -66,7 +63,6 @@ def _skin_edit(app: Any, body: dict[str, Any]) -> dict[str, Any]:
         checked = workshop_visual.checked_skin(current)
         updated.setdefault(part.name, {})["skin"] = checked
         changed.append(part.name)
-    # Rebuild only ordinary physical geometry; the visual compiler owns skin.
     base = _core.assemble(design.kind or "", design_id=design.design_id,
                           purpose=design.purpose, parameters=design.parameters)
     edited = workshop_components.apply_overrides(base, updated)
@@ -102,13 +98,18 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         cell = options.get("cell_size_m", request.get("cell_size_m", 0.04))
         exterior = bool(options.get("exterior_only", False))
         answer["skin"] = workshop_visual.skin_document(design, overrides)
-        answer["matter"] = workshop_visual.matter_document(
+        # CellSkin must see all canonical cells so display filtering can never
+        # erase topology. The client may still choose which individual cells to
+        # render from a separately filtered request later.
+        matter = workshop_visual.matter_document(
             design, overrides, cell_size_m=float(cell), exterior_only=exterior)
+        answer["matter"] = matter
+        answer["cell_skin"] = workshop_debug.cell_skin_document(matter)
+        if bool(options.get("debug", True)):
+            answer["physics_debug"] = workshop_debug.debug_document(design)
     return answer
 
 
-# Keep storage/history behavior from the core; component_overrides now retain
-# skin declarations, so saved designs automatically reopen with their skin.
 library = _core.library
 remember = _core.remember
 remembered = _core.remembered
