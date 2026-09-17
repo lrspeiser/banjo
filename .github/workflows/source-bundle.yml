@@ -29,3 +29,4 @@ jobs:
           name: banjo-offline-source
           path: banjo-offline-source.tar.gz
           retention-days: 7
+# Refresh the offline source artifact for Workshop consistency verification.
