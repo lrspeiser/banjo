@@ -59,44 +59,63 @@ class FakeSession:
 
 
 class PrototypeScene(unittest.TestCase):
-    def test_table_becomes_one_join_group_plus_only_the_test_load(self):
-        setup = workshop_trials.prototype_scene(assemble("table", design_id="t"), load_kg=100)
+    def test_table_is_encoded_as_the_exact_matter_union_plus_only_the_test_load(self):
+        setup = workshop_trials.prototype_scene(
+            assemble("table", design_id="t"), load_kg=100, cell_size_m=0.04)
         bodies = setup["spec"]["bodies"]
         candidate = [b for b in bodies if str(b["name"]).startswith("candidate/")]
-        self.assertGreater(len(candidate), 1)
-        self.assertEqual({"workshop-prototype"}, {b["join"] for b in candidate})
+        self.assertGreaterEqual(len(candidate), 1)
+        joins = {b.get("join") for b in candidate}
+        self.assertEqual(1, len(joins))
+        self.assertTrue(next(iter(joins)).startswith("workshop-matter-"))
         self.assertEqual("workshop/test-load", bodies[-1]["name"])
         self.assertEqual(0.04, setup["requested_cell_size_m"])
-        self.assertLessEqual(setup["cell_size_m"], setup["requested_cell_size_m"])
-        self.assertLessEqual(setup["cells"], 16000)
-        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"]) for body in bodies))
+        self.assertEqual(0.04, setup["cell_size_m"])
+        self.assertTrue(setup["matter_roundtrip_exact"])
+        self.assertGreater(setup["matter_cells"], 0)
+        self.assertGreater(setup["matter_boxes"], 0)
+        self.assertLessEqual(setup["matter_boxes"], setup["matter_cells"])
+        self.assertEqual(64, len(setup["matter_physics_hash"]))
+        self.assertEqual(64, len(setup["matter_artifact_hash"]))
 
-    def test_default_table_refines_only_as_far_as_geometry_and_budget_need(self):
-        setup = workshop_trials.prototype_scene(assemble("table", design_id="t"), load_kg=100)
-        # Do not lock the test to one magic resolution: the chooser is allowed
-        # to use any finer cell that represents every member while staying in
-        # the realtime scratch lane's cell budget.
-        self.assertLess(setup["cell_size_m"], setup["requested_cell_size_m"])
-        self.assertGreaterEqual(setup["cell_size_m"], 0.005)
-        self.assertLessEqual(setup["cells"], 16000)
-        self.assertTrue(all(workshop_trials._fits_cell(body, setup["cell_size_m"])
-                            for body in setup["spec"]["bodies"]))
+    def test_exact_scene_boxes_are_grid_aligned_and_cover_the_canonical_cells(self):
+        cell = 0.02
+        setup = workshop_trials.prototype_scene(
+            assemble("table", design_id="grid-table"), load_kg=100, cell_size_m=cell)
+        candidate = [b for b in setup["spec"]["bodies"] if b.get("join")]
+        for body in candidate:
+            size_cells = [round(float(v) / 1000.0 / cell) for v in body["size_mm"]]
+            self.assertTrue(all(n >= 1 for n in size_cells))
+            self.assertTrue(all(abs(float(body["size_mm"][i]) / 1000.0 - size_cells[i] * cell) < 1e-9
+                                for i in range(3)))
+            # A run of cells [lo,hi] has centre (lo+hi+1)*h/2, so twice the
+            # centre is an integer number of cells.
+            self.assertTrue(all(abs(2.0 * float(v) / 1000.0 / cell
+                                    - round(2.0 * float(v) / 1000.0 / cell)) < 1e-9
+                                for v in body["center_mm"]))
+        self.assertTrue(setup["matter_roundtrip_exact"])
 
     def test_mixed_material_fused_trial_is_refused_instead_of_lying(self):
         cart = assemble("cart", design_id="cart")
         self.assertGreater(len({p.material for p in cart.parts}), 1)
-        with self.assertRaisesRegex(ValueError, "mixed-material"):
+        with self.assertRaisesRegex(ValueError, "one material|mixed-material"):
             workshop_trials.prototype_scene(cart, load_kg=100)
 
     def test_engine_unknown_display_material_is_refused(self):
         table = assemble("table", design_id="pine", parameters={"material": "pine"})
-        with self.assertRaisesRegex(ValueError, "engine material preset"):
+        with self.assertRaisesRegex(ValueError, "material preset"):
             workshop_trials.prototype_scene(table, load_kg=100)
 
-    def test_taper_is_declared_as_a_trial_approximation(self):
-        setup = workshop_trials.prototype_scene(
-            assemble("table", design_id="taper", parameters={"leg_style": "tapered"}), load_kg=100)
-        self.assertTrue(any(name.startswith("leg-") for name in setup["approximated_parts"]))
+    def test_taper_is_compiled_to_cells_not_replaced_by_a_box(self):
+        straight = workshop_trials.prototype_scene(
+            assemble("table", design_id="straight", parameters={"leg_style": "square"}),
+            load_kg=100, cell_size_m=0.02)
+        tapered = workshop_trials.prototype_scene(
+            assemble("table", design_id="taper", parameters={"leg_style": "tapered"}),
+            load_kg=100, cell_size_m=0.02)
+        self.assertTrue(tapered["matter_roundtrip_exact"])
+        self.assertNotEqual(straight["matter_physics_hash"], tapered["matter_physics_hash"])
+        self.assertNotEqual(straight["matter_cells"], tapered["matter_cells"])
 
 
 class Running(unittest.TestCase):
@@ -109,22 +128,26 @@ class Running(unittest.TestCase):
         app = App(self.root); live_before, room_before = app.live, dict(app.room)
         answer = workshop_trials.run_static_load(
             app, assemble("table", design_id="t"), load_kg=100,
-            duration_s=0.1, session_factory=FakeSession)
+            cell_size_m=0.04, duration_s=0.1, session_factory=FakeSession)
         self.assertIs(app.live, live_before); self.assertEqual(room_before, app.room)
         self.assertEqual(1, len(FakeSession.made)); self.assertTrue(FakeSession.made[0].closed)
         self.assertEqual("engine-trial", answer["evidence"])
         self.assertEqual("not-declared", answer["acceptance"]["status"])
         self.assertTrue(answer["measured"]["prototype_present"])
-        self.assertLess(answer["prototype"]["effective_cell_size_m"], answer["requested"]["cell_size_m"])
-        self.assertLessEqual(answer["prototype"]["cells"], 16000)
+        self.assertEqual(answer["requested"]["cell_size_m"], answer["prototype"]["effective_cell_size_m"])
+        self.assertTrue(answer["prototype"]["matter_roundtrip_exact"])
+        self.assertGreater(answer["prototype"]["matter_cells"], 0)
+        self.assertEqual("joined-grid-boxes-exact-cell-union", answer["prototype"]["engine_geometry"])
+        self.assertEqual(64, len(answer["prototype"]["matter_physics_hash"]))
 
     def test_declared_load_is_taken_from_the_assembly_not_a_page_guess(self):
         answer = workshop_trials.run_declared_static_load(
             App(self.root), assemble("chair", design_id="chair"),
-            duration_s=0.1, session_factory=FakeSession)
+            cell_size_m=0.02, duration_s=0.1, session_factory=FakeSession)
         self.assertEqual(120.0, answer["requested"]["load_kg"])
-        self.assertLess(answer["prototype"]["effective_cell_size_m"], 0.02)
-        self.assertLessEqual(answer["prototype"]["cells"], 16000)
+        self.assertEqual(0.02, answer["prototype"]["effective_cell_size_m"])
+        self.assertTrue(answer["prototype"]["matter_roundtrip_exact"])
+        self.assertIn("actual_grid_load_kg", answer["measured"])
 
 
 if __name__ == "__main__": unittest.main()
