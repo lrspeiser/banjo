@@ -1,110 +1,87 @@
 # Workshop visual physics, matter and skins
 
-This is the visual contract for Workshop. It keeps four representations separate:
+Workshop keeps four representations separate:
 
 - **Wire** — semantic design intent and component geometry.
-- **Matter** — the actual discrete cells compiled for detailed material physics.
+- **Matter** — the canonical discrete cells compiled for detailed material physics.
 - **Skin** — editable render geometry bound to a component; appearance-only skins add no physics.
 - **Physics** — recorded states from an isolated engine trial, rendered back in the Workshop viewport.
 
-The rule is: **the picture may be prettier than the cells, but it may not pretend the cells are something they are not.** A skin change marked `physical` changes the matter compilation; an appearance-only change does not.
+The invariant is stronger than “they look similar”: **the Matter cells shown to the user are the Matter cells handed to detailed physics.** A skin may be prettier than the cells, but it may not imply physical geometry the solver did not receive.
 
-## Implemented slice
+## Canonical Matter v2
 
-`mcp/workshop_visual.py` defines:
+`mcp/workshop_visual.py` defines `banjo.workshop-matter.v2`. Matter is compiled directly on Banjo's shared engine grid:
 
-- `banjo.product-skin.v1`
-- `banjo.workshop-matter.v1`
-- block, round and cubic-Bezier tube skin profiles
-- appearance controls (`roughness`, `metalness`, `color`)
-- `physical` skin edits that are sampled onto the Workshop cell grid
-- sparse physical-cell previews with component/material identity and an explicit surface error bound
-
-`playground/workshop_recording.py` defines `banjo.workshop-physics-run.v1`. It transparently records isolated LiveWorld states without changing solver calls. Functional bench tests and the declared static-load trial can therefore return the same measured evidence plus a time-ordered body/joint recording.
-
-`playground/workshop_api.py` decorates candidates with their skin document and accepts:
-
-```json
-{
-  "skin_edit": {
-    "part_name": "handle",
-    "scope": "this",
-    "skin": {
-      "profile": "curve",
-      "bend_m": 0.12,
-      "physical": true,
-      "roughness": 0.45
-    }
-  }
-}
+```text
+cell (i,j,k) center = ((i+0.5)h, (j+0.5)h, (k+0.5)h)
 ```
 
-A visual plan request returns skin plus cells:
+Each returned cell carries:
 
-```json
-{
-  "kind": "cart",
-  "design_id": "cart-g1-v1",
-  "parameters": {},
-  "component_overrides": {},
-  "visual": {
-    "cell_size_m": 0.04,
-    "exterior_only": true
-  }
-}
-```
+- integer `grid` coordinates;
+- world `center_m` derived from those coordinates;
+- `material`;
+- primary `component` and all contributing `components`;
+- `exposed` and exact `exposed_faces` (`+x`, `-x`, `+y`, `-y`, `+z`, `-z`).
 
-The response's `matter.cells` are positioned in product space and carry `component`, `material`, `center_m` and whether the cell is exposed.
+The artifact also carries:
+
+- `physics_hash` — cell coordinates + physical material, independent of UI filtering/component labels;
+- `artifact_hash` — physical cells plus component identity;
+- `surface_error_bound_m` — the half-cell-diagonal sampling bound;
+- `engine_ready: true`.
+
+`exterior_only` changes only which cells are sent to the renderer. It cannot change either hash or the authoritative `total_cells` set.
+
+Cross-material overlap is refused. Two different materials claiming the same physical cell require an explicit interface law rather than silently allowing one material to win.
+
+## Editable skins and curves
+
+`banjo.product-skin.v1` remains separate from Matter. Current profiles are block, round and cubic-Bezier tube, with appearance controls (`roughness`, `metalness`, `color`).
+
+A curve with `physical: false` changes only the skin; its Matter `physics_hash` must remain unchanged. With `physical: true`, the same parametric tube is sampled onto the shared cell grid and therefore changes the canonical physics hash when its occupied cells change.
+
+Future skin operators should add sweep, lathe, extrusion/profile, fillet/chamfer and arbitrary Bezier/Catmull-Rom control points without creating product-specific geometry classes.
+
+## Exact Matter -> engine bridge
+
+The engine already has the needed physical generator: `generateVoxelLattice(VoxelRecipe)` consumes arbitrary occupied grid cells. The legacy scene JSON does not yet have a compact `shape: "voxels"` field, but joined grid-aligned boxes are already voxelised onto that same global grid and unioned before `generateVoxelLattice`.
+
+`playground/workshop_sparse_trial.py` therefore uses a lossless compatibility bridge:
+
+1. Take the exact `banjo.workshop-matter.v2` cell set.
+2. Greedily decompose it into non-overlapping integer-grid rectangular runs.
+3. Reconstruct the set from those boxes and require exact equality before starting the engine.
+4. Encode each run as a grid-aligned box with one common `join` name derived from `physics_hash`.
+5. Let the existing scene engine union those boxes and pass the resulting occupied cells to `generateVoxelLattice`.
+
+This is **not a geometric approximation**. It is an exact encoding of the same cell set. If decomposition does not round-trip, the test refuses to run.
+
+A future native sparse-body scene/API entry point is still desirable because it will be smaller and faster than the box encoding. It is no longer required to guarantee geometry identity.
+
+The current exact fused static-load path intentionally supports one material. The existing join group has one material definition; fixed mixed-material assemblies need explicit per-material interface behavior before they can truthfully become one lattice.
 
 ## Physics playback
 
-The Workshop bench marks tests that have `visual_playback`. Current engine-backed recordings include:
+`playground/workshop_recording.py` defines `banjo.workshop-physics-run.v1`. It records authoritative isolated LiveWorld states without changing solver calls. Current visual playback includes cart rolling, kettle heating, powered machine operation and the product's declared static-load trial.
 
-- cart rolling
-- kettle heating
-- powered machine operation
-- the product's own declared static-load trial for table/stool/bench/chair/shelf/cart designs
-
-Playback is evidence from the isolated scratch world, not a JavaScript animation. The outside world does not advance.
-
-## Curves
-
-Curves exist at two independent levels.
-
-### Curved skin
-
-A `curve` skin is currently a cubic Bezier tube whose four local control points are derived from component height plus `bend_m`. The renderer may draw it smoothly at arbitrary visual tessellation.
-
-### Curved matter
-
-With `physical: true`, that same parametric tube is sampled onto the cell grid. Matter is therefore stair-stepped at coarse cell sizes and converges toward the curve as resolution increases. `surface_error_bound_m` reports the half-cell-diagonal sampling bound.
-
-Future skin operators should add sweep, lathe, profile/extrusion, fillet/chamfer and arbitrary Bezier/Catmull-Rom control points without making product-specific geometry classes.
-
-## Important current limitation
-
-The new Matter view is an honest deterministic preview, but the current scratch-engine scene ABI still accepts the existing primitive/reduced body adapters rather than an externally supplied sparse cell list. Therefore a curved physical skin is voxelized for inspection now, while engine-backed Workshop trials still use their existing test adapters.
-
-The next engine slice is a sparse compiled-body scene/API entry point carrying at least:
-
-```text
-cell_size
-cell positions/indices
-material/component identity
-pose
-optional stable cell ids
-```
-
-Once that exists, the same `banjo.workshop-matter.v1` compilation should feed both the visible Matter view and the detailed physics trial. Until then the UI must label the distinction rather than imply that a curved voxel preview has already been exercised by the engine.
+For the declared static-load trial, result metadata records the canonical Matter hashes, number of Matter cells, exact decomposition box count, and `matter_roundtrip_exact`. The test mass itself is quantized to whole lattice cells; requested and actual grid mass are both reported.
 
 ## Acceptance
 
-A Workshop build is correct when:
+The exact-Matter slice is correct when:
 
-1. Matter mode visibly displays cells rather than translucent design primitives.
-2. Skin mode can show a curved skin while Matter shows the cell approximation underneath it.
-3. Appearance-only skin edits leave candidate mass/physics evidence unchanged.
-4. Physical skin edits invalidate/rebuild Matter.
-5. A visual-playback test supplies recorded engine frames and can be paused/scrubbed in Workshop.
-6. Fracture/topology-changing recordings never keep drawing an intact skin across bodies that the engine has separated.
-7. The UI reports cell resolution and the skin-to-matter error bound.
+1. Matter mode displays cells from `banjo.workshop-matter.v2`, with integer grid identities.
+2. Exterior-only display filtering leaves `physics_hash`, `artifact_hash` and `total_cells` unchanged.
+3. Appearance-only skin edits leave the Matter physics hash unchanged.
+4. Physical skin edits rebuild Matter and change the hash when occupancy changes.
+5. The engine adapter reconstructs exactly the same occupied cell set before a test begins.
+6. A static-load result names the same Matter `physics_hash` the viewport received.
+7. No primitive/taper substitution is used for the product under exact-cell testing.
+8. Mixed-material fused Matter is refused until explicit interface laws are available.
+9. Physics playback remains an engine recording, never a scripted JavaScript animation.
+
+## Remaining visual work
+
+This slice closes the highest-priority geometry-identity seam. Still outstanding are richer CellSkin display modes, collision/relationship debug views, section clipping, broader generic tests, more skin operators, draggable 3D curve handles, smooth surfaces reconstructed from Matter, skin-to-matter error heatmaps and topology-aware reskinning after fracture/cutting.
