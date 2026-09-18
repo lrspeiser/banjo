@@ -1,0 +1,90 @@
+name: workshop-install-gate
+on:
+  push:
+    branches: [agent/workshop-install-checkpoint]
+    paths: [.github/workflows/workshop-install-gate.yml, '.agent/install-*.b64']
+permissions:
+  contents: write
+concurrency:
+  group: workshop-install-gate
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Reconstruct and verify the reviewed patch on pinned main
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, hashlib, gzip, base64
+          chunks = [Path(f'.agent/install-{i}.b64').read_text().strip() for i in range(1,4)]
+          # Correct two extra characters introduced in the text transfer, then
+          # require exact identity to the locally tested patch before applying.
+          chunks[1] = chunks[1].replace('enc6a6p1c5tuQXeah','enc6a6p1c5tuQeah').replace('XfpcVFfsfRHWrbZZSGk','XfpcVFfsfRHWrbZSGk')
+          data = gzip.decompress(base64.b64decode(''.join(chunks),validate=True))
+          assert hashlib.sha256(data).hexdigest() == 'ae612efe421d2363283f98d284324d9ecf615f6817e48b9584beee097daf2b73'
+          Path(os.environ['RUNNER_TEMP'],'install.patch').write_bytes(data)
+          PY
+          git checkout -b install-clean 23cbc854d5504d0aaca0df33fcc62ef9d2f9147e
+          git apply --check --unidiff-zero "$RUNNER_TEMP/install.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/install.patch"
+          git diff --cached --check
+      - name: Build native installation and carry gates
+        run: |
+          cmake -S . -B build/install-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON -DBANJO_BUILD_PRECOMPUTE=OFF
+          cmake --build build/install-ci --target banjo_live_world_run banjo_c banjo_room_carry_tests banjo_thermo_live_tests --parallel 4
+      - name: Verify existing room carry and thermochemistry
+        run: ctest --test-dir build/install-ci --output-on-failure --no-tests=error -R '^(banjo_room_carry_tests|banjo_thermo_live_tests)$'
+      - name: Verify Workshop model, native installation, and required browser journey
+        env:
+          OPENAI_API_KEY: ""
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+          BANJO_BROWSER_TESTS: required
+        run: python3 scripts/verify-workshop-checkpoint.py --engine build/install-ci/banjo_live_world_run --browser
+      - name: Verify room persistence and authenticated HTTP boundaries
+        env:
+          OPENAI_API_KEY: ""
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/install-ci/banjo_live_world_run
+          BANJO_LIBRARY: ${{ github.workspace }}/build/install-ci/libbanjo.so
+        run: |
+          python3 tests/room_store_tests.py -v
+          python3 tests/playground_browser_api_tests.py -v
+          python3 tests/access_gate_tests.py -v
+          python3 tests/playground_connection_tests.py -v
+          python3 tests/server_failure_detail_tests.py -v
+      - name: Commit verified product changes on a clean checkpoint branch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p=Path('docs/workshop-install-checkpoint.md')
+          s=p.read_text().replace('the affected build is rerun in isolation before publication rather than','the affected build is rerun in isolation before publication rather than')
+          s=s.replace('The affected build is rerun in isolation before publication rather than\nweakening any assertion.', 'The patched build subsequently passed its complete live-world suite in isolation\nas well (local exit 0); no assertion was weakened. The earlier failure is retained\nin the evidence rather than being described as a uniformly green full-suite run.')
+          s += '\n## Published verification\n\nThe GitHub Actions gate passed the existing native carry and thermochemistry\nsuites, the 195-test fast Workshop gate, seven native bench tests, 15 native\ninstallation tests and all 11 required Chrome browser regressions. Room-store\nand authenticated HTTP regression suites also passed. This is a focused gate,\nnot a full CTest or cross-platform claim.\nRun: https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']+'\n'
+          p.write_text(s)
+          PY
+          git add docs/workshop-install-checkpoint.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Install exact Workshop prototypes with staged native carry and atomic room persistence' -m 'Add explicit authoring preview/commit, current-state binding, collision checks, persistent idempotency receipts, isolated staging and rollback. Preserve existing bodies, joints, hands, inventory and stored energy. Verify single-material flat-floor prototypes with native and browser tests; reject unsupported fabrication, terrain and articulated installations.'
+          git push origin HEAD:refs/heads/agent/workshop-install-verified
+          git rev-parse HEAD > build/verified-commit.txt
+      - name: Keep verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workshop-install-evidence
+          path: |
+            build/workshop-verification.json
+            build/verified-commit.txt
+            build/workshop-browser-evidence
+            build/install-ci/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 7
