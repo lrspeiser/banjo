@@ -2,7 +2,7 @@ name: thin-startup-verify
 on:
   push:
     branches: [agent/thin-part-representations]
-    paths: [.github/workflows/thin-startup-verify.yml, .agent/thin-token.patch]
+    paths: [.github/workflows/thin-startup-verify.yml]
 permissions:
   contents: write
 concurrency:
@@ -22,19 +22,26 @@ jobs:
       BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
     steps:
       - uses: actions/checkout@v5
-      - name: Publish bounded test fixture fix onto current candidate
+      - name: Preserve the post-reload assertion after asynchronous feedback completes
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/thin-evidence"
-          cp .agent/thin-token.patch "$RUNNER_TEMP/followup.patch"
-          git fetch --depth=1 origin 64c0b12581f7fdf0cb6db6d05d5f6968d637dc09
-          git checkout --detach 64c0b12581f7fdf0cb6db6d05d5f6968d637dc09
-          git apply --index "$RUNNER_TEMP/followup.patch"
-          git diff --cached --check
+          git fetch --depth=1 origin 68728577ba9ebeae282eefffd5d5053a56aacffb
+          git checkout --detach 68728577ba9ebeae282eefffd5d5053a56aacffb
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/workshop_browser_tests.py');s=p.read_text()
+          old='        self.assertIn(\'live-room installation unsupported\',self.js("document.querySelector(\'#ws-buildability-summary\').textContent"))'
+          new='        self.wait("document.querySelector(\'#ws-buildability-summary\')?.textContent.includes(\'live-room installation unsupported\')")'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          PY
+          git diff --check
           node --check playground/workshop.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Seed thin-part browser fixtures with the required local session token' -m 'Reuse the existing authenticated public API helper. Keep CSRF protections and all geometry, native-motion and persistence assertions intact.'
+          git add tests/workshop_browser_tests.py
+          git commit -m 'Await completed buildability feedback after the rigid design reloads' -m 'Keep the exact unsupported-installation assertion, but wait for the independently asynchronous grid audit instead of racing the initial source-model display.'
           git push origin HEAD:refs/heads/agent/thin-parts-candidate
           git rev-parse HEAD | tee "$RUNNER_TEMP/thin-evidence/commit.txt"
           git archive --format=tar.gz HEAD > "$RUNNER_TEMP/thin-evidence/source.tar.gz"
@@ -64,24 +71,12 @@ jobs:
             python3 tests/workshop_install_engine_tests.py -v
             python3 tests/workshop_bench_engine_tests.py -v
           } 2>&1 | tee "$RUNNER_TEMP/thin-evidence/native-tests.log"
-      - name: Run focused thin-table Chrome journey
-        env:
-          BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
-        run: |
-          set -euo pipefail
-          python3 tests/workshop_browser_tests.py -v -f -k thin_rigid 2>&1 | tee "$RUNNER_TEMP/thin-evidence/thin-browser.log"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: thin-startup-smoke
-          path: ${{ runner.temp }}/thin-evidence
-          retention-days: 7
       - name: Run complete Chrome Workshop suite
         env:
           BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
         run: |
           set -euo pipefail
-          python3 tests/workshop_browser_tests.py -v -f 2>&1 | tee "$RUNNER_TEMP/thin-evidence/browser-tests.log"
+          python3 tests/workshop_browser_tests.py -v 2>&1 | tee "$RUNNER_TEMP/thin-evidence/browser-tests.log"
       - name: Record verified checkpoint without moving main
         run: git rev-parse HEAD > "$RUNNER_TEMP/thin-evidence/VERIFIED.txt"
       - uses: actions/upload-artifact@v4
