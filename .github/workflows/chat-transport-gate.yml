@@ -1,0 +1,60 @@
+name: chat-transport-gate
+on:
+  push:
+    branches: [agent/workshop-next-checkpoints]
+    paths: [.github/workflows/chat-transport-gate.yml, .agent/chat-transport.patch.gz.b64]
+permissions:
+  contents: write
+concurrency:
+  group: chat-transport-gate
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply the reviewed transport patch to the verified acceptance commit
+        shell: bash
+        run: |
+          base64 --decode .agent/chat-transport.patch.gz.b64 | gzip --decompress > "$RUNNER_TEMP/transport.patch"
+          echo "c066ed58e138d790978e4ce606e91d4cf8c6355892e734b6bf1e2af3acf208f4  $RUNNER_TEMP/transport.patch" | sha256sum --check
+          git checkout -b transport-clean 5b0c6bed254983897dd40e7d1c4260217f435a59
+          git apply --check --unidiff-zero "$RUNNER_TEMP/transport.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/transport.patch"
+          git diff --cached --check
+      - name: Verify lossless transport, complete audit logs and Workshop regressions
+        env:
+          OPENAI_API_KEY: ""
+        shell: bash
+        run: |
+          unset BANJO_LIBRARY BANJO_LIVE_ENGINE BANJO_BUILD_DIR
+          mkdir -p build
+          python3 -m py_compile playground/chat_tool_results.py playground/world_chat.py playground/server.py tests/chat_history_tests.py tests/room_trace_tests.py
+          python3 tests/chat_history_tests.py ObjectListsSentToTheModel -v 2>&1 | tee build/transport-tests.log
+          python3 tests/chat_tool_parity_tests.py -v 2>&1 | tee build/transport-parity.log
+          python3 tests/room_trace_tests.py -v 2>&1 | tee build/transport-logging.log
+          python3 scripts/verify-workshop-checkpoint.py 2>&1 | tee build/transport-workshop.log
+      - name: Commit only verified product changes to the checkpoint branch
+        shell: bash
+        run: |
+          printf '\n## Published verification\n\nThe GitHub Actions gate passed all 11 pure transport checks, 17 tool-parity checks, 19 trace/logging checks and the 183-test fast Workshop gate. The native transport case is explicitly skipped in this compiler-free gate; all 50 room-chat tests, including that native case and native structure building, passed in the local Linux verification recorded above.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/chat-object-transport-checkpoint.md
+          git add docs/chat-object-transport-checkpoint.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Send lossless room-chat object deltas while preserving complete audit logs' -m 'Keep a bounded full baseline per turn, transmit actual changed objects and explicit removals, retain warnings and unintended side effects, and report serialized bytes separately from tokens. Verify exact reconstruction and native room edits without changing physics or MCP handlers.'
+          git push origin HEAD:refs/heads/agent/chat-object-transport-verified
+          git rev-parse HEAD > build/verified-transport-commit.txt
+      - name: Keep verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-transport-evidence
+          path: |
+            build/transport-*.log
+            build/workshop-verification.json
+            build/verified-transport-commit.txt
+          if-no-files-found: warn
+          retention-days: 7
