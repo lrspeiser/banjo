@@ -699,6 +699,24 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='deck').click()")
         self.assertTrue(self.js("!!document.querySelector('#ws-joint-screen')"))
 
+    def test_placing_and_pushing_bring_the_whole_product_back_from_one_component_shown_alone(self):
+        self.open_product('cart')
+        self.click('#ws-product-catalog .ws-part-open[data-part="deck"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='deck'")
+        # A part goes against the product, not against one piece of it shown alone.
+        self.click('[data-mode="build"]'); self.click('#ws-build-place')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='product'")
+        self.click('#ws-build-cancel')
+        self.click('#ws-build-adopt')
+        # The deck is still the selected part, so the list shows the six joints that hold it.
+        self.wait("document.querySelector('#ws-build-joints').textContent.includes('6 of 16 joints hold deck')")
+        self.click('#ws-product-catalog .ws-part-open[data-part="handle"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='handle'")
+        self.click('#ws-push-go')
+        self.wait("document.querySelector('#ws-joint-screen')")
+        self.assertEqual('product', self.js("document.querySelector('#workshop-stage').dataset.showing"))
+        self.assertIn('handle', self.js("document.querySelector('#ws-selected-part').textContent"))
+
     def test_a_new_build_starts_from_one_part_and_joins_the_product_list(self):
         self.click('[data-mode="build"]')
         self.field('#ws-build-what', 'family:surface')

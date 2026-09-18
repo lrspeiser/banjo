@@ -1458,6 +1458,7 @@ function drawGhost(part, touching) {
   edges.position.copy(mesh.position); edges.rotation.copy(mesh.rotation); ghost.add(edges);
 }
 function drawJoints(candidate) {
+  if (shownParts(candidate).length !== candidate.parts.length) return;   // one component alone has no joints to show
   const size = Math.max(0.008, reach * 0.014);
   for (const joint of candidate.construction?.joints || []) {
     const how = joint.interface; if (joint.open || !how?.centre_m) continue;
@@ -1571,6 +1572,7 @@ async function startNewBuild() {
 }
 async function pushOnIt() {
   if (!bench.selectedPart) throw new Error("Click the spot on the object to push first.");
+  if (bench.isolated) { const keep = bench.selectedPart; showWholeProduct(); bench.selectedPart = keep; }
   const part = selectedPart(), point = bench.forcePoint || part.center_m;
   const config = { component:bench.selectedPart, point_m:point, force_n:Number($("#ws-push-force").value),
     push:$("#ws-push-way").value, standing:$("#ws-push-standing").value };
@@ -1675,6 +1677,7 @@ function installBuildPanel(editor) {
   for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });
   $("#ws-build-place").onclick = () => {
     if (build.placing) { stopPlacing("Placing cancelled."); return; }
+    if (bench.isolated) showWholeProduct();          // a part goes against the product, not against one piece of it
     // A click has to land on a face, and only the solid view has faces: a wire
     // edge belongs to two of them.
     if (view !== "skin") { view = "skin"; pressView("skin"); show(false); }
