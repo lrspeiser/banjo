@@ -1,0 +1,101 @@
+name: thin-browser-verify
+on:
+  push:
+    branches: [agent/thin-part-representations]
+    paths: [.github/workflows/thin-browser-verify.yml, .agent/thin-browser-followup.patch, .agent/thin-capture.patch]
+permissions:
+  contents: write
+concurrency:
+  group: thin-browser-verify
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      OPENAI_API_KEY: ""
+      BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_live_world_run
+      BANJO_PLATFORM_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_platform_cli
+      BANJO_RIGID_TESTS: required
+      BANJO_BROWSER_TESTS: required
+      BANJO_CHROME: /usr/bin/google-chrome
+      BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+      BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
+    steps:
+      - uses: actions/checkout@v5
+      - name: Commit the bounded UI follow-up on the published source checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/thin-evidence"
+          cp .agent/thin-browser-followup.patch "$RUNNER_TEMP/browser.patch"
+          cp .agent/thin-capture.patch "$RUNNER_TEMP/capture.patch"
+          echo "4b57cc4ee1e67e36418d6ad0c086df67f40603500ab38c1b9a21492dc5925828  $RUNNER_TEMP/browser.patch" | sha256sum --check
+          echo "8ef7393e1acb6f1ecb70b4902627255771a8923de721a75f4887c33d929c3b33  $RUNNER_TEMP/capture.patch" | sha256sum --check
+          git fetch --depth=1 origin c8506eb1d429b42707e4b0e7351cc7f945cf5c19
+          git checkout --detach c8506eb1d429b42707e4b0e7351cc7f945cf5c19
+          git apply --index "$RUNNER_TEMP/browser.patch"
+          git apply --index "$RUNNER_TEMP/capture.patch"
+          git diff --cached --check
+          node --check playground/workshop.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Verify exact rigid playback through compact evidence and actual rendered states' -m 'Distinguish five collision shapes from one rigid compound body. Preserve viewport controls, source model round trips and explicit unsupported-state messaging. Retain optional actual Chrome screenshots for visual review.'
+          git push origin HEAD:refs/heads/agent/thin-parts-candidate
+          git rev-parse HEAD | tee "$RUNNER_TEMP/thin-evidence/commit.txt"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/thin-evidence/source.tar.gz"
+      - name: Run isolated Workshop source regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-source-registration.py
+          python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/thin-evidence/source-tests.log"
+          from pathlib import Path
+          import re, subprocess
+          block=Path('.github/workflows/ci.yml').read_text().split('  workshop-fast:')[1].split('  build-test-and-capture:')[0]
+          for file in re.findall(r'python3 (tests/\S+\.py)',block):
+              print('RUN',file,flush=True)
+              subprocess.run(['python3',file,'-v'],check=True)
+          PY
+      - name: Restore identical-input native binaries
+        id: native_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/thin-parts
+          key: thin-parts-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tests/*.cpp') }}
+      - name: Build native runtimes when no exact-input cache exists
+        if: steps.native_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/thin-parts -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF
+          cmake --build build/thin-parts --target banjo_platform_cli banjo_platform_tests banjo_live_world_run --parallel 3 2>&1 | tee "$RUNNER_TEMP/thin-evidence/build.log"
+      - name: Run actual native geometry, dynamics and installation regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "$BANJO_PLATFORM_ENGINE"
+          test -x "$BANJO_LIVE_ENGINE"
+          sha256sum "$BANJO_PLATFORM_ENGINE" "$BANJO_LIVE_ENGINE" > "$RUNNER_TEMP/thin-evidence/native-binaries.sha256"
+          {
+            build/thin-parts/banjo_platform_tests
+            python3 tests/workshop_rigid_engine_tests.py -v
+            python3 tests/workshop_install_engine_tests.py -v
+            python3 tests/workshop_bench_engine_tests.py -v
+          } 2>&1 | tee "$RUNNER_TEMP/thin-evidence/native-tests.log"
+      - name: Run required Chrome Workshop journeys
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "$BANJO_CHROME"
+          python3 tests/workshop_browser_tests.py -v 2>&1 | tee "$RUNNER_TEMP/thin-evidence/browser-tests.log"
+      - name: Record verified checkpoint without moving main
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/thin-evidence/VERIFIED.txt"
+          echo 'Source, native and required Chrome Workshop gates passed. Main remains unchanged pending reviewed promotion.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thin-parts-browser-verification
+          path: ${{ runner.temp }}/thin-evidence
+          retention-days: 7
