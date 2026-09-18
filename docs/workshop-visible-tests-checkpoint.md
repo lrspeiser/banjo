@@ -86,3 +86,23 @@ The required gate passed 203 fast Workshop tests, 11 native bench tests,
 registration and JavaScript syntax checks passed. This is not a full CTest,
 material calibration or cross-platform qualification.
 Run: https://github.com/lrspeiser/banjo/actions/runs/35304716399
+
+
+## Viewport-controls follow-up
+
+Visual review of the first gate's screenshots found that Run and the current
+measurements were below the fold in the parameter sidebar. The actual Run,
+Pause/Replay, timeline, elapsed time, measured temperature, and failure messages
+now live in a dock on the viewport. It follows the Test tab; there are no duplicate
+controls or handlers. Mechanical results default to explicitly labelled 0.25x
+slow display so short impacts are easier to inspect; heating remains 30x.
+A 1280x720 browser regression uses real DevTools mouse input, checks button hit
+testing and screen bounds before running, and requires an onscreen readout after
+completion. Programmatic click success alone no longer qualifies this flow.
+
+Viewport follow-up verification: all 203 fast checks, 11 native bench tests,
+15 native installation tests and 17 required Chrome browser tests passed.
+The added cases check a real onscreen mouse click at 1280x720 and delayed
+history loading while curve settings are edited. Optional history no longer
+redraws and erases unsubmitted editor values.
+Run: https://github.com/lrspeiser/banjo/actions/runs/35305664505

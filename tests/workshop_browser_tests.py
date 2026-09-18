@@ -247,6 +247,32 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
         self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
 
+    def test_late_history_does_not_erase_unsubmitted_skin_edits(self):
+        self.page.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          const originalFetch=window.fetch.bind(window);
+          window.fetch=async function(resource,init){
+            const response=await originalFetch(resource,init);
+            if(String(resource).endsWith('/api/workshop/remembered')){
+              await new Promise(resolve=>window.__releaseHistory=resolve);
+            }
+            return response;
+          };
+        """})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&dirty-editor-test=1"})
+        self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-parts button')")
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
+        self.field("#ws-skin-profile", "curve")
+        self.field("#ws-skin-bend", .35, "input")
+        self.js("document.querySelector('#ws-skin-physical').checked=true")
+        self.js("window.__releaseHistory();new Promise(resolve=>setTimeout(resolve,200))")
+        self.assertEqual("curve", self.js("document.querySelector('#ws-skin-profile').value"))
+        self.assertAlmostEqual(.35, float(self.js("document.querySelector('#ws-skin-bend').value")))
+        self.assertTrue(self.js("document.querySelector('#ws-skin-physical').checked"))
+        self.click("#ws-apply-skin")
+        self.wait("!document.querySelector('#ws-apply-skin').disabled && document.querySelector('#ws-measurement-basis').textContent.includes('Mass/balance from Matter')")
+        self.assertAlmostEqual(.35, float(self.js("document.querySelector('#ws-skin-bend').value")))
+
     def test_changing_limits_during_a_run_discards_the_outdated_answer(self):
         self.click('[data-mode="test"]')
         self.click('#ws-test-catalog button[data-value="declared_static_load"]')
@@ -361,6 +387,24 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click('#ws-play')
         self.wait("Number(document.querySelector('#ws-play-timeline').value)<Number(document.querySelector('#ws-play-timeline').max)")
         self.assertEqual("Pause",self.js("document.querySelector('#ws-play').textContent"))
+
+    def test_run_and_readout_are_visible_and_clickable_without_sidebar_scrolling(self):
+        self.page.send("Emulation.setDeviceMetricsOverride",{"width":1280,"height":720,"deviceScaleFactor":1,"mobile":False})
+        self.click('[data-mode="test"]')
+        self.wait("!document.querySelector('#ws-simulation-dock').hidden")
+        point=self.js("""(()=>{const e=document.querySelector('#ws-run-bench'),r=e.getBoundingClientRect();
+          return {x:r.x+r.width/2,y:r.y+r.height/2,visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,
+          hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e};})()""")
+        self.assertTrue(point['visible'] and point['hit'],point)
+        # Real mouse input: a programmatic element.click() can pass for an
+        # offscreen button and failed to catch the previous below-fold layout.
+        for kind in ('mousePressed','mouseReleased'):
+            self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':point['x'],'y':point['y'],'button':'left','clickCount':1})
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
+        self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout').getBoundingClientRect();return r.height>0&&r.top>=0&&r.bottom<=innerHeight;})()"))
+        self.assertEqual(.25,float(self.js("document.querySelector('#ws-play-speed').value")))
+        self.click('[data-mode="build"]')
+        self.assertTrue(self.js("document.querySelector('#ws-simulation-dock').hidden"))
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')

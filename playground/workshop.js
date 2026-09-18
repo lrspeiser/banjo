@@ -488,7 +488,7 @@ async function guard(button, work) {
   const original = button && button.textContent; if (button) button.disabled = true;
   const notice = $("#ws-notice"); if (notice) notice.hidden = true;
   try { await work(); } catch (err) { say(String(err.message || err), true); }
-  finally { if (button) { button.disabled = false; button.textContent = original; } }
+  finally { if (button) { button.disabled = button.id === "ws-run-bench" && !benchDefinition(); button.textContent = original; } }
 }
 function addOption(select, value, label) { select.append(make("option", { value }, label)); }
 
@@ -580,6 +580,14 @@ function installEditor() {
     make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Calculated motion and temperature. Replay does not rerun the physics."));
   testBox.append(playback, make("div", { id:"ws-bench-presets" }), make("div", { id:"ws-bench-result" }));
   right.insertBefore(testBox, $("#ws-save-design").parentElement.previousElementSibling || $("#ws-save-design").parentElement);
+
+  // Keep the real Run/replay controls next to the object, not below a long
+  // scrolling parameter panel. Move existing nodes, never duplicate handlers.
+  const dock = make("section", {id:"ws-simulation-dock",class:"ws-simulation-dock","aria-label":"Simulation controls"});
+  dock.hidden = true;
+  dock.append(make("strong", {id:"ws-active-situation"}), $("#ws-run-bench"),
+    make("div", {id:"ws-simulation-feedback"}), playback);
+  $(".ws-viewport").append(dock);
 
   const bar = $(".ws-viewbar");
   if (bar && !bar.querySelector('[data-view="physics"]')) bar.append(make("button", { type:"button", "data-view":"physics", "aria-pressed":"false" }, "Physics"));
@@ -702,6 +710,7 @@ let benchTestRequest = 0;
 function renderBenchControls(values = null) {
   benchTestRequest++;
   const root = $("#ws-bench-controls"); root.replaceChildren(); const definition = benchDefinition();
+  $("#ws-active-situation").textContent = definition?.name || "No simulation available for this product";
   root.oninput = root.onchange = () => {
     benchTestRequest++;
     $("#ws-bench-result").replaceChildren();
@@ -756,6 +765,7 @@ function renderBenchPresets() {
 function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(2)} °C`; }
 function clearPlayback() {
   bench.playback = null; bench.playbackIndex = 0; bench.playbackPlaying = false;
+  $("#ws-simulation-feedback")?.replaceChildren();
   const root = $("#ws-playback"); if (root) root.hidden = true;
   stage.dataset.physicsPlaying="false"; delete stage.dataset.physicsTime;
   if (view === "physics") { view = "wire"; pressView("wire"); show(false); }
@@ -767,7 +777,7 @@ function setPlayback(recording) {
   bench.playback=recording; bench.playbackIndex=0; bench.playbackPlaying=false;
   $("#ws-playback").hidden=false;
   const slider=$("#ws-play-timeline"); slider.max=String(recording.frames.length-1);slider.value="0";
-  bench.playbackSpeed = recording.test === "kettle_heat" ? 30 : 1;
+  bench.playbackSpeed = recording.test === "kettle_heat" ? 30 : .25;
   $("#ws-play-speed").value=String(bench.playbackSpeed);
   view="physics";pressView("physics");show(false);frameSimulation(recording);
   setPlaybackIndex(0);togglePlayback();
@@ -855,18 +865,18 @@ async function runBenchTest() {
   const current=()=>request===benchTestRequest && revision===bench.revision && definition.test===bench.selectedBenchTest;
   clearPlayback();
   const status=make("p",{id:"ws-simulation-status",role:"status","aria-live":"polite"},`Calculating ${definition.name.toLowerCase()} on the selected object…`);
-  status.dataset.state="running"; $("#ws-bench-result").replaceChildren(status);
+  status.dataset.state="running"; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
   try {
     const answer=await api("/api/workshop/plan",{...candidateBody(),bench_test:{test:definition.test,config}});
     if(!current()) return;
     if (!answer.bench?.playback?.frames || answer.bench.playback.frames.length < 2) throw new Error("No visible simulation was returned. This test is not complete.");
     renderBenchResult(answer.bench);
     status.dataset.state="complete";status.textContent="Simulation complete. Showing calculated behavior; use Pause or Replay to inspect it.";
-    $("#ws-bench-result").prepend(status);
+    $("#ws-simulation-feedback").replaceChildren(status);
   } catch(error) {
     if(!current())return;
     clearPlayback(); status.dataset.state="error";
-    status.textContent=`Simulation did not run: ${error.message}`; $("#ws-bench-result").replaceChildren(status);
+    status.textContent=`Simulation did not run: ${error.message}`; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
     throw error;
   }
 }
@@ -1057,7 +1067,9 @@ async function start() {
     // Loading optional history must not reset controls or invalidate a test
     // started while this request was in flight. The test catalog is already
     // authoritative from /open; only saved presets changed here.
-    renderUserLibrary(); renderBenchPresets(); show(false);
+    // History has no geometry changes. Redrawing the editor here would erase
+    // unsubmitted curve/material inputs if it arrives while the user edits.
+    renderUserLibrary(); renderBenchPresets();
   } catch { /* optional */ }
 }
 
