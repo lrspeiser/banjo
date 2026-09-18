@@ -1,0 +1,28 @@
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index b6fadca..45abc7f 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -81,4 +81,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
+ 
++    def capture_evidence(self, name):
++        folder = os.environ.get("BANJO_BROWSER_ARTIFACTS")
++        if folder:
++            output = Path(folder); output.mkdir(parents=True, exist_ok=True)
++            image = self.page.send("Page.captureScreenshot", {"format":"png"})["data"]
++            (output / name).write_bytes(base64.b64decode(image))
++
+     def js(self, expression):
+         return self.page.evaluate(expression, await_promise=True)
+@@ -367,4 +374,5 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
+         self.assertIn('top',self.js("document.querySelector('#ws-buildability-parts').textContent"))
++        self.capture_evidence('thin-grid-warning.png')
+         self.click('[data-mode="build"]')
+         self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
+@@ -398,4 +406,5 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.assertEqual('5',self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+         self.assertIn('5 collision shapes · 1 rigid body',self.js("document.querySelector('#ws-simulation-readout').textContent"))
++        self.capture_evidence('thin-rigid-native-motion.png')
+         self.assertIn('Exact rigid',self.js("document.querySelector('#ws-play-note').textContent"))
+         self.click('[data-mode="details"]');self.field('#ws-save-name','Browser precise rigid table');self.click('#ws-save-design')
