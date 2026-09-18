@@ -1,0 +1,163 @@
+diff --git a/docs/workshop-workspace-checkpoint.md b/docs/workshop-workspace-checkpoint.md
+index 1870849..02eaf33 100644
+--- a/docs/workshop-workspace-checkpoint.md
++++ b/docs/workshop-workspace-checkpoint.md
+@@ -20,7 +20,9 @@ states automatically. Calculation has an elapsed-time indicator and keeps the
+ setup visible. Reset to setup is distinct from inspecting a completed result.
+ This is bounded calculation followed by inspectable results, **not streaming
+ live solver control** or a video feature. Late setup answers cannot replace a
+-newer candidate, test, or component inspection. The outside world is not advanced.
++newer candidate, test, or component inspection. Completed run responses also cannot
++replace a component opened while calculating. Setup temporary files are cleaned
++after the native session closes, including errors. The outside world is not advanced.
+ 
+ Opening a component shows a solid, isolated shape, with the camera fitted to its
+ rendered bounds instead of the whole product. Old section clipping, placement
+ diff --git a/playground/workshop.js b/playground/workshop.js
+index fc97518..0363743 100644
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -1452,7 +1452,7 @@ async function previewSetup(sequence) {
+   }
+ }
+ addEventListener("banjo-workshop-mode",event=>{
+-  workspace.mode=event.detail;workspace.sequence++;clearTimeout(workspace.timer);
++  workspace.mode=event.detail;workspace.sequence++;benchTestRequest++;clearTimeout(workspace.timer);
+   if(workspace.mode==="test") {
+     workspace.inspecting++;bench.libraryInspection=null;bench.isolated=null;
+     bench.clip.enabled=false;$("#ws-clip-enabled").checked=false;renderer.clippingPlanes=[];
+@@ -1484,7 +1484,7 @@ function renderProductCatalog() {
+     card.onclick = () => guard(card, async () => {
+       if (picker.value !== option.value) {
+         picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true }));
+-      } else if (bench.isolated) { showWholeProduct(); }
++      } else if (bench.isolated || bench.libraryInspection) { showWholeProduct(); }
+       else { bench.expandedProduct = expanded ? null : option.value; catalogSignature = null; renderProductCatalog(); }
+     });
+     entry.append(card);
+@@ -1858,10 +1858,10 @@ function installBuildPanel(editor) {
+   for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });
+   $("#ws-build-place").onclick = () => {
+     if (build.placing) { stopPlacing("Placing cancelled."); return; }
+-    if (bench.isolated) showWholeProduct();          // a part goes against the product, not against one piece of it
++    if (bench.isolated || bench.libraryInspection) showWholeProduct(); // a part goes against the product, not against one piece of it
+     // A click has to land on a face, and only the solid view has faces: a wire
+     // edge belongs to two of them.
+-    if (view !== "skin") { view = "skin"; pressView("skin"); show(false); }
++    view = "skin"; pressView("skin"); show(false);
+     build.placing = true; stage.classList.add("ws-placing"); $("#ws-build-place").textContent = "Placing… click a face (press again to stop)";
+     sayBuild("Click the face of the part it goes against.");
+   };
+diff --git a/playground/workshop_setup.py b/playground/workshop_setup.py
+index 702b474..55b8887 100644
+--- a/playground/workshop_setup.py
++++ b/playground/workshop_setup.py
+@@ -7,6 +7,7 @@ from __future__ import annotations
+ 
+ from pathlib import Path
+ from typing import Any
++import tempfile
+ 
+ import live_session
+ import workshop_bench_core as core
+@@ -77,8 +78,10 @@ def preview(app: Any, design, request: Any) -> dict[str, Any]:
+         raise ValueError("Build banjo_live_world_run before using the test workspace")
+     folder = Path(app.runs_path) / "workshop-setup"
+     folder.mkdir(parents=True, exist_ok=True)
+-    session = live_session.Session(engine, spec, folder)
++    scratch = tempfile.TemporaryDirectory(prefix="preview-", dir=folder)
++    session = None
+     try:
++        session = live_session.Session(engine, spec, Path(scratch.name))
+         if spec.get("joints"):
+             hung = live_session.Live._hang(session, spec["joints"])
+             if hung.get("refused"):
+@@ -102,4 +105,8 @@ def preview(app: Any, design, request: Any) -> dict[str, Any]:
+                 "physics_advanced": False, "summary": summary,
+                 "matter_physics_hash": matter["physics_hash"] if matter else None}
+     finally:
+-        session.close()
++        try:
++            if session is not None:
++                session.close()
++        finally:
++            scratch.cleanup()
+diff --git a/playground/world.html b/playground/world.html
+index 9353f3d..5f23c2e 100644
+--- a/playground/world.html
++++ b/playground/world.html
+@@ -27,7 +27,7 @@
+ <header class="ws-top"><h1>Banjo Workshop</h1><span class="ws-status">Outside world paused &middot; design sandbox</span><span class="ws-spacer"></span><label>Object <select id="ws-archetype" aria-label="What to design"></select></label><a href="/world">Back to world</a></header>
+ <div class="ws-grid">
+ <aside class="ws-pane ws-left"><h2>Saved designs</h2><p>Reopens a design you saved, with its lineage and source-world revision.</p><div id="ws-saved-designs"></div></aside>
+-<section class="ws-viewport"><canvas id="workshop-stage"></canvas><div class="ws-viewbar" role="group" aria-label="Representation"><button type="button" data-view="wire" aria-pressed="true">Wire</button><button type="button" data-view="matter" aria-pressed="false">Matter</button><button type="button" data-view="skin" aria-pressed="false">Skin</button></div><div class="ws-caption" id="ws-caption">Drag to orbit &middot; wheel to zoom &middot; amber marks balance and support</div></section>
++<section class="ws-viewport"><canvas id="workshop-stage"></canvas><div class="ws-viewbar" role="group" aria-label="Representation"><button type="button" data-view="wire" aria-pressed="false">Wire</button><button type="button" data-view="matter" aria-pressed="false">Matter</button><button type="button" data-view="skin" aria-pressed="true">Skin</button></div><div class="ws-caption" id="ws-caption">Drag to orbit &middot; wheel to zoom &middot; amber marks balance and support</div></section>
+ <aside class="ws-pane ws-right">
+ <h2 id="ws-name">Candidate</h2><p id="ws-purpose"></p>
+ <div class="ws-metrics"><div class="ws-metric"><span>Parts</span><strong id="ws-part-count">&mdash;</strong></div><div class="ws-metric"><span>Mass</span><strong id="ws-mass">&mdash;</strong></div><div class="ws-metric"><span>Stands on</span><strong id="ws-base">&mdash;</strong></div><div class="ws-metric"><span>Tips at</span><strong id="ws-tip">&mdash;</strong></div></div>
+diff --git a/tests/workshop_bench_engine_tests.py b/tests/workshop_bench_engine_tests.py
+index 650636d..d293548 100644
+--- a/tests/workshop_bench_engine_tests.py
++++ b/tests/workshop_bench_engine_tests.py
+@@ -377,6 +377,7 @@ class VisibleTestSetup(unittest.TestCase):
+                     if test in {"declared_static_load","impact_product"}:
+                         self.assertEqual(2,len(answer["frames"][0]["bodies"]))
+         self.assertIn("snapshot",operations)
++        self.assertEqual([], list((Path(self.app.runs_path) / "workshop-setup").iterdir()), "Setup previews must not accumulate scene files")
+ 
+     def test_preview_and_run_share_initial_native_cells_for_glass_oak_iron(self):
+         import workshop_setup, json
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 0dc73da..a597fae 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -160,7 +160,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
+ 
+     def tearDown(self):
+         # Captures support debugging and are never committed as product assets.
+-        out = ROOT / "build/workshop-browser-evidence"
++        out = Path(os.environ.get("BANJO_BROWSER_ARTIFACTS", str(ROOT / "build/workshop-browser-evidence")))
+         out.mkdir(parents=True, exist_ok=True)
+         image = self.page.send("Page.captureScreenshot", {"format": "png"})
+         (out / f"{self._testMethodName}.png").write_bytes(base64.b64decode(image["data"]))
+@@ -320,6 +320,24 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.assert_geometry_is_visible()
+         self.assertEqual("true",self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
+ 
++    def test_finished_run_cannot_replace_component_opened_while_it_was_calculating(self):
++        self.pointer_click('[data-mode="test"]')
++        self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
++        self.js("""window.__originalFetch=window.fetch;window.fetch=async function(url,options){
++            if(String(url).includes('/api/workshop/plan') && JSON.parse(options?.body||'{}').bench_test){
++                const response=await window.__originalFetch(url,options);
++                return await new Promise(resolve=>window.__releaseRun=()=>resolve(response));
++            }return window.__originalFetch(url,options);};""")
++        self.pointer_click('#ws-run-bench')
++        self.wait("typeof window.__releaseRun === 'function'")
++        self.pointer_click('[data-mode="build"]')
++        self.pointer_click('#ws-product-catalog .ws-part-open[data-part="leg-1"]')
++        self.js("window.__releaseRun()")
++        self.wait("!document.querySelector('#ws-run-bench').disabled")
++        self.assertEqual('leg-1', self.js("document.querySelector('#workshop-stage').dataset.showing"))
++        self.assertEqual('true', self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
++        self.assert_geometry_is_visible()
++
+     def test_small_component_remains_visible_after_narrow_viewport_resize(self):
+         self.open_product("cart")
+         self.pointer_click('#ws-product-catalog .ws-part-open[data-part="bearing-mount-11"]')
+@@ -361,8 +379,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
+         self.assertIn("cart deck", self.js("document.querySelector('#ws-user-library').textContent"))
+ 
+-        # Clicking the open product again folds its components away.
+-        self.click('#ws-product-catalog button[data-value="cart"]')
++        # Copy also opens the component. The product row first returns to the
++        # whole product; a second click folds its component list away.
++        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'deck'")
++        self.pointer_click('#ws-product-catalog button[data-value="cart"]')
++        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'product'")
++        self.assertEqual('14', self.js("document.querySelector('#ws-part-count').textContent"))
++        self.pointer_click('#ws-product-catalog button[data-value="cart"]')
+         self.wait("!document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+ 
+     def test_a_component_opens_on_its_own_and_saves_under_a_new_name(self):
