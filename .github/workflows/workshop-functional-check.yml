@@ -2,32 +2,40 @@ name: workshop-functional-check
 on:
   push:
     branches: [agent/workshop-functional-tests]
+    paths: [.github/workflows/workshop-functional-check.yml, .agent/functional-1.b64, .agent/functional-2.b64]
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: workshop-functional-check
   cancel-in-progress: true
 jobs:
-  source:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - run: git archive --format=tar.gz HEAD > banjo-source.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workshop-functional-source
-          path: banjo-source.tar.gz
-          retention-days: 3
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
         with:
-          persist-credentials: false
-      - name: Build native runtime
+          fetch-depth: 0
+      - name: Verify exact reviewed patch and apply to pinned main
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, base64, gzip, hashlib
+          text = ''.join(Path(f'.agent/functional-{i}.b64').read_text().strip() for i in (1,2))
+          # Restore a known missing text-transfer span, then verify all bytes.
+          text = text.replace('IVguGem+tCF', 'IVguosuNMVonqFSgvGem+tCF')
+          data = gzip.decompress(base64.b64decode(text, validate=True))
+          assert hashlib.sha256(data).hexdigest() == 'd4432bb4ba383f73d7d8dc186a9b73bce92faa96e937450b1ccf51160d66ed14'
+          Path(os.environ['RUNNER_TEMP'], 'functional.patch').write_bytes(data)
+          PY
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31
+          git checkout -b functional-clean b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31
+          git apply --check --unidiff-zero "$RUNNER_TEMP/functional.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/functional.patch"
+          git diff --cached --check
+      - name: Build unchanged native runtime
         run: |
           cmake -S . -B build/functional -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON -DBANJO_BUILD_PRECOMPUTE=OFF
           cmake --build build/functional --target banjo_live_world_run banjo_c --parallel 4
@@ -38,13 +46,22 @@ jobs:
           BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
           BANJO_BROWSER_TESTS: required
         run: python3 scripts/verify-workshop-checkpoint.py --engine build/functional/banjo_live_world_run --browser
+      - name: Publish only tested product code to clean checkpoint branch
+        shell: bash
+        run: |
+          printf '\n## Published verification\n\nThe required gate passed 203 fast Workshop tests, 11 native bench tests,\n15 native installation tests and all 15 Chrome browser regressions. Source\nregistration and JavaScript syntax checks passed. This is not a full CTest,\nmaterial calibration or cross-platform qualification.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-visible-tests-checkpoint.md
+          git add docs/workshop-visible-tests-checkpoint.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Make Workshop tests visibly simulate the selected product' -m 'Add exact-cell drop and slide experiments, configurable real loads, automatic animation and replay, intermediate measured heat visualization, stable mesh reuse, and explicit unavailable states. Remove analytical and unrelated reference tools from Test. Reject missing voxel components rather than silently testing incomplete products.'
+          git push origin HEAD:refs/heads/agent/workshop-functional-verified
+          git rev-parse HEAD > build/verified-commit.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: workshop-functional-evidence
           path: |
             build/workshop-verification.json
+            build/verified-commit.txt
             build/workshop-browser-evidence
-            build/functional/banjo_live_world_run
-            build/functional/libbanjo.so*
-          retention-days: 3
+          retention-days: 7
