@@ -1,0 +1,71 @@
+diff --git a/docs/workshop-acceptance-checkpoint.md b/docs/workshop-acceptance-checkpoint.md
+index 2784990..f3b27ed 100644
+--- a/docs/workshop-acceptance-checkpoint.md
++++ b/docs/workshop-acceptance-checkpoint.md
+@@ -18,0 +19,2 @@ Changing test controls clears old results and invalidates pending responses.
++Late optional history loads preserve current controls and pending tests rather
++than resetting them; a deliberately delayed-response browser case covers this.
+@@ -33,2 +35,2 @@ checks pass. No tolerance was relaxed.
+-The container browser is administratively blocked from localhost. Seven required
+-Chrome cases, including two new limit-control/stale-response cases, run on the
++The container browser is administratively blocked from localhost. Eight required
++Chrome cases, including three new limit-control/stale-response cases, run on the
+diff --git a/playground/workshop.js b/playground/workshop.js
+index bb27e0e..bfa158d 100644
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -902 +902,4 @@ async function start() {
+-    renderUserLibrary(); renderBenchCatalog(); show(false);
++    // Loading optional history must not reset controls or invalidate a test
++    // started while this request was in flight. The test catalog is already
++    // authoritative from /open; only saved presets changed here.
++    renderUserLibrary(); renderBenchPresets(); show(false);
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index c4dd340..965f4ec 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -91 +91,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
+-        raise AssertionError(f"Workshop condition timed out: {condition}")
++        diagnostics = self.js("""JSON.stringify({
++          notice:document.querySelector('#ws-notice')?.textContent,
++          test:document.querySelector('#ws-bench-test')?.value,
++          result:document.querySelector('#ws-bench-result')?.textContent,
++          runDisabled:document.querySelector('#ws-run-bench')?.disabled,
++          controls:[...document.querySelectorAll('[data-bench-control]')].map(e=>({
++            name:e.dataset.benchControl,value:e.value,checked:e.checked}))})""")
++        raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}")
+@@ -207,0 +215,34 @@ class WorkshopBrowserRegression(unittest.TestCase):
++    def test_late_history_keeps_changed_test_controls_and_pending_result(self):
++        # Hold optional startup history and release it during a native load test.
++        # It must not recreate controls or increment the test request generation.
++        self.page.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
++          const originalFetch=window.fetch.bind(window);
++          window.fetch=async function(resource,init){
++            const response=await originalFetch(resource,init);
++            if(String(resource).endsWith('/api/workshop/remembered')){
++              await new Promise(resolve=>window.__releaseHistory=resolve);
++            }
++            if(String(resource).endsWith('/api/workshop/plan') && JSON.parse(init.body).bench_test){
++              await new Promise(resolve=>window.__releaseResult=resolve);
++            }
++            return response;
++          };
++        """})
++        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&history-test=1"})
++        self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-test-catalog button[data-value=declared_static_load]')")
++        self.click('[data-mode="test"]')
++        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
++        self.field('[data-bench-control="duration_s"]', .2)
++        self.field('[data-bench-control="max_displacement_m"]', .123)
++        self.click('[data-bench-control="record_trace"]')
++        self.click("#ws-run-bench")
++        self.wait("typeof window.__releaseResult==='function'")
++        self.js("window.__releaseHistory()")
++        # A marker after a microtask/timer proves the history callback completed.
++        self.js("new Promise(resolve=>setTimeout(resolve,200))")
++        self.assertEqual("0.123", self.js("document.querySelector('[data-bench-control=max_displacement_m]').value"))
++        self.assertFalse(self.js("document.querySelector('[data-bench-control=record_trace]').checked"))
++        self.js("window.__releaseResult()")
++        self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
++        self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
++
