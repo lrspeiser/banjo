@@ -92,7 +92,11 @@ thresholds and is how heat already weakens a section -- and the bonds to scale
 are those whose two cells belong to different components. What is missing is
 which component a cell came from surviving the scene's `join`, and what each
 mating method's efficiency is. Both are ProductGraph and mating decisions, so
-this is an issue to decide and not a second implementation.
+this is an issue to decide and not a second implementation:
+[#20](https://github.com/lrspeiser/banjo/issues/20). The joints themselves are
+being made data on `agent/product-construction` (`4320e5e`: fixed or bearing;
+bonded, pressed or a bearing; contact measured from the parts), which is the
+input this needs.
 
 ## 3. Carried ground weighed nothing
 
@@ -197,6 +201,23 @@ a fracture run weakens each bond by what heat has done to the cells at its ends
 -- the status endpoint's own words: J2 plasticity, compact state and bounded
 property variation are reference modules, not live-world capabilities. That is
 a lane of its own, not an increment here.
+
+**Measured, and the part of the report that was right.** Heat-and-strength
+reaches a Workshop scene as it stands, and quickly (3,600 s of fire in 3.5 s).
+The default oak table under 1,000 kg, heated at 50 kW: by 300 s its surface is at
+1,068 K and its bonds are down to 0.21 of their stiffness and 0.27 of their
+tension; by 600 s every bond is at nothing and four cells have burned; **and it
+is never once offered, and never gives.** Part of that is written down already
+("a body charred through keeps its shape", [thermal-mechanics.md](thermal-mechanics.md)).
+The rest is that the survey's heated section is laid over the body's reference
+box, which for a product compiled as one joined body is the whole thing's
+bounding box -- 1.2 x 0.76 x 0.7 m of mostly air -- so a 40 mm top reads as the
+skin of a block whose core is still cold. For anything that is not a box, heat
+does not yet change what it can carry. Iron under the same load at 100 kW
+behaves as its law says (980 K, 0.22 of its tension, and still held). Not
+changed here: it is the thermal lane's model, and the charred-through question
+is recorded there as the owner's.
+[#21](https://github.com/lrspeiser/banjo/issues/21).
 
 ## Verification
 
