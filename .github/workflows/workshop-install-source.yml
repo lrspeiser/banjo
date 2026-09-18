@@ -1,0 +1,21 @@
+name: workshop-install-source
+on:
+  push:
+    branches: [agent/workshop-install-checkpoint]
+    paths: [.github/workflows/workshop-install-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 23cbc854d5504d0aaca0df33fcc62ef9d2f9147e
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD > banjo-install-base.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-install-base
+          path: banjo-install-base.tar.gz
+          retention-days: 3
