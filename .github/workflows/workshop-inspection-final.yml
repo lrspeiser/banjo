@@ -1,0 +1,95 @@
+name: workshop-inspection-final
+on:
+  push:
+    branches: [agent/rigid-live-integration-tools]
+    paths: [.github/workflows/workshop-inspection-final.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OPENAI_API_KEY: ""
+      BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/rigid-live/banjo_live_world_run
+      BANJO_PLATFORM_ENGINE: ${{ github.workspace }}/build/rigid-live/banjo_platform_cli
+      BANJO_RIGID_TESTS: required
+      BANJO_BROWSER_TESTS: required
+      BANJO_CHROME: /usr/bin/google-chrome
+      BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/workshop-inspection-integrated
+          fetch-depth: 0
+      - name: Keep current physical metrics in all inspection views
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/inspection-evidence"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('playground/workshop.js'); s=p.read_text()
+          for key in ('matterMeasured','matterBom','matterMasses'):
+              old='view === "matter" && bench.'+key
+              assert old in s
+              s=s.replace(old,'["matter", "collision", "relations"].includes(view) && bench.'+key)
+          p.write_text(s)
+          PY
+          git add playground/workshop.js
+          git diff --cached --check
+          test "$(git write-tree)" = f158016e06238bd05070e402d6555f08eb5fe9ae
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Keep physical mass and material estimates consistent across Workshop inspection views'
+          git push origin HEAD:refs/heads/agent/workshop-inspection-integrated
+          git rev-parse HEAD > "$RUNNER_TEMP/inspection-evidence/commit.txt"
+      - name: Source and API regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check playground/workshop.js
+          python3 scripts/check-source-registration.py
+          python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/inspection-evidence/source-tests.log"
+          import re, subprocess
+          from pathlib import Path
+          block=Path('.github/workflows/ci.yml').read_text().split('  workshop-fast:')[1].split('  build-test-and-capture:')[0]
+          for file in re.findall(r'python3 (tests/\S+\.py)',block):
+              print('RUN',file,flush=True)
+              subprocess.run(['python3',file,'-v'],check=True)
+          PY
+      - uses: actions/cache/restore@v4
+        id: native
+        with:
+          path: build/rigid-live
+          key: rigid-live-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt','cmake/**','src/**') }}
+      - name: Build and exercise native engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/rigid-live -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF
+          cmake --build build/rigid-live --target banjo_platform_cli banjo_platform_tests banjo_live_world_run --parallel 2 > "$RUNNER_TEMP/inspection-evidence/build.log" 2>&1
+          {
+            build/rigid-live/banjo_platform_tests
+            python3 tests/workshop_rigid_engine_tests.py -v
+            python3 tests/workshop_install_engine_tests.py -v
+            python3 tests/workshop_bench_engine_tests.py -v
+          } 2>&1 | tee "$RUNNER_TEMP/inspection-evidence/native-tests.log"
+      - uses: actions/cache/save@v4
+        if: steps.native.outputs.cache-hit != 'true'
+        with:
+          path: build/rigid-live
+          key: rigid-live-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt','cmake/**','src/**') }}
+      - name: Required actual Chrome Workshop journeys
+        shell: bash
+        run: |
+          set -euo pipefail
+          export BANJO_BROWSER_ARTIFACTS="$RUNNER_TEMP/inspection-evidence/screenshots"
+          python3 tests/workshop_browser_tests.py -v 2>&1 | tee "$RUNNER_TEMP/inspection-evidence/browser-tests.log"
+          git rev-parse HEAD > "$RUNNER_TEMP/inspection-evidence/VERIFIED.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workshop-inspection-final
+          path: ${{ runner.temp }}/inspection-evidence
+          retention-days: 7
