@@ -2344,7 +2344,8 @@ setInterval(showWorkbench, 100);
 // chat changes it or on a reload, carries the same.
 function carryGround(carried) {
   world.carriedGround = carried || null;
-  if (carried && Number.isFinite(Number(carried.limit_kg))) world.carryLimitKg = Number(carried.limit_kg);
+  // What a person can carry is the room's to say, and a room with no ground says nothing.
+  world.carryLimitKg = carried && Number.isFinite(Number(carried.limit_kg)) ? Number(carried.limit_kg) : null;
   for (const what of ["sand", "soil"]) {
     const kg = carried ? Number(carried[`${what}_kg`]) || 0 : 0;
     if (kg > 0.0005) world.stock.set(what, { kg, pieces: 0 });

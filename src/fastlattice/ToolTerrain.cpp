@@ -737,8 +737,11 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
             r.loosened = effect.edit.moved;
             r.loosened_kg = effect.edit.mass_kg;
             // And the dig as an edit would say it, exactly: made again from
-            // these numbers on the same ground, it takes out the same.
-            r.dug = true;
+            // these numbers on the same ground, it takes out the same. A person
+            // carrying all they can takes nothing out, and there is then no dig
+            // to say: kept as one, its depth of nothing is a depth a room
+            // refuses when it is opened again.
+            r.dug = effect.edit.depth_m > 0.0;
             r.dug_from_m[0] = ax;
             r.dug_from_m[1] = az;
             r.dug_to_m[0] = bx;

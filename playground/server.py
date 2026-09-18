@@ -2567,6 +2567,8 @@ def remember_ground(app,body,answer=None):
     if isinstance(answer,dict):
         for work in answer.get("ground_work") or []:
             dug=work.get("dug") if isinstance(work,dict) else None
+            # Nothing came out (the person carries all they can): not an edit.
+            if isinstance(dug,dict) and not float(dug.get("depth_m") or 0.0)>0.0: continue
             if isinstance(dug,dict) and not work.get("open"):
                 new.append({"dig":{"from_m":[float(v) for v in dug["from_m"]],"to_m":[float(v) for v in dug["to_m"]],
                                    "width_m":float(dug["width_m"]),"depth_m":float(dug["depth_m"])}})
