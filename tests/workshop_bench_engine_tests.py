@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -253,6 +254,72 @@ class VisibleSimulationEngine(unittest.TestCase):
         oak = results["oak"]["measured"]
         self.assertEqual(("held", 1), (oak["outcome"], oak["pieces"]), oak)
         self.assertGreater(oak["prototype_displacement_m"], .001, "the blow did not even move it")
+
+    def test_a_load_its_material_cannot_carry_makes_a_table_give(self):
+        # A table is one body with nothing under it but the ground, and the
+        # engine's load survey looked only for a beam held up by other bodies:
+        # five tonnes on a glass table was never once asked about. Its feet, the
+        # span between them and the section bridging it are now its own cells.
+        # Two metres of 40 mm concrete, two cells deep, under 300 kg.
+        long_table = assemble("table", parameters={"material": "concrete", "width_m": 2.0, "depth_m": .5})
+        started = time.monotonic()
+        r = workshop_bench.run(self.app, long_table, {"test": "declared_static_load",
+            "config": {"load_kg": 300.0, "duration_s": 1.5, "cell_size_m": .02}})
+        m = r["measured"]
+        self.assertEqual("broke", m["outcome"], m)
+        self.assertGreater(m["pieces"], 1, m)
+        self.assertGreater(m["overload"]["stress_mpa"], m["overload"]["holds_mpa"], m["overload"])
+        self.assertAlmostEqual(1.84, m["overload"]["span_m"], delta=.05)
+        self.assertEqual("broke", m["statics"]["stop"], m["statics"])
+        self.assertGreater(m["statics"]["ratio"], 1.0, m["statics"])
+        # The wreck is shown falling and then the run stops: what lands on what
+        # is not asked about, which went on without end.
+        self.assertLess(m["clock_s"], m["first_break_s"] + .6 + 1e-6)
+        self.assertLess(time.monotonic() - started, 60)
+        self._every_body_is_drawn_as_its_own_cells(r)
+
+    def test_a_load_it_can_carry_is_held_and_says_by_how_much(self):
+        r = workshop_bench.run(self.app, assemble("table", parameters={"material": "concrete"}),
+            {"test": "declared_static_load", "config": {"load_kg": 400.0, "duration_s": 1.0, "cell_size_m": .02}})
+        m = r["measured"]
+        self.assertEqual(("held", 1), (m["outcome"], m["pieces"]), m)
+        # Beam theory called it overloaded, which is what that bound is for...
+        self.assertGreater(m["overload"]["stress_mpa"], m["overload"]["holds_mpa"], m["overload"])
+        # ...and statics on its own cells said it holds, and how near it came.
+        self.assertEqual("held", m["statics"]["stop"], m["statics"])
+        self.assertGreater(m["statics"]["ratio"], .3)
+        self.assertLess(m["statics"]["ratio"], 1.0)
+        # Oak under the same load is never asked about at all.
+        oak = workshop_bench.run(self.app, assemble("table"), {"test": "declared_static_load",
+            "config": {"load_kg": 400.0, "duration_s": .5, "cell_size_m": .02, "record_trace": False}})["measured"]
+        self.assertEqual(("held", None, None), (oak["outcome"], oak["overload"], oak["statics"]), oak)
+
+    def test_a_ceramic_table_can_be_tested_at_all(self):
+        design = assemble("table", parameters={"material": "alumina ceramic"})
+        for request in ({"test": "declared_static_load", "config": {"load_kg": 50.0, "duration_s": .3}},
+                        {"test": "drop_product", "config": {"height_m": .4, "duration_s": .5}}):
+            with self.subTest(test=request["test"]):
+                self.assertTrue(workshop_bench.run(self.app, design, request)["prototype"]["engine_grid_verified"])
+
+    def test_a_broken_table_comes_apart_at_its_joints_into_its_own_parts(self):
+        # The product is one fused body, and it is still a top on four legs: what
+        # a blow or a landing parts is the joint, and each leg comes away whole
+        # -- all of it but the one cell let into the top -- whichever way it broke.
+        import workshop_motion
+        for material, test, config in (("oak", "impact_product", {"striker_kg": 20.0, "speed_m_s": 15.0}),
+                                       ("glass", "drop_product", {"height_m": 4.0, "duration_s": 1.7}),
+                                       ("oak", "drop_product", {"height_m": 10.0, "duration_s": 2.2})):
+            with self.subTest(material=material, test=test):
+                design = assemble("table", parameters={"material": material})
+                parts = workshop_motion.scene(design, test, config)["matter"]["component_cell_counts"]
+                r = workshop_bench.run(self.app, design, {"test": test, "config": config})
+                shapes = r["playback"]["geometry"]
+                sizes = sorted((len(shapes[b["name"]]["offsets_m"]) for b in r["playback"]["frames"][-1]["bodies"]
+                                if b["name"].startswith(r["prototype"]["root_body"])), reverse=True)
+                legs = [n for n in sizes if parts["leg-1"] - 1 <= n <= parts["leg-1"]]
+                self.assertEqual(4, len(legs), sizes)
+                self.assertGreater(sizes[0], .85 * parts["top"], sizes)
+                self.assertEqual(sum(parts.values()), sum(sizes))
 
     def test_a_drop_that_ended_in_the_air_says_so(self):
         r = workshop_bench.run(self.app, assemble("table", parameters={"material": "glass"}),

@@ -12,10 +12,8 @@ no control could reach it.
 """
 from __future__ import annotations
 
-import base64
 from math import dist, isfinite, sqrt
 from pathlib import Path
-import struct
 import time
 from typing import Any
 
@@ -154,24 +152,7 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
             "speed_m_s": speed, "striker": striker, "mass_kg": summary["measured"]["mass_kg"]}
 
 
-def _render_geometry(snapshot: Any, h: float, known: dict[str, Any]) -> None:
-    """Every body's own cells from a native snapshot, for the ones not drawn yet.
-
-    Pieces are new bodies with new names, so the recording's one entry per name
-    holds them. A name that comes back changed keeps its first shape under the
-    plain name, which is what the frames before the change show, and the later
-    one goes under name#revision.
-    """
-    for body in (snapshot or {}).get("bodies") or []:
-        name, revision = str(body.get("name") or ""), int(body.get("revision") or 0)
-        key = name if name not in known or int(known[name].get("revision") or 0) == revision else f"{name}#{revision}"
-        if not name or key in known or not body.get("offsets_b64"):
-            continue
-        raw = base64.b64decode(body["offsets_b64"], validate=True)
-        if len(raw) % 24:
-            continue
-        known[key] = {"revision": revision, "cell_size_m": h,
-                      "offsets_m": [list(v) for v in struct.iter_unpack("<ddd", raw)]}
+_render_geometry = sparse.piece_geometry
 
 
 def _hardest(impacts: Any, best: dict[str, Any] | None, root: str) -> dict[str, Any] | None:

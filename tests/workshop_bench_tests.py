@@ -310,6 +310,23 @@ class VisibleSimulationContract(unittest.TestCase):
         # The declared time is still the time simulated: a short run checks free fall in mid-air.
         self.assertEqual(.15, motion.scene(assemble("table"), "drop_product", {"height_m": 10, "duration_s": .15})["duration_s"])
 
+    def test_every_catalogue_material_has_a_name_a_scene_accepts(self):
+        # The catalogue says "alumina ceramic" and a scene says "ceramic", so
+        # every ceramic product was refused before it ran, by both the load test
+        # and the drop: "material must be one of [... 'ceramic' ...]".
+        import fracture_lab
+        from mcp import engine_materials
+        for name in engine_materials.MATERIALS:
+            with self.subTest(material=name):
+                self.assertIn(engine_materials.scene_name(name), fracture_lab.MATERIALS)
+                # And what a native snapshot then calls it reads back as the catalogue's.
+                self.assertEqual(name, engine_materials.canonical(engine_materials.scene_name(name)))
+        from workshop_sparse_trial import prototype_scene
+        import workshop_motion as motion
+        design = assemble("table", parameters={"material": "alumina ceramic"})
+        for spec in (prototype_scene(design, load_kg=10)["spec"], motion.scene(design, "drop_product", {})["spec"]):
+            self.assertEqual({"ceramic"}, {b["material"] for b in spec["bodies"] if b["name"].startswith(("candidate/", "workshop/product"))})
+
     def test_the_striker_is_a_separate_iron_block_aimed_at_matter(self):
         import workshop_motion as motion
         from mcp import engine_materials

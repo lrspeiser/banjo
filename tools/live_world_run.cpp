@@ -1714,6 +1714,17 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "decline") {
+                    // Not asked about: this body has had its chance at this
+                    // contact and the world goes on with it whole
+                    // (LiveWorld::declineBreak). A step that would break
+                    // something is taken back until the host answers, and a
+                    // host that has seen what it came to see -- a table give
+                    // under its load -- had no way to let the wreck fall
+                    // without paying for a lattice run on every shard that
+                    // landed on another.
+                    world->declineBreak(command.at("name").get<std::string>());
+                    reply["outcome"] = "declined";
                 } else if (op == "hinge") {
                     // Hang one named thing off another. The pin is given where
                     // it is in the world right now and is kept in both bodies'

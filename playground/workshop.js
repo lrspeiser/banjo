@@ -1102,8 +1102,18 @@ function renderBenchResult(result) {
       make("p", {}, `Speed ${Number(control.speed_rpm || 0).toFixed(1)} rpm · load moved ${Number(m.load_delta_y_m || 0).toFixed(3)} m`),
       make("p", {}, `Motor ${Number(motor.power_w || 0).toFixed(1)} W · battery supplied ${Number(battery.given_j || 0).toFixed(1)} J`));
   } else if (result.trial === "static_load" || result.test === "static_load") {
-    const m = result.measured || {}; card.append(make("strong", {}, "Physical load trial"),
-      make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. Little or no movement means the object held in this model—not that bending strength is certified.`),
+    // What became of it under the load, in the engine's own words: the load
+    // survey's beam reading if it was ever called overloaded, and what statics
+    // on its own cells then said, with how near its bonds came to giving.
+    const m = result.measured || {}, over = m.overload, statics = m.statics, percent = statics?.ratio == null ? null : Math.round(Number(statics.ratio)*100);
+    const applied = Number(m.actual_grid_load_kg).toFixed(1);
+    const what = m.outcome === "broke" ? `Gave way under ${applied} kg: in ${m.pieces} pieces`
+      : percent != null ? `Held ${applied} kg, at ${percent}% of what breaks it`
+      : `Held ${applied} kg`;
+    card.append(make("strong", {id:"ws-load-outcome","data-outcome":m.outcome || "held","data-pieces":String(m.pieces ?? 1)}, what));
+    if (over) card.append(make("p", {id:"ws-load-reading"}, `By beam theory the load puts ${Number(over.stress_mpa).toFixed(1)} MPa of bending in it over the ${Number(over.span_m).toFixed(2)} m between its feet, against the ${Number(over.holds_mpa).toFixed(1)} MPa it can take, so the engine was asked. Statics on its own cells: ${statics?.stop || "no answer"}${percent == null ? "" : `, its bonds at ${percent}% of what breaks them`}.`));
+    else card.append(make("p", {id:"ws-load-reading"}, "By beam theory the bending in it stays under what its material can take, so nothing asked whether it would give."));
+    card.append(make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. A top one cell thick has no depth to bend through: use a cell size that puts at least two cells through the part that carries the load.`),
       make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
     const target = result.target || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),

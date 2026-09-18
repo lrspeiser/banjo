@@ -49,7 +49,9 @@ def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
             test="static_load", requested=dict(result.get("requested") or {}),
             limitations=list(result.get("limitations") or []))
         result["playback"]["geometry"] = geometry
-        result["playback"]["geometry_basis"] = "verified-native-cells-until-topology-changes"
+        # Every piece a load leaves is drawn as its own cells, like a blow's.
+        result["playback"]["geometry_basis"] = "verified-native-cells-and-native-pieces"
+        result["playback"]["fractures"] = list((result.get("measured") or {}).get("fractures") or [])
     return result
 
 

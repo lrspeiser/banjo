@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import struct
+import time
 from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
@@ -58,7 +59,7 @@ def _box_body(name: str, box: Box, cell: float, material: str, join: str) -> dic
     return {
         "name": name,
         "shape": "box",
-        "material": material,
+        "material": engine_materials.scene_name(material),
         "size_mm": [counts[a] * cell * 1000.0 for a in range(3)],
         "center_mm": [centre[a] * 1000.0 for a in range(3)],
         "velocity_m_s": [0.0, 0.0, 0.0],
@@ -245,6 +246,100 @@ def verify_engine_matter(snapshot: dict[str, Any], matter: dict[str, Any], root:
                                         "cell_size_m": h, "offsets_m": offsets}}}
 
 
+def piece_geometry(snapshot: Any, cell_size_m: float, known: dict[str, Any]) -> None:
+    """Every body's own cells from a native snapshot, for the ones not drawn yet.
+
+    Pieces are new bodies with new names, so a recording's one entry per name
+    holds them. A name that comes back changed keeps its first shape under the
+    plain name, which is what the frames before the change show, and the later
+    one goes under name#revision.
+    """
+    for body in (snapshot or {}).get("bodies") or []:
+        name, revision = str(body.get("name") or ""), int(body.get("revision") or 0)
+        key = name if name not in known or int(known[name].get("revision") or 0) == revision else f"{name}#{revision}"
+        if not name or key in known or not body.get("offsets_b64"):
+            continue
+        raw = base64.b64decode(body["offsets_b64"], validate=True)
+        if len(raw) % 24:
+            continue
+        known[key] = {"revision": revision, "cell_size_m": cell_size_m,
+                      "offsets_m": [list(v) for v in struct.iter_unpack("<ddd", raw)]}
+
+
+class _LoadWatch:
+    """Reads what the engine says about a load while the run goes on.
+
+    A transparent proxy, like the recorder it wraps: the solver's calls and its
+    answers are untouched. It keeps the survey's reading of the product the first
+    time it is called overloaded, what each answer to that was, what statics
+    said, and the cells of every body an answer left.
+    """
+    def __init__(self, session: Any, root: str, cell_size_m: float, geometry: dict[str, Any]) -> None:
+        self.session, self.root, self.h, self.geometry = session, root, cell_size_m, geometry
+        self.overload: dict[str, Any] | None = None
+        self.answers: list[dict[str, Any]] = []
+        self.statics: dict[str, Any] | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.session, name)
+
+    def send(self, **command: Any) -> Any:
+        answer = self.session.send(**command)
+        if not isinstance(answer, dict):
+            return answer
+        for reading in answer.get("overloaded") or []:
+            if self.overload is None and str(reading.get("name") or "") == self.root:
+                self.overload = {key: reading.get(key) for key in
+                                 ("carrying_n", "span_m", "stress_mpa", "holds_mpa", "capacity_fraction", "why")}
+        for said in (answer.get("mechanics") or {}).get("statics") or []:
+            if str(said.get("name") or "").startswith(self.root):
+                self.statics = dict(said)
+        if command.get("op") == "fracture":
+            self.answers.append({"name": str(command.get("name") or ""), "at_s": round(float(answer.get("t", 0.0)), 6),
+                                 "outcome": str(answer.get("outcome") or ""), "pieces": int(answer.get("pieces") or 0)})
+            piece_geometry(self.session.send(op="snapshot").get("snapshot"), self.h, self.geometry)
+        return answer
+
+
+# Once the product has given, the question a load test asks is answered. The
+# wreck is shown falling for this long, as the rigid pieces the break left.
+AFTERMATH_S = 0.6
+WORK_BUDGET_S = 30.0
+
+
+def _run_loaded(watch: "_LoadWatch", target_s: float) -> dict[str, Any]:
+    """Step the loaded product to `target_s`, answering what the world asks.
+
+    Until the product gives, everything offered is answered, as it always was.
+    After it has, nothing more is: a tabletop in pieces under a quarter of a
+    tonne of iron offers a break on nearly every step, each one a lattice run
+    over the load's thousands of cells, and that went on without end -- a run
+    measured at 37 minutes of processor time and still going. Those are
+    declined, so the pieces fall as the break left them, and the run stops
+    AFTERMATH_S after the break. A wall-clock budget backs both.
+    """
+    state = watch.send(op="poses")
+    deadline = time.monotonic() + WORK_BUDGET_S
+    gave_at: float | None = None
+    guard = 0
+    while float(state.get("t", 0.0)) < (target_s if gave_at is None else min(target_s, gave_at + AFTERMATH_S)) - 1e-12:
+        guard += 1
+        if guard > 100000 or time.monotonic() > deadline:
+            raise RuntimeError("The load test exceeded its work budget; no completed result is claimed.")
+        state = watch.send(op="step", dt=1 / 120.0, n=1)
+        while state.get("breakable"):
+            if time.monotonic() > deadline:
+                raise RuntimeError("The load test exceeded its work budget; no completed result is claimed.")
+            name = str(state["breakable"][0])
+            if gave_at is not None:
+                state = watch.send(op="decline", name=name)
+                continue
+            state = watch.send(op="fracture", name=name, window_s=0.003)
+            if state.get("outcome") == "broke" and name.startswith(watch.root):
+                gave_at = float(state.get("t", 0.0))
+    return state
+
+
 def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
                     on: str = "top", cell_size_m: float = core.DEFAULT_CELL_M,
                     duration_s: float = core.DEFAULT_DURATION_S,
@@ -264,9 +359,14 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             raise ValueError("the native engine could not snapshot Matter for geometry verification")
         verified = verify_engine_matter(snapshot, setup["matter"], setup["root_body"],
                                         placement_grid=setup["placement_grid"])
-        final, fractures = core._run_to(session, duration)
+        geometry = dict(verified["render_geometry"])
+        piece_geometry(snapshot, float(setup["cell_size_m"]), geometry)     # the load, which is no part of the product
+        watch = _LoadWatch(session, setup["root_body"], float(setup["cell_size_m"]), geometry)
+        final = _run_loaded(watch, duration)
     finally:
         session.close()
+    pieces = [x for x in final.get("bodies") or [] if str(x.get("name") or "").startswith(setup["root_body"])]
+    gave = [x for x in watch.answers if x["outcome"] == "broke" and x["name"].startswith(setup["root_body"])]
 
     a = core._body(initial, setup["root_body"])
     b = core._body(final, setup["root_body"])
@@ -309,7 +409,15 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "prototype_rotation_change_deg": round(turned, 4) if turned is not None else None,
             "load_position_m": ([round(float(v), 6) for v in load.get("position_m", [])]
                                 if load is not None else None),
-            "fractures": fractures,
+            "fractures": watch.answers,
+            # What became of it, in the engine's words: whether the load survey
+            # ever called it overloaded and why, what statics then said, and
+            # how many pieces of it there are at the end.
+            "outcome": "broke" if gave else "held",
+            "pieces": len(pieces),
+            "first_break_s": gave[0]["at_s"] if gave else None,
+            "overload": watch.overload,
+            "statics": watch.statics,
             "requested_load_kg": round(load_kg, 4),
             "actual_grid_load_kg": round(float(setup["actual_load_kg"]), 4),
         },
@@ -318,7 +426,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "why": ("the assembly declares the load to try, but not a displacement/rotation/failure "
                     "tolerance; this result is evidence, not an invented pass/fail"),
         },
-        "render_geometry": verified["render_geometry"],
+        "render_geometry": geometry,
         "limitations": [
             "The test mass is quantized to whole lattice cells; requested and actual grid load are both reported.",
             "The native scene schema still lacks a compact sparse-body field; joined grid boxes are a lossless encoding of the same cell artifact."

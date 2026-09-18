@@ -585,6 +585,27 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='held'")
         self.assertIn('still in one piece',self.js("document.querySelector('#ws-break-outcome').textContent"))
 
+    def test_a_load_says_whether_it_held_and_by_how_much(self):
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='top').click()")
+        self.field('#ws-edit-scope','all')
+        self.field('#ws-part-material','concrete')
+        self.wait("document.querySelector('#ws-part-material').value==='concrete' && !document.querySelector('#ws-mass').textContent.startsWith('27.602')")
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
+        self.wait("document.querySelector('[data-bench-control=load_kg]')")
+        self.field('[data-bench-control=load_kg]',400)
+        self.field('[data-bench-control=cell_size_m]',.02)
+        self.field('[data-bench-control=duration_s]',1)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-load-outcome')")
+        self.assertEqual('held',self.js("document.querySelector('#ws-load-outcome').dataset.outcome"))
+        self.assertRegex(self.js("document.querySelector('#ws-load-outcome').textContent"),r'^Held 400\.\d kg, at \d\d% of what breaks it$')
+        reading=self.js("document.querySelector('#ws-load-reading').textContent")
+        self.assertRegex(reading,r'MPa of bending in it over the 1\.0\d m between its feet, against the 3\.0 MPa it can take')
+        self.assertIn('Statics on its own cells: held',reading)
+        self.capture_evidence('concrete-table-held-with-margin.png')
+
     def test_a_blow_from_a_weight_is_a_test_the_page_offers_and_runs(self):
         self.click('[data-mode="test"]')
         self.click('#ws-test-catalog button[data-value="impact_product"]')
