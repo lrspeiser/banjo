@@ -1,0 +1,94 @@
+name: thin-startup-verify
+on:
+  push:
+    branches: [agent/thin-part-representations]
+    paths: [.github/workflows/thin-startup-verify.yml, .agent/thin-startup.patch]
+permissions:
+  contents: write
+concurrency:
+  group: thin-startup-verify
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      OPENAI_API_KEY: ""
+      BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_live_world_run
+      BANJO_PLATFORM_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_platform_cli
+      BANJO_RIGID_TESTS: required
+      BANJO_BROWSER_TESTS: required
+      BANJO_CHROME: /usr/bin/google-chrome
+      BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+    steps:
+      - uses: actions/checkout@v5
+      - name: Publish bounded startup fix onto current candidate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/thin-evidence"
+          cp .agent/thin-startup.patch "$RUNNER_TEMP/startup.patch"
+          git fetch --depth=1 origin c9843ea4f117046b302ac1602704377a4e1f7909
+          git checkout --detach c9843ea4f117046b302ac1602704377a4e1f7909
+          git apply --index "$RUNNER_TEMP/startup.patch"
+          git diff --cached --check
+          node --check playground/workshop.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Keep Workshop editor placement independent of nested diagnostic headings' -m 'Fix the real Chrome startup regression caught before main promotion; retain startup screenshots and exceptions when unittest setup fails.'
+          git push origin HEAD:refs/heads/agent/thin-parts-candidate
+          git rev-parse HEAD | tee "$RUNNER_TEMP/thin-evidence/commit.txt"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/thin-evidence/source.tar.gz"
+      - name: Run Workshop source regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/check-source-registration.py
+          python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/thin-evidence/source-tests.log"
+          from pathlib import Path
+          import re, subprocess
+          block=Path('.github/workflows/ci.yml').read_text().split('  workshop-fast:')[1].split('  build-test-and-capture:')[0]
+          for file in re.findall(r'python3 (tests/\S+\.py)',block):
+              print('RUN',file,flush=True)
+              subprocess.run(['python3',file,'-v'],check=True)
+          PY
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/thin-parts
+          key: thin-parts-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tests/*.cpp') }}
+          fail-on-cache-miss: true
+      - name: Run native regressions on identical-input binaries
+        run: |
+          set -euo pipefail
+          {
+            build/thin-parts/banjo_platform_tests
+            python3 tests/workshop_rigid_engine_tests.py -v
+            python3 tests/workshop_install_engine_tests.py -v
+            python3 tests/workshop_bench_engine_tests.py -v
+          } 2>&1 | tee "$RUNNER_TEMP/thin-evidence/native-tests.log"
+      - name: Run focused thin-table Chrome journey
+        env:
+          BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
+        run: |
+          set -euo pipefail
+          python3 tests/workshop_browser_tests.py -v -f -k thin_rigid 2>&1 | tee "$RUNNER_TEMP/thin-evidence/thin-browser.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thin-startup-smoke
+          path: ${{ runner.temp }}/thin-evidence
+          retention-days: 7
+      - name: Run complete Chrome Workshop suite
+        env:
+          BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
+        run: |
+          set -euo pipefail
+          python3 tests/workshop_browser_tests.py -v -f 2>&1 | tee "$RUNNER_TEMP/thin-evidence/browser-tests.log"
+      - name: Record verified checkpoint without moving main
+        run: git rev-parse HEAD > "$RUNNER_TEMP/thin-evidence/VERIFIED.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thin-startup-verification
+          path: |
+            ${{ runner.temp }}/thin-evidence
+            build/workshop-browser-evidence
+          retention-days: 7
