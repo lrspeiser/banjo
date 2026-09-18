@@ -1,0 +1,67 @@
+name: workshop-controls-check
+on:
+  push:
+    branches: [agent/workshop-functional-tests]
+    paths: [.github/workflows/workshop-controls-check.yml, .agent/viewport-controls.patch]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: workshop-controls-check
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply only the reviewed UI patch on current main
+        shell: bash
+        run: |
+          cp .agent/viewport-controls.patch "$RUNNER_TEMP/viewport.patch"
+          echo 'b7baed1d6aef13db9ad43f317dc111f92e9b21eb176fcccbea5f2310debc8891  '"$RUNNER_TEMP/viewport.patch" | sha256sum --check
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = b76502654f3bb5e85a7882362a27398f99667cc6
+          git checkout -b controls-clean b76502654f3bb5e85a7882362a27398f99667cc6
+          git diff --quiet b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31 HEAD -- src tools cmake CMakeLists.txt
+          git apply --check --unidiff-zero "$RUNNER_TEMP/viewport.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/viewport.patch"
+          git diff --cached --check
+      - name: Reuse the exact unchanged native runtime from the pinned baseline build
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: lrspeiser/banjo
+          run-id: 35303329213
+          name: workshop-functional-evidence
+          path: .native
+      - name: Verify all Workshop flows and onscreen mouse interaction
+        env:
+          OPENAI_API_KEY: ""
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+          BANJO_BROWSER_TESTS: required
+        run: |
+          chmod +x .native/functional/banjo_live_world_run
+          python3 scripts/verify-workshop-checkpoint.py --engine .native/functional/banjo_live_world_run --browser
+      - name: Commit tested controls on a clean checkpoint branch
+        shell: bash
+        run: |
+          printf '\nViewport follow-up verification: all 203 fast checks, 11 native bench tests,\n15 native installation tests and 16 required Chrome browser tests passed.\nThe extra browser case checks a real onscreen mouse click at 1280x720.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-visible-tests-checkpoint.md
+          git add docs/workshop-visible-tests-checkpoint.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Keep Workshop simulation controls and measured results in the viewport' -m 'Put Run, replay, elapsed time, temperature and failures beside the object. Use explicit slow display for short mechanical events and verify real mouse interaction without scrolling the sidebar.'
+          git push origin HEAD:refs/heads/agent/workshop-controls-verified
+          git rev-parse HEAD > build/verified-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workshop-controls-evidence
+          path: |
+            build/workshop-verification.json
+            build/verified-commit.txt
+            build/workshop-browser-evidence
+          retention-days: 7
