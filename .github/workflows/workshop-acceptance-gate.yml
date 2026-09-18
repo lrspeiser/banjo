@@ -2,7 +2,7 @@ name: workshop-acceptance-gate
 on:
   push:
     branches: [agent/workshop-next-checkpoints]
-    paths: [.github/workflows/workshop-acceptance-gate.yml, .agent/acceptance.patch.gz.b64]
+    paths: [.github/workflows/workshop-acceptance-gate.yml, .agent/acceptance.patch.gz.b64, .agent/acceptance-fix.patch]
 permissions:
   contents: write
 concurrency:
@@ -16,14 +16,18 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Apply only the reviewed patch to the pinned main revision
+      - name: Apply only the reviewed patches to the pinned main revision
         shell: bash
         run: |
           base64 --decode .agent/acceptance.patch.gz.b64 | gzip --decompress > "$RUNNER_TEMP/acceptance.patch"
+          cp .agent/acceptance-fix.patch "$RUNNER_TEMP/acceptance-fix.patch"
           echo "937d3d5fd13a7700c8486a531193f9cadc5c78e007d37282d7754540003661bb  $RUNNER_TEMP/acceptance.patch" | sha256sum --check
+          echo "8d41c999deda0d3fa499ec56d1f5a2a9208bac6f6b70ab9e23d2125855b4177b  $RUNNER_TEMP/acceptance-fix.patch" | sha256sum --check
           git checkout -b acceptance-clean 971261cd81d967fe928f10d796bf5370ddd062c9
           git apply --check --unidiff-zero "$RUNNER_TEMP/acceptance.patch"
           git apply --index --unidiff-zero "$RUNNER_TEMP/acceptance.patch"
+          git apply --check --unidiff-zero "$RUNNER_TEMP/acceptance-fix.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/acceptance-fix.patch"
           git diff --cached --check
       - name: Build the unchanged native engine
         run: |
@@ -39,11 +43,11 @@ jobs:
       - name: Commit only verified product changes to the checkpoint branch
         shell: bash
         run: |
-          printf '\n## Published verification\n\nThe required GitHub Actions gate passed the fast, native-engine and all seven Chrome browser tests.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-acceptance-checkpoint.md
+          printf '\n## Published verification\n\nThe required GitHub Actions gate passed the fast, native-engine and all eight Chrome browser tests.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-acceptance-checkpoint.md
           git add docs/workshop-acceptance-checkpoint.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Evaluate explicit exact-Matter load limits and preserve exact-run evidence' -m 'Add opt-in user-declared acceptance limits, exact geometry provenance, immutable evidence imports, and stale-verdict protection. Verify native glass/oak/iron behavior and browser controls; do not infer untested capability ranges.'
+          git commit -m 'Evaluate explicit exact-Matter load limits and preserve exact-run evidence' -m 'Add opt-in user-declared acceptance limits, exact geometry provenance, immutable evidence imports, and stale-verdict protection. Preserve active controls across delayed history loading. Verify native glass/oak/iron behavior and browser controls; do not infer untested capability ranges.'
           git push origin HEAD:refs/heads/agent/workshop-acceptance-verified
           git rev-parse HEAD > build/verified-commit.txt
       - name: Keep verification evidence
