@@ -835,7 +835,7 @@ function installEditor() {
   }
   $(".ws-viewport").append(context);
   const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
-  setup.onclick=()=>{benchTestRequest++;clearPlayback();scheduleSetup(0);};
+  setup.onclick=()=>{benchTestRequest++;$("#ws-bench-result").replaceChildren();clearPlayback();scheduleSetup(0);};
   dock.insertBefore(setup, $("#ws-simulation-feedback"));
 
   const matterMode=make("select",{id:"ws-matter-mode"});[["cells","Cells"],["solid","Solid CellSkin"],["skin-cells","Skin + cells"]].forEach(([v,l])=>addOption(matterMode,v,l));const modeLabel=make("label",{class:"ws-field"},"Matter display");modeLabel.append(matterMode);editor.append(modeLabel);

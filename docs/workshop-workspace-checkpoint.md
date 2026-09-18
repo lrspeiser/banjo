@@ -69,3 +69,13 @@ needs its geometry, interfaces and mechanical behavior checked on reuse.
 
 The focused native, Workshop and required Chrome browser gate passed.
 Run: https://github.com/lrspeiser/banjo/actions/runs/35402468116
+
+## Final UI review
+
+Review of the captured browser images found that Reset to setup left the previous
+verdict in the result panel. Reset now clears that verdict. The strengthened
+setup/run/reset regression checks this directly; visible motion/replay, component
+copy/inspection, and the late-run/component race were also rerun in Chrome.
+The fast Workshop gate passed again. This UI-only follow-up does not change the
+native engine already verified in the full integration gate above.
+Run: https://github.com/lrspeiser/banjo/actions/runs/35403814615

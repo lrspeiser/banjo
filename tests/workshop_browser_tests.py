@@ -276,6 +276,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
         self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
         self.assert_geometry_is_visible()
+        self.assertEqual("",self.js("document.querySelector('#ws-bench-result').textContent"),
+                         "Reset must not present the previous run's verdict as an unrun setup result")
 
     def test_component_copy_and_saved_inspection_show_solid_geometry_without_replacing_product(self):
         self.open_product("cart")
