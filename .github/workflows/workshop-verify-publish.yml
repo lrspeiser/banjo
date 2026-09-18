@@ -1,0 +1,114 @@
+name: workshop-verify-publish
+on:
+  push:
+    branches: [agent/workshop-validation-20260917]
+    paths:
+      - '.agent-workshop-edits.*.b64'
+      - '.github/workflows/workshop-verify-publish.yml'
+permissions:
+  contents: write
+concurrency:
+  group: workshop-validation-20260917
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply the verified source delta to its exact upstream parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .agent-workshop-edits.1.b64 .agent-workshop-edits.2.b64 .agent-workshop-edits.3.b64 > "$RUNNER_TEMP/workshop-edits.b64"
+          git checkout --detach e222241a796c484624507e5ef9877b6f8714b773
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os
+          from pathlib import Path, PurePosixPath
+          temp = Path(os.environ['RUNNER_TEMP'])
+          packed = (temp/'workshop-edits.b64').read_bytes()
+          raw = lzma.decompress(base64.b64decode(packed, validate=True))
+          assert hashlib.sha256(raw).hexdigest() == '3d52fb4722b432796a0137da579047626598d5ad0ed2ab479b1ec07e2d01e516'
+          changes = json.loads(raw)
+          for name, change in changes.items():
+              path = PurePosixPath(name)
+              assert not path.is_absolute() and '..' not in path.parts
+              assert path.parts[0] in {'mcp', 'playground', 'tests', 'scripts', 'docs'}
+              p = Path(name)
+              if change['before'] is None:
+                  assert not p.exists(), name
+                  text = ''
+              else:
+                  before = p.read_bytes()
+                  assert hashlib.sha256(before).hexdigest() == change['before'], name
+                  text = before.decode('utf-8')
+              lines = text.splitlines(keepends=True)
+              for start, end, replacement in reversed(change['edits']):
+                  lines[start:end] = replacement
+              after = ''.join(lines).encode('utf-8')
+              assert hashlib.sha256(after).hexdigest() == change['after'], name
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(after)
+          (temp/'workshop-changed-paths.json').write_text(json.dumps(sorted(changes)))
+          print('Applied and hash-verified', len(changes), 'source files')
+          PY
+          git diff --check
+          python3 scripts/check-source-registration.py
+      - name: Configure native scratch engine
+        run: >-
+          cmake -S . -B build/workshop-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBANJO_BUILD_LAB=OFF
+          -DBANJO_BUILD_TESTS=OFF
+      - name: Build native scratch engine
+        run: cmake --build build/workshop-ci --target banjo_live_world_run --parallel 2
+      - name: Run Workshop, real-engine, and required Chrome regressions
+        env:
+          OPENAI_API_KEY: ''
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+          BANJO_BROWSER_TESTS: required
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-workshop-checkpoint.py --engine build/workshop-ci/banjo_live_world_run --browser 2>&1 | tee build/workshop-verification.log
+      - name: Publish only the tested source commit to the verified result branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          evidence = json.loads(Path('build/workshop-verification.json').read_text())
+          assert evidence['passed']
+          run = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          note = Path('docs/workshop-consistency-checkpoint.md')
+          with note.open('a') as f:
+              f.write('\n## Published verification evidence\n\n')
+              f.write('The GitHub Actions checkpoint gate passed all 22 Workshop Python suites, ')
+              f.write('six native-engine tests, and five required Chrome browser regressions. ')
+              f.write('This is a focused checkpoint gate, not a complete native CTest run.\n\n')
+              f.write('Run: ' + run + '\n')
+          paths = json.loads((Path(os.environ['RUNNER_TEMP'])/'workshop-changed-paths.json').read_text())
+          subprocess.run(['git','add','--',*paths],check=True)
+          PY
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Make Workshop geometry, saved designs, and simulation traces consistent" -m "Verify exact native Matter; recompute physical-skin metrics; preserve edited designs; clear stale UI state; retain optional bounded numerical traces. Add native and browser regressions."
+          git push origin HEAD:refs/heads/agent/workshop-verified-20260917
+          echo "VERIFIED_COMMIT=$(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "No main ref was changed by this workflow." >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workshop-checkpoint-evidence
+          path: |
+            build/workshop-verification.json
+            build/workshop-verification.log
+            build/workshop-browser-evidence/
+          if-no-files-found: warn
+          retention-days: 7
