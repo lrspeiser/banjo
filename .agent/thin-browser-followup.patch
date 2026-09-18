@@ -1,0 +1,58 @@
+diff --git a/docs/workshop-thin-parts-checkpoint.md b/docs/workshop-thin-parts-checkpoint.md
+index ea08f39..fcf5ffe 100644
+--- a/docs/workshop-thin-parts-checkpoint.md
++++ b/docs/workshop-thin-parts-checkpoint.md
+@@ -3,5 +3,7 @@
+ September 17, 2026 Pacific. Started at `b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31`; integrated and retested on
+ `b76502654f3bb5e85a7882362a27398f99667cc6` after the parallel visible-test repair
+-landed. Its drop/slide/load controls, automatic playback, stable mesh reuse and
++landed, then rebased onto `b03043ee4a151647b17c2fb91ee197c8292f4878` to retain
++the viewport Run/replay/readout dock and late-history editor fix. Its
++drop/slide/load controls, automatic playback, stable mesh reuse and
+ measured thermal visualization are preserved. The UI filters tests by the selected
+ mechanical model; no rigid trial is advertised as a lattice fracture experiment.
+diff --git a/playground/workshop.js b/playground/workshop.js
+index fb9bb55..fea1dd7 100644
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -366,4 +366,7 @@ function drawPlayback() {
+   if (recording.test === "kettle_heat") {
+     live.textContent = `Water ${celsius(thermal.get("water charge"))} · heater ${celsius(thermal.get("heater plate"))}. Blue → red: measured 20–100 °C. Contained thermal model; no sloshing.`;
++  } else if (recording.geometry_basis === "verified-precise-rigid-shapes") {
++    const bodies = new Set((frame.bodies || []).map(part => part.object_id));
++    live.textContent = `${present.size} collision shapes · ${bodies.size} rigid ${bodies.size === 1 ? "body" : "bodies"} · ${Number(frame.t_s).toFixed(2)} seconds. Actual native poses; no internal failure model.`;
+   } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
+@@ -965,5 +968,5 @@ function renderBenchResult(result) {
+   for (const limitation of result.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, limitation));
+   const details = make("details", { class:"ws-family" }); details.append(make("summary", {}, "Measured evidence"));
+-  const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,duration_s:result.playback.duration_s,states:result.playback.frames.length} : undefined}, null, 2); details.append(pre); root.append(details);
++  const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,geometry_basis:result.playback.geometry_basis,duration_s:result.playback.duration_s,states:result.playback.frames.length,sampling:result.playback.sampling} : undefined}, null, 2); details.append(pre); root.append(details);
+ }
+ async function runBenchTest() {
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 33d8705..b6fadca 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -383,6 +383,19 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         proof=json.loads(self.js("document.querySelector('#ws-bench-result pre').textContent"))
+         self.assertEqual('measured',proof['status']);self.assertFalse(proof['strength_certified'])
+-        self.assertEqual(0,proof['measured']['stored_cells']);self.assertEqual(5,len(proof['playback']['frames'][0]['bodies']))
+-        self.field('#ws-play-timeline',30,'input')
++        self.assertEqual(0,proof['measured']['stored_cells'])
++        self.assertEqual(5,proof['measured']['collision_boxes'])
++        self.assertTrue(proof['native_geometry_verified'])
++        self.assertEqual('verified-precise-rigid-shapes',proof['playback']['geometry_basis'])
++        self.assertGreater(proof['playback']['states'],2)
++        # The evidence panel deliberately summarizes (rather than duplicates)
++        # the full native trace. Exercise the actual rendered states too.
++        if self.js("document.querySelector('#ws-play').textContent") == 'Pause':
++            self.click('#ws-play')
++        self.field('#ws-play-timeline',0,'input')
++        before=self.js("document.querySelector('#workshop-stage').dataset.physicsPose")
++        self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
++        self.assertNotEqual(before,self.js("document.querySelector('#workshop-stage').dataset.physicsPose"))
++        self.assertEqual('5',self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
++        self.assertIn('5 collision shapes · 1 rigid body',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+         self.assertIn('Exact rigid',self.js("document.querySelector('#ws-play-note').textContent"))
+         self.click('[data-mode="details"]');self.field('#ws-save-name','Browser precise rigid table');self.click('#ws-save-design')
