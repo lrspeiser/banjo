@@ -2,7 +2,7 @@ name: thin-startup-verify
 on:
   push:
     branches: [agent/thin-part-representations]
-    paths: [.github/workflows/thin-startup-verify.yml, .agent/thin-startup.patch]
+    paths: [.github/workflows/thin-startup-verify.yml, .agent/thin-token.patch]
 permissions:
   contents: write
 concurrency:
@@ -22,19 +22,19 @@ jobs:
       BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
     steps:
       - uses: actions/checkout@v5
-      - name: Publish bounded startup fix onto current candidate
+      - name: Publish bounded test fixture fix onto current candidate
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/thin-evidence"
-          cp .agent/thin-startup.patch "$RUNNER_TEMP/startup.patch"
-          git fetch --depth=1 origin c9843ea4f117046b302ac1602704377a4e1f7909
-          git checkout --detach c9843ea4f117046b302ac1602704377a4e1f7909
-          git apply --index "$RUNNER_TEMP/startup.patch"
+          cp .agent/thin-token.patch "$RUNNER_TEMP/followup.patch"
+          git fetch --depth=1 origin 64c0b12581f7fdf0cb6db6d05d5f6968d637dc09
+          git checkout --detach 64c0b12581f7fdf0cb6db6d05d5f6968d637dc09
+          git apply --index "$RUNNER_TEMP/followup.patch"
           git diff --cached --check
           node --check playground/workshop.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Keep Workshop editor placement independent of nested diagnostic headings' -m 'Fix the real Chrome startup regression caught before main promotion; retain startup screenshots and exceptions when unittest setup fails.'
+          git commit -m 'Seed thin-part browser fixtures with the required local session token' -m 'Reuse the existing authenticated public API helper. Keep CSRF protections and all geometry, native-motion and persistence assertions intact.'
           git push origin HEAD:refs/heads/agent/thin-parts-candidate
           git rev-parse HEAD | tee "$RUNNER_TEMP/thin-evidence/commit.txt"
           git archive --format=tar.gz HEAD > "$RUNNER_TEMP/thin-evidence/source.tar.gz"
