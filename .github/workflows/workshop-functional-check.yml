@@ -1,0 +1,50 @@
+name: workshop-functional-check
+on:
+  push:
+    branches: [agent/workshop-functional-tests]
+permissions:
+  contents: read
+concurrency:
+  group: workshop-functional-check
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD > banjo-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workshop-functional-source
+          path: banjo-source.tar.gz
+          retention-days: 3
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Build native runtime
+        run: |
+          cmake -S . -B build/functional -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON -DBANJO_BUILD_PRECOMPUTE=OFF
+          cmake --build build/functional --target banjo_live_world_run banjo_c --parallel 4
+      - name: Verify actual Workshop behavior
+        env:
+          OPENAI_API_KEY: ""
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+          BANJO_BROWSER_TESTS: required
+        run: python3 scripts/verify-workshop-checkpoint.py --engine build/functional/banjo_live_world_run --browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workshop-functional-evidence
+          path: |
+            build/workshop-verification.json
+            build/workshop-browser-evidence
+            build/functional/banjo_live_world_run
+            build/functional/libbanjo.so*
+          retention-days: 3
