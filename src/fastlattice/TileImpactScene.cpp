@@ -130,6 +130,8 @@ std::vector<SceneBody> readSceneFile(const std::string &path) {
 void readSceneSettings(const std::string &text, TileImpactRequest &request) {
     const nlohmann::json document = nlohmann::json::parse(text);
     if (!document.is_object()) return;   // a bare array is bodies and nothing else
+    if (document.contains("precise_rigid_bodies"))
+        request.precise_rigid_scene_json = document.at("precise_rigid_bodies").dump();
     if (document.contains("plasticity"))
         request.plasticity = document.at("plasticity").get<bool>();
     if (document.contains("hardening_ratio"))
@@ -324,6 +326,8 @@ std::vector<std::uint32_t> componentIds(const ActiveMatter &matter, std::size_t 
 } // namespace
 
 std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &request) {
+    if (!request.precise_rigid_scene_json.empty())
+        throw std::invalid_argument("precise rigid bodies require the live engine; the lattice batch lane cannot simulate them");
     auto setup = std::make_unique<TileImpactSetup>();
     TileImpactSetup &s = *setup;
     s.request = request;

@@ -447,6 +447,8 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
     the opening: it is not part of what the room is, and export_spec leaves it
     out.
     """
+    if spec.get("precise_rigid_bodies"):
+        raise ValueError("The chat authoring adapter cannot yet edit precise-rigid rooms. Use live picking/carrying or Workshop placement; the existing room was not changed.")
     validated = fracture_lab.validate(spec)
     document = fracture_lab.scene_document(validated)
     world_id = "room-" + uuid.uuid4().hex[:8]

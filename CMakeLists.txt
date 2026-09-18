@@ -409,7 +409,8 @@ if(BANJO_BUILD_HEADLESS)
     banjo_enable_warnings(banjo_environment)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp
-                                       src/fastlattice/ToolTerrain.cpp)
+                                       src/fastlattice/ToolTerrain.cpp
+    src/fastlattice/PreciseRigidScene.cpp)
     target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
@@ -1382,4 +1383,15 @@ if(TARGET raylib AND TARGET banjo_platform)
  target_link_libraries(banjo_runtime_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
  add_executable(banjo_platform_lab src/viewer/platform.cpp)
  target_link_libraries(banjo_platform_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
+endif()
+
+# Precise live compounds must be tested through the real native subprocess,
+# including installation transactions and persistent state, not only JSON.
+if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
+    add_test(NAME banjo_precise_rigid_live_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_PRECISE_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/precise_rigid_live_tests.py -v)
+    set_tests_properties(banjo_precise_rigid_live_tests PROPERTIES TIMEOUT 120)
 endif()

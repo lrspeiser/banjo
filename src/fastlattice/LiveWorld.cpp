@@ -1,5 +1,6 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/ToolTerrain.hpp"
+#include "fastlattice/PreciseRigidScene.hpp"
 
 #include "core/Plane.hpp"
 #include "core/RigidPrimitive.hpp"
@@ -569,6 +570,11 @@ struct LiveWorld::Impl {
     TileImpactRequest request{};
     std::unique_ptr<TileImpactSetup> setup;
     std::unique_ptr<JoltWorld> world;
+    std::map<std::string, PreciseRigidBody> precise_bodies;
+    void requireLatticeRoom(const char *operation) const {
+        if (!precise_bodies.empty())
+            throw std::invalid_argument(std::string(operation) + ": precise-rigid rooms currently support motion, picking and carrying only; internal failure, thermal mechanics, attachments and fabrication are unavailable");
+    }
     std::vector<LiveBodyPose> described;   // one per rigid fragment, static parts
     std::vector<MatterBodyId> body_of;     // parallel to described
     // What each body is made of, kept because breaking one means rebuilding its
@@ -1996,6 +2002,7 @@ struct CarryPlan {
     std::vector<std::uint32_t> node_begin_now, bond_begin_now;
     // Each saved body's part, by the body's name (npos for one whose cells are
     // not all of one part), and the saved bodies of each saved part.
+    std::set<std::string> precise_carried;
     std::unordered_map<std::string, std::size_t> part_of_body;
     std::vector<std::vector<std::string>> bodies_of;
     // The saved parts in the order their cells and bonds begin, for finding
@@ -2021,6 +2028,7 @@ struct CarryPlan {
     }
     // Whether a saved body comes back as it was saved.
     [[nodiscard]] bool carries(const std::string &body) const {
+        if (precise_carried.count(body)) return true;
         const auto found = part_of_body.find(body);
         return found != part_of_body.end() && partBack(found->second);
     }
@@ -2294,7 +2302,28 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // middle of everything -- a pane resting on the floor then reads as 140 mm
     // buried and every attempt to break it is refused as too deeply penetrated.
     if (!impl.request.bodies.empty()) impl.request.layout = SceneLayout::Flat;
-    impl.setup = buildTileImpactSetup(impl.request);
+    for (auto &body : readPreciseRigidScene(request.precise_rigid_scene_json))
+        impl.precise_bodies.emplace(body.name, std::move(body));
+    if (!impl.precise_bodies.empty()) {
+        // First live admission boundary: anchored scenery plus explicit rigid
+        // bodies. A deformable contact partner needs an authoritative coupled
+        // failure solve; silently omitting it is not an approximation we make.
+        if (request.bodies.empty() || !request.thermo_scene_json.empty() ||
+            !request.environment_scene_json.empty() || request.loose_cells)
+            throw std::invalid_argument("precise-rigid rooms require anchored flat-floor scenery without thermal or terrain declarations");
+        for (const SceneBody &body : request.bodies)
+            if (!body.anchored || impl.precise_bodies.count(body.name) ||
+                (!body.join.empty() && impl.precise_bodies.count(body.join)))
+                throw std::invalid_argument("precise rigid bodies cannot yet share a room with dynamic lattice bodies or duplicate names");
+        if (saved) {
+            for (const char *key : {"joints", "blades", "tool_points", "motors", "controls"})
+                if (saved->doc.contains(key) && !saved->doc[key].empty())
+                    throw std::invalid_argument("precise-rigid carry cannot preserve an unsupported attached mechanism");
+        }
+    }
+    auto lattice_request = impl.request;
+    lattice_request.precise_rigid_scene_json.clear();
+    impl.setup = buildTileImpactSetup(lattice_request);
     TileImpactSetup &setup = *impl.setup;
     const TileImpactRequest &r = impl.request;
     // Terrain and water. With ground that is not flat, the flat floor the
@@ -2366,6 +2395,28 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // were, and where their cells and bonds are numbered now (CarryPlan).
     CarryPlan plan;
     if (carrying) plan = planCarry(saved->doc, impl.part_prints, impl.lattice_settings, *carry);
+    if (saved) {
+        std::set<std::string> precise_names, saved_names;
+        for (const auto &b : saved->doc.at("bodies")) {
+            if (!saved_names.insert(b.at("name").get<std::string>()).second)
+                throw std::invalid_argument("duplicate saved body name");
+            if (b.value("mechanical_model", std::string{}) != "precise-rigid-v1") {
+                if (!impl.precise_bodies.empty() && !b.value("anchored", false))
+                    throw std::invalid_argument("precise-rigid carry cannot omit a saved dynamic lattice body");
+                continue;
+            }
+            const auto name = b.at("name").get<std::string>();
+            const auto found = impl.precise_bodies.find(name);
+            if (!precise_names.insert(name).second || found == impl.precise_bodies.end() ||
+                b.at("precise_rigid_definition") != nlohmann::json::parse(found->second.definition_json))
+                throw std::invalid_argument("saved precise-rigid geometry or material changed; exact state carry refused");
+            if (carrying) plan.precise_carried.insert(name);
+        }
+        if (!carrying && precise_names.size() != impl.precise_bodies.size())
+            throw std::invalid_argument("saved precise-rigid body set differs from the scene");
+        if (!impl.precise_bodies.empty() && carrying && !plan.exact)
+            throw std::invalid_argument("precise-rigid installation requires exact preservation of existing scenery");
+    }
     // A saved bond's number in this scene: the same for a world opened whole;
     // for one carried, its number in its own part from where that part begins
     // now -- or none, for a part that does not come back as it was saved.
@@ -2571,6 +2622,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         std::set<std::string> names;
         std::set<MatterBodyId> ids;
         for (const nlohmann::json &b : doc.at("bodies")) {
+            if (b.value("mechanical_model", std::string{}) == "precise-rigid-v1") continue;
             LiveBodyPose described{};
             described.name = b.at("name").get<std::string>();
             const std::string name = described.name;
@@ -2750,6 +2802,55 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                             .material = setup.ground_material,
                             .state = {.center_of_mass_world_m = ledge.center_m}, .fixed = true});
     impl.world->addFragments(build.rigid_fragments);
+
+    // Exact compounds live in the same Jolt world as the anchored lattice
+    // scenery. Their source definition, COM frame and native mass properties
+    // are authoritative; an empty cell array is intentional, never a hull.
+    std::set<MatterBodyId> used_ids(impl.body_of.begin(), impl.body_of.end());
+    for (const auto &[name, body] : impl.precise_bodies) {
+        const nlohmann::json *previous = nullptr;
+        if (saved) for (const auto &b : saved->doc.at("bodies"))
+            if (b.at("name") == name) previous = &b;
+        MatterBodyId id = previous ? previous->at("body_id").get<MatterBodyId>() : impl.next_body_id++;
+        if (id < 1000 || !used_ids.insert(id).second)
+            throw std::invalid_argument("precise rigid saved body ID collision");
+        impl.next_body_id = std::max(impl.next_body_id, id + 1);
+        RigidSnapshot pose = body.initial;
+        bool awake = true;
+        if (previous) {
+            if (previous->value("shape", std::string{}) != "compound" ||
+                previous->value("anchored", false) || previous->value("fragment", false) ||
+                previous->contains("parked") || !previous->at("nodes_b64").get<std::string>().empty() ||
+                !previous->at("offsets_b64").get<std::string>().empty() ||
+                previous->value("revision", 0U) != 0 || numberFrom(previous->at("dent_m")) != 0.0)
+                throw std::invalid_argument("invalid or unsupported saved precise-rigid state");
+            const Vec3 dims = vecFrom(previous->at("dimensions_m"));
+            if (length(dims - body.dimensions_m) > 1e-12 || previous->at("material") != materialPresetName(body.material) ||
+                previous->at("color_rgba").get<std::uint32_t>() != body.color_rgba)
+                throw std::invalid_argument("saved precise-rigid descriptor does not match its source");
+            pose = rigidFrom(previous->at("pose"));
+            awake = previous->at("awake").get<bool>();
+        }
+        impl.world->addCompound({.body_id=id, .parts=body.parts,
+            .material=makeReferenceMaterial(body.material), .state=pose,
+            .mass_kg=body.mass_kg, .inertia_local_kg_m2=body.inertia});
+        if (previous) {
+            const auto surface = impl.world->surfaceOf(id);
+            if (numberFrom(previous->at("friction")) != surface.friction ||
+                numberFrom(previous->at("restitution")) != surface.restitution ||
+                numberFrom(previous->at("rolling_resistance")) != surface.rolling_resistance)
+                throw std::invalid_argument("saved precise-rigid surface differs from its material model");
+            Placement at; at.name=name; at.id=id; at.pose=pose; at.awake=awake;
+            placements.push_back(at);
+        }
+        LiveBodyPose d;
+        d.name=name; d.material=materialPresetName(body.material); d.shape="compound";
+        d.mechanical_model="precise-rigid-v1"; d.dimensions_m=body.dimensions_m; d.color_rgba=body.color_rgba;
+        for (const auto &part : body.parts) d.rigid_boxes_local.push_back({part.center_local_m, part.geometry.dimensions_m});
+        impl.described.push_back(std::move(d)); impl.body_of.push_back(id); impl.nodes_of.emplace_back();
+        impl.limits_of.emplace_back(); impl.impedance_of.push_back(0); impl.density_of.push_back(makeReferenceMaterial(body.material).density_kg_m3);
+        impl.tensile_of.push_back(0); impl.compressive_of.push_back(0);
+    }
 
     for (std::size_t i = 0; i < impl.described.size(); ++i)
         impl.index_of.emplace(impl.described[i].name, i);
@@ -3429,7 +3530,7 @@ bool LiveWorld::judgeStep() {
             const std::size_t other = pair[1 - which];
             const bool both = a_known && b_known;
             if (which == 1 && !both) break;
-            if (impl_->described[struck].anchored) continue;
+            if (impl_->described[struck].anchored || impl_->precise_bodies.count(impl_->described[struck].name)) continue;
             // The ground is what it is made of where it was hit: a stone that
             // lands on sand meets soft ground, and one that lands on bare rock
             // meets stone. Judging every landing against the flat floor's
@@ -3990,6 +4091,7 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
                           double lower_deg, double upper_deg,
                           double friction_torque_n_m) {
+    impl_->requireLatticeRoom("hinge");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4051,6 +4153,7 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
 unsigned LiveWorld::slide(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
                           double lower_m, double upper_m, double friction_n) {
+    impl_->requireLatticeRoom("slide");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4102,6 +4205,7 @@ unsigned LiveWorld::slide(const std::string &a, const std::string &b,
 unsigned LiveWorld::tie(const std::string &a, const std::string &b,
                         const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                         double length_m, double breaking_tension_n) {
+    impl_->requireLatticeRoom("tie");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4159,6 +4263,7 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
 unsigned LiveWorld::spring(const std::string &a, const std::string &b,
                            const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                            double rest_m, double stiffness_n_m, double damping_n_s_m) {
+    impl_->requireLatticeRoom("spring");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4214,6 +4319,7 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                         const Vec3 &point_world_m, const Vec3 &axis_world,
                         double holds_tension_n, double holds_shear_n,
                         double comes_off_n) {
+    impl_->requireLatticeRoom("fix");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4270,6 +4376,7 @@ unsigned LiveWorld::reeve(const std::string &a, const std::string &b,
                           const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                           const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,
                           double ratio, double length_m) {
+    impl_->requireLatticeRoom("reeve");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4590,6 +4697,7 @@ double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) 
 unsigned LiveWorld::drum(const std::string &drum, const std::string &load, const Vec3 &centre_world_m,
                          const Vec3 &axis_world, double radius_m, const Vec3 &load_point_world_m, int winds,
                          double length_m, double out_m) {
+    impl_->requireLatticeRoom("drum");
     const auto first = impl_->index_of.find(drum);
     const auto second = impl_->index_of.find(load);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -5176,6 +5284,7 @@ void LiveWorld::surveyLoads() {
     impl_->overloaded.clear();
     impl_->bearing_on.clear();
     impl_->sustained_by.clear();
+    if (!impl_->precise_bodies.empty()) return; // no internal strength calculation in this model
     const std::size_t count = impl_->described.size();
     if (count == 0) return;
 
@@ -5820,6 +5929,7 @@ void LiveWorld::foreseeCollisions(double horizon_s) {
 // Cheap, but not free: a ray is 0.02 ms and there can be a hundred bodies. So
 // it is asked at a stride, and only of things actually going somewhere.
 void LiveWorld::foresee() {
+    if (!impl_->precise_bodies.empty()) return;
     if (!(impl_->foresee_horizon_s > 0.0)) return;
     constexpr std::uint64_t kStride = 8;   // ~30 times a second at a live rate
     if (impl_->steps_taken % kStride != 0) return;
@@ -5944,6 +6054,7 @@ void LiveWorld::foresee() {
 // instead of dropping it the arrival speed will not match and it is refused.
 // Being wrong costs a worker thread.
 void LiveWorld::guessWhatIsHeld(std::set<std::string> &still_coming) {
+    if (!impl_->precise_bodies.empty()) return;
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     if (impl_->pending || !impl_->queued.empty()) return;
     const std::size_t held = impl_->holding;
@@ -6053,6 +6164,7 @@ double LiveWorld::sceneLatticeStep_s() const { return impl_->setup ? impl_->setu
 std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                                                         double window_s,
                                                         const Foresight *guess) {
+    impl_->requireLatticeRoom("prepared");
     auto held = std::make_unique<Pending>();
     Pending &job = *held;
     job.name = name;
@@ -7504,6 +7616,7 @@ std::vector<thermo::BodyShape> LiveWorld::thermoShapes() const {
     shapes.reserve(impl_->described.size());
     for (std::size_t i = 0; i < impl_->described.size(); ++i) {
         const LiveBodyPose &body = impl_->described[i];
+        if (impl_->precise_bodies.count(body.name)) continue; // thermal model is not implemented
         const MatterBodyId id = impl_->body_of[i];
         if (!impl_->world->contains(id)) continue;
         const RigidMechanicalState state = impl_->world->mechanicalState(id);
@@ -7572,6 +7685,7 @@ void LiveWorld::settleThermo() {
 const thermo::ThermoWorld *LiveWorld::thermo() const { return impl_->thermo.get(); }
 
 void LiveWorld::declareThermo(const std::string &json) {
+    impl_->requireLatticeRoom("declareThermo");
     thermo::Declarations declared = thermo::readDeclarations(json);
     thermo::ThermoWorld &network = ensureThermo();
     // A heater declared into a running world starts from now.
@@ -7580,6 +7694,7 @@ void LiveWorld::declareThermo(const std::string &json) {
 }
 
 unsigned LiveWorld::heat(const std::string &target, double power_w, double seconds) {
+    impl_->requireLatticeRoom("heat");
     thermo::ThermoWorld &network = ensureThermo();
     return network.heat({target, power_w, network.timeS(), seconds, "heater"});
 }
@@ -8600,6 +8715,14 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
                                      {"stiffness_mean", m.bond_stiffness_mean}}},
                           {"revision", m.revision}});
     }
+    for (const auto &[name, body] : impl_->precise_bodies) {
+        bodies.push_back({{"name", name}, {"material", materialPresetName(body.material)},
+                          {"mechanical_model", "precise-rigid-v1"}, {"tracked", false},
+                          {"internal_failure_supported", false}, {"thermal_supported", false},
+                          {"attachment_failure_supported", false}, {"cells", 0},
+                          {"collision_boxes", body.parts.size()},
+                          {"mass_kg", impl_->world->mechanicalState(impl_->body_of[impl_->index_of.at(name)]).mass_kg}});
+    }
     json statics_json = json::array();
     for (const LiveStatics &s : statics())
         statics_json.push_back({{"name", s.name},
@@ -9144,6 +9267,7 @@ unsigned LiveWorld::blade(const std::string &body, const Vec3 &heel_world_m,
                           const Vec3 &tip_world_m, const Vec3 &facing_world,
                           double thickness_m, double edge_radius_m, double bevel_deg,
                           const Vec3 &grip_world_m) {
+    impl_->requireLatticeRoom("blade");
     Impl &I = *impl_;
     // Every refusal says which rule it broke: a caller told only "no" -- a
     // model, say -- tries something else at random.
@@ -11182,6 +11306,7 @@ ToolTerrainHost LiveWorld::toolHost() const {
 unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
                               double width_m, double thickness_m, double angle_deg, double length_m,
                               const Vec3 &grip_world_m) {
+    impl_->requireLatticeRoom("toolPoint");
     Impl &I = *impl_;
     const terrain::ToolPointShape shape{width_m, thickness_m, angle_deg, length_m};
     return I.tools.declare(toolHost(), body, tip_world_m, pointing_world, shape, grip_world_m,
@@ -11236,6 +11361,7 @@ const char *jointWord(JoltWorld::JointKind kind) {
 } // namespace
 
 bool LiveWorld::park(const std::string &name, std::string &why) {
+    impl_->requireLatticeRoom("park");
     Impl &I = *impl_;
     why.clear();
     const auto found = I.index_of.find(name);
@@ -11533,6 +11659,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"friction", savedNumber(surface.friction)},
                             {"restitution", savedNumber(surface.restitution)},
                             {"rolling_resistance", savedNumber(surface.rolling_resistance)}};
+        if (const auto precise = I.precise_bodies.find(d.name); precise != I.precise_bodies.end()) {
+            b["mechanical_model"] = "precise-rigid-v1";
+            b["precise_rigid_definition"] = nlohmann::json::parse(precise->second.definition_json);
+            b["precise_mass_kg"] = savedNumber(I.world->mechanicalState(id).mass_kg);
+            b["from"] = d.name;
+        }
         // Which authored thing its cells came from, by name: a piece of a tool
         // is still of that tool, for whoever keeps a record of things.
         const std::vector<std::uint32_t> &nodes = I.nodes_of[i];
@@ -11804,6 +11936,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                 ++pending_heaters;
     }
     doc["carry_readiness"] = {{"schema", "banjo.carry-readiness.v1"},
+                              {"precise_rigid_version", 1},
                               {"pending_heaters", pending_heaters},
                               {"gas_regions", gas_regions}};
     doc["not_kept"] = notKept();
@@ -11811,12 +11944,14 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
 }
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot) {
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);
         if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
             throw std::invalid_argument("it is not a saved world this engine reads");
     } catch (const std::exception &error) {
+        if (exact_required) throw;
         std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
         LiveRestore said;
         said.tier = "none";
@@ -11829,8 +11964,10 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
     try {
         return openFrom(request, &saved);
     } catch (const SavedWorldMismatch &mismatch) {
+        if (exact_required) throw;
         why = mismatch.what();
     } catch (const std::exception &error) {
+        if (exact_required) throw;
         why = std::string("the saved world could not be put back: ") + error.what();
     }
     std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
@@ -11840,12 +11977,14 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot,
                                            const LiveCarry &carry) {
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);
         if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
             throw std::invalid_argument("it is not a saved world this engine reads");
     } catch (const std::exception &error) {
+        if (exact_required) throw;
         std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
         LiveRestore said;
         said.tier = "none";
@@ -11857,6 +11996,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
     try {
         return openFrom(request, &saved, &carry);
     } catch (const std::exception &error) {
+        if (exact_required) throw;
         // Nothing half carried: the scene as it is, and why.
         std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
         LiveRestore said;

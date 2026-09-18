@@ -1,5 +1,7 @@
 # Thin parts: buildability and explicit rigid motion
 
+**Later checkpoint:** [Precise live-world authoring](workshop-precise-live-checkpoint.md) now supports exact rigid installation with anchored scenery. The isolated-only statements below describe the original checkpoint; full dynamic lattice coupling and the other listed future models remain unfinished.
+
 September 17, 2026 Pacific. Started at `b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31`; integrated and retested on
 `b76502654f3bb5e85a7882362a27398f99667cc6` after the parallel visible-test repair
 landed, then rebased onto `b03043ee4a151647b17c2fb91ee197c8292f4878` to retain

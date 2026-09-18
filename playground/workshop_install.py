@@ -27,6 +27,7 @@ import fracture_lab
 import live_session
 import world_access
 import world_room
+import precise_rigid
 import workshop_sparse_trial as sparse
 from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics, workshop_rigid
 
@@ -127,6 +128,8 @@ def _bounds(cells, h):
 
 def _body_bounds(body: dict[str, Any], h: float):
     """Conservative actual-cell AABB, including rotated cubic cell extents."""
+    if body.get("mechanical_model") == precise_rigid.MODEL:
+        return precise_rigid.bounds(body["precise_rigid_definition"]["parts"], body["pose"]["com_m"], body["pose"]["q_wxyz"])
     raw = base64.b64decode(body["offsets_b64"], validate=True)
     if not raw or len(raw) % 24:
         raise ValueError("An existing body lacks exact collision geometry")
@@ -249,7 +252,10 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
             raise ValueError("Staging could not restore every existing joint, control or tool")
         saved = _snapshot(staging)
         _preserved(snapshot, saved, root)
-        sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
+        if matter.get("schema") == workshop_rigid.SCHEMA:
+            precise_rigid.verify(saved, matter, root)
+        else:
+            sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
         return staging, saved
     except BaseException:
         if staging.session:
@@ -280,6 +286,9 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if getattr(app, "store", None) is None:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
+        models = workshop_rigid.requested_models(design, overrides)
+        if models == {"rigid"}:
+            return _preview_rigid(app, room, live, old, design, overrides, pos)
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
@@ -329,6 +338,51 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "spec": spec, "matter": matter, "root": root, "shift": shift}
         return answer
 
+
+
+def _preview_rigid(app, room, live, old, design, overrides, pos):
+    artifact = workshop_rigid.compile_rigid(design, overrides)
+    saved = _snapshot(live)
+    if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
+        raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not declare support")
+    root = "workshop-" + uuid.uuid4().hex[:16]
+    body, translation = precise_rigid.placement(artifact, root, pos)
+    spec = deepcopy(room.spec)
+    spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + [body]
+    # Admission before any new process; this does not rewrite old declarations.
+    normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
+    body = normalised[-1]
+    spec["precise_rigid_bodies"][-1] = body
+    artifact["live_definition"] = body
+    bounds = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+    for existing in saved["bodies"]:
+        if "parked" in existing:
+            continue
+        lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
+        if all(bounds[0][a] < hi[a]+.001 and bounds[1][a] > lo[a]-.001 for a in range(3)):
+            raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
+    fracture_lab.validate(spec)
+    staged, _ = _stage(app, live, old, spec, saved, artifact, root, None)
+    staged.session.close()
+    token = uuid.uuid4().hex
+    answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
+              "scene": room.scene, "session": old.id, "mode": "authoring", "root_body": root,
+              "design_id": design.design_id, "matter_physics_hash": artifact["physics_hash"],
+              "mechanical_model": precise_rigid.MODEL, "cell_size_m": float(old.spec["cell_m"]),
+              "cells": 0, "collision_boxes": artifact["collision_boxes"], "mass_kg": artifact["mass_kg"],
+              "materials": [artifact["material"]], "requested_position_m": pos,
+              "placement_grid": None, "applied_translation_m": translation, "bounds_m": bounds,
+              "engine_grid_verified": False, "native_precise_geometry_verified": True,
+              "existing_state_preserved": True, "resources_charged": False, "strength_certified": False,
+              "expires_in_s": PREVIEW_TTL_S, "limits": precise_rigid.LIMITS +
+              " Geometry, mass and state carry were checked; contact warm-start memory is not persisted."}
+    cache = _preview_cache(app)
+    while len(cache) >= MAX_PREVIEWS:
+        del cache[next(iter(cache))]
+    cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
+                    "source_hash": _hash([saved, room.spec, _inventory(room)]),
+                    "spec": spec, "matter": artifact, "root": root, "shift": None}
+    return answer
 
 def commit(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body, {"session", "scene", "preview_id", "request_id"})

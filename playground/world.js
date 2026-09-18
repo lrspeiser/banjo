@@ -817,6 +817,27 @@ function pressDent(geometry, body) {
 const placing = new THREE.Object3D();
 
 function buildMesh(body) {
+  if (body.mechanical_model === "precise-rigid-v1") {
+    const boxes = body.rigid_boxes_local;
+    if (!Array.isArray(boxes) || !boxes.length || boxes.length > 64)
+      throw new Error("Precise rigid geometry is missing; refusing to draw a substitute bounding box.");
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), look(body.material), boxes.length);
+    for (let i = 0; i < boxes.length; i++) {
+      const box = boxes[i];
+      if (![box.center_local_m, box.dimensions_m].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)) || box.dimensions_m.some(v => v <= 0))
+        throw new Error("Invalid precise rigid collision geometry.");
+      placing.position.fromArray(box.center_local_m);
+      placing.quaternion.identity();
+      placing.scale.fromArray(box.dimensions_m);
+      placing.updateMatrix(); mesh.setMatrixAt(i, placing.matrix);
+    }
+    placing.scale.set(1, 1, 1); placing.quaternion.identity();
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.userData.mechanicalModel = body.mechanical_model;
+    mesh.userData.collisionBoxes = boxes.length;
+    return mesh;
+  }
+
   // Cells first. This used to build a box or a sphere and a material before
   // asking, then throw both away for anything drawn from its cells -- which is
   // every piece of everything that ever breaks.
@@ -893,11 +914,11 @@ function draw(state) {
     // until they arrive it keeps the ones it has.
     const reshaped = held && (body.revision || 0) !== (held.revision || 0)
       && (!held.fromCells || (body.cells_local_m && body.cells_local_m.length));
-    if (!held || dentChanged || reshaped || (body.cells_local_m && !held.fromCells)) {
+    if (!held || dentChanged || reshaped || (body.cells_local_m && !held.fromCells) || (body.mechanical_model === "precise-rigid-v1" && !held.fromPrecise)) {
       if (held) forget(held.mesh);
       const mesh = buildMesh(body);
       scene.add(mesh);
-      held = { mesh, fromCells: !!(body.cells_local_m && body.cells_local_m.length),
+      held = { mesh, fromPrecise: body.mechanical_model === "precise-rigid-v1", fromCells: !!(body.cells_local_m && body.cells_local_m.length),
                dentMm: body.dent_mm || 0 };
       world.bodies.set(body.name, held);
     }
@@ -912,6 +933,7 @@ function draw(state) {
     held.dims = body.dimensions_m;
     held.anchored = !!body.anchored;
     held.shape = body.shape;
+    held.mechanicalModel = body.mechanical_model || "lattice";
     // What the engine says it weighs: what a hand has to hold up and a throw
     // has to accelerate.
     held.mass = body.mass_kg || 0;
@@ -2123,6 +2145,14 @@ function detailsModel() {
   } else {
     model.facts = "Look at something to see what it is and what you can do with it.";
     rows.push([[k("talk")], "ask the room to build or change anything"]);
+  }
+  const focused = world.bodies.get(held?.name || world.aim?.name);
+  if (focused?.fromPrecise) {
+    model.facts += " · precise rigid, no internal failure";
+    model.note = [model.note, "Exact collision geometry. Bending, fracture, heat, joints and bag storage are not implemented for this model."].filter(Boolean).join(" · ");
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i][1] === "heat it" || rows[i][1] === "put it in your bag") rows.splice(i, 1);
+    }
   }
   if (world.doing) model.note = `${world.doing}: doing it…`;
   return model;

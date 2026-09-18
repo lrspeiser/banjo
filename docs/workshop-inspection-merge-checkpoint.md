@@ -27,3 +27,6 @@ CellSkin, contract labels, display-only clipping, physically edited geometry, an
 all earlier thin-rigid/persistence/simulation cases. Runner results are recorded
 separately before main promotion. This is an inspection/UI integration, not new
 constitutive or fracture validation.
+
+
+Merged into main through `c373ef9e5c9a83b33a6712e4f34028d6232fab07`. Source/API and native gates passed in Actions run 35310683831; all 20 Chrome journeys passed in 35311121292 after an isolated Chrome-launch timeout. Physical readouts now remain consistent across Matter/Collision/Relations. PR #16 history is an ancestor of main; its old PR targeted a feature branch, so the card was closed with the integration recorded.

@@ -399,7 +399,7 @@ LIMITS = {
 # `machines` too (docs/machine-world.md), which is not in DEFAULT because a room
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
-FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions"}
+FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
@@ -1739,6 +1739,8 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
 
     document = {"plasticity": spec.get("plasticity") == "on",
                 "bodies": [body(b) for b in spec["bodies"]]}
+    if spec.get("precise_rigid_bodies"):
+        document["precise_rigid_bodies"] = spec["precise_rigid_bodies"]
     if spec.get("thermo"):
         document["thermo"] = spec["thermo"]
     # The ground and the water, read by the engine's own terrain reader.
@@ -1771,6 +1773,9 @@ def validate(spec: Any) -> dict[str, Any]:
         # striker, and what falls is whatever object was given a velocity. The
         # plate and ball fields are not read.
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
+        if "precise_rigid_bodies" in result:
+            import precise_rigid
+            result["precise_rigid_bodies"] = precise_rigid.normalise(result["precise_rigid_bodies"], result)
         result["joints"] = normalise_joints(result["joints"], result["bodies"])
         # Only a room that has machines carries them: a room without says
         # nothing, so its document -- and the word a saved world is checked

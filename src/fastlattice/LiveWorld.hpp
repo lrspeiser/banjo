@@ -27,6 +27,10 @@ struct LiveBodyPose {
     // "hull" is a piece that broke off something, whose cells are its real
     // surface -- there is no primitive for it and the host draws its cells.
     std::string shape{"hull"};
+    // Empty for legacy lattice bodies; explicit no-internal-failure model otherwise.
+    std::string mechanical_model;
+    struct PreciseBox { Vec3 center_local_m, dimensions_m; };
+    std::vector<PreciseBox> rigid_boxes_local;
     // What it measures NOW. For a box or a sphere that has burned, the part of
     // it not burned away: what collides and what is drawn. The box its matter
     // is measured against stays in LiveMaterialState::reference_m.

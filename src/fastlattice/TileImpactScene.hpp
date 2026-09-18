@@ -98,6 +98,8 @@ struct TileImpactRequest {
     // single-tile scene this lane has always run, bit for bit: nothing about a
     // body is read unless this is non-empty.
     std::vector<SceneBody> bodies;
+    // Distinct live-only rigid bodies. Never decoded into cubic lattice cells.
+    std::string precise_rigid_scene_json;
     MaterialPreset tile_material{MaterialPreset::Glass};
     MaterialPreset ball_material{MaterialPreset::Iron};
     MaterialPreset ground_material{MaterialPreset::Concrete};

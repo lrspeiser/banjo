@@ -1017,6 +1017,8 @@ def describe(state: dict[str, Any]) -> list[dict[str, Any]]:
             "name": body.get("name", ""),
             "material": body.get("material", ""),
             "shape": body.get("shape", ""),
+            "mechanical_model": body.get("mechanical_model", "lattice"),
+            "internal_failure_supported": body.get("internal_failure_supported"),
             "position_mm": [round(v * 1000.0, 1) for v in position],
             "size_mm": [round(v * 1000.0, 1) for v in size],
             "anchored": bool(body.get("anchored")),

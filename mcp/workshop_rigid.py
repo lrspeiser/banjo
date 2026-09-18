@@ -23,7 +23,7 @@ LIMITATIONS = [
     "Explicit rigid model: no bending, yielding, crushing, internal fracture or attachment failure.",
     "Face contacts inside the compound are ideal fixed connections, not strength-validated joints.",
     "Only face-connected non-overlapping axis-aligned boxes in one material are supported.",
-    "Available in the isolated rigid-motion bench; live-room carry/installation is not yet supported.",
+    "Available in the isolated bench and bounded live authoring with anchored scenery; dynamic lattice coupling, heat, joints and fabrication are unsupported.",
 ]
 
 
@@ -124,7 +124,7 @@ def compile_rigid(design, overrides=None, *, require_request=True) -> dict[str, 
             "source_geometry_preserved":True, "stored_cells":0, "collision_boxes":len(parts),
             "active_deformation_cells":0, "internal_fracture_supported":False,
             "attachment_failure_supported":False, "strength_certified":False,
-            "live_installation_supported":False, "limitations":list(LIMITATIONS)}
+            "live_installation_supported":True, "live_installation_scope":"anchored-scenery authoring only; native preview required", "limitations":list(LIMITATIONS)}
 
 
 def package(artifact: dict[str, Any], *, drop_height_m: float = .2,

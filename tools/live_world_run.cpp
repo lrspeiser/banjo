@@ -823,6 +823,17 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                           // cells burn away is rebuilt. Redraw when it moves.
                           {"revision", pose.revision},
                           {"color_rgba", std::string(colour)}};
+        if (!pose.mechanical_model.empty()) {
+            body["mechanical_model"] = pose.mechanical_model;
+            body["internal_failure_supported"] = false;
+            // Bounded to 256 boxes per room. Send exact geometry on every
+            // emitted compound record so partial/full clients cannot lose it.
+            nlohmann::json boxes = nlohmann::json::array();
+            for (const auto &box : pose.rigid_boxes_local)
+                boxes.push_back({{"center_local_m", {box.center_local_m.x, box.center_local_m.y, box.center_local_m.z}},
+                                 {"dimensions_m", {box.dimensions_m.x, box.dimensions_m.y, box.dimensions_m.z}}});
+            body["rigid_boxes_local"] = std::move(boxes);
+        }
         if (!pose.cells_local_m.empty() && (with_geometry || reshaped(pose))) {
             nlohmann::json cells = nlohmann::json::array();
             for (const Vec3 &at : pose.cells_local_m) cells.push_back(vec(at));

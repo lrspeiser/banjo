@@ -95,7 +95,7 @@ function installPlacementControls(right) {
   const yard = make("a", {href:"/world?scene=yard&hold=1"}, "Open the yard"); box.append(yard);
   for (const [axis,value] of [["x",3],["z",0]]) {
     const label=make("label", {class:"ws-field"}, `World ${axis.toUpperCase()} (m)`);
-    const input=make("input", {id:`ws-install-${axis}`, type:"number",min:"-100",max:"100",step:"0.04",value:String(value)});
+    const input=make("input", {id:`ws-install-${axis}`, type:"number",min:"-100",max:"100",step:"0.001",value:String(value)});
     input.addEventListener("input", invalidateInstallation); input.addEventListener("change", invalidateInstallation);
     label.append(input);box.append(label);
   }
@@ -117,13 +117,13 @@ function installPlacementControls(right) {
     const sequence=installation.sequence,revision=bench.revision,candidate=candidateBody();
     const source=await api("/api/world/workshop/context",{});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
-    $("#ws-install-context").textContent=`Room: ${source.scene} · native cell size ${source.cell_size_m*1000} mm. The whole prototype snaps once to this room grid.`;
+    $("#ws-install-context").textContent=`Room: ${source.scene} · native cell size ${source.cell_size_m*1000} mm. ${chosen().mechanical_model === "rigid" ? "Precise rigid geometry keeps its dimensions and continuous placement; anchored scenery only." : "The whole lattice prototype snaps once to this room grid."}`;
     const answer=await api("/api/world/workshop/preview",{session:source.session,scene:source.scene,
       mode:"authoring",candidate,position_m:position});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
     installation.preview=answer;installation.request=crypto.randomUUID();
     const result=$("#ws-install-result");result.dataset.status="preview";
-    result.textContent=`Ready: ${answer.design_id}, ${answer.mass_kg.toFixed(3)} kg, ${answer.cells} exact cells. Translation: ${answer.applied_translation_m.map(x=>x.toFixed(3)).join(", ")} m. Native geometry and existing state verified. No strength certification or resource charge.`;
+    result.textContent=`Ready: ${answer.design_id}, ${answer.mass_kg.toFixed(3)} kg, ${answer.mechanical_model === "precise-rigid-v1" ? `${answer.collision_boxes} precise collision boxes, zero lattice cells` : `${answer.cells} exact cells`}. Translation: ${answer.applied_translation_m.map(x=>x.toFixed(3)).join(", ")} m. Native geometry and existing state verified. No strength certification or resource charge. ${answer.limits}`;
     confirm.disabled=false;
   });
   confirm.onclick=async()=>{
@@ -839,7 +839,7 @@ async function loadMatter(force = false) {
     if (answer.skin) chosen().skin = answer.skin;
     if (bench.rigid) {
       $("#ws-matter-status").dataset.state = "current";
-      $("#ws-matter-status").textContent = `${bench.rigid.collision_boxes} precise rigid boxes · 0 lattice cells · ${bench.rigid.mass_kg.toFixed(3)} kg · no internal or attachment failure · isolated native bench only`;
+      $("#ws-matter-status").textContent = `${bench.rigid.collision_boxes} precise rigid boxes · 0 lattice cells · ${bench.rigid.mass_kg.toFixed(3)} kg · no internal or attachment failure · native bench and anchored-scenery live authoring`;
     } else if (bench.matter) {
       $("#ws-matter-status").dataset.state = bench.buildability?.compilation_ready ? "current" : "blocked";
       $("#ws-matter-status").textContent = `${bench.matter.shown_cells.toLocaleString()} shown / ${bench.matter.total_cells.toLocaleString()} physical cells · ${(bench.matter.cell_size_m*1000).toFixed(0)} mm · cell sampling bound ±${(bench.matter.surface_error_bound_m*1000).toFixed(1)} mm · ${bench.matter.physics_hash.slice(0,12)}`;
@@ -872,7 +872,7 @@ function renderBuildability() {
   const cost = report.costs;
   const rigid = report.requested_model === "rigid";
   const prefix = rigid ? (report.rigid?.compilation_ready
-    ? `${report.rigid.collision_boxes} precise rigid boxes, zero lattice cells. Native rigid-motion bench available; live-room installation unsupported. The following is the separate lattice comparison.`
+    ? `${report.rigid.collision_boxes} precise rigid boxes, zero lattice cells. Native rigid-motion bench and anchored-scenery installation available; no dynamic lattice coupling. The following is the separate lattice comparison.`
     : `Rigid compilation blocked: ${report.representation_error || "not yet assessed"}. No substitution was made.`)
     : report.assessment === "dimensions-only" ? "Design dimensions only; checking the selected grid…"
     : report.compilation_ready ? "Geometry fits this grid and bridge. Native installation verification is still required."

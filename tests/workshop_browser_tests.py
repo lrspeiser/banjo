@@ -375,6 +375,41 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(1,self.js(f"[...window.banjoRoom.world.bodies.keys()].filter(name=>name==={json.dumps(root)}).length"))
         self.assertGreater(self.js("document.querySelector('canvas').width"),0)
 
+    def test_precise_thin_table_installs_renders_picks_and_reloads_in_live_world(self):
+        seed=self.install_api('/api/workshop/feedback', {
+            'kind':'table','design_id':'browser-live-thin',
+            'parameters':{'top_thickness_m':.005,'leg_section_m':.015},
+            'save_design':True,'label':'Thin table for live world'})
+        self.assertEqual(200,seed['status'],seed)
+        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?workshop=1&design=browser-live-thin'})
+        self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
+        opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})
+        self.assertEqual(200,opened['status'],opened)
+        self.click('[data-mode="build"]');self.field('#ws-mechanical-model','rigid');self.click('#ws-apply-mechanics')
+        self.wait("document.querySelector('#ws-matter-status')?.textContent.includes('5 precise rigid boxes')")
+        self.click('[data-mode="details"]');self.field('#ws-install-x',3.123)
+        self.click('#ws-install-authoring');self.click('#ws-install-preview')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
+        self.assertIn('5 precise collision boxes, zero lattice cells',self.js("document.querySelector('#ws-install-result').textContent"))
+        self.assertIn('continuous placement',self.js("document.querySelector('#ws-install-context').textContent"))
+        self.click('#ws-install-confirm')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='installed'")
+        self.page.send('Page.navigate',{'url':self.js("document.querySelector('#ws-install-result a').href")})
+        self.wait("window.banjoRoom?.ready() && [...window.banjoRoom.world.bodies.values()].some(b=>b.fromPrecise)")
+        root=self.js("[...window.banjoRoom.world.bodies].find(([name,b])=>b.fromPrecise)[0]")
+        observed=self.js("(()=>{const b=window.banjoRoom.world.bodies.get("+json.dumps(root)+");const m=new window.banjoRoom.THREE.Matrix4();b.mesh.getMatrixAt(0,m);return {count:b.mesh.count,scaleY:m.elements[5],cells:b.fromCells,x:b.mesh.position.x,mass:b.mass,model:b.mechanicalModel};})()")
+        self.assertEqual(5,observed['count']);self.assertAlmostEqual(.005,observed['scaleY'],places=8)
+        self.assertFalse(observed['cells']);self.assertAlmostEqual(3.123,observed['x'],places=5)
+        self.assertAlmostEqual(3.41565,observed['mass'],places=4);self.assertEqual('precise-rigid-v1',observed['model'])
+        session=self.js('window.banjoRoom.world.session')
+        hit=self.install_api('/api/live/act',{'session':session,'op':'pick','from':[3.123,1,0],'dir':[0,-1,0],'max_m':1})
+        self.assertEqual(root,hit['body']['name'])
+        self.js('window.banjoRoom.standAt(5,2,3);window.banjoRoom.lookAt(3.123,.5,0)')
+        self.capture_evidence('thin-rigid-live-world.png')
+        self.js('window.__beforeRigidReload=true');self.page.send('Page.reload',{})
+        self.wait('!window.__beforeRigidReload && window.banjoRoom?.ready() && window.banjoRoom.world.bodies.has('+json.dumps(root)+')')
+        self.assertEqual(5,self.js('window.banjoRoom.world.bodies.get('+json.dumps(root)+').mesh.count'))
+
     def test_installation_stale_world_is_visible_and_does_not_install(self):
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})['body']
         self.click('[data-mode="details"]');self.click('#ws-install-authoring');self.click('#ws-install-preview')
@@ -451,7 +486,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js('window.__thinPageBeforeReload=true')
         self.page.send('Page.reload',{})
         self.wait("!window.__thinPageBeforeReload && document.querySelector('#ws-mechanical-model')?.value==='rigid' && document.querySelector('#ws-mass')?.textContent==='3.416 kg'")
-        self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('live-room installation unsupported')")
+        self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('anchored-scenery installation available')")
 
 
     def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):

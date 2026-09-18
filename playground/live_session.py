@@ -474,6 +474,11 @@ class Session:
         for name in reply.get("gone") or ():
             bodies.pop(name, None)
         for body in reply.get("bodies", ()):
+            previous = bodies.get(body["name"], {})
+            # Precise compound geometry is sent only when created/revised.
+            # Retain it across pose-only replies, like the browser mesh cache.
+            if body.get("mechanical_model") == "precise-rigid-v1" and "rigid_boxes_local" not in body:
+                body = {**body, "rigid_boxes_local": previous.get("rigid_boxes_local", [])}
             bodies[body["name"]] = body
         whole = {**reply, "bodies": list(bodies.values()), "partial": False}
         springs = {e["id"]: e for e in (self.state or {}).get("elastics", ())}
