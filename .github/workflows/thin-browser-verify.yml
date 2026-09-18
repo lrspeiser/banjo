@@ -20,7 +20,6 @@ jobs:
       BANJO_BROWSER_TESTS: required
       BANJO_CHROME: /usr/bin/google-chrome
       BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
-      BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
     steps:
       - uses: actions/checkout@v5
       - name: Commit the bounded UI follow-up on the published source checkpoint
@@ -84,6 +83,8 @@ jobs:
             python3 tests/workshop_bench_engine_tests.py -v
           } 2>&1 | tee "$RUNNER_TEMP/thin-evidence/native-tests.log"
       - name: Run required Chrome Workshop journeys
+        env:
+          BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-evidence/screenshots
         shell: bash
         run: |
           set -euo pipefail
