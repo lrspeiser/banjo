@@ -219,15 +219,31 @@ def product(design: WorkshopDesign, *, contact_tolerance_m: float = 0.003) -> Pr
             a_interface=a_interface, b_interface=b_interface,
             properties={"source": "workshop-authored-semantics", **(properties or {})}, derived=False))
 
+    # A design with joints of its own says how its parts are fastened; nothing is
+    # then read into which parts happen to touch (mcp/workshop_construction.py).
+    from mcp import workshop_construction
+    authored = workshop_construction.of(design).get("joints_authored")
+    for joint in workshop_construction.joints(design) if authored else []:
+        if joint["open"]:
+            continue
+        how = joint["interface"]
+        properties: dict[str, Any] = {"source": "authored-joint", "joint": joint["id"],
+                                      "method": joint["method"], "interface": how}
+        if joint["kind"] == "bearing":
+            properties["axis"] = how.get("axis") or how.get("normal")
+            properties["friction_model"] = "bearing"
+        relationships.append(relationship(
+            joint["id"], joint["kind"], joint["a"], joint["b"], properties=properties, derived=False))
+
     # Authored structural members that touch are fastened, not merely resting
     # next to one another. Mechanism roles are excluded and connected below.
-    for left, right, gap in contact_pairs:
+    for left, right, gap in [] if authored else contact_pairs:
         if left.role in FIXED_STRUCTURE_ROLES and right.role in FIXED_STRUCTURE_ROLES:
             add("fixed", left, right, properties={"gap_m": round(gap, 6)})
 
-    axles = [p for p in design.parts if p.role == "axle"]
+    axles = [] if authored else [p for p in design.parts if p.role == "axle"]
     mounts = [p for p in design.parts if p.role == "bearing_mount"]
-    wheels = [p for p in design.parts if p.role == "wheel"]
+    wheels = [] if authored else [p for p in design.parts if p.role == "wheel"]
     mounted_axles: set[str] = set()
     for axle in axles:
         axis = _axis_of(axle.rotation_deg)

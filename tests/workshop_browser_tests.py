@@ -204,7 +204,6 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click("#ws-save-design")
         self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved designs and My Library')")
         self.open_product("stool")
-        self.js("document.querySelector('#ws-saved-designs').closest('details').open=true")
         self.js("[...document.querySelectorAll('#ws-saved-designs button')].find(b=>b.textContent.includes('Browser curved table')).click()")
         self.wait("document.querySelector('#ws-archetype').value==='table' && document.querySelector('#ws-measurement-basis').textContent.includes('Mass/balance from Matter')")
         self.assertEqual(mass, self.js("document.querySelector('#ws-mass').textContent"))
@@ -254,15 +253,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(1, self.js(
             "document.querySelectorAll('#ws-product-catalog .ws-product-parts').length"))
 
-        # Clicking one selects it, so the component editor works on it.
-        self.click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
-        self.wait("document.querySelector('#ws-selected-part').textContent.startsWith('wheel-11')")
-        self.assertFalse(self.js("document.querySelector('#ws-save-component').disabled"))
-        before = self.js("document.querySelector('#ws-selected-part').textContent")
-        self.click('[data-component-edit="thicker"]')
-        self.wait(f"document.querySelector('#ws-selected-part').textContent !== {json.dumps(before)}")
-
-        # Copy puts that component in My library, where it can be reused.
+        # Copy puts a component in My library, where it can be reused.
         saved = self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
         self.click('#ws-product-catalog .ws-part-row:nth-child(1) .ws-part-copy')
         self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
@@ -271,6 +262,58 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # Clicking the open product again folds its components away.
         self.click('#ws-product-catalog button[data-value="cart"]')
         self.wait("!document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+
+    def test_a_component_opens_on_its_own_and_saves_under_a_new_name(self):
+        """Clicking a component shows that piece alone, editable and saveable.
+
+        The product's own headline numbers -- part count, balance, tip angle --
+        say nothing about one wheel, so while it is alone on screen the panel
+        reports the wheel instead, and the whole-product views are refused.
+        """
+        self.open_product("cart")
+        self.wait("document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+        self.click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'wheel-11'")
+        self.assertFalse(self.js("document.querySelector('#ws-isolation').hidden"))
+        self.assertEqual("wheel-11", self.js("document.querySelector('#ws-name').textContent"))
+        self.assertEqual("220 x 60 x 220 mm", self.js(
+            "document.querySelector('#ws-base').textContent").replace("×", "x"))
+        self.assertTrue(self.js("document.querySelector('#ws-buildability').hidden"))
+        self.assertEqual(["matter", "physics", "collision", "relations"], self.js(
+            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+
+        # It is edited as itself, and the reported size follows.
+        self.click('[data-component-edit="thicker"]')
+        self.wait("document.querySelector('#ws-base').textContent.includes('67')")
+        self.assertEqual("wheel-11", self.js("document.querySelector('#workshop-stage').dataset.showing"))
+
+        # It is saved under a name of the user's choosing, not a generated one.
+        self.field("#ws-component-name", "Fat oak wheel", event="input")
+        saved = self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
+        self.click("#ws-save-component")
+        self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
+        self.assertIn("Fat oak wheel", self.js("document.querySelector('#ws-user-library').textContent"))
+
+        # And the whole product comes back with its own numbers.
+        self.click("#ws-show-whole")
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'product'")
+        self.assertTrue(self.js("document.querySelector('#ws-isolation').hidden"))
+        self.assertEqual("14", self.js("document.querySelector('#ws-part-count').textContent"))
+        self.assertEqual([], self.js(
+            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+
+    def test_the_left_pane_has_no_dead_reference_sections(self):
+        """Variants and the component-family reference are gone.
+
+        Both sat folded inside one another, so neither could be found, and
+        neither made a product. What is left is the product library, what the
+        user saved, and their saved designs.
+        """
+        self.assertEqual(0, self.js(
+            "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
+        self.assertEqual(["Product library", "My library", "Saved designs"], self.js(
+            "[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
+        self.assertEqual(0, self.js("document.querySelectorAll('.ws-left details').length"))
 
     def test_cart_trace_has_actual_intermediate_simulation_states(self):
         self.open_product("cart")
@@ -668,6 +711,104 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
         self.assertNotEqual(first,self.js("document.querySelector('#ws-simulation-readout').textContent"))
         self.assertIn('Water',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+
+    def click_object_at(self, point_m):
+        """A real mouse click on a point of the object, wherever the camera has put it."""
+        x, y = self.js(f"document.querySelector('#workshop-stage').pagePointOf({json.dumps(point_m)})")
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left", "clickCount": 1})
+
+    def test_a_part_is_placed_on_a_clicked_face_added_saved_and_reopened_as_built(self):
+        self.open_product('cart'); self.click('[data-mode="build"]')
+        self.assertIn('still the template', self.js("document.querySelector('#ws-build-joints').textContent"))
+        self.field('#ws-build-what', 'family:post'); self.field('#ws-build-length', .3)
+        # The turn and sink buttons belong to a part being placed, and are not on show before one is.
+        self.assertEqual('none', self.js("getComputedStyle(document.querySelector('#ws-build-adjust')).display"))
+        self.click('#ws-build-place')
+        self.wait("document.querySelector('#workshop-stage').classList.contains('ws-placing')")
+        self.assertEqual('skin', self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
+        # The first seeded cart has its deck top at 0.30 m; click 0.2 m along it.
+        self.click_object_at([0.2, 0.30, 0.0])
+        self.wait("!document.querySelector('#ws-build-adjust').hidden")
+        said = self.js("document.querySelector('#ws-build-status').textContent")
+        self.assertIn('post-1', said); self.assertIn('Meets deck over 25.0 cm²', said)
+        self.assertEqual('14', self.js("document.querySelector('#ws-part-count').textContent"))   # a preview adds nothing
+        self.click('#ws-build-add')
+        self.wait("document.querySelector('#ws-part-count').textContent==='15'")
+        self.assertEqual('15 parts · built part by part', self.js("document.querySelector('#ws-name').textContent"))
+        self.assertIn('post-1', self.js("document.querySelector('#ws-selected-part').textContent"))
+        self.assertEqual(1, self.js("document.querySelectorAll('.ws-joint-row[data-joint]').length"))
+        self.assertIn('deck ↔ post-1', self.js("document.querySelector('.ws-joint-row[data-joint]').textContent"))
+        self.assertFalse(self.js("document.querySelector('#workshop-stage').classList.contains('ws-placing')"))
+        self.assertEqual('none', self.js("getComputedStyle(document.querySelector('#ws-build-adjust')).display"))
+
+        self.click('[data-mode="details"]'); self.field('#ws-save-name', 'cart with a post')
+        self.click('#ws-save-design')
+        self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved')")
+        self.page.send("Page.reload")
+        self.wait("document.querySelector('#ws-user-library .ws-library-item')")
+        self.js("[...document.querySelectorAll('#ws-user-library .ws-library-item')].find(c=>c.textContent.includes('cart with a post')).click()")
+        self.wait("document.querySelector('#ws-part-count').textContent==='15'")
+        self.click('[data-mode="build"]')
+        self.assertIn('17 joints', self.js("document.querySelector('#ws-build-joints').textContent"))
+
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='handle').click()")
+        self.click('#ws-build-remove')
+        self.wait("document.querySelector('#ws-part-count').textContent==='14'")
+        self.assertIn('15 joints', self.js("document.querySelector('#ws-build-joints').textContent"))
+
+    def test_a_push_on_the_handle_says_which_joint_goes_first_and_marks_it(self):
+        self.open_product('cart'); self.click('[data-mode="build"]')
+        self.click('#ws-build-adopt')
+        self.wait("document.querySelectorAll('.ws-joint-row[data-joint]').length===16")
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='handle').click()")
+        self.field('#ws-push-force', 3000); self.click('#ws-push-go')
+        self.wait("document.querySelector('#ws-joint-screen')")
+        self.assertEqual('2', self.js("document.querySelector('#ws-joint-screen').dataset.givesWay"))
+        self.assertIn('handle-arm', self.js("document.querySelector('#ws-first-to-give').textContent"))
+        self.assertIn('2 pieces', self.js("document.querySelector('#ws-comes-apart').textContent"))
+        self.assertEqual(2, self.js("document.querySelectorAll('#ws-joint-screen .ws-joint-row.gives-way').length"))
+        # The analysis is a Build aid; the Test tab still offers only simulations.
+        self.click('[data-mode="test"]')
+        self.assertNotIn('force_probe', self.js("[...document.querySelector('#ws-bench-test').options].map(o=>o.value).join(',')"))
+        # A lighter push holds, and a new spot clears the old answer.
+        self.click('[data-mode="build"]'); self.field('#ws-push-force', 100)
+        self.wait("document.querySelector('#ws-joint-screen')?.dataset.givesWay==='0'")
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='deck').click()")
+        self.assertTrue(self.js("!!document.querySelector('#ws-joint-screen')"))
+
+    def test_placing_and_pushing_bring_the_whole_product_back_from_one_component_shown_alone(self):
+        self.open_product('cart')
+        self.click('#ws-product-catalog .ws-part-open[data-part="deck"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='deck'")
+        # A part goes against the product, not against one piece of it shown alone.
+        self.click('[data-mode="build"]'); self.click('#ws-build-place')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='product'")
+        self.click('#ws-build-cancel')
+        self.click('#ws-build-adopt')
+        # The deck is still the selected part, so the list shows the six joints that hold it.
+        self.wait("document.querySelector('#ws-build-joints').textContent.includes('6 of 16 joints hold deck')")
+        self.click('#ws-product-catalog .ws-part-open[data-part="handle"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing==='handle'")
+        self.click('#ws-push-go')
+        self.wait("document.querySelector('#ws-joint-screen')")
+        self.assertEqual('product', self.js("document.querySelector('#workshop-stage').dataset.showing"))
+        self.assertIn('handle', self.js("document.querySelector('#ws-selected-part').textContent"))
+
+    def test_a_new_build_starts_from_one_part_and_joins_the_product_list(self):
+        self.click('[data-mode="build"]')
+        self.field('#ws-build-what', 'family:surface')
+        self.click('#ws-build-new')
+        self.wait("document.querySelector('#workshop-stage').dataset.kind==='custom'")
+        self.assertEqual('1 part · built part by part', self.js("document.querySelector('#ws-name').textContent"))
+        self.assertEqual('true', self.js("document.querySelector('#ws-product-catalog button[data-value=custom]').getAttribute('aria-current')"))
+        self.field('#ws-build-what', 'family:post'); self.field('#ws-build-length', .4)
+        self.click('#ws-build-place')
+        self.click_object_at([0.0, 0.04, 0.0])
+        self.wait("!document.querySelector('#ws-build-adjust').hidden")
+        self.click('#ws-build-add')
+        self.wait("document.querySelector('#ws-part-count').textContent==='2'")
+        self.assertIn('surface-1 ↔ post-1', self.js("document.querySelector('.ws-joint-row[data-joint]').textContent"))
 
     def test_no_simulation_response_is_a_visible_failure_not_a_success(self):
         self.click('[data-mode="test"]')

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics  # noqa: E402
+from mcp import engine_materials, workshop_components, workshop_construction, workshop_visual, workshop_matter_metrics  # noqa: E402
 from mcp.workshop import (  # noqa: E402
     WORKSHOP_SCHEMA, ComponentLibrary, WorkshopSession, assemble, assemblies,
     assembly, feedback, materialize, variants,
@@ -107,6 +107,12 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
     wire["component_overrides"] = workshop_components.checked_overrides(overrides)
+    # How its parts are fastened, measured from the parts as they stand. A
+    # template with no joints of its own still answers, with none declared.
+    wire["construction"] = workshop_construction.described(design)
+    if workshop_construction.CONSTRUCTION_KEY in wire["component_overrides"]:
+        count = len(design.parts)
+        wire["label"] = f"{count} part{'' if count == 1 else 's'} · built part by part"
     try:
         wire["analytical"] = {"static_loads": declared_statics(design), "limitations": []}
     except ValueError as problem:
@@ -137,8 +143,13 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
             generation: int, purpose: str | None = None, overrides: Any = None) -> list[dict[str, Any]]:
     spec = assembly(kind)
     root = assemble(kind, design_id=f"{kind}-g{generation}", purpose=purpose, parameters=base)
-    made = variants(root, sweeps) if sweeps else [root]
     checked = workshop_components.checked_overrides(overrides)
+    # Parts a person put in stand where they were put. Sweeping the template's
+    # numbers would move the template out from under them, so a built design is
+    # one candidate, changed part by part.
+    if workshop_construction.CONSTRUCTION_KEY in checked:
+        sweeps = {}
+    made = variants(root, sweeps) if sweeps else [root]
     out = []
     for index, design in enumerate(made, 1):
         design.design_id = f"{kind}-g{generation}-v{index}"
@@ -225,7 +236,15 @@ def open_workshop(app: Any, body: Any) -> dict[str, Any]:
     else:
         kind = _kind(body)
         revision, target = str(body.get("world_revision") or "unopened-world"), str(body.get("target") or kind)
-        candidates_out = _spread(app, kind, _parameters(body), SEED_SWEEPS.get(kind, {}), generation)
+        # A design built from nothing arrives with its first part already in it.
+        overrides = body.get("component_overrides")
+        if body.get("first_part") is not None:
+            if kind != "custom":
+                raise ValueError("first_part starts a new build; a template already has its parts")
+            import workshop_build
+            overrides = workshop_build.starting_overrides(app, body["first_part"])
+        candidates_out = _spread(app, kind, _parameters(body), SEED_SWEEPS.get(kind, {}), generation,
+                                 overrides=overrides)
     session = WorkshopSession(
         session_id=str(body.get("session_id") or f"bench-{int(time.time()*1000)}"),
         world_revision=revision, target=target)
@@ -271,6 +290,17 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
             "bench_tests": workshop_bench.catalog(kind), "generation": generation + 1,
                 "candidates": [_candidate(app, changed, assembly(kind), new_overrides)],
                 "workshop_chat": {**proposal, "changed": names}}
+    if isinstance(body.get("construct"), dict):
+        import workshop_build
+        built = workshop_build.construct(app, current, body["construct"])
+        if built["overrides"] is None:       # a preview: the design is not changed
+            return {"schema": WORKSHOP_SCHEMA, "kind": kind, "generation": generation,
+                    "construct": built["summary"]}
+        design, overrides = workshop_components.design_from_spec({**current, "component_overrides": built["overrides"]})
+        return {"schema": WORKSHOP_SCHEMA, "kind": kind,
+                "bench_tests": workshop_bench.catalog(kind), "generation": generation + 1,
+                "candidates": [_candidate(app, design, assembly(kind), overrides)],
+                "construct": {**built["summary"], **({"select": built["select"]} if built.get("select") else {})}}
     if isinstance(body.get("component_edit"), dict):
         edit = body["component_edit"]
         design, overrides, names = workshop_components.edit(
@@ -307,6 +337,9 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
     spec, base = assembly(kind), assembly(kind).checked(_parameters(body))
     overrides, generation = workshop_components.checked_overrides(body.get("component_overrides")), _generation(body) + 1
+    if workshop_construction.CONSTRUCTION_KEY in overrides:
+        raise ValueError("This design has parts you put in or took off. Variants change the template's "
+                         "sizes underneath them, so they are not offered; change its parts directly.")
     known, made = {p.name: p for p in spec.parameters}, []
     for index in range(6):
         values = dict(base)

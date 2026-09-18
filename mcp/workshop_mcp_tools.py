@@ -79,8 +79,8 @@ TOOLS = [
      "description": "List the Workshop product/component catalog, functional test catalog, personal physics-tagged library, material pricebook and the versioned Workshop platform contract.",
      "inputSchema": _schema({})},
     {"name": "workshop_open",
-     "description": "Open a Workshop product, saved design or personal-library assembly and return measured candidates plus all catalogs needed by a client to render the design workspace. Candidates include their editable skin representation.",
-     "inputSchema": _schema({**DESIGN_FIELDS,
+     "description": "Open a Workshop product, saved design or personal-library assembly and return measured candidates plus all catalogs needed by a client to render the design workspace. Candidates include their editable skin representation. kind=custom with first_part={family, parameters, material} starts a design built from nothing.",
+     "inputSchema": _schema({**DESIGN_FIELDS, "first_part": JSON_OBJECT,
          "saved_design_id": {"type": "string"}, "library_item_id": {"type": "string"},
          "world_revision": {"type": "string"}, "target": {"type": "string"}})},
     {"name": "workshop_edit",
@@ -92,6 +92,22 @@ TOOLS = [
          "amount": {"type": "number"}, "material": {"type": "string"},
          "skin": SKIN,
          "library_item_id": {"type": "string"}, "message": {"type": "string"}}, ["kind", "part_name"])},
+    {"name": "workshop_build",
+     "description": "Build a Workshop design part by part. add: put a family part (part={family, parameters, material, length_m for a strut}) or a saved component (part={library_item_id}) against the part named `onto`, by the new part's face `by` (face-y- is its bottom), on `onto_face` at `offset_m` [x, y, z] from that face's middle (or at the product point `at_m`), turned by twist_deg and sunk in by depth_m, fastened with joint_kind fixed|bearing or left loose. preview answers where it would go and what it would meet without changing anything. remove takes part_name off with its joints. fasten/unfasten declare or remove the joint between parts a and b. adopt writes a template's implied connections down as joints. Answers the built candidate with construction.joints measured from the geometry. Start from nothing with workshop_open kind=custom and first_part.",
+     "inputSchema": _schema({**DESIGN_FIELDS,
+         "action": {"type": "string", "enum": ["preview", "add", "remove", "fasten", "unfasten", "adopt"]},
+         "part": JSON_OBJECT,
+         "by": {"type": "string", "enum": ["face-x-", "face-x+", "face-y-", "face-y+", "face-z-", "face-z+"]},
+         "onto": {"type": "string"},
+         "onto_face": {"type": "string", "enum": ["face-x-", "face-x+", "face-y-", "face-y+", "face-z-", "face-z+"]},
+         "offset_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+                      "description": "From the middle of onto_face, in the product's x, y, z; the part of it that leaves the face is ignored."},
+         "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+         "twist_deg": {"type": "number"}, "depth_m": {"type": "number"}, "snap": {"type": "boolean"},
+         "joint_kind": {"type": "string", "enum": ["fixed", "bearing", "none"]},
+         "joint_method": {"type": "string", "enum": ["bonded", "pressed", "bearing"]},
+         "part_name": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}},
+         ["kind", "action"])},
     {"name": "workshop_variants",
      "description": "Generate bounded Workshop variants from product parameters, or ask for the six deterministic more-like-this variants around one chosen candidate.",
      "inputSchema": _schema({**DESIGN_FIELDS,
@@ -189,6 +205,25 @@ def tool_edit(args: dict[str, Any]) -> dict[str, Any]:
     return workshop_platform.call(APP, "edit", request)
 
 
+_BUILD_FIELDS = {"action", "part", "by", "onto", "onto_face", "offset_m", "at_m", "twist_deg", "depth_m",
+                 "snap", "joint_kind", "joint_method", "part_name", "a", "b"}
+
+
+def tool_build(args: dict[str, Any]) -> dict[str, Any]:
+    request = {k: v for k, v in args.items() if k not in _BUILD_FIELDS}
+    construct = {k: args[k] for k in _BUILD_FIELDS - {"joint_kind", "joint_method"} if k in args}
+    joint_kind = str(args.get("joint_kind") or "fixed")
+    if construct.get("action") in {"add", "preview"} and joint_kind != "none":
+        construct["joint"] = {"kind": joint_kind,
+                              **({"method": str(args["joint_method"])} if args.get("joint_method") else {})}
+    if construct.get("action") == "fasten":
+        construct["kind"] = joint_kind
+        if args.get("joint_method"):
+            construct["method"] = str(args["joint_method"])
+    request["construct"] = construct
+    return workshop_platform.call(APP, "edit", request)
+
+
 def tool_variants(args: dict[str, Any]) -> dict[str, Any]:
     return workshop_platform.call(APP, "variants", args)
 
@@ -261,6 +296,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "workshop_catalog": tool_catalog,
     "workshop_open": tool_open,
     "workshop_edit": tool_edit,
+    "workshop_build": tool_build,
     "workshop_variants": tool_variants,
     "workshop_inspect": tool_inspect,
     "workshop_test": tool_test,

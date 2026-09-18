@@ -11,7 +11,9 @@ from copy import deepcopy
 from math import isfinite, sqrt
 from typing import Any
 
-from mcp.workshop import WorkshopDesign, WirePart, assemble
+from mcp.workshop import WorkshopDesign, WirePart, _component_counts, assemble
+from mcp import workshop_construction
+from mcp.workshop_construction import CONSTRUCTION_KEY
 
 OVERRIDE_SCHEMA = "banjo.workshop-component-overrides.v1"
 STRUT_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "axle", "handle"}
@@ -33,6 +35,12 @@ def checked_overrides(value: Any) -> dict[str, dict[str, Any]]:
         raise ValueError("component_overrides must be an object with at most 250 parts")
     out: dict[str, dict[str, Any]] = {}
     for name, patch in value.items():
+        if name == CONSTRUCTION_KEY:
+            # Parts put in, parts taken off and declared joints travel with the
+            # per-part edits, so every path that carries one carries the other.
+            block = workshop_construction.checked(patch)
+            if block: out[name] = block
+            continue
         if not isinstance(name, str) or not name or len(name) > 120 or not isinstance(patch, dict):
             raise ValueError("each component override needs a short part name and an object")
         if set(patch) - {"size_m", "center_m", "rotation_deg", "material", "shape"}:
@@ -65,11 +73,14 @@ def _changed(part: WirePart, patch: dict[str, Any]) -> WirePart:
 
 def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
     patches = checked_overrides(overrides)
-    known = {part.name for part in design.parts}; missing = sorted(set(patches) - known)
+    built = workshop_construction.apply(design.parts, patches.get(CONSTRUCTION_KEY) or {})
+    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY})
     if missing: raise ValueError("component override names part(s) not in this design: " + ", ".join(missing))
-    parts = [_changed(part, patches.get(part.name, {})) for part in design.parts]
+    parts = [_changed(part, patches.get(part.name, {})) for part in built]
+    lineage = {**deepcopy(design.lineage), "component_overrides": deepcopy(patches)}
+    if CONSTRUCTION_KEY in patches: lineage["components"] = _component_counts(parts)
     return WorkshopDesign(design_id=design.design_id, purpose=design.purpose, parts=parts,
-        parameters=deepcopy(design.parameters), lineage={**deepcopy(design.lineage), "component_overrides": deepcopy(patches)},
+        parameters=deepcopy(design.parameters), lineage=lineage,
         tests=deepcopy(design.tests), notes=list(design.notes), kind=design.kind).validate()
 
 

@@ -20,6 +20,40 @@ MATERIALS: dict[str, dict[str, Any]] = {
     "concrete": {"engine_name": "concrete", "density_kg_m3": 2400.0},
 }
 
+#: What each preset is declared to take before it yields or fails, and how stiff
+#: it is: the numbers src/material/MaterialCatalog.cpp gives the engine, copied
+#: so that a joint's capacity can be worked out before an engine is opened
+#: (mcp/product_joints.py). A strength is a declared material property, not a
+#: validated failure model; ``yield_strength_pa`` is absent for a material the
+#: catalogue declares brittle, which has no yield to reach. The parity test
+#: reads the C++ and fails when either side moves alone.
+MECHANICS: dict[str, dict[str, float]] = {
+    "iron": {"young_modulus_pa": 211.0e9, "poisson_ratio": 0.29, "yield_strength_pa": 200.0e6,
+             "tensile_strength_pa": 250.0e6, "compressive_strength_pa": 600.0e6,
+             "shear_strength_pa": 170.0e6, "fracture_energy_j_m2": 100000.0},
+    "aluminum": {"young_modulus_pa": 68.9e9, "poisson_ratio": 0.33, "yield_strength_pa": 276.0e6,
+                 "tensile_strength_pa": 310.0e6, "compressive_strength_pa": 250.0e6,
+                 "shear_strength_pa": 207.0e6, "fracture_energy_j_m2": 25000.0},
+    "glass": {"young_modulus_pa": 70.0e9, "poisson_ratio": 0.22,
+              "tensile_strength_pa": 45.0e6, "compressive_strength_pa": 1000.0e6,
+              "shear_strength_pa": 35.0e6, "fracture_energy_j_m2": 8.0},
+    "alumina ceramic": {"young_modulus_pa": 300.0e9, "poisson_ratio": 0.22,
+                        "tensile_strength_pa": 300.0e6, "compressive_strength_pa": 2200.0e6,
+                        "shear_strength_pa": 240.0e6, "fracture_energy_j_m2": 25.0},
+    "oak": {"young_modulus_pa": 12.0e9, "poisson_ratio": 0.35, "yield_strength_pa": 45.0e6,
+            "tensile_strength_pa": 90.0e6, "compressive_strength_pa": 52.0e6,
+            "shear_strength_pa": 11.0e6, "fracture_energy_j_m2": 1000.0},
+    "rubber": {"young_modulus_pa": 10.0e6, "poisson_ratio": 0.49, "yield_strength_pa": 6.0e6,
+               "tensile_strength_pa": 20.0e6, "compressive_strength_pa": 15.0e6,
+               "shear_strength_pa": 3.5e6, "fracture_energy_j_m2": 5000.0},
+    "ice": {"young_modulus_pa": 9.0e9, "poisson_ratio": 0.33,
+            "tensile_strength_pa": 1.0e6, "compressive_strength_pa": 5.0e6,
+            "shear_strength_pa": 1.0e6, "fracture_energy_j_m2": 1.5},
+    "concrete": {"young_modulus_pa": 30.0e9, "poisson_ratio": 0.20,
+                 "tensile_strength_pa": 3.0e6, "compressive_strength_pa": 35.0e6,
+                 "shear_strength_pa": 5.0e6, "fracture_energy_j_m2": 100.0},
+}
+
 ALIASES = {
     "aluminium": "aluminum",
     "aluminum_6061_t6": "aluminum",
@@ -60,6 +94,15 @@ def density(name: str) -> float:
         return float(MATERIALS[key]["density_kg_m3"])
     except KeyError as exc:
         raise KeyError(f"{name!r} is not an engine material preset") from exc
+
+
+def mechanics(name: str) -> dict[str, float]:
+    """The preset's declared stiffness and strengths, or a clear refusal."""
+    key = canonical(name)
+    try:
+        return dict(MECHANICS[key])
+    except KeyError as exc:
+        raise KeyError(f"{name!r} is not an engine material preset, so it has no declared strength") from exc
 
 
 def engine_name(name: str) -> str:

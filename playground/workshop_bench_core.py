@@ -14,7 +14,7 @@ from typing import Any
 import fracture_lab
 import live_session
 import workshop_trials
-from mcp import engine_materials, workshop_force, workshop_graph
+from mcp import engine_materials, product_breakscreen, workshop_force, workshop_graph
 from mcp.product_contract import compile_contract
 from mcp.workshop import WorkshopDesign
 
@@ -45,14 +45,21 @@ def _catalog() -> list[dict[str, Any]]:
         },
         {
             "test": "force_probe", "name": "Point force probe",
-            "about": "Click the product in 3D to push on that spot. The arrow shows where and how hard; the load paths and support reactions below are what carries it.",
+            "about": "Click the product in 3D to push on that spot. The arrow shows where, which way and how hard. Below: what carries it, and for a design with joints of its own, how much of each joint's strength it uses and which would give way first.",
             "controls": [
                 {"name": "force_n", "label": "Force", "unit": "N", "type": "range",
-                 "default": 500.0, "min": 10.0, "max": 5000.0, "step": 10.0},
+                 "default": 500.0, "min": 10.0, "max": 50000.0, "step": 10.0},
+                {"name": "push", "label": "Pushing", "type": "select", "default": "down",
+                 "choices": list(PUSHES), "choice_labels": [
+                     "down", "up", "along +x (to the right)", "along -x (to the left)",
+                     "along +z (towards the back)", "along -z (towards the front)"]},
+                {"name": "standing", "label": "While it is", "type": "select", "default": "resting",
+                 "choices": ["resting", "free"],
+                 "choice_labels": ["standing on the floor", "struck in mid-air"]},
                 {"name": "duration_s", "label": "Pulse", "unit": "s", "type": "range",
                  "default": 0.05, "min": 0.01, "max": 2.0, "step": 0.01},
             ],
-            "limitations": ["This first layer is an analytical force-path/support calculation; dynamic stress, deflection and fracture require an engine impact trial."],
+            "limitations": ["The joint answer is a static-equivalent screen of rigid parts on elastic joints: between half and the whole of a joint's strength is uncertain, not safe. Whether the struck part itself dents or breaks needs an engine impact trial."],
         },
         {
             "test": "cart_roll", "name": "Roll the cart", "kinds": ["cart"],
@@ -141,6 +148,11 @@ def run_contract(design: WorkshopDesign) -> dict[str, Any]:
     }
 
 
+#: Which way the probe pushes, in the product's axes (y is up).
+PUSHES = {"down": (0.0, -1.0, 0.0), "up": (0.0, 1.0, 0.0), "+x": (1.0, 0.0, 0.0),
+          "-x": (-1.0, 0.0, 0.0), "+z": (0.0, 0.0, 1.0), "-z": (0.0, 0.0, -1.0)}
+
+
 def run_force(design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
     # This probe pushes on ONE named component, and the card offers no control
     # to pick it: it expects the part to have been chosen in 3D first. Asked
@@ -169,15 +181,31 @@ def run_force(design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
     # echoes the point and direction it used, so the default is visible in the
     # result rather than assumed silently.
     point = config.get("point_m") or list(part.center_m)
-    direction = config.get("direction") or [0.0, -1.0, 0.0]
-    return {
+    push = str(config.get("push") or "down")
+    if push not in PUSHES:
+        raise ValueError("push must be one of " + ", ".join(PUSHES))
+    direction = config.get("direction") or list(PUSHES[push])
+    standing = str(config.get("standing") or "resting")
+    if standing not in {"resting", "free"}:
+        raise ValueError("standing must be resting or free")
+    force = _number(config, "force_n", 500.0, 1.0, 100000.0)
+    answer = {
         "schema": BENCH_SCHEMA, "test": "force_probe",
         **workshop_force.probe(
             design, component_name=component,
-            point_m=point, direction=direction,
-            force_n=_number(config, "force_n", 500.0, 1.0, 100000.0),
+            point_m=point, direction=direction, force_n=force,
             duration_s=_number(config, "duration_s", 0.05, 0.001, 10.0)),
     }
+    # The second layer: what each declared joint carries, and which gives first.
+    # A template's joints are still implied by what touches, so there is nothing
+    # declared to rate until the person has shown them in Build.
+    try:
+        answer["joint_screen"] = product_breakscreen.screen(
+            design, component_name=component, point_m=point, direction=direction,
+            force_n=force, resting=standing == "resting")
+    except ValueError as problem:
+        answer["joint_screen"] = {"available": False, "why": str(problem)}
+    return answer
 
 
 def _kettle_dimensions(design: WorkshopDesign) -> tuple[Any, list[Any], float, float, float, float]:

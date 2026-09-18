@@ -65,9 +65,9 @@ let dragging = false, dragged = false, px = 0, py = 0, reach = 1.5;
 const target = new THREE.Vector3(0, 0.42, 0);
 
 const bench = {
-  kind: "table", generation: 0, candidates: [], selected: 0, plans: {},
+  kind: "table", generation: 0, candidates: [], selected: 0,
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
-  selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null,
+  selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
   cellSkin: null, physicsDebug: null, matterMode: "cells",
@@ -79,6 +79,14 @@ const bench = {
 function chosen() { return bench.candidates[bench.selected]; }
 // Explicit prototype placement is separate from the pure design/test APIs.
 const installation = {sequence:0, preview:null, request:null, committing:false};
+// Building part by part. Declared up here because the editor, which holds the
+// Build panel, is installed while this module is still loading.
+const build = { placing:false, onto:null, at:null, twist:0, depth:0, preview:null, request:0 };
+const ghost = new THREE.Group(); scene.add(ghost);
+const BUILD_FACES = [["face-y-","its bottom"],["face-y+","its top"],["face-x-","its left side"],
+  ["face-x+","its right side"],["face-z-","its front"],["face-z+","its back"]];
+const JOINT_COLORS = { fixed:0x5fd38d, bearing:0x6cb6ff };
+const VERDICT_COLORS = { "holds":0x5fd38d, "uncertain":0xe0a63a, "gives way":0xe05c5c, "unrated":0x8a96a3 };
 function invalidateInstallation() {
   installation.sequence++;
   installation.preview = null;
@@ -244,8 +252,19 @@ function spinFor(rotation) {
     THREE.MathUtils.degToRad(rotation?.[1] || 0),
     THREE.MathUtils.degToRad(rotation?.[2] || 0), "XYZ");
 }
+// A component opened from the library is worked on by itself: the design views
+// draw it alone. Matter, collision, relations and physics describe the whole
+// assembled product, so isolation does not apply to them.
+const ISOLATING_VIEWS = ["wire", "skin"];
+function shownParts(candidate) {
+  if (!bench.isolated || !ISOLATING_VIEWS.includes(view)) return candidate.parts;
+  return candidate.parts.filter((part) => part.name === bench.isolated);
+}
+function isolatedPart() {
+  return bench.isolated ? (chosen()?.parts || []).find((p) => p.name === bench.isolated) || null : null;
+}
 function drawWire(candidate) {
-  for (const part of candidate.parts) {
+  for (const part of shownParts(candidate)) {
     const geometry = shapeFor(part);
     const line = new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry),
@@ -255,7 +274,7 @@ function drawWire(candidate) {
   }
 }
 function drawSkin(candidate, opacity = 1) {
-  for (const part of candidate.parts) {
+  for (const part of shownParts(candidate)) {
     const descriptor = skinPart(candidate, part.name);
     const geometry = skinGeometry(part, descriptor);
     const selected = part.name === bench.selectedPart;
@@ -502,6 +521,8 @@ function frameSimulation(recording) {
 }
 
 function draw(candidate) {
+  // What the viewport is actually showing, for the page and for tests.
+  stage.dataset.showing = shownParts(candidate).length === candidate.parts.length ? "product" : bench.isolated;
   if (view !== "physics") clearGroup();
   applyClipPlane();
   balance.visible = !["physics", "collision", "relations"].includes(view);
@@ -512,8 +533,19 @@ function draw(candidate) {
   else if (view === "collision") drawCollisionDebug();
   else if (view === "relations") drawRelationshipDebug();
   else drawWire(candidate);
+  if (view === "wire" || view === "skin") drawJoints(candidate);
 
   const m = currentMeasurements(candidate);
+  const alone = ISOLATING_VIEWS.includes(view) ? isolatedPart() : null;
+  if (alone) {
+    // Balance and support are properties of the whole product, not of one piece.
+    balance.visible = false; support.visible = false;
+    const half = Math.max(...alone.size_m) / 2;
+    grid.position.y = alone.center_m[1] - half * 1.4;
+    target.set(...alone.center_m);
+    reach = 0.5 * Math.hypot(...alone.size_m);
+    return;
+  }
   if (view !== "physics") {
     balance.position.set(...m.centre_of_mass_m);
     const feet = m.ground_contacts_m || [], ring = [];
@@ -540,12 +572,15 @@ function draw(candidate) {
 const forceArrow = new THREE.ArrowHelper(
   new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 0.3, 0xffb347, 0.08, 0.05);
 forceArrow.visible = false; scene.add(forceArrow);
-function showForceAt(point, force_n) {
+const PUSH_WAYS = { "down":[0,-1,0], "up":[0,1,0], "+x":[1,0,0], "-x":[-1,0,0], "+z":[0,0,1], "-z":[0,0,-1] };
+function showForceAt(point, force_n, push = "down") {
   if (!point || view === "physics") { forceArrow.visible = false; return; }
   const span = Math.max(0.12, reach * 0.9);
-  const size = span * (0.25 + 0.75 * Math.min(1, (Number(force_n) || 0) / 5000));
-  forceArrow.position.set(point[0], point[1] + size, point[2]);
-  forceArrow.setDirection(new THREE.Vector3(0, -1, 0));
+  const size = span * (0.25 + 0.75 * Math.min(1, Math.log10(1 + (Number(force_n) || 0)) / Math.log10(50001)));
+  const way = new THREE.Vector3(...(PUSH_WAYS[push] || PUSH_WAYS.down));
+  // The arrow's head lands on the point: it starts one length back along the push.
+  forceArrow.position.set(point[0] - way.x * size, point[1] - way.y * size, point[2] - way.z * size);
+  forceArrow.setDirection(way);
   forceArrow.setLength(size, size * 0.28, size * 0.16); forceArrow.visible = true;
 }
 function hitPartName(hit) {
@@ -561,10 +596,17 @@ function pickPart(event) {
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
+  // Meshes made since the last frame still have the identity as their world
+  // matrix, so a click that beats the next frame would be cast against every
+  // part piled at the origin and pick the wrong one.
+  group.updateMatrixWorld(true);
   const hit = raycaster.intersectObjects(group.children, false)
     .find((item) => hitPartName(item));
+  if (build.placing) { placeAtHit(hit); return; }
   bench.selectedPart = hitPartName(hit);
   bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
+  // A new spot: the last push's colours no longer describe what is selected.
+  bench.jointVerdicts = null; $("#ws-push-result")?.replaceChildren();
   show(false);
   if (bench.selectedPart && bench.selectedBenchTest === "force_probe") reprobe();
   else showForceAt(null);
@@ -649,8 +691,7 @@ function installEditor() {
   $(".ws-metrics").after(buildability);
   const basis = make("p", {id:"ws-measurement-basis", class:"ws-note"});
   $(".ws-metrics").after(basis);
-  const left = $(".ws-left"), right = $(".ws-right"), builtIn = $("#ws-library");
-  const builtInHeading = builtIn.previousElementSibling && builtIn.previousElementSibling.previousElementSibling;
+  const left = $(".ws-left"), right = $(".ws-right");
   const productBox = make("section", { id: "ws-product-library-box", class: "ws-product-section" });
   productBox.append(make("h2", {}, "Product library"),
     make("p", {}, "The open product lists its components and quantities underneath. Click one to edit it, or copy it into My library."),
@@ -660,11 +701,19 @@ function installEditor() {
   libraryBox.append(make("h2", {}, "My library"),
     make("p", {}, "Reusable components and assemblies. Select a part, then click or drag a component onto it."),
     make("div", { id: "ws-user-library" }));
-  left.insertBefore(libraryBox, builtInHeading || builtIn);
+  productBox.after(libraryBox);
 
   const editor = make("section", { id: "ws-component-editor", class: "ws-component-editor" });
   editor.append(make("h3", {}, "Selected component"),
     make("p", { id: "ws-selected-part", class: "ws-note" }, "Click a part of the object to edit it."));
+  const isolation = make("div", { id: "ws-isolation", class: "ws-isolation" });
+  isolation.hidden = true;
+  isolation.append(make("span", { id: "ws-isolation-note" }),
+    make("button", { id: "ws-show-whole", type: "button", class: "ws-action" }, "Show the whole product"));
+  editor.append(isolation);
+  const saveName = make("input", { id:"ws-component-name", type:"text", maxlength:"120", placeholder:"My tapered leg" });
+  const saveLabel = make("label", { class:"ws-field" }, "Save this component as"); saveLabel.append(saveName);
+  editor.append(saveLabel, make("button", { id:"ws-save-component", type:"button", class:"ws-action" }, "Save as a new component"));
   const scope = make("select", { id: "ws-edit-scope", "aria-label": "Edit scope" });
   [["this", "This part"], ["similar", "Similar parts"], ["all", "Whole object"]].forEach(([v,l]) => addOption(scope,v,l));
   const scopeLabel = make("label", { class: "ws-field" }, "Change"); scopeLabel.append(scope); editor.append(scopeLabel);
@@ -705,15 +754,13 @@ function installEditor() {
   editor.append(make("button", { id:"ws-refresh-matter", type:"button", class:"ws-action" }, "Rebuild Matter view"),
     make("p", { id:"ws-matter-status", class:"ws-feedback-count" }, "Matter is compiled from the product geometry, not drawn from its skin."));
 
-  const saveName = make("input", { id:"ws-component-name", type:"text", maxlength:"120", placeholder:"My tapered leg" });
-  const saveLabel = make("label", { class:"ws-field" }, "Save component as"); saveLabel.append(saveName); editor.append(saveLabel);
-  editor.append(make("button", { id:"ws-save-component", type:"button", class:"ws-action" }, "Save to my library"));
   editor.append(make("h3", {}, "Tell Workshop"));
   const chat = make("form", { id:"ws-component-chat", class:"ws-component-chat" });
   chat.append(make("input", { id:"ws-component-chat-text", type:"text", placeholder:"make all the legs thinner" }),
     make("button", { type:"submit", class:"ws-action" }, "Change")); editor.append(chat);
   // Buildability has a nested heading; insertBefore needs a direct child.
   right.insertBefore(editor, right.querySelector(":scope > h3"));
+  installBuildPanel(editor);
 
   const bom = make("section", { id:"ws-bom-box" }); bom.append(make("h3", {}, "Materials"), make("div", { id:"ws-bom" }));
   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
@@ -783,6 +830,10 @@ function installEditor() {
   });
   $("#ws-refresh-matter").onclick = (event) => guard(event.currentTarget, async () => { await loadMatter(true); view = "matter"; pressView("matter"); show(false); });
   $("#ws-save-component").onclick = (event) => guard(event.currentTarget, saveSelectedComponent);
+  $("#ws-show-whole").onclick = (event) => guard(event.currentTarget, async () => { showWholeProduct(); });
+  $("#ws-component-name").oninput = (event) => {
+    if (event.target.value.trim()) event.target.dataset.edited = "1"; else delete event.target.dataset.edited;
+  };
   chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
   testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
@@ -834,10 +885,10 @@ async function chatEdit() {
 }
 async function saveSelectedComponent() {
   const part = selectedPart(); if (!part) throw new Error("Click the component you want to save first.");
-  const name = $("#ws-component-name").value.trim() || `${part.material} ${part.role}`;
+  const field = $("#ws-component-name"), name = field.value.trim() || `${part.material} ${part.role}`;
   const answer = await api("/api/workshop/library", { action:"save_component", ...candidateBody(), part_name:part.name, name });
   bench.personalLibrary = answer.personal_library || []; bench.pricebook = answer.pricebook || bench.pricebook;
-  renderUserLibrary(); $("#ws-component-name").value = ""; say(`Saved ${name} to My Library.`);
+  renderUserLibrary(); field.value = ""; delete field.dataset.edited; say(`Saved ${name} to My library.`);
 }
 async function reuseLibraryComponent(itemId) {
   if (!bench.selectedPart) throw new Error("Click a target component first.");
@@ -1064,6 +1115,39 @@ function advancePlayback(now) {
   if (i !== bench.playbackIndex) setPlaybackIndex(i, false);
   if (i >= frames.length - 1) { bench.playbackPlaying = false; $("#ws-play").textContent = "Replay"; }
 }
+function renderJointScreen(card, screen) {
+  bench.jointVerdicts = null;
+  if (!screen) return;
+  if (screen.available === false) { card.append(make("p", { class:"ws-note", id:"ws-joint-screen-note" }, `Joints not screened: ${screen.why}`)); return; }
+  bench.jointVerdicts = Object.fromEntries((screen.joints || []).map((row) => [row.joint, row.verdict]));
+  const box = make("div", { id:"ws-joint-screen", "data-gives-way":String((screen.gives_way || []).length) });
+  const first = screen.first_to_give;
+  box.append(make("strong", {}, (screen.gives_way || []).length
+    ? `${screen.gives_way.length} joint${screen.gives_way.length === 1 ? "" : "s"} would give way`
+    : "No joint is past its strength"));
+  if (first?.joint) box.append(make("p", { id:"ws-first-to-give" }, `Pushed like this, the first to go is ${first.a} ↔ ${first.b}, ${first.would_be}, at about ${Number(first.force_n).toLocaleString(undefined, { maximumFractionDigits:0 })} N.`));
+  else if (first?.why) box.append(make("p", { id:"ws-first-to-give" }, first.why));
+  if ((screen.comes_apart_into || []).length > 1) box.append(make("p", { id:"ws-comes-apart" },
+    `It would come apart into ${screen.comes_apart_into.length} pieces: ` + screen.comes_apart_into.map((piece) => piece.length > 3 ? `${piece[0]} and ${piece.length - 1} more` : piece.join(" + ")).join("; ") + "."));
+  const leaves = screen.stops_standing_square;
+  if (leaves) box.append(make("p", { class:"ws-note" + (screen.standing === "resting on the floor" ? "" : " warn"), id:"ws-screen-floor-note" },
+    `Pushed along this line it stays put up to about ${Number(leaves.force_n).toLocaleString(undefined, { maximumFractionDigits:0 })} N; past that it ${leaves.does}.`));
+  box.append(make("p", { class:"ws-feedback-count" }, `It is ${screen.standing}. One is all of a joint's strength; between a half and one is uncertain, because a sharp blow can load a joint up to about twice what a steady push does.`));
+  const list = make("ul", { class:"ws-joint-list" });
+  for (const row of (screen.joints || []).slice(0, 8)) {
+    const item = make("li", { class:`ws-joint-row screened ${String(row.verdict).replace(" ", "-")}`, "data-joint":row.joint });
+    const used = row.utilisation == null ? null : Number(row.utilisation);
+    item.append(make("span", { class:`ws-joint-kind ${String(row.verdict).replace(" ", "-")}` }, row.verdict),
+      make("span", { class:"ws-joint-parts" }, `${row.a} ↔ ${row.b}`),
+      make("small", {}, used == null ? (row.why || "not rated") : `${used >= 0.1 ? (used * 100).toFixed(0) : (used * 100).toPrecision(2)}% of its strength · would be ${row.would_be}`));
+    const bar = make("span", { class:"ws-joint-bar" }); const fill = make("i");
+    fill.style.width = `${Math.min(100, (used || 0) * 100)}%`; bar.append(fill); item.append(bar); list.append(item);
+  }
+  box.append(list);
+  if ((screen.joints || []).length > 8) box.append(make("p", { class:"ws-feedback-count" }, `and ${screen.joints.length - 8} more joints, all loaded less.`));
+  card.append(box);
+  if (view === "wire" || view === "skin") show(false);
+}
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
@@ -1116,8 +1200,9 @@ function renderBenchResult(result) {
     card.append(make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. A top one cell thick has no depth to bend through: use a cell size that puts at least two cells through the part that carries the load.`),
       make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
-    const target = result.target || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
-      make("p", {}, `${Number(target.force_n || 0).toFixed(0)} N for ${Number(target.duration_s || 0).toFixed(2)} s at ${(target.point_m || []).map((v) => Number(v).toFixed(2)).join(", ")} m`));
+    const target = result.target || {}, asked = result.requested || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
+      make("p", {}, `${Number(asked.force_n || 0).toFixed(0)} N at ${(target.point_m || []).map((v) => Number(v).toFixed(2)).join(", ")} m`));
+    renderJointScreen(card, result.joint_screen);
   } else if (result.test === "runtime_contract") {
     const s = result.summary || {}; card.append(make("strong", {}, "Runtime physics compiled"),
       make("p", {}, `${s.detailed_components || 0} detailed components → ${s.runtime_bodies || 0} runtime bodies · ${s.mechanisms || 0} mechanisms`));
@@ -1174,19 +1259,6 @@ async function saveBenchPreset() {
 // ---------------------------------------------------------------------------
 // Panels
 // ---------------------------------------------------------------------------
-function cards() {
-  const root = $("#variant-list"); root.replaceChildren(); const twins = {};
-  for (const [id,fingerprint] of Object.entries(bench.plans)) (twins[fingerprint] ||= []).push(id);
-  bench.candidates.forEach((candidate,index) => {
-    const button = make("button", { type:"button", class:"ws-card" + (index === bench.selected ? " selected" : "") });
-    const m = candidate.measured, shared = twins[bench.plans[candidate.design_id]] || [];
-    button.append(make("strong", {}, candidate.label || candidate.design_id),
-      make("small", {}, `${m.mass_kg} kg · base ${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m · ${m.geometry_coherent === false ? "connections unresolved" : `geometric tip ${Number(m.tip_angle_deg).toFixed(2)}°`}${shared.length > 1 ? (candidate.mechanical_model === "rigid" ? " · same rigid geometry" : " · same snapped object") : ""}`));
-    if (shared.length > 1) button.classList.add("same-plan");
-    button.onclick = () => { candidateRequest++; bench.selected = index; bench.selectedPart = null; bench.forcePoint = null; bench.revision++; invalidateMatter(); clearPlayback(); $("#ws-bench-result").replaceChildren(); cards(); show(false); };
-    root.append(button);
-  });
-}
 function savedDesigns(rows) {
   bench.savedDesigns = Array.isArray(rows) ? rows : []; const root = $("#ws-saved-designs"); root.replaceChildren();
   if (!bench.savedDesigns.length) { root.append(make("p", { class:"ws-feedback-count" }, "No saved designs yet.")); return; }
@@ -1197,6 +1269,7 @@ function savedDesigns(rows) {
   }
 }
 function renderUserLibrary() {
+  renderBuildChoices();
   const root = $("#ws-user-library"); root.replaceChildren();
   if (!bench.personalLibrary.length) { root.append(make("p", { class:"ws-feedback-count" }, "Nothing saved yet. Select a part and save it.")); return; }
   for (const item of bench.personalLibrary) {
@@ -1234,6 +1307,7 @@ function productParts(candidate) {
     if (group.names.length > 1) open.append(make("span", { class:"ws-part-qty" }, `× ${group.names.length}`));
     open.title = `${group.role} · ${group.material} · ${group.mass.toFixed(3)} kg total`;
     if (group.names.includes(bench.selectedPart)) { row.classList.add("selected"); open.setAttribute("aria-current", "true"); }
+    if (group.names.includes(bench.isolated)) row.classList.add("alone");
     open.onclick = () => { openComponent(first); };
     const copy = make("button", { type:"button", class:"ws-part-copy", title:`Copy ${group.base} into My library` }, "Copy");
     copy.onclick = () => guard(copy, () => copyComponent(first, group.base));
@@ -1243,10 +1317,20 @@ function productParts(candidate) {
   return list;
 }
 function openComponent(partName) {
-  bench.selectedPart = partName; show(false);
+  bench.selectedPart = partName; bench.isolated = partName;
+  // Matter, collision, relations and physics are whole-product views; a single
+  // component has nothing to show in them, so open it in the design view.
+  if (!ISOLATING_VIEWS.includes(view)) { view = "wire"; pressView(view); }
+  const part = (chosen()?.parts || []).find((p) => p.name === partName);
+  const suggested = $("#ws-component-name");
+  if (suggested && !suggested.dataset.edited) suggested.value = part ? `${bench.kind} ${partName}` : "";
+  show();
   // The component editor lives in the Build tab of the shell, if the shell is there.
   document.querySelector('.ws-workspace-tabs button[data-mode="build"]')?.click();
-  $("#ws-component-editor")?.scrollIntoView({ block:"nearest" });
+  $("#ws-component-editor")?.scrollIntoView({ block:"start" });
+}
+function showWholeProduct() {
+  bench.isolated = null; show(); renderProductCatalog();
 }
 async function copyComponent(partName, label) {
   if (!chosen()) throw new Error("Open a product first.");
@@ -1264,7 +1348,7 @@ function renderProductCatalog() {
   // picker, a saved design or a library assembly. Clicking the open row toggles.
   if (picker.value !== lastOpenProduct) { lastOpenProduct = picker.value; bench.expandedProduct = picker.value; }
   const candidate = chosen(), kinds = [...picker.options].map((o) => o.value);
-  const signature = JSON.stringify([kinds, picker.value, bench.expandedProduct, bench.selectedPart,
+  const signature = JSON.stringify([kinds, picker.value, bench.expandedProduct, bench.selectedPart, bench.isolated,
     candidate ? candidate.parts.map((p) => p.name) : null]);
   if (signature === catalogSignature) return;
   catalogSignature = signature; root.replaceChildren();
@@ -1279,19 +1363,12 @@ function renderProductCatalog() {
     card.onclick = () => guard(card, async () => {
       if (picker.value !== option.value) {
         picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true }));
-      } else { bench.expandedProduct = expanded ? null : option.value; catalogSignature = null; renderProductCatalog(); }
+      } else if (bench.isolated) { showWholeProduct(); }
+      else { bench.expandedProduct = expanded ? null : option.value; catalogSignature = null; renderProductCatalog(); }
     });
     entry.append(card);
     if (expanded) entry.append(productParts(candidate));
     root.append(entry);
-  }
-}
-function families(described) {
-  const root = $("#ws-library"); root.replaceChildren();
-  for (const family of described) {
-    const box = make("details", { class:"ws-family" }), list = make("dl");
-    for (const p of family.parameters) list.append(make("dt", {}, p.name), make("dd", {}, p.choices ? p.choices.join(", ") : `${p.low ?? "—"} to ${p.high ?? "—"} ${p.unit}`.trim()));
-    box.append(make("summary", {}, `${family.family} · ${family.parameters.length} settings`), make("p", {}, family.about), list); root.append(box);
   }
 }
 function renderBom(candidate) {
@@ -1301,10 +1378,24 @@ function renderBom(candidate) {
   for (const row of bom.materials || []) { const tr = make("tr"); tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`), make("td", {}, row.cost == null ? "unpriced" : `${row.cost} cr`)); table.append(tr); }
   root.append(table, make("p", { class:"ws-bom-total" }, `Material cost: ${bom.material_cost} credits`), make("p", { class:"ws-feedback-count" }, bom.basis));
 }
+function renderIsolation() {
+  const bar = $("#ws-isolation"); if (!bar) return;
+  const alone = isolatedPart();
+  bar.hidden = !alone;
+  if (alone) $("#ws-isolation-note").textContent = `Working on ${alone.name} on its own.`;
+  $("#ws-show-whole").textContent = `Show the whole ${bench.kind.replace("-", " ")}`;
+  // Matter, collision, relations and physics measure the assembled product.
+  document.querySelectorAll(".ws-viewbar button").forEach((button) => {
+    const whole = !ISOLATING_VIEWS.includes(button.dataset.view);
+    button.disabled = Boolean(bench.isolated) && whole;
+    button.title = button.disabled ? "This view measures the whole product. Show it to use this view." : "";
+  });
+}
 function renderSelected() {
   const part = selectedPart(), status = $("#ws-selected-part"), material = $("#ws-part-material");
-  document.querySelectorAll("[data-component-edit], #ws-save-component, #ws-part-material, #ws-apply-skin")
+  document.querySelectorAll("[data-component-edit], #ws-save-component, #ws-component-name, #ws-part-material, #ws-apply-skin")
     .forEach((element) => { element.disabled = !part; });
+  renderIsolation();
   if (!part) {
     status.textContent = "Click a part of the object to edit it."; material.replaceChildren();
     $("#ws-skin-profile").value = "design"; $("#ws-skin-bend").value = "0";
@@ -1322,18 +1413,44 @@ function renderSelected() {
   $("#ws-skin-roughness").value = String(descriptor.roughness ?? 0.72); $("#ws-skin-roughness-value").textContent = Number(descriptor.roughness ?? 0.72).toFixed(2);
   $("#ws-skin-physical").checked = Boolean(descriptor.physical);
 }
+// What the four tiles and the title report has to be what the viewport shows:
+// the product's balance means nothing while one component is alone on screen.
+function metricLabel(id, text) {
+  const label = $(id)?.previousElementSibling;
+  if (label && label.tagName === "SPAN") label.textContent = text;
+}
+function headline(candidate, m) {
+  const alone = isolatedPart();
+  for (const id of ["#ws-buildability", "#ws-measurement-basis"]) { const box = $(id); if (box) box.hidden = Boolean(alone); }
+  if (alone) {
+    const mm = alone.size_m.map((v) => (v * 1000).toFixed(0));
+    $("#ws-name").textContent = alone.name;
+    $("#ws-purpose").textContent = `One ${alone.role.replace(/_/g, " ")} of the ${bench.kind.replace("-", " ")}.`;
+    metricLabel("#ws-part-count", "Material"); $("#ws-part-count").textContent = alone.material;
+    metricLabel("#ws-mass", "Mass"); $("#ws-mass").textContent = `${Number(alone.mass_kg).toFixed(3)} kg`;
+    metricLabel("#ws-base", "Size"); $("#ws-base").textContent = `${mm[0]} × ${mm[1]} × ${mm[2]} mm`;
+    metricLabel("#ws-tip", "Family"); $("#ws-tip").textContent = alone.family || alone.role.replace(/_/g, " ");
+    return;
+  }
+  $("#ws-name").textContent = candidate.label || candidate.design_id;
+  $("#ws-purpose").textContent = candidate.purpose;
+  metricLabel("#ws-part-count", "Parts"); $("#ws-part-count").textContent = candidate.parts.length;
+  metricLabel("#ws-mass", "Mass"); $("#ws-mass").textContent = `${Number(m.mass_kg).toFixed(3)} kg`;
+  metricLabel("#ws-base", "Stands on"); $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`;
+  metricLabel("#ws-tip", "Tips at"); $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
+}
 function show(reframe = true) {
-  if (chosen()) scheduleBuildability();
+  // The buildability panel is hidden while one component is alone on screen;
+  // do not pay for an analysis of the whole product that nobody can read.
+  if (chosen() && !bench.isolated) scheduleBuildability();
   if ($("#ws-mechanical-model") && chosen()) $("#ws-mechanical-model").value = chosen().mechanical_model === "rigid" ? "rigid" : "lattice";
   const candidate = chosen(); if (!candidate) return;
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
-  const m = currentMeasurements(candidate); $("#ws-name").textContent = candidate.label || candidate.design_id; $("#ws-purpose").textContent = candidate.purpose;
-  $("#ws-part-count").textContent = candidate.parts.length; $("#ws-mass").textContent = `${Number(m.mass_kg).toFixed(3)} kg`;
-  $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
+  const m = currentMeasurements(candidate); headline(candidate, m);
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
-  renderSelected(); renderBom(candidate); renderProductCatalog();
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
+  renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
   else if (!m.stands_up) { checks.classList.add("bad"); said.push("Its geometric balance point is outside the support region."); }
@@ -1353,26 +1470,294 @@ function show(reframe = true) {
   checks.textContent = said.join(" "); $("#ws-plan").hidden = true;
 }
 
-async function fingerprints() {
-  const revision = bench.revision, plans = {};
-  bench.plans = {};
-  await Promise.all(bench.candidates.map(async (candidate) => {
-    try { const plan = await api("/api/workshop/plan", { kind:bench.kind, design_id:candidate.design_id, parameters:candidate.parameters, component_overrides:candidate.component_overrides || {} }); plans[candidate.design_id] = plan.fingerprint; }
-    catch { /* optional UI evidence */ }
-  })); if (revision === bench.revision) { bench.plans = plans; cards(); }
-}
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   bench.revision++;
   stage.dataset.kind = answer.kind; stage.dataset.revision = String(bench.revision);
-  bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0; bench.plans = {};
-  bench.selectedPart = keepPart; bench.forcePoint = null; invalidateMatter(); clearPlayback();
+  bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0;
+  bench.selectedPart = keepPart; bench.isolated = keepPart && bench.isolated ? keepPart : null;
+  bench.forcePoint = null; invalidateMatter(); clearPlayback();
+  if (build.placing) stopPlacing(); ensureKindOption(answer.kind); bench.jointVerdicts = null;
+  $("#ws-push-result")?.replaceChildren(); showForceAt(null);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
-  renderBenchCatalog(); cards(); show(); fingerprints();
+  renderBenchCatalog(); show();
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Building part by part (mcp/workshop_construction.py). The page decides no
+// geometry here either: it says what to add and where the person clicked, and
+// draws the part where the server says it would go.
+// ---------------------------------------------------------------------------
+
+// Where a point of the object is on the page, so that a test (or a tool) can
+// click a face of it rather than a pixel that a change of framing would move.
+stage.pagePointOf = (point) => {
+  const v = new THREE.Vector3(...point).project(camera), r = stage.getBoundingClientRect();
+  return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
+};
+function clearGhost() {
+  for (const child of [...ghost.children]) { ghost.remove(child); if (child.geometry) child.geometry.dispose(); disposeMaterial(child.material); }
+}
+function drawGhost(part, touching) {
+  clearGhost();
+  const color = touching ? 0x5fd38d : 0xe0a63a;
+  const mesh = new THREE.Mesh(shapeFor(part), new THREE.MeshStandardMaterial({ color, transparent:true, opacity:0.5, depthWrite:false }));
+  mesh.position.set(...part.center_m); mesh.rotation.copy(spinFor(part.rotation_deg)); ghost.add(mesh);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color:0xeaffef }));
+  edges.position.copy(mesh.position); edges.rotation.copy(mesh.rotation); ghost.add(edges);
+}
+function drawJoints(candidate) {
+  if (shownParts(candidate).length !== candidate.parts.length) return;   // one component alone has no joints to show
+  const size = Math.max(0.008, reach * 0.014);
+  for (const joint of candidate.construction?.joints || []) {
+    const how = joint.interface; if (joint.open || !how?.centre_m) continue;
+    // After a push, a joint shows how hard it was loaded rather than what kind it is.
+    const verdict = bench.jointVerdicts?.[joint.id];
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(verdict === "gives way" ? size * 1.7 : size, 12, 8),
+      new THREE.MeshBasicMaterial({ color:verdict ? VERDICT_COLORS[verdict] : (JOINT_COLORS[joint.kind] ?? 0xffffff), depthTest:false, transparent:true, opacity:0.95 }));
+    dot.position.set(...how.centre_m); dot.renderOrder = 5; dot.userData.jointId = joint.id; group.add(dot);
+    const axis = joint.kind === "bearing" ? (how.axis || how.normal) : null;
+    if (axis) {
+      const a = new THREE.Vector3(...how.centre_m), d = new THREE.Vector3(...axis).multiplyScalar(size * 5);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a.clone().sub(d), a.clone().add(d)]),
+        new THREE.LineBasicMaterial({ color:JOINT_COLORS.bearing, depthTest:false }));
+      line.renderOrder = 5; group.add(line);
+    }
+  }
+}
+
+function buildFamily() {
+  const value = $("#ws-build-what")?.value || "";
+  return value.startsWith("family:") ? (bench.families || []).find((f) => f.family === value.slice(7)) : null;
+}
+function renderBuildSizes() {
+  const root = $("#ws-build-sizes"); if (!root) return; root.replaceChildren();
+  const family = buildFamily(); $("#ws-build-material").closest("label").hidden = !family;
+  if (!family) { root.append(make("p", { class:"ws-feedback-count" }, "A saved component comes in at the size and material it was saved with.")); return; }
+  if ((family.offers || []).includes("start")) {
+    const label = make("label", { class:"ws-field" }, "Length (m)");
+    label.append(make("input", { id:"ws-build-length", type:"number", min:"0.005", max:"20", step:"0.005", value:"0.5" })); root.append(label);
+  }
+  for (const p of family.parameters) {
+    if (["lean_x", "lean_z", "splay_deg", "style"].includes(p.name)) continue;   // a part stands as it is placed
+    const label = make("label", { class:"ws-field" }, `${p.name.replace(/_m$/, "").replaceAll("_", " ")}${p.unit ? ` (${p.unit})` : ""}`);
+    let input;
+    if (p.choices) { input = make("select", { "data-parameter":p.name }); p.choices.forEach((c) => addOption(input, c, c)); input.value = p.default; }
+    else input = make("input", { "data-parameter":p.name, type:"number", min:String(p.low ?? 0), max:String(p.high ?? 20), step:"0.005", value:String(p.default) });
+    input.addEventListener("change", () => { if (build.placing) previewPlacement(); });
+    label.append(input); root.append(label);
+  }
+}
+function partRequest() {
+  const what = $("#ws-build-what").value;
+  if (what.startsWith("item:")) return { library_item_id:what.slice(5) };
+  const family = buildFamily(); if (!family) throw new Error("Choose what to add first.");
+  const parameters = {};
+  document.querySelectorAll("#ws-build-sizes [data-parameter]").forEach((input) => {
+    parameters[input.dataset.parameter] = input.tagName === "SELECT" ? input.value : Number(input.value);
+  });
+  const out = { family:family.family, material:$("#ws-build-material").value, parameters };
+  if ($("#ws-build-length")) out.length_m = Number($("#ws-build-length").value);
+  return out;
+}
+function placement(action) {
+  const fasten = $("#ws-build-fasten").value;
+  return { action, part:partRequest(), by:$("#ws-build-by").value, onto:build.onto, at_m:build.at,
+    twist_deg:build.twist, depth_m:build.depth, snap:$("#ws-build-snap").checked,
+    ...(action === "add" && fasten !== "none" ? { joint:{ kind:fasten } } : {}) };
+}
+function sayBuild(message, bad = false) {
+  const status = $("#ws-build-status"); if (!status) return;
+  status.textContent = message; status.classList.toggle("bad", bad);
+}
+function stopPlacing(message = "") {
+  build.placing = false; build.onto = null; build.at = null; build.twist = 0; build.depth = 0; build.preview = null; build.request++;
+  clearGhost(); stage.classList.remove("ws-placing");
+  const start = $("#ws-build-place"); if (start) start.textContent = "Place it: click where it goes";
+  if ($("#ws-build-adjust")) $("#ws-build-adjust").hidden = true;
+  sayBuild(message);
+}
+async function previewPlacement() {
+  if (!build.placing || !build.onto) return;
+  const mine = ++build.request, revision = bench.revision;
+  try {
+    const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct:placement("preview") });
+    if (mine !== build.request || revision !== bench.revision || !build.placing) return;
+    build.preview = answer.construct; const part = build.preview.part, touching = build.preview.touching;
+    drawGhost(part, touching); $("#ws-build-adjust").hidden = false;
+    const met = !touching ? `It does not meet ${build.onto} over any flat area, so it cannot be fastened there. A round side has none: use its end, or sink the part in until the shaft runs into it.`
+      : touching.form === "planar" ? `Meets ${build.onto} over ${(touching.area_m2 * 1e4).toFixed(1)} cm²${touching.mitred ? " (cut to sit flat)" : ""}.`
+      : `A ${(touching.diameter_m * 1000).toFixed(0)} mm shaft, ${(touching.engaged_m * 1000).toFixed(0)} mm of it inside ${build.onto}.`;
+    sayBuild(`${part.name}: ${(part.size_m[0]*1000).toFixed(0)} × ${(part.size_m[1]*1000).toFixed(0)} × ${(part.size_m[2]*1000).toFixed(0)} mm, ${part.mass_kg} kg. ${met}`, !touching && $("#ws-build-fasten").value !== "none");
+  } catch (error) { if (mine === build.request) sayBuild(String(error.message || error), true); }
+}
+function placeAtHit(hit) {
+  const name = hitPartName(hit);
+  if (!name) { sayBuild("Click on a part of the object: the new part goes against it.", true); return; }
+  build.onto = name; build.at = [hit.point.x, hit.point.y, hit.point.z]; previewPlacement();
+}
+async function addPlaced() {
+  if (!build.preview) throw new Error("Click where the part goes first.");
+  const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct:placement("add") });
+  const added = answer.construct?.select || null; stopPlacing();
+  if (took(answer, added)) { ensureKindOption(answer.kind); sayBuild(added ? `Added ${added}${answer.construct.fastened ? ", fastened" : ", loose"}.` : ""); }
+}
+async function constructNow(construct, keep = null) {
+  const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct });
+  if (took(answer, keep)) ensureKindOption(answer.kind);
+  return answer;
+}
+function ensureKindOption(kind) {
+  const picker = $("#ws-archetype"); if (!picker || !kind) return;
+  if (![...picker.options].some((o) => o.value === kind)) { const option = make("option", { value:kind }, kind === "custom" ? "my build" : kind); option.title = "A design built part by part."; picker.append(option); }
+  picker.value = kind; renderProductCatalog();
+}
+async function startNewBuild() {
+  const request = partRequest();
+  const answer = await api("/api/workshop/open", { kind:"custom", first_part:request });
+  bench.openedLibraryItem = null; stopPlacing();
+  const first = answer.candidates?.[0]?.parts?.[0]?.name || null;
+  if (took(answer, first)) { ensureKindOption("custom"); sayBuild(`Started a new build from ${first}. Add the next part against it.`); }
+}
+async function pushOnIt() {
+  if (!bench.selectedPart) throw new Error("Click the spot on the object to push first.");
+  if (bench.isolated) { const keep = bench.selectedPart; showWholeProduct(); bench.selectedPart = keep; }
+  const part = selectedPart(), point = bench.forcePoint || part.center_m;
+  const config = { component:bench.selectedPart, point_m:point, force_n:Number($("#ws-push-force").value),
+    push:$("#ws-push-way").value, standing:$("#ws-push-standing").value };
+  const revision = bench.revision;
+  const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:"force_probe", config } });
+  if (revision !== bench.revision) return;
+  const root = $("#ws-push-result"); root.replaceChildren();
+  renderJointScreen(root, answer.bench?.joint_screen);
+  showForceAt(point, config.force_n, config.push);
+}
+function renderBuild() {
+  const root = $("#ws-build-joints"), candidate = chosen(); if (!root || !candidate) return;
+  const c = candidate.construction || { joints:[], unfastened:[], touching_unfastened:[] };
+  root.replaceChildren();
+  const off = $("#ws-build-remove"); if (off) { off.disabled = !bench.selectedPart || candidate.parts.length < 2; off.textContent = bench.selectedPart ? `Take ${bench.selectedPart} off` : "Take the selected part off"; }
+  if (!c.joints_authored) {
+    root.append(make("p", { class:"ws-feedback-count" }, "This is still the template: its parts are joined where they touch. The joints become yours to change the moment you add, take off or fasten a part."));
+    const adopt = make("button", { type:"button", class:"ws-action", id:"ws-build-adopt" }, "Show me its joints");
+    adopt.onclick = () => guard(adopt, () => constructNow({ action:"adopt" }, bench.selectedPart)); root.append(adopt); return;
+  }
+  const shown = bench.selectedPart ? c.joints.filter((j) => j.a === bench.selectedPart || j.b === bench.selectedPart) : c.joints;
+  root.append(make("p", { class:"ws-feedback-count" }, bench.selectedPart
+    ? `${shown.length} of ${c.joints.length} joints hold ${bench.selectedPart}. Green fixes two parts together; blue lets one turn in the other.`
+    : `${c.joints.length} joints. Click a part to see only its own.`));
+  const list = make("ul", { class:"ws-joint-list" });
+  for (const joint of shown) {
+    const row = make("li", { class:"ws-joint-row" + (joint.open ? " open" : ""), "data-joint":joint.id });
+    const how = joint.interface, size = joint.open ? "no longer touching"
+      : how.form === "planar" ? `${(how.area_m2 * 1e4).toFixed(1)} cm²${how.mitred ? " raked" : ""}`
+      : `${(how.diameter_m * 1000).toFixed(0)} mm shaft, ${(how.engaged_m * 1000).toFixed(0)} mm in`;
+    row.append(make("span", { class:`ws-joint-kind ${joint.kind}` }, joint.kind === "bearing" ? "turns" : "fixed"),
+      make("span", { class:"ws-joint-parts" }, `${joint.a} ↔ ${joint.b}`), make("small", {}, `${joint.method} · ${size}`));
+    const undo = make("button", { type:"button", class:"ws-part-copy" }, "Unfasten");
+    undo.onclick = () => guard(undo, () => constructNow({ action:"unfasten", a:joint.a, b:joint.b }, bench.selectedPart));
+    row.append(undo); list.append(row);
+  }
+  root.append(list);
+  const near = (c.touching_unfastened || []).filter((pair) => !bench.selectedPart || pair.includes(bench.selectedPart));
+  for (const [a, b] of near.slice(0, 12)) {
+    const row = make("div", { class:"ws-joint-row loose" });
+    row.append(make("span", { class:"ws-joint-parts" }, `${a} and ${b} touch and are not fastened`));
+    for (const [kind, label] of [["fixed", "Fix"], ["bearing", "Let it turn"]]) {
+      const button = make("button", { type:"button", class:"ws-part-copy" }, label);
+      button.onclick = () => guard(button, () => constructNow({ action:"fasten", a, b, kind }, bench.selectedPart)); row.append(button);
+    }
+    root.append(row);
+  }
+  if ((c.unfastened || []).length) root.append(make("p", { class:"ws-note warn" }, `Nothing holds ${c.unfastened.join(", ")}.`));
+}
+function installBuildPanel(editor) {
+  const box = make("section", { id:"ws-build-box", class:"ws-build-box" });
+  box.append(make("h3", {}, "Build part by part"),
+    make("p", { class:"ws-feedback-count" }, "Choose a part, press Place, then click the face it goes against. It comes in square to that face; turn it or sink it in, then add it."));
+  const what = make("select", { id:"ws-build-what", "aria-label":"Part to add" });
+  const whatLabel = make("label", { class:"ws-field" }, "Add"); whatLabel.append(what); box.append(whatLabel);
+  const material = make("select", { id:"ws-build-material" });
+  const materialLabel = make("label", { class:"ws-field" }, "Made of"); materialLabel.append(material); box.append(materialLabel);
+  box.append(make("div", { id:"ws-build-sizes" }));
+  const by = make("select", { id:"ws-build-by" }); BUILD_FACES.forEach(([v, l]) => addOption(by, v, l));
+  const byLabel = make("label", { class:"ws-field" }, "Attach it by"); byLabel.append(by); box.append(byLabel);
+  const fasten = make("select", { id:"ws-build-fasten" });
+  [["fixed", "Fixed: glued, welded or pressed in"], ["bearing", "Turning: free to spin in the other part"], ["none", "Loose: just set there"]].forEach(([v, l]) => addOption(fasten, v, l));
+  const fastenLabel = make("label", { class:"ws-field" }, "Fasten"); fastenLabel.append(fasten); box.append(fastenLabel);
+  const snapLabel = make("label", { class:"ws-field" }, "Settle on the middle or flush to an edge");
+  const snap = make("input", { id:"ws-build-snap", type:"checkbox" }); snap.checked = true; snapLabel.append(snap); box.append(snapLabel);
+  const row = make("div", { class:"ws-row" });
+  row.append(make("button", { id:"ws-build-place", type:"button", class:"ws-action primary" }, "Place it: click where it goes"),
+    make("button", { id:"ws-build-new", type:"button", class:"ws-action" }, "Start a new build from it"));
+  box.append(row);
+  const adjust = make("div", { id:"ws-build-adjust", class:"ws-build-adjust" }); adjust.hidden = true;
+  const nudges = make("div", { class:"ws-edit-actions" });
+  for (const [label, change] of [["Turn left", () => { build.twist -= 90; }], ["Turn right", () => { build.twist += 90; }],
+    ["Sink in 5 mm", () => { build.depth += 0.005; }], ["Pull out 5 mm", () => { build.depth -= 0.005; }]]) {
+    const button = make("button", { type:"button", class:"ws-action" }, label);
+    button.onclick = () => { change(); previewPlacement(); }; nudges.append(button);
+  }
+  const confirm = make("div", { class:"ws-row" });
+  confirm.append(make("button", { id:"ws-build-add", type:"button", class:"ws-action primary" }, "Add it"),
+    make("button", { id:"ws-build-cancel", type:"button", class:"ws-action" }, "Cancel"));
+  adjust.append(nudges, confirm); box.append(adjust);
+  box.append(make("p", { id:"ws-build-status", class:"ws-note", role:"status", "aria-live":"polite" }));
+  box.append(make("button", { id:"ws-build-remove", type:"button", class:"ws-action" }, "Take the selected part off"));
+  box.append(make("h3", {}, "Joints"), make("div", { id:"ws-build-joints" }));
+  const push = make("div", { id:"ws-push-box", class:"ws-push-box" });
+  push.append(make("h3", {}, "Push on it"),
+    make("p", { class:"ws-feedback-count" }, "Click the spot to push, then press Push. A quick calculation, not a simulation: it says how much of each joint's strength the push uses and which joint would go first."));
+  const force = make("input", { id:"ws-push-force", type:"number", min:"1", max:"100000", step:"50", value:"1000" });
+  const forceLabel = make("label", { class:"ws-field" }, "Force (N)"); forceLabel.append(force); push.append(forceLabel);
+  const way = make("select", { id:"ws-push-way" });
+  [["down","down"],["up","up"],["+x","along +x, to the right"],["-x","along -x, to the left"],["+z","along +z, towards the back"],["-z","along -z, towards the front"]].forEach(([v,l]) => addOption(way, v, l));
+  const wayLabel = make("label", { class:"ws-field" }, "Pushing"); wayLabel.append(way); push.append(wayLabel);
+  const standing = make("select", { id:"ws-push-standing" });
+  [["resting","standing on the floor"],["free","struck in mid-air"]].forEach(([v,l]) => addOption(standing, v, l));
+  const standingLabel = make("label", { class:"ws-field" }, "While it is"); standingLabel.append(standing); push.append(standingLabel);
+  push.append(make("button", { id:"ws-push-go", type:"button", class:"ws-action primary" }, "Push"), make("div", { id:"ws-push-result" }));
+  box.append(push);
+  editor.prepend(box);
+  $("#ws-push-go").onclick = (event) => guard(event.currentTarget, pushOnIt);
+  for (const control of [force, way, standing]) control.addEventListener("change", () => { if (bench.jointVerdicts) guard(null, pushOnIt); });
+
+  what.onchange = () => { renderBuildSizes(); if (build.placing) previewPlacement(); };
+  for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });
+  $("#ws-build-place").onclick = () => {
+    if (build.placing) { stopPlacing("Placing cancelled."); return; }
+    if (bench.isolated) showWholeProduct();          // a part goes against the product, not against one piece of it
+    // A click has to land on a face, and only the solid view has faces: a wire
+    // edge belongs to two of them.
+    if (view !== "skin") { view = "skin"; pressView("skin"); show(false); }
+    build.placing = true; stage.classList.add("ws-placing"); $("#ws-build-place").textContent = "Placing… click a face (press again to stop)";
+    sayBuild("Click the face of the part it goes against.");
+  };
+  $("#ws-build-add").onclick = (event) => guard(event.currentTarget, addPlaced);
+  $("#ws-build-cancel").onclick = () => stopPlacing("Placing cancelled.");
+  $("#ws-build-new").onclick = (event) => guard(event.currentTarget, startNewBuild);
+  $("#ws-build-remove").onclick = (event) => guard(event.currentTarget, async () => {
+    if (!bench.selectedPart) throw new Error("Click the part to take off first.");
+    const gone = bench.selectedPart; await constructNow({ action:"remove", part_name:gone }); sayBuild(`Took ${gone} off, with the joints that held it.`);
+  });
+}
+function renderBuildChoices() {
+  const what = $("#ws-build-what"), material = $("#ws-build-material"); if (!what) return;
+  const before = what.value; what.replaceChildren();
+  const families = make("optgroup", { label:"Component families" });
+  for (const family of bench.families || []) families.append(make("option", { value:`family:${family.family}`, title:family.about }, family.family));
+  what.append(families);
+  const mine = (bench.personalLibrary || []).filter((item) => item.item_type === "component");
+  if (mine.length) { const saved = make("optgroup", { label:"My library" }); for (const item of mine) saved.append(make("option", { value:`item:${item.item_id}` }, item.name)); what.append(saved); }
+  if ([...what.options].some((o) => o.value === before)) what.value = before;
+  const kept = material.value; material.replaceChildren();
+  const names = (bench.pricebook?.materials || []).map((m) => m.material); if (!names.includes("oak")) names.push("oak");
+  names.sort().forEach((name) => addOption(material, name, name)); material.value = names.includes(kept) ? kept : "oak";
+  renderBuildSizes();
 }
 
 // ---------------------------------------------------------------------------
@@ -1389,8 +1774,6 @@ document.querySelectorAll(".ws-viewbar button").forEach((button) => {
     view = requested; pressView(view); show(false);
   });
 });
-$("#ws-more").onclick = (event) => guard(event.currentTarget, async () => { took(await api("/api/workshop/more", candidateBody())); });
-$("#ws-reset-variants").onclick = (event) => guard(event.currentTarget, async () => { bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:bench.kind, generation:bench.generation + 1 })); });
 $("#ws-archetype").onchange = (event) => guard(null, async () => { bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:event.target.value, generation:bench.generation + 1 })); });
 $("#ws-materialize").onclick = (event) => guard(event.currentTarget, async () => {
   if (!await loadMatter(true)) return;
@@ -1425,8 +1808,8 @@ async function start() {
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
   picker.value = answer.kind; renderProductCatalog();
-  families(answer.families); savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
-  bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); took(answer);
+  bench.families = answer.families || []; savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
+  bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); renderBuildChoices(); took(answer);
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;
