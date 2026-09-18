@@ -22,9 +22,8 @@ order. The ones most easily mistaken for done:
   single-material solid or one precise-rigid compound and refuses mechanisms and
   mixed materials, so the cart is refused as before.
 - **"Push on it" is a calculation, not a trial.** It is static-equivalent, its
-  parts cannot break, and a push that would tip the product is screened as if
-  it were free, which understates the joint loads. No engine run has yet been
-  compared with it.
+  parts cannot break, its floor is flat and rigid, and a product that tips is
+  taken at the instant it starts to. No engine run has yet been compared with it.
 - **A bearing's hold along its axis is not rated**, and the engine's fixings
   check tension and shear only: a joint pried off by a long lever is caught by
   the bench screen and by nothing in the world.

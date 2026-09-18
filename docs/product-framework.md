@@ -147,13 +147,23 @@ native fixing takes.
 
 Parts are rigid; each joint is an elastic interface whose stiffness comes from
 its contact and its two materials (a rigid-body-spring model, Kawai 1978). The
-loads are the push, gravity, the floor's reactions and its grip against
-sliding, and the inertia of whatever the product is free to do: the six motions
-of the whole and the spin of each body that turns on a single line of bearings
-("inertia relief"). The set is then in equilibrium and one linear solve gives
-what every joint transmits. For a tree of joints the stiffnesses cancel out and
-the answer is free-body statics; they only share a load between joints that
-carry it side by side.
+loads are the push, gravity, what the floor does, and the inertia of whatever
+the product is free to do: the six motions of the whole and the spin of each
+body that turns on a single line of bearings ("inertia relief"). The set is
+then in equilibrium and one linear solve gives what every joint transmits. For
+a tree of joints the stiffnesses cancel out and the answer is free-body
+statics; they only share a load between joints that carry it side by side.
+
+**The floor pushes and never pulls.** At every foot: reaction >= 0, upward
+acceleration >= 0, and one of the two is zero, with the product taken as one
+rigid thing starting from rest. So it may stand, tip onto an edge or a corner,
+or be lifted clear, and the answer says which and at what force it stops
+staying put. The floor's grip keeps the middle of the bearing feet from sliding
+and the product from turning on the spot, up to the friction on what presses
+there; past that it slides. Standing still this is exactly the statics
+`mcp/workshop_statics.py` already does. The floor is asked again at every force
+when looking for the first joint to give, because a product that stands under a
+light push may tip under a heavier one, and that changes what its joints carry.
 
 It reports each joint's share of its strength and what it would be (pulled
 apart, crushed, sheared, pried out), the force along the same line at which the
@@ -166,7 +176,7 @@ is `uncertain`, one is `gives way`. The parts are unbreakable here. It is a
 calculation, so the page offers it in Build and not in Test, which shows
 simulations only.
 
-Fifteen cases worked out by hand, in glass, oak and iron
+Seventeen cases worked out by hand, in glass, oak and iron
 (`tests/product_breakscreen_tests.py`), none read back from the code:
 
 - a push through the centre of mass of a free pair is shared by mass, and
@@ -179,22 +189,28 @@ Fifteen cases worked out by hand, in glass, oak and iron
 - a table shares a central load equally between four legs;
 - the cart's four bearings carry its chassis and the push when standing, and in
   mid-air only the share of the push that accelerates the two wheelsets;
-- a push the floor cannot hold slides it; one that would tip it is screened
-  free, with the reason.
+- a push past the floor's grip slides it, at the friction on its weight;
+- **a block pushed over pivots on its far edge as a rigid body does**: about
+  that edge `I = m (w^2 + h^2) / 3` and the torque is `F h - m g w/2`; its
+  centre's acceleration, the reaction `m (g + a_y)` on the two far corners and
+  the grip `m a_x - F` all come out, and it starts to tip at `F = m g w / 2h`;
+- pushed up harder than its weight it leaves the floor and accelerates at
+  `F/m - g`.
 
-On the default cart: 3 kN down on the handle would tip it (it pivots at about
-195 N, because the handle overhangs the back axle), and the first joints to go
-are the handle arms' small raked feet on the deck's edge, crushed, at about
-640 N: someone leaning their weight on that handle. That is a finding about the
-template, and the kind this is for.
+On the default cart, each answered in 0.1 to 0.35 s of pure Python:
+
+| push | what it says |
+|---|---|
+| 3 kN down on the handle | tips onto its back wheels past about 221 N (the handle overhangs the back axle); the handle arms' small raked feet on the deck's edge go first, crushed, at about 560 N, and it comes apart into the chassis and the handle with its two arms |
+| 1.5 kN on the deck | stands; every joint below 4%; the wheel hubs on their axles would go first, near 46 kN |
+| 2 kN sideways on a wheel | slides past about 211 N; the bearings carry 30% of their strength and would go first near 6.6 kN |
+
+The first is a finding about the template -- someone leaning their weight on
+that handle -- and the kind this is for.
 
 ## Not built, in the order it should be
 
-1. **The pivot when a push tips it.** Today that case is screened free, which
-   is the lower bound of the joint loads (a "gives way" can be trusted, a
-   "holds" is optimistic). The floor's reaction on the pivot edge follows from
-   the rigid dynamics with zero vertical acceleration at the pivot.
-2. **The product in the world as few bodies and real joints, handled as one
+1. **The product in the world as few bodies and real joints, handled as one
    item.** The contract's runtime bodies (the cart's three) as precise-rigid
    compounds, its bearings as native hinges, its breakable joints as native
    fixings rated by `engine_fixing`. It needs: the one guard that refuses every
@@ -207,22 +223,22 @@ template, and the kind this is for.
    anything jointed today, and a precise body is not an inventory item at all).
    Done when a built cart placed in the yard rolls when pushed, is picked up
    and put in the bag as one thing, and the room runs at realtime.
-3. **The engine checking what the bench checks.** Read a fixing's rotational
+2. **The engine checking what the bench checks.** Read a fixing's rotational
    impulse for a bending capacity; give a hinge a radial capacity. With
    glass/oak/iron tests, as `fixing_tests.cpp` has for tension and shear. Then
    the bench screen can be checked against the engine on the same product, which
    is the evidence that would let its uncertain band be narrowed.
-4. **Coming apart in the world.** A fixed group is one compound today, so a
+3. **Coming apart in the world.** A fixed group is one compound today, so a
    joint inside it has no constraint to measure. Either keep breakable joints
    as fixings between bodies (more bodies, no new physics) or split a compound
    on the screen's answer; `CompiledRuntime::split` is the pattern (each piece
    inherits `v + w x r` and the same spin, conservation measured, new before
    old). The pieces are the sub-components, by name.
-5. **Stage B for a thin precise part.** Refine the one struck part to a lattice
+4. **Stage B for a thin precise part.** Refine the one struck part to a lattice
    when `admitRefracture`'s bound is passed. It needs a cell size per body.
-6. **Into the Workshop and back.** Carry a world product in, open it as its
+5. **Into the Workshop and back.** Carry a world product in, open it as its
    parts, take it apart or reclaim its materials. It needs the material and
    energy ledger that installation still lacks.
-7. **Melting.** No material has a melting point and no live body a phase. The
+6. **Melting.** No material has a melting point and no live body a phase. The
    enthalpy law exists apart from the live world. Softening by heat exists for
    three materials and already re-rates a fixing.

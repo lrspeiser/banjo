@@ -1096,8 +1096,9 @@ function renderJointScreen(card, screen) {
   else if (first?.why) box.append(make("p", { id:"ws-first-to-give" }, first.why));
   if ((screen.comes_apart_into || []).length > 1) box.append(make("p", { id:"ws-comes-apart" },
     `It would come apart into ${screen.comes_apart_into.length} pieces: ` + screen.comes_apart_into.map((piece) => piece.length > 3 ? `${piece[0]} and ${piece.length - 1} more` : piece.join(" + ")).join("; ") + "."));
-  const floorNote = (screen.limitations || []).find((line) => line.startsWith("Not held by the floor"));
-  if (floorNote) box.append(make("p", { class:"ws-note warn", id:"ws-screen-floor-note" }, floorNote));
+  const leaves = screen.stops_standing_square;
+  if (leaves) box.append(make("p", { class:"ws-note" + (screen.standing === "resting on the floor" ? "" : " warn"), id:"ws-screen-floor-note" },
+    `Pushed along this line it stays put up to about ${Number(leaves.force_n).toLocaleString(undefined, { maximumFractionDigits:0 })} N; past that it ${leaves.does}.`));
   box.append(make("p", { class:"ws-feedback-count" }, `It is ${screen.standing}. One is all of a joint's strength; between a half and one is uncertain, because a sharp blow can load a joint up to about twice what a steady push does.`));
   const list = make("ul", { class:"ws-joint-list" });
   for (const row of (screen.joints || []).slice(0, 8)) {

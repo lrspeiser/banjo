@@ -205,10 +205,11 @@ class Building(unittest.TestCase):
         answer = self.push(shown)
         screen = answer["joint_screen"]
         self.assertEqual("analytical-screen", screen["evidence"])
-        # 3 kN down on a handle that overhangs the back axle would tip the cart
-        # (it pivots at about 195 N), so the floor cannot be what holds it.
-        self.assertEqual("free", screen["standing"])
-        self.assertIn("Not held by the floor", screen["limitations"][0])
+        # 3 kN down on a handle that overhangs the back axle tips the cart onto its back wheels.
+        self.assertIn("tipping, on wheel-", screen["standing"])
+        tips = screen["stops_standing_square"]
+        self.assertEqual("tips", tips["does"])
+        self.assertTrue(100.0 < tips["force_n"] < 300.0, tips)
         self.assertEqual(16, len(screen["joints"]))
         self.assertEqual(sorted(j["utilisation"] for j in screen["joints"])[::-1],
                          [j["utilisation"] for j in screen["joints"]])          # worst first

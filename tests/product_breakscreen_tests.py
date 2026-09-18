@@ -97,9 +97,9 @@ class FreeBody(unittest.TestCase):
 class Resting(unittest.TestCase):
     """Standing on the floor: the floor carries the weight and holds against sliding."""
 
-    def column(self, material, *, base="iron"):
+    def column(self, material, *, base="iron", post=0.1):
         return built([part("base", (1.0, 0.1, 1.0), (0, 0.05, 0), material=base, role="top"),
-                      part("post", (0.1, 0.5, 0.1), (0, 0.35, 0), material=material, role="post"),
+                      part("post", (post, 0.5, post), (0, 0.35, 0), material=material, role="post"),
                       part("cap", (0.3, 0.1, 0.3), (0, 0.65, 0), material=material, role="top")],
                      [("base", "post", "fixed"), ("post", "cap", "fixed")])
 
@@ -132,12 +132,14 @@ class Resting(unittest.TestCase):
 
     def test_what_gives_first_is_the_far_fibre_reaching_the_materials_strength(self):
         for material in MATERIALS:
-            answer = screen.screen(self.column(material), component_name="cap", point_m=(-0.15, 0.65, 0),
-                                   direction=(1, 0, 0), force_n=200.0)
+            # A slender post, so that it fails long before the floor lets the base slide or tip
+            # (that takes some 3.9 kN here): the force is found with the floor asked at each step.
+            answer = screen.screen(self.column(material, post=0.02), component_name="cap",
+                                   point_m=(-0.15, 0.65, 0), direction=(1, 0, 0), force_n=50.0)
             m = engine_materials.mechanics(material)
             rho = engine_materials.density(material)
-            section, area, arm = 0.1 * 0.1 ** 2 / 6.0, 0.01, 0.55
-            weight = (rho * 0.3 * 0.1 * 0.3 + rho * 0.1 * 0.5 * 0.1) * G
+            section, area, arm = 0.02 * 0.02 ** 2 / 6.0, 0.0004, 0.55
+            weight = (rho * 0.3 * 0.1 * 0.3 + rho * 0.02 * 0.5 * 0.02) * G
             # Foot joint, bending about one axis with the weight pressing it. Three ways to go:
             #   the far fibre in tension   F*arm/(st*Z)                     = 1  (the weight is not credited)
             #   the near fibre crushing    W/(sc*A) + F*arm/(sc*Z)          = 1
@@ -171,14 +173,56 @@ class Resting(unittest.TestCase):
                                direction=(1, 0, 0), force_n=600.0, floor_friction=0.2)
         self.assertIn("sliding", answer["standing"])
         self.assertGreater(answer["acceleration_m_s2"][0], 0.0)
+        # It slides once the push passes the floor's grip on its weight: 0.2 of 700 kg/m3 x g x volume.
+        weight = 700.0 * (1.0 * 0.1 * 1.0 + 0.1 * 0.5 * 0.1 + 0.3 * 0.1 * 0.3) * G
+        self.assertEqual("slides", answer["stops_standing_square"]["does"])
+        self.assertAlmostEqual(0.2 * weight, answer["stops_standing_square"]["force_n"], delta=0.05)
 
-    def test_a_push_that_would_tip_it_over_is_screened_as_free_and_the_reason_is_given(self):
+    def block(self, size, centre):
+        return workshop_components.design_from_spec({
+            "kind": "custom", "design_id": "block", "parameters": {},
+            "component_overrides": {KEY: {"added": [part("block", size, centre)], "joints_authored": True}}})[0]
+
+    def test_a_block_pushed_over_pivots_on_its_far_edge_as_a_rigid_body_does(self):
+        # One oak block 0.2 x 0.6 x 0.2 m, pushed along +x at the middle of its top. About the far
+        # bottom edge: I = m (w^2 + h^2) / 3, torque = F h - m g w/2, and the centre, which is
+        # 0.1 back and 0.3 up from that edge, accelerates at alpha x r.
+        m, force = 700.0 * 0.2 * 0.6 * 0.2, 100.0
+        alpha = (force * 0.6 - m * G * 0.1) / (m * (0.2 ** 2 + 0.6 ** 2) / 3.0)
+        answer = screen.screen(self.block((0.2, 0.6, 0.2), (0, 0.3, 0)), component_name="block",
+                               point_m=(0.0, 0.6, 0.0), direction=(1, 0, 0), force_n=force)
+        self.assertEqual("tipping, on block", answer["standing"])
+        self.assertAlmostEqual(alpha * 0.3, answer["acceleration_m_s2"][0], places=3)
+        self.assertAlmostEqual(alpha * 0.1, answer["acceleration_m_s2"][1], places=3)
+        floor = answer["floor"]
+        self.assertEqual({(0.1, -0.1), (0.1, 0.1)}, {(f["at_m"][0], f["at_m"][2]) for f in floor})
+        self.assertAlmostEqual(m * (G + alpha * 0.1), sum(f["force_n"][1] for f in floor), places=2)
+        self.assertAlmostEqual(m * alpha * 0.3 - force, sum(f["force_n"][0] for f in floor), places=2)
+        # It starts to tip when the moment of the push about that edge passes the weight's.
+        self.assertAlmostEqual(m * G * 0.1 / 0.6, answer["stops_standing_square"]["force_n"], delta=0.01)
+        self.assertEqual("tips", answer["stops_standing_square"]["does"])
+
+    def test_pushed_up_hard_enough_it_leaves_the_floor(self):
+        m = 700.0 * 0.008
+        answer = screen.screen(self.block((0.2, 0.2, 0.2), (0, 0.1, 0)), component_name="block",
+                               point_m=(0, 0.1, 0), direction=(0, 1, 0), force_n=100.0)
+        self.assertEqual("lifted clear of the floor", answer["standing"])
+        self.assertEqual([], answer["floor"])
+        self.assertAlmostEqual(100.0 / m - G, answer["acceleration_m_s2"][1], places=3)
+        self.assertAlmostEqual(m * G, answer["stops_standing_square"]["force_n"], delta=0.01)
+        self.assertEqual("lifts off the floor", answer["stops_standing_square"]["does"])
+
+    def test_a_tall_thing_pushed_at_the_top_tips_and_its_joint_carries_more_than_in_mid_air(self):
         tall = built([part("post", (0.1, 1.0, 0.1), (0, 0.5, 0)), part("cap", (0.3, 0.1, 0.3), (0, 1.05, 0))],
                      [("post", "cap", "fixed")])
         answer = screen.screen(tall, component_name="cap", point_m=(-0.15, 1.05, 0),
                                direction=(1, 0, 0), force_n=400.0)
-        self.assertEqual("free", answer["standing"])
-        self.assertIn("Not held by the floor", answer["limitations"][0])
+        self.assertEqual("tipping, on post", answer["standing"])
+        # In mid-air the joint carries only what accelerates the post beyond it. On the floor the
+        # foot of the post is held, so more of the push has to go through the joint to reach it.
+        free = screen.screen(tall, component_name="cap", point_m=(-0.15, 1.05, 0),
+                             direction=(1, 0, 0), force_n=400.0, resting=False)
+        self.assertGreater(joint(answer, "j1")["load"]["shear_n"], joint(free, "j1")["load"]["shear_n"])
 
 
 class TheCart(unittest.TestCase):

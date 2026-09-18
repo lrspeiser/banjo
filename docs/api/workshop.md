@@ -225,7 +225,10 @@ layer, `joint_screen` (`banjo.joint-screen.v1`, `evidence: "analytical-screen"`)
 | `verdict` | `holds` below half, `uncertain` from half to one, `gives way` at one or more, `unrated` when a material has no declared strength. |
 | `first_to_give` | The force, along this same line, at which the first joint reaches its strength, and which joint. |
 | `gives_way`, `comes_apart_into` | The joints past their strength, and the groups of parts left when they have gone. |
-| `standing` | `resting on the floor`, `resting, and sliding…`, or `free`. A push that would tip the product or lift it is screened free, and `limitations[0]` says why. |
+| `standing` | `free`, `resting on the floor`, `tipping, on <parts>`, `lifted clear of the floor`, any of the middle two with `, and sliding: …`. The floor pushes and never pulls, and grips up to `floor_friction` (0.5) times what presses on it. |
+| `stops_standing_square` | The force along this line up to which it stays put, and what it `does` past that: `tips`, `slides`, `tips and slides`, `lifts off the floor`. Null when it never stops. |
+| `floor` | What the floor does at each foot that bears: `part`, `at_m`, `force_n`. |
+| `acceleration_m_s2` | The acceleration of the product's centre of mass under the push. |
 
 A template that has not shown its joints answers `{"available": false, "why": …}`.
 What a joint can carry is the weaker material's declared strength over the

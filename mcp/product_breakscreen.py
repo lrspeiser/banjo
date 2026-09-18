@@ -132,6 +132,8 @@ class _Model:
         for joint in self.joints:
             self._add_joint(joint)
         self.modes = self._free_modes()
+        self._lu: list[list[float]] | None = None
+        self._order: list[int] = []
 
     # -- joints -------------------------------------------------------------
     def _moduli(self, part: WirePart) -> tuple[float, float]:
@@ -319,14 +321,56 @@ class _Model:
             load[6 * i + k] += force[k]
             load[6 * i + 3 + k] += moment[k]
 
-    def displacements(self, loads: list[list[float]]) -> list[list[float]]:
+    def _factorise(self) -> None:
         n = 6 * len(self.parts)
         lin = max((self.stiffness[i][i] for i in range(n) if i % 6 < 3), default=1.0) or 1.0
         rot = max((self.stiffness[i][i] for i in range(n) if i % 6 >= 3), default=1.0) or 1.0
-        matrix = [row[:] for row in self.stiffness]
+        a = [row[:] for row in self.stiffness]
         for i in range(n):                             # held softly, so a free product still solves
-            matrix[i][i] += _FREE * (lin if i % 6 < 3 else rot)
-        return _solve(matrix, loads)
+            a[i][i] += _FREE * (lin if i % 6 < 3 else rot)
+        order = list(range(n))
+        for col in range(n):
+            pivot = max(range(col, n), key=lambda r: abs(a[r][col]))
+            if abs(a[pivot][col]) < 1e-300:
+                raise ValueError("the joint model is singular: a part is held by nothing at all")
+            a[col], a[pivot] = a[pivot], a[col]
+            order[col], order[pivot] = order[pivot], order[col]
+            head, inv = a[col], 1.0 / a[col][col]
+            for r in range(col + 1, n):
+                row = a[r]
+                factor = row[col] * inv
+                if factor != 0.0:
+                    row[col] = factor
+                    for c in range(col + 1, n):
+                        row[c] -= factor * head[c]
+        self._lu, self._order = a, order
+
+    def displacement(self, load: list[float]) -> list[float]:
+        """The parts' small movements under a load that is already in equilibrium."""
+        if self._lu is None:
+            self._factorise()
+        a, n = self._lu, len(load)
+        y = [load[k] for k in self._order]
+        for r in range(n):
+            row = a[r]
+            y[r] -= sum(row[c] * y[c] for c in range(r))
+        for r in range(n - 1, -1, -1):
+            row = a[r]
+            y[r] = (y[r] - sum(row[c] * y[c] for c in range(r + 1, n))) / row[r]
+        return y
+
+    # -- the whole product as one rigid thing, for the floor ---------------------
+    def whole(self) -> tuple[float, Vec, list[list[float]]]:
+        total = sum(self.mass)
+        com = tuple(sum(self.mass[i] * self.centre[i][k] for i in range(len(self.parts))) / total for k in range(3))
+        inertia = [[0.0] * 3 for _ in range(3)]
+        for i, mass in enumerate(self.mass):
+            r = _sub(self.centre[i], com)
+            square = _dot(r, r)
+            for a in range(3):
+                for b in range(3):
+                    inertia[a][b] += self.inertia[i][a][b] + mass * ((square if a == b else 0.0) - r[a] * r[b])
+        return total, com, inertia
 
     def transmitted(self, joint: dict[str, Any], moved: list[float]) -> dict[str, float]:
         frame = self.frames[joint["id"]]
@@ -352,12 +396,13 @@ def _finite3(value: Any, what: str) -> Vec:
 
 def screen(design: WorkshopDesign, *, component_name: str, point_m: Any, direction: Any,
            force_n: float, resting: bool = True, floor_friction: float = 0.5) -> dict[str, Any]:
-    """What each joint carries, and which would give way first, under one blow.
+    """What each joint carries, and which would give way first, under one push.
 
-    ``resting`` stands the product on the floor: the floor carries its weight and
-    the blow's downward part, and holds it against sliding up to
-    ``floor_friction`` times that. Otherwise it floats free and the blow
-    accelerates it, which is the state of something struck in mid-air.
+    ``resting`` stands the product on the floor, which pushes up wherever the
+    product presses on it and nowhere else: so it may stand, tip about an edge,
+    or be lifted clear, and the floor's grip holds it against sliding up to
+    ``floor_friction`` times what it presses with. Otherwise it floats free and
+    the push accelerates it, which is the state of something struck in mid-air.
     """
     model = _Model(design)
     if component_name not in model.index:
@@ -369,35 +414,35 @@ def screen(design: WorkshopDesign, *, component_name: str, point_m: Any, directi
     friction = float(floor_friction)
     if not isfinite(friction) or not 0.0 <= friction <= 2.0:
         raise ValueError("floor_friction must be between 0 and 2")
-    n = 6 * len(model.parts)
-    weight, blow = [0.0] * n, [0.0] * n
-    for i, mass in enumerate(model.mass):
-        weight[6 * i + 1] -= mass * G_M_S2
-    model.push(blow, component_name, point, _scale(way, force))
+    feet, floor = _feet(design) if resting else ([], 0.0)
 
-    notes: list[str] = []
-    standing = "free"
-    if resting:
-        try:
-            standing = _stand(model, weight, blow, component_name, point, _scale(way, force), friction)
-        except ValueError as problem:
-            notes.append(f"Not held by the floor under this blow ({problem}); screened as if free.")
-    relieved_weight, falling = model.relieved(weight)
-    relieved_blow, driven = model.relieved(blow)
-    motion = [f + d for f, d in zip(falling, driven)]
-    moved_weight, moved_blow = model.displacements([relieved_weight, relieved_blow])
-
-    def at_scale(factor: float) -> list[dict[str, Any]]:
-        moved = [w + factor * b for w, b in zip(moved_weight, moved_blow)]
+    def solved(factor: float) -> tuple[list[dict[str, Any]], dict[str, Any], list[float]]:
+        """The joints' loads with the push scaled by ``factor``, and how it then stands."""
+        pushed = _scale(way, force * factor)
+        load = [0.0] * (6 * len(model.parts))
+        for i, mass in enumerate(model.mass):
+            load[6 * i + 1] -= mass * G_M_S2
+        model.push(load, component_name, point, pushed)
+        stance = _floor(model, feet, floor, point, pushed, friction) if resting else {"how": "free", "forces": []}
+        for name, at, reaction in stance["forces"]:
+            model.push(load, name, at, reaction)
+        for name, moment in stance.get("twists") or []:
+            for k in range(3):
+                load[6 * model.index[name] + 3 + k] += moment[k]
+        balanced, motion = model.relieved(load)
+        moved = model.displacement(balanced)
         rows = []
         for joint in model.joints:
-            load = model.transmitted(joint, moved)
+            carried = model.transmitted(joint, moved)
             rows.append({"joint": joint["id"], "a": joint["a"], "b": joint["b"], "kind": joint["kind"],
-                         "method": joint["method"], "load": load,
-                         **product_joints.utilisation(model.rated[joint["id"]], load)})
-        return rows
+                         "method": joint["method"], "load": carried,
+                         **product_joints.utilisation(model.rated[joint["id"]], carried)})
+        return rows, stance, motion
 
-    rows = at_scale(1.0)
+    def worst(factor: float) -> float:
+        return max((r["utilisation"] for r in solved(factor)[0] if r.get("utilisation") is not None), default=0.0)
+
+    rows, stance, motion = solved(1.0)
     for row in rows:
         used = row.get("utilisation")
         row["verdict"] = ("unrated" if used is None else "gives way" if used >= 1.0
@@ -405,35 +450,55 @@ def screen(design: WorkshopDesign, *, component_name: str, point_m: Any, directi
         row["load"] = {k: round(v, 4) for k, v in row["load"].items()}
         if used is not None:
             row["utilisation"] = float(f"{used:.9g}")
-    rated = [r for r in rows if r.get("utilisation") is not None]
-    rated.sort(key=lambda r: -r["utilisation"])
+    rated = sorted((r for r in rows if r.get("utilisation") is not None), key=lambda r: -r["utilisation"])
     failing = {r["joint"] for r in rated if r["verdict"] == "gives way"}
 
-    # The force, along this same line, at which the first joint reaches its capacity.
+    # The force, along this same line, at which the first joint reaches its
+    # strength. The floor is asked again at every force: a product that stands
+    # under a light push may tip under a heavier one, and that changes the loads.
     first = None
     if rated:
-        worst_at = lambda f: max((r["utilisation"] for r in at_scale(f) if r.get("utilisation") is not None), default=0.0)  # noqa: E731
-        if worst_at(0.0) >= 1.0:
-            first = {"force_n": 0.0, "why": "a joint is already past its capacity under the product's own weight"}
+        if worst(0.0) >= 1.0:
+            first = {"force_n": 0.0, "why": "a joint is already past its strength under the product's own weight"}
         else:
             low, high = 0.0, 1.0
-            while worst_at(high) < 1.0 and high < 1.0e6:
+            while worst(high) < 1.0 and high * force < 1.0e7:
                 low, high = high, high * 4.0
-            if worst_at(high) >= 1.0:
+            if worst(high) >= 1.0:
                 for _ in range(40):
                     mid = (low + high) / 2.0
-                    low, high = (mid, high) if worst_at(mid) < 1.0 else (low, mid)
-                there = max((r for r in at_scale(high) if r.get("utilisation") is not None),
+                    low, high = (mid, high) if worst(mid) < 1.0 else (low, mid)
+                there = max((r for r in solved(high)[0] if r.get("utilisation") is not None),
                             key=lambda r: r["utilisation"])
                 first = {"force_n": round(high * force, 2), "joint": there["joint"],
                          "a": there["a"], "b": there["b"], "would_be": there["would_be"]}
 
-    total = sum(model.mass)
+    # And the force at which it stops standing square, if pushing harder does that.
+    leaves = None
+    if resting and feet and solved(0.0)[1]["how"] == "resting on the floor":
+        low, high = 0.0, 1.0
+        while solved(high)[1]["how"] == "resting on the floor" and high * force < 1.0e7:
+            low, high = high, high * 4.0
+        after = solved(high)[1]["how"]
+        if after != "resting on the floor":
+            for _ in range(40):
+                mid = (low + high) / 2.0
+                low, high = (mid, high) if solved(mid)[1]["how"] == "resting on the floor" else (low, mid)
+            then = solved(high)[1]["how"]
+            does = ("lifts off the floor" if then.startswith("lifted") else
+                    ("tips" if then.startswith("tipping") else "") +
+                    (" and slides" if then.startswith("tipping") and "sliding" in then else
+                     "slides" if "sliding" in then else ""))
+            leaves = {"force_n": round(high * force, 2), "does": does, "then": then}
+
     return {
         "schema": SCREEN_SCHEMA, "evidence": "analytical-screen", "design_id": design.design_id,
         "blow": {"component": component_name, "point_m": [round(v, 6) for v in point],
                  "direction": [round(v, 6) for v in way], "force_n": round(force, 4)},
-        "standing": standing, "mass_kg": round(total, 6),
+        "standing": stance["how"], "stops_standing_square": leaves,
+        "floor": [{"part": name, "at_m": [round(v, 6) for v in at], "force_n": [round(v, 4) for v in reaction]}
+                  for name, at, reaction in stance["forces"]],
+        "mass_kg": round(sum(model.mass), 6),
         "joints": rated + [r for r in rows if r.get("utilisation") is None],
         "gives_way": sorted(failing),
         "comes_apart_into": model.pieces(failing) if failing else [],
@@ -441,16 +506,17 @@ def screen(design: WorkshopDesign, *, component_name: str, point_m: Any, directi
         "open_joints": [j["id"] for j in model.open],
         "runtime_bodies": model.bodies(),
         "acceleration_m_s2": [round(v, 4) for v in _acceleration(model, motion)],
-        "bands": {"holds": f"below {UNCERTAIN_FROM:g} of capacity", "uncertain": f"{UNCERTAIN_FROM:g} to 1",
-                  "gives way": "at or above capacity"},
-        "limitations": notes + [
+        "bands": {"holds": f"below {UNCERTAIN_FROM:g} of its strength", "uncertain": f"{UNCERTAIN_FROM:g} to 1",
+                  "gives way": "at or above its strength"},
+        "limitations": [
             "Static-equivalent: a blow shorter than the structure's own period can load a joint up to about "
-            "twice this, or much less. Between half and the whole of a capacity is therefore uncertain.",
+            "twice this, or much less. Between half and the whole of a joint's strength is therefore uncertain.",
             "The parts are rigid and unbreakable here; whether the struck part itself dents, breaks or softens "
             "is the second question, asked of that part alone.",
             "Joint strength is the weaker material's declared strength over the measured contact: "
             + "; ".join(product_joints.NOT_MODELLED) + " are not modelled.",
             "A bearing's hold along its own axis is not rated.",
+            "The floor is flat, rigid and grips evenly; a product that tips is taken at the instant it starts to.",
         ],
     }
 
@@ -483,42 +549,157 @@ def _feet(design: WorkshopDesign) -> tuple[list[dict[str, Any]], float]:
     return feet, floor
 
 
-def _stand(model: _Model, weight: list[float], blow: list[float], name: str, point: Vec,
-           force: Vec, friction: float) -> str:
-    """Add the floor's reactions to the two load cases; say how it stands.
+def _in_line(points: list[tuple[float, float]]) -> tuple[float, float] | None:
+    """The direction of the line the points lie along, or None if they span an area."""
+    far = max(((a, b) for a in points for b in points),
+              key=lambda pair: (pair[0][0] - pair[1][0]) ** 2 + (pair[0][1] - pair[1][1]) ** 2)
+    along = (far[1][0] - far[0][0], far[1][1] - far[0][1])
+    length = sqrt(along[0] ** 2 + along[1] ** 2)
+    if length < 1e-9:
+        return (1.0, 0.0)
+    along = (along[0] / length, along[1] / length)
+    off = max(abs((p[0] - far[0][0]) * along[1] - (p[1] - far[0][1]) * along[0]) for p in points)
+    return along if off < 1e-6 else None
 
-    Nothing is added until all of it is known, so a product the floor turns out
-    not to hold is left exactly as it was for the free case.
+
+def _floor(model: _Model, feet: list[dict[str, Any]], floor: float, point: Vec, pushed: Vec,
+           friction: float) -> dict[str, Any]:
+    """What the floor does to a product pushed like this, starting from rest.
+
+    The product is one rigid thing for this. The floor pushes up at a foot only
+    while the product presses there, and a foot it pushes on does not move into
+    it: for every foot, reaction >= 0, upward acceleration >= 0, and one of the
+    two is zero. The feet all lie in the floor, so their upward accelerations
+    are one flat function of where they are; reactions of that same flat form
+    are sought over the feet still down (the least ones that do it, as
+    mcp/workshop_statics does) -- over a line of feet once it has tipped onto an
+    edge, at one foot on a corner. The floor's grip keeps the middle of the
+    bearing feet from sliding and the product from turning on the spot, up to
+    ``friction`` times what presses there; past that it slides, the grip is that
+    limit, and nothing stops it turning.
     """
-    supports, floor = _feet(model.design)
-    if len(supports) < 3:
-        raise ValueError("it touches the floor at fewer than three points")
-    places = [(s["at_m"][0], s["at_m"][1]) for s in supports]
-    total = sum(model.mass)
-    com = [sum(model.mass[i] * model.centre[i][k] for i in range(len(model.parts))) / total for k in range(3)]
-    own, down = total * G_M_S2, -force[1]
-    if own + down <= 0:
-        raise ValueError("the blow lifts it off the floor")
-    # Held against sliding up to the floor's friction, the sideways part of the
-    # blow is carried out through the feet.
-    push = sqrt(force[0] ** 2 + force[2] ** 2)
-    hold = min(push, friction * (own + down))
-    held = (-force[0] * hold / push, 0.0, -force[2] * hold / push) if push > 1e-12 else (0.0, 0.0, 0.0)
-    # Where the reactions' resultant must act. Moments about the floor: the
-    # weight, the blow (its downward part where it lands, its sideways part at
-    # its height), and -- when it slides -- the inertia of the sliding, which
-    # acts at the height of the centre of mass. The floor's grip acts at the
-    # floor and has no arm. A push at the top of a table loads the far legs.
-    height, high = point[1] - floor, com[1] - floor
-    load_x = (own * com[0] + down * point[0] + force[0] * height - (force[0] + held[0]) * high) / (own + down)
-    load_z = (own * com[2] + down * point[2] + force[2] * height - (force[2] + held[2]) * high) / (own + down)
-    alone = _reactions(places, own, com[0], com[2])
-    with_blow = _reactions(places, own + down, load_x, load_z)
-    for support, before, after in zip(supports, alone, with_blow):
-        at = (float(support["at_m"][0]), floor, float(support["at_m"][1]))
-        share = after / (own + down)
-        model.push(weight, support["name"], at, (0.0, before, 0.0))
-        model.push(blow, support["name"], at, (held[0] * share, after - before, held[2] * share))
-    if push > 1e-12 and hold < push - 1e-9:
-        return "resting, and sliding: the floor holds only part of the sideways push"
-    return "resting on the floor"
+    if not feet:
+        return {"how": "free", "forces": [], "twist": 0.0}
+    total, com, inertia = model.whole()
+    columns = _solve(inertia, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    inverse = [[columns[c][r] for c in range(3)] for r in range(3)]
+    at = [(f["at_m"][0], floor, f["at_m"][1]) for f in feet]
+    up_way = (0.0, 1.0, 0.0)
+
+    # An action is a force through a point or a couple; a measure is the
+    # acceleration of a point along a direction, or the spin about an axis.
+    def push_at(q: Vec, way: Vec) -> tuple[Vec, Vec]:
+        return way, _cross(_sub(q, com), way)
+
+    def couple(axis: Vec) -> tuple[Vec, Vec]:
+        return (0.0, 0.0, 0.0), axis
+
+    def response(action: tuple[Vec, Vec], measure: tuple[str, Vec, Vec]) -> float:
+        force, torque = action
+        spin = tuple(sum(inverse[r][c] * torque[c] for c in range(3)) for r in range(3))
+        kind, where, way = measure
+        if kind == "spin":
+            return _dot(way, spin)
+        return _dot(way, _add(_scale(force, 1.0 / total), _cross(spin, _sub(where, com))))
+
+    known = [(pushed, _cross(_sub(point, com), pushed)), ((0.0, -total * G_M_S2, 0.0), (0.0, 0.0, 0.0))]
+    rising = [("point", q, up_way) for q in at]
+    lifting = [[response(push_at(at[j], up_way), rising[i]) for j in range(len(feet))] for i in range(len(feet))]
+
+    def settle(grip_limit: float | None) -> tuple[list[float], Vec, float, Vec]:
+        """Reactions, the grip, its couple and where it acts. ``grip_limit`` None holds it from sliding."""
+        down = list(range(len(feet)))
+        up: list[float] = [0.0] * len(feet)
+        grip, twist, middle = (0.0, 0.0, 0.0), 0.0, com
+        held = grip_limit is None
+        for _ in range(4 * len(feet) + 8):
+            up, grip, twist = [0.0] * len(feet), (0.0, 0.0, 0.0), 0.0
+            extra: list[tuple[Vec, Vec]] = []
+            if down:
+                places = [(at[i][0], at[i][2]) for i in down]
+                line = _in_line(places) if len(down) > 1 else (1.0, 0.0)
+                mid = (sum(p[0] for p in places) / len(places), sum(p[1] for p in places) / len(places))
+                middle = (mid[0], floor, mid[1])
+                if len(down) == 1:
+                    basis = [[1.0]]
+                elif line is not None:
+                    basis = [[1.0, (p[0] - mid[0]) * line[0] + (p[1] - mid[1]) * line[1]] for p in places]
+                else:
+                    basis = [[1.0, p[0] - mid[0], p[1] - mid[1]] for p in places]
+                k = len(basis[0])
+                # What holds it in place: two grips and a couple, each with the
+                # motion of the feet that it stops.
+                holds = ([(push_at(middle, (1.0, 0.0, 0.0)), ("point", middle, (1.0, 0.0, 0.0))),
+                          (push_at(middle, (0.0, 0.0, 1.0)), ("point", middle, (0.0, 0.0, 1.0))),
+                          (couple(up_way), ("spin", com, up_way))] if held else [])
+                if not held and grip_limit:
+                    going = (sum(response(a, ("point", middle, (1.0, 0.0, 0.0))) for a in known), 0.0,
+                             sum(response(a, ("point", middle, (0.0, 0.0, 1.0))) for a in known))
+                    speed = _norm(going)
+                    if speed > 1e-12:                 # sliding: the grip is its limit, against the way it goes
+                        grip = _scale(going, -grip_limit / speed)
+                        extra = [(grip, _cross(_sub(middle, com), grip))]
+                size = k + len(holds)
+                matrix = [[0.0] * size for _ in range(size)]
+                drive = [0.0] * size
+                for r in range(k):
+                    for c in range(k):
+                        matrix[r][c] = sum(basis[a][r] * lifting[down[a]][down[b]] * basis[b][c]
+                                           for a in range(len(down)) for b in range(len(down)))
+                    drive[r] = -sum(basis[a][r] * sum(response(f, rising[i]) for f in known + extra)
+                                    for a, i in enumerate(down))
+                    for j, (action, measure) in enumerate(holds):
+                        matrix[r][k + j] = sum(basis[a][r] * response(action, rising[i]) for a, i in enumerate(down))
+                        matrix[k + j][r] = sum(basis[a][r] * response(push_at(at[i], up_way), measure)
+                                               for a, i in enumerate(down))
+                for i, (_, measure) in enumerate(holds):
+                    for j, (action, _) in enumerate(holds):
+                        matrix[k + i][k + j] = response(action, measure)
+                    drive[k + i] = -sum(response(f, measure) for f in known)
+                scale = max(abs(matrix[r][r]) for r in range(size)) or 1.0
+                for r in range(size):
+                    matrix[r][r] += 1e-13 * scale
+                found = _solve(matrix, [drive])[0]
+                for a, i in enumerate(down):
+                    up[i] = sum(basis[a][r] * found[r] for r in range(k))
+                if held:
+                    grip, twist = (found[k], 0.0, found[k + 1]), found[k + 2]
+                    extra = [(grip, _cross(_sub(middle, com), grip)), couple(_scale(up_way, twist))]
+                worst = min(up[i] for i in down)
+                if worst < -1e-9 * total * G_M_S2:
+                    # The floor cannot pull. Feet that pull equally lift together:
+                    # taking one of a matched pair would leave it standing lopsided.
+                    down = [i for i in down if up[i] > worst - 1e-6 * worst]
+                    continue
+            lift = [sum(response(f, rising[i]) for f in known + extra)
+                    + sum(lifting[i][j] * up[j] for j in range(len(feet))) for i in range(len(feet))]
+            deepest = min((lift[i] for i in range(len(feet)) if i not in down), default=0.0)
+            if deepest >= -1e-7:
+                break
+            # It would go through the floor there, so it bears there; matched feet together.
+            down += [i for i in range(len(feet)) if i not in down and lift[i] < deepest - 1e-6 * deepest]
+        return [max(0.0, v) for v in up], grip, twist, middle
+
+    up, grip, twist, middle = settle(None)
+    sliding = False
+    if _norm(grip) > friction * sum(up) + 1e-9:
+        sliding = True
+        for _ in range(3):                         # the limit follows what presses, which follows the grip
+            up, grip, twist, middle = settle(friction * sum(up))
+    bearing = [i for i, r in enumerate(up) if r > 1e-9 * total * G_M_S2]
+    if not bearing:
+        how = "lifted clear of the floor"
+    else:
+        places = [(at[i][0], at[i][2]) for i in bearing]
+        on = sorted({feet[i]["name"] for i in bearing})
+        named = " and ".join(on) if len(on) <= 2 else f"{on[0]} and {len(on) - 1} more"
+        how = ("resting on the floor" if len(bearing) >= 3 and _in_line(places) is None
+               else f"tipping, on {named}")
+        if sliding:
+            how += ", and sliding: the floor holds only part of the sideways push"
+    pressing = sum(up[i] for i in bearing) or 1.0
+    # The grip and its couple are shared between the bearing feet as they press.
+    forces = [(feet[i]["name"], at[i], (grip[0] * up[i] / pressing, up[i], grip[2] * up[i] / pressing))
+              for i in bearing]
+    twists = [(feet[i]["name"], (0.0, twist * up[i] / pressing, 0.0)) for i in bearing] if twist else []
+    return {"how": how, "forces": forces, "twists": twists}
