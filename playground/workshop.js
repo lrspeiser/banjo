@@ -582,7 +582,8 @@ function installEditor() {
   const chat = make("form", { id:"ws-component-chat", class:"ws-component-chat" });
   chat.append(make("input", { id:"ws-component-chat-text", type:"text", placeholder:"make all the legs thinner" }),
     make("button", { type:"submit", class:"ws-action" }, "Change")); editor.append(chat);
-  right.insertBefore(editor, right.querySelector("h3"));
+  // Buildability has a nested heading; insertBefore needs a direct child.
+  right.insertBefore(editor, right.querySelector(":scope > h3"));
 
   const bom = make("section", { id:"ws-bom-box" }); bom.append(make("h3", {}, "Materials"), make("div", { id:"ws-bom" }));
   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
