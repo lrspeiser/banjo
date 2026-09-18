@@ -136,6 +136,23 @@ dims and goes blue) and the bag says *wading*, *swimming* or *under water*, how
 much of them is under, and how fast the water carries them. Five metres over a
 river is over it, not in it.
 
+Measured in headless Chrome (`ThePersonIsInTheWater`), in the page's own time --
+it moves the person by the time since its last frame and takes no frame for
+longer than a tenth of a second, so where frames are slower than that a second
+on the wall is less than a second of walking. CI draws the page in software at 7
+frames a second, and a pace read off the wall clock read 1.44 m/s there for a
+person walking at 2.4; read frame by frame, walking is 2.40 m/s, running 5.60
+and a full load 0.96 at 61, 8 and 6 frames a second alike. Down a shallow reach
+of the room's own river their legs cover their dry-land pace times the time the
+water left them; crouched on the bed of its deepest pool their head is under.
+What deep moving water does to them is asked of water the journey describes
+(`banjoRoom.waterForThePerson`), because a journey cannot ask a river to be
+0.9 m deep and moving under someone -- at CI's frame rate the world runs behind
+the clock and the river's deeper reaches are not moving yet when it looks. In
+0.4, 0.85 and 1.4 m of water going [0.3, -0.4] m/s, hands off the keys, the
+water's hold is 0, a half and all of it, and in the second case they go
+[+0.150, -0.200] m every second, to the millimetre.
+
 **Not done:** breath. There is no health in the room for running out of it to
 cost, and inventing one is a game-design decision, not a physics one.
 

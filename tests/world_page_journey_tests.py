@@ -439,22 +439,63 @@ class WhatIsDugIsCarriedAndWeighs(PageJourney):
         c = self.js("banjoRoom.world.carriedGround") or {}
         return float(c.get("sand_kg") or 0) + float(c.get("soil_kg") or 0), c.get("limit_kg")
 
-    def pace(self, run=False, seconds=1.2):
-        """How fast W takes the person across the ground, in metres a second."""
+    # The page's own time. It moves the person by the time since its last frame,
+    # and takes no frame for longer than a tenth of a second -- so where frames
+    # are slower than that (CI draws in software, at 6 a second) a second on the
+    # wall is less than a second of walking, and a pace read off the wall clock
+    # read 1.47 m/s there for a person walking at 2.4. Frame by frame, this adds
+    # up what the page adds up.
+    FOLLOW = ("new Promise((done) => { const p = banjoRoom.camera.position, t0 = performance.now();"
+              " let last = null, time = 0, far = 0, paced = 0, x = 0, z = 0, frames = 0, reach = 0, apart = 0;"
+              " const told = [0, 0], from = [0, 0];"
+              # By performance.now() when the frame runs, as the page's own frame() reads it: the
+              # time a frame is given as its argument drifts from that under load.
+              # Where they are is read from the first frame followed, not from when this was asked: the
+              # page has moved them once by then, which at 7 frames a second is a tenth of a second's worth.
+              " const tick = () => { const now = performance.now();"
+              " if (last === null) { x = from[0] = p.x; z = from[1] = p.z; }"
+              " else { const dt = Math.min(0.1, (now - last) / 1000), w = banjoRoom.world.inWater;"
+              "   time += dt; frames++; far += Math.hypot(p.x - x, p.z - z); x = p.x; z = p.z;"
+              # The page's time weighed by the pace the water leaves them, frame by frame.
+              "   paced += (w ? w.pace : 1) * dt;"
+              "   if (w) { told[0] += w.u * w.carried * dt; told[1] += w.w * w.carried * dt; }"
+              # How far the water has asked them to be from where they began, at its most,
+              # and the furthest they have ever been from where it asked.
+              "   reach = Math.max(reach, Math.hypot(told[0], told[1]));"
+              "   apart = Math.max(apart, Math.hypot(p.x - from[0] - told[0], p.z - from[1] - told[1])); }"
+              "  last = now; const spent = performance.now() - t0;"
+              "  if ((spent < %d || frames < 10) && spent < 15000) requestAnimationFrame(tick);"
+              "  else done(JSON.stringify({ time, far, paced, frames, told, reach, apart, went: [p.x - from[0], p.z - from[1]] })); };"
+              " requestAnimationFrame(tick); })")
+
+    def follow(self, seconds):
+        """The person followed for that long and for ten frames at least, frame by
+        frame: how far they went, in how much of the page's time, that time weighed
+        by the pace the water left them, and where the water that had hold of them said."""
+        return json.loads(self.page.evaluate(self.FOLLOW % int(1000 * seconds), await_promise=True, timeout=120))
+
+    def walk(self, run=False, seconds=1.2):
+        """W held down, and the person followed (follow)."""
         def key(kind, key, code, vk):
             self.page.send("Input.dispatchKeyEvent", {"type": kind, "key": key, "code": code,
                                                       "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk})
-        before, t0 = self.js("banjoRoom.camera.position.toArray()"), time.monotonic()
         if run:
             key("rawKeyDown", "Shift", "ShiftLeft", 16)
         key("rawKeyDown", "w", "KeyW", 87)
-        time.sleep(seconds)
-        after, elapsed = self.js("banjoRoom.camera.position.toArray()"), time.monotonic() - t0
-        key("keyUp", "w", "KeyW", 87)
-        if run:
-            key("keyUp", "Shift", "ShiftLeft", 16)
+        try:
+            seen = self.follow(seconds)
+        finally:
+            key("keyUp", "w", "KeyW", 87)
+            if run:
+                key("keyUp", "Shift", "ShiftLeft", 16)
         time.sleep(0.2)
-        return math.hypot(after[0] - before[0], after[2] - before[2]) / elapsed
+        self.assertGreaterEqual(seen["frames"], 10, f"the page drew too few frames to pace anyone: {seen}")
+        return seen
+
+    def pace(self, run=False, seconds=1.2):
+        """How fast W takes the person across the ground, in metres a second of the page's time."""
+        seen = self.walk(run, seconds)
+        return seen["far"] / seen["time"]
 
     def heap_it_all(self):
         for _ in range(8):
@@ -516,27 +557,26 @@ class ThePersonIsInTheWater(WhatIsDugIsCarriedAndWeighs):
     a point of view, and stood in a flowing river as if on dry land, or on the
     bed of a pool with nothing to say their head was under."""
 
-    # The river as the page knows it: a fast shallow reach, the deepest pool, and
-    # where water deeper than a person's thighs is moving fastest.
-    SPOTS = ("(() => { const R = banjoRoom; let shallow = null, deep = null, drift = null;"
+    # The river as the page knows it: a shallow reach to wade down, and the deepest pool.
+    SPOTS = ("(() => { const R = banjoRoom; let shallow = null, deep = null;"
              " for (let x = -28; x <= 28; x += 0.25) for (let z = -28; z <= 28; z += 0.25) {"
              "   const w = R.waterAt(x, z); if (!w || !(w.depth > 0.02)) continue;"
              # As deep as it is where a person would stand, not at the nearest column's middle.
              "   const depth = w.level - R.groundAt(x, z); if (!(depth > 0.02)) continue;"
              "   const speed = Math.hypot(w.u, w.w), spot = { x, z, depth, level: w.level, u: w.u, w: w.w, speed };"
-             "   if (depth > 0.25 && depth < 0.45 && (!shallow || speed < shallow.speed)) shallow = spot;"
+             "   if (depth > 0.25 && depth < 0.45 && speed > 0.15) { let run = 0;"
+             "     for (let ahead = 0.5; ahead <= 2.5; ahead += 0.5) { const ax = x + ahead * w.u / speed, az = z + ahead * w.w / speed,"
+             "       there = R.waterAt(ax, az), deep = there ? there.level - R.groundAt(ax, az) : 0; if (deep > 0.15 && deep < 0.5) run++; else break; }"
+             "     if (!shallow || run > shallow.run) shallow = { ...spot, run }; }"
              "   if (!deep || depth > deep.depth) deep = spot;"
-             "   const carried = Math.min(1, Math.max(0, (Math.min(1.6, depth) - 0.5) / 0.7));"
-             # In the river's own reaches, which run one way; the pond it feeds sloshes through zero.
-             "   if (depth < 0.9 && (!drift || speed * carried > drift.carries)) drift = { ...spot, carried, carries: speed * carried };"
-             " } return { shallow, deep, drift }; })()")
+             " } return { shallow, deep }; })()")
 
     def test_a_person_wades_swims_is_carried_and_can_be_under(self):
         self.open_the_world()
         self.assertTrue(self.wait_for("!!banjoRoom.waterAt && !!banjoRoom.world", 30))
         self.heap_it_all() if self.js("!!banjoRoom.world.groundAim") else None
         spots = self.js(self.SPOTS)
-        shallow, deep, drift = spots["shallow"], spots["deep"], spots["drift"]
+        shallow, deep = spots["shallow"], spots["deep"]
         self.assertIsNotNone(shallow, "the world's river has no shallow reach")
         self.assertGreater(deep["depth"], 1.0, "the world has no water a person can be under")
 
@@ -557,19 +597,34 @@ class ThePersonIsInTheWater(WhatIsDugIsCarriedAndWeighs):
         # Five metres over the river is over it, not in it.
         self.assertIsNone(stand(shallow, 5.0), "a person in the air over a river was in the water")
         free = self.pace(seconds=0.5)
-        self.assertAlmostEqual(2.4, free, delta=0.3)
+        # About the 2.4 m/s they walk at; what follows is read against this, not against 2.4.
+        self.assertAlmostEqual(2.4, free, delta=0.5)
 
         # Standing on its bed they wade, slower the deeper -- and a shallow
         # river, however fast, does not carry them.
+        self.assertGreaterEqual(shallow["run"], 4, f"the world's river has no shallow reach to wade down: {shallow}")
+
+        def legs(seen):
+            """How far their own legs took them: where they went, less where the water took them."""
+            return math.hypot(seen["went"][0] - seen["told"][0], seen["went"][1] - seen["told"][1])
+
         wet = stand(shallow, 1.6)
         self.assertIsNotNone(wet, "a person standing on the bed of a river was not in the water")
         self.assertLess(wet["under"], 0.5)
         self.assertEqual(0, wet["carried"])
         self.assertFalse(wet["head_under"])
-        wading = self.pace(seconds=0.35)
-        expected = 1 - 0.7 * wet["under"] / 1.2
-        self.assertAlmostEqual(expected, wading / free, delta=0.17,
-                               msg=f"wading in {wet['under']:.2f} m at {wading:.2f} m/s against {free:.2f} on dry land")
+        self.assertAlmostEqual(1 - 0.7 * wet["under"] / 1.2, wet["pace"], delta=1e-6)
+        # Down the reach, the way the water runs, so that they stay in it. Their legs
+        # do what the water says of them frame by frame: the ground they cover is
+        # their dry-land pace times the time it left them, wherever that took them.
+        self.page.evaluate(f"banjoRoom.lookAt(banjoRoom.camera.position.x + {10 * shallow['u']}, banjoRoom.camera.position.y, "
+                           f"banjoRoom.camera.position.z + {10 * shallow['w']}); true")
+        waded = self.walk(seconds=0.6)
+        wading = waded["far"] / waded["time"]
+        self.assertLess(waded["paced"] / waded["time"], 0.93,
+                        f"walking down a shallow reach they were hardly in the water, so this proves nothing: {waded}")
+        self.assertAlmostEqual(free, legs(waded) / waded["paced"], delta=0.06 * free,
+                               msg=f"wading at {wading:.2f} m/s against {free:.2f} on dry land: {waded}")
         self.assertTrue(self.wait_for("document.getElementById('inv-carrying').textContent.includes('wading')", 10),
                         self.js("document.getElementById('inv-carrying').textContent"))
 
@@ -582,43 +637,45 @@ class ThePersonIsInTheWater(WhatIsDugIsCarriedAndWeighs):
         # Standing up in it, as much of them as there is water for is under.
         wet = stand(deep, 1.6)
         self.assertGreater(wet["under"], 1.0)
-        swimming = self.pace(seconds=0.3)
-        self.assertLess(swimming / free, 0.55, f"swimming at {swimming:.2f} m/s against {free:.2f} on dry land")
+        swum = self.walk(seconds=0.3)
+        swimming = swum["far"] / swum["time"]
+        self.assertLess(swum["paced"] / swum["time"], 0.6, f"standing up in {wet['under']:.2f} m of water they were hardly in it: {swum}")
+        # The pool has hold of them as well, so their legs are what is left of where
+        # they went once where the water took them is taken off.
+        self.assertAlmostEqual(free, legs(swum) / swum["paced"], delta=0.12 * free,
+                               msg=f"swimming at {swimming:.2f} m/s against {free:.2f} on dry land: {swum}")
         stand(shallow, 5.0)
         self.assertFalse(self.js("document.body.classList.contains('head-under-water')"))
 
-        # Where water deeper than their thighs is moving, it takes them with it:
-        # with no key down they go where it goes, at its speed times its hold.
-        # Read against the water's own speed where they are, as the page has it,
-        # moment by moment -- the water in a pool sloshes, and a person in it
-        # goes out and comes back with it.
-        print(f"\n   on dry land {free:.2f} m/s, wading {wading:.2f}, swimming {swimming:.2f}; the water's best hold "
-              f"is {drift['carries']:.3f} m/s in {drift['depth']:.2f} m moving at {drift['speed']:.2f}", flush=True)
-        self.assertGreater(drift["carries"], 0.03, "nowhere in the world is water deep enough to carry a person moving")
-        wet = stand(drift, 1.6)
-        self.assertGreater(wet["carried"], 0)
-        track = self.page.evaluate(
-            "new Promise((done) => { const out = [], t0 = performance.now(); const tick = () => {"
-            " const w = banjoRoom.world.inWater, p = banjoRoom.camera.position;"
-            " out.push([performance.now() - t0, p.x, p.z, w ? w.u * w.carried : 0, w ? w.w * w.carried : 0]);"
-            " if (performance.now() - t0 < 2500) requestAnimationFrame(tick); else done(JSON.stringify(out)); };"
-            " requestAnimationFrame(tick); })", await_promise=True, timeout=30)
-        track = json.loads(track)
-        self.assertGreater(len(track), 20, "the page drew too few frames to follow anyone")
-        told = [0.0, 0.0]
-        for (t0, _, _, u, w), (t1, *_rest) in zip(track, track[1:]):
-            told[0] += u * (t1 - t0) / 1000.0
-            told[1] += w * (t1 - t0) / 1000.0
-        went = (track[-1][1] - track[0][1], track[-1][2] - track[0][2])
-        print(f"   in {drift['depth']:.2f} m of moving water, hands off the keys, the person went "
-              f"[{went[0]:+.3f}, {went[1]:+.3f}] m in 2.5 s; the water where they were said [{told[0]:+.3f}, {told[1]:+.3f}]",
-              flush=True)
-        # The river's deeper reaches are gentle: a few centimetres in 2.5 s. They are
-        # followed to the millimetre, so a person the water did not move at all is
-        # three times outside this.
-        self.assertGreater(math.hypot(*told), 0.015, "the water the person stood in was not moving, so this proves nothing")
-        self.assertLess(math.dist(went, told), 0.15 * math.hypot(*told) + 0.005,
-                        f"the person went {went}, and the water that had hold of them went {told}")
+        # Where water deeper than their thighs is moving, it takes them with it: none
+        # of its speed at 0.5 m, all of it by 1.2 m. Not asked of the room's river,
+        # whose deeper reaches are gentle, do not run one way for long, and are not
+        # moving at all yet where the page is drawn at 7 frames a second and the
+        # world runs behind the clock. Asked of water the journey describes, over
+        # level ground, hands off the keys: 0.85 m of it going [0.3, -0.4] m/s has
+        # half its hold, and takes them [0.15, -0.2] m every second.
+        stand(shallow, 5.0)
+        here = self.js("banjoRoom.camera.position.toArray()")
+        for depth, hold in ((0.4, 0.0), (0.85, 0.5), (1.4, 1.0)):
+            self.page.evaluate(f"banjoRoom.standAt({here[0]}, {here[1]}, {here[2]}); "
+                               f"banjoRoom.waterForThePerson(() => ({{ level: {here[1]} - 1.6 + {depth}, depth: {depth}, "
+                               f"u: 0.3, w: -0.4 }})); true")
+            time.sleep(0.3)
+            wet = self.js("banjoRoom.world.inWater")
+            self.assertAlmostEqual(depth, wet["under"], delta=1e-6)
+            self.assertAlmostEqual(hold, wet["carried"], delta=1e-6)
+            self.assertAlmostEqual(1 - 0.7 * min(1.0, depth / 1.2), wet["pace"], delta=1e-6)
+            seen = self.follow(1.5)
+            went, told = seen["went"], seen["told"]
+            print(f"   in {depth} m of water going [0.3, -0.4] m/s, hands off the keys, they went [{went[0]:+.3f}, {went[1]:+.3f}] m "
+                  f"in {seen['time']:.2f} s of the page's time: its hold is {hold:g}", flush=True)
+            for axis, speed in enumerate((0.3, -0.4)):
+                self.assertAlmostEqual(speed * hold * seen["time"], went[axis], delta=0.03 * seen["time"] + 0.005,
+                                       msg=f"in {depth} m of water: {seen}")
+            self.assertLess(seen["apart"], 0.02, f"they left where the water took them: {seen}")
+        self.page.evaluate("banjoRoom.waterForThePerson(null); true")
+        time.sleep(0.3)
+        self.assertIsNone(self.js("banjoRoom.world.inWater || null"), "the journey's water outlived the journey")
         self.no_page_errors("after being in the water")
 
     test_the_spade_takes_what_can_be_carried_and_the_load_is_in_the_legs = None

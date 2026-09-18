@@ -2831,12 +2831,21 @@ function loadPace() { return 1 - 0.6 * loadFraction(); }
 // 1.2 m, where nothing of them is on the bed -- and a person overhead sees so.
 // Standing 5 m up over a river is over it, not in it.
 const BODY_BELOW_EYE_M = 1.6, WADE_TO_SWIM_M = 1.2, CARRIED_FROM_M = 0.5;
+// The water where the person is: the room's, unless a journey has said
+// (banjoRoom.waterForThePerson). A journey cannot ask a river to be 0.9 m deep
+// and moving at 0.4 m/s under someone -- where the page is drawn in software the
+// world runs behind the clock, and the river's deeper reaches are not moving yet
+// when it looks -- so what such water does to a person is checked in water the
+// journey describes: { level, depth, u, w }, as waterAt gives it, over a bed at
+// level - depth.
+let waterSaid = null;
 function inTheWater() {
-  const wet = ground.heights ? waterAt(camera.position.x, camera.position.z) : null;
+  const wet = waterSaid ? waterSaid(camera.position.x, camera.position.z)
+    : ground.heights ? waterAt(camera.position.x, camera.position.z) : null;
   if (!wet || !(wet.depth > 0.02)) return null;
   // The bed under their own feet, not under the nearest column's middle: on a
   // riffle the two are 8 cm apart and more, and they stand on the ground.
-  const bed = groundAt(camera.position.x, camera.position.z);
+  const bed = waterSaid ? wet.level - wet.depth : groundAt(camera.position.x, camera.position.z);
   const feet = Math.max(bed, camera.position.y - BODY_BELOW_EYE_M);
   const under = Math.min(BODY_BELOW_EYE_M, wet.level - feet);
   if (!(under > 0.02)) return null;
@@ -5983,6 +5992,8 @@ window.banjoRoom = {
   // The ground and the water as drawn, for checking what is on screen against
   // what the engine said -- and a spade, for driving the room from outside.
   groundAt, waterAt, digAt,
+  // The water a journey says the person is in (inTheWater), or null for the room's own.
+  waterForThePerson(said) { waterSaid = typeof said === "function" ? said : null; },
   groundDrawn: () => ground.grid && ({ ...ground.grid, water: ground.last,
                                        wetPoints: ground.raw ? ground.raw.filter(Number.isFinite).length : 0 }),
   // The river network drawn beyond the edges (docs/watershed.md): each basin's
