@@ -1,0 +1,21 @@
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 1c995ce..f188dc9 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -372,11 +372,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
+ 
+     def test_thin_rigid_product_roundtrip_and_actual_native_playback(self):
+         # Seed a normal saved source through the public API, then operate real UI controls.
+-        self.js("""(async()=>{
+-          const r=await fetch('/api/workshop/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+-            body:JSON.stringify({kind:'table',design_id:'browser-thin-rigid',parameters:{top_thickness_m:.005,leg_section_m:.015},save_design:true,label:'Browser thin table'})});
+-          if(!r.ok)throw Error(await r.text());
+-        })()""")
++        seed = self.install_api('/api/workshop/feedback', {
++            'kind':'table', 'design_id':'browser-thin-rigid',
++            'parameters':{'top_thickness_m':.005,'leg_section_m':.015},
++            'save_design':True, 'label':'Browser thin table'})
++        self.assertEqual(200, seed['status'], seed)
+         self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world?workshop=1&design=browser-thin-rigid"})
+         self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
+         self.assertIn('top',self.js("document.querySelector('#ws-buildability-parts').textContent"))
