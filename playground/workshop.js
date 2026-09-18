@@ -86,6 +86,7 @@ const ghost = new THREE.Group(); scene.add(ghost);
 const BUILD_FACES = [["face-y-","its bottom"],["face-y+","its top"],["face-x-","its left side"],
   ["face-x+","its right side"],["face-z-","its front"],["face-z+","its back"]];
 const JOINT_COLORS = { fixed:0x5fd38d, bearing:0x6cb6ff };
+const VERDICT_COLORS = { "holds":0x5fd38d, "uncertain":0xe0a63a, "gives way":0xe05c5c, "unrated":0x8a96a3 };
 function invalidateInstallation() {
   installation.sequence++;
   installation.preview = null;
@@ -543,12 +544,15 @@ function draw(candidate) {
 const forceArrow = new THREE.ArrowHelper(
   new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 0.3, 0xffb347, 0.08, 0.05);
 forceArrow.visible = false; scene.add(forceArrow);
-function showForceAt(point, force_n) {
+const PUSH_WAYS = { "down":[0,-1,0], "up":[0,1,0], "+x":[1,0,0], "-x":[-1,0,0], "+z":[0,0,1], "-z":[0,0,-1] };
+function showForceAt(point, force_n, push = "down") {
   if (!point || view === "physics") { forceArrow.visible = false; return; }
   const span = Math.max(0.12, reach * 0.9);
-  const size = span * (0.25 + 0.75 * Math.min(1, (Number(force_n) || 0) / 5000));
-  forceArrow.position.set(point[0], point[1] + size, point[2]);
-  forceArrow.setDirection(new THREE.Vector3(0, -1, 0));
+  const size = span * (0.25 + 0.75 * Math.min(1, Math.log10(1 + (Number(force_n) || 0)) / Math.log10(50001)));
+  const way = new THREE.Vector3(...(PUSH_WAYS[push] || PUSH_WAYS.down));
+  // The arrow's head lands on the point: it starts one length back along the push.
+  forceArrow.position.set(point[0] - way.x * size, point[1] - way.y * size, point[2] - way.z * size);
+  forceArrow.setDirection(way);
   forceArrow.setLength(size, size * 0.28, size * 0.16); forceArrow.visible = true;
 }
 function hitPartName(hit) {
@@ -573,6 +577,8 @@ function pickPart(event) {
   if (build.placing) { placeAtHit(hit); return; }
   bench.selectedPart = hitPartName(hit);
   bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
+  // A new spot: the last push's colours no longer describe what is selected.
+  bench.jointVerdicts = null; $("#ws-push-result")?.replaceChildren();
   show(false);
   if (bench.selectedPart && bench.selectedBenchTest === "force_probe") reprobe();
   else showForceAt(null);
@@ -1076,6 +1082,38 @@ function advancePlayback(now) {
   if (i !== bench.playbackIndex) setPlaybackIndex(i, false);
   if (i >= frames.length - 1) { bench.playbackPlaying = false; $("#ws-play").textContent = "Replay"; }
 }
+function renderJointScreen(card, screen) {
+  bench.jointVerdicts = null;
+  if (!screen) return;
+  if (screen.available === false) { card.append(make("p", { class:"ws-note", id:"ws-joint-screen-note" }, `Joints not screened: ${screen.why}`)); return; }
+  bench.jointVerdicts = Object.fromEntries((screen.joints || []).map((row) => [row.joint, row.verdict]));
+  const box = make("div", { id:"ws-joint-screen", "data-gives-way":String((screen.gives_way || []).length) });
+  const first = screen.first_to_give;
+  box.append(make("strong", {}, (screen.gives_way || []).length
+    ? `${screen.gives_way.length} joint${screen.gives_way.length === 1 ? "" : "s"} would give way`
+    : "No joint is past its strength"));
+  if (first?.joint) box.append(make("p", { id:"ws-first-to-give" }, `Pushed like this, the first to go is ${first.a} ↔ ${first.b}, ${first.would_be}, at about ${Number(first.force_n).toLocaleString(undefined, { maximumFractionDigits:0 })} N.`));
+  else if (first?.why) box.append(make("p", { id:"ws-first-to-give" }, first.why));
+  if ((screen.comes_apart_into || []).length > 1) box.append(make("p", { id:"ws-comes-apart" },
+    `It would come apart into ${screen.comes_apart_into.length} pieces: ` + screen.comes_apart_into.map((piece) => piece.length > 3 ? `${piece[0]} and ${piece.length - 1} more` : piece.join(" + ")).join("; ") + "."));
+  const floorNote = (screen.limitations || []).find((line) => line.startsWith("Not held by the floor"));
+  if (floorNote) box.append(make("p", { class:"ws-note warn", id:"ws-screen-floor-note" }, floorNote));
+  box.append(make("p", { class:"ws-feedback-count" }, `It is ${screen.standing}. One is all of a joint's strength; between a half and one is uncertain, because a sharp blow can load a joint up to about twice what a steady push does.`));
+  const list = make("ul", { class:"ws-joint-list" });
+  for (const row of (screen.joints || []).slice(0, 8)) {
+    const item = make("li", { class:`ws-joint-row screened ${String(row.verdict).replace(" ", "-")}`, "data-joint":row.joint });
+    const used = row.utilisation == null ? null : Number(row.utilisation);
+    item.append(make("span", { class:`ws-joint-kind ${String(row.verdict).replace(" ", "-")}` }, row.verdict),
+      make("span", { class:"ws-joint-parts" }, `${row.a} ↔ ${row.b}`),
+      make("small", {}, used == null ? (row.why || "not rated") : `${used >= 0.1 ? (used * 100).toFixed(0) : (used * 100).toPrecision(2)}% of its strength · would be ${row.would_be}`));
+    const bar = make("span", { class:"ws-joint-bar" }); const fill = make("i");
+    fill.style.width = `${Math.min(100, (used || 0) * 100)}%`; bar.append(fill); item.append(bar); list.append(item);
+  }
+  box.append(list);
+  if ((screen.joints || []).length > 8) box.append(make("p", { class:"ws-feedback-count" }, `and ${screen.joints.length - 8} more joints, all loaded less.`));
+  card.append(box);
+  if (view === "wire" || view === "skin") show(false);
+}
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
@@ -1108,8 +1146,9 @@ function renderBenchResult(result) {
       make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. Little or no movement means the object held in this model—not that bending strength is certified.`),
       make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
-    const target = result.target || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
-      make("p", {}, `${Number(target.force_n || 0).toFixed(0)} N for ${Number(target.duration_s || 0).toFixed(2)} s at ${(target.point_m || []).map((v) => Number(v).toFixed(2)).join(", ")} m`));
+    const target = result.target || {}, asked = result.requested || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
+      make("p", {}, `${Number(asked.force_n || 0).toFixed(0)} N at ${(target.point_m || []).map((v) => Number(v).toFixed(2)).join(", ")} m`));
+    renderJointScreen(card, result.joint_screen);
   } else if (result.test === "runtime_contract") {
     const s = result.summary || {}; card.append(make("strong", {}, "Runtime physics compiled"),
       make("p", {}, `${s.detailed_components || 0} detailed components → ${s.runtime_bodies || 0} runtime bodies · ${s.mechanisms || 0} mechanisms`));
@@ -1384,7 +1423,8 @@ function took(answer, keepPart = null) {
   bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0;
   bench.selectedPart = keepPart; bench.isolated = keepPart && bench.isolated ? keepPart : null;
   bench.forcePoint = null; invalidateMatter(); clearPlayback();
-  if (build.placing) stopPlacing(); ensureKindOption(answer.kind);
+  if (build.placing) stopPlacing(); ensureKindOption(answer.kind); bench.jointVerdicts = null;
+  $("#ws-push-result")?.replaceChildren(); showForceAt(null);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
@@ -1420,8 +1460,10 @@ function drawJoints(candidate) {
   const size = Math.max(0.008, reach * 0.014);
   for (const joint of candidate.construction?.joints || []) {
     const how = joint.interface; if (joint.open || !how?.centre_m) continue;
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8),
-      new THREE.MeshBasicMaterial({ color:JOINT_COLORS[joint.kind] ?? 0xffffff, depthTest:false, transparent:true, opacity:0.95 }));
+    // After a push, a joint shows how hard it was loaded rather than what kind it is.
+    const verdict = bench.jointVerdicts?.[joint.id];
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(verdict === "gives way" ? size * 1.7 : size, 12, 8),
+      new THREE.MeshBasicMaterial({ color:verdict ? VERDICT_COLORS[verdict] : (JOINT_COLORS[joint.kind] ?? 0xffffff), depthTest:false, transparent:true, opacity:0.95 }));
     dot.position.set(...how.centre_m); dot.renderOrder = 5; dot.userData.jointId = joint.id; group.add(dot);
     const axis = joint.kind === "bearing" ? (how.axis || how.normal) : null;
     if (axis) {
@@ -1526,6 +1568,18 @@ async function startNewBuild() {
   const first = answer.candidates?.[0]?.parts?.[0]?.name || null;
   if (took(answer, first)) { ensureKindOption("custom"); sayBuild(`Started a new build from ${first}. Add the next part against it.`); }
 }
+async function pushOnIt() {
+  if (!bench.selectedPart) throw new Error("Click the spot on the object to push first.");
+  const part = selectedPart(), point = bench.forcePoint || part.center_m;
+  const config = { component:bench.selectedPart, point_m:point, force_n:Number($("#ws-push-force").value),
+    push:$("#ws-push-way").value, standing:$("#ws-push-standing").value };
+  const revision = bench.revision;
+  const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:"force_probe", config } });
+  if (revision !== bench.revision) return;
+  const root = $("#ws-push-result"); root.replaceChildren();
+  renderJointScreen(root, answer.bench?.joint_screen);
+  showForceAt(point, config.force_n, config.push);
+}
 function renderBuild() {
   const root = $("#ws-build-joints"), candidate = chosen(); if (!root || !candidate) return;
   const c = candidate.construction || { joints:[], unfastened:[], touching_unfastened:[] };
@@ -1599,7 +1653,22 @@ function installBuildPanel(editor) {
   box.append(make("p", { id:"ws-build-status", class:"ws-note", role:"status", "aria-live":"polite" }));
   box.append(make("button", { id:"ws-build-remove", type:"button", class:"ws-action" }, "Take the selected part off"));
   box.append(make("h3", {}, "Joints"), make("div", { id:"ws-build-joints" }));
+  const push = make("div", { id:"ws-push-box", class:"ws-push-box" });
+  push.append(make("h3", {}, "Push on it"),
+    make("p", { class:"ws-feedback-count" }, "Click the spot to push, then press Push. A quick calculation, not a simulation: it says how much of each joint's strength the push uses and which joint would go first."));
+  const force = make("input", { id:"ws-push-force", type:"number", min:"1", max:"100000", step:"50", value:"1000" });
+  const forceLabel = make("label", { class:"ws-field" }, "Force (N)"); forceLabel.append(force); push.append(forceLabel);
+  const way = make("select", { id:"ws-push-way" });
+  [["down","down"],["up","up"],["+x","along +x, to the right"],["-x","along -x, to the left"],["+z","along +z, towards the back"],["-z","along -z, towards the front"]].forEach(([v,l]) => addOption(way, v, l));
+  const wayLabel = make("label", { class:"ws-field" }, "Pushing"); wayLabel.append(way); push.append(wayLabel);
+  const standing = make("select", { id:"ws-push-standing" });
+  [["resting","standing on the floor"],["free","struck in mid-air"]].forEach(([v,l]) => addOption(standing, v, l));
+  const standingLabel = make("label", { class:"ws-field" }, "While it is"); standingLabel.append(standing); push.append(standingLabel);
+  push.append(make("button", { id:"ws-push-go", type:"button", class:"ws-action primary" }, "Push"), make("div", { id:"ws-push-result" }));
+  box.append(push);
   editor.prepend(box);
+  $("#ws-push-go").onclick = (event) => guard(event.currentTarget, pushOnIt);
+  for (const control of [force, way, standing]) control.addEventListener("change", () => { if (bench.jointVerdicts) guard(null, pushOnIt); });
 
   what.onchange = () => { renderBuildSizes(); if (build.placing) previewPlacement(); };
   for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });

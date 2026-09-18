@@ -190,6 +190,64 @@ class Building(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already has its parts"):
             workshop_api.open_workshop(self.app, {"kind": "cart", "first_part": {"family": "post"}})
 
+    def push(self, candidate, **config):
+        return workshop_api.plan(self.app, {**spec_of(candidate, "cart"), "bench_test": {
+            "test": "force_probe", "config": {"component": "handle", "force_n": 3000.0, **config}}})["bench"]
+
+
+    def test_a_push_says_which_joint_goes_first_once_the_design_has_joints_of_its_own(self):
+        template = self.push(self.cart)["joint_screen"]
+        self.assertFalse(template["available"])
+        self.assertIn("no joints of its own", template["why"])
+
+        shown = workshop_api.candidates(self.app, {**spec_of(self.cart, "cart"),
+                                                   "construct": {"action": "adopt"}})["candidates"][0]
+        answer = self.push(shown)
+        screen = answer["joint_screen"]
+        self.assertEqual("analytical-screen", screen["evidence"])
+        # 3 kN down on a handle that overhangs the back axle would tip the cart
+        # (it pivots at about 195 N), so the floor cannot be what holds it.
+        self.assertEqual("free", screen["standing"])
+        self.assertIn("Not held by the floor", screen["limitations"][0])
+        self.assertEqual(16, len(screen["joints"]))
+        self.assertEqual(sorted(j["utilisation"] for j in screen["joints"])[::-1],
+                         [j["utilisation"] for j in screen["joints"]])          # worst first
+        first = screen["first_to_give"]
+        self.assertIn("handle-arm", first["a"] + first["b"])
+        self.assertLess(first["force_n"], 3000.0)
+        self.assertEqual(2, len(screen["comes_apart_into"]))
+        self.assertEqual(["handle", "handle-arm-1", "handle-arm-2"], sorted(screen["comes_apart_into"][1]))
+        # The first layer is still there, and says what it always said.
+        self.assertEqual("analytical-estimate", answer["evidence"])
+        self.assertTrue(answer["load_paths"])
+
+    def test_the_same_push_in_mid_air_and_in_another_direction_is_a_different_answer(self):
+        shown = workshop_api.candidates(self.app, {**spec_of(self.cart, "cart"),
+                                                   "construct": {"action": "adopt"}})["candidates"][0]
+        # Pushed straight down through the centre of mass, so that it does not turn.
+        parts = shown["parts"]
+        whole = sum(p["mass_kg"] for p in parts)
+        through_com = [sum(p["mass_kg"] * p["center_m"][k] for p in parts) / whole for k in (0, 2)]
+        spot = [through_com[0], 0.38, through_com[1]]
+        resting = self.push(shown, component="deck", point_m=spot)["joint_screen"]
+        free = self.push(shown, component="deck", point_m=spot, standing="free")["joint_screen"]
+        sideways = self.push(shown, push="+x")["joint_screen"]
+        self.assertEqual("resting on the floor", resting["standing"])
+        self.assertEqual("free", free["standing"])
+        # Standing, the chassis's weight and the whole push go out through the four
+        # bearings to the floor. In mid-air the cart falls freely, so its weight
+        # loads nothing, and the bearings carry only the share of the push that
+        # accelerates the two wheelsets beyond them.
+        through = lambda s: sum(j["load"]["shear_n"] for j in s["joints"] if j["kind"] == "bearing")  # noqa: E731
+        mass = {p["name"]: p["mass_kg"] for p in shown["parts"]}
+        wheelsets = sum(m for name, m in mass.items() if name.startswith(("axle", "wheel")))
+        total = sum(mass.values())
+        self.assertAlmostEqual((total - wheelsets) * 9.80665 + 3000.0, through(resting), delta=0.5)
+        self.assertAlmostEqual(3000.0 * wheelsets / total, through(free), delta=0.5)
+        self.assertEqual([1.0, 0.0, 0.0], sideways["blow"]["direction"])
+        with self.assertRaisesRegex(ValueError, "push must be one of"):
+            self.push(shown, push="sideways")
+
     def test_what_cannot_be_done_is_said(self):
         for construct, why in [
             ({"action": "add", "part": dict(POST), "by": "face-y-", "onto": "nothing", "at_m": [0, 0, 0]}, "click the part"),

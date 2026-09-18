@@ -679,6 +679,26 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#ws-part-count').textContent==='14'")
         self.assertIn('15 joints', self.js("document.querySelector('#ws-build-joints').textContent"))
 
+    def test_a_push_on_the_handle_says_which_joint_goes_first_and_marks_it(self):
+        self.open_product('cart'); self.click('[data-mode="build"]')
+        self.click('#ws-build-adopt')
+        self.wait("document.querySelectorAll('.ws-joint-row[data-joint]').length===16")
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='handle').click()")
+        self.field('#ws-push-force', 3000); self.click('#ws-push-go')
+        self.wait("document.querySelector('#ws-joint-screen')")
+        self.assertEqual('2', self.js("document.querySelector('#ws-joint-screen').dataset.givesWay"))
+        self.assertIn('handle-arm', self.js("document.querySelector('#ws-first-to-give').textContent"))
+        self.assertIn('2 pieces', self.js("document.querySelector('#ws-comes-apart').textContent"))
+        self.assertEqual(2, self.js("document.querySelectorAll('#ws-joint-screen .ws-joint-row.gives-way').length"))
+        # The analysis is a Build aid; the Test tab still offers only simulations.
+        self.click('[data-mode="test"]')
+        self.assertNotIn('force_probe', self.js("[...document.querySelector('#ws-bench-test').options].map(o=>o.value).join(',')"))
+        # A lighter push holds, and a new spot clears the old answer.
+        self.click('[data-mode="build"]'); self.field('#ws-push-force', 100)
+        self.wait("document.querySelector('#ws-joint-screen')?.dataset.givesWay==='0'")
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='deck').click()")
+        self.assertTrue(self.js("!!document.querySelector('#ws-joint-screen')"))
+
     def test_a_new_build_starts_from_one_part_and_joins_the_product_list(self):
         self.click('[data-mode="build"]')
         self.field('#ws-build-what', 'family:surface')

@@ -812,8 +812,10 @@ def set_joint(design: WorkshopDesign, overrides: dict[str, Any], *, a: str, b: s
 # ---------------------------------------------------------------------------
 
 def _rounded(value: Any) -> Any:
+    # Significant figures, not decimal places: a second moment of area is of the
+    # order of 1e-6 m4, and nine decimals would leave it four figures.
     if isinstance(value, float):
-        return round(value, 9)
+        return float(f"{value:.12g}")
     if isinstance(value, tuple):
         return [_rounded(v) for v in value]
     return value

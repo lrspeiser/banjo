@@ -154,3 +154,14 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-joint-parts { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .ws-joint-kind { padding:.05rem .35rem;border-radius:.6rem;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#08110c;background:#5fd38d; }
 .ws-joint-kind.bearing { background:#6cb6ff;color:#06111c; }
+/* The joint screen: each joint's share of its strength under the push. */
+.ws-joint-row.screened { grid-template-columns:auto minmax(0,1fr); }
+.ws-joint-row.screened small { grid-column:1 / -1; }
+.ws-joint-bar { grid-column:1 / -1;height:.28rem;border-radius:.2rem;background:#1b2632;overflow:hidden; }
+.ws-joint-bar i { display:block;height:100%;background:#5fd38d; }
+.ws-joint-row.uncertain .ws-joint-bar i, .ws-joint-kind.uncertain { background:#e0a63a; }
+.ws-joint-row.gives-way .ws-joint-bar i, .ws-joint-kind.gives-way { background:#e05c5c; }
+.ws-joint-row.gives-way { border-color:#8a4a4a; }
+.ws-joint-kind.unrated { background:#8a96a3; }
+#ws-joint-screen { display:grid;gap:.35rem;margin-top:.4rem; }
+.ws-push-box { display:grid;gap:.4rem;margin-top:.5rem;padding-top:.6rem;border-top:1px solid #2a3542; }
