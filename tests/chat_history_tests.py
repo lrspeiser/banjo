@@ -809,5 +809,156 @@ class TheGuidesSayWhatARampIsFor(unittest.TestCase):
         self.assertNotIn("60000", lab)
 
 
+class ObjectListsSentToTheModel(unittest.TestCase):
+    def setUp(self):
+        from chat_tool_results import ObjectResultTransport
+        self.transport = ObjectResultTransport({"add_object", "move_object", "remove_object"})
+        self.objects = [{"name": f"part-{i}", "position_m": [i, 0, 0],
+                         "material": "oak", "shape": "box", "size_m": [.2, .3, .4]}
+                        for i in range(50)]
+
+    def send(self, tool, answer):
+        return json.loads(self.transport.encode(tool, answer))
+
+    def baseline(self):
+        source = {"objects": self.objects}
+        self.assertEqual(source, self.send("describe_world", source))
+
+    def test_first_objects_reply_is_complete(self):
+        source = {"added": "part-49", "objects": self.objects}
+        self.assertEqual(source, self.send("add_object", source))
+        self.assertEqual(0, self.transport.described()["delta_calls"])
+
+    def test_additions_and_diagnostics_are_kept_without_changing_the_source(self):
+        self.baseline()
+        added = {"name": "new-part", "position_m": [100, 1, 0]}
+        source = {"added": "new-part", "objects": self.objects + [added],
+                  "set_down": {"from_m": 0, "to_m": 1}, "joints_lost": ["hinge"],
+                  "note": "lifted onto the ground"}
+        before = json.dumps(source)
+        answer = self.send("add_object", source)
+        self.assertEqual([added], answer["objects"])
+        self.assertEqual({"mode": "delta", "basis": "previous-objects-result-in-this-turn",
+                          "removed_names": [], "total_count": 51, "unchanged_count": 50},
+                         answer["object_listing"])
+        for key in ("added", "set_down", "joints_lost", "note"):
+            self.assertEqual(source[key], answer[key])
+        self.assertEqual(before, json.dumps(source), "audit/native response must stay complete")
+
+    def test_all_changed_objects_are_kept_not_only_the_requested_one(self):
+        self.baseline()
+        # A rebuild moves a different object too: that side effect must not disappear.
+        self.objects[2]["position_m"] = [2, 4, 0]
+        self.objects[17]["position_m"] = [17, 2, 0]
+        answer = self.send("move_object", {"moved": "part-2", "objects": self.objects})
+        self.assertEqual(["part-2", "part-17"], [r["name"] for r in answer["objects"]])
+        self.assertEqual(48, answer["object_listing"]["unchanged_count"])
+
+    def test_removals_are_explicit_and_deltas_can_follow_deltas(self):
+        self.baseline()
+        answer = self.send("remove_object", {"removed": "part-4", "objects": self.objects[:4] + self.objects[5:]})
+        self.assertEqual(["part-4"], answer["object_listing"]["removed_names"])
+        self.assertEqual([], answer["objects"])
+        answer = self.send("add_object", {"added": "part-4", "objects": self.objects})
+        self.assertEqual([self.objects[4]], answer["objects"])
+        self.assertEqual([], answer["object_listing"]["removed_names"])
+
+    def test_reads_and_unknown_tools_are_never_compressed(self):
+        self.baseline()
+        for name in ("describe_world", "new_tool_not_yet_classified"):
+            source = {"objects": self.objects, "report": "full"}
+            self.assertEqual(source, self.send(name, source))
+
+    def test_errors_and_missing_mutation_snapshots_reset_the_baseline(self):
+        for source in ({"error": "failed", "objects": self.objects}, {"moved": "part-4"}):
+            self.baseline()
+            self.assertEqual(source, self.send("move_object", source))
+            next_answer = {"added": "part-49", "objects": self.objects}
+            self.assertEqual(next_answer, self.send("add_object", next_answer))
+
+    def test_ambiguous_or_oversized_identity_is_full_and_resets_baseline(self):
+        from chat_tool_results import MAX_TRACKED_OBJECTS
+        bad_arrays = [[{"name": "same"}, {"name": "same"}], [{"position_m": [0, 0, 0]}],
+                      ["part"], [{"name": f"p{i}"} for i in range(MAX_TRACKED_OBJECTS + 1)]]
+        for rows in bad_arrays:
+            self.baseline()
+            source = {"objects": rows}
+            self.assertEqual(source, self.send("add_object", source))
+            self.assertEqual({"objects": self.objects}, self.send("add_object", {"objects": self.objects}))
+
+    def test_small_replies_do_not_grow(self):
+        source = {"objects": [{"name": "a"}]}
+        self.assertEqual(source, self.send("add_object", source))
+        self.assertEqual(source, self.send("add_object", source))
+        self.assertEqual(0, self.transport.described()["saved_json_bytes"])
+
+    def test_json_type_changes_are_not_hidden_by_python_equality(self):
+        self.objects[0]["state"] = 1
+        self.baseline()
+        self.objects[0]["state"] = True
+        answer = self.send("move_object", {"objects": self.objects})
+        self.assertEqual([self.objects[0]], answer["objects"])
+
+    def test_a_new_turn_has_no_previous_turns_baseline(self):
+        from chat_tool_results import ObjectResultTransport
+        self.baseline()
+        next_turn = ObjectResultTransport({"add_object"})
+        source = {"objects": self.objects}
+        self.assertEqual(source, json.loads(next_turn.encode("add_object", source)))
+
+    def test_large_world_byte_accounting_is_measured_and_lossless(self):
+        original = sent = 0
+        reconstructed = {}
+        current = self.objects.copy()
+        for i in range(30):
+            current.append({"name": f"new-{i}", "position_m": [i, 2, 3]})
+            source = {"objects": current, "added": f"new-{i}"}
+            encoded = self.transport.encode("add_object", source)
+            original += len(json.dumps(source, allow_nan=False).encode("utf-8"))
+            sent += len(encoded.encode("utf-8"))
+            answer = json.loads(encoded)
+            if "object_listing" not in answer:
+                reconstructed = {r["name"]: r for r in answer["objects"]}
+            else:
+                for name in answer["object_listing"]["removed_names"]:
+                    reconstructed.pop(name)
+                reconstructed.update({r["name"]: r for r in answer["objects"]})
+            self.assertEqual({r["name"]: r for r in current}, reconstructed)
+        stats = self.transport.described()
+        self.assertEqual((original, sent, original - sent),
+                         (stats["original_json_bytes"], stats["sent_json_bytes"], stats["saved_json_bytes"]))
+        self.assertLess(sent, original * .15)
+        self.assertEqual(29, stats["delta_calls"])
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_real_room_calls_compact_model_outputs_but_not_the_audit_log(self):
+        sent = []
+        trace = []
+        def model(api_key, model_name, conversation):
+            sent.append(list(conversation))
+            if len(sent) <= 2:
+                n = len(sent)
+                return {"status": "completed", "usage": {}, "output": [
+                    _function_call(f"add-{n}", "add_object", {"object": {
+                        "name": f"transport-crate-{n}", "shape": "box", "material": "oak",
+                        "size_m": [.12, .12, .12], "position_m": [8.0 + n, 0.0]}})]}
+            return {"status": "completed", "usage": {}, "output": _message("The crates are there.")}
+        real, world_chat._call = world_chat._call, model
+        try:
+            result = world_chat.ask("test", "scripted", world_room.Room("yard"), {"bodies": []},
+                                    "Add two crates.", [], trace=trace)
+        finally:
+            world_chat._call = real
+        calls = [json.loads(m["output"]) for m in sent[-1] if m.get("type") == "function_call_output"]
+        self.assertNotIn("object_listing", calls[0])
+        self.assertEqual("delta", calls[1]["object_listing"]["mode"])
+        self.assertTrue(any(r["name"] == "transport-crate-2" for r in calls[1]["objects"]))
+        audit = [call["answer"] for round_ in trace for call in round_.get("calls", [])]
+        self.assertNotIn("object_listing", audit[1])
+        self.assertGreater(len(audit[1]["objects"]), len(calls[1]["objects"]))
+        self.assertGreater(result["tool_transport"]["saved_json_bytes"], 0)
+        self.assertIn("TOOL OBJECT LISTS", json.loads(sent[0][0]["content"])["tool_object_lists"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

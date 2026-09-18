@@ -64,6 +64,8 @@ claim cannot paper over it.
 
 ## 3. Cost
 
+**Update:** [The object-result transport checkpoint](chat-object-transport-checkpoint.md) now compacts repeated successful authoring outputs for the room chat, after a full baseline. The original measurement below is historical; live model/token-cost comparison and repair-round cost isolation remain open. MCP answers and audit logs stay complete.
+
 - **Every `add_object` answer carries the whole world's object list.** One
   valley turn read **2.76 M input tokens** for 30 rounds. Trimming that answer
   to what changed is not done, and it is the single largest cost in the chat.

@@ -32,6 +32,7 @@ from typing import Any
 from urllib import error, request
 
 import room_world
+from chat_tool_results import GUIDANCE as OBJECT_LIST_GUIDANCE, ObjectResultTransport
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import constructions  # noqa: E402  (mcp/, the same)
 
@@ -1506,7 +1507,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
     person will be handed was changed.
 
     `trace`, when given a list, receives every round: what the model said, each
-    tool it called with its arguments, and the answer it got back. The answers
+    tool it called with its arguments, and the full native/MCP answer. Only
+    model transport may omit unchanged objects after a full baseline. The answers
     are the part worth having -- a refusal is the only record of WHY a request
     did not make it into the room.
 
@@ -1525,10 +1527,12 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
     if journal is not None:
         entry["journal"] = journal
     started = time.perf_counter()
+    tool_transport = ObjectResultTransport(room_world.AUTHORING)
     try:
         opening = {"what_you_were_asked": message,
                    "what_the_person_has_been_doing": story[-24:] or ["nothing yet"],
                    "objects_now": _now(live_state),
+                   "tool_object_lists": OBJECT_LIST_GUIDANCE,
                    "the_room": {"cell_size_m": entry["cell_m"],
                                 "cells_used": entry["cells"],
                                 "cells_left": max(0, entry["max_cells"] - entry["cells"]),
@@ -1769,7 +1773,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                                               "answer": answer})
                 conversation.append({"type": "function_call_output",
                                      "call_id": call.get("call_id"),
-                                     "output": json.dumps(answer, allow_nan=False)})
+                                     "output": tool_transport.encode(name, answer)})
         else:
             reply = (f"I was still working after {MAX_ROUNDS} rounds. "
                      + ("What I had built by then is in the room." if changed
@@ -1794,7 +1798,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         # the calls held back for the server to make once the change is in.
         return {"reply": reply, "did": did, "changed": changed, "worked": worked,
                 "wall_s": round(time.perf_counter() - started, 2), "rounds": rounds,
-                "usage": usage, "the_person": opening.get("the_person"),
+                "usage": usage, "tool_transport": tool_transport.described(),
+                "the_person": opening.get("the_person"),
                 "checked": checked, "deferred": deferred}
     finally:
         room_world.close_room(world_id)

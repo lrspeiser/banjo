@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Room-chat transport checkpoint:** [Lossless object-result deltas](chat-object-transport-checkpoint.md) reduce repeated model input after a full baseline, preserve all actual side effects and full audit logs, and report measured bytes separately from tokens. Physics and MCP handlers are unchanged.
+
 **Explicit Workshop test limits:** [Exact-run acceptance](workshop-acceptance-checkpoint.md) adds opt-in endpoint limits, measured pass/fail/unsupported verdicts and immutable evidence import. This is not peak-deflection or load-range certification.
 
 **Workshop consistency checkpoint (September 17, 2026):** [Implementation and verification](workshop-consistency-checkpoint.md) connects physical edits to canonical-cell measurements and native-grid verification; repairs edited-design persistence, stale UI results and isolated numerical simulation traces. No material law changed. Live-world installation, mixed-material fusion and complete physical-skin interface semantics remain open.

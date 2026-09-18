@@ -212,5 +212,25 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
         self.assertEqual(json.loads(filed[-1])["realtime_pct"], -358, "filed as it was sent")
 
 
+
+class ChatTransportAccountingIsKept(unittest.TestCase):
+    def test_saved_transcript_keeps_full_answers_and_separate_byte_counts(self):
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        stats = {"original_json_bytes": 1000, "sent_json_bytes": 100,
+                 "saved_json_bytes": 900, "delta_calls": 2}
+        actual = {"objects": [{"name": "unchanged"}, {"name": "new"}], "added": "new"}
+        trace = [{"calls": [{"name": "add_object", "arguments": {}, "answer": actual}]}]
+        answer = {"reply": "Done", "rounds": 1, "tool_transport": stats}
+        with TemporaryDirectory() as root, patch.object(server, "ROOT", Path(root)):
+            server.remember_chat(SimpleNamespace(api_key=""), "Add one", trace, answer, None, .1)
+            files = list((Path(root) / "build/playground-logs/chat").glob("*.json"))
+            self.assertEqual(1, len(files))
+            stored = json.loads(files[0].read_text())
+        self.assertEqual(stats, stored["tool_transport"])
+        self.assertEqual(actual, stored["rounds"][0]["calls"][0]["answer"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

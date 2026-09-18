@@ -1578,6 +1578,7 @@ def remember_chat(app, message, trace, answer, failure, wall_s, person=None):
                   "failure": str(failure) if failure is not None else None,
                   "reply": (answer or {}).get("reply"), "did": (answer or {}).get("did"),
                   "usage": (answer or {}).get("usage"),
+                  "tool_transport": (answer or {}).get("tool_transport"),
                   "the_person": (answer or {}).get("the_person") or person,
                   "rounds": trace}
         text = json.dumps(record, indent=1, default=str)
