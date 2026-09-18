@@ -1,0 +1,32 @@
+name: rigid-live-source
+on:
+  push:
+    branches: [agent/rigid-live-integration-tools]
+    paths: [.github/workflows/rigid-live-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Capture public source history and integration audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rigid-live-source"
+          git fetch origin main agent/workshop-matter-debug agent/thin-parts-candidate
+          git bundle create "$RUNNER_TEMP/rigid-live-source/banjo.bundle" refs/remotes/origin/main refs/remotes/origin/agent/workshop-matter-debug refs/remotes/origin/agent/thin-parts-candidate
+          git rev-parse origin/main > "$RUNNER_TEMP/rigid-live-source/main.txt"
+          git log --oneline --left-right origin/main...origin/agent/workshop-matter-debug > "$RUNNER_TEMP/rigid-live-source/inspection-pr-audit.txt"
+          git merge-base --is-ancestor origin/agent/thin-parts-candidate origin/main
+          echo 'Thin-part candidate is an ancestor of main.' > "$RUNNER_TEMP/rigid-live-source/thin-parts-audit.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rigid-live-source
+          path: ${{ runner.temp }}/rigid-live-source
+          retention-days: 3
+          if-no-files-found: error
