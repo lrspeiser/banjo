@@ -28,6 +28,8 @@ jobs:
           OPENAI_API_KEY: ""
         run: |
           node --check playground/workshop.js
+          python3 tests/workshop_buildability_tests.py -v
+          python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
@@ -108,10 +110,12 @@ jobs:
           python3 tests/access_gate_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/chat_history_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/actions_tests.py -v
-          BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/tool_use_tests.py -v
+          BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/tool_use_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
           python3 tests/asset_compiler_tests.py -v
+          python3 tests/workshop_buildability_tests.py -v
+          python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
@@ -138,6 +142,8 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
+          BANJO_PLATFORM_ENGINE=$PWD/build/ci/banjo_platform_cli BANJO_RIGID_TESTS=required \
+            python3 tests/workshop_rigid_engine_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
             python3 tests/workshop_bench_engine_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
