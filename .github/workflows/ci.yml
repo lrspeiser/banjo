@@ -110,7 +110,7 @@ jobs:
           python3 tests/access_gate_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/chat_history_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/actions_tests.py -v
-          BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/tool_use_tests.py -v
+          BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/tool_use_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
           python3 tests/asset_compiler_tests.py -v
@@ -153,6 +153,11 @@ jobs:
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/world_page_journey_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
+            BANJO_PLATFORM_ENGINE=$PWD/build/ci/banjo_platform_cli \
+            BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
+            BANJO_BROWSER_TESTS=required python3 tests/workshop_browser_tests.py -v
           python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
 
       - name: Generate deterministic scenario projections
