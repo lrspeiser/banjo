@@ -72,5 +72,31 @@ class PersistentWorkshopAPI(unittest.TestCase):
         self.assertEqual(1, answer["designs_kept"])
 
 
+
+class EditedDesignPersistence(unittest.TestCase):
+    setUp = PersistentWorkshopAPI.setUp
+    tearDown = PersistentWorkshopAPI.tearDown
+
+    def test_physical_design_is_saved_listed_and_reopened_exactly(self):
+        overrides = {"leg-1":{"skin":{"profile":"curve","physical":True,"bend_m":.35}}}
+        saved = workshop_api.remember(self.app, {"kind":"table","design_id":"curved-table",
+            "component_overrides":overrides,"save_design":True,"label":"Curved table"})
+        self.assertEqual(1,saved["designs_kept"])
+        self.assertTrue(saved["design"]["component_overrides"]["leg-1"]["skin"]["physical"])
+        reopened = workshop_api.open_workshop(self.app,{"saved_design_id":"curved-table"})["candidates"][0]
+        library = workshop_api.open_workshop(self.app,{"library_item_id":saved["library_item"]["item_id"]})["candidates"][0]
+        self.assertEqual(reopened["component_overrides"],library["component_overrides"])
+        self.assertEqual(saved["design"]["matter_physics_hash"],reopened["measured"]["matter_physics_hash"])
+        self.assertIn("requires-retest",saved["library_item"]["tags"]["evidence"])
+
+    def test_geometric_and_cosmetic_overrides_survive_saved_design_load(self):
+        overrides = {"leg-1":{"size_m":[.09,.72,.09],"skin":{"profile":"curve","physical":False,"bend_m":.1}}}
+        saved = workshop_api.remember(self.app, {"kind":"table","design_id":"edited-table",
+            "component_overrides":overrides,"save_design":True})
+        reopened = workshop_api.open_workshop(self.app,{"saved_design_id":"edited-table"})["candidates"][0]
+        self.assertEqual(saved["design"]["component_overrides"],reopened["component_overrides"])
+        self.assertEqual([.09,.72,.09],next(p for p in reopened["parts"] if p["name"]=="leg-1")["size_m"])
+
+
 if __name__ == "__main__":
     unittest.main()

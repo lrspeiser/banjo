@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Workshop consistency checkpoint (September 17, 2026):** [Implementation and verification](workshop-consistency-checkpoint.md) connects physical edits to canonical-cell measurements and native-grid verification; repairs edited-design persistence, stale UI results and isolated numerical simulation traces. No material law changed. Live-world installation, mixed-material fusion and complete physical-skin interface semantics remain open.
+
 **What is not done** is written down in [what-is-not-done.md](what-is-not-done.md): the increments that were not reached, the owner's placement rule where it is only half built, the four changes that millions of cells would need, what the asset compiler cannot yet do, two engine defects recorded and not fixed, and the things that are easy to misread as finished.
 
 **The room lays a structure out on the ground itself.** Branch `agent/structure-builder`, from `a598d2f`. Increment 2 of [building-from-language.md](building-from-language.md): asked for a long ski ramp in the valley, the chat laid the guide's flat-ground ski jump on a hillside, patched it for 30 rounds and ended "Not finished". Code now works out every part.

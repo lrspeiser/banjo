@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import struct
 from dataclasses import replace
 from pathlib import Path
 import sys
@@ -50,6 +52,23 @@ class FakeSession:
         }
 
     def send(self, **command):
+        if command["op"] == "snapshot":
+            h = self.spec["cell_m"]
+            cells = set()
+            for body in self.spec["bodies"]:
+                if not body.get("join"):
+                    continue
+                counts = [round(v/1000/h) for v in body["size_mm"]]
+                lo = [round(body["center_mm"][a]/1000/h-counts[a]/2) for a in range(3)]
+                cells.update((x,y,z) for x in range(lo[0],lo[0]+counts[0])
+                             for y in range(lo[1],lo[1]+counts[1])
+                             for z in range(lo[2],lo[2]+counts[2]))
+            offsets = b"".join(struct.pack("<ddd", *((g[a]+.5)*h-self.root_at[a] for a in range(3)))
+                               for g in sorted(cells))
+            return {"snapshot": {"bodies": [{"name": self.root_name,
+                "material": self.spec["bodies"][0]["material"],
+                "offsets_b64": base64.b64encode(offsets).decode(),
+                "pose": {"com_m": self.root_at, "q_wxyz": [1,0,0,0]}}]}}
         if command["op"] == "poses": return self._state()
         if command["op"] == "step":
             self.t += float(command["dt"]) * int(command["n"])
@@ -136,6 +155,8 @@ class Running(unittest.TestCase):
         self.assertTrue(answer["measured"]["prototype_present"])
         self.assertEqual(answer["requested"]["cell_size_m"], answer["prototype"]["effective_cell_size_m"])
         self.assertTrue(answer["prototype"]["matter_roundtrip_exact"])
+        self.assertTrue(answer["prototype"]["engine_grid_verified"])
+        self.assertEqual(answer["prototype"]["matter_cells"], answer["prototype"]["engine_cells"])
         self.assertGreater(answer["prototype"]["matter_cells"], 0)
         self.assertEqual("joined-grid-boxes-exact-cell-union", answer["prototype"]["engine_geometry"])
         self.assertEqual(64, len(answer["prototype"]["matter_physics_hash"]))
@@ -147,7 +168,77 @@ class Running(unittest.TestCase):
         self.assertEqual(120.0, answer["requested"]["load_kg"])
         self.assertEqual(0.02, answer["prototype"]["effective_cell_size_m"])
         self.assertTrue(answer["prototype"]["matter_roundtrip_exact"])
+        self.assertTrue(answer["prototype"]["engine_grid_verified"])
+        self.assertEqual(answer["prototype"]["matter_cells"], answer["prototype"]["engine_cells"])
         self.assertIn("actual_grid_load_kg", answer["measured"])
+
+
+
+class NativeMatterVerification(unittest.TestCase):
+    def test_native_cell_mismatch_and_material_mismatch_are_refused(self):
+        from copy import deepcopy
+        import workshop_sparse_trial
+        setup = workshop_trials.prototype_scene(assemble("table"),load_kg=10,cell_size_m=.04)
+        session = FakeSession(None,setup["spec"],None)
+        snapshot = session.send(op="snapshot")["snapshot"]
+        proof = workshop_sparse_trial.verify_engine_matter(snapshot,setup["matter"],setup["root_body"])
+        self.assertTrue(proof["engine_grid_verified"])
+        changed = deepcopy(snapshot);changed["bodies"][0]["material"]="iron"
+        with self.assertRaisesRegex(ValueError,"material differs"):
+            workshop_sparse_trial.verify_engine_matter(changed,setup["matter"],setup["root_body"])
+        changed = deepcopy(snapshot)
+        raw = base64.b64decode(changed["bodies"][0]["offsets_b64"])
+        changed["bodies"][0]["offsets_b64"]=base64.b64encode(raw[:-24]).decode()
+        with self.assertRaisesRegex(ValueError,"cells differ"):
+            workshop_sparse_trial.verify_engine_matter(changed,setup["matter"],setup["root_body"])
+
+
+class SimulationTraceTests(unittest.TestCase):
+    def state(self, t):
+        return {"t":t, "bodies":[{"name":"body", "position_m":[t,0,0]}]}
+
+    def test_trace_is_bounded_and_sampling_stays_uniform_over_full_span(self):
+        from workshop_recording import Recorder
+        for capacity in (2, 20, 600):
+            with self.subTest(capacity=capacity):
+                recorder = Recorder(object(), max_frames=capacity)
+                for i in range(6001):
+                    recorder.capture(self.state(i/30))
+                    self.assertLessEqual(len(recorder.frames), capacity)
+                trace = recorder.recording(test="inspection")
+                self.assertEqual(0,trace["frames"][0]["t_s"])
+                self.assertEqual(200,trace["frames"][-1]["t_s"])
+                self.assertLessEqual(trace["sampling"]["max_gap_s"], trace["sampling"]["effective_period_s"]+2e-6)
+                self.assertTrue(trace["sampling"]["thinned"])
+
+    def test_subsystem_query_does_not_erase_pose_or_clock(self):
+        from workshop_recording import Recorder
+        class Session:
+            state = {"t":1.0}
+        recorder=Recorder(Session())
+        recorder.capture(self.state(1.0))
+        recorder.capture({"thermo":{"temperature_k":340}})
+        recorder.capture(self.state(1.0))
+        self.assertEqual(1,len(recorder.frames))
+        self.assertEqual(340,recorder.frames[0]["thermo"]["temperature_k"])
+        self.assertEqual(1,recorder.frames[0]["t_s"])
+        self.assertTrue(recorder.frames[0]["bodies"])
+
+    def test_event_overflow_is_explicit_and_bounded(self):
+        from workshop_recording import Recorder
+        recorder=Recorder(object(),max_frames=10)
+        for i in range(500):recorder.capture(self.state(i/30),event="drive")
+        self.assertLessEqual(len(recorder.events),40)
+        self.assertTrue(recorder.recording(test="events")["events_truncated"])
+
+    def test_trace_can_be_disabled_without_skipping_native_verification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result=workshop_trials.run_static_load(App(Path(tmp)),assemble("table"),
+                load_kg=10,cell_size_m=.04,duration_s=.1,
+                session_factory=FakeSession,record_trace=False)
+        self.assertNotIn("playback",result)
+        self.assertNotIn("render_geometry",result)
+        self.assertTrue(result["prototype"]["engine_grid_verified"])
 
 
 if __name__ == "__main__": unittest.main()

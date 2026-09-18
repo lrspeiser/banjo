@@ -177,6 +177,8 @@ def _container_semantics(design: WorkshopDesign) -> tuple[list[dict[str, Any]], 
 def product(design: WorkshopDesign, *, contact_tolerance_m: float = 0.003) -> ProductGraph:
     """Convert one Workshop candidate into a generic physical product graph."""
     design.validate()
+    from mcp.workshop_matter_metrics import require_wire_geometry
+    require_wire_geometry(design, "ProductGraph compilation")
     components = []
     by_name = {part.name: part for part in design.parts}
     for part in design.parts:

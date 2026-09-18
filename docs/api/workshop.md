@@ -293,3 +293,27 @@ API.
 
 That separation is now tested: adding a new browser Workshop endpoint or a new
 Workshop MCP tool without documenting it fails the API-doc parity suite.
+
+## Consistency and optional simulation traces
+
+Physical skin edits invalidate wireframe-based engineering evidence. Their
+canonical Matter measurements include mass, centre of mass, cell inertia,
+support hull and conservative face-connectivity diagnostics. A disconnected
+geometry is flagged; a face-connected geometry is not a strength certificate.
+The `visual` plan response adds `matter_measured`, `matter_bom` and
+`matter_component_mass_kg`, computed before exterior filtering.
+
+`bench_test.config.record_trace` (boolean, default true) controls retention of
+numerical states for inspection, not whether the test runs. The direct
+`run_trial` request also accepts `record_trace`. False omits `playback`. Traces
+are bounded and report effective sampling, maximum state gap and event overflow.
+No video is encoded and the outside world does not advance. Exact static-load
+results verify native grid occupancy before advancing and report any whole-body
+integer-grid placement offset used to seat the product on the floor.
+
+Saved designs preserve component and skin overrides. Physically edited plans
+use a Matter fingerprint; legacy primitive descriptions are under
+`wireframe_objects`, with `objects` empty until an exact-Matter installation
+adapter exists. Do not treat those primitive descriptions as a tested build.
+See [the checkpoint](../workshop-consistency-checkpoint.md) for verification
+and remaining boundaries.

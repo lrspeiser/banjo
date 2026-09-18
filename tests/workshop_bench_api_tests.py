@@ -159,5 +159,103 @@ class BenchAPI(unittest.TestCase):
         self.assertNotEqual(baseline["physics_hash"], physical["physics_hash"])
 
 
+
+class MatterConsistency(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.app = App(Path(self.tmp.name))
+
+    def tearDown(self): self.tmp.cleanup()
+
+    def test_physical_edit_changes_mass_and_invalidates_old_load_paths(self):
+        changed = workshop_api.candidates(self.app, {
+            "kind": "table", "design_id": "physical",
+            "skin_edit": {"part_name": "leg-1", "skin": {
+                "profile": "curve", "bend_m": 0.6, "physical": True}}})["candidates"][0]
+        self.assertEqual("canonical-matter-grid", changed["measured"]["basis"])
+        self.assertNotEqual(changed["design_measured"]["mass_kg"], changed["measured"]["mass_kg"])
+        self.assertEqual([], changed["analytical"]["static_loads"])
+        self.assertEqual("requires-retest", changed["evidence_status"])
+        plan = workshop_api.plan(self.app, {**changed, "visual": {"cell_size_m": .04}})
+        self.assertEqual(plan["matter"]["physics_hash"], changed["measured"]["matter_physics_hash"])
+        self.assertEqual(plan["matter"]["physics_hash"], plan["fingerprint"])
+        self.assertEqual([], plan["objects"])
+        self.assertTrue(plan["wireframe_objects"])
+        self.assertAlmostEqual(plan["matter"]["total_cells"]*700*.04**3, changed["measured"]["mass_kg"])
+        self.assertAlmostEqual(changed["bom"]["materials"][0]["mass_kg"], changed["measured"]["mass_kg"], places=3)
+
+    def test_filtered_display_never_changes_mass_or_support(self):
+        full = workshop_api.plan(self.app, {"kind":"table", "visual":{"cell_size_m":.02}})
+        exterior = workshop_api.plan(self.app, {"kind":"table", "visual":{"cell_size_m":.02, "exterior_only":True}})
+        self.assertEqual(full["matter_measured"], exterior["matter_measured"])
+        self.assertEqual(full["matter_bom"], exterior["matter_bom"])
+        self.assertLess(exterior["matter"]["shown_cells"], full["matter"]["shown_cells"])
+
+    def test_physical_curve_cannot_be_validated_by_primitive_graph(self):
+        from mcp import workshop_components, workshop_graph
+        design, _ = workshop_components.design_from_spec({"kind":"cart", "component_overrides":{
+            "handle":{"skin":{"profile":"curve", "bend_m":.2, "physical":True}}}})
+        with self.assertRaisesRegex(ValueError, "physical skin cells"):
+            workshop_graph.product(design)
+
+    def test_cosmetic_skin_keeps_existing_graph_available(self):
+        from mcp import workshop_components, workshop_graph
+        design, _ = workshop_components.design_from_spec({"kind":"table", "component_overrides":{
+            "leg-1":{"skin":{"profile":"curve", "bend_m":.2, "physical":False}}}})
+        self.assertTrue(workshop_graph.product(design).components)
+
+    def test_extreme_surface_edit_is_not_reported_as_a_sound_table(self):
+        changed = workshop_api.candidates(self.app, {"kind":"table", "skin_edit":{
+            "part_name":"top", "skin":{"profile":"curve", "bend_m":1.0, "physical":True}}})["candidates"][0]
+        self.assertFalse(changed["measured"]["stands_up"])
+        self.assertTrue(changed["measured"]["warnings"])
+        self.assertEqual([], changed["analytical"]["static_loads"])
+
+    def test_physical_flag_requires_a_boolean(self):
+        from mcp.workshop_visual import checked_skin
+        with self.assertRaisesRegex(ValueError, "boolean"):
+            checked_skin({"physical":"false"})
+
+    def test_one_sided_curve_is_not_clipped_at_half_its_width(self):
+        from mcp.workshop import WorkshopDesign, WirePart
+        from mcp import workshop_visual
+        part = WirePart("tube", "handle", (.08,.16,.08), (.02,.08,.02), "oak")
+        design = WorkshopDesign("tube", "bound check", [part])
+        overrides = {"tube":{"skin":{"profile":"curve", "bend_m":.8, "physical":True}}}
+        with mock.patch.object(workshop_visual, "_curve_samples", wraps=workshop_visual._curve_samples) as samples:
+            matter = workshop_visual.matter_document(design, overrides, cell_size_m=.02)
+        self.assertEqual(1, samples.call_count)
+        self.assertGreater(max(row["center_m"][0] for row in matter["cells"]), .58)
+
+    def test_single_cell_has_its_own_cubic_inertia(self):
+        from mcp.workshop_matter_metrics import measure
+        matter = {"schema":"banjo.workshop-matter.v2", "cell_size_m":.1,
+                  "physics_hash":"test", "total_cells":1,
+                  "cells":[{"grid":[0,0,0],"material":"oak","component":"cube","components":["cube"]}]}
+        m = measure(matter)["measured"]
+        self.assertAlmostEqual(.7, m["mass_kg"])
+        self.assertAlmostEqual(.7*.1**2/6, m["inertia_kg_m2"][0][0])
+        self.assertEqual(0, m["inertia_kg_m2"][0][1])
+
+    def test_missing_member_and_disconnected_cells_are_flagged(self):
+        from mcp.workshop_matter_metrics import measure
+        matter = {"schema":"banjo.workshop-matter.v2", "cell_size_m":.1,
+                  "physics_hash":"test", "total_cells":2,
+                  "cells":[{"grid":[0,j,0],"material":"oak","component":name,"components":[name]}
+                           for j,name in ((0,"base"),(5,"top"))]}
+        m = measure(matter, expected_components=["base","top","post"])["measured"]
+        self.assertFalse(m["stands_up"])
+        self.assertEqual(["post"], m["missing_components"])
+        self.assertEqual(2,len(m["islands"]))
+
+    def test_ground_hull_is_not_just_a_bounding_rectangle(self):
+        from mcp.workshop_matter_metrics import measure
+        rows = [{"grid":[x,0,z],"material":"oak","component":"foot"} for x,z in ((0,0),(2,0),(0,2))]
+        rows.append({"grid":[2,5,2],"material":"iron","component":"load"})
+        matter = {"schema":"banjo.workshop-matter.v2","cell_size_m":.1,
+                  "physics_hash":"test","total_cells":4,"cells":rows}
+        self.assertLess(measure(matter)["measured"]["smallest_tip_margin_m"],0)
+
+
 if __name__ == "__main__":
     unittest.main()

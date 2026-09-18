@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mcp import engine_materials, workshop_components  # noqa: E402
+from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics  # noqa: E402
 from mcp.workshop import (  # noqa: E402
     WORKSHOP_SCHEMA, ComponentLibrary, WorkshopSession, assemble, assemblies,
     assembly, feedback, materialize, variants,
@@ -112,6 +112,19 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     except ValueError as problem:
         wire["analytical"] = {"static_loads": [], "limitations": [str(problem)]}
     wire["bom"] = workshop_library.bill_of_materials(app, design)
+    wire["measured"]["basis"] = "wireframe-estimate"
+    if workshop_matter_metrics.has_physical_skin(design):
+        matter = workshop_visual.matter_document(design, overrides, cell_size_m=0.04)
+        summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
+        wire["design_measured"] = wire["measured"]
+        wire["measured"] = summary["measured"]
+        for part in wire["parts"]:
+            part["mass_kg"] = summary["component_mass_kg"].get(part["name"], 0.0)
+        wire["analytical"] = {"static_loads": [], "limitations": [
+            "Wireframe load paths are invalid after physical skin edits. Run the exact-Matter trial."]}
+        wire["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+        wire["notes"] += summary["measured"]["warnings"]
+        wire["evidence_status"] = "requires-retest"
     return wire
 
 
@@ -201,7 +214,7 @@ def open_workshop(app: Any, body: Any) -> dict[str, Any]:
     elif saved_id:
         saved, design = workshop_store.load(_store(app), str(saved_id))
         kind = str(saved["kind"])
-        candidates_out = [_candidate(app, design, assembly(kind), {})]
+        candidates_out = [_candidate(app, design, assembly(kind), design.lineage.get("component_overrides", {}))]
         revision = str(body.get("world_revision") or saved.get("world_revision") or "unopened-world")
         target = str(body.get("target") or saved.get("label") or design.design_id)
     else:
@@ -324,6 +337,21 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         raise ValueError("cell_size_m must be between 2 mm and 500 mm")
     answer = materialize(design, cell_size_m=cell)
     answer["bom"] = workshop_library.bill_of_materials(app, design)
+    if workshop_matter_metrics.has_physical_skin(design):
+        overrides = design.lineage.get("component_overrides") or {}
+        matter = workshop_visual.matter_document(design, overrides, cell_size_m=cell)
+        summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
+        answer["measured"] = summary["measured"]
+        answer["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+        answer["wireframe_fingerprint"] = answer["fingerprint"]
+        answer["fingerprint"] = matter["physics_hash"]
+        answer["geometry_basis"] = "canonical-matter-grid"
+        # The legacy primitive list is useful as design intent but must not be
+        # mistaken for a physically edited installation recipe.
+        answer["wireframe_objects"] = answer.pop("objects")
+        answer["objects"] = []
+        answer["commit"]["requires"].append("exact-Matter installation adapter for physical skin edits")
+        answer["matter_physics_hash"] = matter["physics_hash"]
     if body.get("run_trial"):
         import workshop_trials
         try:
@@ -331,7 +359,7 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         except (TypeError, ValueError):
             raise ValueError("duration_s must be a number")
         answer["trial"] = workshop_trials.run_declared_static_load(
-            app, design, cell_size_m=cell, duration_s=duration)
+            app, design, cell_size_m=cell, duration_s=duration, record_trace=body.get("record_trace", True))
     if body.get("bench_test") is not None:
         answer["bench"] = workshop_bench.run(app, design, body.get("bench_test"))
     return answer
@@ -354,16 +382,18 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
                           selected=bool(body.get("selected", True)), note=note)
         record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         record["fingerprint"] = materialize(design)["fingerprint"]
+        if workshop_matter_metrics.has_physical_skin(design):
+            record["fingerprint"] = workshop_visual.matter_document(design, overrides)["physics_hash"]
+            record["evidence_status"] = "requires-retest"
         with _lock:
             with where.open("a", encoding="utf-8") as out:
                 out.write(json.dumps(record, sort_keys=True) + "\n")
     saved_design = library_item = None
     if body.get("save_design"):
-        if not overrides:
-            saved_design = workshop_store.save(
-                _store(app), design, label=str(body.get("label") or design_id),
-                parent_design_id=(str(body["parent_design_id"]) if body.get("parent_design_id") else None),
-                world_revision=(str(body["world_revision"]) if body.get("world_revision") else None))
+        saved_design = workshop_store.save(
+            _store(app), design, label=str(body.get("label") or design_id),
+            parent_design_id=(str(body["parent_design_id"]) if body.get("parent_design_id") else None),
+            world_revision=(str(body["world_revision"]) if body.get("world_revision") else None))
         payload = {"schema": "banjo.workshop-assembly-recipe.v1", "kind": kind,
                    "design_id": design_id, "purpose": design.purpose,
                    "parameters": dict(design.parameters), "component_overrides": overrides}

@@ -22,7 +22,9 @@ _BASE_SESSION = _core.live_session.Session
 def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
                     cell_size_m: float = _core.DEFAULT_CELL_M,
                     duration_s: float = _core.DEFAULT_DURATION_S,
-                    session_factory=None) -> dict[str, Any]:
+                    session_factory=None, record_trace: bool = True) -> dict[str, Any]:
+    if not isinstance(record_trace, bool):
+        raise ValueError("record_trace must be a boolean")
     base_factory = session_factory or _BASE_SESSION
     holder: list[workshop_recording.Recorder] = []
 
@@ -34,11 +36,14 @@ def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
     result = _BASE_RUN_STATIC(
         app, design, load_kg=load_kg, on=on,
         cell_size_m=cell_size_m, duration_s=duration_s,
-        session_factory=factory)
+        session_factory=factory if record_trace else base_factory)
+    geometry = result.pop("render_geometry", {})
     if holder:
         result["playback"] = holder[-1].recording(
             test="static_load", requested=dict(result.get("requested") or {}),
             limitations=list(result.get("limitations") or []))
+        result["playback"]["geometry"] = geometry
+        result["playback"]["geometry_basis"] = "verified-native-cells-until-topology-changes"
     return result
 
 

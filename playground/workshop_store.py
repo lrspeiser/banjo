@@ -19,6 +19,7 @@ import time
 from typing import Any
 
 from mcp.workshop import WORKSHOP_SCHEMA, WorkshopDesign, assemble, materialize
+from mcp import workshop_components, workshop_visual, workshop_matter_metrics
 
 SAVED_SCHEMA = "banjo.workshop.saved-design.v1"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
@@ -67,6 +68,12 @@ def save(root: Path, design: WorkshopDesign, *,
         before = _read(path) if path.exists() else None
         revision = int((before or {}).get("revision") or 0) + 1
         plan = materialize(design)
+        overrides = workshop_components.checked_overrides(design.lineage.get("component_overrides"))
+        measured = design.measure()
+        measured["basis"] = "wireframe-estimate"
+        if workshop_matter_metrics.has_physical_skin(design):
+            matter = workshop_visual.matter_document(design, overrides)
+            measured = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])["measured"]
         record = {
             "schema": SAVED_SCHEMA,
             "workshop_schema": WORKSHOP_SCHEMA,
@@ -76,14 +83,16 @@ def save(root: Path, design: WorkshopDesign, *,
             "label": str(label or design_id)[:160],
             "purpose": design.purpose,
             "parameters": dict(design.parameters),
+            "component_overrides": overrides,
             "lineage": {
                 **dict(design.lineage),
                 **({"parent_design_id": safe_design_id(parent_design_id)}
                    if parent_design_id else {}),
             },
             "world_revision": str(world_revision)[:200] if world_revision else None,
-            "fingerprint": plan["fingerprint"],
-            "measured": design.measure(),
+            "fingerprint": measured.get("matter_physics_hash") or plan["fingerprint"],
+            "measured": measured,
+            "matter_physics_hash": measured.get("matter_physics_hash"),
             "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         encoded = json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n"
@@ -105,6 +114,8 @@ def load(root: Path, design_id: str) -> tuple[dict[str, Any], WorkshopDesign]:
         parameters=dict(record.get("parameters") or {}),
     )
     design.lineage = dict(record.get("lineage") or {})
+    overrides = record.get("component_overrides", design.lineage.get("component_overrides", {}))
+    design = workshop_components.apply_overrides(design, overrides)
     return record, design
 
 

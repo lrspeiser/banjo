@@ -12,6 +12,8 @@ canonical Matter artifact or its hashes.
 """
 from __future__ import annotations
 
+import base64
+import struct
 from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
@@ -177,15 +179,23 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
             f"exact Matter needs {len(boxes)} joined grid boxes at {cell*1000:g} mm; "
             f"the current scene bridge allows {MAX_SCENE_BOXES}. Use a coarser cell until the native sparse-body field lands.")
 
+    # Place the complete product, never individual decomposed runs, on the
+    # scratch floor. An end cap can extend below the design's original origin.
+    # An integer-grid translation preserves the canonical local occupancy.
+    placement_grid = (0, -min(g[1] for g in cells), 0)
+    placed_boxes = [(tuple(lo[a] + placement_grid[a] for a in range(3)),
+                     tuple(hi[a] + placement_grid[a] for a in range(3)))
+                    for lo, hi in boxes]
     join = "workshop-matter-" + str(matter["physics_hash"])[:12]
     bodies = [_box_body(f"candidate/matter-{i+1}", box, cell, material, join)
-              for i, box in enumerate(boxes)]
+              for i, box in enumerate(placed_boxes)]
 
     target = _target_name(design, on)
     target_cells = [c for c in matter.get("cells") or [] if target in (c.get("components") or [c.get("component")])]
     if not target_cells:
         raise ValueError(f"the exact Matter artifact has no cells for load target {target!r}")
-    target_grids = [tuple(int(v) for v in c["grid"]) for c in target_cells]
+    target_grids = [tuple(int(c["grid"][a]) + placement_grid[a] for a in range(3))
+                    for c in target_cells]
     top_y = max(g[1] for g in target_grids)
     centre_x = round(sum(g[0] for g in target_grids) / len(target_grids))
     centre_z = round(sum(g[2] for g in target_grids) / len(target_grids))
@@ -215,12 +225,66 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
         "requested_cell_size_m": cell,
         "cell_size_m": cell,
         "matter": matter,
+        "placement_grid": list(placement_grid),
+        "placement_offset_m": [v * cell for v in placement_grid],
         "matter_cells": len(cells),
         "matter_boxes": len(boxes),
         "matter_roundtrip_exact": True,
         "matter_physics_hash": matter["physics_hash"],
         "matter_artifact_hash": matter["artifact_hash"],
     }
+
+
+def verify_engine_matter(snapshot: dict[str, Any], matter: dict[str, Any], root: str,
+                         *, placement_grid=(0, 0, 0)) -> dict[str, Any]:
+    """Check native compiled cells, not merely the Python box decomposition.
+
+    The fresh-world snapshot carries each cell offset relative to the body's
+    centre of mass. Reconstruct those positions and compare every native grid
+    coordinate AND material with the canonical artifact before advancing time.
+    """
+    body = next((b for b in snapshot.get("bodies", []) if b.get("name") == root), None)
+    if body is None:
+        raise ValueError("the native engine did not produce the requested Matter body")
+    try:
+        raw = base64.b64decode(body["offsets_b64"], validate=True)
+        if len(raw) % 24:
+            raise ValueError("invalid native cell-offset encoding")
+        offsets = list(struct.iter_unpack("<ddd", raw))
+        pose = body["pose"]
+        centre, q = pose["com_m"], pose["q_wxyz"]
+        if len(centre) != 3 or len(q) != 4 or not all(isfinite(v) for v in [*centre, *q]):
+            raise ValueError("invalid native body pose")
+        if abs(sum(v*v for v in q)-1) > 1e-8:
+            raise ValueError("invalid native body orientation")
+        h = float(matter["cell_size_m"])
+        native = set()
+        w, x, y, z = q
+        for v in offsets:
+            # Quaternion rotation, with q stored as w,x,y,z.
+            t = (2*(y*v[2]-z*v[1]), 2*(z*v[0]-x*v[2]), 2*(x*v[1]-y*v[0]))
+            rotated = (v[0]+w*t[0]+y*t[2]-z*t[1],
+                       v[1]+w*t[1]+z*t[0]-x*t[2],
+                       v[2]+w*t[2]+x*t[1]-y*t[0])
+            position = [centre[a]+rotated[a] for a in range(3)]
+            grid = tuple(round(value/h-.5) for value in position)
+            if any(abs(position[a]-(grid[a]+.5)*h) > max(1e-10, h*1e-7) for a in range(3)):
+                raise ValueError("native Matter cell is not on the canonical grid")
+            native.add(grid)
+        if len(placement_grid) != 3 or any(type(v) is not int for v in placement_grid):
+            raise ValueError("Matter placement must be an integer-grid translation")
+        expected = {tuple(g[a] + placement_grid[a] for a in range(3))
+                    for g in _grid_set(matter)}
+        materials = {engine_materials.canonical(row["material"]) for row in matter["cells"]}
+        if len(offsets) != len(native) or native != expected:
+            raise ValueError("native engine cells differ from the canonical Matter artifact")
+        if materials != {engine_materials.canonical(body["material"])}:
+            raise ValueError("native engine material differs from the canonical Matter artifact")
+    except (KeyError, TypeError, struct.error) as exc:
+        raise ValueError("the native snapshot cannot verify the compiled Matter cells") from exc
+    return {"engine_grid_verified": True, "engine_cells": len(native),
+            "render_geometry": {root: {"revision": body.get("revision", 0),
+                                        "cell_size_m": h, "offsets_m": offsets}}}
 
 
 def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
@@ -237,6 +301,11 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
     session = session_factory(engine, setup["spec"], runs)
     try:
         initial = session.send(op="poses")
+        snapshot = session.send(op="snapshot").get("snapshot")
+        if not isinstance(snapshot, dict):
+            raise ValueError("the native engine could not snapshot Matter for geometry verification")
+        verified = verify_engine_matter(snapshot, setup["matter"], setup["root_body"],
+                                        placement_grid=setup["placement_grid"])
         final, fractures = core._run_to(session, duration)
     finally:
         session.close()
@@ -269,6 +338,10 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "matter_physics_hash": setup["matter_physics_hash"],
             "matter_artifact_hash": setup["matter_artifact_hash"],
             "engine_geometry": "joined-grid-boxes-exact-cell-union",
+            "engine_grid_verified": verified["engine_grid_verified"],
+            "engine_cells": verified["engine_cells"],
+            "placement_grid": setup["placement_grid"],
+            "placement_offset_m": setup["placement_offset_m"],
         },
         "measured": {
             "clock_s": round(float(final.get("t", 0.0)), 6),
@@ -287,6 +360,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             "why": ("the assembly declares the load to try, but not a displacement/rotation/failure "
                     "tolerance; this result is evidence, not an invented pass/fail"),
         },
+        "render_geometry": verified["render_geometry"],
         "limitations": [
             "The test mass is quantized to whole lattice cells; requested and actual grid load are both reported.",
             "The native scene schema still lacks a compact sparse-body field; joined grid boxes are a lossless encoding of the same cell artifact."

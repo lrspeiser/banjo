@@ -109,7 +109,11 @@ def _advance(session: Any, duration_s: float, *, dt: float = 1 / 30.0) -> dict[s
         guard += 1
         if guard > 100000: raise RuntimeError("Workshop bench stopped advancing")
         remaining = target - float(state.get("t", 0.0))
-        n = max(1, min(120, int(round(min(remaining, 120 * dt) / dt))))
+        # Only recordings request intermediate states. Keep the solver's dt
+        # and total step count; reduce the transport batch, not the time step.
+        sample = float(getattr(session, "sample_period_s", 120 * dt))
+        cap = max(1, min(120, int(round(sample / dt))))
+        n = max(1, min(cap, int(round(min(remaining, cap * dt) / dt))))
         state = session.send(op="step", dt=dt, n=n)
         while state.get("breakable"):
             state = session.send(op="fracture", name=str(state["breakable"][0]), window_s=0.003)
@@ -191,7 +195,7 @@ def _kettle_dimensions(design: WorkshopDesign) -> tuple[Any, list[Any], float, f
     return bottom, walls, x1 - x0, z1 - z0, floor, rim
 
 
-def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
+def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, session_wrapper=None) -> dict[str, Any]:
     product = workshop_graph.product(design)
     if not product.contents:
         raise ValueError("this design has no declared contained volume")
@@ -257,6 +261,8 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict
                                   "start_s": 0.0, "seconds": duration, "label": "heat below kettle"}]},
     })
     engine, runs = _scratch(app, "kettle"); session = live_session.Session(engine, spec, runs)
+    if session_wrapper is not None:
+        session = session_wrapper(session)
     try:
         initial = session.send(op="thermo"); _advance(session, duration); final = session.send(op="thermo")
     finally: session.close()
@@ -320,10 +326,12 @@ def _cart_spec(design: WorkshopDesign, speed: float) -> tuple[dict[str, Any], st
                                   "bodies": bodies, "joints": joints}), deck.name, [a.name for a in axles]
 
 
-def run_cart(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
+def run_cart(app: Any, design: WorkshopDesign, config: dict[str, Any], *, session_wrapper=None) -> dict[str, Any]:
     speed = _number(config, "speed_m_s", 0.8, 0.1, 3.0); duration = _number(config, "duration_s", 0.5, 0.1, 1.0)
     spec, root, axle_names = _cart_spec(design, speed)
     engine, runs = _scratch(app, "cart"); session = live_session.Session(engine, spec, runs)
+    if session_wrapper is not None:
+        session = session_wrapper(session)
     # Hang the pins. Session() starts a world from the scene document alone;
     # only Live.open follows it with _hang(), which is where joints are actually
     # installed ("the pins go in afterwards"). Building the session directly
@@ -331,12 +339,12 @@ def run_cart(app: Any, design: WorkshopDesign, config: dict[str, Any]) -> dict[s
     # the trial reported joint_count 0 and no axle turns, and the chassis slid
     # rather than rolled -- which reads as broken physics rather than as a
     # missing step, exactly what _hang's own docstring warns about.
-    hung = live_session.Live._hang(session, spec.get("joints") or [])
-    refused = [note for note in (hung.get("refused") or [])]
-    if refused:
-        raise ValueError("the scratch cart could not hang its bearings: "
-                         + "; ".join(str(note) for note in refused))
     try:
+        hung = live_session.Live._hang(session, spec.get("joints") or [])
+        refused = [note for note in (hung.get("refused") or [])]
+        if refused:
+            raise ValueError("the scratch cart could not hang its bearings: "
+                             + "; ".join(str(note) for note in refused))
         start = session.send(op="poses"); before_joints = session.send(op="joints").get("joints") or []
         _advance(session, duration, dt=1 / 120.0)
         final = session.send(op="poses"); after_joints = session.send(op="joints").get("joints") or []
@@ -389,7 +397,7 @@ def _hoist_spec(load_kg: float) -> dict[str, Any]:
     })
 
 
-def run_machine(app: Any, config: dict[str, Any]) -> dict[str, Any]:
+def run_machine(app: Any, config: dict[str, Any], *, session_wrapper=None) -> dict[str, Any]:
     duration = _number(config, "duration_s", 1.5, 0.1, 10.0); load_kg = _number(config, "load_kg", 26.5, 1.0, 100.0)
     setting_pct = _number(config, "setting", 100.0, 0.0, 100.0); power = bool(config.get("power", True))
     try: direction = int(config.get("direction", 1))
@@ -401,6 +409,8 @@ def run_machine(app: Any, config: dict[str, Any]) -> dict[str, Any]:
         live_inprocess = False; on_live_reply = None
     App.runs_path.mkdir(parents=True, exist_ok=True)
     opened = scratch.open(App(), {"spec": spec}); session = scratch.session; assert session is not None
+    if session_wrapper is not None:
+        session = session_wrapper(session)
     try:
         controls = (opened.get("machines") or {}).get("controls") or []
         if not controls: raise ValueError("the scratch machine opened without its controller")
@@ -421,15 +431,18 @@ def run_machine(app: Any, config: dict[str, Any]) -> dict[str, Any]:
             "acceptance": {"status": "observed", "why": "The controller command and resulting motion/energy are reported without inventing a target."}, "limitations": []}
 
 
-def run(app: Any, design: WorkshopDesign, request: Any) -> dict[str, Any]:
+def run(app: Any, design: WorkshopDesign, request: Any, *, session_wrapper=None) -> dict[str, Any]:
     if not isinstance(request, dict): raise ValueError("bench_test must be an object")
     name = str(request.get("test") or ""); config = request.get("config") or {}
     if not isinstance(config, dict): raise ValueError("bench_test.config must be an object")
     if name == "runtime_contract": result = run_contract(design)
     elif name == "force_probe": result = run_force(design, config)
-    elif name == "cart_roll": result = run_cart(app, design, config)
-    elif name == "kettle_heat": result = run_kettle(app, design, config)
-    elif name == "machine_control": result = run_machine(app, config)
+    elif name == "cart_roll": result = run_cart(app, design, config, session_wrapper=session_wrapper)
+    elif name == "kettle_heat": result = run_kettle(app, design, config, session_wrapper=session_wrapper)
+    elif name == "machine_control": result = run_machine(app, config, session_wrapper=session_wrapper)
     else: raise ValueError("unknown Workshop bench test")
     result["source_design_id"] = design.design_id; result["source_kind"] = design.kind
+    result["subject"] = "reference-hoist-fixture" if name == "machine_control" else "selected-product"
+    if name == "machine_control":
+        result["limitations"].append("This is the reference hoist controller fixture, not a physical test of the selected product.")
     return result

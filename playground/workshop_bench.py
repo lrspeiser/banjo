@@ -6,7 +6,6 @@ same calls and the result gains a browser-neutral playback timeline.
 """
 from __future__ import annotations
 
-import threading
 from typing import Any
 
 import workshop_bench_core as _core
@@ -14,7 +13,6 @@ from workshop_bench_core import *  # noqa: F401,F403
 import workshop_recording
 import workshop_trials
 
-_record_lock = threading.RLock()
 _LOAD_KINDS = {"table", "stool", "bench", "chair", "shelf-unit", "cart"}
 
 
@@ -26,16 +24,23 @@ def catalog(kind: str | None = None) -> list[dict[str, Any]]:
             "about": "Run this product's own declared static load in an isolated physics world and watch the bodies move, rotate or fracture.",
             "controls": [
                 {"name": "duration_s", "label": "Run", "unit": "s", "type": "number", "default": 2.0, "min": 0.2, "max": 10.0, "step": 0.1},
-                {"name": "cell_size_m", "label": "Matter resolution", "unit": "m", "type": "number", "default": 0.04, "min": 0.01, "max": 0.12, "step": 0.01},
+                {"name": "cell_size_m", "label": "Matter resolution", "unit": "m", "type": "number", "default": 0.04, "min": 0.005, "max": 0.1, "step": 0.01},
             ],
             "limitations": ["The load is the design's authored load case. If no acceptance tolerance is declared, the run remains measured evidence rather than an invented pass/fail."],
             "visual_playback": True,
         })
     for item in out:
         name = str(item.get("test") or "")
+        if name == "machine_control":
+            item["name"] = "Reference hoist controller"
+            item["about"] = "Exercise the reference hoist's controller and energy path, not the selected product's geometry."
         item["visual_playback"] = bool(item.get("visual_playback")) or name in {
             "cart_roll", "kettle_heat", "machine_control", "declared_static_load"
         }
+        if item["visual_playback"]:
+            item.setdefault("controls", []).append({
+                "name": "record_trace", "label": "Keep simulation trace for inspection",
+                "type": "boolean", "default": True})
         if name in {"runtime_contract", "force_probe"}:
             item["visual_overlay"] = True
     return out
@@ -48,31 +53,23 @@ def run(app: Any, design, request: Any) -> dict[str, Any]:
     config = request.get("config") or {}
     if not isinstance(config, dict):
         raise ValueError("bench_test.config must be an object")
+    record_trace = config.get("record_trace", True)
+    if not isinstance(record_trace, bool):
+        raise ValueError("record_trace must be a boolean")
     if test == "declared_static_load":
         return workshop_trials.run_declared_static_load(
             app, design,
             cell_size_m=float(config.get("cell_size_m", 0.04)),
-            duration_s=float(config.get("duration_s", 2.0)))
+            duration_s=float(config.get("duration_s", 2.0)), record_trace=record_trace)
 
     recorders: list[workshop_recording.Recorder] = []
 
-    # Respect whatever Session factory is installed at call time. Existing
-    # tests and alternate execution backends replace live_session.Session; the
-    # visual recorder must wrap that selected backend rather than a class
-    # captured when this module happened to import.
-    with _record_lock:
-        original = _core.live_session.Session
+    def record(session):
+        recorder = workshop_recording.wrap(session)
+        recorders.append(recorder)
+        return recorder
 
-        def factory(*args: Any, **kwargs: Any):
-            recorder = workshop_recording.wrap(original(*args, **kwargs))
-            recorders.append(recorder)
-            return recorder
-
-        _core.live_session.Session = factory
-        try:
-            result = _core.run(app, design, request)
-        finally:
-            _core.live_session.Session = original
+    result = _core.run(app, design, request, session_wrapper=record if record_trace else None)
     if recorders and isinstance(result, dict):
         recorder = recorders[-1]
         result["playback"] = recorder.recording(

@@ -12,7 +12,7 @@ from typing import Any
 
 import workshop_api_core as _core
 from workshop_api_core import *  # noqa: F401,F403
-from mcp import workshop_components, workshop_visual
+from mcp import workshop_components, workshop_visual, workshop_matter_metrics
 
 
 def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -102,8 +102,17 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         cell = options.get("cell_size_m", request.get("cell_size_m", 0.04))
         exterior = bool(options.get("exterior_only", False))
         answer["skin"] = workshop_visual.skin_document(design, overrides)
-        answer["matter"] = workshop_visual.matter_document(
-            design, overrides, cell_size_m=float(cell), exterior_only=exterior)
+        full = workshop_visual.matter_document(
+            design, overrides, cell_size_m=float(cell), exterior_only=False)
+        summary = workshop_matter_metrics.measure(full, expected_components=[p.name for p in design.parts])
+        answer["matter_measured"] = summary["measured"]
+        answer["matter_bom"] = _core.workshop_library.bill_of_materials(app, design, matter_summary=summary)
+        answer["matter_component_mass_kg"] = summary["component_mass_kg"]
+        if exterior:
+            full["cells"] = [row for row in full["cells"] if row["exposed"]]
+            full["shown_cells"] = len(full["cells"])
+            full["exterior_only"] = True
+        answer["matter"] = full
     return answer
 
 

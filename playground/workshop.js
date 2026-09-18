@@ -3,7 +3,10 @@ import * as THREE from "/vendor/three.module.js";
 
 const $ = (q) => document.querySelector(q);
 let token = "";
+let candidateRequest = 0;
 async function api(path, body) {
+  const changesCandidate = ["/api/workshop/open", "/api/workshop/candidates", "/api/workshop/more"].includes(path);
+  const requestId = changesCandidate ? ++candidateRequest : null;
   if (!token) {
     const status = await fetch("/api/status").then((r) => r.json());
     token = status.csrf_token || "";
@@ -15,6 +18,7 @@ async function api(path, body) {
   });
   const answer = await response.json().catch(() => ({ error: "the bench gave no answer" }));
   if (!response.ok) throw new Error(answer.error || `${path} failed (${response.status})`);
+  if (requestId !== null) answer.clientRequest = requestId;
   return answer;
 }
 
@@ -65,11 +69,21 @@ const bench = {
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
   selectedPart: null, forcePoint: null, openedLibraryItem: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
-  matter: null, matterKey: null,
+  matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
+  revision: 0,
   playback: null, playbackIndex: 0, playbackPlaying: false,
   playbackClock: 0, playbackFrom: 0,
 };
 function chosen() { return bench.candidates[bench.selected]; }
+function currentMeasurements(candidate = chosen()) {
+  return view === "matter" && bench.matterMeasured ? bench.matterMeasured : candidate.measured;
+}
+function invalidateMatter(message = "Not built for this candidate. Rebuild Matter view.") {
+  bench.matter = null; bench.matterKey = null; bench.matterMeasured = null;
+  bench.matterBom = null; bench.matterMasses = null;
+  const status = $("#ws-matter-status");
+  if (status) { status.textContent = message; status.dataset.state = "unbuilt"; }
+}
 function selectedPart() {
   const candidate = chosen();
   return candidate && candidate.parts.find((p) => p.name === bench.selectedPart);
@@ -180,7 +194,7 @@ function drawDesignMatterFallback(candidate) {
 }
 function drawMatter(candidate) {
   const matter = bench.matter;
-  if (!matter?.cells?.length) { drawDesignMatterFallback(candidate); return; }
+  if (!matter?.cells?.length) return;
   const cell = Number(matter.cell_size_m || 0.04);
   const byPart = new Map();
   for (const item of matter.cells) {
@@ -213,7 +227,20 @@ function drawPlayback() {
   const recording = bench.playback;
   const frame = recording?.frames?.[bench.playbackIndex];
   if (!frame) return;
+  let proxies = 0;
   for (const body of frame.bodies || []) {
+    const geometry = recording.geometry?.[body.name];
+    if (geometry && Number(geometry.revision) === Number(body.revision || 0)) {
+      const cell = geometry.cell_size_m;
+      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell, cell, cell),
+        new THREE.MeshStandardMaterial({color:materialColor(body.material), roughness:0.62}), geometry.offsets_m.length);
+      const matrix = new THREE.Matrix4();
+      geometry.offsets_m.forEach((offset, i) => { matrix.makeTranslation(...offset); mesh.setMatrixAt(i, matrix); });
+      mesh.position.set(...body.position_m);
+      const q = body.orientation_wxyz; mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+      group.add(mesh); continue;
+    }
+    proxies++;
     const mesh = new THREE.Mesh(playbackBodyGeometry(body), new THREE.MeshStandardMaterial({
       color: materialColor(body.material), roughness: 0.62, metalness: 0,
     }));
@@ -222,6 +249,7 @@ function drawPlayback() {
     mesh.quaternion.set(q[1], q[2], q[3], q[0]);
     mesh.userData.partName = body.name; group.add(mesh);
   }
+  $("#ws-play-note").textContent = `${recording.geometry ? "Verified Matter cells where topology is unchanged. " : ""}${proxies} bodies drawn as reduced collision proxies. Motion is recorded from the engine.`;
 }
 function draw(candidate) {
   clearGroup();
@@ -232,7 +260,7 @@ function draw(candidate) {
   else if (view === "skin") drawSkin(candidate);
   else drawWire(candidate);
 
-  const m = candidate.measured;
+  const m = currentMeasurements(candidate);
   if (view !== "physics") {
     balance.position.set(...m.centre_of_mass_m);
     const feet = m.ground_contacts_m || [], ring = [];
@@ -242,8 +270,9 @@ function draw(candidate) {
         [Math.min(...xs), Math.min(...zs)], [Math.max(...xs), Math.min(...zs)],
         [Math.max(...xs), Math.max(...zs)], [Math.min(...xs), Math.max(...zs)],
       ];
-      for (let i = 0; i < 4; i++) {
-        const a = box[i], b = box[(i + 1) % 4];
+      const polygon = m.support_polygon_m || box;
+      for (let i = 0; i < polygon.length; i++) {
+        const a = polygon[i], b = polygon[(i + 1) % polygon.length];
         ring.push(a[0], m.lowest_m + 0.002, a[1], b[0], m.lowest_m + 0.002, b[1]);
       }
     }
@@ -341,16 +370,23 @@ function make(tag, attrs = {}, text = "") {
   if (text) element.textContent = text; return element;
 }
 function say(message, bad = false) {
+  const notice = $("#ws-notice");
+  if (notice) { notice.textContent = message; notice.hidden = !message; notice.classList.toggle("bad", bad); }
   const checks = $("#ws-checks"); checks.className = "ws-note" + (bad ? " bad" : ""); checks.textContent = message;
 }
 async function guard(button, work) {
   const original = button && button.textContent; if (button) button.disabled = true;
+  const notice = $("#ws-notice"); if (notice) notice.hidden = true;
   try { await work(); } catch (err) { say(String(err.message || err), true); }
   finally { if (button) { button.disabled = false; button.textContent = original; } }
 }
 function addOption(select, value, label) { select.append(make("option", { value }, label)); }
 
 function installEditor() {
+  const notice = make("p", {id:"ws-notice", role:"status", "aria-live":"polite"});
+  notice.hidden = true; $(".ws-top").append(notice);
+  const basis = make("p", {id:"ws-measurement-basis", class:"ws-note"});
+  $(".ws-metrics").after(basis);
   const left = $(".ws-left"), right = $(".ws-right"), builtIn = $("#ws-library");
   const builtInHeading = builtIn.previousElementSibling && builtIn.previousElementSibling.previousElementSibling;
   const libraryBox = make("section", { id: "ws-personal-library-box" });
@@ -424,8 +460,8 @@ function installEditor() {
     make("button", { id:"ws-play-reset", type:"button", class:"ws-action" }, "Reset"),
     make("output", { id:"ws-play-time" }, "0.00 s"));
   const timeline = make("input", { id:"ws-play-timeline", type:"range", min:"0", max:"0", step:"1", value:"0" });
-  playback.append(make("strong", {}, "Physics playback"), playbackRow, timeline,
-    make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Recorded from the isolated engine run; not a scripted animation."));
+  playback.append(make("strong", {}, "Simulation trace"), playbackRow, timeline,
+    make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Numerical states from the isolated physics test, not a video."));
   testBox.append(playback, make("div", { id:"ws-bench-presets" }), make("div", { id:"ws-bench-result" }));
   right.insertBefore(testBox, $("#ws-save-design").parentElement.previousElementSibling || $("#ws-save-design").parentElement);
 
@@ -446,6 +482,9 @@ function installEditor() {
   timeline.oninput = () => { setPlaybackIndex(Number(timeline.value), false); };
 }
 installEditor();
+for (const id of ["#ws-matter-cell", "#ws-matter-exterior"]) {
+  $(id).addEventListener("change", () => { invalidateMatter("Settings changed. Rebuild Matter view."); clearPlayback(); $("#ws-bench-result").replaceChildren(); show(false); });
+}
 
 async function editSelected(action, material = null) {
   if (!bench.selectedPart) throw new Error("Click a component first.");
@@ -469,7 +508,7 @@ async function editSkin() {
       },
     },
   });
-  took(answer, selected); view = "skin"; pressView("skin"); show(false);
+  if (!took(answer, selected)) return; view = "skin"; pressView("skin"); show(false);
   if ($("#ws-skin-physical").checked) await loadMatter(true);
 }
 async function chatEdit() {
@@ -478,7 +517,7 @@ async function chatEdit() {
   if (!message) throw new Error("Tell Workshop what to change.");
   const selected = bench.selectedPart;
   const answer = await api("/api/workshop/candidates", { ...candidateBody(), component_chat:{ part_name:selected, message } });
-  took(answer, selected);
+  if (!took(answer, selected)) return;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
   if (answer.workshop_chat?.reply) say(answer.workshop_chat.reply); input.value = "";
 }
@@ -501,15 +540,31 @@ async function reuseLibraryComponent(itemId) {
 async function loadMatter(force = false) {
   const cell = Number($("#ws-matter-cell")?.value || 0.04);
   const exterior = Boolean($("#ws-matter-exterior")?.checked);
-  const key = `${chosen()?.design_id}:${JSON.stringify(chosen()?.component_overrides || {})}:${cell}:${exterior}`;
+  const key = JSON.stringify([candidateBody(), cell, exterior]);
+  const revision = bench.revision;
   if (!force && bench.matter && bench.matterKey === key) return bench.matter;
-  const answer = await api("/api/workshop/plan", { ...candidateBody(), visual:{ cell_size_m:cell, exterior_only:exterior } });
-  bench.matter = answer.matter || null; bench.matterKey = key;
-  if (answer.skin) chosen().skin = answer.skin;
-  if (bench.matter) {
-    $("#ws-matter-status").textContent = `${bench.matter.shown_cells.toLocaleString()} shown / ${bench.matter.total_cells.toLocaleString()} physical cells · ${(bench.matter.cell_size_m*1000).toFixed(0)} mm · surface bound ±${(bench.matter.surface_error_bound_m*1000).toFixed(1)} mm`;
+  invalidateMatter("Building Matter at the requested resolution…");
+  try {
+    const answer = await api("/api/workshop/plan", { ...candidateBody(), visual:{ cell_size_m:cell, exterior_only:exterior } });
+    if (revision !== bench.revision || key !== JSON.stringify([candidateBody(), Number($("#ws-matter-cell").value), $("#ws-matter-exterior").checked])) return null;
+    bench.matter = answer.matter || null; bench.matterKey = key;
+    bench.matterMeasured = answer.matter_measured || null;
+    bench.matterBom = answer.matter_bom || null;
+    bench.matterMasses = answer.matter_component_mass_kg || null;
+    if (answer.skin) chosen().skin = answer.skin;
+    if (bench.matter) {
+      $("#ws-matter-status").dataset.state = "current";
+      $("#ws-matter-status").textContent = `${bench.matter.shown_cells.toLocaleString()} shown / ${bench.matter.total_cells.toLocaleString()} physical cells · ${(bench.matter.cell_size_m*1000).toFixed(0)} mm · cell sampling bound ±${(bench.matter.surface_error_bound_m*1000).toFixed(1)} mm · ${bench.matter.physics_hash.slice(0,12)}`;
+    }
+    return bench.matter;
+  } catch (error) {
+    if (revision === bench.revision) {
+      invalidateMatter(`Rebuild failed: ${error.message || error}. No current Matter result.`);
+      $("#ws-matter-status").dataset.state = "error";
+      show(false);
+    }
+    throw error;
   }
-  return bench.matter;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +573,7 @@ async function loadMatter(force = false) {
 function benchDefinition(name = bench.selectedBenchTest) { return bench.benchTests.find((item) => item.test === name) || null; }
 function renderBenchCatalog() {
   const picker = $("#ws-bench-test"); picker.replaceChildren();
-  for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, `${test.name}${test.visual_playback ? " · visual" : ""}`));
+  for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, `${test.name}${test.visual_playback ? " · trace" : ""}`));
   if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) bench.selectedBenchTest = bench.benchTests[0]?.test || null;
   if (bench.selectedBenchTest) picker.value = bench.selectedBenchTest;
   picker.disabled = !bench.benchTests.length; $("#ws-run-bench").disabled = !bench.benchTests.length; $("#ws-save-bench-preset").disabled = !bench.benchTests.length;
@@ -618,7 +673,7 @@ function renderBenchResult(result) {
       make("p", {}, `Motor ${Number(motor.power_w || 0).toFixed(1)} W · battery supplied ${Number(battery.given_j || 0).toFixed(1)} J`));
   } else if (result.trial === "static_load" || result.test === "static_load") {
     const m = result.measured || {}; card.append(make("strong", {}, "Physical load trial"),
-      make("p", {}, `Displacement ${Number(m.displacement_m || 0).toFixed(4)} m · rotation ${Number(m.rotation_deg || 0).toFixed(2)}° · fractures ${(m.fractures || []).length}`));
+      make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
     const target = result.target || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
       make("p", {}, `${Number(target.force_n || 0).toFixed(0)} N for ${Number(target.duration_s || 0).toFixed(2)} s at ${(target.point_m || []).map((v) => Number(v).toFixed(2)).join(", ")} m`));
@@ -626,6 +681,8 @@ function renderBenchResult(result) {
     const s = result.summary || {}; card.append(make("strong", {}, "Runtime physics compiled"),
       make("p", {}, `${s.detailed_components || 0} detailed components → ${s.runtime_bodies || 0} runtime bodies · ${s.mechanisms || 0} mechanisms`));
   }
+  if (result.acceptance) card.append(make("p", {}, `Acceptance: ${result.acceptance.status} — ${result.acceptance.why || ""}`));
+  if (result.prototype?.matter_physics_hash) card.append(make("p", {}, `Tested Matter ${result.prototype.matter_physics_hash.slice(0,12)} · ${result.prototype.matter_cells} cells`));
   if (card.childNodes.length) root.append(card);
   if (result.playback) setPlayback(result.playback);
   for (const limitation of result.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, limitation));
@@ -634,8 +691,9 @@ function renderBenchResult(result) {
 }
 async function runBenchTest() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
+  const revision = bench.revision;
   const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:definition.test, config:benchConfig() } });
-  renderBenchResult(answer.bench);
+  if (revision === bench.revision && definition.test === bench.selectedBenchTest) renderBenchResult(answer.bench);
 }
 async function saveBenchPreset() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
@@ -654,19 +712,19 @@ function cards() {
     const button = make("button", { type:"button", class:"ws-card" + (index === bench.selected ? " selected" : "") });
     const m = candidate.measured, shared = twins[bench.plans[candidate.design_id]] || [];
     button.append(make("strong", {}, candidate.label || candidate.design_id),
-      make("small", {}, `${m.mass_kg} kg · base ${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m · tips ${m.tip_angle_deg}°${shared.length > 1 ? " · same snapped object" : ""}`));
+      make("small", {}, `${m.mass_kg} kg · base ${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m · ${m.geometry_coherent === false ? "connections unresolved" : `geometric tip ${Number(m.tip_angle_deg).toFixed(2)}°`}${shared.length > 1 ? " · same snapped object" : ""}`));
     if (shared.length > 1) button.classList.add("same-plan");
-    button.onclick = () => { bench.selected = index; bench.selectedPart = null; bench.matter = null; bench.matterKey = null; clearPlayback(); cards(); show(false); };
+    button.onclick = () => { candidateRequest++; bench.selected = index; bench.selectedPart = null; bench.forcePoint = null; bench.revision++; invalidateMatter(); clearPlayback(); $("#ws-bench-result").replaceChildren(); cards(); show(false); };
     root.append(button);
   });
 }
 function savedDesigns(rows) {
   bench.savedDesigns = Array.isArray(rows) ? rows : []; const root = $("#ws-saved-designs"); root.replaceChildren();
-  if (!bench.savedDesigns.length) { root.append(make("p", { class:"ws-feedback-count" }, "No legacy saved designs.")); return; }
+  if (!bench.savedDesigns.length) { root.append(make("p", { class:"ws-feedback-count" }, "No saved designs yet.")); return; }
   for (const saved of bench.savedDesigns) {
     const button = make("button", { type:"button", class:"ws-card" }); button.append(make("strong", {}, saved.label || saved.design_id),
       make("small", {}, `${saved.kind} · revision ${saved.revision}${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`));
-    button.onclick = () => guard(button, async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; took(answer); $("#ws-archetype").value = answer.kind; }); root.append(button);
+    button.onclick = () => guard(button, async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); root.append(button);
   }
 }
 function renderUserLibrary() {
@@ -677,7 +735,7 @@ function renderUserLibrary() {
     card.append(make("strong", {}, item.name), make("small", {}, `${item.item_type}${item.family ? ` · ${item.family}` : ""} · v${item.version}`));
     card.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
     card.onclick = () => guard(card, async () => {
-      if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; took(answer); $("#ws-archetype").value = answer.kind; }
+      if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
       else if (bench.selectedPart) await reuseLibraryComponent(item.item_id); else say("Select a component, then click or drag this saved component onto it.");
     }); root.append(card);
   }
@@ -691,7 +749,7 @@ function families(described) {
   }
 }
 function renderBom(candidate) {
-  const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.bom;
+  const root = $("#ws-bom"); root.replaceChildren(); const bom = view === "matter" && bench.matterBom ? bench.matterBom : candidate.bom;
   if (!bom) { root.append(make("p", { class:"ws-feedback-count" }, "No material estimate.")); return; }
   const table = make("table", { class:"ws-bom-table" });
   for (const row of bom.materials || []) { const tr = make("tr"); tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`), make("td", {}, row.cost == null ? "unpriced" : `${row.cost} cr`)); table.append(tr); }
@@ -701,7 +759,13 @@ function renderSelected() {
   const part = selectedPart(), status = $("#ws-selected-part"), material = $("#ws-part-material");
   document.querySelectorAll("[data-component-edit], #ws-save-component, #ws-part-material, #ws-apply-skin")
     .forEach((element) => { element.disabled = !part; });
-  if (!part) { status.textContent = "Click a part of the object to edit it."; material.replaceChildren(); return; }
+  if (!part) {
+    status.textContent = "Click a part of the object to edit it."; material.replaceChildren();
+    $("#ws-skin-profile").value = "design"; $("#ws-skin-bend").value = "0";
+    $("#ws-skin-bend-value").textContent = "0 m"; $("#ws-skin-physical").checked = false;
+    $("#ws-skin-roughness").value = "0.72"; $("#ws-skin-roughness-value").textContent = "0.72";
+    return;
+  }
   status.textContent = `${part.name} · ${part.role}${part.family ? ` · ${part.family}` : ""} · ${part.material} · ${(part.size_m[0]*1000).toFixed(0)} × ${(part.size_m[1]*1000).toFixed(0)} × ${(part.size_m[2]*1000).toFixed(0)} mm`;
   material.replaceChildren(); const names = (bench.pricebook?.materials || []).map((item) => item.material); if (!names.includes(part.material)) names.push(part.material);
   names.sort().forEach((name) => { const option = make("option", { value:name }, name); option.selected = name === part.material; material.append(option); });
@@ -716,36 +780,48 @@ function show(reframe = true) {
   const candidate = chosen(); if (!candidate) return;
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
-  const m = candidate.measured; $("#ws-name").textContent = candidate.label || candidate.design_id; $("#ws-purpose").textContent = candidate.purpose;
-  $("#ws-part-count").textContent = candidate.parts.length; $("#ws-mass").textContent = `${m.mass_kg} kg`;
-  $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = `${m.tip_angle_deg}°`;
+  const m = currentMeasurements(candidate); $("#ws-name").textContent = candidate.label || candidate.design_id; $("#ws-purpose").textContent = candidate.purpose;
+  $("#ws-part-count").textContent = candidate.parts.length; $("#ws-mass").textContent = `${Number(m.mass_kg).toFixed(3)} kg`;
+  $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${part.mass_kg} kg`)); parts.append(row); }
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(view === "matter" && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBom(candidate);
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
-  if (!m.stands_up) { checks.classList.add("bad"); said.push("It does not stand: its balance point is outside its supports."); }
+  if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
+  else if (!m.stands_up) { checks.classList.add("bad"); said.push("Its geometric balance point is outside the support region."); }
   else said.push(`Balanced ${m.smallest_tip_margin_m} m inside its nearest edge; geometric tip angle ${m.tip_angle_deg}°.`);
   if (m.legs_not_under_the_top.length) { checks.classList.add("warn"); said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing.`); }
-  const stat = ((candidate.analytical || {}).static_loads || [])[0]; if (stat) said.push(`Analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
+  const stat = ((candidate.analytical || {}).static_loads || [])[0]; if (stat && m.basis !== "canonical-matter-grid") said.push(`Wireframe analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
   if (view === "matter" && bench.matter) said.push(`Matter: ${bench.matter.shown_cells.toLocaleString()} cells shown at ${(bench.matter.cell_size_m*1000).toFixed(0)} mm.`);
-  if (view === "physics" && bench.playback) said.push(`Physics: recorded ${bench.playback.frames.length} engine frames over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
+  if (view === "physics" && bench.playback) said.push(`Physics: recorded ${bench.playback.frames.length} simulation states over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
+  said.push(...(m.warnings || []));
+  $("#ws-measurement-basis").textContent = m.basis === "canonical-matter-grid"
+    ? `Mass/balance from Matter at ${(m.cell_size_m*1000).toFixed(0)} mm · ${m.matter_physics_hash.slice(0,12)}. ${m.geometry_coherent === false ? "Connections unresolved. " : ""}Strength requires a test.`
+    : "Wireframe estimates, not a physical test. Matter view reports grid measurements.";
+  if (view === "matter" && !bench.matter) said.push("No current Matter result: rebuild it.");
   checks.textContent = said.join(" "); $("#ws-plan").hidden = true;
 }
 
 async function fingerprints() {
+  const revision = bench.revision, plans = {};
   bench.plans = {};
   await Promise.all(bench.candidates.map(async (candidate) => {
-    try { const plan = await api("/api/workshop/plan", { kind:bench.kind, design_id:candidate.design_id, parameters:candidate.parameters, component_overrides:candidate.component_overrides || {} }); bench.plans[candidate.design_id] = plan.fingerprint; }
+    try { const plan = await api("/api/workshop/plan", { kind:bench.kind, design_id:candidate.design_id, parameters:candidate.parameters, component_overrides:candidate.component_overrides || {} }); plans[candidate.design_id] = plan.fingerprint; }
     catch { /* optional UI evidence */ }
-  })); cards();
+  })); if (revision === bench.revision) { bench.plans = plans; cards(); }
 }
 function took(answer, keepPart = null) {
+  if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
+  bench.revision++;
+  stage.dataset.kind = answer.kind; stage.dataset.revision = String(bench.revision);
   bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0; bench.plans = {};
-  bench.selectedPart = keepPart; bench.matter = null; bench.matterKey = null; clearPlayback();
+  bench.selectedPart = keepPart; bench.forcePoint = null; invalidateMatter(); clearPlayback();
+  $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); cards(); show(); fingerprints();
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -758,7 +834,7 @@ document.querySelectorAll(".ws-viewbar button").forEach((button) => {
   button.onclick = () => guard(button, async () => {
     const requested = button.dataset.view;
     if (requested === "matter") await loadMatter(false);
-    if (requested === "physics" && !bench.playback) { say("Run a test marked visual first; Physics view is recorded engine evidence.", true); return; }
+    if (requested === "physics" && !bench.playback) { say("Run a test with trace capture enabled first; Physics view is recorded engine evidence.", true); return; }
     view = requested; pressView(view); show(false);
   });
 });
@@ -766,17 +842,18 @@ $("#ws-more").onclick = (event) => guard(event.currentTarget, async () => { took
 $("#ws-reset-variants").onclick = (event) => guard(event.currentTarget, async () => { bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:bench.kind, generation:bench.generation + 1 })); });
 $("#ws-archetype").onchange = (event) => guard(null, async () => { bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:event.target.value, generation:bench.generation + 1 })); });
 $("#ws-materialize").onclick = (event) => guard(event.currentTarget, async () => {
-  const plan = await api("/api/workshop/plan", { ...candidateBody(), visual:{ cell_size_m:Number($("#ws-matter-cell").value), exterior_only:$("#ws-matter-exterior").checked } });
-  bench.matter = plan.matter || null; bench.matterKey = null; if (plan.skin) chosen().skin = plan.skin;
-  view = "matter"; pressView(view); show(false); $("#ws-plan").hidden = false; $("#ws-plan").textContent = JSON.stringify(plan, null, 2);
+  if (!await loadMatter(true)) return;
+  view = "matter"; pressView(view); show(false);
+  $("#ws-plan").hidden = false; $("#ws-plan").textContent = JSON.stringify({matter: bench.matter, measured: bench.matterMeasured}, null, 2);
 });
 $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () => {
   const candidate = chosen(), label = $("#ws-save-name").value.trim() || candidate.label || candidate.design_id;
   const answer = await api("/api/workshop/feedback", { ...candidateBody(), save_design:true, label, library_item_id:bench.openedLibraryItem || null,
     world_revision:bench.session && bench.session.world_revision !== "unopened-world" ? bench.session.world_revision : null });
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
+  if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.bench_presets) bench.benchPresets = answer.bench_presets; const saved = answer.library_item || answer.design;
-  if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id; $("#ws-save-status").textContent = saved ? `saved v${saved.version || saved.revision}` : "saved";
+  if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id; $("#ws-save-status").textContent = saved ? `Saved to Saved designs and My Library · v${saved.version || saved.revision}` : "Not saved";
 });
 $("#ws-save-feedback").onclick = (event) => guard(event.currentTarget, async () => {
   const answer = await api("/api/workshop/feedback", { ...candidateBody(), rating:$("#ws-rating").value || null, note:$("#ws-note").value.trim(), selected:true });

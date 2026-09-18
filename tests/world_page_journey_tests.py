@@ -686,5 +686,8 @@ class AChatChangeKeepsTheHoistUp(PageJourney):
         self.no_page_errors("after the chat's change")
 
 
+# Workshop controls share the existing required Chrome/engine CI gate.
+from workshop_browser_tests import WorkshopBrowserRegression  # noqa: E402,F401
+
 if __name__ == "__main__":
     unittest.main()

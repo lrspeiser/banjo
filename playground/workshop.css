@@ -112,3 +112,11 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 /* The point-force slider, with its value beside it. */
 .ws-field input[type="range"] { padding: 0; accent-color: #dce7f5; }
 .ws-range-value { font-size: .76rem; color: #9fb0c3; justify-self: end; margin-top: -.15rem; }
+
+/* Errors stay visible above Build/Test/Details and never hide in another pane. */
+.ws-top { flex-wrap:wrap; }
+#ws-notice { flex-basis:100%; margin:0; padding:.55rem; border-left:3px solid #9ed4ad; background:#0d141c; font-size:.8rem; }
+#ws-notice.bad { border-left-color:#d96f6f; }
+#ws-notice[hidden] { display:none; }
+#ws-measurement-basis { font-size:.72rem; }
+#ws-matter-status[data-state="error"] { color:#efa6a6; }

@@ -8,6 +8,7 @@ than only by names such as cart or kettle.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import re
 import sqlite3
@@ -49,7 +50,7 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _connect(app: Any) -> sqlite3.Connection:
+def _open_connection(app: Any) -> sqlite3.Connection:
     db = sqlite3.connect(db_path(app), timeout=5.0)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
@@ -112,6 +113,16 @@ def _connect(app: Any) -> sqlite3.Connection:
                     VALUES (?, ?, ?, 'credits', ?)""", (who, material, price, now))
     db.commit()
     return db
+
+
+@contextmanager
+def _connect(app: Any):
+    db = _open_connection(app)
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 def _id(value: Any | None = None) -> str:
@@ -181,6 +192,11 @@ def infer_tags(item_type: str, payload: Any) -> dict[str, list[str]] | None:
         from mcp import workshop_components, workshop_graph
         from mcp.product_graph import physics_tags
         design, _ = workshop_components.design_from_spec(payload)
+        from mcp.workshop_matter_metrics import has_physical_skin
+        if has_physical_skin(design):
+            return normalize_tags({"role": sorted({p.role for p in design.parts}),
+                                   "family": sorted({p.family for p in design.parts if p.family}),
+                                   "evidence": ["requires-retest"]})
         return normalize_tags(physics_tags(workshop_graph.product(design)))
 
     if schema == "banjo.product-graph.v1" and isinstance(payload.get("physics_tags"), dict):
@@ -333,7 +349,7 @@ def list_bench_presets(app: Any, *, limit: int = 100) -> list[dict[str, Any]]:
              "config": json.loads(row["config_json"]), "updated_at": row["updated_at"]} for row in rows]
 
 
-def bill_of_materials(app: Any, design: WorkshopDesign) -> dict[str, Any]:
+def bill_of_materials(app: Any, design: WorkshopDesign, *, matter_summary=None) -> dict[str, Any]:
     prices = {p["material"]: p for p in pricebook(app)["materials"]}
     grouped: dict[str, dict[str, Any]] = {}
     for part in design.parts:
@@ -345,6 +361,9 @@ def bill_of_materials(app: Any, design: WorkshopDesign) -> dict[str, Any]:
                                              "volume_m3": 0.0, "parts": 0,
                                              "price_per_kg": None, "cost": None})
         row["mass_kg"] += mass; row["volume_m3"] += part.volume_m3(); row["parts"] += 1
+    if matter_summary is not None:
+        grouped = {row["material"]: {**row, "price_per_kg": None, "cost": None}
+                   for row in matter_summary["materials"]}
     total, unpriced = 0.0, []
     for material, row in grouped.items():
         price = prices.get(material); row["mass_kg"] = round(row["mass_kg"], 4)
@@ -354,6 +373,6 @@ def bill_of_materials(app: Any, design: WorkshopDesign) -> dict[str, Any]:
             row["cost"] = round(row["mass_kg"] * row["price_per_kg"], 2); total += row["cost"]
         else: unpriced.append(material)
     return {"schema": "banjo.workshop-bom.v1", "currency": "credits",
-            "basis": "starter in-world material pricebook; excludes fabrication, tools, energy and waste",
+            "basis": ("canonical Matter mass; " if matter_summary is not None else "wireframe mass estimate; ") + "starter in-world material pricebook; excludes fabrication, tools, energy and waste",
             "materials": sorted(grouped.values(), key=lambda r: r["material"]),
             "material_cost": round(total, 2), "unpriced_materials": sorted(unpriced)}

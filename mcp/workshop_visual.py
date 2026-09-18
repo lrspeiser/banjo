@@ -17,7 +17,8 @@ import json
 from math import ceil, cos, floor, isfinite, radians, sin, sqrt
 from typing import Any
 
-from mcp.workshop import WorkshopDesign, WirePart
+from mcp.workshop import WorkshopDesign, WirePart, _rotate
+from mcp import engine_materials
 
 SKIN_SCHEMA = "banjo.product-skin.v1"
 MATTER_SCHEMA = "banjo.workshop-matter.v2"
@@ -53,7 +54,10 @@ def checked_skin(value: Any) -> dict[str, Any]:
     profile = str(value.get("profile") or "design")
     if profile not in {"design", "block", "round", "curve"}:
         raise ValueError("skin profile must be design, block, round or curve")
-    out: dict[str, Any] = {"profile": profile, "physical": bool(value.get("physical", False))}
+    physical = value.get("physical", False)
+    if not isinstance(physical, bool):
+        raise ValueError("skin.physical must be a boolean")
+    out: dict[str, Any] = {"profile": profile, "physical": physical}
     out["bend_m"] = _number(value.get("bend_m", 0.0), "skin.bend_m", -5.0, 5.0)
     out["roughness"] = _number(value.get("roughness", 0.72), "skin.roughness", 0.0, 1.0)
     out["metalness"] = _number(value.get("metalness", 0.0), "skin.metalness", 0.0, 1.0)
@@ -151,7 +155,8 @@ def _curve_samples(descriptor: dict[str, Any], count: int = 32):
     return [_bezier(points, i / count) for i in range(count + 1)]
 
 
-def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float) -> bool:
+def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float,
+            curve: tuple | None = None) -> bool:
     w, h, d = (float(v) for v in part.size_m)
     profile = _effective_profile(part, skin) if skin.get("physical") else (
         "round" if part.shape == "cylinder" else "block")
@@ -159,11 +164,12 @@ def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float) 
         rx, rz = max(w / 2, 1e-9), max(d / 2, 1e-9)
         return abs(y) <= h / 2 and (x / rx) ** 2 + (z / rz) ** 2 <= 1.0
     if profile == "curve":
-        descriptor = _skin_part(part, skin)
-        samples = _curve_samples(descriptor)
-        radius = float(descriptor["radius_m"])
-        return min(_segment_distance_sq((x, y, z), a, b)
-                   for a, b in zip(samples, samples[1:])) <= radius * radius
+        if curve is None:
+            descriptor = _skin_part(part, skin)
+            curve = (_curve_samples(descriptor), float(descriptor["radius_m"]))
+        samples, radius = curve
+        return any(_segment_distance_sq((x, y, z), a, b) <= radius * radius
+                   for a, b in zip(samples, samples[1:]))
     if part.shape == "tapered" and not skin.get("physical"):
         q = max(0.0, min(1.0, (y + h / 2) / h))
         scale = 1.0 - 0.6 * q
@@ -200,13 +206,27 @@ def _inverse_rotate(rotation_deg, v: tuple[float, float, float]) -> tuple[float,
 
 
 def _part_grid_cells(part: WirePart, skin: dict[str, Any], cell: float) -> list[tuple[int, int, int]]:
-    # Scan one world-grid bounding sphere, then ask the actual local solid. This
-    # is intentionally the same strategy as TileImpactScene's primitive
-    # voxelisation: global cell centre -> inverse body rotation -> inside test.
-    bw, bh, bd = _bounds(part, skin)
-    reach = 0.5 * sqrt(bw*bw + bh*bh + bd*bd) + cell
-    lo = [floor((float(part.center_m[a]) - reach) / cell) for a in range(3)]
-    hi = [ceil((float(part.center_m[a]) + reach) / cell) for a in range(3)]
+    # Bezier control-point bounds contain the entire curve. Expanding by
+    # the tube radius also contains its end caps. A symmetric half-width
+    # around the part centre used to clip large one-sided bends.
+    curve = None
+    if skin.get("physical") and _effective_profile(part, skin) == "curve":
+        descriptor = _skin_part(part, skin)
+        radius = float(descriptor["radius_m"])
+        points = descriptor["control_points_local_m"]
+        low = [min(v[a] for v in points) - radius for a in range(3)]
+        high = [max(v[a] for v in points) + radius for a in range(3)]
+        curve = (_curve_samples(descriptor), radius)
+    else:
+        low = [-float(v) / 2 for v in part.size_m]
+        high = [float(v) / 2 for v in part.size_m]
+    corners = [_rotate(part.rotation_deg, (x, y, z))
+               for x in (low[0], high[0]) for y in (low[1], high[1])
+               for z in (low[2], high[2])]
+    lo = [floor((float(part.center_m[a]) + min(v[a] for v in corners)) / cell)
+          for a in range(3)]
+    hi = [ceil((float(part.center_m[a]) + max(v[a] for v in corners)) / cell)
+          for a in range(3)]
     scanned = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
     if scanned > MAX_SCAN_CELLS:
         raise ValueError(
@@ -220,7 +240,7 @@ def _part_grid_cells(part: WirePart, skin: dict[str, Any], cell: float) -> list[
                 wz = (gz + 0.5) * cell
                 local = _inverse_rotate(part.rotation_deg,
                     (wx - float(part.center_m[0]), wy - float(part.center_m[1]), wz - float(part.center_m[2])))
-                if _inside(part, skin, *local):
+                if _inside(part, skin, *local, curve=curve):
                     out.append((gx, gy, gz))
     return out
 
@@ -255,12 +275,12 @@ def matter_document(design: WorkshopDesign, component_overrides: Any = None, *,
             existing = occupied.get(grid)
             if existing is None:
                 occupied[grid] = {
-                    "material": part.material,
+                    "material": engine_materials.canonical(part.material),
                     "component": part.name,
                     "components": [part.name],
                 }
             else:
-                if existing["material"] != part.material:
+                if existing["material"] != engine_materials.canonical(part.material):
                     raise ValueError(
                         f"Matter cell {grid} is claimed by both {existing['material']} and {part.material}; "
                         "cross-material overlap needs an explicit physical interface")

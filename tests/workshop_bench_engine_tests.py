@@ -42,6 +42,10 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
             "config": {"water_kg": 1.0, "heater_power_w": 5000.0, "duration_s": 60.0},
         })
         measured = result["measured"]
+        playback = result["playback"]
+        self.assertGreater(len(playback["frames"]), 8, playback)
+        self.assertGreater(playback["duration_s"], 0, playback)
+        self.assertLessEqual(playback["sampling"]["max_gap_s"], 0.54, playback["sampling"])
         self.assertGreater(result["design"]["capacity_l"], 1.0, result)
         self.assertEqual("iron", result["design"]["material"], result)
         self.assertIsNotNone(measured["water_start_k"], result)
@@ -55,6 +59,10 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
             "test": "cart_roll", "config": {"speed_m_s": 0.8, "duration_s": 0.4},
         })
         measured = result["measured"]
+        playback = result["playback"]
+        self.assertGreater(len(playback["frames"]), 8, playback)
+        self.assertGreater(playback["duration_s"], 0, playback)
+        self.assertLessEqual(playback["sampling"]["max_gap_s"], 0.54, playback["sampling"])
         # Four, not two: each axle is carried by TWO bearing mounts, which is
         # how an axle is actually borne. The trial simplifies each pair into one
         # hinge, so the design has four bearing relationships and the scratch
@@ -77,12 +85,61 @@ class TheWorkshopRunsRealThings(unittest.TestCase):
                        "duration_s": 0.8, "load_kg": 20.0},
         })
         measured = result["measured"]
+        playback = result["playback"]
+        self.assertGreater(len(playback["frames"]), 8, playback)
+        self.assertGreater(playback["duration_s"], 0, playback)
+        self.assertLessEqual(playback["sampling"]["max_gap_s"], 0.54, playback["sampling"])
         self.assertEqual("applied", measured["acknowledgement"], result)
         self.assertEqual(1, measured["control"].get("direction"), result)
         self.assertAlmostEqual(0.6, measured["control"].get("setting"), delta=0.01, msg=result)
         self.assertGreater(measured["load_delta_y_m"], 0.01, result)
         self.assertGreater(measured["battery"].get("given_j", 0), 0, result)
         self.assertGreater(abs(measured["motor"].get("speed_rad_s", 0)), 0.01, result)
+
+
+
+@unittest.skipUnless(ENGINE is not None and ENGINE.is_file(), "the live world runner is not built")
+class ExactNativeMatter(unittest.TestCase):
+    setUp = TheWorkshopRunsRealThings.setUp
+    tearDown = TheWorkshopRunsRealThings.tearDown
+
+    def test_native_grid_matches_glass_oak_iron_at_two_resolutions(self):
+        import workshop_sparse_trial,live_session
+        from mcp import workshop_components
+        for material in ("glass","oak","iron"):
+            for cell in (.04,.02):
+                with self.subTest(material=material,cell=cell):
+                    design,_ = workshop_components.design_from_spec({"kind":"table",
+                        "parameters":{"material":material},"component_overrides":{
+                            "leg-1":{"skin":{"profile":"curve","bend_m":.12,"physical":True}}}})
+                    setup = workshop_sparse_trial.prototype_scene(design,load_kg=10,cell_size_m=cell)
+                    session = live_session.Session(ENGINE,setup["spec"],self.app.runs_path)
+                    try:
+                        snap = session.send(op="snapshot")["snapshot"]
+                        proof = workshop_sparse_trial.verify_engine_matter(snap,setup["matter"],setup["root_body"],
+                            placement_grid=setup["placement_grid"])
+                        self.assertTrue(proof["engine_grid_verified"])
+                        self.assertEqual(setup["matter_cells"],proof["engine_cells"])
+                    finally:session.close()
+
+    def test_trace_toggle_does_not_change_cart_physics(self):
+        design=assemble("cart")
+        request={"test":"cart_roll","config":{"speed_m_s":.8,"duration_s":.4}}
+        traced=workshop_bench.run(self.app,design,request)
+        plain=workshop_bench.run(self.app,design,{"test":"cart_roll",
+            "config":{**request["config"],"record_trace":False}})
+        self.assertIn("playback",traced)
+        self.assertNotIn("playback",plain)
+        self.assertEqual(traced["measured"],plain["measured"])
+
+    def test_static_load_proves_native_geometry_and_returns_cell_playback(self):
+        result = workshop_bench.run(self.app,assemble("table"),{
+            "test":"declared_static_load","config":{"cell_size_m":.04,"duration_s":.2}})
+        self.assertTrue(result["prototype"]["engine_grid_verified"])
+        self.assertGreater(len(result["playback"]["frames"]),5)
+        self.assertEqual("not-declared",result["acceptance"]["status"])
+        root=result["prototype"]["root_body"]
+        self.assertEqual(result["prototype"]["matter_cells"],len(result["playback"]["geometry"][root]["offsets_m"]))
 
 
 if __name__ == "__main__": unittest.main()
