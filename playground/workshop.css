@@ -64,18 +64,6 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-bom-table td:nth-child(2),.ws-bom-table td:nth-child(3) { text-align:right; }
 .ws-bom-total { margin:.45rem 0 .2rem!important;color:#e7edf4!important;font-weight:650; }
 
-/* Browsable products replace the header dropdown. Thumbnails are generated
-   from the same default wire candidates the main renderer uses. */
-#ws-product-browser { margin-bottom:1rem; }
-.ws-product-search { margin-bottom:.55rem!important; }
-.ws-product-grid { display:grid;grid-template-columns:1fr 1fr;gap:.55rem; }
-.ws-product-card { position:relative;min-height:148px;padding:.4rem;display:grid;grid-template-rows:88px auto auto;gap:.25rem;border:1px solid #34404e;border-radius:.55rem;background:#121b25;color:#dce5ef;cursor:pointer;text-align:left; }
-.ws-product-card:hover { border-color:#708298;background:#172330; }
-.ws-product-card.selected { outline:2px solid #dce7f5;outline-offset:1px; }
-.ws-product-card canvas { width:100%;height:88px;display:block;border-radius:.35rem;background:radial-gradient(circle at 50% 45%,#283746,#101720 75%); }
-.ws-product-card strong { font-size:.78rem;text-transform:capitalize; }
-.ws-product-card small { font-size:.66rem;line-height:1.25;color:#95a5b8; }
-
 /* Point-force probe. */
 .ws-force-probe { margin:.8rem 0;padding:.65rem;border:1px solid #39485a;border-radius:.55rem;background:#101923; }
 .ws-force-target { margin:.3rem 0 .55rem!important;color:#d9e3ed!important; }
@@ -94,7 +82,6 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
   .ws-left { grid-column:1;grid-row:1; }
   .ws-viewport { grid-column:2;grid-row:1; }
   .ws-right { display:block;grid-column:1/-1;grid-row:2;border-left:0;border-top:1px solid #2a3340; }
-  .ws-product-grid { grid-template-columns:1fr; }
 }
 @media (max-width:650px) {
   body.workshop-mode { overflow:auto; }
@@ -106,7 +93,6 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
   .ws-top .ws-status { display:none; }
   .ws-top { gap:.5rem;flex-wrap:wrap; }
   .ws-top .ws-spacer { display:none; }
-  .ws-product-grid { grid-template-columns:1fr 1fr; }
 }
 
 /* The point-force slider, with its value beside it. */
@@ -132,3 +118,23 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-simulation-dock .ws-row { margin:.35rem 0; }
 .ws-simulation-dock #ws-run-bench { justify-self:start;font-weight:700; }
 .ws-simulation-dock #ws-play-timeline { width:100%; }
+
+/* Product library tree: a product row, and under the open one its components.
+   A row is the product's name; the name is what the button already says, so it
+   carries no second line repeating the click. */
+.ws-product-catalog { display:grid;grid-template-columns:1fr;gap:.3rem; }
+.ws-product-entry { display:grid;gap:.25rem; }
+.ws-product-card { display:block;text-align:left;border:1px solid #34404e;border-radius:.55rem;background:#121b25;color:#dce5ef;padding:.5rem .65rem;cursor:pointer;font-size:.86rem;font-weight:600;text-transform:capitalize; }
+.ws-product-card:hover { border-color:#708298;background:#172330; }
+.ws-product-card[aria-current="true"] { border-color:#9eb7d2;background:#1c2a38;box-shadow:0 0 0 1px #9eb7d233 inset; }
+.ws-product-card[aria-expanded="true"] { border-bottom-left-radius:0;border-bottom-right-radius:0; }
+.ws-product-parts { display:grid;gap:.18rem;margin:0 0 .35rem;padding:.1rem 0 0 .7rem;list-style:none;border-left:1px solid #34404e;margin-left:.6rem; }
+.ws-part-row { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem;align-items:center; }
+.ws-part-open { display:flex;gap:.35rem;align-items:baseline;min-width:0;text-align:left;border:1px solid transparent;background:none;color:#c3d0de;border-radius:.4rem;padding:.26rem .4rem;cursor:pointer;font:inherit;font-size:.78rem; }
+.ws-part-open:hover { border-color:#4b5b6d;background:#16212c;color:#e7eef6; }
+.ws-part-open[aria-current="true"] { border-color:#9eb7d2;background:#1c2a38;color:#eef4fa;font-weight:600; }
+.ws-part-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.ws-part-qty { flex:none;color:#8fa1b4;font-size:.72rem; }
+.ws-part-copy { border:1px solid #394757;background:#111923;color:#a9b8c8;border-radius:.4rem;padding:.2rem .45rem;cursor:pointer;font:inherit;font-size:.7rem; }
+.ws-part-copy:hover { border-color:#65778b;color:#e0e8f1; }
+.ws-part-copy:disabled { opacity:.55;cursor:default; }

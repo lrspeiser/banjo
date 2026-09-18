@@ -229,6 +229,49 @@ class WorkshopBrowserRegression(unittest.TestCase):
         time.sleep(.2)
         self.assertEqual(name, self.js("document.querySelector('#ws-name').textContent"))
 
+    def test_library_rows_are_names_and_open_a_product_to_its_components(self):
+        """A library row is a name; the open product lists its components.
+
+        Every card used to carry a second line saying to click it, which a
+        button already says. The room under a row is worth more: the open
+        product's components, how many of each, and a way into each one.
+        """
+        rows = self.js("""[...document.querySelectorAll('#ws-product-catalog .ws-product-card')]
+          .map(card=>({name:card.textContent.trim(),extra:card.querySelectorAll('small').length}))""")
+        self.assertEqual([], [row for row in rows if row["extra"]])
+        self.assertIn("cart", [row["name"].lower() for row in rows])
+        self.assertEqual([], self.js(
+            "[...document.querySelectorAll('#ws-test-catalog .ws-test-card small')].map(n=>n.textContent)"))
+
+        self.open_product("cart")
+        self.wait("document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+        listed = self.js(r"""[...document.querySelectorAll('#ws-product-catalog .ws-part-row')].map(row=>[
+          row.querySelector('.ws-part-name').textContent,
+          row.querySelector('.ws-part-qty')?.textContent.replace(/\D/g,'')||'1'])""")
+        self.assertEqual([["deck","1"],["axle","2"],["bearing-mount","4"],
+                          ["wheel","4"],["handle-arm","2"],["handle","1"]], listed)
+        # The components belong to the open product only.
+        self.assertEqual(1, self.js(
+            "document.querySelectorAll('#ws-product-catalog .ws-product-parts').length"))
+
+        # Clicking one selects it, so the component editor works on it.
+        self.click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
+        self.wait("document.querySelector('#ws-selected-part').textContent.startsWith('wheel-11')")
+        self.assertFalse(self.js("document.querySelector('#ws-save-component').disabled"))
+        before = self.js("document.querySelector('#ws-selected-part').textContent")
+        self.click('[data-component-edit="thicker"]')
+        self.wait(f"document.querySelector('#ws-selected-part').textContent !== {json.dumps(before)}")
+
+        # Copy puts that component in My library, where it can be reused.
+        saved = self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
+        self.click('#ws-product-catalog .ws-part-row:nth-child(1) .ws-part-copy')
+        self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
+        self.assertIn("cart deck", self.js("document.querySelector('#ws-user-library').textContent"))
+
+        # Clicking the open product again folds its components away.
+        self.click('#ws-product-catalog button[data-value="cart"]')
+        self.wait("!document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+
     def test_cart_trace_has_actual_intermediate_simulation_states(self):
         self.open_product("cart")
         self.click('[data-mode="test"]')

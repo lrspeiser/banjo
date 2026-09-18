@@ -67,7 +67,7 @@ const target = new THREE.Vector3(0, 0.42, 0);
 const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0, plans: {},
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
-  selectedPart: null, forcePoint: null, openedLibraryItem: null,
+  selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
   cellSkin: null, physicsDebug: null, matterMode: "cells",
@@ -623,6 +623,11 @@ function installEditor() {
   $(".ws-metrics").after(basis);
   const left = $(".ws-left"), right = $(".ws-right"), builtIn = $("#ws-library");
   const builtInHeading = builtIn.previousElementSibling && builtIn.previousElementSibling.previousElementSibling;
+  const productBox = make("section", { id: "ws-product-library-box", class: "ws-product-section" });
+  productBox.append(make("h2", {}, "Product library"),
+    make("p", {}, "The open product lists its components and quantities underneath. Click one to edit it, or copy it into My library."),
+    make("div", { id: "ws-product-catalog", class: "ws-product-catalog" }));
+  left.prepend(productBox);
   const libraryBox = make("section", { id: "ws-personal-library-box" });
   libraryBox.append(make("h2", {}, "My library"),
     make("p", {}, "Reusable components and assemblies. Select a part, then click or drag a component onto it."),
@@ -1151,6 +1156,83 @@ function renderUserLibrary() {
     }); root.append(card);
   }
 }
+// The product library is a tree: a row per product, and under the open one a
+// child row per distinct component with its quantity. Names alone carry the
+// rows; every card once repeated "Open <name> in the Workshop", which said
+// nothing a button does not already say.
+function componentGroups(candidate) {
+  const groups = new Map();
+  for (const part of candidate.parts) {
+    const base = part.name.replace(/-\d+$/, "");
+    const size = (part.size_m || []).map((v) => Math.round(v * 1000)).join("x");
+    const key = [base, part.role, part.material, size].join("|");
+    let group = groups.get(key);
+    if (!group) { group = { base, role:part.role, family:part.family, material:part.material, names:[], mass:0 }; groups.set(key, group); }
+    group.names.push(part.name); group.mass += Number(part.mass_kg) || 0;
+  }
+  return [...groups.values()];
+}
+function productParts(candidate) {
+  const list = make("ul", { class:"ws-product-parts" });
+  for (const group of componentGroups(candidate)) {
+    const first = group.names[0], row = make("li", { class:"ws-part-row" });
+    const open = make("button", { type:"button", class:"ws-part-open", "data-part":first });
+    open.append(make("span", { class:"ws-part-name" }, group.base));
+    if (group.names.length > 1) open.append(make("span", { class:"ws-part-qty" }, `× ${group.names.length}`));
+    open.title = `${group.role} · ${group.material} · ${group.mass.toFixed(3)} kg total`;
+    if (group.names.includes(bench.selectedPart)) { row.classList.add("selected"); open.setAttribute("aria-current", "true"); }
+    open.onclick = () => { openComponent(first); };
+    const copy = make("button", { type:"button", class:"ws-part-copy", title:`Copy ${group.base} into My library` }, "Copy");
+    copy.onclick = () => guard(copy, () => copyComponent(first, group.base));
+    row.append(open, copy); list.append(row);
+  }
+  if (!list.childElementCount) list.append(make("li", { class:"ws-feedback-count" }, "No components yet."));
+  return list;
+}
+function openComponent(partName) {
+  bench.selectedPart = partName; show(false);
+  // The component editor lives in the Build tab of the shell, if the shell is there.
+  document.querySelector('.ws-workspace-tabs button[data-mode="build"]')?.click();
+  $("#ws-component-editor")?.scrollIntoView({ block:"nearest" });
+}
+async function copyComponent(partName, label) {
+  if (!chosen()) throw new Error("Open a product first.");
+  const name = `${bench.kind} ${label}`;
+  const answer = await api("/api/workshop/library", { action:"save_component", ...candidateBody(), part_name:partName, name });
+  bench.personalLibrary = answer.personal_library || bench.personalLibrary;
+  bench.pricebook = answer.pricebook || bench.pricebook;
+  renderUserLibrary(); say(`Copied ${name} into My library.`);
+}
+let catalogSignature = null, lastOpenProduct = null;
+function renderProductCatalog() {
+  const root = $("#ws-product-catalog"), picker = $("#ws-archetype");
+  if (!root || !picker) return;
+  // Opening a product expands it, however it was opened: a card, the native
+  // picker, a saved design or a library assembly. Clicking the open row toggles.
+  if (picker.value !== lastOpenProduct) { lastOpenProduct = picker.value; bench.expandedProduct = picker.value; }
+  const candidate = chosen(), kinds = [...picker.options].map((o) => o.value);
+  const signature = JSON.stringify([kinds, picker.value, bench.expandedProduct, bench.selectedPart,
+    candidate ? candidate.parts.map((p) => p.name) : null]);
+  if (signature === catalogSignature) return;
+  catalogSignature = signature; root.replaceChildren();
+  for (const option of [...picker.options]) {
+    const current = option.value === picker.value;
+    const expanded = current && bench.expandedProduct === option.value && Boolean(candidate);
+    const entry = make("div", { class:"ws-product-entry" });
+    const card = make("button", { type:"button", class:"ws-product-card", "data-value":option.value,
+      "aria-current":current ? "true" : "false", "aria-expanded":expanded ? "true" : "false" },
+      option.textContent || option.value);
+    if (option.title) card.title = option.title;
+    card.onclick = () => guard(card, async () => {
+      if (picker.value !== option.value) {
+        picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true }));
+      } else { bench.expandedProduct = expanded ? null : option.value; catalogSignature = null; renderProductCatalog(); }
+    });
+    entry.append(card);
+    if (expanded) entry.append(productParts(candidate));
+    root.append(entry);
+  }
+}
 function families(described) {
   const root = $("#ws-library"); root.replaceChildren();
   for (const family of described) {
@@ -1198,7 +1280,7 @@ function show(reframe = true) {
   $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
   const parts = $("#ws-parts"); parts.replaceChildren();
   for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
-  renderSelected(); renderBom(candidate);
+  renderSelected(); renderBom(candidate); renderProductCatalog();
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
   else if (!m.stands_up) { checks.classList.add("bad"); said.push("Its geometric balance point is outside the support region."); }
@@ -1289,7 +1371,8 @@ async function start() {
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
-  picker.value = answer.kind; families(answer.families); savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
+  picker.value = answer.kind; renderProductCatalog();
+  families(answer.families); savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
   bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); took(answer);
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
