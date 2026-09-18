@@ -285,7 +285,7 @@ class VisibleSimulationContract(unittest.TestCase):
                                "cart":{"cart_roll"},"kettle":{"kettle_heat"},
                                "chair":set(),"stool":set(),"shelf-unit":set()}.items():
             visible = {t["test"] for t in workshop_bench.catalog(kind)
-                       if t.get("category")=="simulation" and t.get("subject")=="selected-product"}
+                       if t.get("category")=="simulation" and t.get("subject")=="selected-product" and t.get("required_model","lattice")=="lattice"}
             self.assertEqual(expected,visible,kind)
 
     def test_motion_recipe_keeps_exact_cells_and_declares_only_initial_motion(self):

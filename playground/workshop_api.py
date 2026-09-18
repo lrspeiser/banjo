@@ -12,7 +12,7 @@ from typing import Any
 
 import workshop_api_core as _core
 from workshop_api_core import *  # noqa: F401,F403
-from mcp import workshop_components, workshop_visual, workshop_matter_metrics
+from mcp import workshop_components, workshop_visual, workshop_matter_metrics, workshop_buildability, workshop_rigid
 
 
 def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -23,6 +23,11 @@ def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> d
         try:
             design, overrides = workshop_components.design_from_spec(candidate)
             candidate["skin"] = workshop_visual.skin_document(design, overrides)
+            candidate["buildability"] = workshop_buildability.design_feedback(design, overrides)
+            models = workshop_rigid.requested_models(design, overrides)
+            candidate["mechanical_model"] = next(iter(models)) if len(models) == 1 else "mixed"
+            if models != {"lattice"}:
+                candidate["analytical"] = {"static_loads": [], "limitations": list(workshop_rigid.LIMITATIONS)}
         except (ValueError, KeyError):
             # A malformed candidate must still fail at its authoritative API
             # boundary; decoration never invents substitute geometry.
@@ -81,8 +86,25 @@ def _skin_edit(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     return _decorate(answer, body)
 
 
+def _mechanics_edit(app: Any, body: dict[str, Any]) -> dict[str, Any]:
+    edit = body["mechanics_edit"]
+    model = workshop_rigid.checked_mechanics(edit)
+    design, overrides = workshop_components.design_from_spec(body)
+    updated = deepcopy(overrides)
+    for part in design.parts:
+        updated.setdefault(part.name, {})["mechanics"] = dict(model)
+    base = _core.assemble(design.kind or "", design_id=design.design_id,
+                          purpose=design.purpose, parameters=design.parameters)
+    edited = workshop_components.apply_overrides(base, updated)
+    return _decorate({"schema":_core.WORKSHOP_SCHEMA, "kind":str(edited.kind),
+        "generation":_core._generation(body)+1, "bench_tests":_core.workshop_bench.catalog(str(edited.kind)),
+        "candidates":[_core._candidate(app,edited,_core.assembly(str(edited.kind)),updated)]})
+
+
 def candidates(app: Any, body: Any) -> dict[str, Any]:
     request = body if isinstance(body, dict) else {}
+    if "mechanics_edit" in request:
+        return _mechanics_edit(app, request)
     if isinstance(request.get("skin_edit"), dict):
         return _skin_edit(app, request)
     return _decorate(_core.candidates(app, body), request)
@@ -95,6 +117,20 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
 def plan(app: Any, body: Any) -> dict[str, Any]:
     request = body if isinstance(body, dict) else {}
     answer = _core.plan(app, body)
+    design, overrides = workshop_components.design_from_spec(request)
+    models = workshop_rigid.requested_models(design, overrides)
+    answer["mechanical_model"] = next(iter(models)) if len(models) == 1 else "mixed"
+    if models != {"lattice"}:
+        # Never return the old snapped primitive list as this model's build plan.
+        answer["wireframe_objects"] = answer.get("wireframe_objects", answer.get("objects", []))
+        answer["objects"] = []
+        answer["commit"]["requires"].append("precise rigid live-room installation adapter (not implemented)")
+        try:
+            answer["rigid"] = workshop_rigid.compile_rigid(design, overrides)
+            answer["fingerprint"] = answer["rigid"]["physics_hash"]
+            answer["geometry_basis"] = "precise-rigid-boxes"
+        except ValueError as exc:
+            answer["representation_error"] = str(exc)
     visual = request.get("visual")
     if visual:
         options = visual if isinstance(visual, dict) else {}
@@ -102,13 +138,20 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         cell = options.get("cell_size_m", request.get("cell_size_m", 0.04))
         exterior = bool(options.get("exterior_only", False))
         answer["skin"] = workshop_visual.skin_document(design, overrides)
-        full = workshop_visual.matter_document(
-            design, overrides, cell_size_m=float(cell), exterior_only=False)
-        summary = workshop_matter_metrics.measure(full, expected_components=[p.name for p in design.parts])
-        answer["matter_measured"] = summary["measured"]
-        answer["matter_bom"] = _core.workshop_library.bill_of_materials(app, design, matter_summary=summary)
-        answer["matter_component_mass_kg"] = summary["component_mass_kg"]
-        if exterior:
+        report, full, summary = workshop_buildability.assess(design, overrides, cell_size_m=cell)
+        report["requested_model"] = answer["mechanical_model"]
+        if answer.get("rigid"):
+            report["rigid"] = {"compilation_ready":True,"live_installation_supported":False,
+                "stored_cells":0,"collision_boxes":answer["rigid"]["collision_boxes"],
+                "internal_fracture_supported":False}
+        if answer.get("representation_error"):
+            report["representation_error"] = answer["representation_error"]
+        answer["buildability"] = report
+        if summary is not None:
+            answer["matter_measured"] = summary["measured"]
+            answer["matter_bom"] = _core.workshop_library.bill_of_materials(app, design, matter_summary=summary)
+            answer["matter_component_mass_kg"] = summary["component_mass_kg"]
+        if full is not None and exterior:
             full["cells"] = [row for row in full["cells"] if row["exposed"]]
             full["shown_cells"] = len(full["cells"])
             full["exterior_only"] = True

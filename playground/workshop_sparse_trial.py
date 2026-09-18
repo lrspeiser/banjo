@@ -21,10 +21,10 @@ from typing import Any, Callable
 import fracture_lab
 import live_session
 import workshop_trials_core as core
-from mcp import engine_materials, workshop_visual
+from mcp import engine_materials, workshop_visual, workshop_rigid
 from mcp.workshop import WorkshopDesign
 
-MAX_SCENE_BOXES = 240  # leave room for fixtures under fracture_lab's scene cap
+from mcp.workshop_cell_encoding import MAX_SCENE_BOXES, decompose_cells, cells_from_boxes
 _LOAD_MATERIAL = "iron"
 
 Grid = tuple[int, int, int]
@@ -46,52 +46,6 @@ def _grid_set(matter: dict[str, Any]) -> set[Grid]:
         out.add((int(grid[0]), int(grid[1]), int(grid[2])))
     if len(out) != int(matter.get("total_cells", -1)):
         raise ValueError("Matter artifact cell count does not match its canonical grid set")
-    return out
-
-
-def decompose_cells(cells: set[Grid]) -> list[Box]:
-    """Greedy exact rectangular decomposition; every input cell appears once."""
-    left = set(cells)
-    boxes: list[Box] = []
-    while left:
-        x0, y0, z0 = min(left)
-        x1 = x0
-        while (x1 + 1, y0, z0) in left:
-            x1 += 1
-
-        y1 = y0
-        while True:
-            ny = y1 + 1
-            if all((x, ny, z0) in left for x in range(x0, x1 + 1)):
-                y1 = ny
-            else:
-                break
-
-        z1 = z0
-        while True:
-            nz = z1 + 1
-            if all((x, y, nz) in left
-                   for x in range(x0, x1 + 1)
-                   for y in range(y0, y1 + 1)):
-                z1 = nz
-            else:
-                break
-
-        for x in range(x0, x1 + 1):
-            for y in range(y0, y1 + 1):
-                for z in range(z0, z1 + 1):
-                    left.remove((x, y, z))
-        boxes.append(((x0, y0, z0), (x1, y1, z1)))
-    return boxes
-
-
-def cells_from_boxes(boxes: list[Box]) -> set[Grid]:
-    out: set[Grid] = set()
-    for lo, hi in boxes:
-        for x in range(lo[0], hi[0] + 1):
-            for y in range(lo[1], hi[1] + 1):
-                for z in range(lo[2], hi[2] + 1):
-                    out.add((x, y, z))
     return out
 
 
@@ -146,6 +100,7 @@ def _target_name(design: WorkshopDesign, on: str) -> str:
 def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
                     cell_size_m: float = core.DEFAULT_CELL_M) -> dict[str, Any]:
     design.validate()
+    workshop_rigid.require_lattice(design, "This exact-cell experiment")
     load_kg = float(load_kg)
     cell = float(cell_size_m)
     if not isfinite(load_kg) or load_kg <= 0:

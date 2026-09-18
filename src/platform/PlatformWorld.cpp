@@ -23,7 +23,62 @@ unsigned integer(const json &j,unsigned lo,unsigned hi){require(j.is_number_unsi
 Vec3 vector(const json &j,double limit){require(j.is_array()&&j.size()==3,"expected three SI components");return {number(j[0],-limit,limit),number(j[1],-limit,limit),number(j[2],-limit,limit)};}
 json vec(Vec3 v){return {v.x,v.y,v.z};}
 MaterialPreset material(const json &j){for(auto p:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Concrete})if(j==std::string(materialPresetName(p)))return p;throw std::invalid_argument("unsupported package material");}
-struct Body {unsigned id;MaterialPreset material;RigidPrimitive geometry;RigidSnapshot state;std::uint64_t seed{};};
+struct Body {
+    unsigned id; MaterialPreset material; RigidPrimitive geometry; RigidSnapshot state;
+    std::uint64_t seed{};
+    // Explicit, undeformable compound geometry; never expanded into lattice cells.
+    std::vector<RigidCompoundPart> parts;
+    double precise_mass_kg{};
+    Mat3 precise_inertia{};
+};
+std::vector<RigidCompoundPart> shapesOf(const Body &body) {
+    return body.parts.empty() ? std::vector<RigidCompoundPart>{{body.geometry, {}}} : body.parts;
+}
+void readPreciseCompound(Body &body, const json &source) {
+    require(source.is_array() && !source.empty() && source.size() <= 64,
+            "precise rigid compound needs 1..64 boxes");
+    const double density = makeReferenceMaterial(body.material).density_kg_m3;
+    Vec3 weighted{};
+    for (const auto &entry : source) {
+        fields(entry, {"dimensions_m", "center_local_m"});
+        RigidCompoundPart part;
+        part.geometry.kind = PrimitiveKind::Box;
+        part.geometry.dimensions_m = vector(entry.at("dimensions_m"), 6);
+        const auto d = part.geometry.dimensions_m;
+        require(std::min({d.x,d.y,d.z}) >= .001, "precise box dimensions must be 1..6000 mm");
+        part.center_local_m = vector(entry.at("center_local_m"), 6);
+        const double mass = density * part.geometry.volume();
+        body.precise_mass_kg += mass;
+        weighted = weighted + mass * part.center_local_m;
+        const Mat3 own = part.geometry.inertia(mass);
+        const auto c = part.center_local_m;
+        const double v[3]{c.x,c.y,c.z};
+        for (unsigned i=0;i<3;++i) for (unsigned j=0;j<3;++j)
+            body.precise_inertia.m[i][j] += own.m[i][j] + mass *
+                ((i==j ? dot(c,c) : 0) - v[i]*v[j]);
+        body.parts.push_back(part);
+    }
+    require(length(weighted/body.precise_mass_kg) <= 1e-9,
+            "precise compound coordinates must be about the material-derived centre of mass");
+    // A fixed compound cannot hide disconnected members or count overlaps twice.
+    std::vector<std::vector<unsigned>> neighbors(body.parts.size());
+    for (unsigned i=0;i<body.parts.size();++i) for(unsigned j=0;j<i;++j) {
+        const auto a=body.parts[i], b=body.parts[j];
+        const auto h=(a.geometry.dimensions_m+b.geometry.dimensions_m)/2;
+        const auto d=a.center_local_m-b.center_local_m;
+        const double overlap[3]{h.x-std::abs(d.x),h.y-std::abs(d.y),h.z-std::abs(d.z)};
+        require(!(overlap[0]>1e-10 && overlap[1]>1e-10 && overlap[2]>1e-10),
+                "precise compound boxes overlap; an exact solid union is required");
+        unsigned positive=0; bool touch=true;
+        for(double value:overlap){positive+=value>1e-10;touch=touch&&value>=-1e-10;}
+        if(touch && positive>=2){neighbors[i].push_back(j);neighbors[j].push_back(i);}
+    }
+    std::vector<bool> seen(body.parts.size(),false);std::vector<unsigned> pending{0};seen[0]=true;
+    for(unsigned n=0;n<pending.size();++n)for(unsigned other:neighbors[pending[n]])
+        if(!seen[other]){seen[other]=true;pending.push_back(other);}
+    require(pending.size()==body.parts.size(), "precise compound needs face-connected boxes; separate bodies need joints");
+}
+
 }
 struct PlatformWorld::Impl {
     json source;
@@ -50,11 +105,11 @@ PlatformWorld::~PlatformWorld()=default;
 std::string PlatformWorld::capabilitiesJson(){return json{
     {"package_version",1},{"physics_abi","banjo-platform-1"},{"units","SI"},
     {"backend_packages",{{"material-network-v2",{{"package_version",2},{"physics_abi","banjo-network-2"}}}}},
-    {"backends",{{"rigid-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances"}},
+    {"backends",{{"rigid-v1",{"sphere","box","thin-rigid-box","precise-rigid-compound","finite-bowl","finite-ground","gravity","contact","render-instances"}},
                  {"bonded-reference-v2",{"sphere","finite-bowl","finite-ground","gravity","contact","render-instances","experimental-glass-fracture"}},
                  {"material-network-v2",{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins","adaptive-damage-integration"}},
                  {"compiled-impact-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances","experimental-glass-fracture","persistent-damage","compiled-response"}}}},
-    {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"reference_objects",9},{"compiled_objects",128},{"network_cells",1024},{"steps_per_call",240}}},
+    {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"rigid_collision_primitives",4096},{"precise_compound_boxes",64},{"reference_objects",9},{"compiled_objects",128},{"network_cells",1024},{"steps_per_call",240}}},
     {"unsupported",{"automatic-physical-LOD","full-continuum-plasticity","anisotropic-continuum-fracture","live-state-package-save","scripts","network-publishing"}},
     {"realtime_guaranteed",false}}.dump(2);}
 std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
@@ -97,18 +152,35 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
     }
     require(source.at("objects").is_array()&&!source["objects"].empty()&&source["objects"].size()<=(w.reference?9:compiled?128:4096),"object budget exceeded or empty scene");
     std::set<unsigned> ids;
+    std::size_t primitive_count = 0;
     for(auto &o:source["objects"]){
-        fields(o,{"id","material","shape","radius_m","dimensions_m","position_m","orientation_wxyz","velocity_m_s","spin_rad_s","seed"});
+        fields(o,{"id","material","shape","radius_m","dimensions_m","position_m","orientation_wxyz","velocity_m_s","spin_rad_s","seed","parts"});
         Body b;b.id=integer(o.at("id"),1,1000000);require(ids.insert(b.id).second,"duplicate object ID");b.material=material(o.at("material"));
         if(o.contains("seed")){require(compiled,"seed requires compiled-impact-v1");b.seed=integer(o["seed"],0,2147483647);}
-        require(o.at("shape")=="sphere"||o.at("shape")=="box","unsupported shape");
-        if(o["shape"]=="sphere"){require(!o.contains("dimensions_m"),"sphere must not declare box dimensions");b.geometry.radius_m=number(o.at("radius_m"),.01,.5);require(!w.reference||b.geometry.radius_m==.045,"reference spheres require 45 mm radius");}
-        else {require(!w.reference,"reference backend does not support boxes");require(!o.contains("radius_m"),"box must not declare radius");b.geometry.kind=PrimitiveKind::Box;b.geometry.dimensions_m=vector(o.at("dimensions_m"),1);require(b.geometry.dimensions_m.x>=.02&&b.geometry.dimensions_m.y>=.02&&b.geometry.dimensions_m.z>=.02,"invalid box dimensions");}
+        require(o.at("shape")=="sphere"||o.at("shape")=="box"||o.at("shape")=="compound","unsupported shape");
+        if(o["shape"]=="compound"){
+            require(!w.reference&&!compiled,"precise compounds require rigid-v1; no internal failure law is implemented");
+            require(!o.contains("radius_m")&&!o.contains("dimensions_m"),"compound dimensions come only from its parts");
+            require(std::find(source["required_capabilities"].begin(),source["required_capabilities"].end(),"precise-rigid-compound")!=source["required_capabilities"].end(),"declare the precise-rigid-compound capability");
+            readPreciseCompound(b,o.at("parts"));
+        }
+        else if(o["shape"]=="sphere"){require(!o.contains("dimensions_m"),"sphere must not declare box dimensions");b.geometry.radius_m=number(o.at("radius_m"),.01,.5);require(!w.reference||b.geometry.radius_m==.045,"reference spheres require 45 mm radius");}
+        else {require(!w.reference,"reference backend does not support boxes");require(!o.contains("radius_m"),"box must not declare radius");b.geometry.kind=PrimitiveKind::Box;b.geometry.dimensions_m=vector(o.at("dimensions_m"),compiled?1:6);const auto dims=b.geometry.dimensions_m;require(std::min({dims.x,dims.y,dims.z})>=(compiled?.02:.001),"invalid box dimensions");
+            if(std::min({dims.x,dims.y,dims.z})<.02||std::max({dims.x,dims.y,dims.z})>1)
+                require(std::find(source["required_capabilities"].begin(),source["required_capabilities"].end(),"thin-rigid-box")!=source["required_capabilities"].end(),"declare the thin-rigid-box capability");}
+        require(o["shape"]=="compound"||!o.contains("parts"),"only a compound may declare parts");
+        primitive_count += b.parts.empty()?1:b.parts.size();
+        require(primitive_count<=4096,"rigid collision primitive budget exceeded");
         b.state.center_of_mass_world_m=vector(o.at("position_m"),1000);b.state.linear_velocity_m_s=vector(o.at("velocity_m_s"),100);b.state.angular_velocity_rad_s=vector(o.at("spin_rad_s"),1000);require(length(b.state.angular_velocity_rad_s)<=1000,"spin exceeds runtime magnitude limit");
         auto &q=o.at("orientation_wxyz");require(q.is_array()&&q.size()==4,"expected quaternion wxyz");b.state.orientation_world={number(q[0],-1,1),number(q[1],-1,1),number(q[2],-1,1),number(q[3],-1,1)};
         double norm=0;for(auto &v:q)norm+=v.get<double>()*v.get<double>();require(std::abs(norm-1)<1e-8,"orientation must be unit quaternion");
-        for(auto &prior:w.bodies)require(!primitivesOverlap(b.geometry,b.state.center_of_mass_world_m,b.state.orientation_world,prior.geometry,prior.state.center_of_mass_world_m,prior.state.orientation_world,0),"initial objects overlap");
-        if(hasGround)require(b.state.center_of_mass_world_m.y-b.geometry.extent({0,1,0},b.state.orientation_world)>=-1e-8,"object begins below ground top");
+        for(const auto &shape:shapesOf(b)){
+            const auto position=b.state.center_of_mass_world_m+b.state.orientation_world.rotate(shape.center_local_m);
+            for(const auto &prior:w.bodies)for(const auto &other:shapesOf(prior))
+                require(!primitivesOverlap(shape.geometry,position,b.state.orientation_world,other.geometry,
+                    prior.state.center_of_mass_world_m+prior.state.orientation_world.rotate(other.center_local_m),prior.state.orientation_world,0),"initial objects overlap");
+            if(hasGround)require(position.y-shape.geometry.extent({0,1,0},b.state.orientation_world)>=-1e-8,"object begins below ground top");
+        }
         w.bodies.push_back(b);
     }
     // All declarations are validated before allocating a solver. No live world is mutated.
@@ -122,7 +194,10 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
         w.rigid=std::make_unique<JoltWorld>();w.rigid->setGravity(w.gravity);
         if(hasGround)w.rigid->addSupportSurface(ground);
         if(support)w.rigid->addTriangleSupport(w.triangles,makeReferenceMaterial(bowl.surface));
-        for(auto &o:w.bodies){auto m=makeReferenceMaterial(o.material);if(o.geometry.kind==PrimitiveKind::Sphere){w.rigid->addBall({.body_id=o.id,.radius_m=o.geometry.radius_m,.material=m,.position_world_m=o.state.center_of_mass_world_m,.linear_velocity_m_s=o.state.linear_velocity_m_s,.angular_velocity_rad_s=o.state.angular_velocity_rad_s});w.rigid->applyRigidState(o.id,o.state);}else w.rigid->addBox({.body_id=o.id,.dimensions_m=o.geometry.dimensions_m,.material=m,.state=o.state});}
+        for(auto &o:w.bodies){auto m=makeReferenceMaterial(o.material);if(!o.parts.empty()){
+            w.rigid->addCompound({.body_id=o.id,.parts=o.parts,.material=m,.state=o.state,
+                .mass_kg=o.precise_mass_kg,.inertia_local_kg_m2=o.precise_inertia});
+        }else if(o.geometry.kind==PrimitiveKind::Sphere){w.rigid->addBall({.body_id=o.id,.radius_m=o.geometry.radius_m,.material=m,.position_world_m=o.state.center_of_mass_world_m,.linear_velocity_m_s=o.state.linear_velocity_m_s,.angular_velocity_rad_s=o.state.angular_velocity_rad_s});w.rigid->applyRigidState(o.id,o.state);}else w.rigid->addBox({.body_id=o.id,.dimensions_m=o.geometry.dimensions_m,.material=m,.state=o.state});}
         w.initial_energy=w.rigid->mechanicalTotals(w.gravity).mechanicalEnergy();
     }
     return result;
@@ -143,14 +218,34 @@ std::vector<PlatformInstance> PlatformWorld::renderInstances() const{
     if(w.network)return w.network->renderInstances();
     if(w.compiled)return w.compiled->renderInstances();
     if(w.reference){const auto &b=*w.bonded;auto components=b.components();out.reserve(b.cells.size());for(unsigned i=0;i<b.cells.size();++i){auto &c=b.cells[i];auto &o=b.objects[c.object];RigidPrimitive shape;shape.radius_m=c.radius;out.push_back({o.id,i,components[i],o.material,shape,{c.x,{},c.v,c.spin}});}}
-    else {out.reserve(w.bodies.size());for(auto &o:w.bodies)out.push_back({o.id,0,o.id,o.material,o.geometry,w.rigid->snapshot(o.id)});}
+    else {out.reserve(w.bodies.size());for(auto &o:w.bodies){
+        const auto state=w.rigid->snapshot(o.id);unsigned element=0;
+        for(const auto &part:shapesOf(o)){
+            auto placed=state;const auto offset=state.orientation_world.rotate(part.center_local_m);
+            placed.center_of_mass_world_m=placed.center_of_mass_world_m+offset;
+            placed.linear_velocity_m_s=placed.linear_velocity_m_s+cross(state.angular_velocity_rad_s,offset);
+            out.push_back({o.id,element++,o.id,o.material,part.geometry,placed});
+        }
+    }}
     return out;
 }
 std::string PlatformWorld::reportJson() const{
     auto &w=*impl_;auto times=w.timings;std::sort(times.begin(),times.end());auto percentile=[&](double p){return times.empty()?0:times[std::min(times.size()-1,std::size_t(std::ceil(p*times.size())-1))];};
     json result{{"package",w.source},{"position_bits",JoltWorld::positionPrecisionBits()},{"state_valid",w.reference||w.fault.empty()},{"ticks",w.ticks},{"elapsed_s",w.ticks*w.dt},{"fault",w.fault},{"initial_energy_j",w.initial_energy},
         {"performance",{{"step_wall_total_ms",w.total_ms},{"step_p50_ms",percentile(.5)},{"step_p95_ms",percentile(.95)},{"step_max_ms",w.max_ms},{"sample_count",times.size()},{"sample_window","last 4096 steps"},{"realtime_ratio",w.total_ms>0?w.ticks*w.dt*1000/w.total_ms:0},{"includes_rendering",false},{"includes_package_load",false}}}};
-    auto bodies=json::array();for(auto &o:w.bodies){auto s=w.compiled?w.compiled->state(o.id):w.reference?w.bonded->state(o.id):w.rigid->snapshot(o.id);bodies.push_back({{"id",o.id},{"material",materialPresetName(o.material)},{"mass_kg",o.geometry.volume()*makeReferenceMaterial(o.material).density_kg_m3},{"position_m",vec(s.center_of_mass_world_m)},{"velocity_m_s",vec(s.linear_velocity_m_s)},{"spin_rad_s",vec(s.angular_velocity_rad_s)}});}result["objects"]=bodies;
+    auto bodies=json::array();for(auto &o:w.bodies){auto s=w.compiled?w.compiled->state(o.id):w.reference?w.bonded->state(o.id):w.rigid->snapshot(o.id);bodies.push_back({{"id",o.id},{"material",materialPresetName(o.material)},{"mass_kg",(o.parts.empty()?o.geometry.volume()*makeReferenceMaterial(o.material).density_kg_m3:o.precise_mass_kg)},{"position_m",vec(s.center_of_mass_world_m)},{"velocity_m_s",vec(s.linear_velocity_m_s)},{"spin_rad_s",vec(s.angular_velocity_rad_s)}});}result["objects"]=bodies;
+    if(w.rigid){
+        auto precise=json::array();
+        for(const auto &body:w.bodies)if(!body.parts.empty()){
+            json tensor=json::array();for(const auto &row:body.precise_inertia.m)tensor.push_back({row[0],row[1],row[2]});
+            const auto actual=w.rigid->mechanicalState(body.id);
+            precise.push_back({{"id",body.id},{"mechanical_model","rigid-no-internal-failure"},
+                {"stored_cells",0},{"collision_boxes",body.parts.size()},{"mass_kg",body.precise_mass_kg},
+                {"native_mass_kg",actual.mass_kg},{"inertia_local_kg_m2",tensor},
+                {"attachment_failure_supported",false},{"internal_fracture_supported",false}});
+        }
+        if(!precise.empty())result["precise_rigid_bodies"]=precise;
+    }
     if(w.network){
         result.update(json::parse(w.network->reportJson()));
         // A run that refused bond updates has not measured its own material

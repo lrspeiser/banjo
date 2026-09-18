@@ -14,7 +14,7 @@ import workshop_trials_core as _core
 from workshop_trials_core import *  # noqa: F401,F403
 import workshop_recording
 import workshop_sparse_trial
-from mcp import workshop_acceptance
+from mcp import workshop_acceptance, workshop_rigid
 
 _BASE_RUN_STATIC = workshop_sparse_trial.run_static_load
 _BASE_SESSION = _core.live_session.Session
@@ -25,6 +25,7 @@ def run_static_load(app: Any, design, *, load_kg: float, on: str = "top",
                     duration_s: float = _core.DEFAULT_DURATION_S,
                     session_factory=None, record_trace: bool = True,
                     acceptance_limits: Any = None) -> dict[str, Any]:
+    workshop_rigid.require_lattice(design, "Static-load fracture testing")
     if not isinstance(record_trace, bool):
         raise ValueError("record_trace must be a boolean")
     limits = workshop_acceptance.checked_limits(acceptance_limits)

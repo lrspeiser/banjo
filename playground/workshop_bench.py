@@ -13,7 +13,7 @@ from workshop_bench_core import *  # noqa: F401,F403
 import workshop_recording
 import workshop_trials
 import workshop_motion
-from mcp import workshop_acceptance, workshop_matter_metrics
+from mcp import workshop_acceptance, workshop_matter_metrics, workshop_rigid
 
 _LOAD_KINDS = {"table", "stool", "bench", "chair", "shelf-unit", "cart"}
 
@@ -39,10 +39,18 @@ def catalog(kind: str | None = None) -> list[dict[str, Any]]:
             "visual_playback": True,
         })
     out = workshop_motion.catalog(kind) + out
+    if kind in workshop_motion.SOLID_KINDS:
+        out.append({"test":"rigid_motion","name":"Precise rigid motion (no fracture)",
+            "about":"Drop or slide this exact-size fixed compound in the native rigid engine; choose the rigid model explicitly first.",
+            "controls":[{"name":"duration_s","label":"Run","unit":"s","type":"number","default":2,"min":.1,"max":5,"step":.1},
+                        {"name":"drop_height_m","label":"Drop height","unit":"m","type":"number","default":.2,"min":0,"max":2,"step":.05},
+                        {"name":"horizontal_speed_m_s","label":"Horizontal speed","unit":"m/s","type":"number","default":0,"min":-2,"max":2,"step":.1}],
+            "limitations":list(workshop_rigid.LIMITATIONS),"visual_playback":True})
     for item in out:
         name = str(item.get("test") or "")
-        item["category"] = "simulation" if name in {"drop_product", "slide_product", "cart_roll", "kettle_heat", "declared_static_load"} else "analysis"
+        item["category"] = "simulation" if name in {"drop_product", "slide_product", "cart_roll", "kettle_heat", "declared_static_load", "rigid_motion"} else "analysis"
         item["subject"] = "reference-fixture" if name == "machine_control" else "selected-product"
+        item["required_model"] = "rigid" if name == "rigid_motion" else "lattice"
         # Never offer a fused-solid test for an articulated cart in the UI.
         if name == "declared_static_load" and kind not in workshop_motion.SOLID_KINDS:
             item["category"] = "analysis"
@@ -83,6 +91,10 @@ def run(app: Any, design, request: Any) -> dict[str, Any]:
         limits = workshop_acceptance.merge_limits(limits, {name: config[name] for name in names})
     if limits is not None and test != "declared_static_load":
         raise ValueError("acceptance_limits currently require the exact-Matter declared_static_load test")
+    if test == "rigid_motion":
+        import workshop_rigid_trial
+        return workshop_rigid_trial.run(app, design, config)
+    workshop_rigid.require_lattice(design, "This Workshop test")
     if test in workshop_motion.TESTS:
         result = workshop_motion.run(app, design, test, config)
         if not record_trace:

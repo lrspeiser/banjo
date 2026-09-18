@@ -114,17 +114,22 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     wire["bom"] = workshop_library.bill_of_materials(app, design)
     wire["measured"]["basis"] = "wireframe-estimate"
     if workshop_matter_metrics.has_physical_skin(design):
-        matter = workshop_visual.matter_document(design, overrides, cell_size_m=0.04)
-        summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
         wire["design_measured"] = wire["measured"]
-        wire["measured"] = summary["measured"]
-        for part in wire["parts"]:
-            part["mass_kg"] = summary["component_mass_kg"].get(part["name"], 0.0)
+        wire["evidence_status"] = "requires-retest"
         wire["analytical"] = {"static_loads": [], "limitations": [
             "Wireframe load paths are invalid after physical skin edits. Run the exact-Matter trial."]}
-        wire["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
-        wire["notes"] += summary["measured"]["warnings"]
-        wire["evidence_status"] = "requires-retest"
+        try:
+            matter = workshop_visual.matter_document(design, overrides, cell_size_m=0.04)
+            summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
+        except ValueError as problem:
+            wire["measured"]["basis"] = "wireframe-estimate-physical-preview-unavailable"
+            wire["notes"].append("Physical preview unavailable: " + str(problem))
+        else:
+            wire["measured"] = summary["measured"]
+            for part in wire["parts"]:
+                part["mass_kg"] = summary["component_mass_kg"].get(part["name"], 0.0)
+            wire["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+            wire["notes"] += summary["measured"]["warnings"]
     return wire
 
 
@@ -339,19 +344,24 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     answer["bom"] = workshop_library.bill_of_materials(app, design)
     if workshop_matter_metrics.has_physical_skin(design):
         overrides = design.lineage.get("component_overrides") or {}
-        matter = workshop_visual.matter_document(design, overrides, cell_size_m=cell)
-        summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
-        answer["measured"] = summary["measured"]
-        answer["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
         answer["wireframe_fingerprint"] = answer["fingerprint"]
-        answer["fingerprint"] = matter["physics_hash"]
-        answer["geometry_basis"] = "canonical-matter-grid"
-        # The legacy primitive list is useful as design intent but must not be
-        # mistaken for a physically edited installation recipe.
         answer["wireframe_objects"] = answer.pop("objects")
         answer["objects"] = []
         answer["commit"]["requires"].append("exact-Matter installation adapter for physical skin edits")
-        answer["matter_physics_hash"] = matter["physics_hash"]
+        try:
+            matter = workshop_visual.matter_document(design, overrides, cell_size_m=cell)
+            summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
+        except ValueError as problem:
+            answer["geometry_basis"] = "physical-preview-unavailable"
+            answer["physical_preview_error"] = str(problem)
+            answer["measured"]["basis"] = "wireframe-estimate-physical-preview-unavailable"
+            answer["commit"]["requires"].append("resolve physical preview: " + str(problem))
+        else:
+            answer["measured"] = summary["measured"]
+            answer["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+            answer["fingerprint"] = matter["physics_hash"]
+            answer["geometry_basis"] = "canonical-matter-grid"
+            answer["matter_physics_hash"] = matter["physics_hash"]
     if body.get("run_trial"):
         import workshop_trials
         try:
@@ -382,9 +392,16 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
                           selected=bool(body.get("selected", True)), note=note)
         record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         record["fingerprint"] = materialize(design)["fingerprint"]
-        if workshop_matter_metrics.has_physical_skin(design):
-            record["fingerprint"] = workshop_visual.matter_document(design, overrides)["physics_hash"]
+        from mcp import workshop_rigid
+        models = workshop_rigid.requested_models(design)
+        if workshop_matter_metrics.has_physical_skin(design) or models != {"lattice"}:
             record["evidence_status"] = "requires-retest"
+            try:
+                record["fingerprint"] = (workshop_rigid.compile_rigid(design)["physics_hash"]
+                    if models != {"lattice"} else workshop_visual.matter_document(design, overrides)["physics_hash"])
+            except ValueError as exc:
+                record["physical_preview_error"] = str(exc)
+                record["evidence_status"] = "source-only-physical-preview-unavailable"
         with _lock:
             with where.open("a", encoding="utf-8") as out:
                 out.write(json.dumps(record, sort_keys=True) + "\n")

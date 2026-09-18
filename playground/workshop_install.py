@@ -28,7 +28,7 @@ import live_session
 import world_access
 import world_room
 import workshop_sparse_trial as sparse
-from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics
+from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics, workshop_rigid
 
 SCHEMA = "banjo.workshop-install.v1"
 MAX_PREVIEWS = 8
@@ -280,6 +280,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if getattr(app, "store", None) is None:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
+        workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])

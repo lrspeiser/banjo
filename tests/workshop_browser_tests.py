@@ -129,14 +129,15 @@ class WorkshopBrowserRegression(unittest.TestCase):
         errors = [e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"]
         self.assertEqual([], errors, errors)
 
-    def test_rebuild_error_is_visible_and_does_not_keep_stale_matter(self):
+    def test_rebuild_budget_limit_is_visible_and_does_not_keep_stale_matter(self):
         self.click("#ws-refresh-matter")
         self.wait("document.querySelector('#ws-matter-status').dataset.state==='current'")
         self.field("#ws-matter-cell", .005)
         self.click("#ws-refresh-matter")
-        self.wait("document.querySelector('#ws-matter-status').dataset.state==='error'")
-        self.assertTrue(self.js("!document.querySelector('#ws-notice').hidden && document.querySelector('#ws-notice').getBoundingClientRect().height>0"))
-        self.assertIn("No current Matter", self.js("document.querySelector('#ws-matter-status').textContent"))
+        self.wait("document.querySelector('#ws-matter-status').dataset.state==='blocked'")
+        self.assertIn("Not buildable", self.js("document.querySelector('#ws-buildability-summary').textContent"))
+        self.assertTrue(self.js("document.querySelector('#ws-buildability-summary').getBoundingClientRect().height>0"))
+        self.assertIn("limit", self.js("document.querySelector('#ws-matter-status').textContent").lower())
         self.assertTrue(self.js("document.querySelector('#ws-mode-test').hidden"))
 
     def test_physical_measurements_and_product_switch_are_current(self):
@@ -354,6 +355,42 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("!document.querySelector('#ws-install-preview').disabled")
         self.assertTrue(self.js("document.querySelector('#ws-install-confirm').disabled"))
         self.assertNotEqual('preview',self.js("document.querySelector('#ws-install-result').dataset.status"))
+
+    def test_thin_rigid_product_roundtrip_and_actual_native_playback(self):
+        # Seed a normal saved source through the public API, then operate real UI controls.
+        self.js("""(async()=>{
+          const r=await fetch('/api/workshop/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({kind:'table',design_id:'browser-thin-rigid',parameters:{top_thickness_m:.005,leg_section_m:.015},save_design:true,label:'Browser thin table'})});
+          if(!r.ok)throw Error(await r.text());
+        })()""")
+        self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world?workshop=1&design=browser-thin-rigid"})
+        self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
+        self.assertIn('top',self.js("document.querySelector('#ws-buildability-parts').textContent"))
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
+        self.field('#ws-mechanical-model','rigid');self.click('#ws-apply-mechanics')
+        self.wait("document.querySelector('#ws-matter-status')?.textContent.includes('5 precise rigid boxes')")
+        self.assertEqual('3.416 kg',self.js("document.querySelector('#ws-mass').textContent"))
+        self.assertIn('zero lattice cells',self.js("document.querySelector('#ws-buildability-summary').textContent"))
+        self.field('#ws-matter-cell',.01);self.click('#ws-refresh-matter')
+        self.wait("document.querySelector('#ws-matter-status')?.textContent.includes('5 precise rigid boxes')")
+        self.assertEqual('3.416 kg',self.js("document.querySelector('#ws-mass').textContent"))
+        self.click('[data-mode="test"]')
+        self.assertEqual('rigid_motion',self.js("document.querySelector('#ws-bench-test').value"))
+        self.field('[data-bench-control="duration_s"]',.5)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-bench-result pre')?.textContent.includes('verified-precise-rigid-shapes')")
+        proof=json.loads(self.js("document.querySelector('#ws-bench-result pre').textContent"))
+        self.assertEqual('measured',proof['status']);self.assertFalse(proof['strength_certified'])
+        self.assertEqual(0,proof['measured']['stored_cells']);self.assertEqual(5,len(proof['playback']['frames'][0]['bodies']))
+        self.field('#ws-play-timeline',30,'input')
+        self.assertIn('Exact rigid',self.js("document.querySelector('#ws-play-note').textContent"))
+        self.click('[data-mode="details"]');self.field('#ws-save-name','Browser precise rigid table');self.click('#ws-save-design')
+        self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved designs and My Library')")
+        self.js('window.__thinPageBeforeReload=true')
+        self.page.send('Page.reload',{})
+        self.wait("!window.__thinPageBeforeReload && document.querySelector('#ws-mechanical-model')?.value==='rigid' && document.querySelector('#ws-mass')?.textContent==='3.416 kg'")
+        self.assertIn('live-room installation unsupported',self.js("document.querySelector('#ws-buildability-summary').textContent"))
 
 
     def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):

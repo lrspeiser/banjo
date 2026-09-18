@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Thin-part buildability and explicit rigid motion (September 17, 2026 Pacific):** [Checkpoint, measured evidence and remaining gates](workshop-thin-parts-checkpoint.md) adds vanished-part/grid-budget feedback, persisted mechanical-model choice and exact-size native rigid compounds in the isolated Workshop bench. A 5 mm table top and 15 mm legs remain five exact boxes with zero lattice cells. **Rigid live-room installation, beam/sheet solvers and per-body mixed resolution remain unfinished; unsupported paths refuse rather than silently voxelizing.**
+
 **Visible Workshop simulations:** [User-facing test repair](workshop-visible-tests-checkpoint.md) adds exact-cell drop/slide, adjustable loads, automatic motion and measured heat display. Report-only/reference tools are removed from Test; unsupported products are explicitly unavailable. Native laws and grid limits are unchanged.
 
 **Goal 3: first explicit Workshop-to-world installation adapter (September 17, 2026 Pacific):** [Checkpoint and limits](workshop-install-checkpoint.md) adds preview/commit, staged native state verification, persistent duplicate protection, and browser controls. Single-material monolithic solids in explicit authoring mode only; inventory-funded fabrication, mixed-material/articulated installation, and terrain remain open.

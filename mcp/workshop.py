@@ -1023,6 +1023,27 @@ def materialize(design: WorkshopDesign, *, cell_size_m: float = 0.04) -> dict[st
     """
     design.validate()
     cell = _positive("cell_size_m", cell_size_m)
+    # Model choice is persistent physical intent, not a hint to the renderer.
+    # Keep the legacy grid planner from silently voxelizing a rigid recipe.
+    from . import workshop_rigid
+    models = workshop_rigid.requested_models(design)
+    if models != {"lattice"}:
+        model = next(iter(models)) if len(models) == 1 else "mixed"
+        source = design.wireframe()
+        return {
+            "schema": WORKSHOP_SCHEMA, "representation": "materialization-plan",
+            "design_id": design.design_id, "kind": design.kind,
+            "mechanical_model": model, "cell_size_m": cell,
+            "fingerprint": sha256(dumps({"source": source, "models": sorted(models)},
+                                        sort_keys=True).encode()).hexdigest()[:16],
+            "objects": [], "source_geometry": source,
+            "snapping": {"cell_size_m": None, "members_changed": 0, "largest_change_m": 0.0},
+            "measured": design.measure(), "tests": deepcopy(design.tests),
+            "commit": {"status": "not-committed", "requires": [
+                "supported live-room adapter for the explicitly selected mechanical representation",
+                "placement validation", "inventory/material allocation",
+                "fabrication energy/process validation", "functional trials"]},
+        }
     objects, changes = [], []
     for part in design.parts:
         size = [_snap(x, cell) for x in part.size_m]

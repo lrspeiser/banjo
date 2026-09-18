@@ -16,7 +16,7 @@ import live_session
 import workshop_recording
 import workshop_sparse_trial as sparse
 import workshop_trials_core as trials
-from mcp import engine_materials, workshop_matter_metrics, workshop_visual
+from mcp import engine_materials, workshop_matter_metrics, workshop_visual, workshop_rigid
 
 SOLID_KINDS = {"table", "bench"}
 STRUCTURAL_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "top", "panel", "surface"}
@@ -59,6 +59,7 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
     height = number(config, "height_m", .2, .04, 2.0) if test == "drop_product" else 0.0
     speed = number(config, "speed_m_s", 1.0, .1, 3.0) if test == "slide_product" else 0.0
     design.validate()
+    workshop_rigid.require_lattice(design, "This exact-cell experiment")
     if any(p.role not in STRUCTURAL_ROLES for p in design.parts):
         raise ValueError("Drop/slide supports structural solids, not moving assemblies or containers. Use the cart or kettle's own simulation.")
     matter = workshop_visual.matter_document(design, sparse._matter_overrides(design), cell_size_m=h, exterior_only=False)

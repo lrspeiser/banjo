@@ -80,7 +80,10 @@ class BenchAPI(unittest.TestCase):
         matter = answer["matter"]
         self.assertEqual("banjo.workshop-matter.v2", matter["schema"])
         self.assertEqual("center=(index+0.5)*cell_size_m", matter["grid_convention"])
-        self.assertTrue(matter["engine_ready"])
+        # At 80 mm the canonical preview exists, but the table's legs vanish.
+        # A drawable artifact must not be labelled physically buildable.
+        self.assertFalse(matter["engine_ready"])
+        self.assertTrue(answer["buildability"]["missing_components"])
         self.assertEqual(64, len(matter["physics_hash"]))
         self.assertEqual(64, len(matter["artifact_hash"]))
         self.assertGreater(matter["total_cells"], 0)

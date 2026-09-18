@@ -19,6 +19,7 @@ from typing import Any
 
 from mcp.workshop import WorkshopDesign, WirePart, _rotate
 from mcp import engine_materials
+from mcp.workshop_cell_encoding import MAX_SCENE_CELLS
 
 SKIN_SCHEMA = "banjo.product-skin.v1"
 MATTER_SCHEMA = "banjo.workshop-matter.v2"
@@ -323,7 +324,9 @@ def matter_document(design: WorkshopDesign, component_overrides: Any = None, *,
         "physics_hash": physics_hash,
         "artifact_hash": artifact_hash,
         "surface_error_bound_m": round(sqrt(3.0) * cell / 2.0, 9),
-        "engine_ready": True,
+        "engine_ready": bool(occupied) and all(counts.values()) and len(occupied) <= MAX_SCENE_CELLS,
+        "readiness_scope": "nonempty components and scene-cell budget only; native admission still required",
+        "missing_components": sorted(name for name, count in counts.items() if not count),
         "limitations": [
             "Matter is compiled on the engine's shared grid. Workshop's current exact-cell engine adapter may encode this set as joined grid-aligned boxes; a native sparse-body scene field remains a size/performance optimization."
         ],

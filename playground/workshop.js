@@ -147,12 +147,21 @@ function installPlacementControls(right) {
 }
 
 function currentMeasurements(candidate = chosen()) {
+  if (candidate.mechanical_model === "rigid") {
+    const rigid = bench.rigid;
+    return rigid ? {...candidate.measured, basis:"precise-rigid-geometry", mass_kg:rigid.mass_kg,
+      centre_of_mass_m:rigid.centre_of_mass_m, inertia_kg_m2:rigid.inertia_kg_m2,
+      warnings:[...(candidate.measured.warnings || []), ...rigid.limitations]}
+      : {...candidate.measured, basis:"wireframe-estimate", geometry_coherent:false};
+  }
   return view === "matter" && bench.matterMeasured ? bench.matterMeasured : candidate.measured;
 }
 function invalidateMatter(message = "Not built for this candidate. Rebuild Matter view.") {
   invalidateInstallation();
   bench.matter = null; bench.matterKey = null; bench.matterMeasured = null;
-  bench.matterBom = null; bench.matterMasses = null;
+  bench.matterBom = null; bench.matterMasses = null; bench.rigid = null;
+  clearTimeout(buildabilityTimer); buildabilityRequest++; bench.buildabilityPending = null;
+  bench.buildability = null; bench.buildabilityKey = null;
   const status = $("#ws-matter-status");
   if (status) { status.textContent = message; status.dataset.state = "unbuilt"; }
 }
@@ -266,6 +275,15 @@ function drawDesignMatterFallback(candidate) {
   }
 }
 function drawMatter(candidate) {
+  if (chosen()?.mechanical_model === "rigid") {
+    if (!bench.rigid) return; // Never substitute lattice cells for a failed rigid compilation.
+    for (const part of bench.rigid.components) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(...part.dimensions_m),
+        new THREE.MeshStandardMaterial({color:materialColor(bench.rigid.material),roughness:.65}));
+      mesh.position.set(...part.center_m); mesh.userData.partName = part.component; group.add(mesh);
+    }
+    return;
+  }
   const matter = bench.matter;
   if (!matter?.cells?.length) return;
   const cell = Number(matter.cell_size_m || 0.04);
@@ -294,7 +312,7 @@ function drawMatter(candidate) {
 function playbackBodyGeometry(body) {
   const d = body.dimensions_m || [0.05, 0.05, 0.05];
   if (body.shape === "sphere" || body.shape === 1) return new THREE.SphereGeometry(d[0] / 2, 18, 12);
-  return new THREE.BoxGeometry(Math.max(0.002, d[0]), Math.max(0.002, d[1]), Math.max(0.002, d[2]));
+  return new THREE.BoxGeometry(Math.max(0.000001, d[0]), Math.max(0.000001, d[1]), Math.max(0.000001, d[2]));
 }
 let drawnRecording = null;
 const playbackMeshes = new Map();
@@ -325,7 +343,7 @@ function drawPlayback() {
       mesh.userData.partName = body.name;
       group.add(mesh); entry = {mesh,signature}; playbackMeshes.set(body.name,entry); physicsMeshBuilds++;
     }
-    if (!exact) proxies++;
+    if (!exact && recording.geometry_basis !== "verified-precise-rigid-shapes") proxies++;
     entry.mesh.position.set(...body.position_m);
     const q = body.orientation_wxyz || [1,0,0,0]; entry.mesh.quaternion.set(q[1],q[2],q[3],q[0]);
     if (recording.test === "kettle_heat" && Number.isFinite(thermal.get(body.name))) {
@@ -348,7 +366,9 @@ function drawPlayback() {
   if (recording.test === "kettle_heat") {
     live.textContent = `Water ${celsius(thermal.get("water charge"))} · heater ${celsius(thermal.get("heater plate"))}. Blue → red: measured 20–100 °C. Contained thermal model; no sloshing.`;
   } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
-  $("#ws-play-note").textContent = `${recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
+  $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
+    ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
+    : `${recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
 }
 function frameSimulation(recording) {
   const bounds = new THREE.Box3();
@@ -495,6 +515,10 @@ function addOption(select, value, label) { select.append(make("option", { value 
 function installEditor() {
   const notice = make("p", {id:"ws-notice", role:"status", "aria-live":"polite"});
   notice.hidden = true; $(".ws-top").append(notice);
+  const buildability = make("section", {id:"ws-buildability", role:"status", "aria-live":"polite"});
+  buildability.append(make("h3", {}, "Physical buildability"), make("p", {id:"ws-buildability-summary"}),
+    make("div", {id:"ws-buildability-parts"}));
+  $(".ws-metrics").after(buildability);
   const basis = make("p", {id:"ws-measurement-basis", class:"ws-note"});
   $(".ws-metrics").after(basis);
   const left = $(".ws-left"), right = $(".ws-right"), builtIn = $("#ws-library");
@@ -518,6 +542,13 @@ function installEditor() {
   const material = make("select", { id: "ws-part-material" });
   const materialLabel = make("label", { class: "ws-field" }, "Material"); materialLabel.append(material); editor.append(materialLabel);
 
+  editor.append(make("h3", {}, "Mechanical representation"));
+  const model = make("select", {id:"ws-mechanical-model", "aria-label":"Mechanical representation"});
+  addOption(model,"lattice","Breakable lattice (shared grid)");
+  addOption(model,"rigid","Precise rigid (no internal failure)");
+  const modelLabel = make("label", {class:"ws-field"}, "Whole candidate"); modelLabel.append(model); editor.append(modelLabel);
+  editor.append(make("button", {id:"ws-apply-mechanics",type:"button",class:"ws-action"}, "Apply mechanical model"),
+    make("p", {class:"ws-feedback-count"}, "Rigid shapes keep their dimensions. Beam, sheet and mixed-resolution solvers are not implemented. Rigid live-room installation is not available yet."));
   editor.append(make("h3", {}, "Skin & matter"));
   const profile = make("select", { id: "ws-skin-profile" });
   [["design","Design shape"],["block","Block"],["round","Round"],["curve","Curved tube"]]
@@ -595,6 +626,14 @@ function installEditor() {
   actions.querySelectorAll("button").forEach((button) => { button.onclick = () => guard(button, () => editSelected(button.dataset.componentEdit)); });
   material.onchange = () => guard(null, () => editSelected("material", material.value));
   $("#ws-apply-skin").onclick = (event) => guard(event.currentTarget, editSkin);
+  $("#ws-apply-mechanics").onclick = (event) => guard(event.currentTarget, async () => {
+    const answer = await api("/api/workshop/candidates", {...candidateBody(), mechanics_edit:{model:$("#ws-mechanical-model").value}});
+    took(answer, bench.selectedPart);
+    if (chosen().mechanical_model === "rigid") {
+      bench.selectedBenchTest = "rigid_motion"; renderBenchCatalog();
+    }
+    await loadMatter(true); view = "matter"; pressView("matter"); show(false);
+  });
   $("#ws-refresh-matter").onclick = (event) => guard(event.currentTarget, async () => { await loadMatter(true); view = "matter"; pressView("matter"); show(false); });
   $("#ws-save-component").onclick = (event) => guard(event.currentTarget, saveSelectedComponent);
   chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
@@ -673,15 +712,25 @@ async function loadMatter(force = false) {
     const answer = await api("/api/workshop/plan", { ...candidateBody(), visual:{ cell_size_m:cell, exterior_only:exterior } });
     if (revision !== bench.revision || key !== JSON.stringify([candidateBody(), Number($("#ws-matter-cell").value), $("#ws-matter-exterior").checked])) return null;
     bench.matter = answer.matter || null; bench.matterKey = key;
+    bench.rigid = answer.rigid || null;
+    bench.buildability = answer.buildability || null; bench.buildabilityKey = key;
+    renderBuildability();
     bench.matterMeasured = answer.matter_measured || null;
     bench.matterBom = answer.matter_bom || null;
     bench.matterMasses = answer.matter_component_mass_kg || null;
     if (answer.skin) chosen().skin = answer.skin;
-    if (bench.matter) {
+    if (bench.rigid) {
       $("#ws-matter-status").dataset.state = "current";
+      $("#ws-matter-status").textContent = `${bench.rigid.collision_boxes} precise rigid boxes · 0 lattice cells · ${bench.rigid.mass_kg.toFixed(3)} kg · no internal or attachment failure · isolated native bench only`;
+    } else if (bench.matter) {
+      $("#ws-matter-status").dataset.state = bench.buildability?.compilation_ready ? "current" : "blocked";
       $("#ws-matter-status").textContent = `${bench.matter.shown_cells.toLocaleString()} shown / ${bench.matter.total_cells.toLocaleString()} physical cells · ${(bench.matter.cell_size_m*1000).toFixed(0)} mm · cell sampling bound ±${(bench.matter.surface_error_bound_m*1000).toFixed(1)} mm · ${bench.matter.physics_hash.slice(0,12)}`;
     }
-    return bench.matter;
+    if (!bench.rigid && !bench.matter && bench.buildability) {
+      $("#ws-matter-status").dataset.state = "blocked";
+      $("#ws-matter-status").textContent = (bench.buildability.errors || []).join(". ");
+    }
+    return bench.rigid || bench.matter;
   } catch (error) {
     if (revision === bench.revision) {
       invalidateMatter(`Rebuild failed: ${error.message || error}. No current Matter result.`);
@@ -692,13 +741,64 @@ async function loadMatter(force = false) {
   }
 }
 
+// Buildability is distinct from appearance and from strength-test evidence.
+let buildabilityTimer = null;
+let buildabilityRequest = 0;
+function renderBuildability() {
+  const report = bench.buildability || chosen()?.buildability;
+  const summary = $("#ws-buildability-summary"), parts = $("#ws-buildability-parts");
+  if (!summary || !parts) return;
+  parts.replaceChildren();
+  if (!report) { summary.textContent = "Not assessed. The design remains editable."; return; }
+  const issues = [...(report.errors || []), ...(report.warnings || [])];
+  const cost = report.costs;
+  const rigid = report.requested_model === "rigid";
+  const prefix = rigid ? (report.rigid?.compilation_ready
+    ? `${report.rigid.collision_boxes} precise rigid boxes, zero lattice cells. Native rigid-motion bench available; live-room installation unsupported. The following is the separate lattice comparison.`
+    : `Rigid compilation blocked: ${report.representation_error || "not yet assessed"}. No substitution was made.`)
+    : report.assessment === "dimensions-only" ? "Design dimensions only; checking the selected grid…"
+    : report.compilation_ready ? "Geometry fits this grid and bridge. Native installation verification is still required."
+    : "Not buildable on this grid. Your original dimensions are preserved.";
+  summary.textContent = prefix + (cost?.stored_cells != null ? ` ${cost.stored_cells.toLocaleString()} / ${report.limits.scene_cells.toLocaleString()} scene cells.` : "")
+    + (cost?.collision_boxes != null ? ` ${cost.collision_boxes} / ${report.limits.joined_boxes} joined boxes.` : "")
+    + (issues.length ? " " + issues.join(". ") : "") + " No bending, fracture or joint-strength certification.";
+  for (const part of report.components || []) {
+    if (!part.disappeared && !part.subcell_axes.length) continue;
+    parts.append(make("p", {class:"ws-note"}, `${part.component}: ${part.disappeared ? "disappears; " : "subcell feature; "}`
+      + `${part.size_m.map(v => (v*1000).toFixed(1)).join(" × ")} mm. ${part.recommended_model}.`));
+  }
+}
+function scheduleBuildability() {
+  renderBuildability();
+  const key = JSON.stringify([candidateBody(), Number($("#ws-matter-cell")?.value || .04), Boolean($("#ws-matter-exterior")?.checked)]);
+  if (key === bench.buildabilityKey || key === bench.buildabilityPending) return;
+  clearTimeout(buildabilityTimer);
+  const request = ++buildabilityRequest, revision = bench.revision;
+  bench.buildabilityPending = key;
+  buildabilityTimer = setTimeout(async () => {
+    try {
+      const answer = await api("/api/workshop/plan", {...candidateBody(), visual:{
+        cell_size_m:Number($("#ws-matter-cell")?.value || .04), exterior_only:true}});
+      if (request !== buildabilityRequest || revision !== bench.revision) return;
+      bench.buildability = answer.buildability || null; bench.buildabilityKey = key;
+      if (chosen()?.mechanical_model === "rigid") bench.rigid = answer.rigid || null;
+      renderBuildability();
+      if (chosen()?.mechanical_model === "rigid") show(false);
+    } catch (error) {
+      if (request === buildabilityRequest && revision === bench.revision)
+        $("#ws-buildability-summary").textContent = `Buildability could not be assessed: ${error.message}. No physical result is certified.`;
+    } finally { if (request === buildabilityRequest) bench.buildabilityPending = null; }
+  }, 220);
+}
+
 // ---------------------------------------------------------------------------
 // Bench controls, results and playback
 // ---------------------------------------------------------------------------
 function benchDefinition(name = bench.selectedBenchTest) { return bench.benchTests.find((item) => item.test === name) || null; }
 function renderBenchCatalog() {
   // Analysis/reference tools remain callable by specialist APIs, not presented as product simulations.
-  bench.benchTests = bench.benchTests.filter(t => t.category === "simulation" && t.subject === "selected-product");
+  bench.benchTests = bench.benchTests.filter(t => t.category === "simulation" && t.subject === "selected-product"
+    && (t.required_model || "lattice") === (chosen()?.mechanical_model || "lattice"));
   const picker = $("#ws-bench-test"); picker.replaceChildren();
   for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, test.name));
   if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) bench.selectedBenchTest = bench.benchTests[0]?.test || null;
@@ -751,9 +851,11 @@ function benchConfig() {
     else if (control.type === "number" || typeof control.default === "number") out[control.name] = Number(input.value);
     else out[control.name] = input.value;
   }
-  out.record_trace = true; // Visible runs always return the states needed by the viewport.
-  if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
-  if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
+  out.record_trace = true; // Visible runs require actual simulation states.
+  if (definition.test !== "rigid_motion") {
+    if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
+    if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
+  }
   return out;
 }
 function renderBenchPresets() {
@@ -809,7 +911,12 @@ function advancePlayback(now) {
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
-  if (["drop_product","slide_product"].includes(result.test)) {
+  if (result.test === "rigid_motion") {
+    const m = result.measured || {};
+    card.append(make("strong", {}, "Native precise rigid motion — not a strength test"),
+      make("p", {}, `${m.collision_boxes} exact boxes · ${m.stored_cells} lattice cells · ${Number(m.mass_kg).toFixed(3)} kg`),
+      make("p", {}, `Centre of mass moved ${Number(m.displacement_m).toFixed(4)} m in ${Number(m.elapsed_s).toFixed(2)} s.`));
+  } else if (["drop_product","slide_product"].includes(result.test)) {
     const m=result.measured || {}, r=result.requested || {};
     card.append(make("strong",{},result.test==="drop_product" ? "Drop completed" : "Slide completed"),
       make("p",{},result.test==="drop_product" ? `Requested height ${r.height_m} m · grid height ${r.applied_height_m} m` : `Starting speed ${r.speed_m_s} m/s along +X`),
@@ -898,7 +1005,7 @@ function cards() {
     const button = make("button", { type:"button", class:"ws-card" + (index === bench.selected ? " selected" : "") });
     const m = candidate.measured, shared = twins[bench.plans[candidate.design_id]] || [];
     button.append(make("strong", {}, candidate.label || candidate.design_id),
-      make("small", {}, `${m.mass_kg} kg · base ${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m · ${m.geometry_coherent === false ? "connections unresolved" : `geometric tip ${Number(m.tip_angle_deg).toFixed(2)}°`}${shared.length > 1 ? " · same snapped object" : ""}`));
+      make("small", {}, `${m.mass_kg} kg · base ${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m · ${m.geometry_coherent === false ? "connections unresolved" : `geometric tip ${Number(m.tip_angle_deg).toFixed(2)}°`}${shared.length > 1 ? (candidate.mechanical_model === "rigid" ? " · same rigid geometry" : " · same snapped object") : ""}`));
     if (shared.length > 1) button.classList.add("same-plan");
     button.onclick = () => { candidateRequest++; bench.selected = index; bench.selectedPart = null; bench.forcePoint = null; bench.revision++; invalidateMatter(); clearPlayback(); $("#ws-bench-result").replaceChildren(); cards(); show(false); };
     root.append(button);
@@ -935,7 +1042,7 @@ function families(described) {
   }
 }
 function renderBom(candidate) {
-  const root = $("#ws-bom"); root.replaceChildren(); const bom = view === "matter" && bench.matterBom ? bench.matterBom : candidate.bom;
+  const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.mechanical_model !== "rigid" && view === "matter" && bench.matterBom ? bench.matterBom : candidate.bom;
   if (!bom) { root.append(make("p", { class:"ws-feedback-count" }, "No material estimate.")); return; }
   const table = make("table", { class:"ws-bom-table" });
   for (const row of bom.materials || []) { const tr = make("tr"); tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`), make("td", {}, row.cost == null ? "unpriced" : `${row.cost} cr`)); table.append(tr); }
@@ -963,6 +1070,8 @@ function renderSelected() {
   $("#ws-skin-physical").checked = Boolean(descriptor.physical);
 }
 function show(reframe = true) {
+  if (chosen()) scheduleBuildability();
+  if ($("#ws-mechanical-model") && chosen()) $("#ws-mechanical-model").value = chosen().mechanical_model === "rigid" ? "rigid" : "lattice";
   const candidate = chosen(); if (!candidate) return;
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
@@ -970,7 +1079,7 @@ function show(reframe = true) {
   $("#ws-part-count").textContent = candidate.parts.length; $("#ws-mass").textContent = `${Number(m.mass_kg).toFixed(3)} kg`;
   $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(view === "matter" && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg).toFixed(4)} kg`)); parts.append(row); }
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (view === "matter" && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBom(candidate);
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
@@ -978,13 +1087,16 @@ function show(reframe = true) {
   else said.push(`Balanced ${m.smallest_tip_margin_m} m inside its nearest edge; geometric tip angle ${m.tip_angle_deg}°.`);
   if (m.legs_not_under_the_top.length) { checks.classList.add("warn"); said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing.`); }
   const stat = ((candidate.analytical || {}).static_loads || [])[0]; if (stat && m.basis !== "canonical-matter-grid") said.push(`Wireframe analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
-  if (view === "matter" && bench.matter) said.push(`Matter: ${bench.matter.shown_cells.toLocaleString()} cells shown at ${(bench.matter.cell_size_m*1000).toFixed(0)} mm.`);
-  if (view === "physics" && bench.playback) said.push(`Physics: ${bench.playback.frames.length} calculated states over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
+  if (candidate.mechanical_model === "rigid" && bench.rigid) said.push(`Precise rigid: ${bench.rigid.collision_boxes} exact boxes, zero lattice cells. No strength calculation.`);
+  else if (view === "matter" && bench.matter) said.push(`Matter: ${bench.matter.shown_cells.toLocaleString()} cells shown at ${(bench.matter.cell_size_m*1000).toFixed(0)} mm.`);
+  if (view === "physics" && bench.playback) said.push(`Physics: calculated ${bench.playback.frames.length} simulation states over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
   said.push(...(m.warnings || []));
-  $("#ws-measurement-basis").textContent = m.basis === "canonical-matter-grid"
+  $("#ws-measurement-basis").textContent = m.basis === "precise-rigid-geometry"
+    ? "Mass and inertia from exact rigid dimensions; cell width does not change this model. No internal deformation or failure calculation."
+    : m.basis === "canonical-matter-grid"
     ? `Mass/balance from Matter at ${(m.cell_size_m*1000).toFixed(0)} mm · ${m.matter_physics_hash.slice(0,12)}. ${m.geometry_coherent === false ? "Connections unresolved. " : ""}Strength requires a test.`
     : "Wireframe estimates, not a physical test. Matter view reports grid measurements.";
-  if (view === "matter" && !bench.matter) said.push("No current Matter result: rebuild it.");
+  if (view === "matter" && !bench.matter && !bench.rigid) said.push("No current Matter result: rebuild it.");
   checks.textContent = said.join(" "); $("#ws-plan").hidden = true;
 }
 
@@ -1030,7 +1142,7 @@ $("#ws-archetype").onchange = (event) => guard(null, async () => { bench.openedL
 $("#ws-materialize").onclick = (event) => guard(event.currentTarget, async () => {
   if (!await loadMatter(true)) return;
   view = "matter"; pressView(view); show(false);
-  $("#ws-plan").hidden = false; $("#ws-plan").textContent = JSON.stringify({matter: bench.matter, measured: bench.matterMeasured}, null, 2);
+  $("#ws-plan").hidden = false; $("#ws-plan").textContent = JSON.stringify({mechanical_model: chosen().mechanical_model, rigid:bench.rigid, matter: bench.matter, measured: currentMeasurements()}, null, 2);
 });
 $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () => {
   const candidate = chosen(), label = $("#ws-save-name").value.trim() || candidate.label || candidate.design_id;

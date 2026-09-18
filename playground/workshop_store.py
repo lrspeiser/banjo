@@ -19,7 +19,7 @@ import time
 from typing import Any
 
 from mcp.workshop import WORKSHOP_SCHEMA, WorkshopDesign, assemble, materialize
-from mcp import workshop_components, workshop_visual, workshop_matter_metrics
+from mcp import workshop_components, workshop_visual, workshop_matter_metrics, workshop_rigid
 
 SAVED_SCHEMA = "banjo.workshop.saved-design.v1"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
@@ -71,9 +71,26 @@ def save(root: Path, design: WorkshopDesign, *,
         overrides = workshop_components.checked_overrides(design.lineage.get("component_overrides"))
         measured = design.measure()
         measured["basis"] = "wireframe-estimate"
-        if workshop_matter_metrics.has_physical_skin(design):
-            matter = workshop_visual.matter_document(design, overrides)
-            measured = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])["measured"]
+        models = workshop_rigid.requested_models(design)
+        physical_error = None
+        fingerprint = plan["fingerprint"]
+        try:
+            if models != {"lattice"}:
+                rigid = workshop_rigid.compile_rigid(design)
+                measured.update(basis="precise-rigid-geometry", mass_kg=rigid["mass_kg"],
+                                centre_of_mass_m=rigid["centre_of_mass_m"],
+                                inertia_kg_m2=rigid["inertia_kg_m2"], strength_certified=False)
+                fingerprint = rigid["physics_hash"]
+            elif workshop_matter_metrics.has_physical_skin(design):
+                matter = workshop_visual.matter_document(design, overrides)
+                measured = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])["measured"]
+                fingerprint = measured.get("matter_physics_hash") or fingerprint
+        except ValueError as exc:
+            # Persist the fine source even when no supported physical build exists.
+            # No coarse substitute is certified, and later trials still fail closed.
+            physical_error = str(exc)
+            measured.update(basis="wireframe-estimate-physical-preview-unavailable",
+                            geometry_coherent=False, strength_certified=False)
         record = {
             "schema": SAVED_SCHEMA,
             "workshop_schema": WORKSHOP_SCHEMA,
@@ -90,7 +107,9 @@ def save(root: Path, design: WorkshopDesign, *,
                    if parent_design_id else {}),
             },
             "world_revision": str(world_revision)[:200] if world_revision else None,
-            "fingerprint": measured.get("matter_physics_hash") or plan["fingerprint"],
+            "fingerprint": fingerprint,
+            "mechanical_model": next(iter(models)) if len(models) == 1 else "mixed",
+            "physical_preview_error": physical_error,
             "measured": measured,
             "matter_physics_hash": measured.get("matter_physics_hash"),
             "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
