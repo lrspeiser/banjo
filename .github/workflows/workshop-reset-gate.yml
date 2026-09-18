@@ -1,0 +1,67 @@
+name: workshop-reset-gate
+on:
+  push:
+    branches: [agent/workshop-visible-workspace]
+    paths: [.github/workflows/workshop-reset-gate.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ""
+      BANJO_BUILD_DIR: build/reset-ci
+      BANJO_CHROME: /usr/bin/google-chrome
+      BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+      BANJO_BROWSER_TESTS: required
+      BANJO_BROWSER_ARTIFACTS: build/reset-browser-evidence
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply the final UI-only correction to the tested merge
+        shell: bash
+        run: |
+          cp .agent/workspace-reset.patch "$RUNNER_TEMP/reset.patch"
+          echo "93f9d0f5470cd8e04afce7f5d13d93f854ad771b96e0be0e04f484ccdb3e2e61  $RUNNER_TEMP/reset.patch" | sha256sum --check
+          git checkout -b workspace-final-clean 30c9a85d5e2df34f2f5ba17ea600ff5abc260b9c
+          git apply --check "$RUNNER_TEMP/reset.patch"
+          git apply --index "$RUNNER_TEMP/reset.patch"
+          git diff --cached --check
+      - name: Build the unchanged native engine for browser verification
+        run: |
+          cmake -S . -B build/reset-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON -DBANJO_BUILD_PRECOMPUTE=OFF
+          cmake --build build/reset-ci --target banjo_live_world_run banjo_c banjo_platform_cli --parallel 4
+      - name: Run the fast gate and affected visible journeys
+        env:
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/reset-ci/banjo_live_world_run
+          BANJO_LIBRARY: ${{ github.workspace }}/build/reset-ci/libbanjo.so
+        run: |
+          python3 scripts/verify-workshop-checkpoint.py
+          python3 tests/workshop_browser_tests.py -v \
+            WorkshopBrowserRegression.test_workspace_preview_load_run_and_controls_never_cover_canvas \
+            WorkshopBrowserRegression.test_run_moves_visible_object_automatically_and_replay_restarts \
+            WorkshopBrowserRegression.test_component_copy_and_saved_inspection_show_solid_geometry_without_replacing_product \
+            WorkshopBrowserRegression.test_finished_run_cannot_replace_component_opened_while_it_was_calculating
+      - name: Commit the verified reset correction
+        shell: bash
+        run: |
+          printf '\n## Final UI review\n\nReview of the captured browser images found that Reset to setup left the previous\nverdict in the result panel. Reset now clears that verdict. The strengthened\nsetup/run/reset regression checks this directly; visible motion/replay, component\ncopy/inspection, and the late-run/component race were also rerun in Chrome.\nThe fast Workshop gate passed again. This UI-only follow-up does not change the\nnative engine already verified in the full integration gate above.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-workspace-checkpoint.md
+          git add docs/workshop-workspace-checkpoint.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Clear the previous verdict when resetting the Workshop experiment' -m 'Keep an unrun setup distinct from the last completed result; verify the visible reset, motion, copy, and late-response journeys.'
+          git push origin HEAD:refs/heads/agent/workshop-workspace-final
+          git rev-parse HEAD > build/verified-commit.txt
+      - name: Retain final browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workshop-reset-evidence
+          path: |
+            build/workshop-verification.json
+            build/verified-commit.txt
+            build/reset-browser-evidence
+          if-no-files-found: warn
+          retention-days: 7
