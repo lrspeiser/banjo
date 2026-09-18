@@ -151,7 +151,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#ws-matter-status').dataset.state==='blocked'")
         self.assertIn("Not buildable", self.js("document.querySelector('#ws-buildability-summary').textContent"))
         self.assertTrue(self.js("document.querySelector('#ws-buildability-summary').getBoundingClientRect().height>0"))
-        self.assertIn("limit", self.js("document.querySelector('#ws-matter-status').textContent").lower())
+        self.assertIn("more than 50,000 cells", self.js("document.querySelector('#ws-matter-status').textContent").lower())
         self.assertTrue(self.js("document.querySelector('#ws-mode-test').hidden"))
 
     def test_physical_measurements_and_product_switch_are_current(self):
