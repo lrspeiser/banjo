@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Explicit Workshop test limits:** [Exact-run acceptance](workshop-acceptance-checkpoint.md) adds opt-in endpoint limits, measured pass/fail/unsupported verdicts and immutable evidence import. This is not peak-deflection or load-range certification.
+
 **Workshop consistency checkpoint (September 17, 2026):** [Implementation and verification](workshop-consistency-checkpoint.md) connects physical edits to canonical-cell measurements and native-grid verification; repairs edited-design persistence, stale UI results and isolated numerical simulation traces. No material law changed. Live-world installation, mixed-material fusion and complete physical-skin interface semantics remain open.
 
 **What is not done** is written down in [what-is-not-done.md](what-is-not-done.md): the increments that were not reached, the owner's placement rule where it is only half built, the four changes that millions of cells would need, what the asset compiler cannot yet do, two engine defects recorded and not fixed, and the things that are easy to misread as finished.

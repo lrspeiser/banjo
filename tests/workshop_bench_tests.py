@@ -148,4 +148,127 @@ class IsolatedBench(unittest.TestCase):
         self.assertEqual([], workshop_library.list_bench_presets(other))
 
 
+
+class ExplicitLoadAcceptance(unittest.TestCase):
+    def result(self):
+        return {"evidence": "engine-trial", "trial": "static_load", "design_id": "table-1",
+                "requested": {"duration_s": 2.0, "load_kg": 100.0},
+                "prototype": {"engine_grid_verified": True, "matter_physics_hash": "a" * 64,
+                              "effective_cell_size_m": .04},
+                "measured": {"clock_s": 2.0, "prototype_present": True, "load_present": True,
+                             "prototype_displacement_m": .005, "prototype_rotation_change_deg": .5,
+                             "fractures": [], "actual_grid_load_kg": 99.3},
+                "acceptance": {"status": "not-declared"}}
+
+    def test_no_limits_leave_an_observation_not_a_pass(self):
+        from mcp import workshop_acceptance as acceptance
+        self.assertEqual("not-declared", acceptance.evaluate(self.result(), None)["status"])
+
+    def test_limits_pass_only_for_the_measured_run_and_keep_exact_basis(self):
+        from mcp import workshop_acceptance as acceptance
+        result = acceptance.evaluate(self.result(), {"max_displacement_m": .01, "max_fractures": 0})
+        self.assertEqual("passed", result["status"])
+        self.assertEqual("this-exact-run", result["scope"])
+        self.assertEqual("a" * 64, result["basis"]["matter_physics_hash"])
+        self.assertEqual(99.3, result["basis"]["actual_grid_load_kg"])
+        self.assertNotIn("validated_range", result)
+
+    def test_exceeded_limit_is_failed_and_names_the_measurement(self):
+        from mcp import workshop_acceptance as acceptance
+        result = acceptance.evaluate(self.result(), {"max_displacement_m": .004})
+        self.assertEqual("failed", result["status"])
+        failure = next(c for c in result["checks"] if c["status"] == "failed")
+        self.assertEqual("prototype_displacement_m", failure["metric"])
+        self.assertEqual(.005, failure["measured"])
+
+    def test_missing_nonfinite_boolean_and_negative_measurements_cannot_pass(self):
+        from mcp import workshop_acceptance as acceptance
+        for value in (None, float("nan"), float("inf"), True, -.01):
+            with self.subTest(value=value):
+                trial = self.result(); trial["measured"]["prototype_displacement_m"] = value
+                checked = acceptance.evaluate(trial, {"max_displacement_m": .01})
+                self.assertEqual("unsupported", checked["status"])
+                self.assertIsNone(checked["checks"][-1]["measured"])
+
+    def test_early_stop_lost_body_or_unverified_geometry_cannot_pass(self):
+        from mcp import workshop_acceptance as acceptance
+        for section, key, value in (("measured", "clock_s", 1.0),
+                                    ("measured", "prototype_present", False),
+                                    ("measured", "load_present", False),
+                                    ("prototype", "engine_grid_verified", False),
+                                    ("prototype", "matter_physics_hash", None)):
+            with self.subTest(key=key):
+                trial = self.result(); trial[section][key] = value
+                self.assertEqual("failed", acceptance.evaluate(trial, {"max_fractures": 0})["status"])
+
+    def test_actual_quantized_load_can_be_required_not_just_requested_load(self):
+        from mcp import workshop_acceptance as acceptance
+        checked = acceptance.evaluate(self.result(), {"min_actual_load_kg": 100.0})
+        self.assertEqual("failed", checked["status"])
+
+    def test_bad_limits_are_refused_before_engine_work(self):
+        import workshop_trials
+        for limits in ({}, [], {"guess": 1}, {"max_displacement_m": True},
+                       {"max_fractures": .5}, {"max_rotation_deg": -1},
+                       {"max_displacement_m": float("nan")}, {"max_fractures": 10 ** 400}):
+            with self.subTest(limits=str(limits)[:60]), mock.patch.object(workshop_trials, "_BASE_RUN_STATIC") as run:
+                with self.assertRaises(ValueError):
+                    workshop_trials.run_static_load(None, assemble("table"), load_kg=10,
+                                                   acceptance_limits=limits)
+                run.assert_not_called()
+
+    def test_request_can_tighten_but_not_relax_declared_limits(self):
+        from mcp import workshop_acceptance as acceptance
+        self.assertEqual({"max_displacement_m": .01, "min_actual_load_kg": 120.0},
+            acceptance.merge_limits({"max_displacement_m": .01, "min_actual_load_kg": 100},
+                                    {"max_displacement_m": .1, "min_actual_load_kg": 120}))
+
+    def test_browser_limits_are_opt_in_and_forwarded_through_shared_bench(self):
+        with mock.patch.object(workshop_bench.workshop_trials, "run_declared_static_load", return_value={}) as run:
+            config = {"max_displacement_m": .01, "max_rotation_deg": 2.0, "max_fractures": 0}
+            workshop_bench.run(None, assemble("table"), {"test": "declared_static_load", "config": config})
+            self.assertIsNone(run.call_args.kwargs["acceptance_limits"])
+            workshop_bench.run(None, assemble("table"), {"test": "declared_static_load",
+                               "config": {**config, "evaluate_limits": True}})
+            self.assertEqual(config, run.call_args.kwargs["acceptance_limits"])
+
+    def test_mcp_config_limits_reach_the_same_trial_and_presets_keep_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = App(Path(tmp))
+            config = {"acceptance_limits": {"max_fractures": 0}, "record_trace": False}
+            saved = workshop_library.save_bench_preset(app, name="No fracture", test_name="declared_static_load", config=config)
+            self.assertEqual(config, saved["config"])
+            with mock.patch.object(workshop_bench.workshop_trials, "run_declared_static_load", return_value={}) as run:
+                workshop_bench.run(app, assemble("table"), {"test": saved["test"], "config": saved["config"]})
+                self.assertEqual({"max_fractures": 0}, run.call_args.kwargs["acceptance_limits"])
+
+    def test_limits_do_not_certify_a_different_reference_fixture(self):
+        with mock.patch.object(workshop_bench._core, "run") as run:
+            with self.assertRaisesRegex(ValueError, "exact-Matter"):
+                workshop_bench.run(None, assemble("table"), {"test": "machine_control", "acceptance_limits": {"max_fractures": 0}})
+            run.assert_not_called()
+
+    def test_static_observation_import_keeps_geometry_and_does_not_alias(self):
+        from mcp.product_evidence import from_bench
+        original = self.result()
+        item = from_bench(original, evidence_id="test-1")
+        self.assertEqual("observed", item["acceptance"]["status"])
+        self.assertEqual("not-declared", item["acceptance"]["original_status"])
+        self.assertEqual("a" * 64, item["conditions"]["prototype"]["matter_physics_hash"])
+        original["measured"]["fractures"].append({"name": "bad"})
+        original["prototype"]["matter_physics_hash"] = "changed"
+        self.assertEqual([], item["measured"]["fractures"])
+        self.assertEqual("a" * 64, item["conditions"]["prototype"]["matter_physics_hash"])
+
+    def test_passed_run_import_does_not_invent_a_validated_range(self):
+        from mcp import workshop_acceptance
+        from mcp.product_evidence import from_bench, envelope
+        original = self.result()
+        original["acceptance"] = workshop_acceptance.evaluate(original, {"max_fractures": 0})
+        item = from_bench(original, evidence_id="test-2")
+        original["acceptance"]["checks"][0]["status"] = "failed"
+        self.assertEqual("passed", item["acceptance"]["checks"][0]["status"])
+        self.assertEqual({}, envelope([item]))
+
+
 if __name__ == "__main__": unittest.main()

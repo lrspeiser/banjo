@@ -579,8 +579,15 @@ function renderBenchCatalog() {
   picker.disabled = !bench.benchTests.length; $("#ws-run-bench").disabled = !bench.benchTests.length; $("#ws-save-bench-preset").disabled = !bench.benchTests.length;
   renderBenchControls(); renderBenchPresets();
 }
+let benchTestRequest = 0;
 function renderBenchControls(values = null) {
+  benchTestRequest++;
   const root = $("#ws-bench-controls"); root.replaceChildren(); const definition = benchDefinition();
+  root.oninput = root.onchange = () => {
+    benchTestRequest++;
+    $("#ws-bench-result").replaceChildren();
+    clearPlayback();
+  };
   if (!definition) { root.append(make("p", { class:"ws-feedback-count" }, "No functional tests are available.")); return; }
   root.append(make("p", { class:"ws-feedback-count" }, definition.about));
   for (const control of definition.controls || []) {
@@ -683,6 +690,18 @@ function renderBenchResult(result) {
   }
   if (result.acceptance) card.append(make("p", {}, `Acceptance: ${result.acceptance.status} — ${result.acceptance.why || ""}`));
   if (result.prototype?.matter_physics_hash) card.append(make("p", {}, `Tested Matter ${result.prototype.matter_physics_hash.slice(0,12)} · ${result.prototype.matter_cells} cells`));
+  if (result.trial === "static_load") {
+    const acceptance = result.acceptance || {};
+    const status = acceptance.status || "not-declared";
+    const label = status === "not-declared" ? "not evaluated (no limits declared)" : status;
+    card.append(make("strong", { id:"ws-acceptance-status", "data-status":status }, `Declared limits: ${label}`));
+    for (const check of acceptance.checks || []) {
+      if (check.status === "passed") continue;
+      const actual = check.measured == null ? "not measured" : JSON.stringify(check.measured);
+      card.append(make("p", {}, `${check.metric}: ${actual}; ${check.operator} ${JSON.stringify(check.limit)}${check.unit ? ` ${check.unit}` : ""} (${check.status}).`));
+    }
+    if (acceptance.scope === "this-exact-run") card.append(make("p", {}, acceptance.why));
+  }
   if (card.childNodes.length) root.append(card);
   if (result.playback) setPlayback(result.playback);
   for (const limitation of result.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, limitation));
@@ -691,9 +710,11 @@ function renderBenchResult(result) {
 }
 async function runBenchTest() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
-  const revision = bench.revision;
-  const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:definition.test, config:benchConfig() } });
-  if (revision === bench.revision && definition.test === bench.selectedBenchTest) renderBenchResult(answer.bench);
+  const revision = bench.revision, request = ++benchTestRequest;
+  const config = benchConfig();
+  $("#ws-bench-result").replaceChildren();
+  const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:definition.test, config } });
+  if (request === benchTestRequest && revision === bench.revision && definition.test === bench.selectedBenchTest) renderBenchResult(answer.bench);
 }
 async function saveBenchPreset() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
@@ -878,7 +899,10 @@ async function start() {
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;
-    renderUserLibrary(); renderBenchCatalog(); show(false);
+    // Loading optional history must not reset controls or invalidate a test
+    // started while this request was in flight. The test catalog is already
+    // authoritative from /open; only saved presets changed here.
+    renderUserLibrary(); renderBenchPresets(); show(false);
   } catch { /* optional */ }
 }
 

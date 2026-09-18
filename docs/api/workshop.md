@@ -317,3 +317,37 @@ use a Matter fingerprint; legacy primitive descriptions are under
 adapter exists. Do not treat those primitive descriptions as a tested build.
 See [the checkpoint](../workshop-consistency-checkpoint.md) for verification
 and remaining boundaries.
+
+## Explicit static-load acceptance limits
+
+`bench_test.acceptance_limits` (or `bench_test.config.acceptance_limits`, usable
+through the existing MCP `config` argument and saved test presets) optionally
+names `max_displacement_m`, `max_rotation_deg`, `max_fractures`, and/or
+`min_actual_load_kg`. Bounds must be finite, nonnegative JSON numbers; fracture
+limits must be whole counts. Empty, unknown, or invalid limits are refused
+before a native session starts. This first acceptance adapter supports only
+`declared_static_load`; it does not certify the reference hoist or other benches.
+
+```json
+{"kind":"table","bench_test":{"test":"declared_static_load",
+ "config":{"duration_s":2.0,"cell_size_m":0.04,"record_trace":false,
+ "acceptance_limits":{"max_displacement_m":0.01,"max_rotation_deg":2.0,
+                      "max_fractures":0,"min_actual_load_kg":99.0}}}}
+```
+
+The Test panel exposes an unchecked **Evaluate the limits below** control.
+Checking it declares the three displayed endpoint/fracture limits. No unchecked
+example value becomes a pass criterion. Changing controls invalidates the old
+verdict and discards an outstanding response for earlier settings.
+
+The verdict names each check and carries the native Matter hash, resolution,
+actual whole-cell load and duration. Missing/nonfinite measurements never mean
+zero. Native grid verification, surviving product/load bodies, and completed
+simulation time are required. A passing test applies only to that exact run;
+end displacement is rigid-body centre displacement, not maximum beam deflection.
+No untested load interval is inferred. A request can tighten, never weaken,
+`acceptance_limits` already declared on a design's static-load test.
+
+`product_evidence.from_bench` imports `not-declared` as an observation, preserving
+the original status and native geometry provenance. Its nested measurements,
+conditions and acceptance checks are copies, not aliases to mutable test output.

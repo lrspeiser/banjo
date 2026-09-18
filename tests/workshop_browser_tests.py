@@ -76,6 +76,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.addCleanup(self.chrome.close)
         self.page = self.chrome.page
         self.page.send("Runtime.enable")
+        self.page.send("Page.enable")
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
         self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
 
@@ -85,10 +86,19 @@ class WorkshopBrowserRegression(unittest.TestCase):
     def wait(self, condition, timeout=25):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.js(condition):
+            # DOM elements serialize as empty objects through DevTools.
+            # Evaluate presence in JavaScript, not Python dict truthiness.
+            if self.js(f"Boolean({condition})"):
                 return
             time.sleep(.1)
-        raise AssertionError(f"Workshop condition timed out: {condition}")
+        diagnostics = self.js("""JSON.stringify({
+          notice:document.querySelector('#ws-notice')?.textContent,
+          test:document.querySelector('#ws-bench-test')?.value,
+          result:document.querySelector('#ws-bench-result')?.textContent,
+          runDisabled:document.querySelector('#ws-run-bench')?.disabled,
+          controls:[...document.querySelectorAll('[data-bench-control]')].map(e=>({
+            name:e.dataset.benchControl,value:e.value,checked:e.checked}))})""")
+        raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}")
 
     def click(self, selector):
         self.js(f"document.querySelector({json.dumps(selector)}).click()")
@@ -182,6 +192,79 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertIn("Simulation trace", self.js("document.querySelector('#ws-playback').textContent"))
         self.click("#ws-play-reset")
         self.assertEqual("0.00 s", self.js("document.querySelector('#ws-play-time').textContent"))
+
+    def test_static_load_limits_are_opt_in_and_settings_invalidate_the_verdict(self):
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
+        self.assertFalse(self.js("document.querySelector('[data-bench-control=\"evaluate_limits\"]').checked"))
+        self.field('[data-bench-control="duration_s"]', .2)
+        self.js("document.querySelector('[data-bench-control=\"record_trace\"]').checked=false")
+        self.click("#ws-run-bench")
+        self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
+        self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
+        self.js("document.querySelector('[data-bench-control=\"evaluate_limits\"]').checked=true")
+        self.field('[data-bench-control="max_displacement_m"]', 1)
+        self.assertIsNone(self.js("document.querySelector('#ws-acceptance-status')"))
+        self.click("#ws-run-bench")
+        self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
+        self.assertEqual("passed", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
+        self.field('[data-bench-control="max_displacement_m"]', 0)
+        self.assertIsNone(self.js("document.querySelector('#ws-acceptance-status')"))
+        self.click("#ws-run-bench")
+        self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
+        self.assertEqual("failed", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
+        self.assertIn("prototype_displacement_m", self.js("document.querySelector('#ws-bench-result').textContent"))
+
+    def test_late_history_keeps_changed_test_controls_and_pending_result(self):
+        # Hold optional startup history and release it during a native load test.
+        # It must not recreate controls or increment the test request generation.
+        self.page.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          const originalFetch=window.fetch.bind(window);
+          window.fetch=async function(resource,init){
+            const response=await originalFetch(resource,init);
+            if(String(resource).endsWith('/api/workshop/remembered')){
+              await new Promise(resolve=>window.__releaseHistory=resolve);
+            }
+            if(String(resource).endsWith('/api/workshop/plan') && JSON.parse(init.body).bench_test){
+              await new Promise(resolve=>window.__releaseResult=resolve);
+            }
+            return response;
+          };
+        """})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&history-test=1"})
+        self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-test-catalog button[data-value=declared_static_load]')")
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
+        self.field('[data-bench-control="duration_s"]', .2)
+        self.field('[data-bench-control="max_displacement_m"]', .123)
+        self.click('[data-bench-control="record_trace"]')
+        self.click("#ws-run-bench")
+        self.wait("typeof window.__releaseResult==='function'")
+        self.js("window.__releaseHistory()")
+        # A marker after a microtask/timer proves the history callback completed.
+        self.js("new Promise(resolve=>setTimeout(resolve,200))")
+        self.assertEqual("0.123", self.js("document.querySelector('[data-bench-control=max_displacement_m]').value"))
+        self.assertFalse(self.js("document.querySelector('[data-bench-control=record_trace]').checked"))
+        self.js("window.__releaseResult()")
+        self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
+        self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
+
+    def test_changing_limits_during_a_run_discards_the_outdated_answer(self):
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
+        self.field('[data-bench-control="duration_s"]', .2)
+        self.js("""window.__originalFetch=window.fetch;window.fetch=async function(resource,init){
+          const response=await window.__originalFetch(resource,init);
+          if(String(resource).endsWith('/api/workshop/plan') && JSON.parse(init.body).bench_test){
+            await new Promise(resolve=>{window.__releaseTest=resolve});
+          }return response;
+        };""")
+        self.click("#ws-run-bench")
+        self.wait("typeof window.__releaseTest==='function'")
+        self.field('[data-bench-control="max_displacement_m"]', 0)
+        self.js("window.__releaseTest();window.fetch=window.__originalFetch")
+        self.wait("!document.querySelector('#ws-run-bench').disabled")
+        self.assertEqual("", self.js("document.querySelector('#ws-bench-result').textContent"))
 
 
 if __name__ == "__main__":

@@ -142,4 +142,26 @@ class ExactNativeMatter(unittest.TestCase):
         self.assertEqual(result["prototype"]["matter_cells"],len(result["playback"]["geometry"][root]["offsets_m"]))
 
 
+
+@unittest.skipUnless(ENGINE is not None and ENGINE.is_file(), "the live world runner is not built")
+class DeclaredLimitsUseNativeResults(unittest.TestCase):
+    setUp = TheWorkshopRunsRealThings.setUp
+    tearDown = TheWorkshopRunsRealThings.tearDown
+
+    def test_declared_limits_do_not_change_glass_oak_iron_physics(self):
+        from mcp.workshop_acceptance import evaluate
+        for material in ("glass", "oak", "iron"):
+            with self.subTest(material=material):
+                design = assemble("table", parameters={"material": material})
+                config = {"duration_s": .2, "cell_size_m": .04, "record_trace": False}
+                observed = workshop_bench.run(self.app, design, {"test": "declared_static_load", "config": config})
+                accepted = workshop_bench.run(self.app, design, {"test": "declared_static_load", "config": config,
+                    "acceptance_limits": {"max_displacement_m": 1.0, "max_rotation_deg": 180.0}})
+                self.assertEqual(observed["measured"], accepted["measured"])
+                self.assertEqual("not-declared", observed["acceptance"]["status"])
+                self.assertEqual("passed", accepted["acceptance"]["status"], accepted["acceptance"])
+                self.assertEqual("failed", evaluate(accepted, {"min_actual_load_kg": 1e9})["status"])
+                self.assertNotIn("playback", accepted)
+
+
 if __name__ == "__main__": unittest.main()

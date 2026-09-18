@@ -7,6 +7,7 @@ runs remain useful measurements without silently certifying anything.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from math import isfinite
 from typing import Any
 
@@ -37,7 +38,7 @@ def record(*, evidence_id: str, test: str, measured: dict[str, Any],
         raise ValueError("evidence needs an id and test name")
     if not isinstance(measured, dict):
         raise ValueError("measured evidence must be an object")
-    accepted = dict(acceptance or {"status": "observed"})
+    accepted = deepcopy(acceptance or {"status": "observed"})
     status = str(accepted.get("status") or "observed")
     if status not in {"observed", "passed", "failed", "unsupported"}:
         raise ValueError("acceptance status must be observed, passed, failed or unsupported")
@@ -54,8 +55,8 @@ def record(*, evidence_id: str, test: str, measured: dict[str, Any],
         "id": str(evidence_id),
         "test": str(test),
         "source": str(source),
-        "conditions": dict(conditions or {}),
-        "measured": dict(measured),
+        "conditions": deepcopy(conditions or {}),
+        "measured": deepcopy(measured),
         "acceptance": accepted,
         **({"validated_range": ranges} if ranges else {}),
     }
@@ -65,12 +66,22 @@ def from_bench(result: dict[str, Any], *, evidence_id: str) -> dict[str, Any]:
     """Preserve a Workshop bench result without promoting observations to proof."""
     if not isinstance(result, dict):
         raise ValueError("bench result must be an object")
+    accepted = deepcopy(result.get("acceptance") or {"status": "observed"})
+    if accepted.get("status") == "not-declared":
+        accepted["status"] = "observed"
+        accepted["original_status"] = "not-declared"
+    conditions = deepcopy(result.get("requested") or {})
+    for name in ("subject", "source_design_id", "source_kind", "design_id"):
+        if name in result:
+            conditions[name] = deepcopy(result[name])
+    if result.get("prototype"):
+        conditions["prototype"] = deepcopy(result["prototype"])
     return record(
         evidence_id=evidence_id,
         test=str(result.get("test") or result.get("trial") or "bench"),
         measured=dict(result.get("measured") or {}),
-        conditions=dict(result.get("requested") or {}),
-        acceptance=dict(result.get("acceptance") or {"status": "observed"}),
+        conditions=conditions,
+        acceptance=accepted,
         source=str(result.get("evidence") or "workshop-bench"),
     )
 
