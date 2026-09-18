@@ -1,0 +1,43 @@
+diff --git a/playground/workshop.js b/playground/workshop.js
+index fea1dd7..5c08332 100644
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -582,7 +582,8 @@ function installEditor() {
+   const chat = make("form", { id:"ws-component-chat", class:"ws-component-chat" });
+   chat.append(make("input", { id:"ws-component-chat-text", type:"text", placeholder:"make all the legs thinner" }),
+     make("button", { type:"submit", class:"ws-action" }, "Change")); editor.append(chat);
+-  right.insertBefore(editor, right.querySelector("h3"));
++  // Buildability has a nested heading; insertBefore needs a direct child.
++  right.insertBefore(editor, right.querySelector(":scope > h3"));
+ 
+   const bom = make("section", { id:"ws-bom-box" }); bom.append(make("h3", {}, "Materials"), make("div", { id:"ws-bom" }));
+   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 45abc7f..1c995ce 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -78,7 +78,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
+         self.page.send("Runtime.enable")
+         self.page.send("Page.enable")
+         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
+-        self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
++        try:
++            self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
++        except Exception:
++            # unittest skips tearDown when setUp fails. Keep startup evidence
++            # before the registered Chrome cleanup closes this page.
++            self.capture_evidence(f"{self._testMethodName}-startup.png")
++            raise
+ 
+     def capture_evidence(self, name):
+         folder = os.environ.get("BANJO_BROWSER_ARTIFACTS")
+@@ -105,7 +111,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
+           runDisabled:document.querySelector('#ws-run-bench')?.disabled,
+           controls:[...document.querySelectorAll('[data-bench-control]')].map(e=>({
+             name:e.dataset.benchControl,value:e.value,checked:e.checked}))})""")
+-        raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}")
++        errors = [e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"]
++        raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}; runtimeErrors={json.dumps(errors)}")
+ 
+     def click(self, selector):
+         self.js(f"document.querySelector({json.dumps(selector)}).click()")
