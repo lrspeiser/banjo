@@ -778,6 +778,14 @@ ASSEMBLIES: tuple[Assembly, ...] = (
              _build_cart, _hold_and_tip(150.0)),
 )
 
+#: No template at all: every part is one the person put in
+#: (mcp/workshop_construction.py). It has no numbers to sweep, declares no trial
+#: of its own, and is not among the assemblies the bench offers, because on its
+#: own it has no parts to show.
+CUSTOM = Assembly("custom", "do what its parts are put together to do",
+                  "A design built part by part from the library.",
+                  (), lambda library, values: [], lambda values: [])
+
 _BY_NAME = {a.name: a for a in ASSEMBLIES}
 
 
@@ -786,6 +794,8 @@ def assemblies() -> list[dict[str, Any]]:
 
 
 def assembly(name: str) -> Assembly:
+    if name == CUSTOM.name:
+        return CUSTOM
     try:
         return _BY_NAME[name]
     except KeyError as exc:
@@ -964,7 +974,7 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     library = library or ComponentLibrary()
     values = spec.checked(parameters)
     parts = spec.build(library, values)
-    return WorkshopDesign(
+    design = WorkshopDesign(
         design_id=design_id or kind,
         purpose=purpose or spec.purpose,
         parts=parts,
@@ -972,7 +982,10 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
         parameters=values,
         lineage={"components": _component_counts(parts)},
         tests=spec.trials(values),
-    ).validate()
+    )
+    # A template with no parts of its own is only the ground a construction is
+    # built on; it is validated once its parts are in (apply_overrides).
+    return design.validate() if parts else design
 
 
 def variants(base: WorkshopDesign, sweeps: dict[str, Iterable[Any]]) -> list[WorkshopDesign]:
