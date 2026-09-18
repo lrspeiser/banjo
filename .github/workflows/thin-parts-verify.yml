@@ -38,10 +38,18 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Preserve thin Workshop parts with buildability feedback and explicit precise rigid physics' -m 'Keep continuous source geometry, exact compound mass/inertia and zero-cell native motion. Preserve mechanical intent through save/reopen and refuse unsupported fracture or live installation rather than silently voxelizing. Add source, native and browser regressions; beam/sheet and rigid live-room integration remain explicit future work.'
           git rebase --onto b03043ee4a151647b17c2fb91ee197c8292f4878 b76502654f3bb5e85a7882362a27398f99667cc6
+          cp .github/workflows/ci.yml "$RUNNER_TEMP/thin-evidence/proposed-ci.yml"
+          git restore --source=b03043ee4a151647b17c2fb91ee197c8292f4878 --staged --worktree .github/workflows/ci.yml
+          git commit --amend --no-edit
           git diff --check
           git push origin HEAD:refs/heads/agent/thin-parts-candidate
           git rev-parse HEAD | tee "$RUNNER_TEMP/thin-evidence/commit.txt"
           git archive --format=tar.gz HEAD > "$RUNNER_TEMP/thin-evidence/source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thin-parts-source
+          path: ${{ runner.temp }}/thin-evidence
+          retention-days: 7
       - name: Run isolated Workshop source regressions
         shell: bash
         run: |
@@ -50,18 +58,28 @@ jobs:
           python3 scripts/check-source-registration.py
           python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/thin-evidence/source-tests.log"
           from pathlib import Path
-          import re, subprocess
-          block=Path('.github/workflows/ci.yml').read_text().split('  workshop-fast:')[1].split('  build-test-and-capture:')[0]
+          import os, re, subprocess
+          block=Path(os.environ['RUNNER_TEMP'],'thin-evidence','proposed-ci.yml').read_text().split('  workshop-fast:')[1].split('  build-test-and-capture:')[0]
           for file in re.findall(r'python3 (tests/\S+\.py)',block):
               print('RUN',file,flush=True)
               subprocess.run(['python3',file,'-v'],check=True)
           PY
+      - name: Restore native build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/thin-parts
+          key: thin-parts-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tests/*.cpp') }}
       - name: Configure and build native runtimes
         shell: bash
         run: |
           set -euo pipefail
           cmake -S . -B build/thin-parts -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF
-          cmake --build build/thin-parts --target banjo_platform_cli banjo_platform_tests banjo_live_world_run --parallel 2 2>&1 | tee "$RUNNER_TEMP/thin-evidence/build.log"
+          cmake --build build/thin-parts --target banjo_platform_cli banjo_platform_tests banjo_live_world_run --parallel 3 2>&1 | tee "$RUNNER_TEMP/thin-evidence/build.log"
+      - name: Save native build cache
+        uses: actions/cache/save@v4
+        with:
+          path: build/thin-parts
+          key: thin-parts-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tests/*.cpp') }}
       - name: Run actual native geometry, dynamics and installation regressions
         shell: bash
         run: |
