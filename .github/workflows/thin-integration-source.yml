@@ -1,0 +1,21 @@
+name: thin-integration-source
+on:
+  push:
+    branches: [agent/thin-part-representations]
+    paths: [.github/workflows/thin-integration-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: b76502654f3bb5e85a7882362a27398f99667cc6
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD > /tmp/banjo-main-b765026.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-main-b765026
+          path: /tmp/banjo-main-b765026.tar.gz
+          retention-days: 3
