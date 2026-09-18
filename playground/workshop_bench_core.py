@@ -225,7 +225,7 @@ def _kettle_dimensions(design: WorkshopDesign) -> tuple[Any, list[Any], float, f
     return bottom, walls, x1 - x0, z1 - z0, floor, rim
 
 
-def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, session_wrapper=None) -> dict[str, Any]:
+def kettle_setup(design: WorkshopDesign, config: dict[str, Any]) -> dict[str, Any]:
     product = workshop_graph.product(design)
     if not product.contents:
         raise ValueError("this design has no declared contained volume")
@@ -290,6 +290,15 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, sess
         "thermo": {"heaters": [{"target": "heater plate", "power_w": power,
                                   "start_s": 0.0, "seconds": duration, "label": "heat below kettle"}]},
     })
+    return {"spec": spec, "bottom": bottom, "capacity_l": capacity_l, "cell": cell,
+            "shell_cell": shell_cell, "water_kg": water_kg, "power": power, "duration": duration}
+
+
+def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, session_wrapper=None) -> dict[str, Any]:
+    setup = kettle_setup(design, config)
+    spec, bottom, capacity_l = setup["spec"], setup["bottom"], setup["capacity_l"]
+    cell, shell_cell = setup["cell"], setup["shell_cell"]
+    water_kg, power, duration = setup["water_kg"], setup["power"], setup["duration"]
     engine, runs = _scratch(app, "kettle"); session = live_session.Session(engine, spec, runs)
     if session_wrapper is not None:
         session = session_wrapper(session)

@@ -1807,6 +1807,15 @@ function showInventory() {
   const slots = inv && Array.isArray(inv.stowed) ? inv.stowed : [];
   const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
     .map(([what, have]) => ({ what, much: grams(have.kg) }));
+  // How near that is to all a person can carry, and what it is doing to them.
+  const wet = world.inWater;
+  if (wet)
+    carrying.unshift({ what: wet.head_under ? "under water" : wet.under >= WADE_TO_SWIM_M ? "swimming" : "wading",
+                       much: `${Math.round(100 * wet.under)} cm of you under · moving at ${Math.round(100 * wet.pace)}%`
+                         + (wet.carried > 0 && wet.speed > 0.005 ? ` · the water carries you at ${(wet.speed * wet.carried).toFixed(2)} m/s` : "") });
+  if (world.stock.size && world.carryLimitKg)
+    carrying.push({ what: carriedKg() >= world.carryLimitKg - 0.05 ? "all you can carry" : "of what you can carry",
+                    much: `${Math.round(carriedKg())} of ${Math.round(world.carryLimitKg)} kg · walking at ${Math.round(100 * loadPace())}%` });
   const uses = [
     ...(world.tools || []).map((p) => ({ what: p.object,
       keys: `${keyOf("interact")} take it up · ${keyOf("primary")} use it where the ring is · hold to keep going` })),
@@ -2335,6 +2344,8 @@ setInterval(showWorkbench, 100);
 // chat changes it or on a reload, carries the same.
 function carryGround(carried) {
   world.carriedGround = carried || null;
+  // What a person can carry is the room's to say, and a room with no ground says nothing.
+  world.carryLimitKg = carried && Number.isFinite(Number(carried.limit_kg)) ? Number(carried.limit_kg) : null;
   for (const what of ["sand", "soil"]) {
     const kg = carried ? Number(carried[`${what}_kg`]) || 0 : 0;
     if (kg > 0.0005) world.stock.set(what, { kg, pieces: 0 });
@@ -2788,8 +2799,68 @@ function lookFromKeys(dt) {
   if (keys.has("ArrowDown")) turn(0, rate);
 }
 
+// What the person carries weighs on them: the sand and soil they have dug, and
+// the thing in their hand. With nothing, they walk and run as they did; with
+// all they can carry (the engine's limit, CARRY_LIMIT_KG in live_session.py)
+// they walk at two fifths of the pace and cannot run. It was all weightless:
+// 435 kg of sand crossed the owner's room at a run.
+function carriedKg() {
+  let kg = 0;
+  for (const [, have] of world.stock) kg += Number(have.kg) || 0;
+  return kg;
+}
+function loadFraction() {
+  const limit = world.carryLimitKg;
+  if (!limit) return 0;
+  const held = world.held && world.bodies.get(world.held.name);
+  return Math.min(1, (carriedKg() + (held && held.mass ? held.mass : 0)) / limit);
+}
+function loadPace() { return 1 - 0.6 * loadFraction(); }
+
+// The person in the water. Everything else in it already is: the engine presses
+// on every body's own surface, so oak floats with 70% of itself under and a log
+// goes downstream with the river (docs/terrain-and-water.md). The person is a
+// point of view and not a body, and stood in 39 cm of water flowing at 0.32 m/s
+// as if on dry land, or on the bed of a pool with the view under the surface and
+// nothing to say so.
+//
+// The body is taken to hang 1.6 m below the eye, never below the ground, and
+// what matters is how much of it is under: to the knees they wade at four fifths
+// of their pace, by 1.2 m they are swimming at three tenths. Water deeper than
+// their thighs takes them with it -- none of its speed at 0.5 m, all of it by
+// 1.2 m, where nothing of them is on the bed -- and a person overhead sees so.
+// Standing 5 m up over a river is over it, not in it.
+const BODY_BELOW_EYE_M = 1.6, WADE_TO_SWIM_M = 1.2, CARRIED_FROM_M = 0.5;
+// The water where the person is: the room's, unless a journey has said
+// (banjoRoom.waterForThePerson). A journey cannot ask a river to be 0.9 m deep
+// and moving at 0.4 m/s under someone -- where the page is drawn in software the
+// world runs behind the clock, and the river's deeper reaches are not moving yet
+// when it looks -- so what such water does to a person is checked in water the
+// journey describes: { level, depth, u, w }, as waterAt gives it, over a bed at
+// level - depth.
+let waterSaid = null;
+function inTheWater() {
+  const wet = waterSaid ? waterSaid(camera.position.x, camera.position.z)
+    : ground.heights ? waterAt(camera.position.x, camera.position.z) : null;
+  if (!wet || !(wet.depth > 0.02)) return null;
+  // The bed under their own feet, not under the nearest column's middle: on a
+  // riffle the two are 8 cm apart and more, and they stand on the ground.
+  const bed = waterSaid ? wet.level - wet.depth : groundAt(camera.position.x, camera.position.z);
+  const feet = Math.max(bed, camera.position.y - BODY_BELOW_EYE_M);
+  const under = Math.min(BODY_BELOW_EYE_M, wet.level - feet);
+  if (!(under > 0.02)) return null;
+  const carried = Math.min(1, Math.max(0, (under - CARRIED_FROM_M) / (WADE_TO_SWIM_M - CARRIED_FROM_M)));
+  return { under, level: wet.level, u: wet.u, w: wet.w, speed: Math.hypot(wet.u, wet.w),
+           pace: 1 - 0.7 * Math.min(1, under / WADE_TO_SWIM_M), carried,
+           head_under: camera.position.y < wet.level };
+}
+
 function walk(dt) {
-  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 5.6 : 2.4) * dt;
+  const running = (keys.has("ShiftLeft") || keys.has("ShiftRight")) && loadFraction() < 0.5;
+  const water = inTheWater();
+  world.inWater = water;
+  document.body.classList.toggle("head-under-water", !!(water && water.head_under));
+  const speed = (running && !water ? 5.6 : 2.4) * loadPace() * (water ? water.pace : 1) * dt;
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
   const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
   const move = new THREE.Vector3();
@@ -2802,6 +2873,8 @@ function walk(dt) {
   // Q down: E is the hand's and Q the bag's now.
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
   if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += shifted ? -speed : speed;
+  // And where the water is going, as far as it has hold of them.
+  if (water && water.carried > 0) { move.x += water.u * water.carried * dt; move.z += water.w * water.carried * dt; }
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
@@ -5600,12 +5673,18 @@ $("dig-it").addEventListener("click", async () => {
     const answer = await digAt(at[0], at[2]);
     const d = answer.dug || {};
     carryGround(answer.carried);
-    lastAction(`Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ (${grams(d.kg || 0)}) at`
+    lastAction(`${d.limited ? "Took what you could still carry: dug" : "Dug"} ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ (${grams(d.kg || 0)}) at`
       + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(d.sand_m3 || 0).toFixed(2)} of sand,`
       + ` ${(d.soil_m3 || 0).toFixed(2)} of soil; ${d.chunks_rebuilt} collider(s) rebuilt,`
       + ` ${d.bodies_woken} thing(s) woken. Carrying ${carriedSaid()}.`);
     remember(`dug a pit at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}] and carried what came out`);
-  } catch (error) { say("bad", String(error.message || error)); }
+  } catch (error) {
+    // Carrying all that can be carried is an answer, not a fault: said where a
+    // refusal is said, like a crosshair that is not on the ground.
+    const why = String(error.message || error);
+    if (why.includes("is all you can carry")) lastAction(why[0].toUpperCase() + why.slice(1), "refused");
+    else say("bad", why);
+  }
 });
 
 // Heap here: the sand and soil the spade took out go back on the ground where
@@ -5913,6 +5992,8 @@ window.banjoRoom = {
   // The ground and the water as drawn, for checking what is on screen against
   // what the engine said -- and a spade, for driving the room from outside.
   groundAt, waterAt, digAt,
+  // The water a journey says the person is in (inTheWater), or null for the room's own.
+  waterForThePerson(said) { waterSaid = typeof said === "function" ? said : null; },
   groundDrawn: () => ground.grid && ({ ...ground.grid, water: ground.last,
                                        wetPoints: ground.raw ? ground.raw.filter(Number.isFinite).length : 0 }),
   // The river network drawn beyond the edges (docs/watershed.md): each basin's

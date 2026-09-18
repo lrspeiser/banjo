@@ -116,6 +116,11 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
     request = body if isinstance(body, dict) else {}
+    if "bench_preview" in request:
+        import workshop_setup
+        design, _ = workshop_components.design_from_spec(request)
+        return {"schema": _core.WORKSHOP_SCHEMA,
+                "bench_preview": workshop_setup.preview(app, design, request["bench_preview"])}
     answer = _core.plan(app, body)
     design, overrides = workshop_components.design_from_spec(request)
     models = workshop_rigid.requested_models(design, overrides)

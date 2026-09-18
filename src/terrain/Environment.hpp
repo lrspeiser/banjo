@@ -36,6 +36,7 @@
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
 
+#include <limits>
 #include <memory>
 #include <optional>
 #include <set>
@@ -165,6 +166,16 @@ public:
     // edits carries the same. A heap a scene declares beyond it is declared
     // ground and leaves nothing owed; a cut leaves as a body, not carried.
     [[nodiscard]] const Volumes &carried() const { return carried_; }
+    // What that weighs, and how much of it a person can carry. Carried ground
+    // had no weight and no end: six presses of Dig here put 435 kg of sand and
+    // soil on the person in the owner's room, who walked off with it. With a
+    // limit, a dig takes out only what still fits (TerrainField::dig's budget)
+    // -- a spade's and a pick's alike, both go through dig() here -- and takes
+    // nothing once it is reached. Infinite unless a host says, which is every
+    // world as it was; the ground a scene's own edits dig is never limited.
+    [[nodiscard]] double carriedKg() const;
+    [[nodiscard]] double carryLimitKg() const { return carry_limit_kg_; }
+    void setCarryLimitKg(double kg);
 
     [[nodiscard]] const TerrainField &terrain() const { return *terrain_; }
     [[nodiscard]] const water::ShallowWater *water() const { return water_.get(); }
@@ -240,6 +251,7 @@ private:
     std::vector<unsigned> patch_of_chunk_;
     bool attached_{};
     Volumes carried_{};
+    double carry_limit_kg_{std::numeric_limits<double>::infinity()};
     std::unique_ptr<water::RiverNetwork> network_;
     std::vector<Link> links_;
     double time_s_{};

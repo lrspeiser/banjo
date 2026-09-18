@@ -117,6 +117,30 @@ class WorkshopBrowserRegression(unittest.TestCase):
     def click(self, selector):
         self.js(f"document.querySelector({json.dumps(selector)}).click()")
 
+    def pointer_click(self, selector):
+        """Use actual hit testing, not HTMLElement.click through an overlay."""
+        self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest'}})")
+        point=self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();
+          const x=r.left+r.width/2,y=r.top+r.height/2;
+          return {{x,y,visible:r.width>0&&r.height>0,hit:e.contains(document.elementFromPoint(x,y))}};}})()""")
+        self.assertTrue(point["visible"] and point["hit"], f"Hidden/obscured control {selector}: {point}")
+        for event in ("mousePressed","mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent",{"type":event,"x":point["x"],"y":point["y"],"button":"left","clickCount":1})
+
+    def assert_geometry_is_visible(self):
+        info=self.js("document.querySelector('#workshop-stage').visibleGeometry()")
+        self.assertIsNotNone(info); self.assertGreater(info["meshes"],0)
+        self.assertEqual(0,info["clipped"])
+        rect=self.js("document.querySelector('#workshop-stage').getBoundingClientRect().toJSON()")
+        xs=[p[0] for p in info["points"]];ys=[p[1] for p in info["points"]]
+        self.assertGreater(min(xs),rect["left"]-1); self.assertLess(max(xs),rect["right"]+1)
+        self.assertGreater(min(ys),rect["top"]-1); self.assertLess(max(ys),rect["bottom"]+1)
+        self.assertGreater(max(max(xs)-min(xs),max(ys)-min(ys)),min(rect["width"],rect["height"])*.2)
+        self.assertTrue(all(-1<=point[2]<=1 for point in info["points"]))
+        # The whole mesh's projected bounding region must hit the canvas, not
+        # a control panel positioned on top of it.
+        self.assertTrue(self.js(f"document.elementFromPoint({(max(xs)+min(xs))/2},{(max(ys)+min(ys))/2}) === document.querySelector('#workshop-stage')"))
+
     def field(self, selector, value, event="change"):
         self.js(f"{{const e=document.querySelector({json.dumps(selector)}); e.value={json.dumps(str(value))}; e.dispatchEvent(new Event({json.dumps(event)},{{bubbles:true}}));}}")
 
@@ -136,7 +160,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
 
     def tearDown(self):
         # Captures support debugging and are never committed as product assets.
-        out = ROOT / "build/workshop-browser-evidence"
+        out = Path(os.environ.get("BANJO_BROWSER_ARTIFACTS", str(ROOT / "build/workshop-browser-evidence")))
         out.mkdir(parents=True, exist_ok=True)
         image = self.page.send("Page.captureScreenshot", {"format": "png"})
         (out / f"{self._testMethodName}.png").write_bytes(base64.b64decode(image["data"]))
@@ -228,6 +252,102 @@ class WorkshopBrowserRegression(unittest.TestCase):
         time.sleep(.2)
         self.assertEqual(name, self.js("document.querySelector('#ws-name').textContent"))
 
+    def test_workspace_preview_load_run_and_controls_never_cover_canvas(self):
+        self.pointer_click('[data-mode="test"]')
+        self.wait("document.querySelector('#ws-test-catalog [data-value=declared_static_load]')")
+        self.pointer_click('#ws-test-catalog [data-value="declared_static_load"]')
+        self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
+        self.assertEqual("setup",self.js("document.querySelector('#workshop-stage').dataset.phase"))
+        self.assertEqual("2",self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
+        self.assert_geometry_is_visible()
+        layout=self.js("""(()=>{const c=document.querySelector('#workshop-stage').getBoundingClientRect(),
+            d=document.querySelector('#ws-simulation-dock').getBoundingClientRect();
+            return {width:c.width,height:c.height,overlap:d.top<c.bottom-.1,advanced:document.querySelector('.ws-advanced').open};})()""")
+        self.assertGreater(layout["width"],700);self.assertGreater(layout["height"],250)
+        self.assertFalse(layout["overlap"]);self.assertFalse(layout["advanced"])
+        self.field('[data-bench-control="load_kg"]',10)
+        self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready' && document.querySelector('#ws-setup-status').textContent.includes('10.')")
+        self.pointer_click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state === 'complete'",timeout=60)
+        self.assertFalse(self.js("document.querySelector('#ws-playback').hidden"))
+        self.pointer_click('#ws-play')
+        self.pointer_click('#ws-reset-setup')
+        self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
+        self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
+        self.assert_geometry_is_visible()
+
+    def test_component_copy_and_saved_inspection_show_solid_geometry_without_replacing_product(self):
+        self.open_product("cart")
+        # A prior section plane must not hide the next component opened.
+        self.js("document.querySelector('#ws-clip-enabled').checked=true; document.querySelector('#ws-clip-enabled').dispatchEvent(new Event('change'))")
+        self.pointer_click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'wheel-11'")
+        self.assertEqual("true",self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
+        self.assert_geometry_is_visible()
+        revision=self.js("document.querySelector('#workshop-stage').dataset.revision")
+        count=self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
+        self.pointer_click('#ws-product-catalog .ws-part-row:has([data-part="wheel-11"]) .ws-part-copy')
+        self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {count+1}")
+        self.wait("!document.querySelector('#ws-product-catalog .ws-part-row:has([data-part=wheel-11]) .ws-part-copy').disabled")
+        self.assert_geometry_is_visible()
+        # Saved item lookup is explicit, read-only, and remains centered even
+        # though the source wheel originally sat off to one side of the cart.
+        self.js("[...document.querySelectorAll('#ws-user-library .ws-library-item')].find(e=>e.textContent.includes('cart wheel')).id='saved-wheel-inspect'")
+        self.pointer_click('#saved-wheel-inspect')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'saved-component'")
+        self.assert_geometry_is_visible()
+        self.assertEqual(revision,self.js("document.querySelector('#workshop-stage').dataset.revision"))
+        self.assertIn("Read-only",self.js("document.querySelector('#ws-view-description').textContent"))
+        self.assertFalse(self.js("document.querySelector('#ws-inspector-use').hidden"))
+        self.pointer_click('#ws-inspector-back')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'product'")
+        self.assertEqual("14",self.js("document.querySelector('#ws-part-count').textContent"))
+        self.assertEqual(revision,self.js("document.querySelector('#workshop-stage').dataset.revision"))
+
+    def test_setup_response_cannot_replace_newer_component_or_product(self):
+        self.js("""window.__originalFetch=window.fetch;window.fetch=async function(url,options){
+            if(String(url).includes('/api/workshop/plan') && JSON.parse(options?.body||'{}').bench_preview){
+                const response=await window.__originalFetch(url,options);
+                return await new Promise(resolve=>window.__releaseSetup=()=>resolve(response));
+            }return window.__originalFetch(url,options);};""")
+        self.pointer_click('[data-mode="test"]')
+        self.wait("typeof window.__releaseSetup === 'function'")
+        self.pointer_click('[data-mode="build"]')
+        self.pointer_click('#ws-product-catalog .ws-part-open[data-part="leg-1"]')
+        self.js("window.__releaseSetup()")
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'leg-1'")
+        self.assert_geometry_is_visible()
+        self.assertEqual("true",self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
+
+    def test_finished_run_cannot_replace_component_opened_while_it_was_calculating(self):
+        self.pointer_click('[data-mode="test"]')
+        self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
+        self.js("""window.__originalFetch=window.fetch;window.fetch=async function(url,options){
+            if(String(url).includes('/api/workshop/plan') && JSON.parse(options?.body||'{}').bench_test){
+                const response=await window.__originalFetch(url,options);
+                return await new Promise(resolve=>window.__releaseRun=()=>resolve(response));
+            }return window.__originalFetch(url,options);};""")
+        self.pointer_click('#ws-run-bench')
+        self.wait("typeof window.__releaseRun === 'function'")
+        self.pointer_click('[data-mode="build"]')
+        self.pointer_click('#ws-product-catalog .ws-part-open[data-part="leg-1"]')
+        self.js("window.__releaseRun()")
+        self.wait("!document.querySelector('#ws-run-bench').disabled")
+        self.assertEqual('leg-1', self.js("document.querySelector('#workshop-stage').dataset.showing"))
+        self.assertEqual('true', self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
+        self.assert_geometry_is_visible()
+
+    def test_small_component_remains_visible_after_narrow_viewport_resize(self):
+        self.open_product("cart")
+        self.pointer_click('#ws-product-catalog .ws-part-open[data-part="bearing-mount-11"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'bearing-mount-11'")
+        self.assert_geometry_is_visible()
+        self.page.send("Emulation.setDeviceMetricsOverride",{"width":640,"height":900,"deviceScaleFactor":1,"mobile":False})
+        self.wait("document.querySelector('#workshop-stage').getBoundingClientRect().width < 650")
+        self.pointer_click('#ws-fit-view')
+        self.assert_geometry_is_visible()
+
     def test_library_rows_are_names_and_open_a_product_to_its_components(self):
         """A library row is a name; the open product lists its components.
 
@@ -259,8 +379,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
         self.assertIn("cart deck", self.js("document.querySelector('#ws-user-library').textContent"))
 
-        # Clicking the open product again folds its components away.
-        self.click('#ws-product-catalog button[data-value="cart"]')
+        # Copy also opens the component. The product row first returns to the
+        # whole product; a second click folds its component list away.
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'deck'")
+        self.pointer_click('#ws-product-catalog button[data-value="cart"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'product'")
+        self.assertEqual('14', self.js("document.querySelector('#ws-part-count').textContent"))
+        self.pointer_click('#ws-product-catalog button[data-value="cart"]')
         self.wait("!document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
 
     def test_a_component_opens_on_its_own_and_saves_under_a_new_name(self):
@@ -578,13 +703,88 @@ class WorkshopBrowserRegression(unittest.TestCase):
     def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):
         self.click('[data-mode="test"]')
         values=self.js("[...document.querySelectorAll('#ws-test-catalog button')].map(b=>b.dataset.value)")
-        self.assertEqual(["drop_product","slide_product","declared_static_load"],values)
+        self.assertEqual(["drop_product","slide_product","impact_product","declared_static_load"],values)
         self.assertEqual("drop_product",self.js("document.querySelector('#ws-bench-test').value"))
         self.assertIsNone(self.js("document.querySelector('[data-bench-control=record_trace]')"))
         self.open_product("shelf-unit")
         self.assertTrue(self.js("document.querySelector('#ws-run-bench').disabled"))
         self.assertEqual(0,self.js("document.querySelectorAll('#ws-test-catalog button').length"))
         self.assertIn("No working simulation",self.js("document.querySelector('#ws-bench-controls').textContent"))
+
+    def test_a_glass_table_dropped_far_enough_is_seen_to_break_into_pieces(self):
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='top').click()")
+        self.field('#ws-edit-scope','all')
+        self.field('#ws-part-material','glass')
+        self.wait("document.querySelector('#ws-mass')?.textContent==='98.580 kg'")
+        self.click('[data-mode="test"]')
+        # Raising the drop raises the time beside it, in plain sight, so the run sees the landing.
+        self.assertEqual('20',self.js("document.querySelector('[data-bench-control=height_m]').max"))
+        self.field('[data-bench-control=height_m]',4)
+        self.assertGreaterEqual(float(self.js("document.querySelector('[data-bench-control=duration_s]').value")),1.6)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='broke'")
+        pieces=int(self.js("document.querySelector('#ws-break-outcome').dataset.pieces"))
+        self.assertGreater(pieces,4)
+        self.assertIn(f'Broke into {pieces} pieces',self.js("document.querySelector('#ws-break-outcome').textContent"))
+        # The engine's own reading of the landing, not a rule the page made up.
+        self.assertRegex(self.js("document.querySelector('#ws-break-reading').textContent"),
+                         r'Met the ground at 8\.\d\d m/s\. Against that, this can first break at 8\.70 m/s')
+        if self.js("document.querySelector('#ws-play').textContent") == 'Pause':
+            self.click('#ws-play')
+        # Whole at the start, and at the end every piece is a drawn body of its own cells.
+        self.field('#ws-play-timeline',0,'input')
+        self.assertEqual('1',self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertIn('1 simulated body',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
+        self.assertEqual(str(pieces),self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertIn(f'In {pieces} pieces',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        note=self.js("document.querySelector('#ws-play-note').textContent")
+        self.assertIn('every piece as the cells the engine left it',note)
+        self.assertNotIn('simplified collision shapes',note)
+        self.capture_evidence('glass-table-broken.png')
+        # The same table in oak, from the same height, is still a table.
+        self.click('[data-mode="build"]')
+        self.field('#ws-part-material','oak')
+        self.wait("document.querySelector('#ws-mass')?.textContent==='27.602 kg'")
+        self.click('[data-mode="test"]')
+        self.field('[data-bench-control=height_m]',4)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='held'")
+        self.assertIn('still in one piece',self.js("document.querySelector('#ws-break-outcome').textContent"))
+
+    def test_a_load_says_whether_it_held_and_by_how_much(self):
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='top').click()")
+        self.field('#ws-edit-scope','all')
+        self.field('#ws-part-material','concrete')
+        self.wait("document.querySelector('#ws-part-material').value==='concrete' && !document.querySelector('#ws-mass').textContent.startsWith('27.602')")
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="declared_static_load"]')
+        self.wait("document.querySelector('[data-bench-control=load_kg]')")
+        self.field('[data-bench-control=load_kg]',400)
+        self.field('[data-bench-control=cell_size_m]',.02)
+        self.field('[data-bench-control=duration_s]',1)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-load-outcome')")
+        self.assertEqual('held',self.js("document.querySelector('#ws-load-outcome').dataset.outcome"))
+        self.assertRegex(self.js("document.querySelector('#ws-load-outcome').textContent"),r'^Held 400\.\d kg, at \d\d% of what breaks it$')
+        reading=self.js("document.querySelector('#ws-load-reading').textContent")
+        self.assertRegex(reading,r'MPa of bending in it over the 1\.0\d m between its feet, against the 3\.0 MPa it can take')
+        self.assertIn('Statics on its own cells: held',reading)
+        self.capture_evidence('concrete-table-held-with-margin.png')
+
+    def test_a_blow_from_a_weight_is_a_test_the_page_offers_and_runs(self):
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="impact_product"]')
+        self.wait("document.querySelector('[data-bench-control=striker_kg]')")
+        self.field('[data-bench-control=striker_kg]',20)
+        self.field('[data-bench-control=speed_m_s]',15)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='broke'")
+        self.assertRegex(self.js("document.querySelector('#ws-bench-result').textContent"),r'Struck by 18\.1 kg of iron at 15\.0 m/s: 2,0\d\d J')
+        self.assertIn('Met workshop/striker at 15.00 m/s',self.js("document.querySelector('#ws-break-reading').textContent"))
+        self.capture_evidence('oak-table-struck.png')
 
     def test_run_moves_visible_object_automatically_and_replay_restarts(self):
         self.click('[data-mode="test"]')

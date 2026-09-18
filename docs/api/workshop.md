@@ -520,3 +520,19 @@ Catalog entries distinguish `category: simulation` from `analysis`, and
 supported selected-product simulations, with states always requested. Legacy
 analysis/reference API operations have not been deleted. See the
 [visible-tests checkpoint](../workshop-visible-tests-checkpoint.md) for limits.
+
+## Visible experiment setup and saved component inspection
+
+`POST /api/workshop/plan` accepts `bench_preview: {test, config}` alongside
+the current candidate recipe. It returns `bench_preview` with schema
+`banjo.workshop-setup.v1`, a single time-zero frame, geometry, summary and explicit
+`native_verified` / `physics_advanced` fields. It does not produce a verdict or
+advance the live world. The scene factories are shared with Run. Unsupported
+setups fail explicitly. The rigid setup is compiled, not native-verified.
+
+`POST /api/workshop/library {action: "inspect_component", item_id: "..."}`
+returns the owner-scoped saved component and `component_preview` (one centered
+part and its skin) with `read_only: true`. It does not return or mutate a product
+candidate. Reuse continues through the existing explicit `reuse_library_item`
+candidate operation. Physical skin recipes retain their settings and require
+retest; obsolete primitive ports are not exported as physical interfaces.

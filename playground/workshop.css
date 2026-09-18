@@ -166,3 +166,60 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 #ws-joint-screen { display:grid;gap:.35rem;margin-top:.4rem; }
 .ws-push-box { display:grid;gap:.4rem;margin-top:.5rem;padding-top:.6rem;border-top:1px solid #2a3542; }
 .ws-build-adjust[hidden], .ws-push-box[hidden] { display:none; }
+
+/* Workspace v2: canvas and controls occupy different layout rows, never overlap. */
+.ws-workspace-tabs { display:flex;gap:.35rem;margin:0; }
+.ws-workspace-tabs button { padding:.45rem .95rem; }
+.ws-grid { grid-template-columns:240px minmax(240px,1fr) 320px; }
+.ws-viewport { display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden; }
+.ws-viewbar { position:static;grid-row:1;flex-wrap:wrap;padding:.65rem .8rem;border-bottom:1px solid #303b49; }
+#workshop-stage { grid-row:2;min-height:0;min-width:0;height:100%; }
+.ws-caption { display:none; }
+#ws-view-context { grid-row:3;padding:.6rem .9rem;border-top:1px solid #303b49;background:#111923;min-width:0; }
+#ws-view-context p { margin:.3rem 0;font-size:.78rem;color:#b7c7d8;line-height:1.4; }
+#ws-view-context strong { font-size:.9rem; }
+#ws-inspector-actions { margin:.3rem 0 0; }
+#ws-inspector-actions button[hidden] { display:none; }
+.ws-simulation-dock { position:static;grid-row:4;max-width:none;max-height:none;border-radius:0;
+  border:0;border-top:1px solid #465363;background:#101923;display:block;padding:.65rem .9rem;overflow:visible; }
+#ws-active-situation { display:none; }
+#ws-run-bench { min-width:150px;margin-right:.45rem; }
+#ws-playback { padding:0; }
+#ws-playback > strong { display:none; }
+#ws-play-note { font-size:.68rem; }
+#ws-setup-status[data-state="error"],#ws-simulation-status[data-state="error"] { color:#ffb0a6; }
+#ws-simulation-status[data-state="running"]::before { content:"";display:inline-block;width:.7rem;height:.7rem;margin-right:.5rem;
+  border:2px solid #405162;border-top-color:#cbe7ff;border-radius:50%;animation:ws-spin 1s linear infinite; }
+@keyframes ws-spin { to {transform:rotate(360deg);} }
+.ws-advanced { margin:.6rem 0;padding:.5rem;border:1px solid #354252;border-radius:.4rem; }
+.ws-advanced summary { cursor:pointer;font-size:.8rem; }
+#design-workshop[data-mode="test"] .ws-grid { grid-template-columns:minmax(300px,1fr) 320px; }
+#design-workshop[data-mode="test"] .ws-left { display:none; }
+#design-workshop[data-mode="test"] .ws-viewport { grid-column:1;grid-row:1; }
+#design-workshop[data-mode="test"] .ws-right { grid-column:2;grid-row:1; }
+#design-workshop[data-mode="test"] .ws-right > :not(#ws-mode-test) { display:none; }
+#design-workshop[data-mode="test"] .ws-viewbar button[data-view] { display:none; }
+#design-workshop[data-mode="test"] .ws-viewbar { display:none; }
+#design-workshop[data-mode="test"] #ws-test-bench > h3 { margin-top:0; }
+#design-workshop[data-mode="test"] .ws-test-intro { margin-top:0; }
+#ws-test-catalog { display:grid;grid-template-columns:1fr;gap:.4rem; }
+#ws-test-catalog .ws-test-card { padding:.65rem; }
+@media (max-width:1050px) and (min-width:701px) {
+  .ws-grid {grid-template-columns:180px minmax(230px,1fr) 290px;grid-template-rows:1fr;}
+  .ws-left {grid-column:1;grid-row:1;} .ws-viewport {grid-column:2;grid-row:1;} .ws-right {grid-column:3;grid-row:1;}
+  #design-workshop[data-mode="test"] .ws-grid {grid-template-columns:minmax(300px,1fr) 290px;}
+}
+@media (max-width:700px) {
+  body.workshop-mode {overflow:auto;}
+  #design-workshop {position:absolute;min-height:100vh;height:auto;}
+  .ws-grid,#design-workshop[data-mode="test"] .ws-grid {display:flex;flex-direction:column;overflow:visible;}
+  .ws-viewport {flex:none;order:1;height:70vh;min-height:450px;}
+  .ws-left {order:3;flex:none;} .ws-right {order:2;flex:none;overflow:visible;}
+  #design-workshop[data-mode="test"] .ws-viewport {height:78vh;min-height:490px;}
+  .ws-top {padding:.6rem;gap:.45rem;}
+  .ws-top .ws-status {display:none;}
+  .ws-workspace-tabs {width:100%;justify-content:center;}
+  .ws-workspace-tabs button {flex:1;}
+}
+.ws-top .ws-workspace-tabs {display:flex;gap:.35rem;margin:0;}
+.ws-top .ws-workspace-tabs button {padding:.45rem .9rem;}

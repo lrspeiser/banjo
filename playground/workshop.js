@@ -59,7 +59,9 @@ function parseColor(value, fallback) {
   try { return new THREE.Color(value); } catch { return fallback; }
 }
 
-let view = "wire";
+let view = "skin";
+// Workspace UI state is separate from the product and from completed test evidence.
+const workspace = {mode:"build", setup:null, sequence:0, timer:null, running:false, inspecting:0};
 let yaw = 0.72, pitch = 0.42, distance = 3;
 let dragging = false, dragged = false, px = 0, py = 0, reach = 1.5;
 const target = new THREE.Vector3(0, 0.42, 0);
@@ -67,7 +69,7 @@ const target = new THREE.Vector3(0, 0.42, 0);
 const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0,
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
-  selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
+  libraryInspection: null, selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
   cellSkin: null, physicsDebug: null, matterMode: "cells",
@@ -200,7 +202,9 @@ function placeCamera() {
 function frameCandidate() {
   const up = THREE.MathUtils.degToRad(camera.fov) / 2;
   const across = Math.atan(Math.tan(up) * Math.max(0.2, camera.aspect));
-  distance = Math.max(0.6, reach * 1.15 / Math.sin(Math.min(up, across)));
+  distance = Math.max(0.025, reach * 1.18 / Math.sin(Math.min(up, across)));
+  camera.near = Math.max(0.00001, distance / 1000);
+  camera.far = Math.max(100, distance * 20); camera.updateProjectionMatrix();
   placeCamera();
 }
 function applyClipPlane() {
@@ -257,7 +261,7 @@ function spinFor(rotation) {
 // assembled product, so isolation does not apply to them.
 const ISOLATING_VIEWS = ["wire", "skin"];
 function shownParts(candidate) {
-  if (!bench.isolated || !ISOLATING_VIEWS.includes(view)) return candidate.parts;
+  if (candidate === bench.libraryInspection?.component_preview || !bench.isolated || !ISOLATING_VIEWS.includes(view)) return candidate.parts;
   return candidate.parts.filter((part) => part.name === bench.isolated);
 }
 function isolatedPart() {
@@ -426,14 +430,15 @@ let drawnRecording = null;
 const playbackMeshes = new Map();
 let physicsMeshBuilds = 0;
 function drawPlayback() {
-  const recording = bench.playback, frame = recording?.frames?.[bench.playbackIndex];
+  balance.visible=false;support.visible=false;forceArrow.visible=false;
+  const recording = bench.playback || workspace.setup, frame = recording?.frames?.[bench.playback ? bench.playbackIndex : 0];
   if (!frame) return;
   if (drawnRecording !== recording) { clearGroup(); drawnRecording = recording; physicsMeshBuilds = 0; }
   const present = new Set(), thermal = new Map((frame.thermo?.bodies || []).map(b => [b.name, b.temperature_k]));
   let proxies = 0;
   for (const body of frame.bodies || []) {
     present.add(body.name);
-    const geometry = recording.geometry?.[body.name];
+    const geometry = recording.geometry?.[`${body.name}#${Number(body.revision || 0)}`] || recording.geometry?.[body.name];
     const exact = geometry && Number(geometry.revision) === Number(body.revision || 0);
     const signature = JSON.stringify([body.revision || 0, exact, body.shape, body.dimensions_m, body.material]);
     let entry = playbackMeshes.get(body.name);
@@ -466,33 +471,76 @@ function drawPlayback() {
   for (const [name,entry] of playbackMeshes) if (!present.has(name)) {
     group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
   }
+  if (followsMatter(recording)) followCentre = matterCentre(recording, frame) || followCentre;
   stage.dataset.physicsTime = String(frame.t_s);
   stage.dataset.physicsBodyCount = String(present.size);
   stage.dataset.physicsMeshBuilds = String(physicsMeshBuilds);
   stage.dataset.physicsPose = JSON.stringify(frame.bodies?.[0]?.position_m || []);
   const live = $("#ws-simulation-readout");
+  if (recording.phase === "setup") {
+    stage.dataset.phase = "setup";
+    live.textContent = recording.summary;
+    $("#ws-play-note").textContent = "Setup only. Physics has not advanced.";
+    return;
+  }
+  stage.dataset.phase = bench.playbackPlaying ? "playing" : "result";
   if (recording.test === "kettle_heat") {
     live.textContent = `Water ${celsius(thermal.get("water charge"))} · heater ${celsius(thermal.get("heater plate"))}. Blue → red: measured 20–100 °C. Contained thermal model; no sloshing.`;
   } else if (recording.geometry_basis === "verified-precise-rigid-shapes") {
     const bodies = new Set((frame.bodies || []).map(part => part.object_id));
     live.textContent = `${present.size} collision shapes · ${bodies.size} rigid ${bodies.size === 1 ? "body" : "bodies"} · ${Number(frame.t_s).toFixed(2)} seconds. Actual native poses; no internal failure model.`;
-  } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+  } else {
+    const broken = (recording.fractures || []).some(f => f.outcome === "broke" && Number(f.at_s) <= Number(frame.t_s) + 1e-9);
+    live.textContent = `${broken ? `In ${present.size} pieces` : `${present.size} simulated ${present.size === 1 ? "body" : "bodies"}`} · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+  }
   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
     ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
-    : `${recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
+    : `${recording.geometry_basis === "verified-native-cells-and-native-pieces" ? "Exact Matter cells, and every piece as the cells the engine left it. " : recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
+}
+// A thing dropped from 4 m, or knocked across the floor in pieces, is a speck if
+// the view holds its whole journey. These runs are framed on the thing as it
+// starts and the view then goes with the matter: every body weighed by the
+// cells it is drawn with, so it stays on the bulk of the wreck and lets a
+// one-cell shard fly out of shot.
+const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces";
+let followCentre = null, followClock = 0;
+function matterCentre(recording, frame) {
+  const sum = new THREE.Vector3(); let weight = 0;
+  for (const body of frame?.bodies || []) {
+    const cells = recording.geometry?.[body.name]?.offsets_m?.length || 1;
+    sum.x += cells*body.position_m[0]; sum.y += cells*body.position_m[1]; sum.z += cells*body.position_m[2]; weight += cells;
+  }
+  return weight ? sum.multiplyScalar(1/weight) : null;
+}
+function followMatter(now) {
+  const dt = Math.min(.1, Math.max(0, (now - followClock)/1000)); followClock = now;
+  if (view !== "physics" || !followCentre || !followsMatter(bench.playback)) return;
+  // Scrubbing or paused: be there. Playing: close most of the gap in a fifth of a second.
+  if (bench.playbackPlaying) target.lerp(followCentre, 1 - Math.pow(.02, dt/.2)); else target.copy(followCentre);
+  placeCamera();
 }
 function frameSimulation(recording) {
   const bounds = new THREE.Box3();
-  for (const frame of recording.frames) for (const body of frame.bodies || []) {
+  for (const frame of followsMatter(recording) ? recording.frames.slice(0,1) : recording.frames) for (const body of frame.bodies || []) {
     const radius = .5*Math.hypot(...(body.dimensions_m || [.05,.05,.05]));
     const point = new THREE.Vector3(...body.position_m);
     bounds.expandByPoint(point.clone().addScalar(radius)); bounds.expandByPoint(point.clone().addScalar(-radius));
   }
+  if(recording.phase==="setup" && !bounds.isEmpty()) bounds.expandByPoint(new THREE.Vector3((bounds.min.x+bounds.max.x)/2,0,(bounds.min.z+bounds.max.z)/2));
   if (!bounds.isEmpty()) { bounds.getCenter(target); reach = Math.max(.3,bounds.getSize(new THREE.Vector3()).length()/2); frameCandidate(); }
+  followCentre = followsMatter(recording) ? matterCentre(recording, recording.frames[0]) : null;
+  if (followCentre) { target.copy(followCentre); placeCamera(); }
   grid.position.y = 0;
 }
 
 function draw(candidate) {
+  if (bench.libraryInspection) {
+    clearGroup(); renderer.clippingPlanes=[]; balance.visible=false; support.visible=false;
+    const preview = bench.libraryInspection.component_preview;
+    drawSkin(preview); frameRenderedGeometry();
+    stage.dataset.showing = "saved-component"; stage.dataset.phase = "inspection";
+    updateInspector(); return;
+  }
   // What the viewport is actually showing, for the page and for tests.
   stage.dataset.showing = shownParts(candidate).length === candidate.parts.length ? "product" : bench.isolated;
   if (view !== "physics") clearGroup();
@@ -507,16 +555,14 @@ function draw(candidate) {
   else drawWire(candidate);
   if (view === "wire" || view === "skin") drawJoints(candidate);
 
+  updateInspector();
   const m = currentMeasurements(candidate);
   const alone = ISOLATING_VIEWS.includes(view) ? isolatedPart() : null;
   if (alone) {
     // Balance and support are properties of the whole product, not of one piece.
     balance.visible = false; support.visible = false;
-    const half = Math.max(...alone.size_m) / 2;
-    grid.position.y = alone.center_m[1] - half * 1.4;
-    target.set(...alone.center_m);
-    reach = 0.5 * Math.hypot(...alone.size_m);
-    return;
+    frameRenderedGeometry(); stage.dataset.phase = "inspection";
+    updateInspector(); return;
   }
   if (view !== "physics") {
     balance.position.set(...m.centre_of_mass_m);
@@ -563,7 +609,7 @@ function hitPartName(hit) {
   return hit.object.userData?.partName || null;
 }
 function pickPart(event) {
-  if (view === "physics") return;
+  if (view === "physics" || bench.libraryInspection) return;
   const rect = stage.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -612,7 +658,7 @@ stage.addEventListener("pointermove", (event) => {
 stage.addEventListener("pointerup", (event) => { dragging = false; if (!dragged) pickPart(event); });
 stage.addEventListener("pointercancel", () => { dragging = false; });
 stage.addEventListener("wheel", (event) => {
-  event.preventDefault(); distance = Math.max(0.6, Math.min(9, distance * Math.exp(event.deltaY * 0.001))); placeCamera();
+  event.preventDefault(); distance = Math.max(0.015, Math.min(100, distance * Math.exp(event.deltaY * 0.001))); placeCamera();
 }, { passive: false });
 stage.addEventListener("dragover", (event) => { event.preventDefault(); stage.classList.add("ws-drop-target"); });
 stage.addEventListener("dragleave", () => stage.classList.remove("ws-drop-target"));
@@ -671,7 +717,7 @@ function installEditor() {
   left.prepend(productBox);
   const libraryBox = make("section", { id: "ws-personal-library-box" });
   libraryBox.append(make("h2", {}, "My library"),
-    make("p", {}, "Reusable components and assemblies. Select a part, then click or drag a component onto it."),
+    make("p", {}, "Click a saved component to inspect it. Replacing a selected part is a separate, explicit action."),
     make("div", { id: "ws-user-library" }));
   productBox.after(libraryBox);
 
@@ -762,7 +808,8 @@ function installEditor() {
   playback.append(make("strong", {}, "Simulation result"), playbackRow, timeline,
     make("p", {id:"ws-simulation-readout",role:"status"}),
     make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Calculated motion and temperature. Replay does not rerun the physics."));
-  testBox.append(playback, make("div", { id:"ws-bench-presets" }), make("div", { id:"ws-bench-result" }));
+  const presets=make("details",{class:"ws-advanced"});presets.append(make("summary",{},"Saved setups"),testBox.querySelector("#ws-save-bench-preset"),presetLabel,make("div",{id:"ws-bench-presets"}));
+  testBox.append(playback,presets,make("div",{id:"ws-bench-result"}));
   right.insertBefore(testBox, $("#ws-save-design").parentElement.previousElementSibling || $("#ws-save-design").parentElement);
 
   // Keep the real Run/replay controls next to the object, not below a long
@@ -772,6 +819,24 @@ function installEditor() {
   dock.append(make("strong", {id:"ws-active-situation"}), $("#ws-run-bench"),
     make("div", {id:"ws-simulation-feedback"}), playback);
   $(".ws-viewport").append(dock);
+  const context = make("section", {id:"ws-view-context", role:"status", "aria-live":"polite"});
+  context.append(make("strong", {id:"ws-view-title"}, "Product"), make("p",{id:"ws-view-description"}),
+    make("div", {id:"ws-inspector-actions",class:"ws-row"}));
+  const fit = make("button", {id:"ws-fit-view",type:"button",class:"ws-action"}, "Fit view");
+  fit.onclick=()=>{if(workspace.mode==="test" && (bench.playback || workspace.setup)) frameSimulation(bench.playback || workspace.setup); else {draw(chosen());frameCandidate();}};
+  const back = make("button", {id:"ws-inspector-back",type:"button",class:"ws-action"}, "Back to product");
+  back.onclick=showWholeProduct;
+  const use = make("button", {id:"ws-inspector-use",type:"button",class:"ws-action"}, "Use on selected part");
+  use.onclick=()=>guard(use,()=>reuseLibraryComponent(bench.libraryInspection.library_item.item_id));
+  context.querySelector("#ws-inspector-actions").append(fit,back,use);
+  for(const [name,y,p] of [["Perspective",.72,.42],["Side",0,.08],["Top",0,1.25]]) {
+    const button=make("button",{type:"button",class:"ws-action"},name);
+    button.onclick=()=>{yaw=y;pitch=p;placeCamera();};context.querySelector("#ws-inspector-actions").append(button);
+  }
+  $(".ws-viewport").append(context);
+  const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
+  setup.onclick=()=>{benchTestRequest++;clearPlayback();scheduleSetup(0);};
+  dock.insertBefore(setup, $("#ws-simulation-feedback"));
 
   const matterMode=make("select",{id:"ws-matter-mode"});[["cells","Cells"],["solid","Solid CellSkin"],["skin-cells","Skin + cells"]].forEach(([v,l])=>addOption(matterMode,v,l));const modeLabel=make("label",{class:"ws-field"},"Matter display");modeLabel.append(matterMode);editor.append(modeLabel);
   editor.append(make("h3",{},"Section view"));
@@ -807,7 +872,7 @@ function installEditor() {
     if (event.target.value.trim()) event.target.dataset.edited = "1"; else delete event.target.dataset.edited;
   };
   chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
-  testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); };
+  testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); scheduleSetup(0); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
   $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
   $("#ws-play").onclick = togglePlayback;
@@ -988,11 +1053,15 @@ function renderBenchControls(values = null) {
   root.oninput = root.onchange = () => {
     benchTestRequest++;
     $("#ws-bench-result").replaceChildren();
-    clearPlayback();
+    clearPlayback(); scheduleSetup();
   };
   if (!definition) { root.append(make("p", { class:"ws-feedback-count" }, "No working simulation is available for this product yet. Report-only tools have been removed from Test; the design is still editable.")); return; }
   root.append(make("p", { class:"ws-feedback-count" }, definition.about));
+  const advanced = make("details",{class:"ws-advanced"});
+  advanced.append(make("summary",{},"Advanced settings and limits"));
+  const advancedNames = new Set(["duration_s","cell_size_m","evaluate_limits","max_displacement_m","max_rotation_deg","max_fracture_events","min_actual_load_kg"]);
   for (const control of definition.controls || []) {
+    const destination = advancedNames.has(control.name) || control.name.startsWith("max_") || control.name.startsWith("min_") ? advanced : root;
     if (control.name === "record_trace") continue;
     const label = make("label", { class:"ws-field" }, `${control.label}${control.unit ? ` (${control.unit})` : ""}`);
     const chosenValue = values && Object.prototype.hasOwnProperty.call(values, control.name) ? values[control.name] : control.default;
@@ -1007,13 +1076,20 @@ function renderBenchControls(values = null) {
       input.value = String(chosenValue ?? control.min ?? 0); input.dataset.valueType = "number";
       const shown = make("output", { class:"ws-range-value" }, String(chosenValue ?? ""));
       const refresh = () => { shown.textContent = input.value; }; input.addEventListener("input", refresh); input.addEventListener("change", () => { refresh(); reprobe(); });
-      label.append(input,shown); root.append(label); continue;
+      if (definition.test === "drop_product" && control.name === "height_m") input.addEventListener("change", () => {
+        const time = document.querySelector('[data-bench-control="duration_s"]'); if (!time) return;
+        const wanted = Math.min(Number(time.max) || 5, Math.ceil((Math.sqrt(2*Number(input.value)/9.81) + .75)*10)/10);
+        if (Number(time.value) < wanted) { time.value = String(wanted); time.dispatchEvent(new Event("change", {bubbles:true})); }
+      });
+      label.append(input,shown); destination.append(label); continue;
     } else {
       input = make("input", { type:"number", value:String(chosenValue ?? ""), min:String(control.min ?? ""), max:String(control.max ?? ""), step:String(control.step ?? "any"), "data-bench-control":control.name }); input.dataset.valueType = "number";
     }
-    label.append(input); root.append(label);
+    label.append(input); destination.append(label);
   }
-  for (const limitation of definition.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, `Limit: ${limitation}`));
+  root.append(advanced);
+  for (const limitation of definition.limitations || []) advanced.append(make("p", { class:"ws-feedback-count" }, `Limit: ${limitation}`));
+  scheduleSetup();
 }
 function benchConfig() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first."); const out = {};
@@ -1040,16 +1116,18 @@ function renderBenchPresets() {
 }
 function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(2)} °C`; }
 function clearPlayback() {
+  workspace.sequence++; clearTimeout(workspace.timer); workspace.setup=null;
   bench.playback = null; bench.playbackIndex = 0; bench.playbackPlaying = false;
   $("#ws-simulation-feedback")?.replaceChildren();
   const root = $("#ws-playback"); if (root) root.hidden = true;
   stage.dataset.physicsPlaying="false"; delete stage.dataset.physicsTime;
-  if (view === "physics") { view = "wire"; pressView("wire"); show(false); }
+  if (view === "physics") { view = "skin"; pressView("skin"); show(false); }
 }
 function setPlayback(recording) {
   if (!recording?.frames || recording.frames.length < 2 || !(recording.duration_s > 0)) {
     clearPlayback(); throw new Error("The test returned no advancing simulation. No successful simulation is claimed.");
   }
+  workspace.sequence++; clearTimeout(workspace.timer); workspace.setup=null;
   bench.playback=recording; bench.playbackIndex=0; bench.playbackPlaying=false;
   $("#ws-playback").hidden=false;
   const slider=$("#ws-play-timeline"); slider.max=String(recording.frames.length-1);slider.value="0";
@@ -1123,11 +1201,21 @@ function renderBenchResult(result) {
     card.append(make("strong", {}, "Native precise rigid motion — not a strength test"),
       make("p", {}, `${m.collision_boxes} exact boxes · ${m.stored_cells} lattice cells · ${Number(m.mass_kg).toFixed(3)} kg`),
       make("p", {}, `Centre of mass moved ${Number(m.displacement_m).toFixed(4)} m in ${Number(m.elapsed_s).toFixed(2)} s.`));
-  } else if (["drop_product","slide_product"].includes(result.test)) {
-    const m=result.measured || {}, r=result.requested || {};
-    card.append(make("strong",{},result.test==="drop_product" ? "Drop completed" : "Slide completed"),
-      make("p",{},result.test==="drop_product" ? `Requested height ${r.height_m} m · grid height ${r.applied_height_m} m` : `Starting speed ${r.speed_m_s} m/s along +X`),
-      make("p",{},`Final displacement ${m.prototype_displacement_m == null ? "unavailable after separation" : Number(m.prototype_displacement_m).toFixed(3)+" m"} · ${m.fracture_events} fracture evaluations · ${m.clock_s.toFixed(2)} s simulated`));
+  } else if (["drop_product","slide_product","impact_product"].includes(result.test)) {
+    const m=result.measured || {}, r=result.requested || {}, hit=m.hardest_impact, striker=r.striker;
+    const inTheAir = result.test === "drop_product" && m.landed === false;
+    const what = inTheAir ? `Still falling when the run ended: simulate ${r.settled_duration_s} s to see it land`
+      : m.outcome === "broke" ? `Broke into ${m.pieces} pieces${m.first_break_s == null ? "" : ` at ${Number(m.first_break_s).toFixed(2)} s`}`
+      : m.outcome === "dented" ? "Dented, and still in one piece" : "Held: still in one piece";
+    const headline = make("strong",{id:"ws-break-outcome","data-outcome":inTheAir ? "in-the-air" : m.outcome || "held","data-pieces":String(m.pieces ?? 1)},what);
+    card.append(headline,
+      make("p",{},result.test==="drop_product" ? `Dropped ${r.applied_height_m} m (asked ${r.height_m} m; heights are whole cells)`
+        : result.test==="impact_product" ? `Struck by ${Number(striker?.actual_kg || 0).toFixed(1)} kg of iron at ${Number(striker?.speed_m_s || 0).toFixed(1)} m/s: ${Math.round(Number(striker?.energy_j || 0)).toLocaleString()} J`
+        : `Starting speed ${r.speed_m_s} m/s along +X`));
+    // The engine's own reading of the hardest blow to the thing as designed:
+    // what it met, how fast, and the speed under which that meeting can break nothing.
+    if (hit) card.append(make("p",{id:"ws-break-reading"},`Met ${hit.by} at ${Number(hit.closing_speed_m_s).toFixed(2)} m/s. Against that, this can first break at ${Number(hit.threshold_speed_m_s).toFixed(2)} m/s${hit.dent_speed_m_s == null ? " and has no bending range" : ` and bend at ${Number(hit.dent_speed_m_s).toFixed(2)} m/s`}.`));
+    card.append(make("p",{},`${m.prototype_displacement_m == null ? "It did not survive as one body" : `Moved ${Number(m.prototype_displacement_m).toFixed(3)} m`} · ${m.fracture_events} failure ${m.fracture_events === 1 ? "run" : "runs"} · ${m.clock_s.toFixed(2)} s simulated`));
   } else if (result.test === "cart_roll") {
     const m=result.measured || {};
     card.append(make("strong",{},"Cart run completed"),make("p",{},`Chassis displacement (X/Y/Z): ${(m.chassis_delta_m || []).map(v=>Number(v).toFixed(3)).join(" / ")} m`),
@@ -1143,8 +1231,18 @@ function renderBenchResult(result) {
       make("p", {}, `Speed ${Number(control.speed_rpm || 0).toFixed(1)} rpm · load moved ${Number(m.load_delta_y_m || 0).toFixed(3)} m`),
       make("p", {}, `Motor ${Number(motor.power_w || 0).toFixed(1)} W · battery supplied ${Number(battery.given_j || 0).toFixed(1)} J`));
   } else if (result.trial === "static_load" || result.test === "static_load") {
-    const m = result.measured || {}; card.append(make("strong", {}, "Physical load trial"),
-      make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. Little or no movement means the object held in this model—not that bending strength is certified.`),
+    // What became of it under the load, in the engine's own words: the load
+    // survey's beam reading if it was ever called overloaded, and what statics
+    // on its own cells then said, with how near its bonds came to giving.
+    const m = result.measured || {}, over = m.overload, statics = m.statics, percent = statics?.ratio == null ? null : Math.round(Number(statics.ratio)*100);
+    const applied = Number(m.actual_grid_load_kg).toFixed(1);
+    const what = m.outcome === "broke" ? `Gave way under ${applied} kg: in ${m.pieces} pieces`
+      : percent != null ? `Held ${applied} kg, at ${percent}% of what breaks it`
+      : `Held ${applied} kg`;
+    card.append(make("strong", {id:"ws-load-outcome","data-outcome":m.outcome || "held","data-pieces":String(m.pieces ?? 1)}, what));
+    if (over) card.append(make("p", {id:"ws-load-reading"}, `By beam theory the load puts ${Number(over.stress_mpa).toFixed(1)} MPa of bending in it over the ${Number(over.span_m).toFixed(2)} m between its feet, against the ${Number(over.holds_mpa).toFixed(1)} MPa it can take, so the engine was asked. Statics on its own cells: ${statics?.stop || "no answer"}${percent == null ? "" : `, its bonds at ${percent}% of what breaks them`}.`));
+    else card.append(make("p", {id:"ws-load-reading"}, "By beam theory the bending in it stays under what its material can take, so nothing asked whether it would give."));
+    card.append(make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. A top one cell thick has no depth to bend through: use a cell size that puts at least two cells through the part that carries the load.`),
       make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
     const target = result.target || {}, asked = result.requested || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
@@ -1178,9 +1276,14 @@ async function runBenchTest() {
   const definition=benchDefinition(); if(!definition) throw new Error("Choose a supported simulation first.");
   const revision=bench.revision, request=++benchTestRequest, config=benchConfig();
   const current=()=>request===benchTestRequest && revision===bench.revision && definition.test===bench.selectedBenchTest;
-  clearPlayback();
+  workspace.sequence++; clearTimeout(workspace.timer); workspace.running=true;
+  bench.playback=null; bench.playbackPlaying=false; $("#ws-playback").hidden=true;
+  if (workspace.setup) {view="physics";drawPlayback();} else {view="skin";show(false);}
+  const started=performance.now();
   const status=make("p",{id:"ws-simulation-status",role:"status","aria-live":"polite"},`Calculating ${definition.name.toLowerCase()} on the selected object…`);
-  status.dataset.state="running"; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
+  status.dataset.state="running"; stage.dataset.phase="calculating";
+  $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
+  const clock=setInterval(()=>{if(current())status.textContent=`Calculating ${definition.name.toLowerCase()} · ${((performance.now()-started)/1000).toFixed(1)} s elapsed. The setup stays visible; results appear when calculation finishes.`;},200);
   try {
     const answer=await api("/api/workshop/plan",{...candidateBody(),bench_test:{test:definition.test,config}});
     if(!current()) return;
@@ -1193,7 +1296,7 @@ async function runBenchTest() {
     clearPlayback(); status.dataset.state="error";
     status.textContent=`Simulation did not run: ${error.message}`; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
     throw error;
-  }
+  } finally {clearInterval(clock);workspace.running=false;}
 }
 
 async function saveBenchPreset() {
@@ -1225,7 +1328,7 @@ function renderUserLibrary() {
     card.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
     card.onclick = () => guard(card, async () => {
       if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
-      else if (bench.selectedPart) await reuseLibraryComponent(item.item_id); else say("Select a component, then click or drag this saved component onto it.");
+      else await inspectLibraryComponent(item.item_id);
     }); root.append(card);
   }
 }
@@ -1263,30 +1366,101 @@ function productParts(candidate) {
   if (!list.childElementCount) list.append(make("li", { class:"ws-feedback-count" }, "No components yet."));
   return list;
 }
+function resetInspectionView() {
+  clearPlayback(); workspace.inspecting++;
+  bench.clip.enabled=false; $("#ws-clip-enabled").checked=false;renderer.clippingPlanes=[];
+  showForceAt(null); if(build.placing)stopPlacing();clearGhost();
+  view="skin";pressView(view);
+}
 function openComponent(partName) {
-  bench.selectedPart = partName; bench.isolated = partName;
-  // Matter, collision, relations and physics are whole-product views; a single
-  // component has nothing to show in them, so open it in the design view.
-  if (!ISOLATING_VIEWS.includes(view)) { view = "wire"; pressView(view); }
-  const part = (chosen()?.parts || []).find((p) => p.name === partName);
-  const suggested = $("#ws-component-name");
-  if (suggested && !suggested.dataset.edited) suggested.value = part ? `${bench.kind} ${partName}` : "";
-  show();
-  // The component editor lives in the Build tab of the shell, if the shell is there.
+  const part = (chosen()?.parts || []).find(p=>p.name===partName); if(!part)return;
   document.querySelector('.ws-workspace-tabs button[data-mode="build"]')?.click();
-  $("#ws-component-editor")?.scrollIntoView({ block:"start" });
+  resetInspectionView();bench.libraryInspection=null;
+  $("#ws-component-editor").querySelectorAll("input,select,button").forEach(el=>el.disabled=false);
+  bench.selectedPart=partName;bench.isolated=partName;
+  const suggested=$("#ws-component-name");
+  if(suggested && !suggested.dataset.edited)suggested.value=`${bench.kind} ${partName}`;
+  show(); requestAnimationFrame(()=>{resize();show();});
 }
 function showWholeProduct() {
-  bench.isolated = null; show(); renderProductCatalog();
+  workspace.inspecting++;bench.libraryInspection=null;bench.isolated=null;
+  $("#ws-component-editor").querySelectorAll("input,select,button").forEach(el=>el.disabled=false);
+  show();renderProductCatalog();updateInspector();
+}
+async function inspectLibraryComponent(itemId) {
+  document.querySelector('.ws-workspace-tabs button[data-mode="build"]')?.click();
+  resetInspectionView();const request=workspace.inspecting,revision=bench.revision;
+  const answer=await api("/api/workshop/library",{action:"inspect_component",item_id:itemId});
+  if(request!==workspace.inspecting || revision!==bench.revision)return;
+  bench.libraryInspection=answer;bench.isolated=null;
+  show();requestAnimationFrame(()=>{resize();show();});
+  say(`Inspecting ${answer.library_item.name}. Your product has not changed.`);
 }
 async function copyComponent(partName, label) {
   if (!chosen()) throw new Error("Open a product first.");
-  const name = `${bench.kind} ${label}`;
-  const answer = await api("/api/workshop/library", { action:"save_component", ...candidateBody(), part_name:partName, name });
-  bench.personalLibrary = answer.personal_library || bench.personalLibrary;
-  bench.pricebook = answer.pricebook || bench.pricebook;
-  renderUserLibrary(); say(`Copied ${name} into My library.`);
+  const revision=bench.revision,name=`${bench.kind} ${label}`;
+  const answer=await api("/api/workshop/library",{action:"save_component",...candidateBody(),part_name:partName,name});
+  bench.personalLibrary=answer.personal_library || bench.personalLibrary;
+  bench.pricebook=answer.pricebook || bench.pricebook;renderUserLibrary();
+  if(revision===bench.revision)openComponent(partName);
+  say(`Copied ${name} into My library. Showing the component on its own.`);
 }
+function frameRenderedGeometry() {
+  group.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(group);
+  if(bounds.isEmpty())return;
+  bounds.getCenter(target);reach=Math.max(.001,bounds.getSize(new THREE.Vector3()).length()/2);
+  grid.position.y=bounds.min.y-reach*.06;
+}
+function updateInspector() {
+  const root=$("#ws-view-context");if(!root)return;
+  const saved=bench.libraryInspection,part=saved?.component_preview?.parts?.[0] || isolatedPart();
+  $("#ws-inspector-back").hidden=!part;$("#ws-inspector-use").hidden=!saved;
+  $("#ws-inspector-use").disabled=!bench.selectedPart;
+  $("#ws-inspector-use").textContent=bench.selectedPart ? `Replace ${bench.selectedPart} with this copy` : "Select a product part to replace first";
+  root.dataset.mode=part ? "component" : workspace.mode;
+  $("#ws-view-title").textContent=part ? saved?.library_item.name || part.name : workspace.mode==="test" ? benchDefinition()?.name || "Simulation workspace" : chosen()?.purpose || "Product";
+  $("#ws-view-description").textContent=part ? `${part.material} · ${part.size_m.map(v=>(v*1000).toFixed(1)).join(" × ")} mm · ${saved ? "Read-only saved component. Product unchanged." : "This component only. Edits apply to the product."} Drag to orbit; scroll to zoom.`
+    : workspace.mode==="test" ? workspace.setup?.summary || "Choose a situation. Inspect its setup, then run the physics." : "Drag to orbit · scroll to zoom · click a part to select it.";
+}
+function scheduleSetup(delay=250) {
+  clearTimeout(workspace.timer);const sequence=++workspace.sequence;
+  if(workspace.mode!=="test" || !chosen() || !benchDefinition())return;
+  workspace.timer=setTimeout(()=>previewSetup(sequence),delay);
+}
+async function previewSetup(sequence) {
+  if(sequence!==workspace.sequence || workspace.mode!=="test")return;
+  const revision=bench.revision,test=bench.selectedBenchTest;
+  const current=()=>sequence===workspace.sequence && revision===bench.revision && test===bench.selectedBenchTest && workspace.mode==="test";
+  const status=make("p",{id:"ws-setup-status",role:"status"},"Preparing the test scene…");
+  status.dataset.state="preparing";$("#ws-simulation-feedback").replaceChildren(status);
+  try {
+    const config=benchConfig();
+    const answer=await api("/api/workshop/plan",{...candidateBody(),bench_preview:{test,config}});
+    if(!current())return;
+    const setup=answer.bench_preview;
+    if(!setup?.frames?.[0]?.bodies?.length)throw new Error("No visible setup returned.");
+    workspace.setup=setup;bench.playback=null;bench.playbackPlaying=false;bench.playbackIndex=0;
+    view="physics";pressView(view);drawPlayback();frameSimulation(setup);updateInspector();
+    $("#ws-playback").hidden=true;
+    status.dataset.state="ready";status.textContent=`Setup ready · ${setup.native_verified ? "native geometry" : "compiled rigid geometry"} · physics has not run. ${setup.summary}`;
+  }catch(error){
+    if(!current())return;
+    workspace.setup=null;stage.dataset.phase="unavailable";
+    status.dataset.state="error";status.textContent=`Cannot prepare this test: ${error.message}`;
+    view="skin";pressView(view);show(false);
+  }
+}
+addEventListener("banjo-workshop-mode",event=>{
+  workspace.mode=event.detail;workspace.sequence++;benchTestRequest++;clearTimeout(workspace.timer);
+  if(workspace.mode==="test") {
+    workspace.inspecting++;bench.libraryInspection=null;bench.isolated=null;
+    bench.clip.enabled=false;$("#ws-clip-enabled").checked=false;renderer.clippingPlanes=[];
+    showForceAt(null);if(build.placing)stopPlacing();clearGhost();
+    if(bench.playback){view="physics";drawPlayback();frameSimulation(bench.playback);}else{view="skin";show();scheduleSetup(0);}
+  }else {bench.playbackPlaying=false;workspace.setup=null;if(view==="physics"){view="skin";pressView(view);}if(chosen())show();}
+  updateInspector();requestAnimationFrame(()=>{resize();if(bench.playback && workspace.mode==="test")frameSimulation(bench.playback);else frameCandidate();});
+});
 let catalogSignature = null, lastOpenProduct = null;
 function renderProductCatalog() {
   const root = $("#ws-product-catalog"), picker = $("#ws-archetype");
@@ -1310,7 +1484,7 @@ function renderProductCatalog() {
     card.onclick = () => guard(card, async () => {
       if (picker.value !== option.value) {
         picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true }));
-      } else if (bench.isolated) { showWholeProduct(); }
+      } else if (bench.isolated || bench.libraryInspection) { showWholeProduct(); }
       else { bench.expandedProduct = expanded ? null : option.value; catalogSignature = null; renderProductCatalog(); }
     });
     entry.append(card);
@@ -1334,12 +1508,12 @@ function renderIsolation() {
   // Matter, collision, relations and physics measure the assembled product.
   document.querySelectorAll(".ws-viewbar button").forEach((button) => {
     const whole = !ISOLATING_VIEWS.includes(button.dataset.view);
-    button.disabled = Boolean(bench.isolated) && whole;
+    button.disabled = Boolean(bench.isolated || bench.libraryInspection) && whole;
     button.title = button.disabled ? "This view measures the whole product. Show it to use this view." : "";
   });
 }
 function renderSelected() {
-  const part = selectedPart(), status = $("#ws-selected-part"), material = $("#ws-part-material");
+  const part = bench.libraryInspection ? null : selectedPart(), status = $("#ws-selected-part"), material = $("#ws-part-material");
   document.querySelectorAll("[data-component-edit], #ws-save-component, #ws-component-name, #ws-part-material, #ws-apply-skin")
     .forEach((element) => { element.disabled = !part; });
   renderIsolation();
@@ -1367,11 +1541,11 @@ function metricLabel(id, text) {
   if (label && label.tagName === "SPAN") label.textContent = text;
 }
 function headline(candidate, m) {
-  const alone = isolatedPart();
+  const alone = bench.libraryInspection?.component_preview?.parts?.[0] || isolatedPart();
   for (const id of ["#ws-buildability", "#ws-measurement-basis"]) { const box = $(id); if (box) box.hidden = Boolean(alone); }
   if (alone) {
     const mm = alone.size_m.map((v) => (v * 1000).toFixed(0));
-    $("#ws-name").textContent = alone.name;
+    $("#ws-name").textContent = bench.libraryInspection?.library_item.name || alone.name;
     $("#ws-purpose").textContent = `One ${alone.role.replace(/_/g, " ")} of the ${bench.kind.replace("-", " ")}.`;
     metricLabel("#ws-part-count", "Material"); $("#ws-part-count").textContent = alone.material;
     metricLabel("#ws-mass", "Mass"); $("#ws-mass").textContent = `${Number(alone.mass_kg).toFixed(3)} kg`;
@@ -1389,7 +1563,7 @@ function headline(candidate, m) {
 function show(reframe = true) {
   // The buildability panel is hidden while one component is alone on screen;
   // do not pay for an analysis of the whole product that nobody can read.
-  if (chosen() && !bench.isolated) scheduleBuildability();
+  if (chosen() && !bench.isolated && !bench.libraryInspection && workspace.mode!=="test") scheduleBuildability();
   if ($("#ws-mechanical-model") && chosen()) $("#ws-mechanical-model").value = chosen().mechanical_model === "rigid" ? "rigid" : "lattice";
   const candidate = chosen(); if (!candidate) return;
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
@@ -1398,6 +1572,11 @@ function show(reframe = true) {
   const parts = $("#ws-parts"); parts.replaceChildren();
   for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
+  if(bench.libraryInspection) {
+    $("#ws-selected-part").textContent="Inspecting a saved component. Your product has not changed.";
+    $("#ws-component-editor").querySelectorAll("input,select,button").forEach(el=>el.disabled=true);
+  }
+  updateInspector();
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
   else if (!m.stands_up) { checks.classList.add("bad"); said.push("Its geometric balance point is outside the support region."); }
@@ -1419,6 +1598,8 @@ function show(reframe = true) {
 
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
+  workspace.inspecting++;bench.libraryInspection=null;
+  $("#ws-component-editor").querySelectorAll("input,select,button").forEach(el=>el.disabled=false);
   bench.revision++;
   stage.dataset.kind = answer.kind; stage.dataset.revision = String(bench.revision);
   bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0;
@@ -1677,10 +1858,10 @@ function installBuildPanel(editor) {
   for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });
   $("#ws-build-place").onclick = () => {
     if (build.placing) { stopPlacing("Placing cancelled."); return; }
-    if (bench.isolated) showWholeProduct();          // a part goes against the product, not against one piece of it
+    if (bench.isolated || bench.libraryInspection) showWholeProduct(); // a part goes against the product, not against one piece of it
     // A click has to land on a face, and only the solid view has faces: a wire
     // edge belongs to two of them.
-    if (view !== "skin") { view = "skin"; pressView("skin"); show(false); }
+    view = "skin"; pressView("skin"); show(false);
     build.placing = true; stage.classList.add("ws-placing"); $("#ws-build-place").textContent = "Placing… click a face (press again to stop)";
     sayBuild("Click the face of the part it goes against.");
   };
@@ -1743,10 +1924,21 @@ $("#ws-save-feedback").onclick = (event) => guard(event.currentTarget, async () 
 
 function resize() {
   const rect = stage.getBoundingClientRect(); if (!rect.width || !rect.height) return;
-  renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.updateProjectionMatrix(); placeCamera();
+  const changed=Math.abs(camera.aspect-rect.width/rect.height)>0.001;
+  renderer.setSize(rect.width, rect.height, false); camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix();
+  if(changed)frameCandidate();else placeCamera();
 }
 new ResizeObserver(resize).observe(stage); addEventListener("resize", resize);
-function frame(now) { advancePlayback(now); renderer.render(scene, camera); requestAnimationFrame(frame); }
+function frame(now) {advancePlayback(now);followMatter(now);renderer.render(scene,camera);requestAnimationFrame(frame);}
+stage.visibleGeometry = () => {
+  group.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+  const b=new THREE.Box3().setFromObject(group),r=stage.getBoundingClientRect();
+  if(b.isEmpty())return null;
+  const points=[];for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]) {
+    const v=new THREE.Vector3(x,y,z).project(camera);points.push([r.left+(v.x+1)*r.width/2,r.top+(1-v.y)*r.height/2,v.z]);
+  }
+  return {points,meshes:group.children.filter(c=>c.isMesh || c.isLineSegments).length,clipped:renderer.clippingPlanes.length};
+};
 
 async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");

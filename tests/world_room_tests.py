@@ -479,7 +479,7 @@ class TheSpadeCarriesWhatItDigs(unittest.TestCase):
         def act(**body):
             body["session"] = live.session.id
             answer = live.act(body)
-            playground_server.remember_ground(app, body)   # as /api/live/act does
+            playground_server.remember_ground(app, body, answer)   # as /api/live/act does
             return answer
 
         opened = live.open(app, {"spec": app.room.spec})
@@ -498,7 +498,22 @@ class TheSpadeCarriesWhatItDigs(unittest.TestCase):
             # is carried is not.
             self.assertAlmostEqual(have[f"{kind}_m3"], dug["dug"][f"{kind}_m3"], delta=1e-5)
         self.assertAlmostEqual(have["sand_kg"] + have["soil_kg"], dug["dug"]["kg"], delta=0.02)
-        self.assertGreater(have["sand_m3"] + have["soil_m3"], 0.1, "a spade's pit is about 0.2 m3")
+        # A spade's pit here is about 0.2 m3, which is 320 kg, and it used to come
+        # out in one press and be carried off at a run. What comes out is what a
+        # person can still carry -- what their 800 N hand can lift -- from the same
+        # pit, less deep; and the answer says how deep, which is what the room keeps.
+        self.assertTrue(dug["dug"]["limited"])
+        self.assertEqual(have["limit_kg"], live_session.CARRY_LIMIT_KG)
+        self.assertAlmostEqual(have["sand_kg"] + have["soil_kg"], live_session.CARRY_LIMIT_KG, delta=1e-6)
+        self.assertGreater(dug["dug"]["depth_m"], 0.0)
+        self.assertLess(dug["dug"]["depth_m"], 0.4)
+        self.assertEqual(app.room.spec["terrain"]["edits"][-1]["dig"]["depth_m"], dug["dug"]["depth_m"])
+        # Carrying all they can, another press is refused in words before the
+        # ground is touched, and is not an edit.
+        with self.assertRaises(live_session.LiveError) as full:
+            act(op="dig", **{"from": [2.0, 4.25], "to": [2.0, 4.25]}, width_m=0.8, depth_m=0.4)
+        self.assertIn("is all you can carry: heap some of it first", str(full.exception))
+        self.assertEqual(1, len(app.room.spec["terrain"]["edits"]))
         # More than is carried is refused before the ground is touched.
         with self.assertRaises(live_session.LiveError) as refused:
             act(op="deposit", at=[-2.0, 4.0], radius_m=0.8, sand_m3=have["sand_m3"] + 0.01,

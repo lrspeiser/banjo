@@ -57,5 +57,37 @@ _core._changed = _changed
 apply_overrides = _core.apply_overrides
 design_from_spec = _core.design_from_spec
 edit = _core.edit
-component_recipe = _core.component_recipe
-replace_with_recipe = _core.replace_with_recipe
+def component_recipe(design, part_name):
+    from .workshop_matter_metrics import has_physical_skin
+    if has_physical_skin(design):
+        part = next((p for p in design.parts if p.name == part_name), None)
+        if part is None:
+            raise ValueError(f"there is no component {part_name!r} in this candidate")
+        # Preserve editable geometry without exporting the obsolete straight-part
+        # ports or claiming a capability for a physically curved component.
+        recipe = {"schema":"banjo.workshop-component-recipe.v1",
+                  "source_design_id":design.design_id,"source_part_name":part.name,
+                  "family":part.family,"role":part.role,"shape":part.shape,
+                  "size_m":list(part.size_m),"material":part.material,
+                  "interfaces":[],"ports":[],"physics_tags":["requires_retest"],
+                  "capabilities":[],"requires_retest":True}
+    else:
+        recipe = _core.component_recipe(design, part_name)
+    patch = (design.lineage.get("component_overrides") or {}).get(part_name) or {}
+    for key in ("skin", "mechanics"):
+        if key in patch:
+            recipe[key] = deepcopy(patch[key])
+    return recipe
+
+
+def replace_with_recipe(spec, *, part_name, recipe, scope="this"):
+    design, overrides, names = _core.replace_with_recipe(
+        spec, part_name=part_name, recipe=recipe, scope=scope)
+    for name in names:
+        for key, validator in (("skin", checked_skin), ("mechanics", checked_mechanics)):
+            # Replace, rather than retain the target's unrelated previous skin.
+            overrides.setdefault(name, {}).pop(key, None)
+            if key in recipe:
+                overrides[name][key] = validator(recipe[key])
+    design, overrides = design_from_spec({**spec, "component_overrides": overrides})
+    return design, overrides, names

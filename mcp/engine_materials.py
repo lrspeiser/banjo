@@ -59,6 +59,9 @@ ALIASES = {
     "aluminum_6061_t6": "aluminum",
     "soda_lime_glass": "glass",
     "alumina_ceramic": "alumina ceramic",
+    # What a scene calls it (fracture_lab.MATERIALS), and so what a native
+    # snapshot says a ceramic body is made of.
+    "ceramic": "alumina ceramic",
     "natural_rubber": "rubber",
     "freshwater_ice": "ice",
 }
@@ -71,6 +74,18 @@ def canonical(name: str) -> str:
 
 def known(name: str) -> bool:
     return canonical(name) in MATERIALS
+
+
+def scene_name(name: str) -> str:
+    """What a scene body must call this material.
+
+    The scene vocabulary (fracture_lab.MATERIALS) is this catalogue's, except
+    that it says "ceramic" where the catalogue says "alumina ceramic". Handing a
+    scene the catalogue's name refused every ceramic product before it ran:
+    "material must be one of [... 'ceramic' ...]".
+    """
+    key = canonical(name)
+    return "ceramic" if key == "alumina ceramic" else key
 
 
 def density(name: str) -> float:

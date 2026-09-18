@@ -78,5 +78,44 @@ class ComponentRoundTrip(unittest.TestCase):
         self.assertGreater(after, before)
 
 
+class ComponentInspection(unittest.TestCase):
+    setUp = ComponentRoundTrip.setUp
+    tearDown = ComponentRoundTrip.tearDown
+    def test_inspection_returns_one_centered_component_without_replacing_anything(self):
+        saved = workshop_api.library(self.app, {"action":"save_component", "kind":"cart",
+            "parameters":{}, "part_name":"wheel-11", "name":"Wheel to inspect"})["library_item"]
+        before = workshop_api.library(self.app, {"action":"load", "item_id":saved["item_id"]})
+        answer = workshop_api.library(self.app, {"action":"inspect_component", "item_id":saved["item_id"]})
+        self.assertTrue(answer["read_only"])
+        self.assertNotIn("candidates", answer)
+        parts = answer["component_preview"]["parts"]
+        self.assertEqual(1, len(parts))
+        self.assertEqual([0,0,0], parts[0]["center_m"])
+        self.assertEqual(saved["payload"]["size_m"], parts[0]["size_m"])
+        self.assertEqual(before, workshop_api.library(self.app, {"action":"load", "item_id":saved["item_id"]}))
+
+    def test_saved_surface_and_physical_flag_survive_inspect_and_explicit_reuse(self):
+        spec={"kind":"table", "parameters":{}, "component_overrides":{
+            "leg-1":{"skin":{"profile":"curve", "physical":True, "bend_m":.08, "roughness":.25}},
+            "leg-3":{"skin":{"profile":"round", "physical":False}}}}
+        saved=workshop_api.library(self.app, {**spec,"action":"save_component", "part_name":"leg-1", "name":"Curved leg"})["library_item"]
+        answer=workshop_api.library(self.app, {"action":"inspect_component", "item_id":saved["item_id"]})
+        skin=answer["component_preview"]["skin"]["components"][0]
+        self.assertEqual("bezier_tube",skin["kind"]); self.assertTrue(skin["physical"])
+        self.assertEqual(.08,skin["control_points_local_m"][1][0])
+        reused=workshop_api.candidates(self.app, {**spec,"reuse_library_item":{
+            "item_id":saved["item_id"],"part_name":"leg-3"}})["candidates"][0]
+        copied=reused["component_overrides"]["leg-3"]["skin"]
+        self.assertEqual("curve",copied["profile"]);self.assertTrue(copied["physical"])
+        self.assertEqual(.08,copied["bend_m"])
+
+    def test_inspection_is_owner_scoped_and_rejects_missing_components(self):
+        saved=workshop_api.library(self.app, {"action":"save_component","kind":"table",
+            "parameters":{},"part_name":"leg-1","name":"Private leg"})["library_item"]
+        self.app.workshop_owner_id="another-owner"
+        with self.assertRaises(FileNotFoundError):
+            workshop_api.library(self.app, {"action":"inspect_component","item_id":saved["item_id"]})
+
+
 if __name__ == "__main__":
     unittest.main()

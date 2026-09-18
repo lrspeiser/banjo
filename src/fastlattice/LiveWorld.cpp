@@ -752,6 +752,9 @@ struct LiveWorld::Impl {
     struct Sustained {
         std::vector<std::string> on;
         std::vector<std::pair<std::string, double>> loads_n;
+        // Held up by the ground, on its own feet, rather than by anything in
+        // `on`: a table, which is one body and has nothing under it.
+        bool on_ground{};
     };
     std::unordered_map<std::string, Sustained> sustained_by;
     // What statics last said about each body it was asked about, for reports.
@@ -5308,6 +5311,26 @@ void LiveWorld::surveyLoads() {
         middle[i] = impl_->world->snapshot(impl_->body_of[i]).center_of_mass_world_m;
         half[i] = 0.5 * impl_->described[i].dimensions_m;
         const double cell = impl_->request.cell_size_m;
+        // A box about the centre of mass is where a BOX is. A thing joined from
+        // several shapes is somewhere else: a table's weight is nearly all in its
+        // top, so that box stood 0.3 m proud of it and nothing put on the table
+        // was found resting on it. Where its cells say it is more than half a
+        // cell from that box, its cells are believed.
+        if (!impl_->nodes_of[i].empty()) {
+            const RigidSnapshot pose = impl_->world->snapshot(impl_->body_of[i]);
+            Vec3 low{1e30, 1e30, 1e30}, high{-1e30, -1e30, -1e30};
+            for (const std::uint32_t node : impl_->nodes_of[i]) {
+                const Vec3 at = pose.center_of_mass_world_m + pose.orientation_world.rotate(impl_->cell_offset_m[node]);
+                low = {std::min(low.x, at.x), std::min(low.y, at.y), std::min(low.z, at.z)};
+                high = {std::max(high.x, at.x), std::max(high.y, at.y), std::max(high.z, at.z)};
+            }
+            const Vec3 centre = 0.5 * (low + high);
+            const Vec3 reach = 0.5 * (high - low) + Vec3{0.5 * cell, 0.5 * cell, 0.5 * cell};
+            const auto apart = [&](const Vec3 &a, const Vec3 &b) {
+                return std::max({std::abs(a.x - b.x), std::abs(a.y - b.y), std::abs(a.z - b.z)}) > 0.5 * cell;
+            };
+            if (apart(centre, middle[i]) || apart(reach, half[i])) { middle[i] = centre; half[i] = reach; }
+        }
         const double volume = static_cast<double>(impl_->nodes_of[i].size()) *
                               cell * cell * cell;
         const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
@@ -5355,6 +5378,114 @@ void LiveWorld::surveyLoads() {
         }
     }
 
+    // A thing that stands on the ground on its own feet: a table, which is a top
+    // between its legs and all one body.
+    //
+    // The survey below looks for a beam held up by OTHER bodies and takes the
+    // span between them, so a table -- nothing under it but the ground -- was
+    // "falling, not carrying", and was never asked about whatever was piled on
+    // it: measured through the Workshop's load test, five tonnes of iron on a
+    // glass table. Nor would the whole body's box have been its section: legs
+    // and all, that is most of a metre deep, where what bridges the gap is the
+    // 40 mm of top.
+    //
+    // So both are read from the body's own cells, on their own grid and in the
+    // body's own frame, which is right whichever way it faces. Its feet are the
+    // cells whose underside is on the ground beneath them. Along each of its two
+    // level axes the feet fall into runs, the widest gap between two runs is
+    // the clear span, and the section is what is actually there in the middle of
+    // that gap: in each column across it, the cells in one run down from the
+    // top, which is the member the load sits on (a stretcher lower down is a
+    // second beam, not more depth for this one). Its section modulus is summed
+    // over those cells, which for a plain rectangle is b d^2 / 6 exactly. Feet
+    // in one run -- a block, a plinth -- leave no gap, and nothing to bend.
+    struct OwnFeet {
+        bool stands{};
+        double span_m{}, section_modulus_m3{};
+    };
+    const auto onItsOwnFeet = [&](std::size_t body) {
+        OwnFeet best;
+        const std::vector<std::uint32_t> &nodes = impl_->nodes_of[body];
+        if (nodes.empty()) return best;
+        const RigidSnapshot pose = impl_->world->snapshot(impl_->body_of[body]);
+        const double cell = impl_->request.cell_size_m;
+        // Which of its own axes is up. One that is not square to the ground is
+        // tipping, and is not at rest under anything.
+        int up = -1;
+        double up_sign = 1.0;
+        for (int axis = 0; axis < 3; ++axis) {
+            const Vec3 unit{axis == 0 ? 1.0 : 0.0, axis == 1 ? 1.0 : 0.0, axis == 2 ? 1.0 : 0.0};
+            const double y = pose.orientation_world.rotate(unit).y;
+            if (std::abs(y) > 0.996) { up = axis; up_sign = y > 0.0 ? 1.0 : -1.0; }
+        }
+        if (up < 0) return best;
+        const int level[2] = {(up + 1) % 3, (up + 2) % 3};
+        const auto part = [](const Vec3 &v, int axis) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; };
+        const Vec3 first = impl_->cell_offset_m[nodes.front()];
+        struct Cell { long long at[3]; bool foot; };
+        std::vector<Cell> cells;
+        cells.reserve(nodes.size());
+        const double reach = std::max(kWhisker, 0.25 * cell);
+        for (const std::uint32_t node : nodes) {
+            const Vec3 offset = impl_->cell_offset_m[node];
+            Cell c{};
+            for (int axis = 0; axis < 3; ++axis)
+                c.at[axis] = std::llround((part(offset, axis) - part(first, axis)) / cell);
+            c.at[up] = static_cast<long long>(up_sign) * c.at[up];
+            const Vec3 world = pose.center_of_mass_world_m + pose.orientation_world.rotate(offset);
+            const double ground = impl_->environment ? impl_->environment->terrain().heightAt(world.x, world.z)
+                                                     : impl_->setup->ground_y;
+            c.foot = std::abs(world.y - 0.5 * cell - ground) < reach;
+            best.stands = best.stands || c.foot;
+            cells.push_back(c);
+        }
+        if (!best.stands) return best;
+        double worst = 0.0;
+        for (const int along : level) {
+            const int across = along == level[0] ? level[1] : level[0];
+            std::set<long long> feet;
+            for (const Cell &c : cells)
+                if (c.foot) feet.insert(c.at[along]);
+            // The widest gap between two runs of feet.
+            long long gap = 0, from = 0, last = 0;
+            bool any = false;
+            for (const long long at : feet) {
+                if (any && at - last - 1 > gap) { gap = at - last - 1; from = last; }
+                last = at;
+                any = true;
+            }
+            if (gap < 1) continue;
+            const long long middle = from + (gap + 1) / 2;
+            // What is there in the middle of it: each column's run down from the top.
+            std::map<long long, std::set<long long>> column;
+            for (const Cell &c : cells)
+                if (c.at[along] == middle) column[c.at[across]].insert(c.at[up]);
+            std::vector<long long> carrying_cells;
+            for (const auto &[where, heights] : column) {
+                long long at = *heights.rbegin();
+                while (heights.count(at) != 0) carrying_cells.push_back(at--);
+            }
+            if (carrying_cells.empty()) continue;
+            double mean = 0.0;
+            for (const long long at : carrying_cells) mean += static_cast<double>(at);
+            mean /= static_cast<double>(carrying_cells.size());
+            double second_moment = 0.0, furthest = 0.0;
+            for (const long long at : carrying_cells) {
+                const double away = static_cast<double>(at) - mean;
+                second_moment += 1.0 / 12.0 + away * away;
+                furthest = std::max(furthest, std::abs(away));
+            }
+            const double modulus = second_moment * cell * cell * cell / (furthest + 0.5);
+            const double span = static_cast<double>(gap) * cell;
+            // The worse of its two ways across: the longer span over the smaller section.
+            if (!(modulus > 0.0) || span / modulus <= worst) continue;
+            worst = span / modulus;
+            best.span_m = span;
+            best.section_modulus_m3 = modulus;
+        }
+        return best;
+    };
+
     for (std::size_t i = 0; i < count; ++i) {
         if (impl_->described[i].anchored) continue;
         if (i == impl_->holding) continue;             // in a hand, not on anything
@@ -5377,7 +5508,10 @@ void LiveWorld::surveyLoads() {
             leftmost = std::min(leftmost, middle[under].x - half[under].x);
             rightmost = std::max(rightmost, middle[under].x + half[under].x);
         }
-        if (!held) continue;                            // falling, not carrying
+        // Nothing under it: falling, not carrying -- unless what is under it is
+        // the ground, and it stands there on its own feet.
+        const OwnFeet feet = held ? OwnFeet{} : onItsOwnFeet(i);
+        if (!held && !feet.stands) continue;
         // The clear span: from the inner edge of one support to the inner edge
         // of the other, capped at the beam itself.
         double span = std::min(rightmost - leftmost, 2.0 * half[i].x);
@@ -5388,6 +5522,7 @@ void LiveWorld::surveyLoads() {
             supported_length += std::min(2.0 * half[under].x, 2.0 * half[i].x);
         }
         span = std::max(0.0, span - supported_length);
+        if (!held) span = feet.span_m;
         if (!(span > 1e-3)) continue;                   // held everywhere: no bending
 
         // Section: breadth across the span, depth in the direction it bends --
@@ -5406,6 +5541,11 @@ void LiveWorld::surveyLoads() {
         const double own_per_m = weight[i] / std::max(span, 1e-6);
         double stress = 3.0 * carrying[i] * span / (2.0 * breadth * depth * depth) +
                         3.0 * own_per_m * span * span / (4.0 * breadth * depth * depth);
+        // On its own feet the section is the one its cells have in the middle of
+        // the gap, and the same two moments go over its modulus: W L / 4 and
+        // w L^2 / 8, which over b d^2 / 6 are the two terms above.
+        if (!held)
+            stress = (0.25 * carrying[i] * span + 0.125 * own_per_m * span * span) / feet.section_modulus_m3;
         // And at every cut it carries. A kerf across the span leaves the bonds
         // still alive across its plane as the only section there -- the
         // ligament -- so the bending there is the moment where the kerf is over
@@ -5539,6 +5679,7 @@ void LiveWorld::surveyLoads() {
         // And the whole of it, for statics: what it rests on, and every body
         // directly on it with the weight that body brings down.
         Impl::Sustained &sustained = impl_->sustained_by[impl_->described[i].name];
+        sustained.on_ground = !held;
         for (std::size_t under = 0; under < count; ++under)
             if (restsOn(i, under)) sustained.on.push_back(impl_->described[under].name);
         for (std::size_t on_top = 0; on_top < count; ++on_top)
@@ -6403,9 +6544,25 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // the island clear first -- a rigid translation, so no momentum and no
     // kinetic energy change -- and refuse outright if it is buried deeper than
     // half a cell, rather than hand the lattice a state it will explode on.
-    double lift = 0.0;
+    //
+    // Buried, which is not the same as on its way in. The step taken back is
+    // the one in which the contact was REPORTED, and a body landing fast is well
+    // into the floor by then for the same reason a striker is well into what it
+    // struck (above): at the room's 1/120 s a table coming down at 10.8 m/s
+    // moves 90 mm a step, more than two 40 mm cells. Counting that as burial
+    // made the answer a matter of where in a step the floor happened to be.
+    // Measured on the Workshop's glass table against its 8.7 m/s bar: dropped
+    // 4 m it was caught 14 mm short of the floor and broke into 40; dropped 6 m
+    // it was caught 25 mm inside, and at 10 and 16 m deeper still, the contact
+    // said would_break each time and the answer was "held" with no run made. A
+    // harder landing held where a softer one broke. So the depth a cell can owe
+    // to its own body's way in -- what that cell moves into the plane in one
+    // step -- is not burial, and lifting it out is putting the body back where
+    // it was when it met the floor. Only what is deeper than that is refused.
+    double lift = 0.0, on_its_way_in = 0.0;
     {
         const SupportSet<double> &support = setup.settings_world.support;
+        const double step_s = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 240.0;
         for (const std::uint32_t node : island_nodes) {
             const Vec3 position = snap.center_of_mass_world_m +
                 snap.orientation_world.rotate(island_offset_m[node]);
@@ -6415,11 +6572,19 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                 if (!insideFootprints(plane, toV3(position))) continue;
                 const double depth =
                     dot(toV3(position) - plane.point, plane.normal) - plane.node_radius;
-                lift = std::max(lift, -depth);
+                if (-depth <= lift) continue;
+                lift = -depth;
+                // This cell's own speed into the plane: its body's, with its spin.
+                const RigidSnapshot &owner = poses_before.at(body_of_node.at(node));
+                const Vec3 velocity = owner.linear_velocity_m_s +
+                    cross(owner.angular_velocity_rad_s, position - owner.center_of_mass_world_m);
+                on_its_way_in = std::max(0.0, -velocity.y) * step_s;
             }
         }
     }
-    if (lift > 0.5 * impl_->request.cell_size_m) { job.settled = true; job.answer = 1; return held; }
+    if (lift > 0.5 * impl_->request.cell_size_m + on_its_way_in) {
+        job.settled = true; job.answer = 1; return held;
+    }
 
     const FragmentPose pose{snap.center_of_mass_world_m + Vec3{0.0, lift, 0.0},
                             snap.orientation_world, snap.linear_velocity_m_s,
@@ -6625,6 +6790,16 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                 holding_cells.insert(static_cast<std::uint32_t>(local));
             }
         }
+        // Held from below by the ground: its own feet, where the survey found
+        // them -- the cells whose underside is on the ground beneath them.
+        if (sustained.on_ground)
+            for (std::size_t local = 0; local < count; ++local) {
+                const Vec3 p = island.matter.nodes[local].position_world_m;
+                const double ground = impl_->environment ? impl_->environment->terrain().heightAt(p.x, p.z)
+                                                         : setup.ground_y;
+                if (p.y - ground > cell || p.y < ground - 0.5 * cell) continue;
+                holding_cells.insert(static_cast<std::uint32_t>(local));
+            }
         job.load.supported_nodes.assign(holding_cells.begin(), holding_cells.end());
         job.supported_cells = holding_cells.size();
         // Pressed from above: the weight each thing on it brings down, shared
@@ -8973,6 +9148,10 @@ terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environm
 terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, double width_m,
                                    double depth_m) {
     return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m);
+}
+
+void LiveWorld::setCarryLimitKg(double kg) {
+    if (impl_->environment) impl_->environment->setCarryLimitKg(kg);
 }
 
 terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {

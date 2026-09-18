@@ -280,8 +280,8 @@ class VisibleSimulationContract(unittest.TestCase):
                 workshop_bench.run(None, assemble("table"), request)
 
     def test_only_real_selected_subjects_are_offered_as_simulations(self):
-        for kind, expected in {"table":{"drop_product","slide_product","declared_static_load"},
-                               "bench":{"drop_product","slide_product","declared_static_load"},
+        for kind, expected in {"table":{"drop_product","slide_product","impact_product","declared_static_load"},
+                               "bench":{"drop_product","slide_product","impact_product","declared_static_load"},
                                "cart":{"cart_roll"},"kettle":{"kettle_heat"},
                                "chair":set(),"stool":set(),"shelf-unit":set()}.items():
             visible = {t["test"] for t in workshop_bench.catalog(kind)
@@ -298,6 +298,67 @@ class VisibleSimulationContract(unittest.TestCase):
         self.assertTrue(all(b["velocity_m_s"]==[0,0,0] for b in drop["spec"]["bodies"]))
         self.assertTrue(all(b["velocity_m_s"]==[2,0,0] for b in slide["spec"]["bodies"]))
         self.assertTrue(all(b["name"].startswith("workshop/product") for b in drop["spec"]["bodies"]))
+
+    def test_the_drop_reaches_past_what_every_offered_material_can_take(self):
+        # The engine's own bars for this table landing on the ground: glass 8.7
+        # m/s, oak 13.7. A ceiling of 2 m landed at 6.3 m/s, so no setting the
+        # page offered could break anything and every run said zero fractures.
+        import workshop_motion as motion
+        height = next(c for t in motion.catalog("table") if t["test"] == "drop_product"
+                      for c in t["controls"] if c["name"] == "height_m")
+        self.assertGreater((2 * 9.81 * height["max"]) ** .5, 13.75 * 1.2)
+        # The declared time is still the time simulated: a short run checks free fall in mid-air.
+        self.assertEqual(.15, motion.scene(assemble("table"), "drop_product", {"height_m": 10, "duration_s": .15})["duration_s"])
+
+    def test_every_catalogue_material_has_a_name_a_scene_accepts(self):
+        # The catalogue says "alumina ceramic" and a scene says "ceramic", so
+        # every ceramic product was refused before it ran, by both the load test
+        # and the drop: "material must be one of [... 'ceramic' ...]".
+        import fracture_lab
+        from mcp import engine_materials
+        for name in engine_materials.MATERIALS:
+            with self.subTest(material=name):
+                self.assertIn(engine_materials.scene_name(name), fracture_lab.MATERIALS)
+                # And what a native snapshot then calls it reads back as the catalogue's.
+                self.assertEqual(name, engine_materials.canonical(engine_materials.scene_name(name)))
+        from workshop_sparse_trial import prototype_scene
+        import workshop_motion as motion
+        design = assemble("table", parameters={"material": "alumina ceramic"})
+        for spec in (prototype_scene(design, load_kg=10)["spec"], motion.scene(design, "drop_product", {})["spec"]):
+            self.assertEqual({"ceramic"}, {b["material"] for b in spec["bodies"] if b["name"].startswith(("candidate/", "workshop/product"))})
+
+    def test_the_striker_is_a_separate_iron_block_aimed_at_matter(self):
+        import workshop_motion as motion
+        from mcp import engine_materials
+        design = assemble("table")
+        h = .04
+        for fraction in (0.0, .3, 1.0):
+            with self.subTest(fraction=fraction):
+                made = motion.scene(design, "impact_product", {"striker_kg": 5, "speed_m_s": 8, "height_fraction": fraction})
+                blocks = [b for b in made["spec"]["bodies"] if b["name"] == motion.STRIKER]
+                product = [b for b in made["spec"]["bodies"] if b["name"] != motion.STRIKER]
+                self.assertEqual(1, len(blocks))
+                block = blocks[0]
+                self.assertEqual("iron", block["material"])
+                self.assertFalse(block.get("join"))
+                self.assertTrue(all(b["join"] == made["root"] and b["velocity_m_s"] == [0, 0, 0] for b in product))
+                self.assertEqual([8, 0, 0], block["velocity_m_s"])
+                # Whole cells of iron, and the energy is that mass's, not the asked one's.
+                cells = round(block["size_mm"][0] / 40) * round(block["size_mm"][1] / 40) * round(block["size_mm"][2] / 40)
+                self.assertAlmostEqual(cells * engine_materials.density("iron") * h**3, made["striker"]["actual_kg"], places=6)
+                self.assertAlmostEqual(.5 * made["striker"]["actual_kg"] * 64, made["striker"]["energy_j"], places=6)
+                # Beside the product with air between, on the floor or above it...
+                low = block["center_mm"][1] - block["size_mm"][1] / 2
+                self.assertGreaterEqual(low, -1e-6)
+                right = block["center_mm"][0] + block["size_mm"][0] / 2
+                first = min(b["center_mm"][0] - b["size_mm"][0] / 2 for b in product)
+                self.assertGreater(first - right, 2 * 40 - 1e-6)
+                # ...and in line with matter: some box of the product overlaps its
+                # height and depth. A table's middle is the air between its legs.
+                def overlaps(b, axis):
+                    return (abs(b["center_mm"][axis] - block["center_mm"][axis])
+                            < (b["size_mm"][axis] + block["size_mm"][axis]) / 2 - 1e-6)
+                self.assertTrue(any(overlaps(b, 1) and overlaps(b, 2) for b in product))
 
     def test_motion_rejects_invalid_inputs_without_starting_engine(self):
         import workshop_motion as motion

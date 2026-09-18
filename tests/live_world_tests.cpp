@@ -1322,6 +1322,107 @@ void landingOnTheFloorIsAnImpact() {
     require(hard.outcome == "broke", "a glass ball hit the floor at 20 m/s and survived");
 }
 
+// A hard landing breaks the thing whatever the phase of the step it lands in.
+//
+// The step taken back is the one in which the contact was REPORTED, and at the
+// room's 1/120 s a table coming down at 12 m/s has moved 100 mm in it. The
+// state handed to the lattice therefore has its feet anywhere from just short
+// of the floor to most of a step's travel inside it, by nothing but where in a
+// step the floor happened to be. The lattice is started from a lift clear of
+// the floor, and used to refuse outright whenever that lift was more than half
+// a cell -- the guard against matter that is BURIED, which a body on its way in
+// is not. Measured on the Workshop's glass table at 40 mm cells: dropped 4 m
+// (8.8 m/s, 14 mm short of the floor at capture) it broke into 40; dropped 6 m
+// (10.8 m/s, 25 mm inside) the contact said would_break and the answer was
+// "held" with no run made, and the same at 10 and 16 m. A harder hit must not
+// be the one that holds.
+//
+// A table and not a slab: a slab landing flat on a flat floor is loaded evenly
+// over its whole face, and its run at 12 m/s against the same 8.7 m/s bar goes
+// the full window without a bond failing -- the bar is the speed below which
+// nothing CAN happen, not one above which something must. Four legs under a
+// top are what the Workshop drops, and they come off.
+struct TableLanding {
+    LiveImpact hardest;
+    std::string outcome{"never asked"};
+    std::size_t pieces{};
+    int asked{};
+};
+TableLanding dropAGlassTable(double clearance_m, double speed_m_s) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    r.backend = benchBackend();
+    r.plasticity = true;
+    const double leg = 0.40, across = 0.48;
+    const auto glass = [&](const std::string &name, Vec3 size, Vec3 centre) {
+        SceneBody part;
+        part.name = name;
+        part.shape = BodyShape::Box;
+        part.material = MaterialPreset::Glass;
+        part.dimensions_m = size;
+        part.center_m = centre + Vec3{0.0, clearance_m, 0.0};
+        part.velocity_m_s = {0.0, -speed_m_s, 0.0};
+        part.join = "table";
+        return part;
+    };
+    r.bodies.push_back(glass("table", {across, 0.04, across}, {0.0, leg + 0.02, 0.0}));
+    const double at = 0.5 * across - 0.02;
+    int n = 0;
+    for (const double x : {-at, at})
+        for (const double z : {-at, at})
+            r.bodies.push_back(glass("table leg " + std::to_string(++n), {0.04, leg, 0.04},
+                                     {x, 0.5 * leg, z}));
+    const auto live = LiveWorld::open(r);
+    TableLanding out;
+    for (int i = 0; i < 40 && out.asked == 0; ++i) {
+        live->step(1.0 / 120.0);
+        for (const LiveImpact &impact : live->impacts(0.2))
+            if (impact.struck.rfind("table", 0) == 0 &&
+                impact.closing_speed_m_s > out.hardest.closing_speed_m_s)
+                out.hardest = impact;
+        for (const std::string &name : live->breakable()) {
+            if (name.rfind("table", 0) != 0) continue;
+            ++out.asked;
+            live->fracture(name);
+            switch (live->lastOutcome()) {
+            case LiveOutcome::Broke: out.outcome = "broke"; break;
+            case LiveOutcome::Dented: out.outcome = "dented"; break;
+            case LiveOutcome::Held: out.outcome = "held"; break;
+            default: out.outcome = "something else"; break;
+            }
+            break;
+        }
+    }
+    for (const LiveBodyPose &pose : live->poses(false))
+        if (pose.name.rfind("table", 0) == 0) ++out.pieces;
+    return out;
+}
+void aHardLandingBreaksItWhateverThePhaseOfTheStep() {
+    // 12 m/s is 100 mm a step, and the clearances are whole cells apart (the
+    // parts are voxelised where they stand, so anything else moves the shape on
+    // its grid): 40 mm at a time walks the floor through a step in fifths --
+    // caught 20, 80, 40, 0 and 60 mm in, and round again.
+    for (int k = 0; k < 6; ++k) {
+        const double clearance = 0.48 + 0.04 * k;
+        const TableLanding landing = dropAGlassTable(clearance, 12.0);
+        std::cout << "  glass table from " << clearance << " m up at 12 m/s: hit at "
+                  << landing.hardest.closing_speed_m_s << " m/s against a "
+                  << landing.hardest.threshold_speed_m_s << " m/s bar, " << landing.outcome
+                  << ", now in " << landing.pieces << " piece(s)\n";
+        const std::string from = "from " + std::to_string(clearance) + " m up, ";
+        // The premise: a landing well past the bar that says so, and was asked about.
+        require(landing.hardest.would_break &&
+                    landing.hardest.closing_speed_m_s > 1.2 * landing.hardest.threshold_speed_m_s,
+                from + "the table never landed hard enough to break, so this proves nothing");
+        require(landing.asked > 0, from + "the table was never asked about");
+        require(landing.outcome == "broke" && landing.pieces > 1,
+                from + "the table landed at " + std::to_string(landing.hardest.closing_speed_m_s) +
+                    " m/s against its " + std::to_string(landing.hardest.threshold_speed_m_s) +
+                    " m/s bar, the contact said it would break, and the answer was \"" +
+                    landing.outcome + "\" with " + std::to_string(landing.pieces) + " piece(s)");
+    }
+}
+
 // A thing bends before it breaks, and the engine can now tell you which.
 //
 // The trigger only ever asked one question -- can any bond reach its REMOVAL
@@ -2298,6 +2399,11 @@ void aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom() {
 
 int main(int argc, char **argv) {
     try {
+        if (argc > 1 && std::string(argv[1]) == "--landing") {
+            aHardLandingBreaksItWhateverThePhaseOfTheStep();
+            std::cout << "[PASS] a hard landing breaks the thing whatever the phase of the step it lands in\n";
+            return 0;
+        }
         if (argc > 1 && std::string(argv[1]) == "--deadline") {
             theDeadlineIsMet();
             std::cout << "[PASS] a foreseen fracture's first run is done inside its warning\n";
@@ -2341,6 +2447,8 @@ int main(int argc, char **argv) {
         std::cout << "[PASS] a body asked about for a dent is dented, never broken\n";
         landingOnTheFloorIsAnImpact();
         std::cout << "[PASS] landing on the floor is an impact and is judged like any other\n";
+        aHardLandingBreaksItWhateverThePhaseOfTheStep();
+        std::cout << "[PASS] a hard landing breaks the thing whatever the phase of the step it lands in\n";
         aThingBendsBeforeItBreaks();
         std::cout << "[PASS] a thing bends before it breaks, and the engine says which\n";
         somethingBrittleHasNoDentingRange();

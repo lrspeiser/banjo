@@ -163,6 +163,20 @@ def library(app: Any = None, body: Any = None,
     body = body if isinstance(body, dict) else {}
     if app is not None:
         action = body.get("action")
+        if action == "inspect_component":
+            from mcp.workshop_construction import template_part
+            from mcp.workshop import WorkshopDesign
+            item = workshop_library.load_item(app, str(body.get("item_id") or ""))
+            if item["item_type"] != "component":
+                raise ValueError("Choose a saved component to inspect")
+            part = template_part({"name": "inspected-component", "recipe": item["payload"]})
+            design = WorkshopDesign(design_id=item["item_id"], purpose=item["name"], parts=[part])
+            skin = item["payload"].get("skin")
+            overrides = {part.name: {"skin": skin}} if skin else {}
+            return {"schema": WORKSHOP_SCHEMA, "library_item": item,
+                    "component_preview": {**design.wireframe(),
+                        "skin": workshop_visual.skin_document(design, overrides)},
+                    "read_only": True}
         if action == "load":
             return {"schema": WORKSHOP_SCHEMA,
                     "library_item": workshop_library.load_item(app, str(body.get("item_id") or ""))}

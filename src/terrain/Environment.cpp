@@ -874,6 +874,15 @@ void Environment::stepNetwork(double dt_s) {
     network_->advance(dt_s);
 }
 
+double Environment::carriedKg() const {
+    return carried_.sand_m3 * sandMaterial().density_kg_m3 + carried_.soil_m3 * soilMaterial().density_kg_m3;
+}
+
+void Environment::setCarryLimitKg(double kg) {
+    if (std::isnan(kg) || kg < 0.0) throw std::invalid_argument("a carry limit is zero or more kilograms");
+    carry_limit_kg_ = kg;
+}
+
 void Environment::carry(const Volumes &dug) {
     carried_.sand_m3 += dug.sand_m3;
     carried_.soil_m3 += dug.soil_m3;
@@ -890,7 +899,9 @@ EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, d
                             double width_m, double depth_m) {
     EditEffect effect;
     terrain_->resetActivity();
-    effect.edit = terrain_->dig(ax, az, bx, bz, width_m, depth_m);
+    // What comes out is carried, so no more comes out than can be.
+    effect.edit = terrain_->dig(ax, az, bx, bz, width_m, depth_m,
+                                std::max(0.0, carry_limit_kg_ - carriedKg()));
     carry(effect.edit.moved);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);

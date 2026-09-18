@@ -1434,6 +1434,9 @@ public:
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.
     terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    // How much dug ground the person can carry (terrain::Environment). A world
+    // with no ground has nothing to dig and takes any limit.
+    void setCarryLimitKg(double kg);
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
     // Cut a block out of bare rock, `height_m` tall (rounded to whole cells).

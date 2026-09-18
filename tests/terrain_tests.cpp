@@ -85,6 +85,57 @@ void diggingIsAccountedByMaterial() {
               << std::abs(back.total() - before.total()) << " m^3\n";
 }
 
+// 1b. A dig with a budget takes out no more than the budget: the same trench,
+// as deep as the budget lets it go. What is carried out of the ground had no
+// weight and no end -- six presses of Dig here put 435 kg on the person in the
+// owner's room -- and a limit on it is this, in the ground's own arithmetic.
+void aDigTakesOutNoMoreThanMayBeCarried() {
+    const auto asked = [] {
+        TerrainField ground = flat(40, 40, 0.6, 0.3);
+        return ground.dig(3.0, 5.0, 7.0, 5.0, 1.0, 0.5);
+    }();
+    require(!asked.limited && asked.depth_m == 0.5, "a dig with no budget goes as deep as it was asked to");
+    // Room for all of it: the same dig, to the last bit.
+    {
+        TerrainField ground = flat(40, 40, 0.6, 0.3);
+        const EditReport dug = ground.dig(3.0, 5.0, 7.0, 5.0, 1.0, 0.5, asked.mass_kg + 1.0);
+        require(!dug.limited && dug.depth_m == 0.5 && dug.mass_kg == asked.mass_kg &&
+                    dug.moved.sand_m3 == asked.moved.sand_m3 && dug.cells == asked.cells,
+                "a budget it fits inside changed the dig");
+    }
+    // Room for 80 kg of it, which is within the sand; and for an amount that
+    // goes through the sand into the soil under it.
+    for (const double budget : {80.0, 0.8 * asked.mass_kg}) {
+        TerrainField ground = flat(40, 40, 0.6, 0.3);
+        const Volumes before = ground.volumes();
+        const EditReport dug = ground.dig(3.0, 5.0, 7.0, 5.0, 1.0, 0.5, budget);
+        require(dug.limited, "a dig that would take more than may be carried was not limited");
+        near(dug.mass_kg, budget, 1e-6, "what came out is what could be carried");
+        require(dug.mass_kg <= budget, "it took out more than it may");
+        require(dug.depth_m > 0.0 && dug.depth_m < 0.5, "it went as deep as it was asked to anyway");
+        require(dug.cells == asked.cells, "it is not the same trench, only shallower");
+        const Volumes after = ground.volumes();
+        near(before.total() - after.total(), dug.moved.total(), 1e-12, "what left the ground is what it says left");
+        // Made again at the depth it says it went, with no budget, it takes out the same:
+        // that depth is what a room keeps, and a room opened again digs it again.
+        TerrainField again = flat(40, 40, 0.6, 0.3);
+        const EditReport replayed = again.dig(3.0, 5.0, 7.0, 5.0, 1.0, dug.depth_m);
+        require(replayed.moved.sand_m3 == dug.moved.sand_m3 && replayed.moved.soil_m3 == dug.moved.soil_m3,
+                "the dig made again at the depth it reports does not take out the same");
+        std::cout << "    with room for " << budget << " kg of " << asked.mass_kg << ": " << dug.mass_kg
+                  << " kg from " << dug.depth_m << " m deep instead of 0.5\n";
+    }
+    // Room for nothing: nothing comes out, and the ground is as it was.
+    {
+        TerrainField ground = flat(40, 40, 0.6, 0.3);
+        const Volumes before = ground.volumes();
+        const EditReport dug = ground.dig(3.0, 5.0, 7.0, 5.0, 1.0, 0.5, 0.0);
+        require(dug.limited && dug.cells.empty() && dug.mass_kg == 0.0 && dug.depth_m == 0.0,
+                "a dig with room for nothing still took something");
+        require(ground.volumes().total() == before.total(), "and the ground changed");
+    }
+}
+
 // 2. A pit dug in sand does not keep vertical walls: the sand slumps in until
 // no slope is steeper than it can stand at -- and not one grain is lost.
 void aPitInSandSlumpsToItsAngleOfRepose() {
@@ -270,6 +321,7 @@ void aValleyIsShapedByWaterAndSaved() {
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"digging is accounted by material", diggingIsAccountedByMaterial},
+        {"a dig takes out no more than may be carried", aDigTakesOutNoMoreThanMayBeCarried},
         {"a pit in sand slumps to its angle of repose", aPitInSandSlumpsToItsAngleOfRepose},
         {"a trench in soil stands and a deep one does not", aTrenchInSoilStandsAndADeepOneDoesNot},
         {"rock does not slump", rockDoesNotSlump},
