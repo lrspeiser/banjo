@@ -29,10 +29,14 @@
 // 6. A seesaw responds to where the load is placed, not just how much.
 // 7. A balance tips towards the heavier side and levels when matched.
 // 8. Something in your hand is not weighing on anything.
+// 9. A thing that stands on the ground on its own feet is a beam too, and one
+//    that lies on the ground along its whole length is not.
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -418,8 +422,118 @@ void somethingInAHandWeighsOnNothing() {
 
 } // namespace
 
+// The same shelf and the same piers, made as ONE thing: a stone table, its top
+// joined to its two ends, standing on the ground on its own feet.
+//
+// This is what the Workshop tests and what a room is asked to build -- a table
+// is one object, not a plank balanced on two loose blocks -- and the survey
+// could not see it. It looked for a beam held up by OTHER bodies and measured
+// the span between them, and a table has nothing under it but the ground:
+// "falling, not carrying". Measured through the Workshop's load test, five
+// tonnes of iron on a glass table was never once asked about. And had it been,
+// the section was the whole body's box, legs and all -- 0.5 m deep here instead
+// of the 0.1 m of stone that is actually bridging the gap.
+//
+// The feet, the clear span between them and the section that carries the
+// bending across it are the body's own cells, so the arithmetic is the shelf's:
+// stress = 3 W L / (2 b d^2) = 500 W, and concrete takes 3 MPa.
+TileImpactRequest stoneTable(int crates, double crate_side_m, bool solid = false) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.05;
+    r.backend = BackendKind::CpuParallel;
+    const auto stone = [](const std::string &name, Vec3 size, Vec3 centre) {
+        SceneBody part;
+        part.name = name;
+        part.shape = BodyShape::Box;
+        part.material = MaterialPreset::Concrete;
+        part.dimensions_m = size;
+        part.center_m = centre;
+        part.join = "table";
+        return part;
+    };
+    r.bodies.push_back(stone("table", {1.4, 0.1, 0.3}, {0.0, 0.45, 0.0}));
+    if (solid) {
+        // The same top on a plinth as long as itself: on the ground all along.
+        r.bodies.push_back(stone("table plinth", {1.4, 0.4, 0.3}, {0.0, 0.2, 0.0}));
+    } else {
+        r.bodies.push_back(stone("table left end", {0.2, 0.4, 0.3}, {-0.6, 0.2, 0.0}));
+        r.bodies.push_back(stone("table right end", {0.2, 0.4, 0.3}, {0.6, 0.2, 0.0}));
+    }
+    for (int i = 0; i < crates; ++i) {
+        SceneBody crate;
+        crate.name = "crate " + std::to_string(i + 1);
+        crate.shape = BodyShape::Box;
+        crate.material = MaterialPreset::Iron;
+        crate.dimensions_m = {crate_side_m, crate_side_m, crate_side_m};
+        crate.center_m = {0.0, 0.5 + crate_side_m * (0.5 + static_cast<double>(i)), 0.0};
+        r.bodies.push_back(crate);
+    }
+    return r;
+}
+
+void aThingOnItsOwnFeetIsABeamToo() {
+    {
+        const auto world = LiveWorld::open(stoneTable(1, 0.2));
+        run(*world, 480);
+        std::cout << "  a one-piece stone table with one 63 kg crate on it: "
+                  << world->overloaded().size() << " overloaded\n";
+        require(world->overloaded().empty(), "a table was called overloaded while holding one crate");
+    }
+    {
+        // The shelf's own numbers (pileOnEnoughAndItIsReported): the same span,
+        // the same section, the same five crates.
+        const auto apart = LiveWorld::open(shelf(5, 0.3));
+        run(*apart, 480);
+        const LiveOverload plank = loadOn(*apart, "shelf");
+        const auto world = LiveWorld::open(stoneTable(5, 0.3));
+        run(*world, 480);
+        require(sagging(*world, "table"),
+                "a metre of stone between its own two feet, with five iron crates on it, was "
+                "not reported as carrying too much: the survey does not see what stands on the ground");
+        const LiveOverload top = loadOn(*world, "table");
+        std::cout << "  the same five crates on it: " << top.carrying_n << " N over a " << top.span_m
+                  << " m span between its feet, " << top.stress_pa / 1e6 << " MPa against "
+                  << top.strength_pa / 1e6 << " MPa (the shelf on loose piers: " << plank.span_m
+                  << " m, " << plank.stress_pa / 1e6 << " MPa)\n";
+        require(std::abs(top.span_m - plank.span_m) < 1e-6, "its span is not the gap between its feet");
+        // Its own weight per metre counts its ends as well, so a little more than the shelf's.
+        require(top.stress_pa > plank.stress_pa * 0.999 && top.stress_pa < plank.stress_pa * 1.2,
+                "its section is not the stone that bridges the gap: " + std::to_string(top.stress_pa / 1e6) +
+                    " MPa against the shelf's " + std::to_string(plank.stress_pa / 1e6));
+        const auto offered = world->breakable();
+        require(std::find(offered.begin(), offered.end(), "table") != offered.end(),
+                "the table is overloaded but was never offered for breaking");
+    }
+    {
+        // And it can actually give: the load of whatIsReportedCanActuallyBreak.
+        const auto world = LiveWorld::open(stoneTable(5, 0.45));
+        run(*world, 480);
+        require(sagging(*world, "table"), "the table was not reported in the first place");
+        const std::size_t pieces = world->fracture("table");
+        const LiveStatics said = staticsOf(*world, "table");
+        std::cout << "  five 450 mm crates: statics " << said.stop << " on " << said.supported_cells
+                  << " cells of its own feet, " << said.bonds_removed << " bonds; the table came out in "
+                  << pieces << " pieces\n";
+        require(said.supported_cells > 0, "statics held the table up by nothing: its feet are not reaching it");
+        require(pieces > 1, "the lattice was offered an overloaded table and gave it back whole");
+    }
+    {
+        const auto world = LiveWorld::open(stoneTable(5, 0.3, true));
+        run(*world, 480);
+        std::cout << "  the same five crates on the same top with stone under all of it: "
+                  << world->overloaded().size() << " overloaded\n";
+        require(!sagging(*world, "table"),
+                "a block standing on the ground along its whole length was called overloaded");
+    }
+}
+
 int main() {
     try {
+        if (std::getenv("BANJO_BEAM_ONLY_FEET") != nullptr) {
+            aThingOnItsOwnFeetIsABeamToo();
+            std::cout << "[PASS] a thing on its own feet is a beam too\n";
+            return 0;
+        }
         aPlankHoldsWhatItCanHold();
         std::cout << "[PASS] a plank holds what it can hold\n";
         pileOnEnoughAndItIsReported();
@@ -438,6 +552,8 @@ int main() {
         std::cout << "[PASS] a balance tips towards the heavier side\n";
         somethingInAHandWeighsOnNothing();
         std::cout << "[PASS] something in a hand weighs on nothing\n";
+        aThingOnItsOwnFeetIsABeamToo();
+        std::cout << "[PASS] a thing on its own feet is a beam too\n";
         std::cout << "\nall beam tests passed\n";
         return 0;
     } catch (const std::exception &error) {
