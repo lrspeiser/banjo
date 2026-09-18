@@ -204,7 +204,6 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click("#ws-save-design")
         self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved designs and My Library')")
         self.open_product("stool")
-        self.js("document.querySelector('#ws-saved-designs').closest('details').open=true")
         self.js("[...document.querySelectorAll('#ws-saved-designs button')].find(b=>b.textContent.includes('Browser curved table')).click()")
         self.wait("document.querySelector('#ws-archetype').value==='table' && document.querySelector('#ws-measurement-basis').textContent.includes('Mass/balance from Matter')")
         self.assertEqual(mass, self.js("document.querySelector('#ws-mass').textContent"))
@@ -254,15 +253,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(1, self.js(
             "document.querySelectorAll('#ws-product-catalog .ws-product-parts').length"))
 
-        # Clicking one selects it, so the component editor works on it.
-        self.click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
-        self.wait("document.querySelector('#ws-selected-part').textContent.startsWith('wheel-11')")
-        self.assertFalse(self.js("document.querySelector('#ws-save-component').disabled"))
-        before = self.js("document.querySelector('#ws-selected-part').textContent")
-        self.click('[data-component-edit="thicker"]')
-        self.wait(f"document.querySelector('#ws-selected-part').textContent !== {json.dumps(before)}")
-
-        # Copy puts that component in My library, where it can be reused.
+        # Copy puts a component in My library, where it can be reused.
         saved = self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
         self.click('#ws-product-catalog .ws-part-row:nth-child(1) .ws-part-copy')
         self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
@@ -271,6 +262,58 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # Clicking the open product again folds its components away.
         self.click('#ws-product-catalog button[data-value="cart"]')
         self.wait("!document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+
+    def test_a_component_opens_on_its_own_and_saves_under_a_new_name(self):
+        """Clicking a component shows that piece alone, editable and saveable.
+
+        The product's own headline numbers -- part count, balance, tip angle --
+        say nothing about one wheel, so while it is alone on screen the panel
+        reports the wheel instead, and the whole-product views are refused.
+        """
+        self.open_product("cart")
+        self.wait("document.querySelectorAll('#ws-product-catalog .ws-part-row').length")
+        self.click('#ws-product-catalog .ws-part-open[data-part="wheel-11"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'wheel-11'")
+        self.assertFalse(self.js("document.querySelector('#ws-isolation').hidden"))
+        self.assertEqual("wheel-11", self.js("document.querySelector('#ws-name').textContent"))
+        self.assertEqual("220 x 60 x 220 mm", self.js(
+            "document.querySelector('#ws-base').textContent").replace("×", "x"))
+        self.assertTrue(self.js("document.querySelector('#ws-buildability').hidden"))
+        self.assertEqual(["matter", "physics", "collision", "relations"], self.js(
+            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+
+        # It is edited as itself, and the reported size follows.
+        self.click('[data-component-edit="thicker"]')
+        self.wait("document.querySelector('#ws-base').textContent.includes('67')")
+        self.assertEqual("wheel-11", self.js("document.querySelector('#workshop-stage').dataset.showing"))
+
+        # It is saved under a name of the user's choosing, not a generated one.
+        self.field("#ws-component-name", "Fat oak wheel", event="input")
+        saved = self.js("document.querySelectorAll('#ws-user-library .ws-library-item').length")
+        self.click("#ws-save-component")
+        self.wait(f"document.querySelectorAll('#ws-user-library .ws-library-item').length === {saved + 1}")
+        self.assertIn("Fat oak wheel", self.js("document.querySelector('#ws-user-library').textContent"))
+
+        # And the whole product comes back with its own numbers.
+        self.click("#ws-show-whole")
+        self.wait("document.querySelector('#workshop-stage').dataset.showing === 'product'")
+        self.assertTrue(self.js("document.querySelector('#ws-isolation').hidden"))
+        self.assertEqual("14", self.js("document.querySelector('#ws-part-count').textContent"))
+        self.assertEqual([], self.js(
+            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+
+    def test_the_left_pane_has_no_dead_reference_sections(self):
+        """Variants and the component-family reference are gone.
+
+        Both sat folded inside one another, so neither could be found, and
+        neither made a product. What is left is the product library, what the
+        user saved, and their saved designs.
+        """
+        self.assertEqual(0, self.js(
+            "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
+        self.assertEqual(["Product library", "My library", "Saved designs"], self.js(
+            "[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
+        self.assertEqual(0, self.js("document.querySelectorAll('.ws-left details').length"))
 
     def test_cart_trace_has_actual_intermediate_simulation_states(self):
         self.open_product("cart")
