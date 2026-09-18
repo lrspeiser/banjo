@@ -197,6 +197,72 @@ class VisibleSimulationEngine(unittest.TestCase):
                 self.assertTrue(r["prototype"]["engine_grid_verified"])
                 self.assertEqual(0,m["fracture_events"])
 
+    def _every_body_is_drawn_as_its_own_cells(self, result):
+        playback = result["playback"]
+        for frame in (playback["frames"][0], playback["frames"][-1]):
+            for body in frame["bodies"]:
+                shape = playback["geometry"].get(body["name"])
+                self.assertIsNotNone(shape, body["name"])
+                self.assertEqual(int(body.get("revision") or 0), int(shape["revision"]), body["name"])
+        drawn = sum(len(playback["geometry"][b["name"]]["offsets_m"]) for b in playback["frames"][-1]["bodies"]
+                    if b["name"].startswith(result["prototype"]["root_body"]))
+        self.assertEqual(result["prototype"]["matter_cells"], drawn, "matter was lost or made in the break")
+
+    def test_a_glass_table_breaks_in_a_drop_an_oak_one_survives(self):
+        results = {m: workshop_bench.run(self.app, assemble("table", parameters={"material": m}),
+                   {"test": "drop_product", "config": {"height_m": 4.0, "duration_s": 1.7}}) for m in ("glass", "oak")}
+        glass, oak = results["glass"]["measured"], results["oak"]["measured"]
+        for m in (glass, oak):
+            self.assertTrue(m["landed"], m)
+            self.assertAlmostEqual((2 * 9.81 * 4) ** .5, m["hardest_impact"]["closing_speed_m_s"], delta=.2)
+        # The engine's own bar is what separates them, not a rule written here.
+        self.assertGreater(glass["hardest_impact"]["closing_speed_m_s"], glass["hardest_impact"]["threshold_speed_m_s"])
+        self.assertLess(oak["hardest_impact"]["closing_speed_m_s"], oak["hardest_impact"]["threshold_speed_m_s"])
+        self.assertEqual("broke", glass["outcome"], glass)
+        self.assertGreater(glass["pieces"], 4, glass)
+        self.assertEqual(glass["pieces"], len([b for b in results["glass"]["playback"]["frames"][-1]["bodies"]]))
+        self.assertEqual(("held", 1, 0), (oak["outcome"], oak["pieces"], oak["fracture_events"]), oak)
+        for result in results.values():
+            self._every_body_is_drawn_as_its_own_cells(result)
+
+    def test_a_harder_landing_never_holds_where_a_softer_one_broke(self):
+        # At 1/120 s a table landing at 10.8 m/s is caught up to 90 mm into the
+        # floor, and the engine used to refuse that run as "buried": 4 m broke
+        # into 40, and 6, 10 and 16 m said would_break and answered "held".
+        for height in (4.0, 6.0, 10.0, 16.0):
+            with self.subTest(height=height):
+                r = workshop_bench.run(self.app, assemble("table", parameters={"material": "glass"}),
+                    {"test": "drop_product", "config": {"height_m": height, "duration_s": round((2*height/9.81)**.5 + .3, 2),
+                                                        "record_trace": False}})
+                self.assertTrue(r["measured"]["hardest_impact"]["would_break"], r["measured"])
+                self.assertEqual("broke", r["measured"]["outcome"], r["measured"])
+                self.assertGreater(r["measured"]["pieces"], 4, r["measured"])
+
+    def test_a_blow_breaks_glass_and_only_shoves_oak(self):
+        config = {"striker_kg": 5.0, "speed_m_s": 8.0, "height_fraction": 1.0, "duration_s": 1.0}
+        results = {m: workshop_bench.run(self.app, assemble("table", parameters={"material": m}),
+                   {"test": "impact_product", "config": config}) for m in ("glass", "oak")}
+        for result in results.values():
+            striker = result["requested"]["striker"]
+            self.assertAlmostEqual(.5 * striker["actual_kg"] * 64, striker["energy_j"], places=6)
+            self.assertEqual("workshop/striker", result["measured"]["hardest_impact"]["by"])
+            self.assertAlmostEqual(8.0, result["measured"]["hardest_impact"]["closing_speed_m_s"], delta=.1)
+            self._every_body_is_drawn_as_its_own_cells(result)
+        self.assertEqual("broke", results["glass"]["measured"]["outcome"], results["glass"]["measured"])
+        self.assertGreater(results["glass"]["measured"]["pieces"], 1)
+        oak = results["oak"]["measured"]
+        self.assertEqual(("held", 1), (oak["outcome"], oak["pieces"]), oak)
+        self.assertGreater(oak["prototype_displacement_m"], .001, "the blow did not even move it")
+
+    def test_a_drop_that_ended_in_the_air_says_so(self):
+        r = workshop_bench.run(self.app, assemble("table", parameters={"material": "glass"}),
+            {"test": "drop_product", "config": {"height_m": 10.0, "duration_s": .5}})
+        self.assertFalse(r["measured"]["landed"])
+        self.assertEqual("held", r["measured"]["outcome"])
+        self.assertAlmostEqual(.5, r["measured"]["clock_s"], places=6)
+        self.assertGreater(r["requested"]["settled_duration_s"], r["requested"]["fall_time_s"])
+        self.assertAlmostEqual((2 * 10.0 / 9.81) ** .5, r["requested"]["fall_time_s"], delta=.02)
+
     def test_kettle_has_intermediate_measured_temperatures_not_only_final_numbers(self):
         r=workshop_bench.run(self.app,assemble("kettle"),{"test":"kettle_heat","config":{"duration_s":30}})
         frames=r["playback"]["frames"]

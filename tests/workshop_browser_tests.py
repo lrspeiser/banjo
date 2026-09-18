@@ -535,13 +535,67 @@ class WorkshopBrowserRegression(unittest.TestCase):
     def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):
         self.click('[data-mode="test"]')
         values=self.js("[...document.querySelectorAll('#ws-test-catalog button')].map(b=>b.dataset.value)")
-        self.assertEqual(["drop_product","slide_product","declared_static_load"],values)
+        self.assertEqual(["drop_product","slide_product","impact_product","declared_static_load"],values)
         self.assertEqual("drop_product",self.js("document.querySelector('#ws-bench-test').value"))
         self.assertIsNone(self.js("document.querySelector('[data-bench-control=record_trace]')"))
         self.open_product("shelf-unit")
         self.assertTrue(self.js("document.querySelector('#ws-run-bench').disabled"))
         self.assertEqual(0,self.js("document.querySelectorAll('#ws-test-catalog button').length"))
         self.assertIn("No working simulation",self.js("document.querySelector('#ws-bench-controls').textContent"))
+
+    def test_a_glass_table_dropped_far_enough_is_seen_to_break_into_pieces(self):
+        self.click('[data-mode="build"]')
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='top').click()")
+        self.field('#ws-edit-scope','all')
+        self.field('#ws-part-material','glass')
+        self.wait("document.querySelector('#ws-mass')?.textContent==='98.580 kg'")
+        self.click('[data-mode="test"]')
+        # Raising the drop raises the time beside it, in plain sight, so the run sees the landing.
+        self.assertEqual('20',self.js("document.querySelector('[data-bench-control=height_m]').max"))
+        self.field('[data-bench-control=height_m]',4)
+        self.assertGreaterEqual(float(self.js("document.querySelector('[data-bench-control=duration_s]').value")),1.6)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='broke'")
+        pieces=int(self.js("document.querySelector('#ws-break-outcome').dataset.pieces"))
+        self.assertGreater(pieces,4)
+        self.assertIn(f'Broke into {pieces} pieces',self.js("document.querySelector('#ws-break-outcome').textContent"))
+        # The engine's own reading of the landing, not a rule the page made up.
+        self.assertRegex(self.js("document.querySelector('#ws-break-reading').textContent"),
+                         r'Met the ground at 8\.\d\d m/s\. Against that, this can first break at 8\.70 m/s')
+        if self.js("document.querySelector('#ws-play').textContent") == 'Pause':
+            self.click('#ws-play')
+        # Whole at the start, and at the end every piece is a drawn body of its own cells.
+        self.field('#ws-play-timeline',0,'input')
+        self.assertEqual('1',self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertIn('1 simulated body',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
+        self.assertEqual(str(pieces),self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertIn(f'In {pieces} pieces',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        note=self.js("document.querySelector('#ws-play-note').textContent")
+        self.assertIn('every piece as the cells the engine left it',note)
+        self.assertNotIn('simplified collision shapes',note)
+        self.capture_evidence('glass-table-broken.png')
+        # The same table in oak, from the same height, is still a table.
+        self.click('[data-mode="build"]')
+        self.field('#ws-part-material','oak')
+        self.wait("document.querySelector('#ws-mass')?.textContent==='27.602 kg'")
+        self.click('[data-mode="test"]')
+        self.field('[data-bench-control=height_m]',4)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='held'")
+        self.assertIn('still in one piece',self.js("document.querySelector('#ws-break-outcome').textContent"))
+
+    def test_a_blow_from_a_weight_is_a_test_the_page_offers_and_runs(self):
+        self.click('[data-mode="test"]')
+        self.click('#ws-test-catalog button[data-value="impact_product"]')
+        self.wait("document.querySelector('[data-bench-control=striker_kg]')")
+        self.field('[data-bench-control=striker_kg]',20)
+        self.field('[data-bench-control=speed_m_s]',15)
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-break-outcome')?.dataset.outcome==='broke'")
+        self.assertRegex(self.js("document.querySelector('#ws-bench-result').textContent"),r'Struck by 18\.1 kg of iron at 15\.0 m/s: 2,0\d\d J')
+        self.assertIn('Met workshop/striker at 15.00 m/s',self.js("document.querySelector('#ws-break-reading').textContent"))
+        self.capture_evidence('oak-table-struck.png')
 
     def test_run_moves_visible_object_automatically_and_replay_restarts(self):
         self.click('[data-mode="test"]')

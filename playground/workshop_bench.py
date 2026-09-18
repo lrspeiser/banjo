@@ -48,7 +48,7 @@ def catalog(kind: str | None = None) -> list[dict[str, Any]]:
             "limitations":list(workshop_rigid.LIMITATIONS),"visual_playback":True})
     for item in out:
         name = str(item.get("test") or "")
-        item["category"] = "simulation" if name in {"drop_product", "slide_product", "cart_roll", "kettle_heat", "declared_static_load", "rigid_motion"} else "analysis"
+        item["category"] = "simulation" if name in workshop_motion.TESTS | {"cart_roll", "kettle_heat", "declared_static_load", "rigid_motion"} else "analysis"
         item["subject"] = "reference-fixture" if name == "machine_control" else "selected-product"
         item["required_model"] = "rigid" if name == "rigid_motion" else "lattice"
         # Never offer a fused-solid test for an articulated cart in the UI.

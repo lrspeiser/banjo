@@ -414,7 +414,7 @@ function drawPlayback() {
   let proxies = 0;
   for (const body of frame.bodies || []) {
     present.add(body.name);
-    const geometry = recording.geometry?.[body.name];
+    const geometry = recording.geometry?.[`${body.name}#${Number(body.revision || 0)}`] || recording.geometry?.[body.name];
     const exact = geometry && Number(geometry.revision) === Number(body.revision || 0);
     const signature = JSON.stringify([body.revision || 0, exact, body.shape, body.dimensions_m, body.material]);
     let entry = playbackMeshes.get(body.name);
@@ -447,6 +447,7 @@ function drawPlayback() {
   for (const [name,entry] of playbackMeshes) if (!present.has(name)) {
     group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
   }
+  if (followsMatter(recording)) followCentre = matterCentre(recording, frame) || followCentre;
   stage.dataset.physicsTime = String(frame.t_s);
   stage.dataset.physicsBodyCount = String(present.size);
   stage.dataset.physicsMeshBuilds = String(physicsMeshBuilds);
@@ -457,19 +458,46 @@ function drawPlayback() {
   } else if (recording.geometry_basis === "verified-precise-rigid-shapes") {
     const bodies = new Set((frame.bodies || []).map(part => part.object_id));
     live.textContent = `${present.size} collision shapes · ${bodies.size} rigid ${bodies.size === 1 ? "body" : "bodies"} · ${Number(frame.t_s).toFixed(2)} seconds. Actual native poses; no internal failure model.`;
-  } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+  } else {
+    const broken = (recording.fractures || []).some(f => f.outcome === "broke" && Number(f.at_s) <= Number(frame.t_s) + 1e-9);
+    live.textContent = `${broken ? `In ${present.size} pieces` : `${present.size} simulated ${present.size === 1 ? "body" : "bodies"}`} · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+  }
   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
     ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
-    : `${recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
+    : `${recording.geometry_basis === "verified-native-cells-and-native-pieces" ? "Exact Matter cells, and every piece as the cells the engine left it. " : recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
+}
+// A thing dropped from 4 m, or knocked across the floor in pieces, is a speck if
+// the view holds its whole journey. These runs are framed on the thing as it
+// starts and the view then goes with the matter: every body weighed by the
+// cells it is drawn with, so it stays on the bulk of the wreck and lets a
+// one-cell shard fly out of shot.
+const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces";
+let followCentre = null, followClock = 0;
+function matterCentre(recording, frame) {
+  const sum = new THREE.Vector3(); let weight = 0;
+  for (const body of frame?.bodies || []) {
+    const cells = recording.geometry?.[body.name]?.offsets_m?.length || 1;
+    sum.x += cells*body.position_m[0]; sum.y += cells*body.position_m[1]; sum.z += cells*body.position_m[2]; weight += cells;
+  }
+  return weight ? sum.multiplyScalar(1/weight) : null;
+}
+function followMatter(now) {
+  const dt = Math.min(.1, Math.max(0, (now - followClock)/1000)); followClock = now;
+  if (view !== "physics" || !followCentre || !followsMatter(bench.playback)) return;
+  // Scrubbing or paused: be there. Playing: close most of the gap in a fifth of a second.
+  if (bench.playbackPlaying) target.lerp(followCentre, 1 - Math.pow(.02, dt/.2)); else target.copy(followCentre);
+  placeCamera();
 }
 function frameSimulation(recording) {
   const bounds = new THREE.Box3();
-  for (const frame of recording.frames) for (const body of frame.bodies || []) {
+  for (const frame of followsMatter(recording) ? recording.frames.slice(0,1) : recording.frames) for (const body of frame.bodies || []) {
     const radius = .5*Math.hypot(...(body.dimensions_m || [.05,.05,.05]));
     const point = new THREE.Vector3(...body.position_m);
     bounds.expandByPoint(point.clone().addScalar(radius)); bounds.expandByPoint(point.clone().addScalar(-radius));
   }
   if (!bounds.isEmpty()) { bounds.getCenter(target); reach = Math.max(.3,bounds.getSize(new THREE.Vector3()).length()/2); frameCandidate(); }
+  followCentre = followsMatter(recording) ? matterCentre(recording, recording.frames[0]) : null;
+  if (followCentre) { target.copy(followCentre); placeCamera(); }
   grid.position.y = 0;
 }
 
@@ -956,6 +984,11 @@ function renderBenchControls(values = null) {
       input.value = String(chosenValue ?? control.min ?? 0); input.dataset.valueType = "number";
       const shown = make("output", { class:"ws-range-value" }, String(chosenValue ?? ""));
       const refresh = () => { shown.textContent = input.value; }; input.addEventListener("input", refresh); input.addEventListener("change", () => { refresh(); reprobe(); });
+      if (definition.test === "drop_product" && control.name === "height_m") input.addEventListener("change", () => {
+        const time = document.querySelector('[data-bench-control="duration_s"]'); if (!time) return;
+        const wanted = Math.min(Number(time.max) || 5, Math.ceil((Math.sqrt(2*Number(input.value)/9.81) + .75)*10)/10);
+        if (Number(time.value) < wanted) { time.value = String(wanted); time.dispatchEvent(new Event("change", {bubbles:true})); }
+      });
       label.append(input,shown); root.append(label); continue;
     } else {
       input = make("input", { type:"number", value:String(chosenValue ?? ""), min:String(control.min ?? ""), max:String(control.max ?? ""), step:String(control.step ?? "any"), "data-bench-control":control.name }); input.dataset.valueType = "number";
@@ -1039,11 +1072,21 @@ function renderBenchResult(result) {
     card.append(make("strong", {}, "Native precise rigid motion — not a strength test"),
       make("p", {}, `${m.collision_boxes} exact boxes · ${m.stored_cells} lattice cells · ${Number(m.mass_kg).toFixed(3)} kg`),
       make("p", {}, `Centre of mass moved ${Number(m.displacement_m).toFixed(4)} m in ${Number(m.elapsed_s).toFixed(2)} s.`));
-  } else if (["drop_product","slide_product"].includes(result.test)) {
-    const m=result.measured || {}, r=result.requested || {};
-    card.append(make("strong",{},result.test==="drop_product" ? "Drop completed" : "Slide completed"),
-      make("p",{},result.test==="drop_product" ? `Requested height ${r.height_m} m · grid height ${r.applied_height_m} m` : `Starting speed ${r.speed_m_s} m/s along +X`),
-      make("p",{},`Final displacement ${m.prototype_displacement_m == null ? "unavailable after separation" : Number(m.prototype_displacement_m).toFixed(3)+" m"} · ${m.fracture_events} fracture evaluations · ${m.clock_s.toFixed(2)} s simulated`));
+  } else if (["drop_product","slide_product","impact_product"].includes(result.test)) {
+    const m=result.measured || {}, r=result.requested || {}, hit=m.hardest_impact, striker=r.striker;
+    const inTheAir = result.test === "drop_product" && m.landed === false;
+    const what = inTheAir ? `Still falling when the run ended: simulate ${r.settled_duration_s} s to see it land`
+      : m.outcome === "broke" ? `Broke into ${m.pieces} pieces${m.first_break_s == null ? "" : ` at ${Number(m.first_break_s).toFixed(2)} s`}`
+      : m.outcome === "dented" ? "Dented, and still in one piece" : "Held: still in one piece";
+    const headline = make("strong",{id:"ws-break-outcome","data-outcome":inTheAir ? "in-the-air" : m.outcome || "held","data-pieces":String(m.pieces ?? 1)},what);
+    card.append(headline,
+      make("p",{},result.test==="drop_product" ? `Dropped ${r.applied_height_m} m (asked ${r.height_m} m; heights are whole cells)`
+        : result.test==="impact_product" ? `Struck by ${Number(striker?.actual_kg || 0).toFixed(1)} kg of iron at ${Number(striker?.speed_m_s || 0).toFixed(1)} m/s: ${Math.round(Number(striker?.energy_j || 0)).toLocaleString()} J`
+        : `Starting speed ${r.speed_m_s} m/s along +X`));
+    // The engine's own reading of the hardest blow to the thing as designed:
+    // what it met, how fast, and the speed under which that meeting can break nothing.
+    if (hit) card.append(make("p",{id:"ws-break-reading"},`Met ${hit.by} at ${Number(hit.closing_speed_m_s).toFixed(2)} m/s. Against that, this can first break at ${Number(hit.threshold_speed_m_s).toFixed(2)} m/s${hit.dent_speed_m_s == null ? " and has no bending range" : ` and bend at ${Number(hit.dent_speed_m_s).toFixed(2)} m/s`}.`));
+    card.append(make("p",{},`${m.prototype_displacement_m == null ? "It did not survive as one body" : `Moved ${Number(m.prototype_displacement_m).toFixed(3)} m`} · ${m.fracture_events} failure ${m.fracture_events === 1 ? "run" : "runs"} · ${m.clock_s.toFixed(2)} s simulated`));
   } else if (result.test === "cart_roll") {
     const m=result.measured || {};
     card.append(make("strong",{},"Cart run completed"),make("p",{},`Chassis displacement (X/Y/Z): ${(m.chassis_delta_m || []).map(v=>Number(v).toFixed(3)).join(" / ")} m`),
@@ -1363,7 +1406,7 @@ function resize() {
   renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.updateProjectionMatrix(); placeCamera();
 }
 new ResizeObserver(resize).observe(stage); addEventListener("resize", resize);
-function frame(now) { advancePlayback(now); renderer.render(scene, camera); requestAnimationFrame(frame); }
+function frame(now) { advancePlayback(now); followMatter(now); renderer.render(scene, camera); requestAnimationFrame(frame); }
 
 async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");
