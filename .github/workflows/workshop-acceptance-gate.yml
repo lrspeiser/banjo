@@ -2,7 +2,7 @@ name: workshop-acceptance-gate
 on:
   push:
     branches: [agent/workshop-next-checkpoints]
-    paths: [.github/workflows/workshop-acceptance-gate.yml, .agent/acceptance.patch.gz.b64, .agent/acceptance-fix.patch]
+    paths: [.github/workflows/workshop-acceptance-gate.yml, .agent/acceptance.patch.gz.b64, .agent/acceptance-fix.patch, .agent/acceptance-dom-bool.patch]
 permissions:
   contents: write
 concurrency:
@@ -20,14 +20,16 @@ jobs:
         shell: bash
         run: |
           base64 --decode .agent/acceptance.patch.gz.b64 | gzip --decompress > "$RUNNER_TEMP/acceptance.patch"
-          cp .agent/acceptance-fix.patch "$RUNNER_TEMP/acceptance-fix.patch"
+          cp .agent/acceptance-fix.patch .agent/acceptance-dom-bool.patch "$RUNNER_TEMP/"
           echo "937d3d5fd13a7700c8486a531193f9cadc5c78e007d37282d7754540003661bb  $RUNNER_TEMP/acceptance.patch" | sha256sum --check
           echo "8d41c999deda0d3fa499ec56d1f5a2a9208bac6f6b70ab9e23d2125855b4177b  $RUNNER_TEMP/acceptance-fix.patch" | sha256sum --check
+          echo "ae963436d1f009db33683aca7d7fe85aa0e3796d58aca7ee653a45627ebe66dc  $RUNNER_TEMP/acceptance-dom-bool.patch" | sha256sum --check
           git checkout -b acceptance-clean 971261cd81d967fe928f10d796bf5370ddd062c9
           git apply --check --unidiff-zero "$RUNNER_TEMP/acceptance.patch"
           git apply --index --unidiff-zero "$RUNNER_TEMP/acceptance.patch"
           git apply --check --unidiff-zero "$RUNNER_TEMP/acceptance-fix.patch"
           git apply --index --unidiff-zero "$RUNNER_TEMP/acceptance-fix.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/acceptance-dom-bool.patch"
           git diff --cached --check
       - name: Build the unchanged native engine
         run: |
