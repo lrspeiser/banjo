@@ -110,6 +110,8 @@ geometry, not merely in the renderer.
 
 ## Verification
 
+Completed runner results and the tested commit are recorded in [workshop-thin-parts-verification.md](workshop-thin-parts-verification.md).
+
 Linux CPU Release build, GCC 14, Python 3.13, Node 22; Jolt v5.6.0 and the repository's
 pinned nlohmann/json. No macOS/Windows/GPU or world-scale throughput claim follows.
 
