@@ -6403,9 +6403,25 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // the island clear first -- a rigid translation, so no momentum and no
     // kinetic energy change -- and refuse outright if it is buried deeper than
     // half a cell, rather than hand the lattice a state it will explode on.
-    double lift = 0.0;
+    //
+    // Buried, which is not the same as on its way in. The step taken back is
+    // the one in which the contact was REPORTED, and a body landing fast is well
+    // into the floor by then for the same reason a striker is well into what it
+    // struck (above): at the room's 1/120 s a table coming down at 10.8 m/s
+    // moves 90 mm a step, more than two 40 mm cells. Counting that as burial
+    // made the answer a matter of where in a step the floor happened to be.
+    // Measured on the Workshop's glass table against its 8.7 m/s bar: dropped
+    // 4 m it was caught 14 mm short of the floor and broke into 40; dropped 6 m
+    // it was caught 25 mm inside, and at 10 and 16 m deeper still, the contact
+    // said would_break each time and the answer was "held" with no run made. A
+    // harder landing held where a softer one broke. So the depth a cell can owe
+    // to its own body's way in -- what that cell moves into the plane in one
+    // step -- is not burial, and lifting it out is putting the body back where
+    // it was when it met the floor. Only what is deeper than that is refused.
+    double lift = 0.0, on_its_way_in = 0.0;
     {
         const SupportSet<double> &support = setup.settings_world.support;
+        const double step_s = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 240.0;
         for (const std::uint32_t node : island_nodes) {
             const Vec3 position = snap.center_of_mass_world_m +
                 snap.orientation_world.rotate(island_offset_m[node]);
@@ -6415,11 +6431,19 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                 if (!insideFootprints(plane, toV3(position))) continue;
                 const double depth =
                     dot(toV3(position) - plane.point, plane.normal) - plane.node_radius;
-                lift = std::max(lift, -depth);
+                if (-depth <= lift) continue;
+                lift = -depth;
+                // This cell's own speed into the plane: its body's, with its spin.
+                const RigidSnapshot &owner = poses_before.at(body_of_node.at(node));
+                const Vec3 velocity = owner.linear_velocity_m_s +
+                    cross(owner.angular_velocity_rad_s, position - owner.center_of_mass_world_m);
+                on_its_way_in = std::max(0.0, -velocity.y) * step_s;
             }
         }
     }
-    if (lift > 0.5 * impl_->request.cell_size_m) { job.settled = true; job.answer = 1; return held; }
+    if (lift > 0.5 * impl_->request.cell_size_m + on_its_way_in) {
+        job.settled = true; job.answer = 1; return held;
+    }
 
     const FragmentPose pose{snap.center_of_mass_world_m + Vec3{0.0, lift, 0.0},
                             snap.orientation_world, snap.linear_velocity_m_s,
