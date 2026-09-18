@@ -12,7 +12,8 @@ import workshop_bench_core as _core
 from workshop_bench_core import *  # noqa: F401,F403
 import workshop_recording
 import workshop_trials
-from mcp import workshop_acceptance
+import workshop_motion
+from mcp import workshop_acceptance, workshop_matter_metrics
 
 _LOAD_KINDS = {"table", "stool", "bench", "chair", "shelf-unit", "cart"}
 
@@ -24,8 +25,9 @@ def catalog(kind: str | None = None) -> list[dict[str, Any]]:
             "test": "declared_static_load", "name": "Load the product",
             "about": "Run this product's own declared static load in an isolated physics world and watch the bodies move, rotate or fracture.",
             "controls": [
+                {"name": "load_kg", "label": "Load (blank uses design load)", "unit": "kg", "type": "number", "default": "", "optional": True, "min": .1, "max": 1000.0, "step": .1},
                 {"name": "duration_s", "label": "Run", "unit": "s", "type": "number", "default": 2.0, "min": 0.2, "max": 10.0, "step": 0.1},
-                {"name": "cell_size_m", "label": "Matter resolution", "unit": "m", "type": "number", "default": 0.04, "min": 0.005, "max": 0.1, "step": 0.01},
+                {"name": "cell_size_m", "label": "Matter resolution", "unit": "m", "type": "number", "default": 0.04, "min": 0.005, "max": 0.1, "step": 0.005},
                 {"name": "evaluate_limits", "label": "Evaluate the limits below", "type": "boolean", "default": False},
                 {"name": "max_displacement_m", "label": "Maximum end displacement", "unit": "m", "type": "number", "default": 0.01, "min": 0.0, "max": 10.0, "step": 0.001},
                 {"name": "max_rotation_deg", "label": "Maximum end rotation", "unit": "deg", "type": "number", "default": 5.0, "min": 0.0, "max": 180.0, "step": 0.1},
@@ -36,8 +38,14 @@ def catalog(kind: str | None = None) -> list[dict[str, Any]]:
             "limitations": ["The load is the design's authored load case. If no acceptance tolerance is declared, the run remains measured evidence rather than an invented pass/fail."],
             "visual_playback": True,
         })
+    out = workshop_motion.catalog(kind) + out
     for item in out:
         name = str(item.get("test") or "")
+        item["category"] = "simulation" if name in {"drop_product", "slide_product", "cart_roll", "kettle_heat", "declared_static_load"} else "analysis"
+        item["subject"] = "reference-fixture" if name == "machine_control" else "selected-product"
+        # Never offer a fused-solid test for an articulated cart in the UI.
+        if name == "declared_static_load" and kind not in workshop_motion.SOLID_KINDS:
+            item["category"] = "analysis"
         if name == "machine_control":
             item["name"] = "Reference hoist controller"
             item["about"] = "Exercise the reference hoist's controller and energy path, not the selected product's geometry."
@@ -75,13 +83,29 @@ def run(app: Any, design, request: Any) -> dict[str, Any]:
         limits = workshop_acceptance.merge_limits(limits, {name: config[name] for name in names})
     if limits is not None and test != "declared_static_load":
         raise ValueError("acceptance_limits currently require the exact-Matter declared_static_load test")
+    if test in workshop_motion.TESTS:
+        result = workshop_motion.run(app, design, test, config)
+        if not record_trace:
+            result.pop("playback", None)
+        return result
     if test == "declared_static_load":
+        if "load_kg" in config:
+            load = workshop_motion.number(config, "load_kg", 25.0, .1, 1000.0)
+            trial = next((t for t in design.tests if t.get("kind") == "static_load"), None)
+            if trial is None:
+                raise ValueError("This design has no supported load target")
+            return workshop_trials.run_static_load(app, design, load_kg=load,
+                on=str(trial.get("on") or "top"), cell_size_m=float(config.get("cell_size_m", .04)),
+                duration_s=float(config.get("duration_s", 2.0)), record_trace=record_trace,
+                acceptance_limits=workshop_acceptance.merge_limits(trial.get("acceptance_limits"), limits))
         return workshop_trials.run_declared_static_load(
             app, design,
             cell_size_m=float(config.get("cell_size_m", 0.04)),
             duration_s=float(config.get("duration_s", 2.0)), record_trace=record_trace,
             acceptance_limits=limits)
 
+    if test in {"cart_roll", "kettle_heat"}:
+        workshop_matter_metrics.require_wire_geometry(design, test)
     recorders: list[workshop_recording.Recorder] = []
 
     def record(session):

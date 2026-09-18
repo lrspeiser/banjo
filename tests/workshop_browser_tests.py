@@ -189,7 +189,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click("#ws-run-bench")
         self.wait("!document.querySelector('#ws-run-bench').disabled && !document.querySelector('#ws-playback').hidden")
         self.assertGreater(int(self.js("document.querySelector('#ws-play-timeline').max")), 8)
-        self.assertIn("Simulation trace", self.js("document.querySelector('#ws-playback').textContent"))
+        self.assertIn("Simulation result", self.js("document.querySelector('#ws-playback').textContent"))
         self.click("#ws-play-reset")
         self.assertEqual("0.00 s", self.js("document.querySelector('#ws-play-time').textContent"))
 
@@ -198,7 +198,6 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click('#ws-test-catalog button[data-value="declared_static_load"]')
         self.assertFalse(self.js("document.querySelector('[data-bench-control=\"evaluate_limits\"]').checked"))
         self.field('[data-bench-control="duration_s"]', .2)
-        self.js("document.querySelector('[data-bench-control=\"record_trace\"]').checked=false")
         self.click("#ws-run-bench")
         self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
         self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
@@ -237,14 +236,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click('#ws-test-catalog button[data-value="declared_static_load"]')
         self.field('[data-bench-control="duration_s"]', .2)
         self.field('[data-bench-control="max_displacement_m"]', .123)
-        self.click('[data-bench-control="record_trace"]')
         self.click("#ws-run-bench")
         self.wait("typeof window.__releaseResult==='function'")
         self.js("window.__releaseHistory()")
         # A marker after a microtask/timer proves the history callback completed.
         self.js("new Promise(resolve=>setTimeout(resolve,200))")
         self.assertEqual("0.123", self.js("document.querySelector('[data-bench-control=max_displacement_m]').value"))
-        self.assertFalse(self.js("document.querySelector('[data-bench-control=record_trace]').checked"))
+        self.assertIsNone(self.js("document.querySelector('[data-bench-control=record_trace]')"))
         self.js("window.__releaseResult()")
         self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
         self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
@@ -330,6 +328,63 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("!document.querySelector('#ws-install-preview').disabled")
         self.assertTrue(self.js("document.querySelector('#ws-install-confirm').disabled"))
         self.assertNotEqual('preview',self.js("document.querySelector('#ws-install-result').dataset.status"))
+
+
+    def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):
+        self.click('[data-mode="test"]')
+        values=self.js("[...document.querySelectorAll('#ws-test-catalog button')].map(b=>b.dataset.value)")
+        self.assertEqual(["drop_product","slide_product","declared_static_load"],values)
+        self.assertEqual("drop_product",self.js("document.querySelector('#ws-bench-test').value"))
+        self.assertIsNone(self.js("document.querySelector('[data-bench-control=record_trace]')"))
+        self.open_product("shelf-unit")
+        self.assertTrue(self.js("document.querySelector('#ws-run-bench').disabled"))
+        self.assertEqual(0,self.js("document.querySelectorAll('#ws-test-catalog button').length"))
+        self.assertIn("No working simulation",self.js("document.querySelector('#ws-bench-controls').textContent"))
+
+    def test_run_moves_visible_object_automatically_and_replay_restarts(self):
+        self.click('[data-mode="test"]')
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete' && Number(document.querySelector('#workshop-stage').dataset.physicsTime)>0")
+        self.click('#ws-play')  # pause the automatically started run
+        self.assertIn("computed",self.js("document.querySelector('#ws-play-note').textContent"))
+        before=self.js("document.querySelector('#workshop-stage').dataset.physicsPose")
+        builds=self.js("document.querySelector('#workshop-stage').dataset.physicsMeshBuilds")
+        rect=self.js("(()=>{const r=document.querySelector('#workshop-stage').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()")
+        first=self.page.send('Page.captureScreenshot',{'format':'png','clip':rect})['data']
+        end=self.js("document.querySelector('#ws-play-timeline').max")
+        self.field('#ws-play-timeline',end,'input')
+        self.assertNotEqual(before,self.js("document.querySelector('#workshop-stage').dataset.physicsPose"))
+        self.assertEqual(builds,self.js("document.querySelector('#workshop-stage').dataset.physicsMeshBuilds"),"Do not rebuild voxel meshes each frame")
+        time.sleep(.1)
+        last=self.page.send('Page.captureScreenshot',{'format':'png','clip':rect})['data']
+        self.assertNotEqual(first,last,"The 3D viewport itself must change, not only status text")
+        self.click('#ws-play')
+        self.wait("Number(document.querySelector('#ws-play-timeline').value)<Number(document.querySelector('#ws-play-timeline').max)")
+        self.assertEqual("Pause",self.js("document.querySelector('#ws-play').textContent"))
+
+    def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
+        self.open_product('kettle');self.click('[data-mode="test"]')
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
+        self.click('#ws-play-reset')
+        first=self.js("document.querySelector('#ws-simulation-readout').textContent")
+        self.assertIn('20.0',first)
+        self.assertEqual('30',self.js("document.querySelector('#ws-play-speed').value"))
+        self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
+        self.assertNotEqual(first,self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        self.assertIn('Water',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+
+    def test_no_simulation_response_is_a_visible_failure_not_a_success(self):
+        self.click('[data-mode="test"]')
+        self.js("""window.__oldFetch=window.fetch;window.fetch=(url,init)=>{
+          if(String(url).endsWith('/api/workshop/plan') && JSON.parse(init.body).bench_test)
+            return Promise.resolve(new Response(JSON.stringify({bench:{evidence:'report-only'}}),{status:200}));
+          return window.__oldFetch(url,init);
+        };""")
+        self.click('#ws-run-bench')
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='error'")
+        self.assertTrue(self.js("document.querySelector('#ws-playback').hidden"))
+        self.assertIn('No visible simulation',self.js("document.querySelector('#ws-simulation-status').textContent"))
 
 
 if __name__ == "__main__":

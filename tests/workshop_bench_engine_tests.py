@@ -164,4 +164,54 @@ class DeclaredLimitsUseNativeResults(unittest.TestCase):
                 self.assertNotIn("playback", accepted)
 
 
+
+@unittest.skipUnless(ENGINE is not None and ENGINE.is_file(), "the live world runner is not built")
+class VisibleSimulationEngine(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.app=type("App",(),{"engine_path":ENGINE,"runs_path":Path(self.tmp.name)})()
+        self.app.live=object()
+
+    def test_default_drop_and_slide_complete_for_every_offered_solid(self):
+        for kind in ("table","bench"):
+            for test in ("drop_product","slide_product"):
+                with self.subTest(kind=kind,test=test):
+                    outside=self.app.live
+                    result=workshop_bench.run(self.app,assemble(kind),{"test":test,"config":{}})
+                    self.assertIs(outside,self.app.live)
+                    self.assertTrue(result["prototype"]["engine_grid_verified"])
+                    self.assertAlmostEqual(1.5,result["measured"]["clock_s"],places=6)
+                    frames=result["playback"]["frames"]
+                    self.assertGreater(len(frames),20)
+                    self.assertNotEqual(frames[0]["bodies"][0]["position_m"],frames[-1]["bodies"][0]["position_m"])
+                    self.assertGreater(result["measured"]["prototype_displacement_m"],.02)
+
+    def test_gravity_not_a_script_moves_glass_oak_and_iron(self):
+        for material in ("glass","oak","iron"):
+            with self.subTest(material=material):
+                r=workshop_bench.run(self.app,assemble("table",parameters={"material":material}),
+                    {"test":"drop_product","config":{"height_m":.4,"duration_s":.15}})
+                m=r["measured"];fall=m["start_position_m"][1]-m["end_position_m"][1]
+                # Native semi-implicit 1/120 s gravity: finite-step error bounded explicitly.
+                self.assertAlmostEqual(.5*9.81*.15**2,fall,delta=.008)
+                self.assertTrue(r["prototype"]["engine_grid_verified"])
+                self.assertEqual(0,m["fracture_events"])
+
+    def test_kettle_has_intermediate_measured_temperatures_not_only_final_numbers(self):
+        r=workshop_bench.run(self.app,assemble("kettle"),{"test":"kettle_heat","config":{"duration_s":30}})
+        frames=r["playback"]["frames"]
+        temperatures=[next(b["temperature_k"] for b in f["thermo"]["bodies"] if b["name"]=="water charge")
+                      for f in frames if f.get("thermo")]
+        self.assertGreater(len(temperatures),10)
+        self.assertGreater(temperatures[-1],temperatures[0]+.1)
+        self.assertGreater(temperatures[len(temperatures)//2],temperatures[0])
+
+    def test_load_control_changes_the_actual_native_test_mass(self):
+        results=[workshop_bench.run(self.app,assemble("table"),{"test":"declared_static_load",
+                 "config":{"load_kg":load,"duration_s":.2}}) for load in (5,30)]
+        self.assertLess(results[0]["measured"]["actual_grid_load_kg"],results[1]["measured"]["actual_grid_load_kg"])
+        self.assertEqual(5,results[0]["requested"]["load_kg"])
+        self.assertEqual(30,results[1]["requested"]["load_kg"])
+
+
 if __name__ == "__main__": unittest.main()

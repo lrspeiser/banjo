@@ -155,6 +155,9 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
 
     matter = workshop_visual.matter_document(
         design, _matter_overrides(design), cell_size_m=cell, exterior_only=False)
+    missing = [name for name, count in matter["component_cell_counts"].items() if count == 0]
+    if missing:
+        raise ValueError("Cannot simulate: " + ", ".join(missing) + f" disappear at {cell*1000:g} mm cells. Use a finer cell size or thicker parts; no substitute product was tested.")
     cells = _grid_set(matter)
     if not cells:
         raise ValueError("the selected design produced no physical Matter cells")

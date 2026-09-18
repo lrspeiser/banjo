@@ -271,4 +271,62 @@ class ExplicitLoadAcceptance(unittest.TestCase):
         self.assertEqual({}, envelope([item]))
 
 
+
+class VisibleSimulationContract(unittest.TestCase):
+    def test_motion_does_not_ignore_bad_flags_or_unsupported_limits(self):
+        for request in ({"test":"drop_product","config":{"record_trace":"false"}},
+                        {"test":"drop_product","acceptance_limits":{"max_displacement_m":1}}):
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                workshop_bench.run(None, assemble("table"), request)
+
+    def test_only_real_selected_subjects_are_offered_as_simulations(self):
+        for kind, expected in {"table":{"drop_product","slide_product","declared_static_load"},
+                               "bench":{"drop_product","slide_product","declared_static_load"},
+                               "cart":{"cart_roll"},"kettle":{"kettle_heat"},
+                               "chair":set(),"stool":set(),"shelf-unit":set()}.items():
+            visible = {t["test"] for t in workshop_bench.catalog(kind)
+                       if t.get("category")=="simulation" and t.get("subject")=="selected-product"}
+            self.assertEqual(expected,visible,kind)
+
+    def test_motion_recipe_keeps_exact_cells_and_declares_only_initial_motion(self):
+        import workshop_motion as motion
+        design=assemble("table")
+        drop=motion.scene(design,"drop_product",{"height_m":.21})
+        slide=motion.scene(design,"slide_product",{"speed_m_s":2})
+        self.assertEqual(drop["matter"]["physics_hash"],slide["matter"]["physics_hash"])
+        self.assertAlmostEqual(.2,drop["applied_height_m"])
+        self.assertTrue(all(b["velocity_m_s"]==[0,0,0] for b in drop["spec"]["bodies"]))
+        self.assertTrue(all(b["velocity_m_s"]==[2,0,0] for b in slide["spec"]["bodies"]))
+        self.assertTrue(all(b["name"].startswith("workshop/product") for b in drop["spec"]["bodies"]))
+
+    def test_motion_rejects_invalid_inputs_without_starting_engine(self):
+        import workshop_motion as motion
+        with mock.patch.object(motion.live_session,"Session") as engine:
+            for field,value in [("height_m",float("nan")),("height_m",True),("height_m",-1),
+                                ("duration_s",100),("cell_size_m",0),("cell_size_m","0.04")]:
+                with self.subTest(field=field,value=value), self.assertRaises(ValueError):
+                    motion.run(None,assemble("table"),"drop_product",{field:value})
+            engine.assert_not_called()
+
+    def test_missing_parts_and_articulated_products_never_become_a_different_test(self):
+        import workshop_motion as motion
+        with self.assertRaisesRegex(ValueError,"disappear"):
+            motion.scene(assemble("table",parameters={"top_thickness_m":.005,"leg_section_m":.015}),"drop_product",{})
+        for kind in ["cart","kettle"]:
+            with self.assertRaisesRegex(ValueError,"structural solids"):
+                motion.scene(assemble(kind),"drop_product",{})
+
+    def test_chosen_load_is_forwarded_without_replacing_the_target(self):
+        design=assemble("table")
+        with mock.patch.object(workshop_bench.workshop_trials,"run_static_load",return_value={}) as run:
+            workshop_bench.run(None,design,{"test":"declared_static_load","config":{"load_kg":12.5}})
+        self.assertEqual(12.5,run.call_args.kwargs["load_kg"])
+        self.assertEqual("top",run.call_args.kwargs["on"])
+
+    def test_load_does_not_test_a_product_with_a_missing_top(self):
+        from workshop_sparse_trial import prototype_scene
+        with self.assertRaisesRegex(ValueError,"disappear"):
+            prototype_scene(assemble("table",parameters={"top_thickness_m":.005}),load_kg=10)
+
+
 if __name__ == "__main__": unittest.main()

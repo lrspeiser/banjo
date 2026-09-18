@@ -72,7 +72,7 @@ const bench = {
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
   revision: 0,
   playback: null, playbackIndex: 0, playbackPlaying: false,
-  playbackClock: 0, playbackFrom: 0,
+  playbackClock: 0, playbackFrom: 0, playbackSpeed: 1,
 };
 function chosen() { return bench.candidates[bench.selected]; }
 // Explicit prototype placement is separate from the pure design/test APIs.
@@ -213,6 +213,7 @@ function disposeMaterial(material) {
   else if (material) material.dispose();
 }
 function clearGroup() {
+  drawnRecording = null; playbackMeshes.clear();
   for (const child of [...group.children]) {
     group.remove(child);
     if (child.geometry) child.geometry.dispose();
@@ -295,36 +296,73 @@ function playbackBodyGeometry(body) {
   if (body.shape === "sphere" || body.shape === 1) return new THREE.SphereGeometry(d[0] / 2, 18, 12);
   return new THREE.BoxGeometry(Math.max(0.002, d[0]), Math.max(0.002, d[1]), Math.max(0.002, d[2]));
 }
+let drawnRecording = null;
+const playbackMeshes = new Map();
+let physicsMeshBuilds = 0;
 function drawPlayback() {
-  const recording = bench.playback;
-  const frame = recording?.frames?.[bench.playbackIndex];
+  const recording = bench.playback, frame = recording?.frames?.[bench.playbackIndex];
   if (!frame) return;
+  if (drawnRecording !== recording) { clearGroup(); drawnRecording = recording; physicsMeshBuilds = 0; }
+  const present = new Set(), thermal = new Map((frame.thermo?.bodies || []).map(b => [b.name, b.temperature_k]));
   let proxies = 0;
   for (const body of frame.bodies || []) {
+    present.add(body.name);
     const geometry = recording.geometry?.[body.name];
-    if (geometry && Number(geometry.revision) === Number(body.revision || 0)) {
-      const cell = geometry.cell_size_m;
-      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell, cell, cell),
-        new THREE.MeshStandardMaterial({color:materialColor(body.material), roughness:0.62}), geometry.offsets_m.length);
-      const matrix = new THREE.Matrix4();
-      geometry.offsets_m.forEach((offset, i) => { matrix.makeTranslation(...offset); mesh.setMatrixAt(i, matrix); });
-      mesh.position.set(...body.position_m);
-      const q = body.orientation_wxyz; mesh.quaternion.set(q[1], q[2], q[3], q[0]);
-      group.add(mesh); continue;
+    const exact = geometry && Number(geometry.revision) === Number(body.revision || 0);
+    const signature = JSON.stringify([body.revision || 0, exact, body.shape, body.dimensions_m, body.material]);
+    let entry = playbackMeshes.get(body.name);
+    if (!entry || entry.signature !== signature) {
+      if (entry) { group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); }
+      const material = new THREE.MeshStandardMaterial({color:materialColor(body.material), roughness:0.62});
+      let mesh;
+      if (exact) {
+        const cell = geometry.cell_size_m;
+        mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell,cell,cell), material, geometry.offsets_m.length);
+        const matrix = new THREE.Matrix4();
+        geometry.offsets_m.forEach((offset,i) => { matrix.makeTranslation(...offset); mesh.setMatrixAt(i,matrix); });
+        mesh.instanceMatrix.needsUpdate = true;
+      } else mesh = new THREE.Mesh(playbackBodyGeometry(body), material);
+      mesh.userData.partName = body.name;
+      group.add(mesh); entry = {mesh,signature}; playbackMeshes.set(body.name,entry); physicsMeshBuilds++;
     }
-    proxies++;
-    const mesh = new THREE.Mesh(playbackBodyGeometry(body), new THREE.MeshStandardMaterial({
-      color: materialColor(body.material), roughness: 0.62, metalness: 0,
-    }));
-    mesh.position.set(...(body.position_m || [0, 0, 0]));
-    const q = body.orientation_wxyz || [1, 0, 0, 0];
-    mesh.quaternion.set(q[1], q[2], q[3], q[0]);
-    mesh.userData.partName = body.name; group.add(mesh);
+    if (!exact) proxies++;
+    entry.mesh.position.set(...body.position_m);
+    const q = body.orientation_wxyz || [1,0,0,0]; entry.mesh.quaternion.set(q[1],q[2],q[3],q[0]);
+    if (recording.test === "kettle_heat" && Number.isFinite(thermal.get(body.name))) {
+      const hot = Math.max(0,Math.min(1,(thermal.get(body.name)-293.15)/80));
+      entry.mesh.material.color.setHSL((1-hot)*.62,.85,.55);
+      // The contained thermal proxy must remain visible inside the vessel.
+      entry.mesh.material.transparent = body.name !== "water charge";
+      entry.mesh.material.opacity = body.name === "water charge" ? .95 : .4;
+      entry.mesh.material.depthWrite = body.name === "water charge";
+    }
   }
-  $("#ws-play-note").textContent = `${recording.geometry ? "Verified Matter cells where topology is unchanged. " : ""}${proxies} bodies drawn as reduced collision proxies. Motion is recorded from the engine.`;
+  for (const [name,entry] of playbackMeshes) if (!present.has(name)) {
+    group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
+  }
+  stage.dataset.physicsTime = String(frame.t_s);
+  stage.dataset.physicsBodyCount = String(present.size);
+  stage.dataset.physicsMeshBuilds = String(physicsMeshBuilds);
+  stage.dataset.physicsPose = JSON.stringify(frame.bodies?.[0]?.position_m || []);
+  const live = $("#ws-simulation-readout");
+  if (recording.test === "kettle_heat") {
+    live.textContent = `Water ${celsius(thermal.get("water charge"))} · heater ${celsius(thermal.get("heater plate"))}. Blue → red: measured 20–100 °C. Contained thermal model; no sloshing.`;
+  } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
+  $("#ws-play-note").textContent = `${recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
 }
+function frameSimulation(recording) {
+  const bounds = new THREE.Box3();
+  for (const frame of recording.frames) for (const body of frame.bodies || []) {
+    const radius = .5*Math.hypot(...(body.dimensions_m || [.05,.05,.05]));
+    const point = new THREE.Vector3(...body.position_m);
+    bounds.expandByPoint(point.clone().addScalar(radius)); bounds.expandByPoint(point.clone().addScalar(-radius));
+  }
+  if (!bounds.isEmpty()) { bounds.getCenter(target); reach = Math.max(.3,bounds.getSize(new THREE.Vector3()).length()/2); frameCandidate(); }
+  grid.position.y = 0;
+}
+
 function draw(candidate) {
-  clearGroup();
+  if (view !== "physics") clearGroup();
   balance.visible = view !== "physics";
   support.visible = view !== "physics";
   if (view === "physics") drawPlayback();
@@ -517,14 +555,14 @@ function installEditor() {
 
   const testBox = make("section", { id:"ws-test-bench" });
   testBox.append(make("h3", {}, "Test bench"),
-    make("p", { class:"ws-feedback-count" }, "Run the selected object in an isolated physics fixture. Engine-backed tests can be played, paused and scrubbed here."));
+    make("p", { class:"ws-feedback-count" }, "Choose a situation and press Run simulation. The computed motion starts automatically. The outside world stays unchanged."));
   const testPicker = make("select", { id:"ws-bench-test", "aria-label":"Functional test" });
   const pickerLabel = make("label", { class:"ws-field" }, "Test"); pickerLabel.append(testPicker); testBox.append(pickerLabel);
   testBox.append(make("div", { id:"ws-bench-controls" }));
   const testActions = make("div", { class:"ws-row" });
-  testActions.append(make("button", { id:"ws-run-bench", type:"button", class:"ws-action primary" }, "Run test"),
+  testActions.append(make("button", { id:"ws-run-bench", type:"button", class:"ws-action primary" }, "Run simulation"),
     make("button", { id:"ws-save-bench-preset", type:"button", class:"ws-action" }, "Save preset")); testBox.append(testActions);
-  const presetName = make("input", { id:"ws-bench-preset-name", type:"text", maxlength:"120", placeholder:"Half-speed lift" });
+  const presetName = make("input", { id:"ws-bench-preset-name", type:"text", maxlength:"120", placeholder:"My drop test" });
   const presetLabel = make("label", { class:"ws-field" }, "Preset name"); presetLabel.append(presetName); testBox.append(presetLabel);
   const playback = make("div", { id:"ws-playback", class:"ws-note" }); playback.hidden = true;
   const playbackRow = make("div", { class:"ws-row" });
@@ -532,8 +570,14 @@ function installEditor() {
     make("button", { id:"ws-play-reset", type:"button", class:"ws-action" }, "Reset"),
     make("output", { id:"ws-play-time" }, "0.00 s"));
   const timeline = make("input", { id:"ws-play-timeline", type:"range", min:"0", max:"0", step:"1", value:"0" });
-  playback.append(make("strong", {}, "Simulation trace"), playbackRow, timeline,
-    make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Numerical states from the isolated physics test, not a video."));
+  const speed = make("select", {id:"ws-play-speed", "aria-label":"Simulation display speed"});
+  for (const value of [.25,1,5,10,30,60]) speed.append(make("option",{value:String(value)},`${value}×`));
+  speed.value="1";
+  speed.onchange=()=>{bench.playbackSpeed=Number(speed.value);bench.playbackClock=performance.now();bench.playbackFrom=Number(bench.playback?.frames?.[bench.playbackIndex]?.t_s || 0);};
+  playbackRow.append(speed);
+  playback.append(make("strong", {}, "Simulation result"), playbackRow, timeline,
+    make("p", {id:"ws-simulation-readout",role:"status"}),
+    make("p", { id:"ws-play-note", class:"ws-feedback-count" }, "Calculated motion and temperature. Replay does not rerun the physics."));
   testBox.append(playback, make("div", { id:"ws-bench-presets" }), make("div", { id:"ws-bench-result" }));
   right.insertBefore(testBox, $("#ws-save-design").parentElement.previousElementSibling || $("#ws-save-design").parentElement);
 
@@ -551,7 +595,7 @@ function installEditor() {
   $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
   $("#ws-play").onclick = togglePlayback;
   $("#ws-play-reset").onclick = resetPlayback;
-  timeline.oninput = () => { setPlaybackIndex(Number(timeline.value), false); };
+  timeline.oninput = () => { bench.playbackPlaying=false; $("#ws-play").textContent="Play"; setPlaybackIndex(Number(timeline.value)); };
   installPlacementControls(right);
 }
 installEditor();
@@ -645,8 +689,10 @@ async function loadMatter(force = false) {
 // ---------------------------------------------------------------------------
 function benchDefinition(name = bench.selectedBenchTest) { return bench.benchTests.find((item) => item.test === name) || null; }
 function renderBenchCatalog() {
+  // Analysis/reference tools remain callable by specialist APIs, not presented as product simulations.
+  bench.benchTests = bench.benchTests.filter(t => t.category === "simulation" && t.subject === "selected-product");
   const picker = $("#ws-bench-test"); picker.replaceChildren();
-  for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, `${test.name}${test.visual_playback ? " · trace" : ""}`));
+  for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, test.name));
   if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) bench.selectedBenchTest = bench.benchTests[0]?.test || null;
   if (bench.selectedBenchTest) picker.value = bench.selectedBenchTest;
   picker.disabled = !bench.benchTests.length; $("#ws-run-bench").disabled = !bench.benchTests.length; $("#ws-save-bench-preset").disabled = !bench.benchTests.length;
@@ -661,9 +707,10 @@ function renderBenchControls(values = null) {
     $("#ws-bench-result").replaceChildren();
     clearPlayback();
   };
-  if (!definition) { root.append(make("p", { class:"ws-feedback-count" }, "No functional tests are available.")); return; }
+  if (!definition) { root.append(make("p", { class:"ws-feedback-count" }, "No working simulation is available for this product yet. Report-only tools have been removed from Test; the design is still editable.")); return; }
   root.append(make("p", { class:"ws-feedback-count" }, definition.about));
   for (const control of definition.controls || []) {
+    if (control.name === "record_trace") continue;
     const label = make("label", { class:"ws-field" }, `${control.label}${control.unit ? ` (${control.unit})` : ""}`);
     const chosenValue = values && Object.prototype.hasOwnProperty.call(values, control.name) ? values[control.name] : control.default;
     let input;
@@ -689,10 +736,13 @@ function benchConfig() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first."); const out = {};
   for (const control of definition.controls || []) {
     const input = document.querySelector(`[data-bench-control="${control.name}"]`); if (!input) continue;
+    if (control.optional && input.value.trim() === "") continue;
+    if (input.type === "number" && (!input.checkValidity() || !Number.isFinite(input.valueAsNumber))) throw new Error(`Enter a valid ${control.label}.`);
     if (control.type === "boolean") out[control.name] = input.checked;
     else if (control.type === "number" || typeof control.default === "number") out[control.name] = Number(input.value);
     else out[control.name] = input.value;
   }
+  out.record_trace = true; // Visible runs always return the states needed by the viewport.
   if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
   if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
   return out;
@@ -703,45 +753,62 @@ function renderBenchPresets() {
   for (const preset of relevant) { const button = make("button", { type:"button", class:"ws-action" }, preset.name); button.onclick = () => { renderBenchControls(preset.config || {}); $("#ws-bench-preset-name").value = preset.name; }; row.append(button); }
   root.append(row);
 }
-function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(1)} °C`; }
+function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(2)} °C`; }
 function clearPlayback() {
   bench.playback = null; bench.playbackIndex = 0; bench.playbackPlaying = false;
   const root = $("#ws-playback"); if (root) root.hidden = true;
+  stage.dataset.physicsPlaying="false"; delete stage.dataset.physicsTime;
   if (view === "physics") { view = "wire"; pressView("wire"); show(false); }
 }
 function setPlayback(recording) {
-  if (!recording?.frames?.length) { clearPlayback(); return; }
-  bench.playback = recording; bench.playbackIndex = 0; bench.playbackPlaying = false;
-  const root = $("#ws-playback"), slider = $("#ws-play-timeline"); root.hidden = false;
-  slider.max = String(recording.frames.length - 1); slider.value = "0";
-  $("#ws-play").textContent = "Play"; setPlaybackIndex(0, false);
-  view = "physics"; pressView("physics"); show(false);
+  if (!recording?.frames || recording.frames.length < 2 || !(recording.duration_s > 0)) {
+    clearPlayback(); throw new Error("The test returned no advancing simulation. No successful simulation is claimed.");
+  }
+  bench.playback=recording; bench.playbackIndex=0; bench.playbackPlaying=false;
+  $("#ws-playback").hidden=false;
+  const slider=$("#ws-play-timeline"); slider.max=String(recording.frames.length-1);slider.value="0";
+  bench.playbackSpeed = recording.test === "kettle_heat" ? 30 : 1;
+  $("#ws-play-speed").value=String(bench.playbackSpeed);
+  view="physics";pressView("physics");show(false);frameSimulation(recording);
+  setPlaybackIndex(0);togglePlayback();
 }
+
 function setPlaybackIndex(index, rebase = true) {
   if (!bench.playback?.frames?.length) return;
   bench.playbackIndex = Math.max(0, Math.min(bench.playback.frames.length - 1, Math.round(index)));
   $("#ws-play-timeline").value = String(bench.playbackIndex);
   const frame = bench.playback.frames[bench.playbackIndex]; $("#ws-play-time").textContent = `${Number(frame.t_s || 0).toFixed(2)} s`;
   if (rebase) { bench.playbackClock = performance.now(); bench.playbackFrom = Number(frame.t_s || 0); }
-  if (view === "physics") show(false);
+  if (view === "physics") drawPlayback();
 }
 function togglePlayback() {
   if (!bench.playback?.frames?.length) return;
+  if (!bench.playbackPlaying && bench.playbackIndex >= bench.playback.frames.length-1) setPlaybackIndex(0);
   bench.playbackPlaying = !bench.playbackPlaying; $("#ws-play").textContent = bench.playbackPlaying ? "Pause" : "Play";
   bench.playbackClock = performance.now(); bench.playbackFrom = Number(bench.playback.frames[bench.playbackIndex]?.t_s || 0);
 }
 function resetPlayback() { bench.playbackPlaying = false; if ($("#ws-play")) $("#ws-play").textContent = "Play"; setPlaybackIndex(0); }
 function advancePlayback(now) {
+  stage.dataset.physicsPlaying=String(bench.playbackPlaying);
   if (!bench.playbackPlaying || !bench.playback?.frames?.length) return;
-  const frames = bench.playback.frames, targetTime = bench.playbackFrom + (now - bench.playbackClock) / 1000;
+  const frames = bench.playback.frames, targetTime = bench.playbackFrom + (now - bench.playbackClock) / 1000 * bench.playbackSpeed;
   let i = bench.playbackIndex; while (i + 1 < frames.length && Number(frames[i+1].t_s) <= targetTime) i++;
   if (i !== bench.playbackIndex) setPlaybackIndex(i, false);
-  if (i >= frames.length - 1) { bench.playbackPlaying = false; $("#ws-play").textContent = "Play"; }
+  if (i >= frames.length - 1) { bench.playbackPlaying = false; $("#ws-play").textContent = "Replay"; }
 }
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
-  if (result.test === "kettle_heat") {
+  if (["drop_product","slide_product"].includes(result.test)) {
+    const m=result.measured || {}, r=result.requested || {};
+    card.append(make("strong",{},result.test==="drop_product" ? "Drop completed" : "Slide completed"),
+      make("p",{},result.test==="drop_product" ? `Requested height ${r.height_m} m · grid height ${r.applied_height_m} m` : `Starting speed ${r.speed_m_s} m/s along +X`),
+      make("p",{},`Final displacement ${m.prototype_displacement_m == null ? "unavailable after separation" : Number(m.prototype_displacement_m).toFixed(3)+" m"} · ${m.fracture_events} fracture evaluations · ${m.clock_s.toFixed(2)} s simulated`));
+  } else if (result.test === "cart_roll") {
+    const m=result.measured || {};
+    card.append(make("strong",{},"Cart run completed"),make("p",{},`Chassis displacement (X/Y/Z): ${(m.chassis_delta_m || []).map(v=>Number(v).toFixed(3)).join(" / ")} m`),
+      make("p",{},`${m.joint_count} joints · ${(m.axle_turns || []).map(a=>`${a.axle}: ${Number(a.degrees).toFixed(1)}°`).join("; ")}`));
+  } else if (result.test === "kettle_heat") {
     const m = result.measured || {}; card.append(make("strong", {}, `Water: ${celsius(m.water_start_k)} → ${celsius(m.water_end_k)}`),
       make("p", {}, `Kettle bottom ${celsius(m.kettle_bottom_k)} · heater plate ${celsius(m.heater_plate_k)}`));
     const heaterIn = m.ledger?.heater_in_j; if (heaterIn != null) card.append(make("p", {}, `External heat added: ${(Number(heaterIn)/1000).toFixed(1)} kJ`));
@@ -753,6 +820,7 @@ function renderBenchResult(result) {
       make("p", {}, `Motor ${Number(motor.power_w || 0).toFixed(1)} W · battery supplied ${Number(battery.given_j || 0).toFixed(1)} J`));
   } else if (result.trial === "static_load" || result.test === "static_load") {
     const m = result.measured || {}; card.append(make("strong", {}, "Physical load trial"),
+      make("p", {}, `Requested ${m.requested_load_kg} kg · applied ${m.actual_grid_load_kg} kg. Little or no movement means the object held in this model—not that bending strength is certified.`),
       make("p", {}, `Displacement ${m.prototype_displacement_m == null ? "unavailable" : Number(m.prototype_displacement_m).toFixed(4) + " m"} · rotation ${m.prototype_rotation_change_deg == null ? "unavailable" : Number(m.prototype_rotation_change_deg).toFixed(2) + "°"} · fractures ${(m.fractures || []).length}`));
   } else if (result.test === "force_probe") {
     const target = result.target || {}; card.append(make("strong", {}, `Force probe · ${target.component || "component"}`),
@@ -779,16 +847,30 @@ function renderBenchResult(result) {
   if (result.playback) setPlayback(result.playback);
   for (const limitation of result.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, limitation));
   const details = make("details", { class:"ws-family" }); details.append(make("summary", {}, "Measured evidence"));
-  const pre = make("pre"); pre.textContent = JSON.stringify(result, null, 2); details.append(pre); root.append(details);
+  const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,duration_s:result.playback.duration_s,states:result.playback.frames.length} : undefined}, null, 2); details.append(pre); root.append(details);
 }
 async function runBenchTest() {
-  const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
-  const revision = bench.revision, request = ++benchTestRequest;
-  const config = benchConfig();
-  $("#ws-bench-result").replaceChildren();
-  const answer = await api("/api/workshop/plan", { ...candidateBody(), bench_test:{ test:definition.test, config } });
-  if (request === benchTestRequest && revision === bench.revision && definition.test === bench.selectedBenchTest) renderBenchResult(answer.bench);
+  const definition=benchDefinition(); if(!definition) throw new Error("Choose a supported simulation first.");
+  const revision=bench.revision, request=++benchTestRequest, config=benchConfig();
+  const current=()=>request===benchTestRequest && revision===bench.revision && definition.test===bench.selectedBenchTest;
+  clearPlayback();
+  const status=make("p",{id:"ws-simulation-status",role:"status","aria-live":"polite"},`Calculating ${definition.name.toLowerCase()} on the selected object…`);
+  status.dataset.state="running"; $("#ws-bench-result").replaceChildren(status);
+  try {
+    const answer=await api("/api/workshop/plan",{...candidateBody(),bench_test:{test:definition.test,config}});
+    if(!current()) return;
+    if (!answer.bench?.playback?.frames || answer.bench.playback.frames.length < 2) throw new Error("No visible simulation was returned. This test is not complete.");
+    renderBenchResult(answer.bench);
+    status.dataset.state="complete";status.textContent="Simulation complete. Showing calculated behavior; use Pause or Replay to inspect it.";
+    $("#ws-bench-result").prepend(status);
+  } catch(error) {
+    if(!current())return;
+    clearPlayback(); status.dataset.state="error";
+    status.textContent=`Simulation did not run: ${error.message}`; $("#ws-bench-result").replaceChildren(status);
+    throw error;
+  }
 }
+
 async function saveBenchPreset() {
   const definition = benchDefinition(); if (!definition) throw new Error("Choose a test first.");
   const name = $("#ws-bench-preset-name").value.trim() || `${definition.name} preset`;
@@ -887,7 +969,7 @@ function show(reframe = true) {
   if (m.legs_not_under_the_top.length) { checks.classList.add("warn"); said.push(`${m.legs_not_under_the_top.join(", ")} meet nothing.`); }
   const stat = ((candidate.analytical || {}).static_loads || [])[0]; if (stat && m.basis !== "canonical-matter-grid") said.push(`Wireframe analytical ${stat.external_load_kg} kg load: ${stat.max_support.name} carries about ${stat.max_support.equivalent_load_kg} kg equivalent.`);
   if (view === "matter" && bench.matter) said.push(`Matter: ${bench.matter.shown_cells.toLocaleString()} cells shown at ${(bench.matter.cell_size_m*1000).toFixed(0)} mm.`);
-  if (view === "physics" && bench.playback) said.push(`Physics: recorded ${bench.playback.frames.length} simulation states over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
+  if (view === "physics" && bench.playback) said.push(`Physics: ${bench.playback.frames.length} calculated states over ${Number(bench.playback.duration_s || 0).toFixed(2)} s.`);
   said.push(...(m.warnings || []));
   $("#ws-measurement-basis").textContent = m.basis === "canonical-matter-grid"
     ? `Mass/balance from Matter at ${(m.cell_size_m*1000).toFixed(0)} mm · ${m.matter_physics_hash.slice(0,12)}. ${m.geometry_coherent === false ? "Connections unresolved. " : ""}Strength requires a test.`
@@ -928,7 +1010,7 @@ document.querySelectorAll(".ws-viewbar button").forEach((button) => {
   button.onclick = () => guard(button, async () => {
     const requested = button.dataset.view;
     if (requested === "matter") await loadMatter(false);
-    if (requested === "physics" && !bench.playback) { say("Run a test with trace capture enabled first; Physics view is recorded engine evidence.", true); return; }
+    if (requested === "physics" && !bench.playback) { say("Run a supported simulation first. This view shows its calculated result.", true); return; }
     view = requested; pressView(view); show(false);
   });
 });

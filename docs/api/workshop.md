@@ -390,3 +390,24 @@ The last 64 receipts are retained. A successful response has `status: installed`
 the new `session`, and `root_body` identifying the real installed solid. Rejoin
 that scene through the world page to use it. Changing Workshop controls or the
 selected candidate invalidates pending preview UI responses.
+
+## Visible preset experiments
+
+`bench_test.test` additionally accepts `drop_product` and `slide_product` for
+connected, single-material structural solids. Config accepts `cell_size_m`
+(default 0.04 m, range 0.005-0.1 m), `duration_s` (default 1.5 s, range 0.1-3 s),
+and either `height_m` (default 0.2 m, range 0.04-2 m) or `speed_m_s` (default
+1 m/s, range 0.1-3 m/s). Values must be finite numbers. Drop height is translated
+onto the existing integer grid and both requested/applied heights are reported.
+The result includes verified native geometry and optional numerical display
+states; no arbitrary force program or unsupported acceptance limit is implied.
+
+`declared_static_load` config can optionally override `load_kg` (0.1-1000 kg),
+retaining the authored load target and any stricter declared acceptance limits.
+Blank browser input uses the declared load. Actual quantized mass is reported.
+
+Catalog entries distinguish `category: simulation` from `analysis`, and
+`subject: selected-product` from `reference-fixture`. The browser offers only
+supported selected-product simulations, with states always requested. Legacy
+analysis/reference API operations have not been deleted. See the
+[visible-tests checkpoint](../workshop-visible-tests-checkpoint.md) for limits.

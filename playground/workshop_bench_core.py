@@ -102,7 +102,7 @@ def _scratch(app: Any, label: str) -> tuple[Path, Path]:
     return engine, runs
 
 
-def _advance(session: Any, duration_s: float, *, dt: float = 1 / 30.0) -> dict[str, Any]:
+def _advance(session: Any, duration_s: float, *, dt: float = 1 / 30.0, read_thermo: bool = False) -> dict[str, Any]:
     target = float((session.state or {}).get("t", 0.0)) + duration_s
     state = session.state; guard = 0
     while float(state.get("t", 0.0)) < target - 1e-9:
@@ -117,6 +117,8 @@ def _advance(session: Any, duration_s: float, *, dt: float = 1 / 30.0) -> dict[s
         state = session.send(op="step", dt=dt, n=n)
         while state.get("breakable"):
             state = session.send(op="fracture", name=str(state["breakable"][0]), window_s=0.003)
+        if read_thermo:
+            session.send(op="thermo")
     return state
 
 
@@ -264,7 +266,9 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, sess
     if session_wrapper is not None:
         session = session_wrapper(session)
     try:
-        initial = session.send(op="thermo"); _advance(session, duration); final = session.send(op="thermo")
+        if session_wrapper is not None:
+            session.sample_period_s = max(1/30, duration/500)
+        initial = session.send(op="thermo"); _advance(session, duration, read_thermo=session_wrapper is not None); final = session.send(op="thermo")
     finally: session.close()
     before_report = initial.get("thermo") or {}; report = final.get("thermo") or {}
     before = _thermo_body(before_report, "water charge") or {}; after = _thermo_body(report, "water charge") or {}

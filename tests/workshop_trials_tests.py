@@ -162,8 +162,13 @@ class Running(unittest.TestCase):
         self.assertEqual(64, len(answer["prototype"]["matter_physics_hash"]))
 
     def test_declared_load_is_taken_from_the_assembly_not_a_page_guess(self):
+        # This plumbing fixture needs every part resolved. The default thin
+        # chair back vanishes at 20 mm and is now correctly rejected below.
+        chair = assemble("chair", design_id="chair")
+        chair.parts = [replace(p, size_m=(p.size_m[0], p.size_m[1], .04))
+                       if p.name == "back-panel" else p for p in chair.parts]
         answer = workshop_trials.run_declared_static_load(
-            App(self.root), assemble("chair", design_id="chair"),
+            App(self.root), chair,
             cell_size_m=0.02, duration_s=0.1, session_factory=FakeSession)
         self.assertEqual(120.0, answer["requested"]["load_kg"])
         self.assertEqual(0.02, answer["prototype"]["effective_cell_size_m"])
@@ -171,6 +176,14 @@ class Running(unittest.TestCase):
         self.assertTrue(answer["prototype"]["engine_grid_verified"])
         self.assertEqual(answer["prototype"]["matter_cells"], answer["prototype"]["engine_cells"])
         self.assertIn("actual_grid_load_kg", answer["measured"])
+
+
+
+    def test_missing_chair_back_never_reaches_the_engine(self):
+        with self.assertRaisesRegex(ValueError, "back-panel.*disappear"):
+            workshop_trials.run_declared_static_load(App(self.root), assemble("chair"),
+                cell_size_m=.02, duration_s=.1, session_factory=FakeSession)
+        self.assertEqual([], FakeSession.made)
 
 
 
