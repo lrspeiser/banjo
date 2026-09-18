@@ -1,0 +1,97 @@
+diff --git a/docs/workshop-visible-tests-checkpoint.md b/docs/workshop-visible-tests-checkpoint.md
+index e5619a4..560c7d8 100644
+--- a/docs/workshop-visible-tests-checkpoint.md
++++ b/docs/workshop-visible-tests-checkpoint.md
+@@ -88,0 +89,13 @@
++
++
++## Viewport-controls follow-up
++
++Visual review of the first gate's screenshots found that Run and the current
++measurements were below the fold in the parameter sidebar. The actual Run,
++Pause/Replay, timeline, elapsed time, measured temperature, and failure messages
++now live in a dock on the viewport. It follows the Test tab; there are no duplicate
++controls or handlers. Mechanical results default to explicitly labelled 0.25x
++slow display so short impacts are easier to inspect; heating remains 30x.
++A 1280x720 browser regression uses real DevTools mouse input, checks button hit
++testing and screen bounds before running, and requires an onscreen readout after
++completion. Programmatic click success alone no longer qualifies this flow.
+diff --git a/playground/workshop.css b/playground/workshop.css
+index 27c8008..7e18ef6 100644
+--- a/playground/workshop.css
++++ b/playground/workshop.css
+@@ -122,0 +123,12 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
++
++/* Run and measured results stay visible while the parameter sidebar scrolls. */
++.ws-simulation-dock { position:absolute;left:1rem;top:4rem;z-index:3;
++  max-width:min(470px,calc(100% - 2rem));max-height:calc(100% - 6rem);overflow:auto;
++  box-sizing:border-box;display:grid;gap:.4rem;padding:.65rem .8rem;border-radius:.5rem;
++  border:1px solid #465363;background:#0b1017ed;color:#e7edf4;font-size:.78rem; }
++.ws-simulation-dock[hidden] { display:none; }
++.ws-simulation-dock p { margin:.35rem 0;line-height:1.35; }
++.ws-simulation-dock .ws-note { margin:0;padding:.4rem;border:0; }
++.ws-simulation-dock .ws-row { margin:.35rem 0; }
++.ws-simulation-dock #ws-run-bench { justify-self:start;font-weight:700; }
++.ws-simulation-dock #ws-play-timeline { width:100%; }
+diff --git a/playground/workshop.js b/playground/workshop.js
+index dffaeed..a1196d5 100644
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -491 +491 @@ async function guard(button, work) {
+-  finally { if (button) { button.disabled = false; button.textContent = original; } }
++  finally { if (button) { button.disabled = button.id === "ws-run-bench" && !benchDefinition(); button.textContent = original; } }
+@@ -583,0 +584,8 @@ function installEditor() {
++  // Keep the real Run/replay controls next to the object, not below a long
++  // scrolling parameter panel. Move existing nodes, never duplicate handlers.
++  const dock = make("section", {id:"ws-simulation-dock",class:"ws-simulation-dock","aria-label":"Simulation controls"});
++  dock.hidden = true;
++  dock.append(make("strong", {id:"ws-active-situation"}), $("#ws-run-bench"),
++    make("div", {id:"ws-simulation-feedback"}), playback);
++  $(".ws-viewport").append(dock);
++
+@@ -704,0 +713 @@ function renderBenchControls(values = null) {
++  $("#ws-active-situation").textContent = definition?.name || "No simulation available for this product";
+@@ -758,0 +768 @@ function clearPlayback() {
++  $("#ws-simulation-feedback")?.replaceChildren();
+@@ -770 +780 @@ function setPlayback(recording) {
+-  bench.playbackSpeed = recording.test === "kettle_heat" ? 30 : 1;
++  bench.playbackSpeed = recording.test === "kettle_heat" ? 30 : .25;
+@@ -858 +868 @@ async function runBenchTest() {
+-  status.dataset.state="running"; $("#ws-bench-result").replaceChildren(status);
++  status.dataset.state="running"; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
+@@ -865 +875 @@ async function runBenchTest() {
+-    $("#ws-bench-result").prepend(status);
++    $("#ws-simulation-feedback").replaceChildren(status);
+@@ -869 +879 @@ async function runBenchTest() {
+-    status.textContent=`Simulation did not run: ${error.message}`; $("#ws-bench-result").replaceChildren(status);
++    status.textContent=`Simulation did not run: ${error.message}`; $("#ws-simulation-feedback").replaceChildren(status); $("#ws-bench-result").replaceChildren();
+diff --git a/playground/world.html b/playground/world.html
+index 8eca16a..8b9f507 100644
+--- a/playground/world.html
++++ b/playground/world.html
+@@ -81 +81 @@ if(new URLSearchParams(location.search).has("workshop")){
+-  const tabs=(right,panes)=>{const nav=el("div",{class:"ws-workspace-tabs",role:"tablist","aria-label":"Workshop mode"}),activate=name=>{Object.entries(panes).forEach(([key,pane])=>pane.hidden=key!==name);$$("button",nav).forEach(button=>button.setAttribute("aria-selected",button.dataset.mode===name?"true":"false"))};for(const[name,label]of[["build","Build"],["test","Test"],["details","Details"]]){const b=el("button",{type:"button",role:"tab","data-mode":name,"aria-selected":name==="build"?"true":"false"},label);b.addEventListener("click",()=>activate(name));nav.append(b)}($(".ws-metrics",right)||$("#ws-purpose",right)).after(nav);activate("build")};
++  const tabs=(right,panes)=>{const nav=el("div",{class:"ws-workspace-tabs",role:"tablist","aria-label":"Workshop mode"}),activate=name=>{const dock=$("#ws-simulation-dock");if(dock)dock.hidden=name!=="test";Object.entries(panes).forEach(([key,pane])=>pane.hidden=key!==name);$$("button",nav).forEach(button=>button.setAttribute("aria-selected",button.dataset.mode===name?"true":"false"))};for(const[name,label]of[["build","Build"],["test","Test"],["details","Details"]]){const b=el("button",{type:"button",role:"tab","data-mode":name,"aria-selected":name==="build"?"true":"false"},label);b.addEventListener("click",()=>activate(name));nav.append(b)}($(".ws-metrics",right)||$("#ws-purpose",right)).after(nav);activate("build")};
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 1bd3871..bdbbd6c 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -364,0 +365,18 @@ class WorkshopBrowserRegression(unittest.TestCase):
++    def test_run_and_readout_are_visible_and_clickable_without_sidebar_scrolling(self):
++        self.page.send("Emulation.setDeviceMetricsOverride",{"width":1280,"height":720,"deviceScaleFactor":1,"mobile":False})
++        self.click('[data-mode="test"]')
++        self.wait("!document.querySelector('#ws-simulation-dock').hidden")
++        point=self.js("""(()=>{const e=document.querySelector('#ws-run-bench'),r=e.getBoundingClientRect();
++          return {x:r.x+r.width/2,y:r.y+r.height/2,visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,
++          hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e};})()""")
++        self.assertTrue(point['visible'] and point['hit'],point)
++        # Real mouse input: a programmatic element.click() can pass for an
++        # offscreen button and failed to catch the previous below-fold layout.
++        for kind in ('mousePressed','mouseReleased'):
++            self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':point['x'],'y':point['y'],'button':'left','clickCount':1})
++        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
++        self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout').getBoundingClientRect();return r.height>0&&r.top>=0&&r.bottom<=innerHeight;})()"))
++        self.assertEqual(.25,float(self.js("document.querySelector('#ws-play-speed').value")))
++        self.click('[data-mode="build"]')
++        self.assertTrue(self.js("document.querySelector('#ws-simulation-dock').hidden"))
++
