@@ -1,0 +1,50 @@
+diff --git a/playground/workshop.js b/playground/workshop.js
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -1067,7 +1067,9 @@
+     // Loading optional history must not reset controls or invalidate a test
+     // started while this request was in flight. The test catalog is already
+     // authoritative from /open; only saved presets changed here.
+-    renderUserLibrary(); renderBenchPresets(); show(false);
++    // History has no geometry changes. Redrawing the editor here would erase
++    // unsubmitted curve/material inputs if it arrives while the user edits.
++    renderUserLibrary(); renderBenchPresets();
+   } catch { /* optional */ }
+ }
+ 
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -247,6 +247,32 @@
+         self.wait("!document.querySelector('#ws-run-bench').disabled && document.querySelector('#ws-acceptance-status')")
+         self.assertEqual("not-declared", self.js("document.querySelector('#ws-acceptance-status').dataset.status"))
+ 
++    def test_late_history_does_not_erase_unsubmitted_skin_edits(self):
++        self.page.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
++          const originalFetch=window.fetch.bind(window);
++          window.fetch=async function(resource,init){
++            const response=await originalFetch(resource,init);
++            if(String(resource).endsWith('/api/workshop/remembered')){
++              await new Promise(resolve=>window.__releaseHistory=resolve);
++            }
++            return response;
++          };
++        """})
++        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&dirty-editor-test=1"})
++        self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-parts button')")
++        self.click('[data-mode="build"]')
++        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
++        self.field("#ws-skin-profile", "curve")
++        self.field("#ws-skin-bend", .35, "input")
++        self.js("document.querySelector('#ws-skin-physical').checked=true")
++        self.js("window.__releaseHistory();new Promise(resolve=>setTimeout(resolve,200))")
++        self.assertEqual("curve", self.js("document.querySelector('#ws-skin-profile').value"))
++        self.assertAlmostEqual(.35, float(self.js("document.querySelector('#ws-skin-bend').value")))
++        self.assertTrue(self.js("document.querySelector('#ws-skin-physical').checked"))
++        self.click("#ws-apply-skin")
++        self.wait("!document.querySelector('#ws-apply-skin').disabled && document.querySelector('#ws-measurement-basis').textContent.includes('Mass/balance from Matter')")
++        self.assertAlmostEqual(.35, float(self.js("document.querySelector('#ws-skin-bend').value")))
++
+     def test_changing_limits_during_a_run_discards_the_outdated_answer(self):
+         self.click('[data-mode="test"]')
+         self.click('#ws-test-catalog button[data-value="declared_static_load"]')
