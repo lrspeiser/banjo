@@ -1,0 +1,22 @@
+--- a/playground/workshop.js
++++ b/playground/workshop.js
+@@ -835,7 +835,7 @@
+   }
+   $(".ws-viewport").append(context);
+   const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
+-  setup.onclick=()=>{benchTestRequest++;clearPlayback();scheduleSetup(0);};
++  setup.onclick=()=>{benchTestRequest++;$("#ws-bench-result").replaceChildren();clearPlayback();scheduleSetup(0);};
+   dock.insertBefore(setup, $("#ws-simulation-feedback"));
+ 
+   const matterMode=make("select",{id:"ws-matter-mode"});[["cells","Cells"],["solid","Solid CellSkin"],["skin-cells","Skin + cells"]].forEach(([v,l])=>addOption(matterMode,v,l));const modeLabel=make("label",{class:"ws-field"},"Matter display");modeLabel.append(matterMode);editor.append(modeLabel);
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -276,6 +276,8 @@
+         self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
+         self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
+         self.assert_geometry_is_visible()
++        self.assertEqual("",self.js("document.querySelector('#ws-bench-result').textContent"),
++                         "Reset must not present the previous run's verdict as an unrun setup result")
+ 
+     def test_component_copy_and_saved_inspection_show_solid_geometry_without_replacing_product(self):
+         self.open_product("cart")
