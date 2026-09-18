@@ -1,0 +1,43 @@
+name: thin-ui-smoke
+on:
+  push:
+    branches: [agent/thin-part-representations]
+    paths: [.github/workflows/thin-ui-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  thin-table:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/thin-parts-candidate
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/thin-parts
+          key: thin-parts-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tests/*.cpp') }}
+      - name: Exercise the actual thin-table UI and native engine
+        env:
+          OPENAI_API_KEY: ""
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_live_world_run
+          BANJO_PLATFORM_ENGINE: ${{ github.workspace }}/build/thin-parts/banjo_platform_cli
+          BANJO_BROWSER_TESTS: required
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+          BANJO_BROWSER_ARTIFACTS: ${{ runner.temp }}/thin-smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/thin-smoke"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/thin-smoke/commit.txt"
+          test -x "$BANJO_PLATFORM_ENGINE"
+          python3 tests/workshop_browser_tests.py -v -f -k thin_rigid 2>&1 | tee "$RUNNER_TEMP/thin-smoke/test.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thin-ui-smoke
+          path: |
+            ${{ runner.temp }}/thin-smoke
+            build/workshop-browser-evidence
+          retention-days: 7
