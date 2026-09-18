@@ -1,0 +1,24 @@
+name: workshop-workspace-source
+on:
+  push:
+    branches: [agent/workshop-visible-workspace]
+    paths: [.github/workflows/workshop-workspace-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          git fetch origin refs/pull/22/head:refs/heads/review-pr22
+          git branch review-main 07aab26eb6ae7c9dbd3c740c1d877c9e848e14cb
+          git bundle create banjo-workspace.bundle refs/heads/review-main refs/heads/review-pr22
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-workspace-source
+          path: banjo-workspace.bundle
+          retention-days: 3
