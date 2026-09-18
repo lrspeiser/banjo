@@ -1,0 +1,6 @@
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index ef617fd..8c518ca 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -78,0 +79 @@ class WorkshopBrowserRegression(unittest.TestCase):
++        self.page.send("Page.enable")
