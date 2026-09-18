@@ -419,7 +419,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js('window.__thinPageBeforeReload=true')
         self.page.send('Page.reload',{})
         self.wait("!window.__thinPageBeforeReload && document.querySelector('#ws-mechanical-model')?.value==='rigid' && document.querySelector('#ws-mass')?.textContent==='3.416 kg'")
-        self.assertIn('live-room installation unsupported',self.js("document.querySelector('#ws-buildability-summary').textContent"))
+        self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('live-room installation unsupported')")
 
 
     def test_test_tab_only_shows_working_simulations_and_disables_unsupported_products(self):
