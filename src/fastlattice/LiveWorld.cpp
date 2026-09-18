@@ -2825,7 +2825,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 previous->value("revision", 0U) != 0 || numberFrom(previous->at("dent_m")) != 0.0)
                 throw std::invalid_argument("invalid or unsupported saved precise-rigid state");
             const Vec3 dims = vecFrom(previous->at("dimensions_m"));
-            if (length(dims - body.dimensions_m) > 1e-12 || previous->at("material") != materialPresetName(body.material) ||
+            // Compare as a string, the way this block already reads nodes_b64
+            // and color_rgba. materialPresetName returns std::string_view, and
+            // `json != std::string_view` gives MSVC two equally good
+            // conversions (json's own operator!= and string_view's), so it
+            // refuses with C2666 and the whole live world stops building on
+            // Windows while gcc accepts it.
+            if (length(dims - body.dimensions_m) > 1e-12
+                || previous->at("material").get<std::string>() != materialPresetName(body.material) ||
                 previous->at("color_rgba").get<std::uint32_t>() != body.color_rgba)
                 throw std::invalid_argument("saved precise-rigid descriptor does not match its source");
             pose = rigidFrom(previous->at("pose"));
