@@ -71,10 +71,10 @@ class BenchAPI(unittest.TestCase):
         self.assertEqual("candidate", run.call_args.args[1].design_id)
         self.assertEqual("machine_control", run.call_args.args[2]["test"])
 
-    def test_visual_plan_returns_canonical_engine_grid_cells_and_separate_skin(self):
+    def test_visual_plan_returns_canonical_cells_cellskin_and_physics_debug(self):
         answer = workshop_api.plan(self.app, {
             "kind": "table", "design_id": "visual-table", "parameters": {},
-            "visual": {"cell_size_m": 0.08, "exterior_only": True},
+            "visual": {"cell_size_m": 0.08, "exterior_only": True, "debug": True},
         })
         self.assertEqual("banjo.product-skin.v1", answer["skin"]["schema"])
         matter = answer["matter"]
@@ -90,25 +90,45 @@ class BenchAPI(unittest.TestCase):
         self.assertGreater(matter["shown_cells"], 0)
         self.assertLessEqual(matter["shown_cells"], matter["total_cells"])
         self.assertAlmostEqual(0.08, matter["cell_size_m"])
+        exposed = 0
         for item in matter["cells"][:20]:
             self.assertEqual(3, len(item["grid"]))
             self.assertEqual(3, len(item["center_m"]))
             self.assertTrue(item["exposed"])
             self.assertTrue(item["exposed_faces"])
+            exposed += len(item["exposed_faces"])
             expected = [(item["grid"][axis] + 0.5) * matter["cell_size_m"] for axis in range(3)]
             for got, want in zip(item["center_m"], expected):
                 self.assertAlmostEqual(want, got, places=8)
 
-    def test_exterior_only_changes_display_not_the_physics_hash(self):
+        cell_skin = answer["cell_skin"]
+        self.assertEqual("banjo.workshop-cell-skin.v1", cell_skin["schema"])
+        self.assertEqual(matter["physics_hash"], cell_skin["matter_physics_hash"])
+        self.assertEqual(cell_skin["exposed_faces"] * 2, cell_skin["triangle_count"])
+        self.assertGreater(cell_skin["exposed_faces"], exposed)
+        self.assertTrue(all(face["axis"] in {0, 1, 2} for face in cell_skin["faces"][:20]))
+
+        debug = answer["physics_debug"]
+        self.assertEqual("banjo.workshop-physics-debug.v1", debug["schema"])
+        self.assertTrue(debug["components"])
+        self.assertTrue(debug["relationships"])
+        self.assertTrue(debug["collision_zones"])
+        self.assertIsInstance(debug["mechanisms"], list)
+        self.assertIsInstance(debug["component_to_body"], dict)
+
+    def test_exterior_only_changes_display_not_physics_or_cellskin_topology(self):
         base = {"kind": "table", "design_id": "visual-table", "parameters": {}}
-        all_cells = workshop_api.plan(self.app, {
-            **base, "visual": {"cell_size_m": 0.04, "exterior_only": False}})["matter"]
-        exterior = workshop_api.plan(self.app, {
-            **base, "visual": {"cell_size_m": 0.04, "exterior_only": True}})["matter"]
+        full = workshop_api.plan(self.app, {
+            **base, "visual": {"cell_size_m": 0.04, "exterior_only": False}})
+        clipped = workshop_api.plan(self.app, {
+            **base, "visual": {"cell_size_m": 0.04, "exterior_only": True}})
+        all_cells, exterior = full["matter"], clipped["matter"]
         self.assertEqual(all_cells["physics_hash"], exterior["physics_hash"])
         self.assertEqual(all_cells["artifact_hash"], exterior["artifact_hash"])
         self.assertEqual(all_cells["total_cells"], exterior["total_cells"])
         self.assertLessEqual(exterior["shown_cells"], all_cells["shown_cells"])
+        self.assertEqual(full["cell_skin"]["exposed_faces"], clipped["cell_skin"]["exposed_faces"])
+        self.assertEqual(full["cell_skin"]["triangle_count"], clipped["cell_skin"]["triangle_count"])
 
     def test_physical_curve_changes_canonical_matter_and_appearance_curve_does_not(self):
         opened = workshop_api.open_workshop(self.app, {"kind": "cart"})
@@ -182,6 +202,11 @@ class MatterConsistency(unittest.TestCase):
         plan = workshop_api.plan(self.app, {**changed, "visual": {"cell_size_m": .04}})
         self.assertEqual(plan["matter"]["physics_hash"], changed["measured"]["matter_physics_hash"])
         self.assertEqual(plan["matter"]["physics_hash"], plan["fingerprint"])
+        self.assertEqual("unavailable", plan["physics_debug"]["status"])
+        self.assertEqual([], plan["physics_debug"]["collision_zones"])
+        self.assertEqual([], plan["physics_debug"]["relationships"])
+        self.assertFalse(plan["physics_debug"]["strength_certified"])
+        self.assertEqual(plan["matter"]["physics_hash"], plan["cell_skin"]["matter_physics_hash"])
         self.assertEqual([], plan["objects"])
         self.assertTrue(plan["wireframe_objects"])
         self.assertAlmostEqual(plan["matter"]["total_cells"]*700*.04**3, changed["measured"]["mass_kg"])

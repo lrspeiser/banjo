@@ -12,7 +12,7 @@ from typing import Any
 
 import workshop_api_core as _core
 from workshop_api_core import *  # noqa: F401,F403
-from mcp import workshop_components, workshop_visual, workshop_matter_metrics, workshop_buildability, workshop_rigid
+from mcp import workshop_components, workshop_visual, workshop_matter_metrics, workshop_buildability, workshop_rigid, workshop_debug
 
 
 def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -151,6 +151,11 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
             answer["matter_measured"] = summary["measured"]
             answer["matter_bom"] = _core.workshop_library.bill_of_materials(app, design, matter_summary=summary)
             answer["matter_component_mass_kg"] = summary["component_mass_kg"]
+        # Build surfaces before display filtering; null stays unavailable, never
+        # a substituted bounding box when canonical compilation was rejected.
+        answer["cell_skin"] = workshop_debug.cell_skin_document(full) if full is not None else None
+        if bool(options.get("debug", True)):
+            answer["physics_debug"] = workshop_debug.debug_document(design)
         if full is not None and exterior:
             full["cells"] = [row for row in full["cells"] if row["exposed"]]
             full["shown_cells"] = len(full["cells"])

@@ -70,6 +70,8 @@ const bench = {
   selectedPart: null, forcePoint: null, openedLibraryItem: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
+  cellSkin: null, physicsDebug: null, matterMode: "cells",
+  clip: {enabled:false, axis:"x", position:0},
   revision: 0,
   playback: null, playbackIndex: 0, playbackPlaying: false,
   playbackClock: 0, playbackFrom: 0, playbackSpeed: 1,
@@ -158,6 +160,7 @@ function currentMeasurements(candidate = chosen()) {
 }
 function invalidateMatter(message = "Not built for this candidate. Rebuild Matter view.") {
   invalidateInstallation();
+  bench.cellSkin = null; bench.physicsDebug = null;
   bench.matter = null; bench.matterKey = null; bench.matterMeasured = null;
   bench.matterBom = null; bench.matterMasses = null; bench.rigid = null;
   clearTimeout(buildabilityTimer); buildabilityRequest++; bench.buildabilityPending = null;
@@ -191,6 +194,12 @@ function frameCandidate() {
   const across = Math.atan(Math.tan(up) * Math.max(0.2, camera.aspect));
   distance = Math.max(0.6, reach * 1.15 / Math.sin(Math.min(up, across)));
   placeCamera();
+}
+function applyClipPlane() {
+  if (!bench.clip.enabled) { renderer.clippingPlanes = []; return; }
+  const normal = bench.clip.axis === "x" ? new THREE.Vector3(-1,0,0)
+    : bench.clip.axis === "y" ? new THREE.Vector3(0,-1,0) : new THREE.Vector3(0,0,-1);
+  renderer.clippingPlanes = [new THREE.Plane(normal, Number(bench.clip.position || 0))];
 }
 function shapeFor(part) {
   const [w, h, d] = part.size_m;
@@ -245,7 +254,7 @@ function drawWire(candidate) {
     line.userData.partName = part.name; group.add(line); geometry.dispose();
   }
 }
-function drawSkin(candidate) {
+function drawSkin(candidate, opacity = 1) {
   for (const part of candidate.parts) {
     const descriptor = skinPart(candidate, part.name);
     const geometry = skinGeometry(part, descriptor);
@@ -256,6 +265,7 @@ function drawSkin(candidate) {
       color, emissive: selected ? 0x3d2b0d : 0,
       roughness: Number(descriptor?.roughness ?? 0.72),
       metalness: Number(descriptor?.metalness ?? 0),
+      transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
     }));
     mesh.position.set(...(descriptor?.center_m || part.center_m));
     mesh.rotation.copy(spinFor(descriptor?.rotation_deg || part.rotation_deg));
@@ -274,7 +284,7 @@ function drawDesignMatterFallback(candidate) {
     mesh.userData.partName = part.name; group.add(mesh);
   }
 }
-function drawMatter(candidate) {
+function drawMatterCells(candidate) {
   if (chosen()?.mechanical_model === "rigid") {
     if (!bench.rigid) return; // Never substitute lattice cells for a failed rigid compilation.
     for (const part of bench.rigid.components) {
@@ -308,6 +318,85 @@ function drawMatter(candidate) {
     mesh.instanceMatrix.needsUpdate = true; group.add(mesh);
   }
   cube.dispose();
+}
+function faceQuad(face, cell) {
+  const [gx,gy,gz] = face.grid;
+  const lo = [gx*cell, gy*cell, gz*cell], hi = [(gx+1)*cell,(gy+1)*cell,(gz+1)*cell];
+  const a = face.axis, p = face.positive ? hi[a] : lo[a];
+  const axes = [0,1,2].filter((q) => q !== a), u = axes[0], v = axes[1];
+  const points = [];
+  for (const [su,sv] of [[0,0],[1,0],[1,1],[0,1]]) {
+    const q = [0,0,0]; q[a]=p; q[u]=su ? hi[u] : lo[u]; q[v]=sv ? hi[v] : lo[v]; points.push(q);
+  }
+  // x/z use right-handed face axes; x cross z points toward negative y.
+  if (face.positive === (a === 1)) points.reverse();
+  return points;
+}
+function drawCellSkin() {
+  const skin = bench.cellSkin;
+  stage.dataset.cellSkinFaces = String(skin?.exposed_faces || 0);
+  if (!skin?.faces?.length) return;
+  const cell = Number(skin.cell_size_m || bench.matter?.cell_size_m || 0.04);
+  const byPart = new Map();
+  for (const face of skin.faces) {
+    const key = face.component || "matter";
+    if (!byPart.has(key)) byPart.set(key, []);
+    byPart.get(key).push(face);
+  }
+  for (const [partName, faces] of byPart.entries()) {
+    const positions = [];
+    for (const face of faces) {
+      const q = faceQuad(face, cell);
+      for (const index of [0,1,2,0,2,3]) positions.push(...q[index]);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.computeVertexNormals();
+    const material = faces[0]?.material || "iron";
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: partName === bench.selectedPart ? 0xd9a441 : materialColor(material), roughness: 0.72,
+      side: THREE.DoubleSide,
+    }));
+    mesh.userData.partName = partName; group.add(mesh);
+  }
+}
+function drawMatter(candidate) {
+  if (bench.rigid) { drawMatterCells(candidate); return; }
+  if (bench.matterMode === "solid") drawCellSkin();
+  else if (bench.matterMode === "skin-cells") { drawMatterCells(candidate); drawSkin(candidate, 0.28); }
+  else drawMatterCells(candidate);
+}
+function debugComponent(id) { return (bench.physicsDebug?.components || []).find((c) => c.id === id) || null; }
+function drawCollisionDebug() {
+  if (bench.physicsDebug?.status === "unavailable") { stage.dataset.debugBasis = bench.physicsDebug.basis; return; }
+  drawSkin(chosen(), 0.13);
+  stage.dataset.debugBasis = bench.physicsDebug?.basis || "unavailable";
+  for (const zone of bench.physicsDebug?.collision_zones || []) {
+    const part = debugComponent(zone.component); if (!part) continue;
+    const geometry = shapeFor({ size_m:part.size_m, shape:part.shape });
+    const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry),
+      new THREE.LineBasicMaterial({ color: 0xff7657, transparent:true, opacity:0.95 }));
+    line.position.set(...part.center_m); line.rotation.copy(spinFor(part.rotation_deg));
+    line.userData.partName = part.id; line.userData.collisionKind = zone.kind; group.add(line); geometry.dispose();
+  }
+}
+function drawRelationshipDebug() {
+  stage.dataset.debugBasis = bench.physicsDebug?.basis || "unavailable";
+  if (bench.physicsDebug?.status === "unavailable") return;
+  drawWire(chosen());
+  const positions = [];
+  for (const relation of bench.physicsDebug?.relationships || []) {
+    const a = debugComponent(relation.a), b = debugComponent(relation.b); if (!a || !b) continue;
+    positions.push(...a.center_m, ...b.center_m);
+  }
+  const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions,3));
+  const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color:0x65c7ff, transparent:true, opacity:0.9 }));
+  group.add(lines);
+  for (const mechanism of bench.physicsDebug?.mechanisms || []) {
+    const a = debugComponent(mechanism.a_component), b = debugComponent(mechanism.b_component); if (!a || !b) continue;
+    const p = a.center_m.map((v,i) => (Number(v)+Number(b.center_m[i]))/2);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.015, reach*0.012),12,8),
+      new THREE.MeshBasicMaterial({ color:0xffd166 })); marker.position.set(...p); group.add(marker);
+  }
 }
 function playbackBodyGeometry(body) {
   const d = body.dimensions_m || [0.05, 0.05, 0.05];
@@ -386,11 +475,14 @@ function frameSimulation(recording) {
 
 function draw(candidate) {
   if (view !== "physics") clearGroup();
-  balance.visible = view !== "physics";
-  support.visible = view !== "physics";
+  applyClipPlane();
+  balance.visible = !["physics", "collision", "relations"].includes(view);
+  support.visible = balance.visible;
   if (view === "physics") drawPlayback();
   else if (view === "matter") drawMatter(candidate);
   else if (view === "skin") drawSkin(candidate);
+  else if (view === "collision") drawCollisionDebug();
+  else if (view === "relations") drawRelationshipDebug();
   else drawWire(candidate);
 
   const m = currentMeasurements(candidate);
@@ -515,6 +607,11 @@ async function guard(button, work) {
 }
 function addOption(select, value, label) { select.append(make("option", { value }, label)); }
 
+function updateClipControls() {
+  const output=$("#ws-clip-value"); if(output) output.textContent=`${bench.clip.position.toFixed(2)} m`;
+  applyClipPlane(); show(false);
+}
+
 function installEditor() {
   const notice = make("p", {id:"ws-notice", role:"status", "aria-live":"polite"});
   notice.hidden = true; $(".ws-top").append(notice);
@@ -624,8 +721,21 @@ function installEditor() {
     make("div", {id:"ws-simulation-feedback"}), playback);
   $(".ws-viewport").append(dock);
 
+  const matterMode=make("select",{id:"ws-matter-mode"});[["cells","Cells"],["solid","Solid CellSkin"],["skin-cells","Skin + cells"]].forEach(([v,l])=>addOption(matterMode,v,l));const modeLabel=make("label",{class:"ws-field"},"Matter display");modeLabel.append(matterMode);editor.append(modeLabel);
+  editor.append(make("h3",{},"Section view"));
+  const clipEnabled=make("input",{id:"ws-clip-enabled",type:"checkbox"});const clipEnabledLabel=make("label",{class:"ws-field"},"Enable clipping plane");clipEnabledLabel.append(clipEnabled);editor.append(clipEnabledLabel);
+  const clipAxis=make("select",{id:"ws-clip-axis"});[["x","X"],["y","Y"],["z","Z"]].forEach(([v,l])=>addOption(clipAxis,v,l));const axisLabel=make("label",{class:"ws-field"},"Section axis");axisLabel.append(clipAxis);editor.append(axisLabel);
+  const clipPosition=make("input",{id:"ws-clip-position",type:"range",min:"-3",max:"3",step:"0.01",value:"0"});const clipOut=make("output",{id:"ws-clip-value",class:"ws-range-value"},"0.00 m");const clipLabel=make("label",{class:"ws-field"},"Plane position");clipLabel.append(clipPosition,clipOut);editor.append(clipLabel);
+  matterMode.onchange = () => { bench.matterMode = matterMode.value; view = "matter"; pressView(view); show(false); };
+  clipEnabled.onchange = () => { bench.clip.enabled = clipEnabled.checked; updateClipControls(); };
+  clipAxis.onchange = () => { bench.clip.axis = clipAxis.value; updateClipControls(); };
+  clipPosition.oninput = () => { bench.clip.position = Number(clipPosition.value); updateClipControls(); };
+  editor.append(make("p", {class:"ws-feedback-count",id:"ws-inspection-basis"}, "Collision and Relations show declared design-contract zones and connections, not a native contact or load test. Section clipping changes display only; it does not cut matter."));
   const bar = $(".ws-viewbar");
   if (bar && !bar.querySelector('[data-view="physics"]')) bar.append(make("button", { type:"button", "data-view":"physics", "aria-pressed":"false" }, "Physics"));
+
+  for (const [mode,label] of [["collision","Collision"],["relations","Relations"]])
+    if (bar && !bar.querySelector(`[data-view="${mode}"]`)) bar.append(make("button", {type:"button", "data-view":mode, "aria-pressed":"false"}, label));
 
   actions.querySelectorAll("button").forEach((button) => { button.onclick = () => guard(button, () => editSelected(button.dataset.componentEdit)); });
   material.onchange = () => guard(null, () => editSelected("material", material.value));
@@ -716,6 +826,10 @@ async function loadMatter(force = false) {
     const answer = await api("/api/workshop/plan", { ...candidateBody(), visual:{ cell_size_m:cell, exterior_only:exterior } });
     if (revision !== bench.revision || key !== JSON.stringify([candidateBody(), Number($("#ws-matter-cell").value), $("#ws-matter-exterior").checked])) return null;
     bench.matter = answer.matter || null; bench.matterKey = key;
+    bench.cellSkin = answer.cell_skin || null; bench.physicsDebug = answer.physics_debug || null;
+    $("#ws-inspection-basis").textContent = bench.physicsDebug?.status === "unavailable"
+      ? bench.physicsDebug.reason
+      : "Collision and Relations show declared design-contract zones and connections, not a native contact or load test. Section clipping changes display only; it does not cut matter.";
     bench.rigid = answer.rigid || null;
     bench.buildability = answer.buildability || null; bench.buildabilityKey = key;
     renderBuildability();
@@ -1135,7 +1249,7 @@ function pressView(name) {
 document.querySelectorAll(".ws-viewbar button").forEach((button) => {
   button.onclick = () => guard(button, async () => {
     const requested = button.dataset.view;
-    if (requested === "matter") await loadMatter(false);
+    if (["matter", "collision", "relations"].includes(requested)) await loadMatter(false);
     if (requested === "physics" && !bench.playback) { say("Run a supported simulation first. This view shows its calculated result.", true); return; }
     view = requested; pressView(view); show(false);
   });

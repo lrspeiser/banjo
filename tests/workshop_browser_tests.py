@@ -143,6 +143,38 @@ class WorkshopBrowserRegression(unittest.TestCase):
         errors = [e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"]
         self.assertEqual([], errors, errors)
 
+    def test_cellskin_and_contract_views_preserve_matter_and_clipping_is_display_only(self):
+        self.click('[data-mode="build"]')
+        self.click('[data-view="matter"]')
+        self.wait("document.querySelector('#ws-matter-status').dataset.state==='current'")
+        status = self.js("document.querySelector('#ws-matter-status').textContent")
+        mass = self.js("document.querySelector('#ws-mass').textContent")
+        self.field('#ws-matter-mode', 'solid')
+        self.wait("Number(document.querySelector('#workshop-stage').dataset.cellSkinFaces)>0")
+        faces = self.js("document.querySelector('#workshop-stage').dataset.cellSkinFaces")
+        self.js("document.querySelector('#ws-clip-enabled').checked=true;document.querySelector('#ws-clip-enabled').dispatchEvent(new Event('change',{bubbles:true}))")
+        self.field('#ws-clip-axis', 'y')
+        self.field('#ws-clip-position', .4, 'input')
+        self.assertEqual(mass, self.js("document.querySelector('#ws-mass').textContent"))
+        self.assertEqual(status, self.js("document.querySelector('#ws-matter-status').textContent"))
+        self.assertEqual(faces, self.js("document.querySelector('#workshop-stage').dataset.cellSkinFaces"))
+        self.click('[data-view="collision"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.debugBasis==='design-contract-not-native-collision'")
+        self.assertIn('not a native contact',self.js("document.querySelector('#ws-inspection-basis').textContent"))
+        self.click('[data-view="relations"]')
+        self.wait("document.querySelector('[data-view=relations]').getAttribute('aria-pressed')==='true'")
+        self.assertEqual(mass, self.js("document.querySelector('#ws-mass').textContent"))
+        self.capture_evidence('workshop-section-and-contract.png')
+
+    def test_physical_skin_does_not_reinstate_obsolete_contract_geometry(self):
+        self.curve_leg()
+        self.click('[data-view="collision"]')
+        self.wait("document.querySelector('#workshop-stage').dataset.debugBasis==='unavailable-physical-skin'")
+        self.assertIn('does not consume physical skin',self.js("document.querySelector('#ws-inspection-basis').textContent"))
+        self.click('[data-view="matter"]')
+        self.field('#ws-matter-mode','solid')
+        self.wait("Number(document.querySelector('#workshop-stage').dataset.cellSkinFaces)>0")
+
     def test_rebuild_budget_limit_is_visible_and_does_not_keep_stale_matter(self):
         self.click("#ws-refresh-matter")
         self.wait("document.querySelector('#ws-matter-status').dataset.state==='current'")

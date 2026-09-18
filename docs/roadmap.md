@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Inspection integration checkpoint:** retain the current thin-rigid/visible-test paths while integrating PR #16. Next physical milestone remains the complete precise-rigid Workshop-to-live-world path, before beam/sheet and mixed-resolution detail. See [checkpoint](workshop-inspection-merge-checkpoint.md).
+
 **Thin-part buildability and explicit rigid motion (September 17, 2026 Pacific):** [Checkpoint, measured evidence and remaining gates](workshop-thin-parts-checkpoint.md) adds vanished-part/grid-budget feedback, persisted mechanical-model choice and exact-size native rigid compounds in the isolated Workshop bench. A 5 mm table top and 15 mm legs remain five exact boxes with zero lattice cells. **Rigid live-room installation, beam/sheet solvers and per-body mixed resolution remain unfinished; unsupported paths refuse rather than silently voxelizing.**
 
 **Visible Workshop simulations:** [User-facing test repair](workshop-visible-tests-checkpoint.md) adds exact-cell drop/slide, adjustable loads, automatic motion and measured heat display. Report-only/reference tools are removed from Test; unsupported products are explicitly unavailable. Native laws and grid limits are unchanged.
