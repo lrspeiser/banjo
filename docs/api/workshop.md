@@ -172,6 +172,10 @@ which axis are measured from the parts as they stand and never stored.
 | `unfasten` | `a`, `b` | Removes their joint. |
 | `adopt` | | Writes a template's implied connections down as joints. Every other action does this first. |
 
+Instead of `at_m`, a client that cannot click names the face: `onto_face`, and
+`offset_m` `[x, y, z]` from that face's middle in the product's axes (whatever
+part of it leaves the face is ignored).
+
 `part` is `{"family", "parameters", "material", "length_m"}` (a strut family
 needs `length_m`) or `{"library_item_id"}` for a component saved in My Library.
 `by` is the new part's face that goes against the other part (`face-y-` is its
@@ -370,6 +374,7 @@ Workshop/Product tools.
 | `workshop_catalog` | Product/component catalog, test catalog, personal library, pricebook and platform contract. |
 | `workshop_open` | Open a product, saved design or library assembly and return measured candidates. |
 | `workshop_edit` | Resize/material-edit components, reuse a saved component, or optionally run the bounded Workshop assistant. |
+| `workshop_build` | Build part by part: preview or add a part against a named face of another, take a part off, fasten or unfasten two parts, or adopt a template's implied joints. The same `construct` operations as the sim, with `joint_kind`/`joint_method` in place of the nested joint. |
 | `workshop_variants` | Generate parameter sweeps or deterministic more-like-this candidates. |
 | `workshop_inspect` | Compile a Workshop design or ProductGraph to ProductGraph + PhysicsContract. |
 | `workshop_test` | Run runtime-contract, force-probe, cart, kettle, machine or declared-load tests in isolation. |

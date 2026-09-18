@@ -597,7 +597,8 @@ def _snapped(target: dict[str, Any], point: Vec, half_u: float, half_v: float) -
 
 
 def place(new: WirePart, *, by: str, onto: WirePart, at_m: Iterable[float],
-          twist_deg: float = 0.0, depth_m: float = 0.0, snap: bool = True) -> WirePart:
+          twist_deg: float = 0.0, depth_m: float = 0.0, snap: bool = True,
+          onto_face: str | None = None) -> WirePart:
     """Put ``new`` against ``onto``: its ``by`` face on the clicked point, facing in.
 
     The new part comes in square to the face it lands on, grows out of it along
@@ -610,7 +611,9 @@ def place(new: WirePart, *, by: str, onto: WirePart, at_m: Iterable[float],
     twist, depth = float(twist_deg), float(depth_m)
     if not isfinite(twist) or not isfinite(depth) or abs(depth) > 20:
         raise ValueError("twist_deg and depth_m must be finite, and depth within 20 m")
-    target = nearest_face(onto, point)
+    # A click says which face by where it landed. A face that is NAMED is that
+    # face, however near an edge or a corner the point is.
+    target = face(onto, onto_face) if onto_face else nearest_face(onto, point)
     axis, u, v, sign = _face_frame(by)
     size = tuple(float(s) for s in new.size_m)
     unit = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))

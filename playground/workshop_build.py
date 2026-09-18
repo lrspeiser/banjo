@@ -58,10 +58,21 @@ def _placed(app: Any, design, request: dict[str, Any]):
     onto = next((p for p in design.parts if p.name == str(request.get("onto") or "")), None)
     if onto is None:
         raise ValueError("click the part it goes against first")
+    at, named = request.get("at_m"), None
+    if at is None and request.get("onto_face"):
+        named = str(request["onto_face"])
+        # Someone who cannot click says which face, and how far from its middle,
+        # in the product's own x, y, z. Placing drops the point onto the face, so
+        # whatever part of the offset leaves the face is ignored.
+        side = construction.face(onto, str(request["onto_face"]))
+        offset = request.get("offset_m") or [0.0, 0.0, 0.0]
+        if not isinstance(offset, (list, tuple)) or len(offset) != 3:
+            raise ValueError("offset_m is three numbers, in the product's x, y and z, from the middle of the face")
+        at = [side["centre_m"][k] + float(offset[k]) for k in range(3)]
     return construction.place(
-        new, by=str(request.get("by") or "face-y-"), onto=onto, at_m=request.get("at_m") or [],
+        new, by=str(request.get("by") or "face-y-"), onto=onto, at_m=at or [],
         twist_deg=float(request.get("twist_deg", 0.0)), depth_m=float(request.get("depth_m", 0.0)),
-        snap=bool(request.get("snap", True))), onto
+        snap=bool(request.get("snap", True)), onto_face=named), onto
 
 
 def construct(app: Any, spec: dict[str, Any], request: Any) -> dict[str, Any]:

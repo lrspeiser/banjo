@@ -262,5 +262,74 @@ class Building(unittest.TestCase):
                 workshop_api.candidates(self.app, {**spec_of(self.cart, "cart"), "construct": construct})
 
 
+class AnAgentBuilds(unittest.TestCase):
+    """The same building through the MCP tools, by a client that cannot click a face."""
+
+    def setUp(self):
+        from mcp import workshop_mcp_tools
+        self.tools = workshop_mcp_tools
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        root = Path(self.tmp.name)
+        self.original = workshop_mcp_tools.APP
+        workshop_mcp_tools.APP = types.SimpleNamespace(
+            runs_path=root / "runs", workshop_store=root / "store", workshop_db=root / "banjo.db",
+            workshop_owner_id="builder", engine_path=None, api_key="", model="gpt-5-mini", live=None)
+        workshop_mcp_tools.APP.runs_path.mkdir()
+        workshop_mcp_tools.APP.workshop_store.mkdir()
+
+    def tearDown(self):
+        self.tools.APP = self.original
+        self.tmp.cleanup()
+
+    def test_a_table_is_built_from_nothing_by_naming_faces_and_then_pushed(self):
+        opened = self.tools.tool_open({"kind": "custom", "first_part": {
+            "family": "surface", "material": "oak",
+            "parameters": {"width_m": 0.8, "thickness_m": 0.04, "depth_m": 0.5}}})
+        current = opened["candidates"][0]
+        # The top lies on the floor to begin with, so the legs go on TOP of it, at its corners;
+        # named by face and offset, settled flush to the edges.
+        for x, z in [(0.4, 0.25), (-0.4, 0.25), (0.4, -0.25), (-0.4, -0.25)]:
+            answer = self.tools.tool_build({
+                **spec_of(current, "custom"), "action": "add", "onto": "surface-1", "onto_face": "face-y+",
+                "offset_m": [x, 0.3, z], "by": "face-y-", "joint_kind": "fixed",
+                "part": {"family": "post", "length_m": 0.4, "material": "oak",
+                         "parameters": {"width_m": 0.05, "depth_m": 0.05}}})
+            current = answer["candidates"][0]
+        self.assertEqual(5, len(current["parts"]))
+        joints = current["construction"]["joints"]
+        self.assertEqual(4, len(joints))
+        self.assertEqual({0.0025}, {round(j["interface"]["area_m2"], 9) for j in joints})
+        posts = [p for p in current["parts"] if p["role"] == "post"]
+        self.assertEqual({(0.375, 0.225), (-0.375, 0.225), (0.375, -0.225), (-0.375, -0.225)},
+                         {(round(p["center_m"][0], 9), round(p["center_m"][2], 9)) for p in posts})
+
+        preview = self.tools.tool_build({**spec_of(current, "custom"), "action": "preview", "onto": "post-1",
+                                         "onto_face": "face-y+", "part": {"family": "surface", "parameters": {}}})
+        self.assertNotIn("candidates", preview)
+        self.assertEqual("surface-2", preview["construct"]["part"]["name"])
+
+        pushed = self.tools.tool_test({**spec_of(current, "custom"), "test": "force_probe", "config": {
+            "component": "post-1", "force_n": 400.0, "push": "+x", "standing": "resting"}})
+        screen = pushed["bench"]["joint_screen"]
+        self.assertEqual("surface-1", screen["first_to_give"]["a"])
+        self.assertEqual(4, len(screen["joints"]))
+
+        loose = self.tools.tool_build({**spec_of(current, "custom"), "action": "unfasten",
+                                       "a": "surface-1", "b": "post-1"})["candidates"][0]
+        self.assertEqual(["post-1"], loose["construction"]["unfastened"])
+        held = self.tools.tool_build({**spec_of(loose, "custom"), "action": "fasten", "a": "surface-1",
+                                      "b": "post-1", "joint_kind": "fixed"})["candidates"][0]
+        self.assertEqual([], held["construction"]["unfastened"])
+        gone = self.tools.tool_build({**spec_of(held, "custom"), "action": "remove",
+                                      "part_name": "post-4"})["candidates"][0]
+        self.assertEqual(4, len(gone["parts"]))
+
+    def test_the_build_tool_is_offered_and_documented(self):
+        self.assertIn("workshop_build", {tool["name"] for tool in self.tools.TOOLS})
+        self.assertIn("workshop_build", self.tools.HANDLERS)
+        doc = (ROOT / "docs" / "api" / "workshop.md").read_text(encoding="utf-8")
+        self.assertIn("| `workshop_build` |", doc)
+
+
 if __name__ == "__main__":
     unittest.main()
