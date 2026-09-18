@@ -32,7 +32,29 @@ jobs:
           mkdir -p "$RUNNER_TEMP/thin-smoke"
           git rev-parse HEAD | tee "$RUNNER_TEMP/thin-smoke/commit.txt"
           test -x "$BANJO_PLATFORM_ENGINE"
-          python3 tests/workshop_browser_tests.py -v -f -k thin_rigid 2>&1 | tee "$RUNNER_TEMP/thin-smoke/test.log"
+          python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/thin-smoke/test.log"
+          import sys, os, json, unittest, traceback
+          from pathlib import Path
+          sys.path.insert(0,'tests')
+          import workshop_browser_tests as w
+          old_setup=w.WorkshopBrowserRegression.setUp
+          def setup(self):
+              try:
+                  old_setup(self)
+              except Exception:
+                  if hasattr(self,'page'):
+                      events=[e for e in self.page.events if e.get('method') in ('Runtime.exceptionThrown','Runtime.consoleAPICalled','Log.entryAdded','Network.loadingFailed')]
+                      print('STARTUP EVENTS:',json.dumps(events,indent=2),flush=True)
+                      print('BODY:',self.js('document.body.innerText'),flush=True)
+                      self.capture_evidence('startup-failure.png')
+                      Path(os.environ['BANJO_BROWSER_ARTIFACTS'],'events.json').write_text(json.dumps(events,indent=2))
+                      Path(os.environ['BANJO_BROWSER_ARTIFACTS'],'page.html').write_text(self.js('document.documentElement.outerHTML'))
+                  raise
+          w.WorkshopBrowserRegression.setUp=setup
+          suite=unittest.TestSuite([w.WorkshopBrowserRegression('test_thin_rigid_product_roundtrip_and_actual_native_playback')])
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(not result.wasSuccessful())
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
