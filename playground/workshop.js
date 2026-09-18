@@ -156,7 +156,7 @@ function currentMeasurements(candidate = chosen()) {
       warnings:[...(candidate.measured.warnings || []), ...rigid.limitations]}
       : {...candidate.measured, basis:"wireframe-estimate", geometry_coherent:false};
   }
-  return view === "matter" && bench.matterMeasured ? bench.matterMeasured : candidate.measured;
+  return ["matter", "collision", "relations"].includes(view) && bench.matterMeasured ? bench.matterMeasured : candidate.measured;
 }
 function invalidateMatter(message = "Not built for this candidate. Rebuild Matter view.") {
   invalidateInstallation();
@@ -1160,7 +1160,7 @@ function families(described) {
   }
 }
 function renderBom(candidate) {
-  const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.mechanical_model !== "rigid" && view === "matter" && bench.matterBom ? bench.matterBom : candidate.bom;
+  const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.mechanical_model !== "rigid" && ["matter", "collision", "relations"].includes(view) && bench.matterBom ? bench.matterBom : candidate.bom;
   if (!bom) { root.append(make("p", { class:"ws-feedback-count" }, "No material estimate.")); return; }
   const table = make("table", { class:"ws-bom-table" });
   for (const row of bom.materials || []) { const tr = make("tr"); tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`), make("td", {}, row.cost == null ? "unpriced" : `${row.cost} cr`)); table.append(tr); }
@@ -1197,7 +1197,7 @@ function show(reframe = true) {
   $("#ws-part-count").textContent = candidate.parts.length; $("#ws-mass").textContent = `${Number(m.mass_kg).toFixed(3)} kg`;
   $("#ws-base").textContent = `${m.support_footprint_m[0].toFixed(2)} × ${m.support_footprint_m[1].toFixed(2)} m`; $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (view === "matter" && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBom(candidate);
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
