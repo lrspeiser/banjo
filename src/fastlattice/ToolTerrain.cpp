@@ -744,7 +744,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
             r.dug_to_m[0] = bx;
             r.dug_to_m[1] = bz;
             r.dug_width_m = width;
-            r.dug_depth_m = depth;
+            r.dug_depth_m = effect.edit.depth_m;
         }
     }
     r.kind = p.broke_out ? "broke out" : "pulled out";

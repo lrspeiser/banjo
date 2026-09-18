@@ -195,6 +195,23 @@ void TerrainField::markChanged(const std::vector<std::size_t> &cells) {
     frontier_peak_ = std::max(frontier_peak_, frontier_.size());
 }
 
+Volumes TerrainField::wouldStrip(std::size_t c, double thickness) const {
+    // strip()'s own arithmetic, on nothing.
+    Volumes would;
+    const double area = grid_.dx * grid_.dx;
+    double left = std::max(0.0, thickness);
+    const double loose = sand_[c] + loose_[c];
+    if (left > 0.0 && loose > 0.0) {
+        const double take = std::min(left, loose);
+        const double from_sand = take * (sand_[c] / loose);
+        would.sand_m3 += from_sand * area;
+        would.soil_m3 += (take - from_sand) * area;
+        left -= take;
+    }
+    if (left > 0.0 && soil_[c] > 0.0) would.soil_m3 += std::min(left, soil_[c]) * area;
+    return would;
+}
+
 Volumes TerrainField::strip(std::size_t c, double thickness) {
     Volumes took;
     const double area = grid_.dx * grid_.dx;
@@ -244,12 +261,43 @@ std::vector<std::size_t> TerrainField::columnsAlong(double ax, double az, double
 }
 
 EditReport TerrainField::dig(double ax, double az, double bx, double bz, double width_m,
-                             double depth_m) {
+                             double depth_m, double max_kg) {
     EditReport report;
     if (!(width_m > 0.0) || !(depth_m > 0.0) || !std::isfinite(ax + az + bx + bz + width_m + depth_m))
         throw std::invalid_argument("a dig needs two points, a positive width and a positive depth");
+    if (std::isnan(max_kg) || max_kg < 0.0)
+        throw std::invalid_argument("what a dig may take out is zero or more kilograms");
     // The same columns, in the same order, columnsAlong names.
-    for (const std::size_t c : columnsAlong(ax, az, bx, bz, width_m)) {
+    const std::vector<std::size_t> columns = columnsAlong(ax, az, bx, bz, width_m);
+    // As deep as was asked, unless that is more than may come out: then as deep
+    // as takes out exactly that much. What comes out only grows with depth, so
+    // the depth is found by halving; nothing is touched until it is known.
+    if (std::isfinite(max_kg)) {
+        // Added up the way the report below adds it up -- the volumes column by
+        // column, and the mass from their totals -- so that what is found to fit
+        // is, to the last bit, what is then said to have come out.
+        const auto massAt = [&](double depth) {
+            Volumes would;
+            for (const std::size_t c : columns) {
+                const Volumes column = wouldStrip(c, depth);
+                would.sand_m3 += column.sand_m3;
+                would.soil_m3 += column.soil_m3;
+            }
+            return would.sand_m3 * sandMaterial().density_kg_m3 + would.soil_m3 * soilMaterial().density_kg_m3;
+        };
+        if (massAt(depth_m) > max_kg) {
+            report.limited = true;
+            double holds = 0.0, too_deep = depth_m;
+            for (int halving = 0; halving < 60; ++halving) {
+                const double middle = 0.5 * (holds + too_deep);
+                (massAt(middle) > max_kg ? too_deep : holds) = middle;
+            }
+            depth_m = holds;
+        }
+    }
+    report.depth_m = depth_m;
+    if (!(depth_m > 0.0)) return report;
+    for (const std::size_t c : columns) {
         const Volumes took = strip(c, depth_m);
         if (took.total() <= 0.0) continue;
         report.moved.sand_m3 += took.sand_m3;

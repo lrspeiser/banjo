@@ -2552,8 +2552,15 @@ def remember_ground(app,body,answer=None):
             return [float(value[0]),float(value[-1])]
         if body["op"]=="dig":
             start=xz("from")
-            new.append({"dig":{"from_m":start,"to_m":xz("to",start),
-                               "width_m":float(body.get("width_m",1.0)),"depth_m":float(body.get("depth_m",0.5))}})
+            # As deep as it WENT, which is less than was asked when no more
+            # could be carried (the engine's "dug" says, unrounded). Kept as
+            # asked, the room opened again dug the whole pit and carried the lot.
+            depth=float(body.get("depth_m",0.5))
+            went=(answer.get("dug") or {}).get("depth_m") if isinstance(answer,dict) else None
+            if isinstance(went,(int,float)) and not isinstance(went,bool) and math.isfinite(went): depth=float(went)
+            if depth>0.0:
+                new.append({"dig":{"from_m":start,"to_m":xz("to",start),
+                                   "width_m":float(body.get("width_m",1.0)),"depth_m":depth}})
         else:
             new.append({"deposit":{"at_m":xz("at"),"radius_m":float(body.get("radius_m",1.0)),
                                    "sand_m3":float(body.get("sand_m3",0.0)),"soil_m3":float(body.get("soil_m3",0.0))}})

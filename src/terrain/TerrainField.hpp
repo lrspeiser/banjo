@@ -42,6 +42,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <set>
 #include <string>
@@ -124,6 +125,11 @@ struct EditReport {
     Volumes moved;                       // dug out, cut out, or heaped up
     std::vector<std::size_t> cells;      // columns whose height changed
     double mass_kg{};
+    // How deep a dig actually went, and whether that was less than it was asked
+    // to because what came out had to fit a budget (TerrainField::dig). A dig
+    // made again at THIS depth takes out the same, which is what a room keeps.
+    double depth_m{};
+    bool limited{};
 };
 
 // A block of rock taken out of the ground as one piece.
@@ -183,7 +189,14 @@ public:
     // Dig along a line: every column whose centre is within width/2 of the
     // segment from a to b (x, z) is taken down `depth` below where it stands,
     // loose material first, then soil. Rock is not dug -- a spade stops on it.
-    EditReport dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    //
+    // With a budget, it takes out no more than `max_kg`: the same trench, as
+    // deep as the budget lets it go and no deeper -- every column to the one
+    // depth, as a dig always is -- so a spade that can lift 30 kg more takes
+    // 30 kg and leaves the rest in the ground. Nothing at all fits a budget of
+    // nothing, and the ground is then untouched.
+    EditReport dig(double ax, double az, double bx, double bz, double width_m, double depth_m,
+                   double max_kg = std::numeric_limits<double>::infinity());
     // The columns such a dig takes, in the order it takes them: every column
     // whose centre is within width/2 of the segment. Changes nothing -- it is
     // how a caller that knows a VOLUME, not a depth, works out the depth.
@@ -236,6 +249,8 @@ private:
     // Take up to `thickness` off the top of a column, loose first, then soil,
     // never rock. Returns how much of each came off.
     Volumes strip(std::size_t c, double thickness);
+    // What strip() would take, taking nothing.
+    [[nodiscard]] Volumes wouldStrip(std::size_t c, double thickness) const;
 
     Grid grid_;
     std::vector<double> rock_, soil_, sand_, loose_;

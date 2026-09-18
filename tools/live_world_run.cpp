@@ -1074,9 +1074,12 @@ constexpr double kWaterEveryS = 0.25;
 // is refused.
 nlohmann::json carriedJson(const banjo::terrain::Environment &env) {
     const banjo::terrain::Volumes &c = env.carried();
-    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
-            {"sand_kg", c.sand_m3 * banjo::terrain::sandMaterial().density_kg_m3},
-            {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3}};
+    nlohmann::json out{{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+                       {"sand_kg", c.sand_m3 * banjo::terrain::sandMaterial().density_kg_m3},
+                       {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3}};
+    // How much of it a person can carry, where a host has said.
+    if (std::isfinite(env.carryLimitKg())) out["limit_kg"] = env.carryLimitKg();
+    return out;
 }
 
 // How far past what is carried a heap may go: a cubic millimetre, for a host
@@ -1321,8 +1324,12 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
 }
 
 nlohmann::json dugJson(const banjo::terrain::EditEffect &effect) {
+    // depth_m is how deep it went, unrounded: a room keeps the dig at that depth,
+    // and made again from it the dig takes out the same. `limited` says it went
+    // less deep than it was asked to, because no more could be carried.
     return {{"sand_m3", tidy(effect.edit.moved.sand_m3)}, {"soil_m3", tidy(effect.edit.moved.soil_m3)},
             {"kg", tidy(effect.edit.mass_kg)}, {"columns", effect.edit.cells.size()},
+            {"depth_m", effect.edit.depth_m}, {"limited", effect.edit.limited},
             {"chunks_rebuilt", effect.chunks_rebuilt}, {"rebuild_ms", tidy(effect.rebuild_ms)},
             {"bodies_woken", effect.bodies_woken}};
 }
@@ -1714,6 +1721,18 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "carry_limit") {
+                    // How much dug ground the person can carry, from now
+                    // (terrain::Environment::setCarryLimitKg). A host that says
+                    // nothing has a world as it was: no limit.
+                    // Moves nothing, so it answers on its own and carries no
+                    // bodies: a host's picture of the room stays as it is.
+                    world->setCarryLimitKg(command.at("kg").get<double>());
+                    nlohmann::json out{{"ok", true}};
+                    if (const banjo::terrain::Environment *env = world->environment())
+                        out["carried"] = carriedJson(*env);
+                    std::cout << out.dump() << std::endl;
+                    continue;
                 } else if (op == "decline") {
                     // Not asked about: this body has had its chance at this
                     // contact and the world goes on with it whole
@@ -2006,6 +2025,17 @@ int main(int argc, char **argv) {
                     // rebuilt now, and whatever they held up is woken.
                     const auto a = readXZ(command, "from");
                     const auto b = command.contains("to") ? readXZ(command, "to") : a;
+                    // Carrying all that can be carried: said before the ground
+                    // is touched, like a heap bigger than what is carried.
+                    if (const banjo::terrain::Environment *env = world->environment();
+                        env != nullptr && env->carryLimitKg() - env->carriedKg() < 0.05) {
+                        char why[240];
+                        std::snprintf(why, sizeof why,
+                                      "you are carrying %.1f kg of sand and soil, and %.1f kg is all you can "
+                                      "carry: heap some of it first",
+                                      env->carriedKg(), env->carryLimitKg());
+                        throw std::invalid_argument(why);
+                    }
                     reply["dug"] = dugJson(world->dig(a.first, a.second, b.first, b.second,
                                                       command.value("width_m", 1.0),
                                                       command.value("depth_m", 0.5)));

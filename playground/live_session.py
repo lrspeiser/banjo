@@ -54,6 +54,17 @@ MAX_DT_S = 1.0 / 30.0
 _log = logging.getLogger("banjo.live")
 
 
+# What a person can carry of the ground they dig: what their hand can lift. The
+# hand in the engine and in the page is 800 N (LiveWorld's hand_strength_n,
+# interaction.js HAND_STRENGTH_N), which holds 81.5 kg against gravity, so 80.
+# Carried ground had no weight and no end -- six presses of Dig here put 435 kg
+# of sand and soil on the person in the owner's room, who walked off with it at
+# full speed. The engine keeps the account, and keeps to the limit: a dig takes
+# out only what still fits, and none once it is reached.
+HAND_STRENGTH_N = 800.0
+CARRY_LIMIT_KG = 80.0
+
+
 class LiveError(ValueError):
     """Something the caller can fix: a bad scene, a body that cannot be moved."""
 
@@ -606,6 +617,18 @@ class Live:
             # its steps, so there it hears nothing.
             session.room_spec = spec
             session.on_reply = getattr(app, "on_live_reply", None)
+            # A world with ground in it is told what its person can carry. The
+            # in-process lane has no such call, and there carrying is as it was.
+            if spec.get("terrain") and not isinstance(session, live_inprocess.InProcessSession):
+                try:
+                    told = session.send(op="carry_limit", kg=CARRY_LIMIT_KG)
+                    # The opening said what is carried before it knew the limit;
+                    # the page reads both from there, before anything is dug.
+                    ground = session.state.get("terrain")
+                    if isinstance(ground, dict) and isinstance(told.get("carried"), dict):
+                        ground["carried"] = told["carried"]
+                except LiveError as error:
+                    _log.warning("live: this engine takes no carry limit (%s); carrying is unbounded", error)
         # What the world said as it opened. Only the opening carries the whole
         # of the ground and the water; every call that puts a pin, an edge or a
         # point in replaces the session's picture with its own reply, which

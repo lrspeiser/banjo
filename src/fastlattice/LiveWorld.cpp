@@ -9150,6 +9150,10 @@ terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, d
     return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m);
 }
 
+void LiveWorld::setCarryLimitKg(double kg) {
+    if (impl_->environment) impl_->environment->setCarryLimitKg(kg);
+}
+
 terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {
     return requireEnvironment(impl_->environment).deposit(*impl_->world, x, z, radius_m, sand_m3, soil_m3);
 }
