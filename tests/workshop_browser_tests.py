@@ -637,6 +637,63 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertNotEqual(first,self.js("document.querySelector('#ws-simulation-readout').textContent"))
         self.assertIn('Water',self.js("document.querySelector('#ws-simulation-readout').textContent"))
 
+    def click_object_at(self, point_m):
+        """A real mouse click on a point of the object, wherever the camera has put it."""
+        x, y = self.js(f"document.querySelector('#workshop-stage').pagePointOf({json.dumps(point_m)})")
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left", "clickCount": 1})
+
+    def test_a_part_is_placed_on_a_clicked_face_added_saved_and_reopened_as_built(self):
+        self.open_product('cart'); self.click('[data-mode="build"]')
+        self.assertIn('still the template', self.js("document.querySelector('#ws-build-joints').textContent"))
+        self.field('#ws-build-what', 'family:post'); self.field('#ws-build-length', .3)
+        self.click('#ws-build-place')
+        self.wait("document.querySelector('#workshop-stage').classList.contains('ws-placing')")
+        self.assertEqual('skin', self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
+        # The first seeded cart has its deck top at 0.30 m; click 0.2 m along it.
+        self.click_object_at([0.2, 0.30, 0.0])
+        self.wait("!document.querySelector('#ws-build-adjust').hidden")
+        said = self.js("document.querySelector('#ws-build-status').textContent")
+        self.assertIn('post-1', said); self.assertIn('Meets deck over 25.0 cm²', said)
+        self.assertEqual('14', self.js("document.querySelector('#ws-part-count').textContent"))   # a preview adds nothing
+        self.click('#ws-build-add')
+        self.wait("document.querySelector('#ws-part-count').textContent==='15'")
+        self.assertEqual('15 parts · built part by part', self.js("document.querySelector('#ws-name').textContent"))
+        self.assertIn('post-1', self.js("document.querySelector('#ws-selected-part').textContent"))
+        self.assertEqual(1, self.js("document.querySelectorAll('.ws-joint-row[data-joint]').length"))
+        self.assertIn('deck ↔ post-1', self.js("document.querySelector('.ws-joint-row[data-joint]').textContent"))
+        self.assertFalse(self.js("document.querySelector('#workshop-stage').classList.contains('ws-placing')"))
+
+        self.click('[data-mode="details"]'); self.field('#ws-save-name', 'cart with a post')
+        self.click('#ws-save-design')
+        self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved')")
+        self.page.send("Page.reload")
+        self.wait("document.querySelector('#ws-user-library .ws-library-item')")
+        self.js("[...document.querySelectorAll('#ws-user-library .ws-library-item')].find(c=>c.textContent.includes('cart with a post')).click()")
+        self.wait("document.querySelector('#ws-part-count').textContent==='15'")
+        self.click('[data-mode="build"]')
+        self.assertIn('17 joints', self.js("document.querySelector('#ws-build-joints').textContent"))
+
+        self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='handle').click()")
+        self.click('#ws-build-remove')
+        self.wait("document.querySelector('#ws-part-count').textContent==='14'")
+        self.assertIn('15 joints', self.js("document.querySelector('#ws-build-joints').textContent"))
+
+    def test_a_new_build_starts_from_one_part_and_joins_the_product_list(self):
+        self.click('[data-mode="build"]')
+        self.field('#ws-build-what', 'family:surface')
+        self.click('#ws-build-new')
+        self.wait("document.querySelector('#workshop-stage').dataset.kind==='custom'")
+        self.assertEqual('1 part · built part by part', self.js("document.querySelector('#ws-name').textContent"))
+        self.assertEqual('true', self.js("document.querySelector('#ws-product-catalog button[data-value=custom]').getAttribute('aria-current')"))
+        self.field('#ws-build-what', 'family:post'); self.field('#ws-build-length', .4)
+        self.click('#ws-build-place')
+        self.click_object_at([0.0, 0.04, 0.0])
+        self.wait("!document.querySelector('#ws-build-adjust').hidden")
+        self.click('#ws-build-add')
+        self.wait("document.querySelector('#ws-part-count').textContent==='2'")
+        self.assertIn('surface-1 ↔ post-1', self.js("document.querySelector('.ws-joint-row[data-joint]').textContent"))
+
     def test_no_simulation_response_is_a_visible_failure_not_a_success(self):
         self.click('[data-mode="test"]')
         self.js("""window.__oldFetch=window.fetch;window.fetch=(url,init)=>{

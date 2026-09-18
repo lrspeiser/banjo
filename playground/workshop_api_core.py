@@ -111,7 +111,8 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     # template with no joints of its own still answers, with none declared.
     wire["construction"] = workshop_construction.described(design)
     if workshop_construction.CONSTRUCTION_KEY in wire["component_overrides"]:
-        wire["label"] = f"{len(design.parts)} parts · built part by part"
+        count = len(design.parts)
+        wire["label"] = f"{count} part{'' if count == 1 else 's'} · built part by part"
     try:
         wire["analytical"] = {"static_loads": declared_statics(design), "limitations": []}
     except ValueError as problem:
@@ -236,8 +237,14 @@ def open_workshop(app: Any, body: Any) -> dict[str, Any]:
         kind = _kind(body)
         revision, target = str(body.get("world_revision") or "unopened-world"), str(body.get("target") or kind)
         # A design built from nothing arrives with its first part already in it.
+        overrides = body.get("component_overrides")
+        if body.get("first_part") is not None:
+            if kind != "custom":
+                raise ValueError("first_part starts a new build; a template already has its parts")
+            import workshop_build
+            overrides = workshop_build.starting_overrides(app, body["first_part"])
         candidates_out = _spread(app, kind, _parameters(body), SEED_SWEEPS.get(kind, {}), generation,
-                                 overrides=body.get("component_overrides"))
+                                 overrides=overrides)
     session = WorkshopSession(
         session_id=str(body.get("session_id") or f"bench-{int(time.time()*1000)}"),
         world_revision=revision, target=target)

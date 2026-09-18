@@ -21,9 +21,8 @@ def _wire(part) -> dict[str, Any]:
             "mass_kg": round(part.mass_kg(), 4)}
 
 
-def _placed(app: Any, design, request: dict[str, Any]):
-    """The requested part, made and set against the part the person clicked."""
-    asked = request.get("part")
+def _template(app: Any, asked: Any, taken: set[str]):
+    """The part a person asked for, in its own frame, under a name not in use."""
     if not isinstance(asked, dict):
         raise ValueError("say which part to add: a family with its sizes, or a saved component")
     asked = dict(asked)
@@ -32,9 +31,30 @@ def _placed(app: Any, design, request: dict[str, Any]):
         if item["item_type"] != "component":
             raise ValueError("only a saved component can be added as one part")
         asked["recipe"] = item["payload"]
-    stem = asked.get("family") or (asked.get("recipe") or {}).get("family") or "part"
-    asked["name"] = str(asked.get("name") or "").strip() or construction.fresh_name(design, str(stem))
-    new = construction.template_part(asked)
+    name = str(asked.get("name") or "").strip()
+    if not name:
+        stem = str(asked.get("family") or (asked.get("recipe") or {}).get("family") or "part")[:80]
+        index = 1
+        while f"{stem}-{index}" in taken:
+            index += 1
+        name = f"{stem}-{index}"
+    asked["name"] = name
+    return construction.template_part(asked)
+
+
+def starting_overrides(app: Any, asked: Any) -> dict[str, Any]:
+    """A new build's first part: standing on the floor, at the middle, fastened to nothing."""
+    part = _template(app, asked, set())
+    record = {"name": part.name, "role": part.role, "shape": part.shape,
+              "size_m": [float(v) for v in part.size_m],
+              "center_m": [0.0, float(part.size_m[1]) / 2.0, 0.0], "rotation_deg": [0.0, 0.0, 0.0],
+              "material": part.material, **({"family": part.family} if part.family else {})}
+    return {construction.CONSTRUCTION_KEY: construction.checked({"added": [record], "joints_authored": True})}
+
+
+def _placed(app: Any, design, request: dict[str, Any]):
+    """The requested part, made and set against the part the person clicked."""
+    new = _template(app, request.get("part"), {p.name for p in design.parts})
     onto = next((p for p in design.parts if p.name == str(request.get("onto") or "")), None)
     if onto is None:
         raise ValueError("click the part it goes against first")

@@ -79,6 +79,13 @@ const bench = {
 function chosen() { return bench.candidates[bench.selected]; }
 // Explicit prototype placement is separate from the pure design/test APIs.
 const installation = {sequence:0, preview:null, request:null, committing:false};
+// Building part by part. Declared up here because the editor, which holds the
+// Build panel, is installed while this module is still loading.
+const build = { placing:false, onto:null, at:null, twist:0, depth:0, preview:null, request:0 };
+const ghost = new THREE.Group(); scene.add(ghost);
+const BUILD_FACES = [["face-y-","its bottom"],["face-y+","its top"],["face-x-","its left side"],
+  ["face-x+","its right side"],["face-z-","its front"],["face-z+","its back"]];
+const JOINT_COLORS = { fixed:0x5fd38d, bearing:0x6cb6ff };
 function invalidateInstallation() {
   installation.sequence++;
   installation.preview = null;
@@ -497,6 +504,7 @@ function draw(candidate) {
   else if (view === "collision") drawCollisionDebug();
   else if (view === "relations") drawRelationshipDebug();
   else drawWire(candidate);
+  if (view === "wire" || view === "skin") drawJoints(candidate);
 
   const m = currentMeasurements(candidate);
   const alone = ISOLATING_VIEWS.includes(view) ? isolatedPart() : null;
@@ -556,8 +564,13 @@ function pickPart(event) {
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
+  // Meshes made since the last frame still have the identity as their world
+  // matrix, so a click that beats the next frame would be cast against every
+  // part piled at the origin and pick the wrong one.
+  group.updateMatrixWorld(true);
   const hit = raycaster.intersectObjects(group.children, false)
     .find((item) => hitPartName(item));
+  if (build.placing) { placeAtHit(hit); return; }
   bench.selectedPart = hitPartName(hit);
   bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
   show(false);
@@ -713,6 +726,7 @@ function installEditor() {
     make("button", { type:"submit", class:"ws-action" }, "Change")); editor.append(chat);
   // Buildability has a nested heading; insertBefore needs a direct child.
   right.insertBefore(editor, right.querySelector(":scope > h3"));
+  installBuildPanel(editor);
 
   const bom = make("section", { id:"ws-bom-box" }); bom.append(make("h3", {}, "Materials"), make("div", { id:"ws-bom" }));
   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
@@ -1162,6 +1176,7 @@ function savedDesigns(rows) {
   }
 }
 function renderUserLibrary() {
+  renderBuildChoices();
   const root = $("#ws-user-library"); root.replaceChildren();
   if (!bench.personalLibrary.length) { root.append(make("p", { class:"ws-feedback-count" }, "Nothing saved yet. Select a part and save it.")); return; }
   for (const item of bench.personalLibrary) {
@@ -1342,7 +1357,7 @@ function show(reframe = true) {
   const m = currentMeasurements(candidate); headline(candidate, m);
   const parts = $("#ws-parts"); parts.replaceChildren();
   for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
-  renderSelected(); renderBom(candidate); renderProductCatalog();
+  renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
   const checks = $("#ws-checks"); checks.className = "ws-note"; const said = [];
   if (m.geometry_coherent === false) { checks.classList.add("bad"); said.push("Connectivity is unresolved; this is not a validated assembled product."); }
   else if (!m.stands_up) { checks.classList.add("bad"); said.push("Its geometric balance point is outside the support region."); }
@@ -1369,12 +1384,254 @@ function took(answer, keepPart = null) {
   bench.kind = answer.kind; bench.generation = answer.generation; bench.candidates = answer.candidates; bench.selected = 0;
   bench.selectedPart = keepPart; bench.isolated = keepPart && bench.isolated ? keepPart : null;
   bench.forcePoint = null; invalidateMatter(); clearPlayback();
+  if (build.placing) stopPlacing(); ensureKindOption(answer.kind);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Building part by part (mcp/workshop_construction.py). The page decides no
+// geometry here either: it says what to add and where the person clicked, and
+// draws the part where the server says it would go.
+// ---------------------------------------------------------------------------
+
+// Where a point of the object is on the page, so that a test (or a tool) can
+// click a face of it rather than a pixel that a change of framing would move.
+stage.pagePointOf = (point) => {
+  const v = new THREE.Vector3(...point).project(camera), r = stage.getBoundingClientRect();
+  return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
+};
+function clearGhost() {
+  for (const child of [...ghost.children]) { ghost.remove(child); if (child.geometry) child.geometry.dispose(); disposeMaterial(child.material); }
+}
+function drawGhost(part, touching) {
+  clearGhost();
+  const color = touching ? 0x5fd38d : 0xe0a63a;
+  const mesh = new THREE.Mesh(shapeFor(part), new THREE.MeshStandardMaterial({ color, transparent:true, opacity:0.5, depthWrite:false }));
+  mesh.position.set(...part.center_m); mesh.rotation.copy(spinFor(part.rotation_deg)); ghost.add(mesh);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color:0xeaffef }));
+  edges.position.copy(mesh.position); edges.rotation.copy(mesh.rotation); ghost.add(edges);
+}
+function drawJoints(candidate) {
+  const size = Math.max(0.008, reach * 0.014);
+  for (const joint of candidate.construction?.joints || []) {
+    const how = joint.interface; if (joint.open || !how?.centre_m) continue;
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8),
+      new THREE.MeshBasicMaterial({ color:JOINT_COLORS[joint.kind] ?? 0xffffff, depthTest:false, transparent:true, opacity:0.95 }));
+    dot.position.set(...how.centre_m); dot.renderOrder = 5; dot.userData.jointId = joint.id; group.add(dot);
+    const axis = joint.kind === "bearing" ? (how.axis || how.normal) : null;
+    if (axis) {
+      const a = new THREE.Vector3(...how.centre_m), d = new THREE.Vector3(...axis).multiplyScalar(size * 5);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a.clone().sub(d), a.clone().add(d)]),
+        new THREE.LineBasicMaterial({ color:JOINT_COLORS.bearing, depthTest:false }));
+      line.renderOrder = 5; group.add(line);
+    }
+  }
+}
+
+function buildFamily() {
+  const value = $("#ws-build-what")?.value || "";
+  return value.startsWith("family:") ? (bench.families || []).find((f) => f.family === value.slice(7)) : null;
+}
+function renderBuildSizes() {
+  const root = $("#ws-build-sizes"); if (!root) return; root.replaceChildren();
+  const family = buildFamily(); $("#ws-build-material").closest("label").hidden = !family;
+  if (!family) { root.append(make("p", { class:"ws-feedback-count" }, "A saved component comes in at the size and material it was saved with.")); return; }
+  if ((family.offers || []).includes("start")) {
+    const label = make("label", { class:"ws-field" }, "Length (m)");
+    label.append(make("input", { id:"ws-build-length", type:"number", min:"0.005", max:"20", step:"0.005", value:"0.5" })); root.append(label);
+  }
+  for (const p of family.parameters) {
+    if (["lean_x", "lean_z", "splay_deg", "style"].includes(p.name)) continue;   // a part stands as it is placed
+    const label = make("label", { class:"ws-field" }, `${p.name.replace(/_m$/, "").replaceAll("_", " ")}${p.unit ? ` (${p.unit})` : ""}`);
+    let input;
+    if (p.choices) { input = make("select", { "data-parameter":p.name }); p.choices.forEach((c) => addOption(input, c, c)); input.value = p.default; }
+    else input = make("input", { "data-parameter":p.name, type:"number", min:String(p.low ?? 0), max:String(p.high ?? 20), step:"0.005", value:String(p.default) });
+    input.addEventListener("change", () => { if (build.placing) previewPlacement(); });
+    label.append(input); root.append(label);
+  }
+}
+function partRequest() {
+  const what = $("#ws-build-what").value;
+  if (what.startsWith("item:")) return { library_item_id:what.slice(5) };
+  const family = buildFamily(); if (!family) throw new Error("Choose what to add first.");
+  const parameters = {};
+  document.querySelectorAll("#ws-build-sizes [data-parameter]").forEach((input) => {
+    parameters[input.dataset.parameter] = input.tagName === "SELECT" ? input.value : Number(input.value);
+  });
+  const out = { family:family.family, material:$("#ws-build-material").value, parameters };
+  if ($("#ws-build-length")) out.length_m = Number($("#ws-build-length").value);
+  return out;
+}
+function placement(action) {
+  const fasten = $("#ws-build-fasten").value;
+  return { action, part:partRequest(), by:$("#ws-build-by").value, onto:build.onto, at_m:build.at,
+    twist_deg:build.twist, depth_m:build.depth, snap:$("#ws-build-snap").checked,
+    ...(action === "add" && fasten !== "none" ? { joint:{ kind:fasten } } : {}) };
+}
+function sayBuild(message, bad = false) {
+  const status = $("#ws-build-status"); if (!status) return;
+  status.textContent = message; status.classList.toggle("bad", bad);
+}
+function stopPlacing(message = "") {
+  build.placing = false; build.onto = null; build.at = null; build.twist = 0; build.depth = 0; build.preview = null; build.request++;
+  clearGhost(); stage.classList.remove("ws-placing");
+  const start = $("#ws-build-place"); if (start) start.textContent = "Place it: click where it goes";
+  if ($("#ws-build-adjust")) $("#ws-build-adjust").hidden = true;
+  sayBuild(message);
+}
+async function previewPlacement() {
+  if (!build.placing || !build.onto) return;
+  const mine = ++build.request, revision = bench.revision;
+  try {
+    const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct:placement("preview") });
+    if (mine !== build.request || revision !== bench.revision || !build.placing) return;
+    build.preview = answer.construct; const part = build.preview.part, touching = build.preview.touching;
+    drawGhost(part, touching); $("#ws-build-adjust").hidden = false;
+    const met = !touching ? `It does not meet ${build.onto} over any flat area, so it cannot be fastened there. A round side has none: use its end, or sink the part in until the shaft runs into it.`
+      : touching.form === "planar" ? `Meets ${build.onto} over ${(touching.area_m2 * 1e4).toFixed(1)} cm²${touching.mitred ? " (cut to sit flat)" : ""}.`
+      : `A ${(touching.diameter_m * 1000).toFixed(0)} mm shaft, ${(touching.engaged_m * 1000).toFixed(0)} mm of it inside ${build.onto}.`;
+    sayBuild(`${part.name}: ${(part.size_m[0]*1000).toFixed(0)} × ${(part.size_m[1]*1000).toFixed(0)} × ${(part.size_m[2]*1000).toFixed(0)} mm, ${part.mass_kg} kg. ${met}`, !touching && $("#ws-build-fasten").value !== "none");
+  } catch (error) { if (mine === build.request) sayBuild(String(error.message || error), true); }
+}
+function placeAtHit(hit) {
+  const name = hitPartName(hit);
+  if (!name) { sayBuild("Click on a part of the object: the new part goes against it.", true); return; }
+  build.onto = name; build.at = [hit.point.x, hit.point.y, hit.point.z]; previewPlacement();
+}
+async function addPlaced() {
+  if (!build.preview) throw new Error("Click where the part goes first.");
+  const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct:placement("add") });
+  const added = answer.construct?.select || null; stopPlacing();
+  if (took(answer, added)) { ensureKindOption(answer.kind); sayBuild(added ? `Added ${added}${answer.construct.fastened ? ", fastened" : ", loose"}.` : ""); }
+}
+async function constructNow(construct, keep = null) {
+  const answer = await api("/api/workshop/candidates", { ...candidateBody(), construct });
+  if (took(answer, keep)) ensureKindOption(answer.kind);
+  return answer;
+}
+function ensureKindOption(kind) {
+  const picker = $("#ws-archetype"); if (!picker || !kind) return;
+  if (![...picker.options].some((o) => o.value === kind)) { const option = make("option", { value:kind }, kind === "custom" ? "my build" : kind); option.title = "A design built part by part."; picker.append(option); }
+  picker.value = kind; renderProductCatalog();
+}
+async function startNewBuild() {
+  const request = partRequest();
+  const answer = await api("/api/workshop/open", { kind:"custom", first_part:request });
+  bench.openedLibraryItem = null; stopPlacing();
+  const first = answer.candidates?.[0]?.parts?.[0]?.name || null;
+  if (took(answer, first)) { ensureKindOption("custom"); sayBuild(`Started a new build from ${first}. Add the next part against it.`); }
+}
+function renderBuild() {
+  const root = $("#ws-build-joints"), candidate = chosen(); if (!root || !candidate) return;
+  const c = candidate.construction || { joints:[], unfastened:[], touching_unfastened:[] };
+  root.replaceChildren();
+  const off = $("#ws-build-remove"); if (off) { off.disabled = !bench.selectedPart || candidate.parts.length < 2; off.textContent = bench.selectedPart ? `Take ${bench.selectedPart} off` : "Take the selected part off"; }
+  if (!c.joints_authored) {
+    root.append(make("p", { class:"ws-feedback-count" }, "This is still the template: its parts are joined where they touch. The joints become yours to change the moment you add, take off or fasten a part."));
+    const adopt = make("button", { type:"button", class:"ws-action", id:"ws-build-adopt" }, "Show me its joints");
+    adopt.onclick = () => guard(adopt, () => constructNow({ action:"adopt" }, bench.selectedPart)); root.append(adopt); return;
+  }
+  const shown = bench.selectedPart ? c.joints.filter((j) => j.a === bench.selectedPart || j.b === bench.selectedPart) : c.joints;
+  root.append(make("p", { class:"ws-feedback-count" }, bench.selectedPart
+    ? `${shown.length} of ${c.joints.length} joints hold ${bench.selectedPart}. Green fixes two parts together; blue lets one turn in the other.`
+    : `${c.joints.length} joints. Click a part to see only its own.`));
+  const list = make("ul", { class:"ws-joint-list" });
+  for (const joint of shown) {
+    const row = make("li", { class:"ws-joint-row" + (joint.open ? " open" : ""), "data-joint":joint.id });
+    const how = joint.interface, size = joint.open ? "no longer touching"
+      : how.form === "planar" ? `${(how.area_m2 * 1e4).toFixed(1)} cm²${how.mitred ? " raked" : ""}`
+      : `${(how.diameter_m * 1000).toFixed(0)} mm shaft, ${(how.engaged_m * 1000).toFixed(0)} mm in`;
+    row.append(make("span", { class:`ws-joint-kind ${joint.kind}` }, joint.kind === "bearing" ? "turns" : "fixed"),
+      make("span", { class:"ws-joint-parts" }, `${joint.a} ↔ ${joint.b}`), make("small", {}, `${joint.method} · ${size}`));
+    const undo = make("button", { type:"button", class:"ws-part-copy" }, "Unfasten");
+    undo.onclick = () => guard(undo, () => constructNow({ action:"unfasten", a:joint.a, b:joint.b }, bench.selectedPart));
+    row.append(undo); list.append(row);
+  }
+  root.append(list);
+  const near = (c.touching_unfastened || []).filter((pair) => !bench.selectedPart || pair.includes(bench.selectedPart));
+  for (const [a, b] of near.slice(0, 12)) {
+    const row = make("div", { class:"ws-joint-row loose" });
+    row.append(make("span", { class:"ws-joint-parts" }, `${a} and ${b} touch and are not fastened`));
+    for (const [kind, label] of [["fixed", "Fix"], ["bearing", "Let it turn"]]) {
+      const button = make("button", { type:"button", class:"ws-part-copy" }, label);
+      button.onclick = () => guard(button, () => constructNow({ action:"fasten", a, b, kind }, bench.selectedPart)); row.append(button);
+    }
+    root.append(row);
+  }
+  if ((c.unfastened || []).length) root.append(make("p", { class:"ws-note warn" }, `Nothing holds ${c.unfastened.join(", ")}.`));
+}
+function installBuildPanel(editor) {
+  const box = make("section", { id:"ws-build-box", class:"ws-build-box" });
+  box.append(make("h3", {}, "Build part by part"),
+    make("p", { class:"ws-feedback-count" }, "Choose a part, press Place, then click the face it goes against. It comes in square to that face; turn it or sink it in, then add it."));
+  const what = make("select", { id:"ws-build-what", "aria-label":"Part to add" });
+  const whatLabel = make("label", { class:"ws-field" }, "Add"); whatLabel.append(what); box.append(whatLabel);
+  const material = make("select", { id:"ws-build-material" });
+  const materialLabel = make("label", { class:"ws-field" }, "Made of"); materialLabel.append(material); box.append(materialLabel);
+  box.append(make("div", { id:"ws-build-sizes" }));
+  const by = make("select", { id:"ws-build-by" }); BUILD_FACES.forEach(([v, l]) => addOption(by, v, l));
+  const byLabel = make("label", { class:"ws-field" }, "Attach it by"); byLabel.append(by); box.append(byLabel);
+  const fasten = make("select", { id:"ws-build-fasten" });
+  [["fixed", "Fixed: glued, welded or pressed in"], ["bearing", "Turning: free to spin in the other part"], ["none", "Loose: just set there"]].forEach(([v, l]) => addOption(fasten, v, l));
+  const fastenLabel = make("label", { class:"ws-field" }, "Fasten"); fastenLabel.append(fasten); box.append(fastenLabel);
+  const snapLabel = make("label", { class:"ws-field" }, "Settle on the middle or flush to an edge");
+  const snap = make("input", { id:"ws-build-snap", type:"checkbox" }); snap.checked = true; snapLabel.append(snap); box.append(snapLabel);
+  const row = make("div", { class:"ws-row" });
+  row.append(make("button", { id:"ws-build-place", type:"button", class:"ws-action primary" }, "Place it: click where it goes"),
+    make("button", { id:"ws-build-new", type:"button", class:"ws-action" }, "Start a new build from it"));
+  box.append(row);
+  const adjust = make("div", { id:"ws-build-adjust", class:"ws-build-adjust" }); adjust.hidden = true;
+  const nudges = make("div", { class:"ws-edit-actions" });
+  for (const [label, change] of [["Turn left", () => { build.twist -= 90; }], ["Turn right", () => { build.twist += 90; }],
+    ["Sink in 5 mm", () => { build.depth += 0.005; }], ["Pull out 5 mm", () => { build.depth -= 0.005; }]]) {
+    const button = make("button", { type:"button", class:"ws-action" }, label);
+    button.onclick = () => { change(); previewPlacement(); }; nudges.append(button);
+  }
+  const confirm = make("div", { class:"ws-row" });
+  confirm.append(make("button", { id:"ws-build-add", type:"button", class:"ws-action primary" }, "Add it"),
+    make("button", { id:"ws-build-cancel", type:"button", class:"ws-action" }, "Cancel"));
+  adjust.append(nudges, confirm); box.append(adjust);
+  box.append(make("p", { id:"ws-build-status", class:"ws-note", role:"status", "aria-live":"polite" }));
+  box.append(make("button", { id:"ws-build-remove", type:"button", class:"ws-action" }, "Take the selected part off"));
+  box.append(make("h3", {}, "Joints"), make("div", { id:"ws-build-joints" }));
+  editor.prepend(box);
+
+  what.onchange = () => { renderBuildSizes(); if (build.placing) previewPlacement(); };
+  for (const control of [material, by, fasten, snap]) control.addEventListener("change", () => { if (build.placing) previewPlacement(); });
+  $("#ws-build-place").onclick = () => {
+    if (build.placing) { stopPlacing("Placing cancelled."); return; }
+    // A click has to land on a face, and only the solid view has faces: a wire
+    // edge belongs to two of them.
+    if (view !== "skin") { view = "skin"; pressView("skin"); show(false); }
+    build.placing = true; stage.classList.add("ws-placing"); $("#ws-build-place").textContent = "Placing… click a face (press again to stop)";
+    sayBuild("Click the face of the part it goes against.");
+  };
+  $("#ws-build-add").onclick = (event) => guard(event.currentTarget, addPlaced);
+  $("#ws-build-cancel").onclick = () => stopPlacing("Placing cancelled.");
+  $("#ws-build-new").onclick = (event) => guard(event.currentTarget, startNewBuild);
+  $("#ws-build-remove").onclick = (event) => guard(event.currentTarget, async () => {
+    if (!bench.selectedPart) throw new Error("Click the part to take off first.");
+    const gone = bench.selectedPart; await constructNow({ action:"remove", part_name:gone }); sayBuild(`Took ${gone} off, with the joints that held it.`);
+  });
+}
+function renderBuildChoices() {
+  const what = $("#ws-build-what"), material = $("#ws-build-material"); if (!what) return;
+  const before = what.value; what.replaceChildren();
+  const families = make("optgroup", { label:"Component families" });
+  for (const family of bench.families || []) families.append(make("option", { value:`family:${family.family}`, title:family.about }, family.family));
+  what.append(families);
+  const mine = (bench.personalLibrary || []).filter((item) => item.item_type === "component");
+  if (mine.length) { const saved = make("optgroup", { label:"My library" }); for (const item of mine) saved.append(make("option", { value:`item:${item.item_id}` }, item.name)); what.append(saved); }
+  if ([...what.options].some((o) => o.value === before)) what.value = before;
+  const kept = material.value; material.replaceChildren();
+  const names = (bench.pricebook?.materials || []).map((m) => m.material); if (!names.includes("oak")) names.push("oak");
+  names.sort().forEach((name) => addOption(material, name, name)); material.value = names.includes(kept) ? kept : "oak";
+  renderBuildSizes();
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,8 +1682,8 @@ async function start() {
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
   picker.value = answer.kind; renderProductCatalog();
-  savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
-  bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); took(answer);
+  bench.families = answer.families || []; savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
+  bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); renderBuildChoices(); took(answer);
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;

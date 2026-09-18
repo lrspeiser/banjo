@@ -178,6 +178,18 @@ class Building(unittest.TestCase):
         self.assertGreater(matter["matter"]["total_cells"], 0)
         self.assertEqual([], matter["matter"]["missing_components"])
 
+    def test_a_new_build_starts_from_one_part_standing_on_the_floor(self):
+        opened = workshop_api.open_workshop(self.app, {"kind": "custom", "first_part": {
+            "family": "surface", "material": "oak",
+            "parameters": {"width_m": 0.8, "thickness_m": 0.04, "depth_m": 0.5}}})
+        first = opened["candidates"][0]
+        self.assertEqual("1 part · built part by part", first["label"])
+        self.assertEqual(["surface-1"], [p["name"] for p in first["parts"]])
+        self.assertAlmostEqual(0.0, first["measured"]["lowest_m"], places=9)
+        self.assertTrue(first["construction"]["joints_authored"])
+        with self.assertRaisesRegex(ValueError, "already has its parts"):
+            workshop_api.open_workshop(self.app, {"kind": "cart", "first_part": {"family": "post"}})
+
     def test_what_cannot_be_done_is_said(self):
         for construct, why in [
             ({"action": "add", "part": dict(POST), "by": "face-y-", "onto": "nothing", "at_m": [0, 0, 0]}, "click the part"),

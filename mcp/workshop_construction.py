@@ -851,10 +851,38 @@ def unfastened(design: WorkshopDesign) -> list[str]:
     return sorted(p.name for p in design.parts if p.name not in held)
 
 
+def _bounds(part: WirePart) -> tuple[Vec, Vec]:
+    corners = part.corners_m()
+    return (tuple(min(c[i] for c in corners) for i in range(3)),      # type: ignore[return-value]
+            tuple(max(c[i] for c in corners) for i in range(3)))
+
+
+def touching_unfastened(design: WorkshopDesign) -> list[list[str]]:
+    """Pairs of parts that meet and that no joint holds: what could be fastened."""
+    construction = of(design)
+    if not construction.get("joints_authored"):
+        return []
+    held = {tuple(sorted((j["a"], j["b"]))) for j in construction.get("joints") or []}
+    boxes = {p.name: _bounds(p) for p in design.parts}
+    out = []
+    for i, a in enumerate(design.parts):
+        for b in design.parts[i + 1:]:
+            if tuple(sorted((a.name, b.name))) in held:
+                continue
+            (alo, ahi), (blo, bhi) = boxes[a.name], boxes[b.name]
+            if any(alo[k] > bhi[k] + CONTACT_TOLERANCE_M or blo[k] > ahi[k] + CONTACT_TOLERANCE_M
+                   for k in range(3)):
+                continue
+            if interface(a, b) is not None:
+                out.append([a.name, b.name])
+    return out
+
+
 def described(design: WorkshopDesign) -> dict[str, Any]:
     construction = of(design)
     return {"schema": CONSTRUCTION_SCHEMA,
             "joints_authored": bool(construction.get("joints_authored")),
             "added": [p["name"] for p in construction.get("added") or []],
             "removed": list(construction.get("removed") or []),
-            "joints": joints(design), "unfastened": unfastened(design)}
+            "joints": joints(design), "unfastened": unfastened(design),
+            "touching_unfastened": touching_unfastened(design)}
