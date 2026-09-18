@@ -365,6 +365,9 @@ function drawPlayback() {
   const live = $("#ws-simulation-readout");
   if (recording.test === "kettle_heat") {
     live.textContent = `Water ${celsius(thermal.get("water charge"))} · heater ${celsius(thermal.get("heater plate"))}. Blue → red: measured 20–100 °C. Contained thermal model; no sloshing.`;
+  } else if (recording.geometry_basis === "verified-precise-rigid-shapes") {
+    const bodies = new Set((frame.bodies || []).map(part => part.object_id));
+    live.textContent = `${present.size} collision shapes · ${bodies.size} rigid ${bodies.size === 1 ? "body" : "bodies"} · ${Number(frame.t_s).toFixed(2)} seconds. Actual native poses; no internal failure model.`;
   } else live.textContent = `${present.size} simulated bodies · ${Number(frame.t_s).toFixed(2)} seconds. Positions are calculated by the physics engine.`;
   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
     ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
@@ -964,7 +967,7 @@ function renderBenchResult(result) {
   if (result.playback) setPlayback(result.playback);
   for (const limitation of result.limitations || []) root.append(make("p", { class:"ws-feedback-count" }, limitation));
   const details = make("details", { class:"ws-family" }); details.append(make("summary", {}, "Measured evidence"));
-  const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,duration_s:result.playback.duration_s,states:result.playback.frames.length} : undefined}, null, 2); details.append(pre); root.append(details);
+  const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,geometry_basis:result.playback.geometry_basis,duration_s:result.playback.duration_s,states:result.playback.frames.length,sampling:result.playback.sampling} : undefined}, null, 2); details.append(pre); root.append(details);
 }
 async function runBenchTest() {
   const definition=benchDefinition(); if(!definition) throw new Error("Choose a supported simulation first.");

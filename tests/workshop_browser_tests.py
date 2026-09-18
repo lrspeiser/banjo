@@ -80,6 +80,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
         self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
 
+    def capture_evidence(self, name):
+        folder = os.environ.get("BANJO_BROWSER_ARTIFACTS")
+        if folder:
+            output = Path(folder); output.mkdir(parents=True, exist_ok=True)
+            image = self.page.send("Page.captureScreenshot", {"format":"png"})["data"]
+            (output / name).write_bytes(base64.b64decode(image))
+
     def js(self, expression):
         return self.page.evaluate(expression, await_promise=True)
 
@@ -366,6 +373,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world?workshop=1&design=browser-thin-rigid"})
         self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
         self.assertIn('top',self.js("document.querySelector('#ws-buildability-parts').textContent"))
+        self.capture_evidence('thin-grid-warning.png')
         self.click('[data-mode="build"]')
         self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
         self.field('#ws-mechanical-model','rigid');self.click('#ws-apply-mechanics')
@@ -382,8 +390,22 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#ws-bench-result pre')?.textContent.includes('verified-precise-rigid-shapes')")
         proof=json.loads(self.js("document.querySelector('#ws-bench-result pre').textContent"))
         self.assertEqual('measured',proof['status']);self.assertFalse(proof['strength_certified'])
-        self.assertEqual(0,proof['measured']['stored_cells']);self.assertEqual(5,len(proof['playback']['frames'][0]['bodies']))
-        self.field('#ws-play-timeline',30,'input')
+        self.assertEqual(0,proof['measured']['stored_cells'])
+        self.assertEqual(5,proof['measured']['collision_boxes'])
+        self.assertTrue(proof['native_geometry_verified'])
+        self.assertEqual('verified-precise-rigid-shapes',proof['playback']['geometry_basis'])
+        self.assertGreater(proof['playback']['states'],2)
+        # The evidence panel deliberately summarizes (rather than duplicates)
+        # the full native trace. Exercise the actual rendered states too.
+        if self.js("document.querySelector('#ws-play').textContent") == 'Pause':
+            self.click('#ws-play')
+        self.field('#ws-play-timeline',0,'input')
+        before=self.js("document.querySelector('#workshop-stage').dataset.physicsPose")
+        self.field('#ws-play-timeline',self.js("document.querySelector('#ws-play-timeline').max"),'input')
+        self.assertNotEqual(before,self.js("document.querySelector('#workshop-stage').dataset.physicsPose"))
+        self.assertEqual('5',self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
+        self.assertIn('5 collision shapes · 1 rigid body',self.js("document.querySelector('#ws-simulation-readout').textContent"))
+        self.capture_evidence('thin-rigid-native-motion.png')
         self.assertIn('Exact rigid',self.js("document.querySelector('#ws-play-note').textContent"))
         self.click('[data-mode="details"]');self.field('#ws-save-name','Browser precise rigid table');self.click('#ws-save-design')
         self.wait("document.querySelector('#ws-save-status').textContent.includes('Saved designs and My Library')")

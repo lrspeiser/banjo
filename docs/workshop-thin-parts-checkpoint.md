@@ -2,7 +2,9 @@
 
 September 17, 2026 Pacific. Started at `b789faa6ecb37cd3a5eb41db8a6c29f9eed5ae31`; integrated and retested on
 `b76502654f3bb5e85a7882362a27398f99667cc6` after the parallel visible-test repair
-landed. Its drop/slide/load controls, automatic playback, stable mesh reuse and
+landed, then rebased onto `b03043ee4a151647b17c2fb91ee197c8292f4878` to retain
+the viewport Run/replay/readout dock and late-history editor fix. Its
+drop/slide/load controls, automatic playback, stable mesh reuse and
 measured thermal visualization are preserved. The UI filters tests by the selected
 mechanical model; no rigid trial is advertised as a lattice fracture experiment.
 
