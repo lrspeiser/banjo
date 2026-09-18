@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Goal 3: first explicit Workshop-to-world installation adapter (September 17, 2026 Pacific):** [Checkpoint and limits](workshop-install-checkpoint.md) adds preview/commit, staged native state verification, persistent duplicate protection, and browser controls. Single-material monolithic solids in explicit authoring mode only; inventory-funded fabrication, mixed-material/articulated installation, and terrain remain open.
+
 **Room-chat transport checkpoint:** [Lossless object-result deltas](chat-object-transport-checkpoint.md) reduce repeated model input after a full baseline, preserve all actual side effects and full audit logs, and report measured bytes separately from tokens. Physics and MCP handlers are unchanged.
 
 **Explicit Workshop test limits:** [Exact-run acceptance](workshop-acceptance-checkpoint.md) adds opt-in endpoint limits, measured pass/fail/unsupported verdicts and immutable evidence import. This is not peak-deflection or load-range certification.

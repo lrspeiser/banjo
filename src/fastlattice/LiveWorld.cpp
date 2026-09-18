@@ -11789,6 +11789,23 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         for (const thermo::Lump &lump : state.lumps) lumps.push_back(savedLump(lump, state));
         if (!lumps.empty()) doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)}};
     }
+    // A snapshot's old descriptive not_kept list is not enough for a caller
+    // that promises an atomic changed-scene carry: a heater scheduled but not
+    // yet stepped has heater_w == 0 in its body's report. Expose whether state
+    // omitted by the carry adapter ACTUALLY exists, without mutating it.
+    std::size_t pending_heaters = 0;
+    std::size_t gas_regions = 0;
+    if (I.thermo) {
+        const thermo::ThermoState &state = I.thermo->state();
+        gas_regions = state.regions.size();
+        for (const thermo::Heater &heater : state.heaters)
+            if (heater.what.power_w != 0.0 &&
+                heater.what.start_s + heater.what.seconds > state.time_s)
+                ++pending_heaters;
+    }
+    doc["carry_readiness"] = {{"schema", "banjo.carry-readiness.v1"},
+                              {"pending_heaters", pending_heaters},
+                              {"gas_regions", gas_regions}};
     doc["not_kept"] = notKept();
     return doc.dump();
 }

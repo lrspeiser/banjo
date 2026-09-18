@@ -1,5 +1,7 @@
 # What is not done
 
+**Workshop installation update:** [The first prototype adapter](workshop-install-checkpoint.md) is implemented for authoring-only, single-material solids on flat floors. This does not complete the inventory/fabrication, terrain, articulated or mixed-material installation gates below.
+
 Written 2026-09-16, at the close of the authoring work that began with the
 owner's review of 2026-09-15. Everything here is either unfinished, recorded
 but unfixed, or finished in a way that is easy to misread. Numbers are

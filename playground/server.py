@@ -4,6 +4,7 @@ Run: python playground/server.py --port 8765
 Credentials are read only on the server. Static serving is an explicit allowlist.
 """
 from __future__ import annotations
+from contextlib import nullcontext
 import base64
 import binascii
 import argparse
@@ -40,6 +41,8 @@ import inventory_room
 import tool_use
 import access_gate
 import workshop_api
+import workshop_install
+import world_access
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1167,6 +1170,15 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Content-Type","").split(";")[0]!="application/json": raise ValueError("Expected application/json")
             body=strict_json(raw_body)
             path=urlsplit(self.path).path
+            # Authenticate before a request can hold world access.
+            return self._dispatch_POST(path,body)
+        except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
+
+    def _dispatch_POST(self,path,body):
+        world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith("/api/world/workshop/")
+        # Normal world calls share access; explicit installation is exclusive.
+        # Keep ordinary requests concurrent and perform authentication first.
+        with (world_access.gate(self.server.app).enter() if world_call else nullcontext()):
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
             if path=="/api/packages/run": return self.send(self.server.app.run_package(body),202)
             # Pure computation: admission verdict, repair and cost for a builder
@@ -1194,6 +1206,16 @@ class Handler(BaseHTTPRequestHandler):
             # A live world, instead of a recording. /open starts one from a
             # validated scene; /act steps it, takes hold of an object, moves it,
             # lets go, or puts something back into the lattice to be broken.
+            if path.startswith("/api/world/workshop/"):
+                operations = {"/api/world/workshop/context": workshop_install.context,
+                              "/api/world/workshop/preview": workshop_install.preview,
+                              "/api/world/workshop/commit": workshop_install.commit}
+                if path in operations:
+                    try:
+                        answer = operations[path](self.server.app,body)
+                    except OSError as exc:
+                        return self.send({"error": "Installation could not be saved; the original world is unchanged: " + str(exc)}, 503)
+                    return self.send(answer)
             if path=="/api/world/open":
                 app=self.server.app
                 # Which room. The bench is the materials room this playground
@@ -1478,7 +1500,6 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
                 return self.send(self.server.app.open_case(match[1],body["case_index"]))
             self.send({"error":"Not found"},404)
-        except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
 def clock_went_back(report):
     """Whether the world's clock ran backwards inside one frame report.

@@ -28,6 +28,7 @@ jobs:
           OPENAI_API_KEY: ""
         run: |
           node --check playground/workshop.js
+          python3 tests/workshop_install_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
@@ -111,6 +112,7 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
           python3 tests/asset_compiler_tests.py -v
+          python3 tests/workshop_install_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
@@ -138,6 +140,8 @@ jobs:
             python3 tests/machine_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
             python3 tests/workshop_bench_engine_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
+            python3 tests/workshop_install_engine_tests.py -v
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \

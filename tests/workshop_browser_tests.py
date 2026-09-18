@@ -266,6 +266,71 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("!document.querySelector('#ws-run-bench').disabled")
         self.assertEqual("", self.js("document.querySelector('#ws-bench-result').textContent"))
 
+    def install_api(self, path, body):
+        return self.js(f"""(async()=>{{
+          const status=await fetch('/api/status').then(r=>r.json());
+          const response=await fetch({json.dumps(path)},{{method:'POST',headers:{{'Content-Type':'application/json','X-Banjo-Token':status.csrf_token}},body:JSON.stringify({json.dumps(body)})}});
+          return {{status:response.status,body:await response.json()}};
+        }})()""")
+
+    def test_installation_preview_confirm_retry_and_return_to_live_world(self):
+        opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})
+        self.assertEqual(200,opened['status'],opened)
+        self.click('[data-mode="details"]')
+        self.assertFalse(self.js("document.querySelector('#ws-install-authoring').checked"))
+        self.assertTrue(self.js("document.querySelector('#ws-install-confirm').disabled"))
+        self.click('#ws-install-preview')
+        self.wait("!document.querySelector('#ws-install-preview').disabled")
+        self.assertIn('Acknowledge',self.js("document.querySelector('#ws-notice').textContent"))
+        self.click('#ws-install-authoring');self.click('#ws-install-preview')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
+        self.assertIn('40 mm',self.js("document.querySelector('#ws-install-context').textContent"))
+        self.field('#ws-install-x',3.5)
+        self.assertTrue(self.js("document.querySelector('#ws-install-confirm').disabled"))
+        self.click('#ws-install-preview')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
+        self.js("""window.__nativeInstallFetch=window.fetch;window.fetch=(url,init)=>{
+          if(String(url).endsWith('/api/world/workshop/commit'))window.__lastInstall=JSON.parse(init.body);
+          return window.__nativeInstallFetch(url,init);
+        };""")
+        self.click('#ws-install-confirm')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='installed'")
+        request=self.js('window.__lastInstall');replay=self.install_api('/api/world/workshop/commit',request)
+        self.assertEqual(200,replay['status'],replay);self.assertTrue(replay['body']['replayed'])
+        root=replay['body']['root_body'];link=self.js("document.querySelector('#ws-install-result a').href")
+        self.page.send('Page.navigate',{'url':link})
+        self.wait("window.banjoRoom?.world.session")
+        self.wait(f"window.banjoRoom.world.bodies.has({json.dumps(root)})")
+        self.assertEqual(1,self.js(f"[...window.banjoRoom.world.bodies.keys()].filter(name=>name==={json.dumps(root)}).length"))
+        self.assertGreater(self.js("document.querySelector('canvas').width"),0)
+
+    def test_installation_stale_world_is_visible_and_does_not_install(self):
+        opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})['body']
+        self.click('[data-mode="details"]');self.click('#ws-install-authoring');self.click('#ws-install-preview')
+        self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
+        advanced=self.install_api('/api/live/act',{'session':opened['session'],'op':'step','dt':1/120,'n':1})
+        self.assertEqual(200,advanced['status'],advanced)
+        self.click('#ws-install-confirm');self.wait("!document.querySelector('#ws-install-confirm').disabled")
+        self.assertIn('changed after preview',self.js("document.querySelector('#ws-notice').textContent"))
+        state=self.install_api('/api/live/act',{'session':opened['session'],'op':'poses'})
+        self.assertEqual(200,state['status'],state)
+        self.assertFalse(any(b['name'].startswith('workshop-') for b in state['body']['bodies']))
+
+    def test_late_installation_preview_cannot_apply_to_another_candidate(self):
+        self.install_api('/api/world/open',{'scene':'yard','fresh':True})
+        self.click('[data-mode="details"]');self.click('#ws-install-authoring')
+        self.js("""window.__nativeInstallFetch=window.fetch;window.fetch=async (url,init)=>{
+          const response=await window.__nativeInstallFetch(url,init);
+          if(String(url).endsWith('/api/world/workshop/preview'))await new Promise(resolve=>window.__releaseInstall=resolve);
+          return response;
+        };""")
+        self.click('#ws-install-preview');self.wait("typeof window.__releaseInstall==='function'")
+        self.open_product('chair')
+        self.js('window.__releaseInstall();window.fetch=window.__nativeInstallFetch')
+        self.wait("!document.querySelector('#ws-install-preview').disabled")
+        self.assertTrue(self.js("document.querySelector('#ws-install-confirm').disabled"))
+        self.assertNotEqual('preview',self.js("document.querySelector('#ws-install-result').dataset.status"))
+
 
 if __name__ == "__main__":
     unittest.main()

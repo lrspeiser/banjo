@@ -33,7 +33,9 @@ files = re.findall(r'python3 (tests/[^ ]+) -v', fast)
 if not files: raise RuntimeError('No Workshop test suites found in the existing CI gate')
 commands = [[sys.executable, 'scripts/check-source-registration.py'], ['node','--check','playground/workshop.js']]
 commands += [[sys.executable, f, '-v'] for f in files]
-if args.engine: commands.append([sys.executable,'tests/workshop_bench_engine_tests.py','-v'])
+if args.engine:
+    commands.append([sys.executable,'tests/workshop_bench_engine_tests.py','-v'])
+    commands.append([sys.executable,'tests/workshop_install_engine_tests.py','-v'])
 if args.browser: commands.append([sys.executable,'tests/workshop_browser_tests.py','-v'])
 results=[]
 for command in commands:

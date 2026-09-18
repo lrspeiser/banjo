@@ -320,7 +320,7 @@ class Session:
         scene = directory / "scene.json"
         scene.write_text(json.dumps(fracture_lab.scene_document(spec), indent=1),
                          encoding="utf-8")
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._closed = False
         command = [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"]
         # A saved world to open the scene into (LiveWorld::snapshot), beside
@@ -355,9 +355,13 @@ class Session:
         # the person's own hand did (server.hear). None hears nothing.
         self.on_reply: Any = None
         self.state: dict[str, Any] = {}
-        self.state = self._read("opening the world")
-        if not self.state.get("ok"):
-            raise LiveError(self.state.get("error") or "the live world refused this scene")
+        try:
+            self.state = self._read("opening the world")
+            if not self.state.get("ok"):
+                raise LiveError(self.state.get("error") or "the live world refused this scene")
+        except BaseException:
+            self.close()
+            raise
 
     # -- the wire ----------------------------------------------------------
     def _read(self, what: str) -> dict[str, Any]:
@@ -371,6 +375,12 @@ class Session:
         return json.loads(line)
 
     def send(self, **command: Any) -> dict[str, Any]:
+        # A staged installation holds this reentrant lock from snapshot through
+        # publication. No direct caller may step the old world in that interval.
+        with self._lock:
+            return self._send(command)
+
+    def _send(self, command: dict[str, Any]) -> dict[str, Any]:
         line = json.dumps(command) + "\n"
         with self._lock:
             if self._closed or self._process.poll() is not None:
@@ -528,9 +538,9 @@ class Live:
 
     def __init__(self) -> None:
         self.session: Session | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
-    def open(self, app: Any, body: Any) -> dict[str, Any]:
+    def open(self, app: Any, body: Any, *, carry_from: Any = None) -> dict[str, Any]:
         if not isinstance(body, dict):
             raise LiveError("A live request must be an object")
         # Pins are part of the ROOM rather than of the engine's scene request:
@@ -555,7 +565,8 @@ class Live:
             # from what did not, and the room opens from its spec.
             plan = None
             if snapshot is not None and body.get("carry"):
-                was = getattr(self.session, "declared", None) if self.session is not None else None
+                source = carry_from if carry_from is not None else self.session
+                was = getattr(source, "declared", None) if source is not None else None
                 if isinstance(was, dict):
                     plan = carry_plan(was, spec)
                 else:
@@ -1171,6 +1182,10 @@ class Live:
         return session
 
     def act(self, body: Any) -> dict[str, Any]:
+        with self._lock:
+            return self._act(body)
+
+    def _act(self, body: Any) -> dict[str, Any]:
         if not isinstance(body, dict):
             raise LiveError("A live request must be an object")
         session = self._current(str(body.get("session", "")))

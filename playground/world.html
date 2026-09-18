@@ -88,7 +88,7 @@ if(new URLSearchParams(location.search).has("workshop")){
     const build=el("div",{id:"ws-mode-build",class:"ws-mode-pane"}),test=el("div",{id:"ws-mode-test",class:"ws-mode-pane",hidden:true}),details=el("div",{id:"ws-mode-details",class:"ws-mode-pane",hidden:true});
     const editor=$("#ws-component-editor");if(editor)build.append(editor);moveBlock(right,"Components",build);
     const bench=$("#ws-test-bench");if(bench){test.append(el("p",{class:"ws-test-intro"},"Run isolated product tests here. These trials never advance or mutate the outside world."),bench);const picker=$("#ws-bench-test",bench);if(picker){picker.closest("label")?.classList.add("ws-native-picker-hidden");const catalog=el("div",{id:"ws-test-catalog",class:"ws-test-catalog"}),controls=$("#ws-bench-controls",bench);(controls||bench.firstChild).before(catalog);cardify(picker,catalog,"ws-test-card",()=>"Run this test on the selected product")}}moveBlock(right,"Cheap checks",test);
-    const bom=$("#ws-bom")?.parentElement;if(bom)details.append(bom);moveBlock(right,"Save design",details);moveBlock(right,"Feedback",details);moveBlock(right,"Materialization",details);right.append(build,test,details);tabs(right,{build,test,details});
+    const bom=$("#ws-bom")?.parentElement;if(bom)details.append(bom);moveBlock(right,"Save design",details);moveBlock(right,"Feedback",details);moveBlock(right,"Materialization",details);const install=$("#ws-install-box");if(install)details.append(install);right.append(build,test,details);tabs(right,{build,test,details});
   }catch(error){console.warn("Workshop shell:",error)}
 }
 </script>

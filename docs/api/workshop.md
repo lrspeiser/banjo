@@ -351,3 +351,42 @@ No untested load interval is inferred. A request can tighten, never weaken,
 `product_evidence.from_bench` imports `not-declared` as an observation, preserving
 the original status and native geometry provenance. Its nested measurements,
 conditions and acceptance checks are copies, not aliases to mutable test output.
+
+## Explicit live-world prototype installation
+
+Unlike the pure `/api/workshop/*` design routes, the following world routes are
+explicit capabilities. They use the same host, login and CSRF protection as
+other live-world changes. See [the checkpoint](../workshop-install-checkpoint.md).
+
+`POST /api/world/workshop/context {}` identifies the current `scene`, `session`
+and `cell_size_m`; it never opens or resets a room.
+
+`POST /api/world/workshop/preview` takes exactly these fields:
+
+```json
+{
+  "scene": "yard",
+  "session": "current-live-session-id",
+  "mode": "authoring",
+  "candidate": {"kind": "table", "parameters": {"material": "oak"}},
+  "position_m": [3.0, 0.0]
+}
+```
+
+X/Z are finite numbers within +/-100 m. Y is resolved by a whole-object integer-
+grid translation onto the flat floor. The room resolution is not changed. The
+candidate accepts the ordinary design recipe and component overrides. The result
+reports `preview_id`, actual geometry hash/cells/mass, requested/applied placement,
+native verification and limitations. It is NOT an installation or a strength
+certificate. `mode` must explicitly be `authoring`; inventory-funded fabrication,
+articulated/mixed-material products and terrain/water are not supported yet.
+
+`POST /api/world/workshop/commit` takes only `scene`, the source `session`,
+`preview_id`, and a unique `request_id` (8-80 ASCII letters/digits/hyphen/underscore).
+It refuses an expired, missing or stale preview. Retrying the SAME request and
+preview returns the persisted installed receipt (`replayed: true`) without
+creating another object. A request ID cannot be reused for a different preview.
+The last 64 receipts are retained. A successful response has `status: installed`,
+the new `session`, and `root_body` identifying the real installed solid. Rejoin
+that scene through the world page to use it. Changing Workshop controls or the
+selected candidate invalidates pending preview UI responses.

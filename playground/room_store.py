@@ -81,6 +81,9 @@ class RoomStore:
         world = getattr(room, "world_record", None)
         if isinstance(world, dict):
             record["world"] = world
+        receipts = getattr(room, "workshop_installs", None)
+        if isinstance(receipts, list):
+            record["workshop_installs"] = receipts[-64:]
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -115,6 +118,8 @@ class RoomStore:
         room.kept_since = record.get("saved_unix_s")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
+        receipts = record.get("workshop_installs")
+        room.workshop_installs = [r for r in receipts[-64:] if isinstance(r, dict)] if isinstance(receipts, list) else []
         return room
 
     def set_aside_world(self, room: Any, why: str) -> None:

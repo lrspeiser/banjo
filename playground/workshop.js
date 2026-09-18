@@ -75,10 +75,82 @@ const bench = {
   playbackClock: 0, playbackFrom: 0,
 };
 function chosen() { return bench.candidates[bench.selected]; }
+// Explicit prototype placement is separate from the pure design/test APIs.
+const installation = {sequence:0, preview:null, request:null, committing:false};
+function invalidateInstallation() {
+  installation.sequence++;
+  installation.preview = null;
+  installation.request = null;
+  const confirm = $("#ws-install-confirm");
+  if (confirm) confirm.disabled = true;
+  const result = $("#ws-install-result");
+  if (result) { result.textContent = "Preview the current design and position before installing."; result.dataset.status = "unbuilt"; }
+}
+function installPlacementControls(right) {
+  const box = make("section", {id:"ws-install-box"});
+  box.append(make("h3", {}, "Place prototype in world"),
+    make("p", {class:"ws-note"}, "Creates one single-material solid in a flat-floor room. This is an authoring prototype, not manufactured inventory or a certified assembly. Open a world first and leave it paused while previewing."));
+  const yard = make("a", {href:"/world?scene=yard&hold=1"}, "Open the yard"); box.append(yard);
+  for (const [axis,value] of [["x",3],["z",0]]) {
+    const label=make("label", {class:"ws-field"}, `World ${axis.toUpperCase()} (m)`);
+    const input=make("input", {id:`ws-install-${axis}`, type:"number",min:"-100",max:"100",step:"0.04",value:String(value)});
+    input.addEventListener("input", invalidateInstallation); input.addEventListener("change", invalidateInstallation);
+    label.append(input);box.append(label);
+  }
+  const mode=make("label", {class:"ws-field"}, "Create in authoring sandbox: do not charge inventory or fabrication energy");
+  const consent=make("input", {id:"ws-install-authoring",type:"checkbox"});
+  consent.addEventListener("change",invalidateInstallation);mode.append(consent);box.append(mode);
+  const row=make("div", {class:"ws-row"});
+  const preview=make("button", {id:"ws-install-preview",type:"button",class:"ws-action"}, "Preview placement");
+  const confirm=make("button", {id:"ws-install-confirm",type:"button",class:"ws-action primary"}, "Install prototype");
+  confirm.disabled=true;row.append(preview,confirm);
+  box.append(row,make("p",{id:"ws-install-context",class:"ws-note"}),
+    make("p",{id:"ws-install-result",role:"status","aria-live":"polite"},"Preview the current design and position before installing."));
+  right.append(box);
+  preview.onclick=()=>guard(preview,async()=>{
+    invalidateInstallation();
+    if (!consent.checked) throw new Error("Acknowledge authoring-sandbox creation first. Inventory-funded fabrication is not implemented.");
+    const position=[$("#ws-install-x"),$("#ws-install-z")].map(e=>e.valueAsNumber);
+    if (!position.every(Number.isFinite)) throw new Error("Enter finite X and Z coordinates.");
+    const sequence=installation.sequence,revision=bench.revision,candidate=candidateBody();
+    const source=await api("/api/world/workshop/context",{});
+    if(sequence!==installation.sequence || revision!==bench.revision)return;
+    $("#ws-install-context").textContent=`Room: ${source.scene} · native cell size ${source.cell_size_m*1000} mm. The whole prototype snaps once to this room grid.`;
+    const answer=await api("/api/world/workshop/preview",{session:source.session,scene:source.scene,
+      mode:"authoring",candidate,position_m:position});
+    if(sequence!==installation.sequence || revision!==bench.revision)return;
+    installation.preview=answer;installation.request=crypto.randomUUID();
+    const result=$("#ws-install-result");result.dataset.status="preview";
+    result.textContent=`Ready: ${answer.design_id}, ${answer.mass_kg.toFixed(3)} kg, ${answer.cells} exact cells. Translation: ${answer.applied_translation_m.map(x=>x.toFixed(3)).join(", ")} m. Native geometry and existing state verified. No strength certification or resource charge.`;
+    confirm.disabled=false;
+  });
+  confirm.onclick=async()=>{
+    const ready=installation.preview,request=installation.request;
+    if(!ready || installation.committing || !consent.checked)return;
+    installation.committing=true;confirm.disabled=true;preview.disabled=true;
+    try {
+      const answer=await api("/api/world/workshop/commit",{session:ready.session,scene:ready.scene,
+        preview_id:ready.preview_id,request_id:request});
+      installation.preview=null;installation.request=null;
+      const result=$("#ws-install-result");result.dataset.status="installed";
+      result.textContent=`Installed ${answer.design_id} as ${answer.root_body} in ${answer.scene}. The original world state and inventory were preserved. `;
+      result.append(make("a",{href:`/world?scene=${encodeURIComponent(answer.scene)}&hold=1`},"Return to the world"));
+      say("Prototype installed and room saved.");
+    } catch(error) {
+      // Retain the same request ID on an uncertain network result: retrying
+      // retrieves the saved receipt rather than creating another prototype.
+      say(`${error.message} Retrying uses the same installation request.`,true);
+    } finally {
+      installation.committing=false;preview.disabled=false;confirm.disabled=!installation.preview;
+    }
+  };
+}
+
 function currentMeasurements(candidate = chosen()) {
   return view === "matter" && bench.matterMeasured ? bench.matterMeasured : candidate.measured;
 }
 function invalidateMatter(message = "Not built for this candidate. Rebuild Matter view.") {
+  invalidateInstallation();
   bench.matter = null; bench.matterKey = null; bench.matterMeasured = null;
   bench.matterBom = null; bench.matterMasses = null;
   const status = $("#ws-matter-status");
@@ -480,6 +552,7 @@ function installEditor() {
   $("#ws-play").onclick = togglePlayback;
   $("#ws-play-reset").onclick = resetPlayback;
   timeline.oninput = () => { setPlaybackIndex(Number(timeline.value), false); };
+  installPlacementControls(right);
 }
 installEditor();
 for (const id of ["#ws-matter-cell", "#ws-matter-exterior"]) {
