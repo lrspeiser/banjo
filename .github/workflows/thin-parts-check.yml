@@ -1,0 +1,29 @@
+name: thin-parts-check
+on:
+  push:
+    branches: [agent/thin-part-representations]
+permissions:
+  contents: read
+concurrency:
+  group: thin-parts-check
+  cancel-in-progress: true
+jobs:
+  dependencies:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Bundle pinned build dependencies for offline verification
+        run: |
+          mkdir -p /tmp/banjo-deps
+          git clone --depth 1 --branch v5.6.0 https://github.com/jrouwe/JoltPhysics.git /tmp/banjo-deps/JoltPhysics
+          git clone --filter=blob:none --no-checkout https://github.com/nlohmann/json.git /tmp/json
+          git -C /tmp/json checkout 65ee68451d8eb2b5f3a30b410476ab83deb3289b
+          mv /tmp/json /tmp/banjo-deps/nlohmann_json
+          tar --exclude=.git -czf /tmp/banjo-deps.tar.gz -C /tmp banjo-deps
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thin-parts-build-dependencies
+          path: /tmp/banjo-deps.tar.gz
+          retention-days: 3
