@@ -165,3 +165,4 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-joint-kind.unrated { background:#8a96a3; }
 #ws-joint-screen { display:grid;gap:.35rem;margin-top:.4rem; }
 .ws-push-box { display:grid;gap:.4rem;margin-top:.5rem;padding-top:.6rem;border-top:1px solid #2a3542; }
+.ws-build-adjust[hidden], .ws-push-box[hidden] { display:none; }

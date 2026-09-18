@@ -647,6 +647,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.open_product('cart'); self.click('[data-mode="build"]')
         self.assertIn('still the template', self.js("document.querySelector('#ws-build-joints').textContent"))
         self.field('#ws-build-what', 'family:post'); self.field('#ws-build-length', .3)
+        # The turn and sink buttons belong to a part being placed, and are not on show before one is.
+        self.assertEqual('none', self.js("getComputedStyle(document.querySelector('#ws-build-adjust')).display"))
         self.click('#ws-build-place')
         self.wait("document.querySelector('#workshop-stage').classList.contains('ws-placing')")
         self.assertEqual('skin', self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
@@ -663,6 +665,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(1, self.js("document.querySelectorAll('.ws-joint-row[data-joint]').length"))
         self.assertIn('deck ↔ post-1', self.js("document.querySelector('.ws-joint-row[data-joint]').textContent"))
         self.assertFalse(self.js("document.querySelector('#workshop-stage').classList.contains('ws-placing')"))
+        self.assertEqual('none', self.js("getComputedStyle(document.querySelector('#ws-build-adjust')).display"))
 
         self.click('[data-mode="details"]'); self.field('#ws-save-name', 'cart with a post')
         self.click('#ws-save-design')
