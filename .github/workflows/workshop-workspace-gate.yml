@@ -1,0 +1,98 @@
+name: workshop-workspace-gate
+on:
+  push:
+    branches: [agent/workshop-visible-workspace]
+    paths: [.github/workflows/workshop-workspace-gate.yml, .agent/workspace-fixes.json]
+permissions:
+  contents: write
+concurrency:
+  group: workshop-workspace-gate
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ""
+      BANJO_BUILD_DIR: build/workspace-ci
+      BANJO_CHROME: /usr/bin/google-chrome
+      BANJO_CHROME_ARGS: --no-sandbox --enable-unsafe-swiftshader
+      BANJO_BROWSER_TESTS: required
+      BANJO_BROWSER_ARTIFACTS: build/workspace-browser-evidence
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Retain patch transfer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-transfer
+          path: .agent/workspace-*.b64
+          include-hidden-files: true
+          retention-days: 3
+      - name: Verify exact patch and merge both pinned source revisions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, json, base64, gzip, hashlib
+          chunks=[Path(f'.agent/workspace-{i}.b64').read_text().strip() for i in range(1,4)]
+          fix=Path('.agent/workspace-fixes.json')
+          if fix.exists():
+              for rule in json.loads(fix.read_text()):
+                  index=rule['chunk']-1
+                  assert chunks[index].count(rule['old']) == 1, rule
+                  chunks[index]=chunks[index].replace(rule['old'],rule['new'],1)
+          patch=gzip.decompress(base64.b64decode(''.join(chunks),validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='edcd78abaf36f98eb5f2bca3f2fb96e52887bb24e6567b55528d4a19fa3d5480'
+          Path(os.environ['RUNNER_TEMP'],'workspace.patch').write_bytes(patch)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b workspace-clean 07aab26eb6ae7c9dbd3c740c1d877c9e848e14cb
+          git fetch origin bd54148d66445e2b9c50c2694cf5d9191c5f761c
+          git merge --no-commit --no-ff bd54148d66445e2b9c50c2694cf5d9191c5f761c || test "$(git diff --name-only --diff-filter=U)" = 'docs/development-status.md'
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('docs/development-status.md')
+          p.write_text(''.join(line for line in p.read_text().splitlines(keepends=True) if not line.startswith(('<<<<<<<','=======','>>>>>>>'))))
+          PY
+          git add docs/development-status.md
+          test "$(git write-tree)" = '9a084ed52e7508b32d74b10def672cc4d62a0103'
+          git apply --check "$RUNNER_TEMP/workspace.patch"
+          git apply --index "$RUNNER_TEMP/workspace.patch"
+          git diff --cached --check
+      - name: Build native engine and affected regression targets
+        run: |
+          cmake -S . -B build/workspace-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON -DBANJO_BUILD_PRECOMPUTE=OFF
+          cmake --build build/workspace-ci --target banjo_live_world_run banjo_c banjo_platform_cli banjo_live_world_tests banjo_beam_tests banjo_terrain_tests banjo_room_carry_tests banjo_thermo_live_tests banjo_ground_work_tests --parallel 4
+      - name: Exercise visible Workshop journeys and model/native gates
+        run: python3 scripts/verify-workshop-checkpoint.py --engine build/workspace-ci/banjo_live_world_run --browser
+      - name: Verify PR22 native and world-page behavior
+        env:
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/workspace-ci/banjo_live_world_run
+          BANJO_LIBRARY: ${{ github.workspace }}/build/workspace-ci/libbanjo.so
+        run: |
+          ctest --test-dir build/workspace-ci --output-on-failure --no-tests=error -R '^(banjo_live_world_tests|banjo_beam_tests|banjo_terrain_tests|banjo_room_carry_tests|banjo_thermo_live_tests|banjo_ground_work_tests)$'
+          python3 tests/world_room_tests.py -v
+          python3 tests/world_page_journey_tests.py -v
+      - name: Commit verified product changes with PR ancestry
+        shell: bash
+        run: |
+          printf '\n## Published verification\n\nThe focused native, Workshop and required Chrome browser gate passed.\nRun: https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> docs/workshop-workspace-checkpoint.md
+          git add docs/workshop-workspace-checkpoint.md
+          git commit -m 'Rebuild visible Workshop testing and component inspection; integrate PR22' -m 'Separate the canvas and setup controls, show actual initial experiment geometry, provide solid read-only component previews, preserve copied physical skins, and add real-pointer browser regressions. Keep bounded native simulation results distinct from live solver streaming.'
+          git push origin HEAD:refs/heads/agent/workshop-workspace-verified
+          git rev-parse HEAD > build/verified-commit.txt
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workshop-workspace-evidence
+          path: |
+            build/workshop-verification.json
+            build/verified-commit.txt
+            build/workspace-browser-evidence
+            build/workspace-ci/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 7
