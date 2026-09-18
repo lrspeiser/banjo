@@ -1,0 +1,21 @@
+name: workshop-next-source
+on:
+  push:
+    branches: [agent/workshop-next-checkpoints]
+    paths: [.github/workflows/workshop-next-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 971261cd81d967fe928f10d796bf5370ddd062c9
+          persist-credentials: false
+      - run: git archive --format=tar.gz HEAD > /tmp/banjo-main-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-main-source
+          path: /tmp/banjo-main-source.tar.gz
+          retention-days: 3
