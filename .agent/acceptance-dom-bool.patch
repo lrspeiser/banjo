@@ -1,0 +1,9 @@
+diff --git a/tests/workshop_browser_tests.py b/tests/workshop_browser_tests.py
+index 965f4ec..ef617fd 100644
+--- a/tests/workshop_browser_tests.py
++++ b/tests/workshop_browser_tests.py
+@@ -88 +88,3 @@ class WorkshopBrowserRegression(unittest.TestCase):
+-            if self.js(condition):
++            # DOM elements serialize as empty objects through DevTools.
++            # Evaluate presence in JavaScript, not Python dict truthiness.
++            if self.js(f"Boolean({condition})"):
