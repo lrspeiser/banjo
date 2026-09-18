@@ -132,6 +132,107 @@ The conversational adapter can inspect full design geometry, one component,
 physics/load paths and My Library, then apply several bounded edits in one turn.
 A failed turn leaves the candidate unchanged.
 
+### Build part by part
+
+A design can be changed by adding parts, taking parts off and declaring how two
+parts are fastened ([product-framework.md](../product-framework.md)). That
+construction travels inside `component_overrides` under the reserved key
+`"@construction"`, so a client that already round-trips the overrides keeps it
+without learning a new field; no part may have a name beginning with `@`.
+
+```json
+"component_overrides": {
+  "leg-1": {"material": "iron"},
+  "@construction": {
+    "schema": "banjo.workshop-construction.v1",
+    "added":   [{"name": "post-1", "role": "post", "family": "post", "shape": "box",
+                 "size_m": [0.04, 0.3, 0.04], "center_m": [0.1, 0.53, 0.1],
+                 "rotation_deg": [0, 0, 0], "material": "oak"}],
+    "removed": ["handle"],
+    "joints":  [{"id": "joint-17", "kind": "fixed", "method": "bonded", "a": "deck", "b": "post-1"}],
+    "joints_authored": true
+  }
+}
+```
+
+A joint's `kind` is `fixed` (the two move as one) or `bearing` (one turns in the
+other about the joint's axis). Its `method` is `bonded` (glued, welded or fused
+over the whole contact), `pressed` (a shaft held in a bore) or `bearing`. At
+most one joint holds any two parts. Where a joint is, over what area, and about
+which axis are measured from the parts as they stand and never stored.
+
+`/api/workshop/candidates` takes `construct`, with the candidate specification:
+
+| `action` | fields | effect |
+|---|---|---|
+| `preview` | `part`, `by`, `onto`, `at_m`, `twist_deg`, `depth_m`, `snap` | Answers `construct.part` (where it would go) and `construct.touching` (what it would meet). Returns no `candidates`; nothing changes. |
+| `add` | as `preview`, plus `joint: {"kind": "fixed" | "bearing"}` or none for a loose part | Adds the part; `construct.select` names it. |
+| `remove` | `part_name` | Takes the part off with the joints that held it and the edits made to it. |
+| `fasten` | `a`, `b`, `kind`, optional `method` | Fastens two touching parts, or changes how they are fastened. |
+| `unfasten` | `a`, `b` | Removes their joint. |
+| `adopt` | | Writes a template's implied connections down as joints. Every other action does this first. |
+
+`part` is `{"family", "parameters", "material", "length_m"}` (a strut family
+needs `length_m`) or `{"library_item_id"}` for a component saved in My Library.
+`by` is the new part's face that goes against the other part (`face-y-` is its
+bottom; `face-x-`, `face-x+`, `face-y+`, `face-z-`, `face-z+`). `onto` names the
+part that was clicked and `at_m` the point clicked on it, in product metres. The
+part lands square on the nearest face to that point, grows out of it, settles
+on the face's middle or flush to its edge unless `snap` is false, is turned
+about the face by `twist_deg` and sunk into it by `depth_m`.
+
+Until a template has joints of its own, its connections are implied by what
+touches and `construction.joints_authored` is false. After the first
+construction they are declared and nothing is inferred; a joint whose parts an
+edit pulled apart is kept and reported `open`. A built design has no parameter
+variants: `sweeps` yields the one candidate and `/api/workshop/more` refuses.
+
+Every candidate carries `construction`:
+
+```json
+{"joints_authored": true, "added": ["post-1"], "removed": [],
+ "joints": [{"id": "joint-17", "kind": "fixed", "method": "bonded", "a": "deck", "b": "post-1", "open": false,
+             "interface": {"form": "planar", "area_m2": 0.0016, "centre_m": [0.1, 0.38, 0.1],
+                           "normal": [0, 1, 0], "on": "deck", "against": "post-1", "mitred": false,
+                           "i_uu_m4": 2.13e-7, "i_vv_m4": 2.13e-7}}],
+ "unfastened": [], "touching_unfastened": []}
+```
+
+An interface is `planar` (two faces; `mitred` when a raked member's end is cut
+to sit flat, which bears over its section divided by the cosine of the rake) or
+`cylindrical` (`shaft`, `housing`, `axis`, `diameter_m`, `engaged_m`, `through`).
+
+A design built from nothing is `kind: "custom"`. It is opened with its first
+part, which is set on the floor at the middle:
+
+```json
+{"kind": "custom", "first_part": {"family": "surface", "material": "oak", "parameters": {"width_m": 0.8}}}
+```
+
+`custom` is not among the `assemblies` the bench lists, because on its own it
+has no parts to show.
+
+### Which joint a push would break first
+
+The `force_probe` bench test (`/api/workshop/plan` with `bench_test`) takes
+`push` (`down`, `up`, `+x`, `-x`, `+z`, `-z`; or an explicit `direction`) and
+`standing` (`resting` on the floor, or `free` in mid-air), and answers a second
+layer, `joint_screen` (`banjo.joint-screen.v1`, `evidence: "analytical-screen"`):
+
+| field | meaning |
+|---|---|
+| `joints` | Every closed joint, worst first: `load` (what it transmits, in its own frame), `utilisation` (one is all of its strength), `would_be` (`pulled apart`, `crushed`, `sheared`, `sheared across the shaft`, `crushed in its bore`, `pulled out`, `twisted loose`), and `verdict`. |
+| `verdict` | `holds` below half, `uncertain` from half to one, `gives way` at one or more, `unrated` when a material has no declared strength. |
+| `first_to_give` | The force, along this same line, at which the first joint reaches its strength, and which joint. |
+| `gives_way`, `comes_apart_into` | The joints past their strength, and the groups of parts left when they have gone. |
+| `standing` | `resting on the floor`, `resting, and sliding…`, or `free`. A push that would tip the product or lift it is screened free, and `limitations[0]` says why. |
+
+A template that has not shown its joints answers `{"available": false, "why": …}`.
+What a joint can carry is the weaker material's declared strength over the
+measured contact (`mcp/product_joints.py`); the model, its assumptions and what
+it does not cover are in [product-framework.md](../product-framework.md). It is
+a calculation, not an engine trial, and the sim offers it in Build, not in Test.
+
 ### Variants
 
 `/api/workshop/candidates` accepts `sweeps` as parameter -> values to generate a

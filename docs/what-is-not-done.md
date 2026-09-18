@@ -11,6 +11,25 @@ The work that IS done is in [development-status.md](development-status.md),
 [building-from-language.md](building-from-language.md) and
 [asset-compiler.md](asset-compiler.md).
 
+## 0. Products made of parts (added 2026-09-18)
+
+What is built is in [product-framework.md](product-framework.md): building a
+Workshop design part by part with declared joints, rating a joint, and screening
+which joint a push breaks first. Its own last section lists what is not, in
+order. The ones most easily mistaken for done:
+
+- **Nothing built part by part can enter a room.** Installation still takes one
+  single-material solid or one precise-rigid compound and refuses mechanisms and
+  mixed materials, so the cart is refused as before.
+- **"Push on it" is a calculation, not a trial.** It is static-equivalent, its
+  parts cannot break, and a push that would tip the product is screened as if
+  it were free, which understates the joint loads. No engine run has yet been
+  compared with it.
+- **A bearing's hold along its axis is not rated**, and the engine's fixings
+  check tension and shear only: a joint pried off by a long lever is caught by
+  the bench screen and by nothing in the world.
+- **Nothing melts.** Heat softens oak, iron and concrete and chars oak.
+
 ## 1. Building from language: increments 3 and 4
 
 Increments 1 and 2 landed (the construction contract; the room laying a
