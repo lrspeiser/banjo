@@ -42,8 +42,11 @@ class MaterialParity(unittest.TestCase):
             self.assertIsNotNone(base, block[:80])
             row = {"density_kg_m3": float(base.group(2)), "young_modulus_pa": float(base.group(3)),
                    "poisson_ratio": float(base.group(4))}
+            # anisotropy_ratio is the one property with a non-zero default in
+            # Material.hpp, so an absent line means 1.0 and not "unset".
+            row["anisotropy_ratio"] = 1.0
             for key in ("yield_strength_pa", "tensile_strength_pa", "compressive_strength_pa",
-                        "shear_strength_pa", "fracture_energy_j_m2"):
+                        "shear_strength_pa", "fracture_energy_j_m2", "anisotropy_ratio"):
                 found = re.search(r"material\." + key + r"\s*=\s*([0-9.e+-]+);", block)
                 if found:
                     row[key] = float(found.group(1))
@@ -55,6 +58,13 @@ class MaterialParity(unittest.TestCase):
             # Every number, and the same set of them: a brittle preset has no
             # yield strength on either side.
             self.assertEqual(in_engine, engine_materials.mechanics(name), name)
+
+    def test_only_oak_is_declared_to_have_a_grain(self):
+        grained = {name for name in engine_materials.MATERIALS
+                   if engine_materials.mechanics(name)["anisotropy_ratio"] > 1.0}
+        self.assertEqual({"oak"}, grained)
+        self.assertEqual(8.0, engine_materials.mechanics("oak")["anisotropy_ratio"])
+        self.assertEqual(1.0, engine_materials.mechanics("iron")["anisotropy_ratio"])
 
     def test_a_name_the_engine_does_not_have_has_no_strength(self):
         with self.assertRaisesRegex(KeyError, "no declared strength"):

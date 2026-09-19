@@ -22,7 +22,7 @@ import live_session
 import workshop_recording
 import workshop_sparse_trial as sparse
 import workshop_trials_core as trials
-from mcp import engine_materials, workshop_matter_metrics, workshop_visual, workshop_rigid
+from mcp import joint_efficiency, engine_materials, workshop_matter_metrics, workshop_visual, workshop_rigid
 
 SOLID_KINDS = {"table", "bench"}
 STRUCTURAL_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "top", "panel", "surface"}
@@ -115,7 +115,8 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
     summary = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
     if not summary["measured"]["geometry_coherent"]:
         raise ValueError("Cannot simulate: compiled components are disconnected. Repair the design or its cell resolution first; no substitute object was tested.")
-    cells = sparse._grid_set(matter)
+    part_of = sparse._grid_parts(matter)
+    cells = set(part_of)
     materials = {engine_materials.canonical(c["material"]) for c in matter["cells"]}
     if len(materials) != 1 or any(not engine_materials.known(m) for m in materials):
         raise ValueError("Drop/slide requires one supported material; mixed materials need explicit interfaces.")
@@ -124,12 +125,17 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
     lift = max(1, round(height / h)) if height else 0
     shift = (0, -min(g[1] for g in cells) + lift, 0)
     placed = {tuple(g[a] + shift[a] for a in range(3)) for g in cells}
-    boxes = sparse.decompose_cells(placed)
+    # Decomposed component by component, so a declared joint can name the parts
+    # its bonds cross (#20). Moving every cell by the same whole number of cells
+    # leaves which component each one is untouched.
+    placed_parts = {tuple(g[a] + shift[a] for a in range(3)): part for g, part in part_of.items()}
+    labelled = sparse.decompose_by_part(placed, placed_parts)
+    boxes = [box for box, _ in labelled]
     if len(boxes) > sparse.MAX_SCENE_BOXES or sparse.cells_from_boxes(boxes) != placed:
         raise ValueError("The exact shape exceeds the scene adapter's complexity limit; no simpler shape was substituted.")
     root = "workshop/product"
-    bodies = [sparse._box_body(root if i == 0 else f"{root}-{i}", box, h, next(iter(materials)), root)
-              for i, box in enumerate(boxes)]
+    bodies = [sparse._box_body(root if i == 0 else f"{root}-{i}", box, h, next(iter(materials)), root, part)
+              for i, (box, part) in enumerate(labelled)]
     for body in bodies:
         body["velocity_m_s"] = [speed, 0.0, 0.0]
     striker = None
@@ -146,7 +152,12 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
     # settle is reported beside it, so a run that ended in the air can say so.
     applied_height = lift * h
     fall = sqrt(2 * applied_height / GRAVITY_M_S2) if applied_height else 0.0
-    spec = fracture_lab.validate({"algorithm": "lattice", "cell_m": h, "plasticity": "on", "bodies": bodies})
+    # What each declared joint leaves the bonds that cross it: a glued product
+    # comes apart at its joints at the strength they were made to (#20).
+    declared = joint_efficiency.scene_interfaces(design)
+    spec = fracture_lab.validate({"algorithm": "lattice", "cell_m": h, "plasticity": "on",
+                                  "bodies": bodies,
+                                  **({"interfaces": declared} if declared else {})})
     return {"spec": spec, "matter": matter, "root": root, "shift": shift, "duration_s": duration,
             "height_m": height, "applied_height_m": applied_height, "fall_time_s": fall,
             "speed_m_s": speed, "striker": striker, "mass_kg": summary["measured"]["mass_kg"]}

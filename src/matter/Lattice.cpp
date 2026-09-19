@@ -426,4 +426,26 @@ LatticeResolutionLimit measureLatticeResolutionLimit(
     return limit;
 }
 
+bool wholeBond(const BondFactors &factors) {
+    return factors.stiffness == 1.0 && factors.tension == 1.0 &&
+           factors.compression == 1.0 && factors.shear == 1.0;
+}
+
+bool weakenBond(BondRest &bond, const BondFactors &f) {
+    if (!(f.stiffness > kSoftestBond) ||
+        !(std::max({f.tension, f.compression, f.shear}) > 0.0)) {
+        return false;
+    }
+    bond.compliance /= f.stiffness;
+    const double t = f.tension / f.stiffness, c = f.compression / f.stiffness,
+                 s = f.shear / f.stiffness;
+    bond.damage_start_stretch *= t;
+    bond.damage_end_stretch *= t;
+    bond.compression_damage_start_strain *= c;
+    bond.compression_damage_end_strain *= c;
+    bond.shear_damage_start_strain *= s;
+    bond.shear_damage_end_strain *= s;
+    return true;
+}
+
 } // namespace banjo

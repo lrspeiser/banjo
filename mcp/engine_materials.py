@@ -42,7 +42,8 @@ MECHANICS: dict[str, dict[str, float]] = {
                         "shear_strength_pa": 240.0e6, "fracture_energy_j_m2": 25.0},
     "oak": {"young_modulus_pa": 12.0e9, "poisson_ratio": 0.35, "yield_strength_pa": 45.0e6,
             "tensile_strength_pa": 90.0e6, "compressive_strength_pa": 52.0e6,
-            "shear_strength_pa": 11.0e6, "fracture_energy_j_m2": 1000.0},
+            "shear_strength_pa": 11.0e6, "fracture_energy_j_m2": 1000.0,
+            "anisotropy_ratio": 8.0},
     "rubber": {"young_modulus_pa": 10.0e6, "poisson_ratio": 0.49, "yield_strength_pa": 6.0e6,
                "tensile_strength_pa": 20.0e6, "compressive_strength_pa": 15.0e6,
                "shear_strength_pa": 3.5e6, "fracture_energy_j_m2": 5000.0},
@@ -100,7 +101,9 @@ def mechanics(name: str) -> dict[str, float]:
     """The preset's declared stiffness and strengths, or a clear refusal."""
     key = canonical(name)
     try:
-        return dict(MECHANICS[key])
+        # anisotropy_ratio is 1 unless the catalogue gives the material a grain,
+        # exactly as MaterialDefinition declares it.
+        return {"anisotropy_ratio": 1.0, **MECHANICS[key]}
     except KeyError as exc:
         raise KeyError(f"{name!r} is not an engine material preset, so it has no declared strength") from exc
 

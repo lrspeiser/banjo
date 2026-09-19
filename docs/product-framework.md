@@ -87,6 +87,7 @@ So the product layer is what was missing, not the break machinery:
 | a design whose parts and joints are data a person can change | **built** (below) |
 | what a declared joint can carry, from declared things only | **built** |
 | a fast answer to "which joint goes first" while designing | **built**, as a screen |
+| a joint weaker than the material it joins, in the engine | **built** (below), for a product under test |
 | the same product in the world: few bodies, real joints, one item | not built |
 | a joint's bending, and a bearing's load, checked by the engine | not built |
 | the struck part refined on demand when it is a thin precise part | not built |
@@ -208,9 +209,89 @@ On the default cart, each answered in 0.1 to 0.35 s of pure Python:
 The first is a finding about the template -- someone leaning their weight on
 that handle -- and the kind this is for.
 
+## Built: a joint is weaker than the wood it joins, in the engine
+
+[Issue #20](https://github.com/lrspeiser/banjo/issues/20). A Workshop product
+compiles to ONE fused lattice, so a bond between a leg's cell and the top's was
+an ordinary oak bond: a broken table already came apart at its joints, but every
+joint was as strong as the wood. A glued or dowelled joint is a fraction of it;
+a weld is nearly all.
+
+Three things were missing, and none of them was the mechanism.
+
+**What each way of making a joint keeps** (`mcp/joint_efficiency.py`), declared
+the way `src/thermo/ThermalMechanics.cpp` declares the heat curves: every number
+carries its source and what it does not cover, and a demonstration value says so
+in the answer rather than in a comment.
+
+| joint | tension | shear | compression | where from |
+|---|---:|---:|---:|---|
+| bonded, side grain, or a weld | 1.0 | 1.0 | 1.0 | a properly made side-grain glue joint fails in the wood beside the bond line, not in it (Wood Handbook FPL-GTR-190 ch. 10); a full-penetration weld with matching filler develops the base metal (AWS D1.1, EN 1993-1-8) |
+| bonded, end grain butted on | 0.25 | 0.25 | 1.0 | an end-grain butt joint cannot be made to hold more than about a quarter of a comparable side-grain one -- the open cells drink the adhesive (same chapter). It is why scarf and finger joints exist. The quarter is the source's figure for TENSION; the same share for shear is an assumption |
+| pressed fit | 0.15 | 0.15 | 1.0 | **demonstration.** A press fit holds by friction, and the interference, finish and moduli it follows from are declared nowhere in a design, so no number can be derived. A design that turns on it should declare its interference |
+| a bearing | -- | -- | -- | not a bond at all. What holds a wheel on its axle -- a pin, a washer, a nut -- is not in the design, so neither weakening it nor welding it would be that. Left as the material's own, and said |
+
+**Compression is 1.0 in every law, and that is physics, not a default.** Two
+parts pushed together bear on each other: an end-grain joint that holds a
+quarter of the wood in tension carries all of its compression, because there the
+glue line is not what is carrying.
+
+Which law a joint gets is read from the design, not chosen: the grain runs along
+a part's longest side (which is how timber is cut, and why a strut is a strut),
+so a face looking along that side is end grain. A material has a grain only if
+the catalogue says so -- `anisotropy_ratio` above 1, which is oak and nothing
+else. The same shapes in iron are a weld and keep everything. A part with no
+single longest side, a cube or a disc, is taken to show end grain, because for a
+strength answer that is the safe way to be wrong.
+
+**Which part a cell came from, surviving the join.** A product's cells were
+decomposed as one heap of boxes, so the engine could not tell an interface bond
+from an interior one. They are now decomposed component by component
+(`decompose_by_part`), every box carries `part`, and the union is unchanged
+because the components partition the cells. A cell two parts both claim is the
+first's -- the rule by which the lattice already builds it once.
+
+**The bond law, in one place.** `weakenBond` moved from an anonymous namespace
+in `LiveWorld.cpp` to `matter/Lattice.hpp`, beside the bond it acts on, with
+`BondFactors` as its input. Heat and joints are now the same function: heat
+supplies factors per zone, per fracture run; a joint supplies them once, at
+asset build, so a product carries its joints from the moment it exists and a
+blow, a landing, the admission bound and the fracture run all read the same
+bonds. Nothing else changed.
+
+**Measured**, default oak table, 20 mm cells, dropped on its top:
+
+| drop | carved from one piece | glued (end grain, 0.25) |
+|---|---|---|
+| 1 m | holds | holds |
+| 2 m | holds | **two legs off** |
+| 4 m | holds | **all four legs off** |
+| 6 m | holds | all four legs off |
+| 10 m | 63 pieces, none leg-sized | 111 pieces, and the four legs still come off whole |
+
+The bar a blow has to pass fell from **13.75 to 3.44 m/s**, which is the
+declared quarter exactly. Carved, the table survives to 10 m and then shatters
+*through the wood* -- not one piece is leg-sized. Glued, it loses legs at 2 m, a
+fifth of the energy, and loses them **as legs**: at the joint, which is where it
+already parted. A separate two-part probe (a slab on a post) holds to 4.5 m
+carved and parts in two at 4.5 m glued.
+
+**What this does not reach.** The load survey (`surveyLoads`, which is what
+warns that a shelf is overloaded) reads per-body material strengths and not
+bonds, so a weak joint does not show up there. A product **installed in a live
+room** does not carry its joints either: that path builds its own bodies, and
+adding to them changes a room's spec, which decides whether a saved world can be
+reopened -- so it is the next step and not a quiet one. Precise-rigid bodies
+have no bonds to weaken. Mixed materials are still refused upstream.
+
 ## Not built, in the order it should be
 
-1. **The product in the world as few bodies and real joints, handled as one
+1. **The declared joints reaching a product installed in a live room.** The
+   three lines are the same as the test path's, but a room's spec is what
+   decides whether its saved world can be reopened, and the owner's standing
+   rule is that nothing resets a room. So it needs its own care: a spec
+   migration, or interfaces kept out of the digest.
+2. **The product in the world as few bodies and real joints, handled as one
    item.** The contract's runtime bodies (the cart's three) as precise-rigid
    compounds, its bearings as native hinges, its breakable joints as native
    fixings rated by `engine_fixing`. It needs: the one guard that refuses every
@@ -223,22 +304,22 @@ that handle -- and the kind this is for.
    anything jointed today, and a precise body is not an inventory item at all).
    Done when a built cart placed in the yard rolls when pushed, is picked up
    and put in the bag as one thing, and the room runs at realtime.
-2. **The engine checking what the bench checks.** Read a fixing's rotational
+3. **The engine checking what the bench checks.** Read a fixing's rotational
    impulse for a bending capacity; give a hinge a radial capacity. With
    glass/oak/iron tests, as `fixing_tests.cpp` has for tension and shear. Then
    the bench screen can be checked against the engine on the same product, which
    is the evidence that would let its uncertain band be narrowed.
-3. **Coming apart in the world.** A fixed group is one compound today, so a
+4. **Coming apart in the world.** A fixed group is one compound today, so a
    joint inside it has no constraint to measure. Either keep breakable joints
    as fixings between bodies (more bodies, no new physics) or split a compound
    on the screen's answer; `CompiledRuntime::split` is the pattern (each piece
    inherits `v + w x r` and the same spin, conservation measured, new before
    old). The pieces are the sub-components, by name.
-4. **Stage B for a thin precise part.** Refine the one struck part to a lattice
+5. **Stage B for a thin precise part.** Refine the one struck part to a lattice
    when `admitRefracture`'s bound is passed. It needs a cell size per body.
-5. **Into the Workshop and back.** Carry a world product in, open it as its
+6. **Into the Workshop and back.** Carry a world product in, open it as its
    parts, take it apart or reclaim its materials. It needs the material and
    energy ledger that installation still lacks.
-6. **Melting.** No material has a melting point and no live body a phase. The
+7. **Melting.** No material has a melting point and no live body a phase. The
    enthalpy law exists apart from the live world. Softening by heat exists for
    three materials and already re-rates a fixing.

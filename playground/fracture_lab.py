@@ -399,7 +399,59 @@ LIMITS = {
 # `machines` too (docs/machine-world.md), which is not in DEFAULT because a room
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
-FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies"}
+FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
+                         "interfaces"}
+
+# What a declared joint leaves the bonds that cross it, inside one joined
+# object. A glued or dowelled joint is not the wood it joins; the shares come
+# from how the joint was made and what of (mcp/joint_efficiency.py), and the
+# engine applies them once, at asset build (matter/Lattice.hpp weakenBond).
+#
+# This is NOT the "joints" block above. Those are pins -- a hinge, a fixing --
+# which hold two separate bodies together and go in after a world is open.
+# These are inside one body, and have to be there before its bonds are made.
+INTERFACE_SHARES = ("tension", "shear", "compression", "stiffness")
+
+
+def normalise_interfaces(interfaces: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check every declared joint against the parts the bodies actually carry."""
+    if interfaces is None:
+        return []
+    if not isinstance(interfaces, list):
+        raise ValueError("interfaces must be a list of joints between the parts of one object")
+    if len(interfaces) > 400:
+        raise ValueError("a scene declares at most 400 joints between parts")
+    labelled = {str(b.get("part") or "") for b in bodies} - {""}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, face in enumerate(interfaces):
+        if not isinstance(face, dict):
+            raise ValueError(f"interface {index + 1} is not an object")
+        unknown = set(face) - {"a", "b", *INTERFACE_SHARES}
+        if unknown:
+            raise ValueError(f"interface {index + 1} has unknown field(s): {', '.join(sorted(unknown))}")
+        a, b = str(face.get("a", "")).strip(), str(face.get("b", "")).strip()
+        if not a or not b or a == b:
+            raise ValueError(f"interface {index + 1} joins two different named parts")
+        for named in (a, b):
+            if named not in labelled:
+                raise ValueError(f"interface {index + 1} names the part {named!r}, which no body in "
+                                 f"this scene is; the parts here are {', '.join(sorted(labelled)) or 'none'}")
+        pair = (a, b) if a < b else (b, a)
+        if pair in seen:
+            raise ValueError(f"{a} and {b} are joined by more than one interface")
+        seen.add(pair)
+        row: dict[str, Any] = {"a": a, "b": b}
+        for key in INTERFACE_SHARES:
+            if key not in face:
+                continue
+            share = _number(face[key], 0.0, 1.0, f"interface {index + 1} {key}")
+            row[key] = share
+        if not any(row.get(key, 1.0) > 0.0 for key in ("tension", "shear", "compression")):
+            raise ValueError(f"interface {index + 1} holds nothing in any direction, which is two "
+                             "objects and not one joined")
+        out.append(row)
+    return out
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
@@ -1084,6 +1136,13 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
                     f"{name}: a {want:.0f} mm side is not a whole number of {cell_m * 1000:g} mm cells, "
                     f"and the nearest whole number is {got:.0f} mm - too far to substitute.")
         join = str(body.get("join", ""))[:40].strip()
+        # Which part of the joined object this body is: the leg, the top. A join
+        # makes one object of many bodies and loses which was which, so a joint
+        # declared between two of them would have nothing to name. Only useful
+        # with a join, and empty is exactly as before.
+        part = str(body.get("part", ""))[:80].strip()
+        if part and not join:
+            raise ValueError(f"{name}: only a body in a join group is a part of anything")
         # Nothing in either phase turns sliding into rolling: friction slows a body
         # and applies no torque. A sphere sent along the ground with no spin slides
         # the whole way, measured at 2 degrees of turn over 10.4 m where a true roll
@@ -1103,6 +1162,7 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
             ident = "b-" + hashlib.sha1(f"{name}#{index}".encode("utf-8")).hexdigest()[:10]
         seen_ids.add(ident)
         entry = {"id": ident, "name": name, "shape": shape, "material": material, "join": join,
+                 "part": part,
                  "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
                  "rest_on": rest_on, "subtract": subtract,
                  "size_mm": [round(v, 3) for v in built],
@@ -1721,6 +1781,8 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
                # Bodies sharing a join name are voxelised onto the shared grid and
                # unioned: a cell both claim is built once and bonds cross the seam.
                "join": b["join"],
+               # Which part of that object it is, so a declared joint can name it.
+               "part": b["part"],
                "rotation_deg": b["rotation_deg"],
                "anchored": b["anchored"],
                "subtract": b["subtract"],
@@ -1739,6 +1801,10 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
 
     document = {"plasticity": spec.get("plasticity") == "on",
                 "bodies": [body(b) for b in spec["bodies"]]}
+    # What a declared joint leaves the bonds that cross it. Absent, nothing
+    # changes: every bond is the material's own.
+    if spec.get("interfaces"):
+        document["interfaces"] = [dict(face) for face in spec["interfaces"]]
     if spec.get("precise_rigid_bodies"):
         document["precise_rigid_bodies"] = spec["precise_rigid_bodies"]
     if spec.get("thermo"):
@@ -1777,6 +1843,13 @@ def validate(spec: Any) -> dict[str, Any]:
             import precise_rigid
             result["precise_rigid_bodies"] = precise_rigid.normalise(result["precise_rigid_bodies"], result)
         result["joints"] = normalise_joints(result["joints"], result["bodies"])
+        # The joints declared between the parts of a joined object, which the
+        # engine applies to its bonds when it builds them. A room without any
+        # carries none, so its document is the word it always was.
+        if result.get("interfaces"):
+            result["interfaces"] = normalise_interfaces(result["interfaces"], result["bodies"])
+        else:
+            result.pop("interfaces", None)
         # Only a room that has machines carries them: a room without says
         # nothing, so its document -- and the word a saved world is checked
         # against -- is what it was before there were machines.

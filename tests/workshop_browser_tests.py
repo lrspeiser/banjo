@@ -891,10 +891,12 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js("[...document.querySelectorAll('#ws-parts .ws-part-link')].find(b=>b.textContent==='handle').click()")
         self.field('#ws-push-force', 3000); self.click('#ws-push-go')
         self.wait("document.querySelector('#ws-joint-screen')")
-        self.assertEqual('2', self.js("document.querySelector('#ws-joint-screen').dataset.givesWay"))
+        # The arms are glued to the deck board's end grain and the handle is pressed
+        # into them, so at 3 kN the handle and both arms each come away.
+        self.assertEqual('4', self.js("document.querySelector('#ws-joint-screen').dataset.givesWay"))
         self.assertIn('handle-arm', self.js("document.querySelector('#ws-first-to-give').textContent"))
-        self.assertIn('2 pieces', self.js("document.querySelector('#ws-comes-apart').textContent"))
-        self.assertEqual(2, self.js("document.querySelectorAll('#ws-joint-screen .ws-joint-row.gives-way').length"))
+        self.assertIn('4 pieces', self.js("document.querySelector('#ws-comes-apart').textContent"))
+        self.assertEqual(4, self.js("document.querySelectorAll('#ws-joint-screen .ws-joint-row.gives-way').length"))
         # The analysis is a Build aid; the Test tab still offers only simulations.
         self.click('[data-mode="test"]')
         self.assertNotIn('force_probe', self.js("[...document.querySelector('#ws-bench-test').options].map(o=>o.value).join(',')"))

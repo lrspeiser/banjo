@@ -43,6 +43,42 @@ struct BondRest {
     double shear_damage_end_strain{};
 };
 
+// How much of its cold, whole self a bond is left with: one multiplier for its
+// stiffness and one for each of the three strengths a failure is decided by.
+// 1 is untouched.
+//
+// Two things make these, and they are the same law either way. HEAT makes them
+// from the temperature a zone has reached (thermo::ZoneFactors, and the curves
+// in docs/thermal-mechanics.md). A DECLARED JOINT makes them from how it was
+// made: a glue line is not the wood it joins, and an end-grain butt joint is a
+// quarter of a side-grain one (mcp/product_joints.py). Heat's are applied to
+// the island a fracture run builds; a joint's at asset build, so a body carries
+// its joints from the moment it exists.
+struct BondFactors {
+    double stiffness{1.0};
+    double tension{1.0};
+    double compression{1.0};
+    double shear{1.0};
+};
+
+// The softest a bond can be and still be one: below it, it carries nothing.
+inline constexpr double kSoftestBond = 1.0e-6;
+
+// Nothing to do: every factor is exactly 1.
+[[nodiscard]] bool wholeBond(const BondFactors &factors);
+
+// Leave a bond with that much of what it had, ONCE. A damage threshold is a
+// stretch, and a stretch is a strength over a modulus, so each goes by its
+// strength's factor over the stiffness's -- and the force the bond fails at
+// goes by its strength's factor alone, which is the law. False when it carries
+// nothing at all, which is the caller's cue to kill the bond rather than keep
+// an infinitely weak one.
+//
+// It is CUMULATIVE, not idempotent: it multiplies the record in place, so
+// calling it twice squares the factors. Apply it once per record, to a record
+// no one else has weakened.
+[[nodiscard]] bool weakenBond(BondRest &bond, const BondFactors &factors);
+
 struct LatticeAsset {
     SphereRecipe recipe{};
     std::vector<LatticeNodeRest> nodes;

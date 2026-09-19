@@ -321,6 +321,96 @@ class VisibleSimulationEngine(unittest.TestCase):
                 self.assertGreater(sizes[0], .85 * parts["top"], sizes)
                 self.assertEqual(sum(parts.values()), sum(sizes))
 
+    def test_a_glued_table_parts_at_its_joints_where_a_carved_one_holds(self):
+        """A joint is weaker than the wood it joins, and the drop shows it (#20).
+
+        The same oak table, dropped the same way, twice: once carved from one
+        piece, once with its legs glued into the top. Gluing is declared by the
+        design's own joints (mcp/workshop_construction.py) and what a glue line
+        keeps of the wood is the declared law (mcp/joint_efficiency.py) -- here
+        an end-grain butt joint, a quarter of it.
+        """
+        import workshop_motion
+        from mcp import joint_efficiency, workshop_components, workshop_construction
+
+        def table(glued):
+            design = assemble("table", design_id="glue", parameters={"material": "oak"})
+            if not glued:
+                return design
+            return workshop_components.design_from_spec(
+                {"kind": "table", "design_id": "glue", "parameters": {"material": "oak"},
+                 "component_overrides": {workshop_construction.CONSTRUCTION_KEY:
+                                         workshop_construction.adopted(design)}})[0]
+
+        # Every leg is glued into the top by its end grain, and nothing else is.
+        declared = joint_efficiency.scene_interfaces(table(True))
+        self.assertEqual(4, len(declared), declared)
+        self.assertEqual([{"tension": .25, "shear": .25, "compression": 1.}],
+                         [{k: v for k, v in face.items() if k != "a" and k != "b"}
+                          for face in declared[:1]])
+
+        config = {"height_m": 2.0, "duration_s": 1.5, "cell_size_m": .02}
+        counts = workshop_motion.scene(table(False), "drop_product", config)["matter"]["component_cell_counts"]
+        pieces = {}
+        for glued in (False, True):
+            design = table(glued)
+            # Only the glued one declares joints to the engine at all.
+            self.assertEqual(glued, bool(workshop_motion.scene(design, "drop_product", config)["spec"].get("interfaces")))
+            r = workshop_bench.run(self.app, design, {"test": "drop_product", "config": config})
+            shapes = r["playback"]["geometry"]
+            sizes = sorted((len(shapes[b["name"]]["offsets_m"]) for b in r["playback"]["frames"][-1]["bodies"]
+                            if b["name"].startswith(r["prototype"]["root_body"])), reverse=True)
+            pieces[glued] = sizes
+            self.assertEqual(sum(counts.values()), sum(sizes), sizes)
+
+        # Carved, it holds this landing whole. Glued, the legs come away -- and
+        # they come away as legs, at the joint, not as splinters.
+        self.assertEqual(1, len(pieces[False]), pieces[False])
+        self.assertGreater(len(pieces[True]), 1, pieces[True])
+        legs = [n for n in pieces[True] if counts["leg-1"] - 1 <= n <= counts["leg-1"]]
+        self.assertEqual(len(pieces[True]) - 1, len(legs), pieces[True])
+        self.assertGreater(pieces[True][0], .85 * counts["top"], pieces[True])
+
+    def test_a_declared_joint_lowers_the_bar_a_blow_has_to_pass(self):
+        """And by exactly what it declares, which is the whole mechanism.
+
+        The bar is what decides whether a body is offered to the lattice at all
+        (admitRefracture), and it is read off the weakest bond the body has. A
+        joint at a quarter of the wood makes a quarter of the bar, which is the
+        declaration arriving intact. Driven through a session directly, because
+        the bar rides on the step's own reply and not on a recording.
+        """
+        import live_session
+        import workshop_motion
+        from mcp import workshop_components, workshop_construction
+
+        design = assemble("table", design_id="bar", parameters={"material": "oak"})
+        glued = workshop_components.design_from_spec(
+            {"kind": "table", "design_id": "bar", "parameters": {"material": "oak"},
+             "component_overrides": {workshop_construction.CONSTRUCTION_KEY:
+                                     workshop_construction.adopted(design)}})[0]
+        config = {"height_m": 1.0, "duration_s": 1.0, "cell_size_m": .02}
+        bars = {}
+        for name, candidate in (("carved", design), ("glued", glued)):
+            spec = workshop_motion.scene(candidate, "drop_product", config)["spec"]
+            session = live_session.Session(ENGINE, spec, Path(self.app.runs_path))
+            try:
+                state, seen = session.send(op="poses"), []
+                while float(state.get("t", 0)) < .9 and not seen:
+                    state = session.send(op="step", dt=1 / 240, n=1)
+                    seen += [float(i["threshold_speed_m_s"]) for i in state.get("impacts") or []]
+                    for _ in range(40):
+                        if not state.get("breakable"):
+                            break
+                        state = session.send(op="fracture", name=str(state["breakable"][0]), window_s=.003)
+            finally:
+                session.close()
+            self.assertTrue(seen, f"{name}: the landing was never reported as an impact")
+            bars[name] = min(seen)
+        # A quarter of the wood's strength is a quarter of the speed it takes.
+        self.assertAlmostEqual(.25 * bars["carved"], bars["glued"], delta=.02 * bars["carved"])
+        self.assertGreater(bars["carved"], 10.0, bars)
+
     def test_a_drop_that_ended_in_the_air_says_so(self):
         r = workshop_bench.run(self.app, assemble("table", parameters={"material": "glass"}),
             {"test": "drop_product", "config": {"height_m": 10.0, "duration_s": .5}})

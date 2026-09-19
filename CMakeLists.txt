@@ -1200,6 +1200,11 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_beam_tests)
             add_test(NAME banjo_beam_tests COMMAND banjo_beam_tests)
 
+            add_executable(banjo_joint_interface_tests tests/joint_interface_tests.cpp)
+            target_link_libraries(banjo_joint_interface_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_joint_interface_tests)
+            add_test(NAME banjo_joint_interface_tests COMMAND banjo_joint_interface_tests)
+
             add_executable(banjo_pulley_tests tests/pulley_tests.cpp)
             target_link_libraries(banjo_pulley_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_pulley_tests)

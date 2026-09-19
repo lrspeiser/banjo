@@ -333,8 +333,8 @@ struct LiveWorld::Pending {
 namespace {
 // Below this share of a cell's matter, the cell has burned away.
 constexpr double kGoneShare = 0.02;
-// The softest a bond can be and still be one: below it, it carries nothing.
-constexpr double kSoftestBond = 1.0e-6;
+// The softest a bond can be and still be one is banjo::kSoftestBond, which the
+// bond law itself owns (matter/Lattice.hpp).
 // A box or a sphere is cut again once its burned depth has moved this far.
 constexpr double kReviseDepthM = 2.0e-4;
 // A section a hundredth weaker than statics last held, or a load a hundredth
@@ -452,17 +452,11 @@ Recession planRecession(const JoltWorld &world, const std::vector<LiveBodyPose> 
     return plan;
 }
 
+// What heat has left a bond, by the one law that says what any factor does to
+// a bond (banjo::weakenBond, matter/Lattice.hpp). A declared joint weakens the
+// same way, at asset build, so the two cannot drift apart.
 bool weakenBond(BondRest &bond, const thermo::ZoneFactors &f) {
-    if (!(f.stiffness > kSoftestBond) || !(std::max({f.tension, f.compression, f.shear}) > 0.0)) return false;
-    bond.compliance /= f.stiffness;
-    const double t = f.tension / f.stiffness, c = f.compression / f.stiffness, s = f.shear / f.stiffness;
-    bond.damage_start_stretch *= t;
-    bond.damage_end_stretch *= t;
-    bond.compression_damage_start_strain *= c;
-    bond.compression_damage_end_strain *= c;
-    bond.shear_damage_start_strain *= s;
-    bond.shear_damage_end_strain *= s;
-    return true;
+    return banjo::weakenBond(bond, BondFactors{f.stiffness, f.tension, f.compression, f.shear});
 }
 
 // A cell below kGoneShare that the revision has not yet taken out (it runs at

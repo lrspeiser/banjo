@@ -24,6 +24,17 @@ order. The ones most easily mistaken for done:
 - **"Push on it" is a calculation, not a trial.** It is static-equivalent, its
   parts cannot break, its floor is flat and rigid, and a product that tips is
   taken at the instant it starts to. No engine run has yet been compared with it.
+- **A joint's strength does not reach the load survey.** The bonds crossing a
+  declared joint are weakened (#20), and the fracture run and the admission
+  bound both read them -- but `surveyLoads`, which is what warns that something
+  is overloaded, reads per-body material strengths and never touches a bond. A
+  glued shelf is warned about as if it were carved.
+- **A product installed in a live room has no joints.** The install path builds
+  its own bodies without part labels, so only a product under test on the bench
+  breaks at its joints.
+- **The joint efficiency numbers are declared, not validated**, and the press
+  fit's is a stated demonstration value. They are the owner's to sign off
+  ([product-framework.md](product-framework.md)).
 - **A bearing's hold along its axis is not rated**, and the engine's fixings
   check tension and shear only: a joint pried off by a long lever is caught by
   the bench screen and by nothing in the world.

@@ -27,6 +27,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <map>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -136,6 +137,35 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
         request.plasticity = document.at("plasticity").get<bool>();
     if (document.contains("hardening_ratio"))
         request.hardening_ratio = document.at("hardening_ratio").get<double>();
+    // What a declared joint leaves the bonds that cross it. Every factor is
+    // required and named, so a misspelling is a refusal and not a silent 1.
+    if (document.contains("interfaces")) {
+        const auto &declared = document.at("interfaces");
+        if (!declared.is_array()) throw std::invalid_argument("scene interfaces must be a list");
+        for (const auto &node : declared) {
+            if (!node.is_object()) throw std::invalid_argument("a scene interface must be an object");
+            PartInterface face;
+            face.a = node.value("a", std::string());
+            face.b = node.value("b", std::string());
+            if (face.a.empty() || face.b.empty() || face.a == face.b)
+                throw std::invalid_argument("a scene interface joins two different named parts");
+            for (const auto &[key, into] : {std::pair{"stiffness", &face.factors.stiffness},
+                                            std::pair{"tension", &face.factors.tension},
+                                            std::pair{"compression", &face.factors.compression},
+                                            std::pair{"shear", &face.factors.shear}}) {
+                if (!node.contains(key)) continue;   // absent is 1: untouched
+                const double value = node.at(key).get<double>();
+                if (!std::isfinite(value) || value < 0.0 || value > 1.0)
+                    throw std::invalid_argument(
+                        "a scene interface factor is the share of the material it keeps, 0 to 1");
+                *into = value;
+            }
+            if (!(std::max({face.factors.tension, face.factors.compression, face.factors.shear}) > 0.0))
+                throw std::invalid_argument(
+                    "a joint that holds nothing in any direction is two objects, not one joined");
+            request.interfaces.push_back(std::move(face));
+        }
+    }
     // Heat, chemistry and gas: declared on bodies and in a "thermo" block, and
     // read by the live world with the thermochemical network's own reader, so
     // the two can never disagree about what a declaration means.
@@ -179,6 +209,9 @@ std::vector<SceneBody> readSceneJson(const std::string &text) {
         // Bodies sharing a join name are voxelised onto the shared grid and
         // unioned, so a cell both claim is built once and bonds cross the seam.
         body.join = node.value("join", std::string());
+        // Which part of the joined object it is, so a declared joint between
+        // two parts has something to name.
+        body.part = node.value("part", std::string());
         body.spin_rad_s = vector3(node, "spin_rad_s", Vec3{});
         body.rotation_deg = vector3(node, "rotation_deg", Vec3{});
         body.anchored = node.value("anchored", false);
@@ -323,11 +356,67 @@ std::vector<std::uint32_t> componentIds(const ActiveMatter &matter, std::size_t 
     return ids;
 }
 
+// Leave the bonds that cross a declared joint with what that joint gives them.
+//
+// A joined object is one lattice: a bond between a leg's cell and the top's is
+// an ordinary bond of the material, so the joint is as strong as the wood it
+// joins. It is not -- a glue line, a dowel or a press fit is weaker, and by how
+// much is declared by whoever made it (mcp/product_joints.py). Every bond whose
+// two cells belong to different parts with a joint declared between them is
+// passed through the one bond law, once, here at asset build: from then on a
+// blow, a landing, the admission bound and the fracture run all read the same
+// bonds, with nothing else changed.
+//
+// Cells with no label, and pairs with no joint declared, are left alone.
+std::size_t weakenDeclaredJoints(LatticeAsset &asset,
+                                 const std::map<std::tuple<int, int, int>, std::string> &part_of_cell,
+                                 const std::vector<PartInterface> &interfaces,
+                                 std::map<std::pair<std::string, std::string>, std::size_t> &reached) {
+    if (interfaces.empty() || part_of_cell.empty()) return 0;
+    std::map<std::pair<std::string, std::string>, BondFactors> declared;
+    for (const PartInterface &face : interfaces) {
+        // Either way round names the same joint.
+        declared.emplace(std::minmax(face.a, face.b), face.factors);
+    }
+    const auto label = [&](std::uint32_t node) -> const std::string * {
+        const GridCoord &g = asset.nodes[node].grid;
+        const auto found = part_of_cell.find({g.x, g.y, g.z});
+        return found == part_of_cell.end() ? nullptr : &found->second;
+    };
+    std::size_t weakened = 0;
+    for (BondRest &bond : asset.bonds) {
+        const std::string *a = label(bond.node_a), *b = label(bond.node_b);
+        if (a == nullptr || b == nullptr || *a == *b) continue;
+        const auto found = declared.find(std::minmax(*a, *b));
+        if (found == declared.end() || wholeBond(found->second)) continue;
+        if (!weakenBond(bond, found->second))
+            throw std::invalid_argument("a joint between \"" + *a + "\" and \"" + *b +
+                                        "\" holds nothing at all: two objects, not one joined");
+        ++reached[found->first];
+        ++weakened;
+    }
+    return weakened;
+}
+
 } // namespace
 
 std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &request) {
     if (!request.precise_rigid_scene_json.empty())
         throw std::invalid_argument("precise rigid bodies require the live engine; the lattice batch lane cannot simulate them");
+    // A joint naming a part nothing carries would weaken nothing and say
+    // nothing. An unknown key is a default here, which is how a misspelling
+    // becomes a silent full-strength joint; this is the one guard against it.
+    std::map<std::pair<std::string, std::string>, std::size_t> reached;
+    if (!request.interfaces.empty()) {
+        std::set<std::string> labelled;
+        for (const SceneBody &body : request.bodies)
+            if (!body.part.empty()) labelled.insert(body.part);
+        for (const PartInterface &face : request.interfaces)
+            for (const std::string &named : {face.a, face.b})
+                if (!labelled.contains(named))
+                    throw std::invalid_argument("a joint names the part \"" + named +
+                                                "\", which no body in this scene is");
+    }
     auto setup = std::make_unique<TileImpactSetup>();
     TileImpactSetup &s = *setup;
     s.request = request;
@@ -420,6 +509,10 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                 // what lets bonds cross the seam and make them one object.
                 std::vector<GridCoord> cells;
                 std::vector<GridCoord> removed;
+                // Which part of the object each cell belongs to, for the joints
+                // declared between them. A cell two bodies both claim takes the
+                // first one's label: the same rule by which it is built once.
+                std::map<std::tuple<int, int, int>, std::string> part_of_cell;
                 for (const std::size_t index : group) {
                     const SceneBody &part = r.bodies[index];
                     const double widest = std::max(part.dimensions_m.x, part.dimensions_m.z);
@@ -470,8 +563,13 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                                  std::abs(local.z) <= half.z;
                     }
                         if (!inside) continue;
-                        if (part.subtract) removed.push_back({gx, gy, gz});
-                        else cells.push_back({gx, gy, gz});
+                        if (part.subtract) {
+                            removed.push_back({gx, gy, gz});
+                        } else {
+                            cells.push_back({gx, gy, gz});
+                            if (!part.part.empty())
+                                part_of_cell.emplace(std::tuple{gx, gy, gz}, part.part);
+                        }
                     }
                 }
                 if (!removed.empty()) {
@@ -492,6 +590,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                                                 "\" has nothing left after what it cuts away");
                 asset = generateVoxelLattice({std::move(cells), r.cell_size_m, r.neighbor_horizon_cells},
                                              compiled);
+                s.interface_bonds += weakenDeclaredJoints(asset, part_of_cell, r.interfaces, reached);
             } else {
                 asset =
                     body.shape == BodyShape::Sphere
@@ -512,6 +611,14 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             s.part_materials.push_back(compiled);
             s.part_assets.push_back(std::move(asset));
         }
+        // A declared joint that reached no bond at all did nothing and said
+        // nothing: the parts may not touch, or one may not be in a join group.
+        // Refused, for the same reason an unknown part name is.
+        for (const PartInterface &face : request.interfaces)
+            if (!reached.contains(std::minmax(face.a, face.b)))
+                throw std::invalid_argument("the joint between \"" + face.a + "\" and \"" + face.b +
+                                            "\" crosses no bond: those parts are not joined to each other");
+
         std::vector<LatticePart> parts;
         parts.reserve(r.bodies.size());
         for (std::size_t g = 0; g < groups.size(); ++g) {

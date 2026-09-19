@@ -91,6 +91,26 @@ struct SceneBody {
     // joined to a blade is one knife, not two touching pieces. A join takes one
     // material, the first body's.
     std::string join;
+    // Which part of the joined object this body is: the leg, the top. A join
+    // makes one object out of many bodies and loses which was which, so a
+    // declared joint between two of them has nothing to name. This gives every
+    // cell a label back. Empty (the default) is exactly as before.
+    //
+    // A cell two bodies both claim takes the label of the first that claims it,
+    // which is the rule the lattice already uses to build that cell once.
+    std::string part;
+};
+
+// What a declared joint leaves the bonds that cross it, inside one joined
+// object. A glued or dowelled joint is not the wood it joins and a press fit is
+// not the metal; the factors come from how the joint was made and what it is
+// made of (mcp/product_joints.py, docs/product-framework.md).
+//
+// Absent, this changes nothing: every bond is the material's own.
+struct PartInterface {
+    std::string a;
+    std::string b;
+    BondFactors factors;
 };
 
 struct TileImpactRequest {
@@ -140,6 +160,14 @@ struct TileImpactRequest {
     // keeps what the material declares, which is 0 (perfect plasticity) for
     // every catalog preset and the only value the network lane admits.
     double hardening_ratio{-1.0};
+    // The joints declared between the parts of a joined object, by the labels
+    // its bodies carry (SceneBody::part). Every bond whose two cells belong to
+    // different parts with a joint declared between them is left with what that
+    // joint gives it, once, at asset build -- so the object carries its joints
+    // from the moment it exists, and a blow, a landing and the admission bound
+    // all read the same bonds. An interface naming a part no body carries is
+    // refused rather than quietly doing nothing.
+    std::vector<PartInterface> interfaces;
     // What the scene says about heat, chemistry and gas -- its bodies'
     // "contents" and the "thermo" block beside them -- as the scene document's
     // own text, for the live world to read with thermo/ThermoJson.hpp. Empty
@@ -284,6 +312,10 @@ struct TileImpactSetup {
     // Which bodies each part was built from. One entry for a plain body,
     // several for a joined group, whose first body names and colours it.
     std::vector<std::vector<std::size_t>> part_bodies;
+    // How many bonds a declared joint was applied to. Zero with interfaces
+    // declared means they reached nothing, which the host is told rather than
+    // left to wonder about.
+    std::size_t interface_bonds{};
     LatticeAsset asset{};
     BoxLatticeLayout layout{};
     ActiveMatter matter{};

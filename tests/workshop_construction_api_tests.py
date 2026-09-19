@@ -216,8 +216,15 @@ class Building(unittest.TestCase):
         first = screen["first_to_give"]
         self.assertIn("handle-arm", first["a"] + first["b"])
         self.assertLess(first["force_n"], 3000.0)
-        self.assertEqual(2, len(screen["comes_apart_into"]))
-        self.assertEqual(["handle", "handle-arm-1", "handle-arm-2"], sorted(screen["comes_apart_into"][1]))
+        # The arms are glued to the end grain of the deck board and the handle is pressed
+        # into them, so at 3 kN the handle and both arms each come away on their own.
+        self.assertEqual(4, len(screen["comes_apart_into"]))
+        self.assertEqual(["axle-1", "axle-2", "bearing-mount-11", "bearing-mount-12",
+                          "bearing-mount-21", "bearing-mount-22", "deck",
+                          "wheel-11", "wheel-12", "wheel-21", "wheel-22"],
+                         sorted(screen["comes_apart_into"][0]))
+        self.assertEqual([["handle-arm-1"], ["handle-arm-2"], ["handle"]],
+                         sorted(screen["comes_apart_into"][1:], key=len))
         # The first layer is still there, and says what it always said.
         self.assertEqual("analytical-estimate", answer["evidence"])
         self.assertTrue(answer["load_paths"])

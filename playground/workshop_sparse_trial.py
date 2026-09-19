@@ -22,7 +22,7 @@ from typing import Any, Callable
 import fracture_lab
 import live_session
 import workshop_trials_core as core
-from mcp import engine_materials, workshop_visual, workshop_rigid
+from mcp import engine_materials, joint_efficiency, workshop_visual, workshop_rigid
 from mcp.workshop import WorkshopDesign
 
 from mcp.workshop_cell_encoding import MAX_SCENE_BOXES, decompose_cells, cells_from_boxes
@@ -39,18 +39,47 @@ def _matter_overrides(design: WorkshopDesign) -> dict[str, Any]:
 
 
 def _grid_set(matter: dict[str, Any]) -> set[Grid]:
-    out: set[Grid] = set()
+    return set(_grid_parts(matter))
+
+
+def _grid_parts(matter: dict[str, Any]) -> dict[Grid, str]:
+    """Every cell and the component it belongs to.
+
+    A cell two components both claim takes its primary one, which is the first
+    that claimed it -- the same rule by which the engine builds it once. So the
+    components partition the cells, and decomposing each on its own still
+    reconstructs the whole set exactly.
+    """
+    out: dict[Grid, str] = {}
     for cell in matter.get("cells") or []:
         grid = cell.get("grid") if isinstance(cell, dict) else None
         if not isinstance(grid, list) or len(grid) != 3:
             raise ValueError("Matter artifact is missing canonical grid coordinates")
-        out.add((int(grid[0]), int(grid[1]), int(grid[2])))
+        out[(int(grid[0]), int(grid[1]), int(grid[2]))] = str(cell.get("component") or "")
     if len(out) != int(matter.get("total_cells", -1)):
         raise ValueError("Matter artifact cell count does not match its canonical grid set")
     return out
 
 
-def _box_body(name: str, box: Box, cell: float, material: str, join: str) -> dict[str, Any]:
+def decompose_by_part(cells: set[Grid], part_of: dict[Grid, str]) -> list[tuple[Box, str]]:
+    """Boxes that know which component they are, by decomposing each on its own.
+
+    A joint declared between two parts can only reach the engine if the cells
+    still say which part they are, so the whole object is no longer decomposed
+    as one heap of cells (#20). The union is unchanged: the components
+    partition the cells, so the same set comes back.
+    """
+    grouped: dict[str, set[Grid]] = {}
+    for cell in cells:
+        grouped.setdefault(part_of.get(cell, ""), set()).add(cell)
+    out: list[tuple[Box, str]] = []
+    for part in sorted(grouped):
+        out += [(box, part) for box in decompose_cells(grouped[part])]
+    return out
+
+
+def _box_body(name: str, box: Box, cell: float, material: str, join: str,
+              part: str = "") -> dict[str, Any]:
     lo, hi = box
     counts = [hi[a] - lo[a] + 1 for a in range(3)]
     # Grid cell i spans [i*h,(i+1)*h], so a rectangular run has an exact
@@ -66,6 +95,8 @@ def _box_body(name: str, box: Box, cell: float, material: str, join: str) -> dic
         "rotation_deg": [0.0, 0.0, 0.0],
         "anchored": False,
         "join": join,
+        # Which part of the joined object it is, so a declared joint can name it.
+        **({"part": part} if part and join else {}),
     }
 
 
@@ -129,7 +160,10 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
             "mixed-material fixed interfaces need per-cell interface laws rather than silently taking the first material")
     material = next(iter(materials))
 
-    boxes = decompose_cells(cells)
+    # Decomposed component by component, so every box still says which part of
+    # the product it is and a declared joint has something to name (#20).
+    labelled = decompose_by_part(cells, _grid_parts(matter))
+    boxes = [box for box, _ in labelled]
     reconstructed = cells_from_boxes(boxes)
     if reconstructed != cells:
         raise RuntimeError("internal error: engine box decomposition changed the Matter cell set")
@@ -142,12 +176,12 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
     # scratch floor. An end cap can extend below the design's original origin.
     # An integer-grid translation preserves the canonical local occupancy.
     placement_grid = (0, -min(g[1] for g in cells), 0)
-    placed_boxes = [(tuple(lo[a] + placement_grid[a] for a in range(3)),
-                     tuple(hi[a] + placement_grid[a] for a in range(3)))
-                    for lo, hi in boxes]
+    placed_boxes = [((tuple(lo[a] + placement_grid[a] for a in range(3)),
+                      tuple(hi[a] + placement_grid[a] for a in range(3))), part)
+                    for (lo, hi), part in labelled]
     join = "workshop-matter-" + str(matter["physics_hash"])[:12]
-    bodies = [_box_body(f"candidate/matter-{i+1}", box, cell, material, join)
-              for i, box in enumerate(placed_boxes)]
+    bodies = [_box_body(f"candidate/matter-{i+1}", box, cell, material, join, part)
+              for i, (box, part) in enumerate(placed_boxes)]
 
     target = _target_name(design, on)
     target_cells = [c for c in matter.get("cells") or [] if target in (c.get("components") or [c.get("component")])]
@@ -168,10 +202,14 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float, on: str = "top",
     load_body = _box_body(load_name, load_box, cell, _LOAD_MATERIAL, "")
     bodies.append(load_body)
 
+    # What each declared joint leaves the bonds that cross it, so the product
+    # breaks at its joints at the strength they were made to, not the wood's.
+    declared = joint_efficiency.scene_interfaces(design)
     spec = fracture_lab.validate({
         "algorithm": "lattice",
         "cell_m": cell,
         "plasticity": "on",
+        **({"interfaces": declared} if declared else {}),
         "bodies": bodies,
     })
     return {

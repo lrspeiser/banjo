@@ -9,28 +9,32 @@ numbers, and only ones that follow from something declared elsewhere:
 * the strengths are the engine catalogue's, of the WEAKER of the two materials
   (mcp/engine_materials.py, pinned to src/material/MaterialCatalog.cpp).
 
-So a bonded joint is taken to be as strong as the weaker material it joins, over
-the whole contact, with stress uniform under direct load and linear under
-bending. That is the engine's own rule for a fixing made of a member
-(``tensile_strength_pa * area``, ``shear_strength_pa * area``; LiveWorld
-``setJointMember``), extended to bending, which a fixing does not check.
+* what the joint itself keeps of that material, by how it was made
+  (:mod:`mcp.joint_efficiency`) -- a glue line is not the wood it joins.
 
-Not modelled, and said in every answer: grain direction at the interface, glue
-or weld metal weaker or stronger than the parts, fasteners, stress
-concentration at a corner, fatigue, and a bearing's hold along its own axis.
+So a joint is taken to hold, over the whole contact, the weaker material's
+strength times what its own making leaves of it, with stress uniform under
+direct load and linear under bending. Without the third term that is the
+engine's own rule for a fixing made of a member (``tensile_strength_pa * area``,
+``shear_strength_pa * area``; LiveWorld ``setJointMember``), extended to
+bending, which a fixing does not check. The engine reads the same third term
+as a scene ``interfaces`` block, so the bench and the world agree.
+
+Not modelled, and said in every answer: glue or weld metal weaker or stronger
+than the parts, fasteners, stress concentration at a corner, fatigue, and a
+bearing's hold along its own axis.
 """
 from __future__ import annotations
 
 from math import hypot, pi
 from typing import Any
 
-from mcp import engine_materials
+from mcp import engine_materials, joint_efficiency
 from mcp.workshop import WirePart
 
 CAPACITY_SCHEMA = "banjo.joint-capacity.v1"
 
 NOT_MODELLED = (
-    "grain direction at the interface",
     "an adhesive, weld or fastener weaker or stronger than the parts it joins",
     "stress concentration at corners and edges",
     "fatigue and creep",
@@ -61,11 +65,17 @@ def capacity(joint: dict[str, Any], a: WirePart, b: WirePart) -> dict[str, Any]:
     except KeyError as problem:
         return {"schema": CAPACITY_SCHEMA, "joint": joint["id"], "rated": False,
                 "why": str(problem).strip("'\"")}
-    tensile, crushing, shear = (strength["tensile_strength_pa"], strength["compressive_strength_pa"],
-                                strength["shear_strength_pa"])
+    # What the joint's own making leaves of the material it joins. The engine is
+    # handed these same three numbers and leaves the bonds crossing the joint
+    # with exactly that share, so neither side can drift.
+    keeps = joint_efficiency.efficiency(joint, a, b)
+    tensile = strength["tensile_strength_pa"] * keeps["tension"]
+    crushing = strength["compressive_strength_pa"] * keeps["compression"]
+    shear = strength["shear_strength_pa"] * keeps["shear"]
     out: dict[str, Any] = {"schema": CAPACITY_SCHEMA, "joint": joint["id"], "rated": True,
                            "kind": joint["kind"], "method": joint["method"], "form": how["form"],
-                           "strength": strength, "not_modelled": list(NOT_MODELLED)}
+                           "strength": strength, "efficiency": keeps,
+                           "not_modelled": list(NOT_MODELLED) + list(keeps["not_modelled"])}
 
     if how["form"] == "planar":
         if joint["kind"] == "bearing":
@@ -93,7 +103,8 @@ def capacity(joint: dict[str, Any], a: WirePart, b: WirePart) -> dict[str, Any]:
 
     diameter, engaged = float(how["diameter_m"]), float(how["engaged_m"])
     shaft = a if how["shaft"] == a.name else b
-    shaft_shear = engine_materials.mechanics(shaft.material)["shear_strength_pa"] * pi * diameter ** 2 / 4.0
+    shaft_shear = (engine_materials.mechanics(shaft.material)["shear_strength_pa"]
+                   * keeps["shear"] * pi * diameter ** 2 / 4.0)
     bearing_on_bore = crushing * diameter * engaged
     out.update({
         "diameter_m": diameter, "engaged_m": engaged,
