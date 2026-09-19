@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Built wall and 160k-budget experiment, September 19:** [Measured results and limits](building-sledgehammer-checkpoint.md). Bricks, glass, a two-hinge oak door and a two-material hammer were assembled through engine tools; browser Use opened the door 71 degrees. Strong glass impact entered analysis but stayed intact; concrete cascades prevented a final save. An isolated 160k admission budget ran ordinary motion quickly, with about 1 GiB peak native memory and seconds of fracture work. Exact per-axis box enumeration removes the measured validation bottleneck without changing occupancy. Default caps remain 16k; separate active-fracture limits and glass validation remain next.
+
 **Contextual placement, September 19:** [Interaction-point and API contract](placement-and-interaction-points.md). Nearby receiving surfaces and container floors offer snap targets; held objects show a ghost before placement. Saved `place` actions and the drop control share native geometry checks. Local anchors survive Workshop graph/contract, installation and room persistence; stale or blocked destinations keep the item held. MCP 1.5.0, ABI 25. Focused verification is recorded in the linked contract; this is not full-engine qualification.
 
 **Primary Use programs, September 19:** [Control and API contract](primary-use.md).

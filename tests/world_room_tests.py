@@ -31,14 +31,15 @@ ENGINE = next((p for p in [
 class TheMenuHasOneWorld(unittest.TestCase):
     """The owner, 2026-09-14: "wipe all the items and worlds in our sim dropdown
     and start over with a new world with everything in it". The menu offers the
-    world alone. The rooms the tests and the docs name are kept, off the menu,
+    expedition alone since the September 19 gameplay checkpoint. The rooms
+    the tests and the docs name are kept, off the menu,
     and a link opens one (/world?scene=yard)."""
 
     def test_the_menu_offers_the_world_and_the_rooms_stay_for_links(self):
         import re
         page = (ROOT / "playground" / "world.html").read_text(encoding="utf-8")
         menu = re.search(r'<select id="scene"[^>]*>(.*?)</select>', page, re.S).group(1)
-        self.assertEqual(re.findall(r'<option value="([^"]+)"', menu), ["world"])
+        self.assertEqual(re.findall(r'<option value="([^"]+)"', menu), ["expedition"])
         for room in ("tests-gates", "tests-ropes", "tests-motion", "bench", "courtyard",
                      "yard", "armoury", "valley", "watershed", "clearing"):
             self.assertIn(room, world_room.SCENES)
@@ -267,7 +268,7 @@ class ABodyTurnedAboutTwoAxes(unittest.TestCase):
     cells), and the engine said a body built turned faced no way at all, so the
     page drew it square while it collided turned."""
 
-    TURNS = ([30, 0, 45], [20, 35, -50], [-60, 25, 10])
+    TURNS = ([0, 0, 0], [30, 0, 45], [20, 35, -50], [-60, 25, 10])
     # The line protocol rounds every number it sends to 1e-5 (live_world_run's
     # tidy), which can move an orientation by 2e-5 rad, a thousandth of a
     # degree. Ten times that.
@@ -282,7 +283,9 @@ class ABodyTurnedAboutTwoAxes(unittest.TestCase):
 
     @staticmethod
     def plank(turn, name="plank", **more):
-        return {"name": name, "shape": "box", "material": "oak", "size_mm": [1000, 100, 200],
+        # Align the unrotated fixture to full cell faces. Inclusive Python
+        # boundary counts for odd layer counts predate the scan optimization.
+        return {"name": name, "shape": "box", "material": "oak", "size_mm": [1000, 100 if any(turn) else 120, 200],
                 "center_mm": [0, 1000, 0], "rotation_deg": list(turn), "anchored": True, **more}
 
     @staticmethod
@@ -333,7 +336,7 @@ class ABodyTurnedAboutTwoAxes(unittest.TestCase):
                         self.assertAlmostEqual(turned[i], sum(built[i][k] * axis[k] for k in range(3)),
                                                places=12)
                 # And what the chat is told it stands at is what it was built at.
-                self.assertEqual(mcp._turned("box", said), [float(a) for a in turn])
+                self.assertEqual(mcp._turned("box", said), [float(a) for a in turn] if any(turn) else None)
 
     def test_a_plank_held_as_it_lies_is_not_turned(self):
         """Taken hold of the way the page takes hold of it: a grip at its middle,

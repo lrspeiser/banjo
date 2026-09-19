@@ -1,0 +1,692 @@
+{
+  "native_source": "365f43a",
+  "engine_sha256": "341ce24e5f2efd655418f705863934783893dc8e64f0194f6986e0f5151fcfe9",
+  "cases": {
+    "10mm-glass": {
+      "cell_m": 0.01,
+      "material": "glass",
+      "cells": 105968,
+      "cap": 160000,
+      "validation_s": 35.962435800000094,
+      "open_s": 36.42929240001831,
+      "dt_s": 0.004166666666666667,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 2.8658525943756104,
+          "dent_speed_m_s": null,
+          "energy_j": 22.700078821472225,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [],
+      "memory_open": {
+        "working_mb": 329.26953125,
+        "peak_working_mb": 665.92578125,
+        "private_mb": 443.4453125
+      },
+      "mass_before_kg": 139.00288,
+      "half_second_wall_s": 0.04070889999275096,
+      "memory_settled": {
+        "working_mb": 331.35546875,
+        "peak_working_mb": 665.92578125,
+        "private_mb": 445.62109375
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 0.01577460000407882,
+      "hand_after": {
+        "force_n": [
+          4.40812,
+          -92.91017,
+          490.54783
+        ],
+        "grip_m": [
+          -0.75019,
+          1.27414,
+          -0.58272
+        ],
+        "grip_velocity_m_s": [
+          -0.02395,
+          -0.13989,
+          -2.69687
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          1.24905,
+          -0.55
+        ],
+        "work_j": 275.11689
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 331.5546875,
+        "peak_working_mb": 665.92578125,
+        "private_mb": 445.80859375
+      },
+      "mass_after_kg": 139.00288,
+      "t_s": 0.7833333333333318,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 103616
+    },
+    "160k-glass": {
+      "cell_m": 0.01,
+      "material": "glass",
+      "cells": 160000,
+      "cap": 160000,
+      "validation_s": 0.32929419999709353,
+      "open_s": 1.414137399988249,
+      "dt_s": 0.004166666666666667,
+      "grip_y_m": 0.84,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 4.973528861999512,
+          "dent_speed_m_s": null,
+          "energy_j": 68.36738252217594,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 4.973528861999512,
+          "dent_speed_m_s": null,
+          "energy_j": 68.36738252217594,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 3.1819591522216797,
+          "dent_speed_m_s": null,
+          "energy_j": 27.98394047229132,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 1.1984734535217285,
+          "dent_speed_m_s": null,
+          "energy_j": 3.9698720123270475,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [
+        {
+          "t": 0.7458333333333319,
+          "finished": "left pane",
+          "pieces": 1,
+          "outcome": "held"
+        }
+      ],
+      "memory_open": {
+        "working_mb": 512.984375,
+        "peak_working_mb": 1038.5625,
+        "private_mb": 633.5390625
+      },
+      "mass_before_kg": 139.00288,
+      "half_second_wall_s": 0.041796799981966615,
+      "memory_settled": {
+        "working_mb": 515.0546875,
+        "peak_working_mb": 1038.5625,
+        "private_mb": 635.6796875
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 5.3692482999758795,
+      "hand_after": {
+        "force_n": [
+          15.0729,
+          117.51121,
+          90.01379
+        ],
+        "grip_m": [
+          -0.75379,
+          0.81574,
+          -0.55575
+        ],
+        "grip_velocity_m_s": [
+          -0.13275,
+          -0.49704,
+          -3.14379
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          0.82905,
+          -0.55
+        ],
+        "work_j": 239.56111
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 516.05859375,
+        "peak_working_mb": 1038.5625,
+        "private_mb": 636.375
+      },
+      "mass_after_kg": 139.00288,
+      "t_s": 0.995833333333331,
+      "body_count": 35,
+      "save_refused": "",
+      "native_node_count": 157648
+    },
+    "20mm-glass": {
+      "cell_m": 0.02,
+      "material": "glass",
+      "cells": 15868,
+      "cap": 160000,
+      "validation_s": 4.461050200014142,
+      "open_s": 4.8335545000154525,
+      "dt_s": 0.004166666666666667,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 2.865853786468506,
+          "dent_speed_m_s": null,
+          "energy_j": 22.7000977063293,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [],
+      "memory_open": {
+        "working_mb": 41.40234375,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 134.14453125
+      },
+      "mass_before_kg": 139.00288,
+      "half_second_wall_s": 0.03759300001547672,
+      "memory_settled": {
+        "working_mb": 43.4140625,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 136.05859375
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 0.01545149998855777,
+      "hand_after": {
+        "force_n": [
+          4.40808,
+          -92.91003,
+          490.54933
+        ],
+        "grip_m": [
+          -0.75019,
+          1.27414,
+          -0.58272
+        ],
+        "grip_velocity_m_s": [
+          -0.02395,
+          -0.13989,
+          -2.69686
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          1.24905,
+          -0.55
+        ],
+        "work_j": 275.11683
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 43.58203125,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 136.21484375
+      },
+      "mass_after_kg": 139.00288,
+      "t_s": 0.7833333333333318,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 12952
+    },
+    "20mm-glass-close-grip": {
+      "cell_m": 0.02,
+      "material": "glass",
+      "cells": 15868,
+      "cap": 160000,
+      "validation_s": 4.485380199999781,
+      "open_s": 4.94665779999923,
+      "dt_s": 0.004166666666666667,
+      "grip_y_m": 0.84,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.01924467086792,
+          "dent_speed_m_s": null,
+          "energy_j": 69.63000094361126,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.01924467086792,
+          "dent_speed_m_s": null,
+          "energy_j": 69.63000094361126,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 4.437972545623779,
+          "dent_speed_m_s": null,
+          "energy_j": 54.43633655470713,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [
+        {
+          "t": 0.7458333333333319,
+          "finished": "left pane",
+          "pieces": 1,
+          "outcome": "held"
+        }
+      ],
+      "memory_open": {
+        "working_mb": 41.45703125,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 134.74609375
+      },
+      "mass_before_kg": 139.00288,
+      "half_second_wall_s": 0.03737309999996796,
+      "memory_settled": {
+        "working_mb": 43.4375,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 137.0078125
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 0.4201607999857515,
+      "hand_after": {
+        "force_n": [
+          3.19537,
+          111.75739,
+          168.08444
+        ],
+        "grip_m": [
+          -0.75054,
+          0.81781,
+          -0.5809
+        ],
+        "grip_velocity_m_s": [
+          -0.04199,
+          -0.51546,
+          -3.25799
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          0.82905,
+          -0.55
+        ],
+        "work_j": 238.82985
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 44.01953125,
+        "peak_working_mb": 74.1640625,
+        "private_mb": 136.1640625
+      },
+      "mass_after_kg": 139.00288,
+      "t_s": 0.995833333333331,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 12952
+    },
+    "20mm-iron-close-grip": {
+      "cell_m": 0.02,
+      "material": "iron",
+      "cells": 15868,
+      "cap": 160000,
+      "validation_s": 4.469035400019493,
+      "open_s": 4.866477200004738,
+      "dt_s": 0.004166666666666667,
+      "grip_y_m": 0.84,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.009511470794678,
+          "dent_speed_m_s": 4.907964376622,
+          "energy_j": 88.27903594516457,
+          "struck": "left pane",
+          "threshold_speed_m_s": 12.269910941555,
+          "would_break": false,
+          "would_dent": true
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.009511470794678,
+          "dent_speed_m_s": 4.907964376622,
+          "energy_j": 88.27903594516457,
+          "struck": "left pane",
+          "threshold_speed_m_s": 12.269910941555,
+          "would_break": false,
+          "would_dent": true
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 4.273802280426025,
+          "dent_speed_m_s": 4.907964376622,
+          "energy_j": 64.25333644210751,
+          "struck": "left pane",
+          "threshold_speed_m_s": 12.269910941555,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [
+        {
+          "t": 0.7416666666666653,
+          "finished": "left pane",
+          "pieces": 1,
+          "outcome": "held"
+        },
+        {
+          "t": 1.7416666666666618,
+          "finished": "sledge head",
+          "pieces": 1,
+          "outcome": "dented"
+        }
+      ],
+      "memory_open": {
+        "working_mb": 41.51171875,
+        "peak_working_mb": 74.19921875,
+        "private_mb": 135.69921875
+      },
+      "mass_before_kg": 214.61248,
+      "half_second_wall_s": 0.04131419997429475,
+      "memory_settled": {
+        "working_mb": 43.49609375,
+        "peak_working_mb": 74.19921875,
+        "private_mb": 137.8671875
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 1.1393945000017993,
+      "hand_after": {
+        "force_n": [
+          -2.43974,
+          167.55391,
+          -204.21506
+        ],
+        "grip_m": [
+          -0.74902,
+          0.81589,
+          0.04275
+        ],
+        "grip_velocity_m_s": [
+          -0.00054,
+          0.00669,
+          -0.02036
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "blocked",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          0.82905,
+          -0.04091
+        ],
+        "work_j": 132.02021
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 43.734375,
+        "peak_working_mb": 74.19921875,
+        "private_mb": 135.6328125
+      },
+      "mass_after_kg": 214.61248,
+      "t_s": 1.7416666666666618,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 12952
+    },
+    "20mm-oak-close-grip": {
+      "cell_m": 0.02,
+      "material": "oak",
+      "cells": 15868,
+      "cap": 160000,
+      "validation_s": 4.520578199997544,
+      "open_s": 4.826034900004743,
+      "dt_s": 0.004166666666666667,
+      "grip_y_m": 0.84,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.0377349853515625,
+          "dent_speed_m_s": 8.31538353497146,
+          "energy_j": 38.80442037354121,
+          "struck": "left pane",
+          "threshold_speed_m_s": 10.976306266162329,
+          "would_break": false,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 0.7496806383132935,
+          "dent_speed_m_s": 8.31538353497146,
+          "energy_j": 0.8593362956354504,
+          "struck": "left pane",
+          "threshold_speed_m_s": 10.976306266162329,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [],
+      "memory_open": {
+        "working_mb": 41.58203125,
+        "peak_working_mb": 74.25390625,
+        "private_mb": 136.1171875
+      },
+      "mass_before_kg": 113.65888,
+      "half_second_wall_s": 0.035679199994774535,
+      "memory_settled": {
+        "working_mb": 43.609375,
+        "peak_working_mb": 74.25390625,
+        "private_mb": 138.23828125
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 0.022273799986578524,
+      "hand_after": {
+        "force_n": [
+          -0.34396,
+          271.53234,
+          360.73866
+        ],
+        "grip_m": [
+          -0.75019,
+          0.81122,
+          -0.64761
+        ],
+        "grip_velocity_m_s": [
+          0.0225,
+          -0.17267,
+          -3.44438
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          0.82905,
+          -0.55
+        ],
+        "work_j": 208.87101
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 43.7578125,
+        "peak_working_mb": 74.25390625,
+        "private_mb": 138.3359375
+      },
+      "mass_after_kg": 113.65888,
+      "t_s": 0.9833333333333311,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 12952
+    },
+    "20mm-optimized": {
+      "cell_m": 0.02,
+      "material": "glass",
+      "cells": 15868,
+      "cap": 160000,
+      "validation_s": 0.04192489999695681,
+      "open_s": 0.11430560000007972,
+      "dt_s": 0.004166666666666667,
+      "grip_y_m": 0.84,
+      "impacts": [
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.01924467086792,
+          "dent_speed_m_s": null,
+          "energy_j": 69.63000094361126,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 5.01924467086792,
+          "dent_speed_m_s": null,
+          "energy_j": 69.63000094361126,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": true,
+          "would_dent": false
+        },
+        {
+          "by": "sledge head",
+          "closing_speed_m_s": 4.437972545623779,
+          "dent_speed_m_s": null,
+          "energy_j": 54.43633655470713,
+          "struck": "left pane",
+          "threshold_speed_m_s": 4.505972241822995,
+          "would_break": false,
+          "would_dent": false
+        }
+      ],
+      "fractures": [
+        {
+          "t": 0.7458333333333319,
+          "finished": "left pane",
+          "pieces": 1,
+          "outcome": "held"
+        }
+      ],
+      "memory_open": {
+        "working_mb": 41.4296875,
+        "peak_working_mb": 74.12890625,
+        "private_mb": 133.75390625
+      },
+      "mass_before_kg": 139.00288,
+      "half_second_wall_s": 0.03201930000795983,
+      "memory_settled": {
+        "working_mb": 43.4140625,
+        "peak_working_mb": 74.12890625,
+        "private_mb": 135.890625
+      },
+      "work_before_j": -0.94043,
+      "impact_wall_s": 0.4199881000095047,
+      "hand_after": {
+        "force_n": [
+          3.19537,
+          111.75739,
+          168.08444
+        ],
+        "grip_m": [
+          -0.75054,
+          0.81781,
+          -0.5809
+        ],
+        "grip_velocity_m_s": [
+          -0.04199,
+          -0.51546,
+          -3.25799
+        ],
+        "holding": "sledgehammer",
+        "mode": "grip",
+        "stroke_ended": "reached",
+        "stroking": false,
+        "target_m": [
+          -0.75,
+          0.82905,
+          -0.55
+        ],
+        "work_j": 238.82985
+      },
+      "pending": "",
+      "memory_final": {
+        "working_mb": 44.0234375,
+        "peak_working_mb": 74.12890625,
+        "private_mb": 136.2890625
+      },
+      "mass_after_kg": 139.00288,
+      "t_s": 0.995833333333331,
+      "body_count": 20,
+      "save_refused": "",
+      "native_node_count": 12952
+    }
+  },
+  "assembly": {
+    "saved_final": false,
+    "final_t_s": 36.32500000000194,
+    "final_bodies": 122,
+    "door": {
+      "answer": {
+        "action": "Open door",
+        "done": [
+          "turned door +71 degrees, to 71",
+          "let go of door"
+        ],
+        "did": [
+          "Open door"
+        ]
+      },
+      "wall_seconds": 0.5789999999979045
+    },
+    "outcomes": {
+      "held": 12,
+      "dented": 0,
+      "broke": 3
+    },
+    "save_refusals": [
+      {
+        "snapshot_refused": "damaged",
+        "why": "a break is being worked out: the world is saved once it has come apart"
+      }
+    ]
+  }
+}

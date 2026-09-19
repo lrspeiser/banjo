@@ -1445,9 +1445,13 @@ def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, i
     reach = radius if sphere else math.dist(half, [0, 0, 0])
     cells: set[tuple[int, int, int]] = set()
     ranges = []
+    # Axis-aligned boxes have exact per-axis bounds. A circumscribed cube
+    # scans mostly empty space around thin panes and long posts; retain the
+    # same centre-inside test below, including cells exactly on a boundary.
+    extents = half if body["shape"] == "box" and not any(rotation) else [reach] * 3
     for k in range(3):
-        ranges.append((math.floor((centre[k] - reach) / cell_mm),
-                       math.ceil((centre[k] + reach) / cell_mm)))
+        ranges.append((math.floor((centre[k] - extents[k]) / cell_mm),
+                       math.ceil((centre[k] + extents[k]) / cell_mm)))
     for i in range(ranges[0][0], ranges[0][1] + 1):
         for j in range(ranges[1][0], ranges[1][1] + 1):
             for k in range(ranges[2][0], ranges[2][1] + 1):
