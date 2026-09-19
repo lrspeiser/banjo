@@ -460,13 +460,29 @@ def standing_interfaces(bodies: list[dict[str, Any]], interfaces: Any, *,
     """
     if not interfaces:
         return []
+
+    def measured(value: Any) -> list[float] | None:
+        """Three finite numbers, or nothing. This runs on every rebuild of every
+        world (banjo_mcp._rebuild), so a body written in some spelling this does
+        not know must cost its joint and not the whole edit: raising here would
+        mean the room could not be changed at all."""
+        if not isinstance(value, (list, tuple)) or len(value) != 3:
+            return None
+        try:
+            out = [float(v) for v in value]
+        except (TypeError, ValueError):
+            return None
+        return out if all(math.isfinite(v) for v in out) else None
+
     boxes: dict[str, list[tuple[str, list[float], list[float]]]] = {}
     for body in bodies:
-        label = str(body.get("part") or "")
-        if label:
-            boxes.setdefault(label, []).append(
-                (str(body.get("join") or ""), [float(v) for v in body[centre]],
-                 [float(v) for v in body[size]]))
+        label = str(body.get("part") or "") if isinstance(body, dict) else ""
+        if not label:
+            continue
+        here, span = measured(body.get(centre)), measured(body.get(size))
+        if here is None or span is None:
+            continue
+        boxes.setdefault(label, []).append((str(body.get("join") or ""), here, span))
     return [dict(face) for face in interfaces
             if any(_shares_a_face(one, two)
                    for one in boxes.get(str(face.get("a", "")), [])

@@ -285,6 +285,22 @@ class AJointThatNoLongerStands(unittest.TestCase):
         bodies[1] = dict(bodies[1], join="other")
         self.assertEqual([], fracture_lab.standing_interfaces(bodies, [FACE]))
 
+    def test_a_body_it_cannot_measure_costs_its_joint_and_not_the_edit(self):
+        """This rule runs on every rebuild of every world, so a body written in
+        a spelling it does not know has to cost its joint and nothing else.
+        Raising here would mean the room could not be changed at all, which is
+        the failure the rule exists to prevent."""
+        for broken in ({"size_mm": None}, {"size_mm": [1, 2]}, {"size_mm": {}},
+                       {"center_mm": ["x", 0, 0]}, {"center_mm": [float("nan"), 0, 0]},
+                       {"center_mm": [float("inf"), 0, 0]}):
+            bodies = [jointed()[0], dict(jointed()[1], **broken)]
+            self.assertEqual([], fracture_lab.standing_interfaces(bodies, [FACE]), broken)
+        # And a body that is not an object at all.
+        self.assertEqual([], fracture_lab.standing_interfaces([jointed()[0], "nonsense"], [FACE]))
+        # The sound pair beside a broken one still stands.
+        both = jointed() + [dict(jointed()[1], name="junk", part="p/junk", size_mm=None)]
+        self.assertEqual([FACE], fracture_lab.standing_interfaces(both, [FACE]))
+
     def test_meeting_only_along_an_edge_is_not_a_face(self):
         bodies = jointed()
         bodies[1] = dict(bodies[1], center_mm=[220, 200, 0])   # touching corner to corner
