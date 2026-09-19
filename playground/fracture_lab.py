@@ -33,6 +33,7 @@ from typing import Any
 # through the MCP's `interaction` tool -- which live beside the MCP server.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
+import core_use  # noqa: E402
 
 GRAVITY_M_S2 = 9.81
 REALTIME_LIMIT = 1.1
@@ -965,7 +966,7 @@ INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
 
 
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
-                "heat", "wait", "drive")
+                "heat", "wait", "drive") + core_use.STEPS
 ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "distance_m",
                       "degrees", "stop", "speed_m_s", "power_w", "seconds", "command", "brake"}
 ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
@@ -1025,7 +1026,9 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
     for i, action in enumerate(actions):
         if not isinstance(action, dict):
             raise ValueError(f"action {i} must be an object")
-        unknown = set(action) - {"body", "label", "steps"}
+        unknown = set(action) - {"body", "label", "steps", "primary"}
+        if "primary" in action and not isinstance(action["primary"], bool):
+            raise ValueError("primary must be true or false")
         if unknown:
             raise ValueError(f"action {i} cannot say {sorted(unknown)}")
         body = str(action.get("body", ""))
@@ -1046,6 +1049,8 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
             if "part" in step and str(step["part"]) not in named:
                 raise ValueError(f"action {i} step {j + 1} names {step['part']!r}, and there "
                                  f"is nothing called that")
+            if step["do"] in core_use.STEPS:
+                core_use.checked_step(step)
             if step["do"] == "drive":
                 # A motor's command, the share of its voltage, and its brake
                 # (docs/machine-world.md).
@@ -1066,7 +1071,10 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
         if per_body[body] > 9:
             raise ValueError(f"{body} is offered more than 9 actions: a person steps through "
                              f"at most 9 with Tab")
-        out.append({"body": body, "label": label, "steps": [dict(step) for step in steps]})
+        out.append({"body": body, "label": label, "steps": [dict(step) for step in steps],
+                    **({"primary": action["primary"]} if "primary" in action else {})})
+    for body in per_body:
+        core_use.selected([a for a in out if a["body"] == body])
     return out
 
 
@@ -1950,7 +1958,8 @@ def validate(spec: Any) -> dict[str, Any]:
         result["interactions"] = normalise_interactions(result.get("interactions") or [],
                                                         result["bodies"], result["joints"],
                                                         result["tool_points"])
-        result["actions"] = normalise_actions(result.get("actions") or [], result["bodies"])
+        result["actions"] = normalise_actions(result.get("actions") or [],
+                                               result["bodies"] + result.get("precise_rigid_bodies", []))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

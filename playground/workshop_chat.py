@@ -39,6 +39,10 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- Every finished product needs a primary_use program. Call program_use to write
+  its purpose-specific core action when creating or completing it; it is stored
+  with the design, exposed in ProductGraph controls and carried into the world.
+  Never claim a product is operational if its intended action is unsupported.
 - Use tools to inspect the design before guessing about component names,
   positions, dimensions, interfaces, contacts, physics, evidence, or library
   contents.
@@ -150,6 +154,16 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         },
     }
     return [
+        {"type": "function", "name": "program_use",
+         "description": "Program the product's single core Use on Left mouse / J. Physical bounded steps; never arbitrary code. strike requires holding it; push_forward requires an empty hand. Use inspect for a passive product, not as a pretend machine function.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["label", "steps"],
+                        "properties": {
+                            "label": {"type": "string", "minLength": 1, "maxLength": 60},
+                            "steps": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
+                                "type": "object", "additionalProperties": False, "required": ["do"],
+                                "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward"]},
+                                               "distance_m": {"type": "number"},
+                                               "speed_m_s": {"type": "number"}}}}}}},
         {"type": "function", "name": "inspect_design",
          "description": "Inspect the complete current Workshop candidate including every component's 3D centre, size, rotation and measured design metrics.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
@@ -298,6 +312,17 @@ class _State:
                                       "changed": names, "action": action,
                                       "components": [_part_doc(next(p for p in self.design.parts if p.name == name))
                                                      for name in names]})
+
+        if tool == "program_use":
+            from mcp import core_use
+            program = core_use.checked_program(args)
+            parameters = {**self.design.parameters, "primary_use": program}
+            base = assemble(str(self.design.kind), design_id=self.design.design_id,
+                            purpose=self.design.purpose, parameters=parameters)
+            self.design = workshop_components.apply_overrides(base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append("primary_use")
+            return self.record(tool, {"summary": f"Use: {program['label']}", "primary_use": program})
 
         if tool == "set_parameter":
             name = str(args.get("name") or "")

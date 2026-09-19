@@ -2190,6 +2190,11 @@ let detailsSaid = "";
 let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
 function showDetails(now = false) {
   const model = detailsModel();
+  const useName = world.held?.name || world.aim?.name;
+  if (useName && (actionsFor(useName).length || !world.held)) {
+    model.rows = model.rows.filter(([keys]) => !keys.includes(keyOf("primary")));
+    model.rows.unshift([[keyOf("primary")], primaryAction(useName).label, "primary"]);
+  }
   const said = JSON.stringify(model);
   if (!now && said === detailsSaid) return;
   detailsSaid = said;
@@ -2611,6 +2616,7 @@ addEventListener("keydown", (e) => {
   // Esc closes a machine's panel when nothing else is using it -- and not
   // while the mouse is looking round, where Esc gives the mouse back first.
   else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
+  if (isKey("primary", e.code)) { e.preventDefault(); primaryUsed = pressPrimary(); }
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
   if (isKey("stow", e.code)) toTheBag();
@@ -2631,7 +2637,10 @@ addEventListener("keydown", (e) => {
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("keyup", (e) => {
+  keys.delete(e.code);
+  if (isKey("primary", e.code) && primaryUsed) { primaryUsed = false; releasePrimary(); }
+});
 addEventListener("blur", () => keys.clear());
 // Every control, in the side view's Keys tab, said from the same table the keys
 // are read from.
@@ -2710,6 +2719,34 @@ let drag = null;
 // down used to pick the bow straight up again, and after lowering a wind-up it
 // dropped the ball.
 let primaryUsed = false;
+function primaryAction(name) {
+  const offered = actionsFor(name);
+  return offered.find((a) => a.primary) || offered[0] || { label: "Inspect", steps: [{ do: "inspect" }] };
+}
+
+function pressPrimary() {
+  if (!world.session || world.placing) return false;
+  if (world.asking || world.acting) return true;
+  if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
+  const name = world.held?.name || world.aim?.name;
+  if (name && actionsFor(name).length) {
+    runAction(name, 0, true);
+    return true;
+  }
+  if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) startWindUp();
+  else if (world.held?.bow && world.use.mode === "bow-ready") intend("draw");
+  else if (world.held?.pick) tools.press();
+  else if (name) runAction(name, 0, true);
+  else return false;
+  return true;
+}
+
+function releasePrimary() {
+  if (world.use.mode === "preparing") intend("let fly");
+  else if (world.use.mode === "drawing") intend("loose");
+  tools.release();
+}
+
 // A click takes the mouse, to look with; a second click on the same thing
 // straight after does what E does -- picks it up, or what the side view marks
 // (the owner: "maybe double click to take it").
@@ -2722,21 +2759,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   // Primary held with something throwable in the hand winds it up. Looking
   // still works while it does -- that is how a throw is aimed.
-  if (isButton("primary", e.button) && world.held && world.held.throwable &&
-      (world.use.mode === "ready" || world.use.mode === "blocked")) {
-    startWindUp();
-    primaryUsed = true;
-  } else if (isButton("primary", e.button) && world.held && world.held.bow &&
-             world.use.mode === "bow-ready") {
-    // The same button on a bow draws it.
-    intend("draw");
-    primaryUsed = true;
-  } else if (isButton("primary", e.button) && world.held && world.held.pick) {
-    // And with a tool, uses it where the ring is -- and held, goes on
-    // (tools.js). Pressed while it works, it goes on after the use in hand.
-    tools.press();
-    primaryUsed = true;
-  }
+  if (looking || world.held) primaryUsed = pressPrimary();
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false };
   // Capture can be refused -- a pointer already gone, or one a test made up --
@@ -2758,9 +2781,7 @@ canvas.addEventListener("pointerup", (e) => {
     primaryUsed = false;
     if (drag) try { canvas.releasePointerCapture(e.pointerId); } catch { /* gone */ }
     drag = null;
-    if (world.use.mode === "preparing") intend("let fly");
-    else if (world.use.mode === "drawing") intend("loose");
-    tools.release();
+    releasePrimary();
     return;
   }
   const was = drag;
@@ -5249,7 +5270,8 @@ function whereIAm() {
   level.normalize();
   const r = (v) => Math.round(v * 1000) / 1000;
   const person = { standing_m: [r(p.x), r(groundAt(p.x, p.z)), r(p.z)],
-                   eyes_m: [r(p.x), r(p.y), r(p.z)], facing: [r(level.x), 0, r(level.z)] };
+                   eyes_m: [r(p.x), r(p.y), r(p.z)], facing: [r(level.x), 0, r(level.z)],
+                   look_direction: f.toArray().map(r) };
   // What is in their hand: "this", before anything they are looking at.
   if (world.held) {
     person.holding = world.held.name;
@@ -5559,8 +5581,8 @@ function allActionsFor(name) {
                                                   ask: builtin.ask || { builtin: builtin.key } })));
 }
 
-async function runAction(name, index) {
-  const action = allActionsFor(name)[index];
+async function runAction(name, index, primary = false) {
+  const action = primary ? { label: primaryAction(name).label, ask: { primary: true } } : allActionsFor(name)[index];
   if (!action || world.asking || world.acting) return;
   if (action.ask.latch != null) {
     // The fixing that holds it fast is let go of, as R does.
@@ -5575,7 +5597,10 @@ async function runAction(name, index) {
   world.acting = true;
   // Going on from a hold -- the winch kept turned -- the hand is the server's
   // for the action.
-  const aside = !!world.held;
+  const previousHold = world.held;
+  const previousUse = world.use;
+  const person = whereIAm();
+  const aside = !!previousHold;
   if (aside) setHoldAside();
   // Said in the details while it runs, and what it came to after.
   world.doing = action.label;
@@ -5584,7 +5609,7 @@ async function runAction(name, index) {
     // On the room this page has open: a page whose room was opened again
     // elsewhere is refused, and nothing is done in the room somebody else has.
     const answer = await api("/api/world/action", { session: world.session, object: name,
-                                                     ...action.ask, person: whereIAm() });
+                                                     ...action.ask, person });
     const done = (answer.done || []).join(", ");
     if (answer.refused) {
       lastAction(`${action.label}: ${answer.refused}` + (done ? ` (done first: ${done})` : ""), "refused");
@@ -5592,7 +5617,12 @@ async function runAction(name, index) {
       lastAction(`${action.label}: ${done || "done"}.`);
     }
     if (answer.reopened) adoptRebuilt(answer);
-    if (answer.holding) {
+    if (answer.holding && previousHold?.name === answer.holding) {
+      world.held = previousHold;
+      world.use = previousUse;
+      showHolding(true);
+      showUse();
+    } else if (answer.holding) {
       adoptHold(answer.holding);
       lastAction(`You are holding ${answer.holding} there: move the crosshair to work it on,`
         + ` or ${keyOf("interact")} to let go; ${keyOf("next")} moves E on to its turns, from here.`);

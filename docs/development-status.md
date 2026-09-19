@@ -1,5 +1,30 @@
 # Development status and handoff
 
+**Primary Use programs, September 19:** [Control and API contract](primary-use.md).
+Left mouse / J runs one saved action on the held or aimed product. The LLM
+programs it through room `offer_actions(primary=true)` or Workshop
+`program_use` / `parameters.primary_use`. ProductGraph/PhysicsContract carry
+the declaration; both installation adapters map it to the installed root.
+Strike and push-forward use the existing bounded native hand, with honest
+blocked-motion outcomes, repeatable held strikes and a single active program.
+Legacy objects have an explicit Inspect fallback. Workshop's portable subset
+is inspect/strike/push-forward; articulated installation and unsupported
+machine functions remain outside this checkpoint. MCP is 1.4.0; ABI stays 25.
+
+Verification: 36 action tests, 252 Workshop unit/API tests (44 environment-gated
+tests skipped), 17 focused native installation tests, 9 API-doc tests and 17
+chat-tool parity tests passed; all 68 MCP regressions passed (186.7 s). All 275
+C++ sources are registered and 528 local documentation links resolve. The
+browser's J control ran the saved push and
+reported 0.21 m of native forward movement with no console errors. The existing
+Workshop mass oracle now uses the loaded catalog density instead of assuming
+750 kg/m³ for oak; its geometric arithmetic and tolerance are unchanged.
+This is control/adapter verification, not fresh full-engine or material
+qualification. Next: require explicit operational readiness across every
+legacy authoring path and expand portable programs with supported mechanism
+adapters and cancellation.
+
+
 
 **Expedition gameplay, September 19:** [Playable checkpoint and full API contract](gameplay.md)
 add finite surface stocks on the native generated valley, reach-limited gathering,

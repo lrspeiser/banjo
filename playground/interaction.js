@@ -21,7 +21,7 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 // needs the mouse let go of. Down moved off Q, which is the bag now.
 export const BINDINGS = {
   interact:  { label: "E", keys: ["KeyE"] },
-  primary:   { label: "Left mouse", button: 0 },
+  primary:   { label: "Left mouse / J", button: 0, keys: ["KeyJ"] },
   secondary: { label: "Right mouse", button: 2 },
   next:      { label: "Tab", keys: ["Tab"] },
   stow:      { label: "Q", keys: ["KeyQ"] },
@@ -82,7 +82,7 @@ export function controls() {
     [k("next"), "move E on to the next thing the side view lists"],
     [k("stow"), "put what you hold, or what you look at, in your bag"],
     [k("slots"), "take that slot of your bag into your hand; the same number puts it back"],
-    [k("primary"), "hold to wind up, let go to throw · use a tool where its ring is · hold to draw a bow"],
+    [k("primary"), "use the held product or the one you look at · hold/release for a throw or bow"],
     [k("secondary"), "lower a throw, let a string down, stop a tool · release a latch"],
     [`${k("turnLeft")} ${k("turnRight")}`, "turn what you hold"],
     [`${k("tipAway")} ${k("tipBack")}`, "tip it away or back"],
@@ -90,7 +90,6 @@ export function controls() {
     [k("upright"), "stand it upright"],
     [k("reach"), "hold it further out or nearer"],
     [`Alt+${k("interact")}`, "take hold of exactly the part you look at"],
-    ["Double-click", "what E does"],
     [k("talk"), "talk to the room"],
     [k("dig"), "dig where you look"],
     [k("heap"), "heap what you carry where you look"],

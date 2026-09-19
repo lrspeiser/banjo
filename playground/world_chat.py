@@ -333,7 +333,18 @@ heavy for their hand. Heavier than 73 kg they can carry it but not turn it by
 hand -- add_object's answer says too_heavy_for_a_hand -- so say so, and turn it
 for them with turn_object when they ask.
 
-ACTIONS. Whenever you make something, work out what a person would DO with it,
+ACTIONS. Every completed product must have one core Use program. The same Left mouse / J
+control runs it on the held product, or on the product under the crosshair. E
+continues to pick up and put down. Use offer_actions with primary=true on exactly
+one action, named for the product's purpose. The LLM writes this bounded program
+at creation; no LLM call is needed per press. A hand tool can use strike (held
+first, 0.05–0.8 m, 0.1–5 m/s); a cart can use push_forward (empty hand, 0.05–1.5 m,
+0.1–1.5 m/s, along the person's facing). Motion comes from the engine's bounded
+hand and contacts. Powered products use drive on a real motor and battery. For
+passive objects choose inspect, or an honest supported handling action. Never
+pretend inspection implements an unsupported machine function. Program the
+product root; fixed constituent parts need not each duplicate its program.
+Whenever you make something, work out what a person would DO with it,
 and give it those actions with offer_actions in the same turn: each a label and
 a short program the room runs when they choose it. Looking at the thing, they
 see its actions in the side view: E does the one marked (a loose thing's first
@@ -360,8 +371,8 @@ they can click on the thing to see what it
 does. What already has actions is in actions_offered.
 
 PRODUCTS: HOW TO BUILD IT, ITS KEYS, WHAT TO OFFER. Keys for everything: one
-click on a thing lists its actions and 1 to 9 run them; E or a double-click
-takes hold; E puts down; / talks to you.
+Left mouse / J runs the core Use; E takes hold or puts down; Tab cycles other
+actions; 1 to 9 select bag slots; / talks to you.
 - FIRST: a gate between two posts (with its latch), a portcullis and its winch,
   a door that shuts itself, a bell on a rope, a bow, a pick, a table with a
   chair, a battery hoist -- build_recipe builds each of these exactly, with its
@@ -1354,6 +1365,11 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
         "one_metre_to_the_left_m": [round(standing[0] + fz, 3), round(standing[2] - fx, 3)],
         "one_metre_to_the_right_m": [round(standing[0] - fz, 3), round(standing[2] + fx, 3)],
         "reach_m": REACH_M}
+    look = point(raw.get("look_direction"))
+    if look is not None:
+        magnitude = sum(v*v for v in look) ** 0.5
+        if magnitude > 1e-6:
+            said["look_direction"] = [v / magnitude for v in look]
     eyes = point(raw.get("eyes_m"))
     if eyes is not None:
         said["eyes_m"] = eyes
@@ -1683,11 +1699,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 # And only for a thing to take: asked for a ski ramp, the chat
                 # was asked this and gave its anchored board a "Use the ramp"
                 # action, so a structure's parts and scenery are not asked about.
-                if _loose(entry, made_names) and not offered and not reminded:
+                missing_use = [n for n in _loose(entry, made_names)
+                               if not (entry.get("actions") or {}).get(n)
+                               and not any(n in p.get("parts", []) for p in entry.get("interactions", []))]
+                if missing_use and not reminded:
                     reminded = True
                     conversation.extend(o for o in outputs
                                         if o.get("type") in ("reasoning", "message"))
-                    conversation.append({"role": "user", "content": NOTHING_OFFERED})
+                    conversation.append({"role": "user", "content": NOTHING_OFFERED + "\nMissing core Use: " + ", ".join(missing_use)})
                     continue
                 # Said it built something, and nothing changed: asked once more.
                 # Asked for a table and a chair, the chat called no tool and

@@ -220,6 +220,30 @@ class OfferActions(unittest.TestCase):
                          [("stool", "Bring it to me"), ("oak beam", "Stand the beam on end")])
 
 
+
+    def test_primary_selection_survives_export_and_reopening(self):
+        answer = self.offer("stool", [
+            {"label": "Look", "steps": [{"do": "inspect"}]},
+            {"label": "Move forward", "primary": True, "steps": [{"do": "push_forward"}]}])
+        self.assertNotIn("error", answer, answer)
+        spec = room_world.export_spec(room_world.entry_of(self.world))
+        again = room_world.open_room(spec)
+        try:
+            actions = room_world.entry_of(again)["actions"]["stool"]
+            self.assertTrue(actions[1]["primary"])
+            self.assertFalse(actions[0].get("primary", False))
+        finally:
+            room_world.close_room(again)
+        primary = room_world.call(self.world, "use_action", {"name": "stool", "primary": True})
+        self.assertIn("person\'s hand", primary["error"])
+        inspect = room_world.call(self.world, "use_action", {"name": "stool", "action": "Look"})
+        self.assertIn("mass_kg", inspect["done"][0])
+        before = json.dumps(room_world.entry_of(self.world)["actions"])
+        answer = self.offer("stool", [
+            {"label": label, "primary": True, "steps": [{"do": "inspect"}]} for label in ("A", "B")])
+        self.assertIn("exactly one", answer["error"])
+        self.assertEqual(json.dumps(room_world.entry_of(self.world)["actions"]), before)
+
 class HandInLive(StandInLive):
     """The running room, as far as a hand goes: it keeps what the hand is asked
     to do, moves what the hand holds to where a stroke ends -- unless it is told
@@ -374,6 +398,86 @@ class RunningAnAction(PlaygroundTestCase):
                          {"session": app.live.session.id, "object": name, "action": index,
                           "person": PERSON})
 
+
+    def test_primary_selects_designated_program_not_menu_order(self):
+        app = self.start([
+            {"body": "stool", "label": "Read", "steps": [{"do": "inspect"}]},
+            {"body": "stool", "label": "Roll forward", "primary": True,
+             "steps": [{"do": "push_forward", "distance_m": .4, "speed_m_s": .4}]}])
+        status, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": PERSON})
+        self.assertEqual(status, 200, answer)
+        self.assertEqual(answer["action"], "Roll forward")
+        self.assertEqual([a["op"] for a in app.live.acts], ["wield", "stroke", "release"])
+        self.assertAlmostEqual(app.live.acts[1]["path"][-1][2], .6)
+
+    def test_primary_push_blocked_or_out_of_reach_does_not_claim_success(self):
+        app = self.start([{"body": "stool", "label": "Roll", "primary": True,
+                           "steps": [{"do": "push_forward"}]}])
+        app.live.stroke_ends = "blocked"
+        _, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": PERSON})
+        self.assertIn("did not move", answer["refused"])
+        self.assertNotIn("did", answer)
+        self.assertFalse(app.live.session.state["hand"]["holding"])
+        app.live.acts.clear()
+        _, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True,
+            "person": dict(PERSON, standing_m=[0, 0, 30])})
+        self.assertIn("within 3 m", answer["refused"])
+        self.assertEqual(app.live.acts, [])
+
+    def test_strike_uses_real_grip_keeps_tool_and_can_repeat(self):
+        app = self.start([{"body": "stool", "label": "Strike", "primary": True,
+                           "steps": [{"do": "strike", "distance_m": .3, "speed_m_s": 3}]}])
+        app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
+        for _ in range(2):
+            status, answer = self.post(app, "/api/world/action", {
+                "session": app.live.session.id, "object": "stool", "primary": True,
+                "person": dict(PERSON, look_direction=[0, -.6, -.8])})
+            self.assertEqual(status, 200, answer)
+            self.assertEqual(answer["holding"], "stool")
+            self.assertNotIn("refused", answer)
+        self.assertEqual([a["op"] for a in app.live.acts], ["stroke"] * 4)
+        self.assertEqual(app.live.acts[0]["path"][0], [0, 1, 1])
+        self.assertAlmostEqual(app.live.acts[0]["path"][-1][1], .82)
+        self.assertEqual(app.live.acts[-1]["path"][-1], [0, 1, 1])
+
+    def test_unheld_strike_and_concurrent_use_are_refused(self):
+        app = self.start([{"body": "stool", "label": "Strike", "primary": True,
+                           "steps": [{"do": "strike"}]}])
+        request = {"session": app.live.session.id, "object": "stool", "primary": True, "person": PERSON}
+        _, answer = self.post(app, "/api/world/action", request)
+        self.assertIn("pick up", answer["refused"])
+        app.action_lock.acquire()
+        try:
+            status, answer = self.post(app, "/api/world/action", request)
+            self.assertEqual(status, 400)
+            self.assertIn("already running", answer["error"])
+        finally:
+            app.action_lock.release()
+        self.assertEqual(app.live.acts, [])
+
+
+    def test_timed_out_strike_cancels_without_releasing_tool(self):
+        app = self.start([{"body": "stool", "label": "Strike", "primary": True,
+                           "steps": [{"do": "strike"}]}])
+        app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
+        with mock.patch.object(playground_server, "_stroke_to", return_value="ran out of time"):
+            _, answer = self.post(app, "/api/world/action", {
+                "session": app.live.session.id, "object": "stool", "primary": True, "person": PERSON})
+        self.assertIn("ran out of time", answer["refused"])
+        self.assertEqual(answer["holding"], "stool")
+        self.assertEqual([a["op"] for a in app.live.acts], ["cancel_stroke"])
+
+    def test_legacy_object_inspection_is_read_only(self):
+        app = self.start([])
+        _, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True})
+        self.assertEqual(answer["action"], "Inspect")
+        self.assertIn("position_m", answer["done"][0])
+        self.assertEqual(app.live.acts, [])
+
     def test_bring_it_to_me_is_a_grip_a_stroke_and_setting_it_down(self):
         app = self.start([dict(BRING, body="stool")])
         status, answer = self.press(app, "stool", 0)
@@ -510,6 +614,79 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertEqual(max(beam["size_mm"]), beam["size_mm"][1], "its long side is vertical now")
         opened = app.live.opened[-1]
         self.assertEqual(len(opened["actions"]), 1, "the room opened again keeps its actions")
+
+
+
+class CoreUseContract(unittest.TestCase):
+    def test_bad_core_programs_and_ambiguous_primaries_fail(self):
+        import core_use
+        for bad in (True, float("inf"), float("nan"), -1, "3", 100):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                core_use.checked_program({"label": "Strike", "steps": [{"do": "strike", "speed_m_s": bad}]})
+        for steps in ([{"do": "python", "code": "x"}], [{"do": "strike", "force_n": 1e9}],
+                      [{"do": "strike"}, {"do": "push_forward"}]):
+            with self.assertRaises(ValueError):
+                core_use.checked_program({"label": "Use", "steps": steps})
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            fracture_lab.normalise_actions([
+                {"body": "stool", "label": name, "primary": True, "steps": [{"do": "inspect"}]}
+                for name in ("One", "Two")], [STOOL])
+
+    def test_workshop_program_survives_edit_graph_contract_and_install_mapping(self):
+        from mcp import core_use, workshop, workshop_components, workshop_graph, product_contract
+        program = {"label": "Push cart", "steps": [{"do": "push_forward", "distance_m": .5, "speed_m_s": .4}]}
+        design = workshop.assemble("cart", parameters={"primary_use": program})
+        spec = design.wireframe()
+        part = design.parts[0].name
+        edited, _, _ = workshop_components.edit(spec, part_name=part, action="thicker")
+        self.assertEqual(edited.parameters["primary_use"], program)
+        graph = workshop_graph.product(edited)
+        controls = product_contract.compile_contract(graph)["controls"]
+        self.assertTrue(controls[0]["programmed"])
+        self.assertEqual(controls[0]["program"]["label"], "Push cart")
+        self.assertEqual(core_use.installed(edited, "installed-root")["body"], "installed-root")
+        self.assertEqual(core_use.installed(edited, "installed-root")["steps"], program["steps"])
+        import tempfile
+        import workshop_store
+        with tempfile.TemporaryDirectory() as folder:
+            workshop_store.save(Path(folder), edited)
+            _, reopened = workshop_store.load(Path(folder), edited.design_id)
+            self.assertEqual(reopened.parameters["primary_use"], program)
+
+
+    def test_model_tool_call_programs_the_candidate(self):
+        from mcp import workshop
+        import workshop_chat
+        from types import SimpleNamespace
+        candidate = workshop.assemble("table").wireframe()
+        app = SimpleNamespace(api_key="test-only", model="test-model")
+        replies = [
+            {"output": [{"type": "function_call", "call_id": "use-1", "name": "program_use",
+                         "arguments": json.dumps({"label": "Push forward", "steps": [{"do": "push_forward"}]})}]},
+            {"output": [{"type": "message", "content": [{"type": "output_text", "text": "Use pushes the table."}]}]},
+        ]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies) as model, \
+             mock.patch.object(workshop_chat, "_refresh", side_effect=lambda app, candidate, design, overrides: candidate.update(design.wireframe())):
+            result = workshop_chat.propose(app, message="program its core use", selected_part=None,
+                                           candidate=candidate, materials=["oak"], library=[])
+        self.assertEqual(result["changed"], ["primary_use"])
+        self.assertEqual(candidate["parameters"]["primary_use"]["steps"][0]["do"], "push_forward")
+        self.assertIn("program_use", [t["name"] for t in model.call_args_list[0].args[1]["tools"]])
+
+    def test_workshop_llm_can_program_use_and_invalid_edit_is_atomic(self):
+        from mcp import workshop
+        import workshop_chat
+        from types import SimpleNamespace
+        candidate = workshop.assemble("table").wireframe()
+        app = SimpleNamespace()
+        state = workshop_chat._State(app, candidate, None, ["oak"], [])
+        with mock.patch.object(workshop_chat, "_refresh", side_effect=lambda app, candidate, design, overrides: candidate.update(design.wireframe())):
+            result = state.execute("program_use", {"label": "Push it forward", "steps": [{"do": "push_forward"}]})
+            self.assertEqual(result["primary_use"]["label"], "Push it forward")
+            before = json.dumps(candidate)
+            with self.assertRaises(ValueError):
+                state.execute("program_use", {"label": "Fly", "steps": [{"do": "teleport"}]})
+            self.assertEqual(json.dumps(candidate), before)
 
 
 if __name__ == "__main__":

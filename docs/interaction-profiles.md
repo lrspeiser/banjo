@@ -1,5 +1,7 @@
 # Interaction profiles
 
+Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](primary-use.md) for programming, API payloads, bounds and compatibility.
+
 Every object someone can use carries an **interaction profile**: a validated
 description of how to hold it, operate it, aim it and explain it to the person
 using it. The chat authors the profile alongside the physical construction; the

@@ -326,6 +326,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         _clearance(saved, placed, h)
         spec = deepcopy(room.spec)
         spec["bodies"] = spec["bodies"] + added
+        from mcp import core_use
+        spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
         # What each of its joints leaves the bonds that cross it, so a blow
         # landing on it in the room breaks it where it is actually weak rather
         # than treating every joint as the solid wood.
@@ -376,6 +378,8 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
     body, translation = precise_rigid.placement(artifact, root, pos)
     spec = deepcopy(room.spec)
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + [body]
+    from mcp import core_use
+    spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
     # Admission before any new process; this does not rewrite old declarations.
     normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
     body = normalised[-1]

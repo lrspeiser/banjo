@@ -2257,6 +2257,11 @@ def _chat_live(app,name,args,person=None):
         if name=="use_action":
             thing=str(args.get("name",""))[:200]
             offered=[a for a in (app.room.spec.get("actions") or []) if a.get("body")==thing]
+            if args.get("primary") is True:
+                said = run_action(app, {"object": thing, "primary": True, "person": person})
+                if said.get("refused"):
+                    return {"error": said["refused"], "done": said.get("done", [])}
+                return {"used": thing, **said}
             if not offered: raise ValueError(f"{thing or 'that'} has no actions in this room: offer_actions gives it some")
             which=args.get("action")
             labels=[str(a.get("label","")) for a in offered]
@@ -2313,7 +2318,70 @@ def _chat_live(app,name,args,person=None):
     except Exception as failure:
         return {"error":str(failure)}
 
-def run_action(app,body):
+def _core_hand_step(app, name, step, person):
+    """Execute a declared gesture, never prescribe an object trajectory."""
+    from mcp import core_use
+    step = core_use.checked_step(step)
+    target = _live_body(app, name)
+    if step["do"] == "inspect":
+        state = {k: target[k] for k in ("position_m", "mass_kg", "dimensions_m", "anchored", "temperature_k") if k in target}
+        return f"inspected {name}: " + json.dumps(state, allow_nan=False), None
+    if person is None:
+        raise ValueError("Use needs the person's position and facing")
+    if target.get("anchored"):
+        raise ValueError(f"{name} is fixed in place")
+    hand = (app.live.session.state or {}).get("hand") or {}
+    held = hand.get("name") if hand.get("holding") else None
+    at = [float(v) for v in target["position_m"]]
+    if step["do"] == "strike":
+        if held != name:
+            raise ValueError(f"pick up {name} before striking")
+        start = list(hand.get("grip_m") or at)
+        way = person.get("look_direction") or person["facing"]
+        end = [start[k] + way[k] * step["distance_m"] for k in range(3)]
+        ended = _stroke_to(app, end, step["speed_m_s"], start)
+        if ended not in ("reached", "blocked"):
+            app.live.act({"session": app.live.session.id, "op": "cancel_stroke"})
+            return "", f"{name} stroke {ended}"
+        # A stopped stroke can be contact; it is not proof of a successful hit.
+        grip = ((app.live.session.state or {}).get("hand") or {}).get("grip_m") or start
+        returned = _stroke_to(app, start, min(step["speed_m_s"], 1.0), grip)
+        if returned not in ("reached", "blocked"):
+            app.live.act({"session": app.live.session.id, "op": "cancel_stroke"})
+            return f"swung {name}; stroke {ended}", f"return stroke {returned}"
+        return f"swung {name}; stroke {ended}", None
+    if held:
+        raise ValueError("put down what you are holding before pushing")
+    eyes = person.get("eyes_m") or person["standing_m"]
+    if math.dist(at, eyes) > 3.0:
+        raise ValueError("move within 3 m of the product to use it")
+    way = person["facing"]
+    end = [at[k] + way[k] * step["distance_m"] for k in range(3)]
+    app.live.act({"session": app.live.session.id, "op": "wield", "name": name, "grip": at})
+    try:
+        ended = _stroke_to(app, end, step["speed_m_s"], at)
+    finally:
+        app.live.act({"session": app.live.session.id, "op": "release"})
+    now = _live_body(app, name)["position_m"]
+    moved = sum((now[k] - at[k]) * way[k] for k in range(3))
+    if moved < 0.02:
+        return "", f"{name} did not move forward: blocked or beyond the hand's force"
+    return f"pushed {name} forward {moved:.2f} m (stroke {ended})", None
+
+
+def run_action(app, body):
+    # A product cannot start overlapping programs on the same physical hand.
+    # setdefault is not available on the app Namespace; initialize under GIL.
+    lock = app.__dict__.setdefault("action_lock", threading.Lock())
+    if not lock.acquire(blocking=False):
+        raise ValueError("a Use action is already running")
+    try:
+        return _run_action(app, body)
+    finally:
+        lock.release()
+
+
+def _run_action(app,body):
     """One of a thing's actions, pressed on the page (POST /api/world/action).
 
     An action is a short program the room's chat kept with the thing when it
@@ -2328,7 +2396,13 @@ def run_action(app,body):
     if not isinstance(body,dict): raise ValueError("expected {object, action, person}")
     room=app.room
     name=str(body.get("object",""))[:200]
-    if body.get("builtin") is not None:
+    if "primary" in body and not isinstance(body["primary"], bool):
+        raise ValueError("primary must be true or false")
+    if body.get("primary"):
+        from mcp import core_use
+        _live_body(app, name)
+        action = core_use.selected([a for a in room.spec.get("actions", []) if a.get("body") == name])
+    elif body.get("builtin") is not None:
         key=str(body.get("builtin"))
         if key in ("turn","slide"):
             # Everything on a pin or in a groove has these, to the joint's stops.
@@ -2348,8 +2422,9 @@ def run_action(app,body):
     # The hand may already hold what a turn or a slide works -- a winch kept
     # turned, its gate up: "Lower the gate" goes on from that hold, since
     # letting go first would drop the gate. Anything else needs the hand free.
-    held=((app.live.session.state or {}).get("hand") or {}).get("holding")
-    if held and action["steps"][0]["do"] not in ("turn","slide","drive"):
+    hand = (app.live.session.state or {}).get("hand") or {}
+    held = (hand.get("name") or hand.get("holding")) if hand.get("holding") else None
+    if held and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     # What the hand held before the action: the action lets go only of what it
@@ -2358,7 +2433,11 @@ def run_action(app,body):
     try:
         for index,step in enumerate(action["steps"]):
             do=step["do"]
-            if do=="stand":
+            if do in ("inspect", "strike", "push_forward"):
+                line, problem = _core_hand_step(app, name, step, person)
+                if line: done.append(line)
+                if problem: break
+            elif do=="stand":
                 now,said=_stand(app,room,name,step,person)
                 if now is None:
                     problem=said
@@ -2480,7 +2559,7 @@ def run_action(app,body):
     said={"action":action["label"],"done":done}
     if problem: said["refused"]=problem
     else: said["did"]=[action["label"]]
-    if kept: said["holding"]=holding
+    if kept or (before and not acquired and not worked): said["holding"]=holding
     if opened is not None: said.update(reopened=True,session=opened["session"],state=opened)
     return said
 

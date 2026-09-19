@@ -11,6 +11,7 @@ from __future__ import annotations
 from math import sqrt
 from typing import Any
 
+from mcp import core_use
 from mcp.workshop import WorkshopDesign, WirePart, _axis_of, _rotate
 from mcp.product_graph import ProductGraph, ProductComponent, component, interface, relationship
 
@@ -283,6 +284,9 @@ def product(design: WorkshopDesign, *, contact_tolerance_m: float = 0.003) -> Pr
         relationships=relationships,
         contents=contents,
         energy=energy,
+        controls=[{"kind": "primary-use", "binding": "primary",
+                   "programmed": "primary_use" in design.parameters,
+                   "program": core_use.installed(design, design.design_id)}],
         tests=list(design.tests),
         metadata={"source": "workshop", "kind": design.kind,
                   "parameters": dict(design.parameters),

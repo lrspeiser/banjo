@@ -8,7 +8,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. Both MCP entry points are **1.3.0**.
+Current native ABI: **25**. Both MCP entry points are **1.4.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.

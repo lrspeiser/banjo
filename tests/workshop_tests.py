@@ -191,8 +191,10 @@ class Mass(unittest.TestCase):
         design = assemble("table", parameters={
             "width_m": 1.0, "depth_m": 1.0, "height_m": 1.0, "top_thickness_m": 0.1,
             "leg_section_m": 0.1, "material": "oak"})
-        top = 1.0 * 0.1 * 1.0 * 750.0
-        leg = 0.1 * 0.9 * 0.1 * 750.0
+        from mcp import engine_materials
+        density = engine_materials.density("oak")
+        top = 1.0 * 0.1 * 1.0 * density
+        leg = 0.1 * 0.9 * 0.1 * density
         self.assertAlmostEqual(top + 4 * leg, design.measure()["mass_kg"], places=2)
 
 

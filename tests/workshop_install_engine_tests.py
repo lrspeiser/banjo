@@ -68,6 +68,45 @@ class NativeInstallation(unittest.TestCase):
                 reply=self.live.act({'session':self.live.session.id,'op':'step','dt':1/120,'n':2})
                 self.assertIn(result['root_body'],[b['name'] for b in reply['bodies']])
 
+
+    def test_programmed_use_survives_native_install_restart_and_runs(self):
+        import server
+        import threading
+        import time
+        program = {"label": "Push table", "steps": [{"do": "push_forward", "distance_m": .2, "speed_m_s": .4}]}
+        candidate = {"kind": "table", "parameters": {"primary_use": program}}
+        result = self.do_commit(self.preview(candidate=candidate))
+        root = result["root_body"]
+        saved = self.app.store.load("yard")
+        action = next(a for a in saved.spec["actions"] if a["body"] == root)
+        self.assertTrue(action["primary"])
+        self.assertEqual(action["steps"], program["steps"])
+        self.assertEqual(action["label"], program["label"])
+        # Real native stepping accompanies the HTTP-style gesture, just as the
+        # browser does. A blocked heavy table may honestly refuse displacement.
+        stop = threading.Event()
+        errors = []
+        def tick():
+            try:
+                while not stop.is_set():
+                    self.live.act({"session": self.live.session.id, "op": "step", "dt": 1/120, "n": 2})
+                    time.sleep(.004)
+            except Exception as error:
+                errors.append(str(error))
+        runner = threading.Thread(target=tick)
+        runner.start()
+        try:
+            answer = server.run_action(self.app, {"object": root, "primary": True,
+                                       "person": {"standing_m": [3, 0, 2], "facing": [0, 0, -1]}})
+        finally:
+            stop.set()
+            runner.join(10)
+        self.assertFalse(errors)
+        self.assertFalse(runner.is_alive())
+        self.assertEqual(answer["action"], "Push table")
+        self.assertTrue(answer.get("done") or answer.get("refused"), answer)
+        self.assertFalse((self.live.session.state.get("hand") or {}).get("holding"))
+
     def test_an_installed_product_carries_its_parts_into_the_room(self):
         """#20 in a live room. A product used to arrive as one anonymous heap of
         cells, so nothing in the room could tell an interface bond from an

@@ -836,6 +836,9 @@ class WorkshopDesign:
             raise ValueError("purpose is required")
         if not self.parts:
             raise ValueError("a workshop design must contain at least one part")
+        if "primary_use" in self.parameters:
+            from mcp import core_use
+            core_use.checked_program(self.parameters["primary_use"])
         names = [p.name for p in self.parts]
         if len(names) != len(set(names)):
             raise ValueError("part names must be unique inside a workshop design")
@@ -972,7 +975,12 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     """Compose a named assembly out of the component library."""
     spec = assembly(kind)
     library = library or ComponentLibrary()
-    values = spec.checked(parameters)
+    from mcp import core_use
+    supplied = dict(parameters or {})
+    use = supplied.pop("primary_use", None)
+    values = spec.checked(supplied)
+    if use is not None:
+        values["primary_use"] = core_use.checked_program(use)
     parts = spec.build(library, values)
     design = WorkshopDesign(
         design_id=design_id or kind,

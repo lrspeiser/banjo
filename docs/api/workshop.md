@@ -1,5 +1,7 @@
 # Workshop and Product platform API
 
+Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](../primary-use.md) for programming, API payloads, bounds and compatibility.
+
 Workshop is Banjo's product-design surface. It designs one product or assembly in
 an isolated workspace, measures it, reuses saved components, runs bounded tests,
 compiles a reduced real-time physics contract, and materializes only the selected

@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bindings" / "pytho
 # playground's room holds its own profiles to as well.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import core_use
 
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
@@ -50,7 +51,7 @@ import constructions  # noqa: E402
 import machine_mcp_tools  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER = {"name": "banjo", "version": "1.3.0"}
+SERVER = {"name": "banjo", "version": "1.4.0"}
 
 # How many worlds may be open at once. Each is a physics engine with its scene
 # resident in it, and nothing here is a long-lived service.
@@ -1452,7 +1453,7 @@ MAX_ACTIONS = 9             # few enough for a person to step through with Tab
 MAX_STEPS = 12
 ACTION_LABEL_CHARS = 60
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
-                "heat", "wait", "drive")
+                "heat", "wait", "drive") + core_use.STEPS
 # Where a turn or a slide ends, by name: the joint's far stop, half way there,
 # its near stop, or where it was when the room was made.
 ACTION_STOPS = ("all_the_way", "half_way", "all_the_way_back", "back_to_start")
@@ -1511,7 +1512,8 @@ def _action_number(value: Any, what: str, low: float, high: float,
 # sent every step every field six times over and gave up. So a step reads only
 # its kind's fields and a place only its kind's, and the rest is set aside and
 # said, as the interaction profiles do.
-STEP_FIELDS = {"stand": ("stand", "along", "where"), "take_hold": ("part",),
+STEP_FIELDS = {"inspect": (), "strike": ("distance_m", "speed_m_s"),
+               "push_forward": ("distance_m", "speed_m_s"), "stand": ("stand", "along", "where"), "take_hold": ("part",),
                "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
                "push": ("part", "toward", "distance_m", "speed_m_s"),
                "turn": ("part", "degrees", "stop"), "slide": ("part", "distance_m", "stop"),
@@ -1637,6 +1639,8 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         raise Refused(f"{label!r}: steps is a list of 1 to {MAX_STEPS} steps")
     body = next(b for b in entry["scene"]["bodies"] if b["name"] == name)
     holding: str | None = None
+    if "primary" in action and not isinstance(action["primary"], bool):
+        raise Refused("primary must be true or false")
     kept: list[dict[str, Any]] = []
     for i, step in enumerate(steps):
         where = f"{label!r} step {i + 1}"
@@ -1656,7 +1660,15 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         if extra:
             aside.append(f"{where}: {', '.join(sorted(extra))} (a {do} step has none)")
         out: dict[str, Any] = {"do": do}
-        if do == "stand":
+        if do in core_use.STEPS:
+            try:
+                out = core_use.checked_step({"do": do, **{k: v for k, v in step.items()
+                                              if k in STEP_FIELDS[do] and v is not None}})
+            except ValueError as error:
+                raise Refused(str(error)) from error
+            if do != "inspect" and body.get("anchored"):
+                raise Refused(f"{where}: {name} is fixed in place")
+        elif do == "stand":
             if holding:
                 raise Refused(f"{where}: stand is not done with {holding} in the hand: "
                               f"put_down or let_go first")
@@ -1778,7 +1790,7 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         raise Refused(f"{label!r} ends with {holding} still in the hand: end it with put_down "
                       f"or let_go, so the person's hand is free (only a last turn or slide "
                       f"keeps hold, so what it raised stays up)")
-    return {"label": label, "steps": kept}
+    return {"label": label, "steps": kept, **({"primary": action["primary"]} if "primary" in action else {})}
 
 
 def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
@@ -1801,6 +1813,10 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
     warned: list[str] = []
     kept = [_action_checked(entry, name, action, names, masses, aside, warned)
             for action in actions]
+    if sum(a.get("primary") is True for a in kept) > 1:
+        raise Refused("an object has exactly one primary action; nothing was changed")
+    if kept and not any(a.get("primary") is True for a in kept):
+        kept[0]["primary"] = True
     labels = [action["label"].lower() for action in kept]
     if len(set(labels)) != len(labels):
         raise Refused("two actions have the same label, and the person has to be able to "
@@ -1813,7 +1829,7 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
     answer: dict[str, Any] = {
         "offered": name,
         "actions": [{"key": i + 1, **action} for i, action in enumerate(kept)],
-        "note": "Shown when the person looks at it, in the order given (in the playground, "
+        "note": "Left mouse runs the primary action. Shown when the person looks at it, in the order given (in the playground, "
                 "E does the one marked and Tab moves E on). Each program runs when it is "
                 "chosen: the hand's steps in the running room with the "
                 "hand's own 800 N, a stand step as turn_object with all its checks, a drive "
@@ -2925,9 +2941,11 @@ def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
     if not any(b["name"] == name for b in entry["scene"]["bodies"]):
         raise Refused(f"there is nothing called {name!r} in this world")
     offered = (entry.get("actions") or {}).get(name) or []
+    if args.get("primary") is True:
+        offered = [core_use.selected(offered)]
     if not offered:
         raise Refused(f"{name} has no actions: offer_actions gives it some")
-    which = args.get("action")
+    which = offered[0]["label"] if args.get("primary") is True else args.get("action")
     labels = [str(a["label"]) for a in offered]
     key = str(which).strip()
     action = next((a for a in offered if str(a["label"]).lower() == key.lower()), None)
@@ -2935,13 +2953,19 @@ def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
         action = offered[int(key) - 1]
     if action is None:
         raise Refused(f"{name} has no action {which!r}: its actions are {', '.join(labels)}")
-    hand = sorted({s["do"] for s in action["steps"] if s["do"] not in ("drive", "wait")})
+    hand = sorted({s["do"] for s in action["steps"] if s["do"] not in ("drive", "wait", "inspect")})
     if hand:
         raise Refused(f"'{action['label']}' has {', '.join(hand)} steps, which the person's hand takes in "
                       f"the playground's running room; in this world, do them with the hand's own calls")
     done = []
     for step in action["steps"]:
-        if step["do"] == "drive":
+        if step["do"] == "inspect":
+            bodies = _describe(entry["world"]) if entry.get("world") is not None else entry["scene"]["bodies"]
+            current = next((dict(b) for b in bodies if b["name"] == name), None)
+            if current is None:
+                raise Refused(f"{name} is no longer present in the running world")
+            done.append(current)
+        elif step["do"] == "drive":
             said = tool_drive({"world_id": args.get("world_id"), "part": step.get("part") or name,
                                "command": step.get("command", 0.0),
                                **({"brake": step["brake"]} if "brake" in step else {})})
@@ -6600,7 +6624,11 @@ TOOLS = [
                                            "side runs, like [1, 0, 0]. Left out, the way it "
                                            "runs now.")}}},
     {"name": "offer_actions",
-     "description": "Give an object you made the actions a person would take with it: each "
+     "description": "Program every created product\'s core Use. Set primary=true on exactly one action; "
+                    "Left mouse / J runs it. With none marked, the first is primary. "
+                    "strike moves the held product forward through a bounded hand stroke; "
+                    "push_forward pushes an unheld product along the person\'s facing; inspect reads its state. "
+                    "Give an object you made the actions a person would take with it: each "
                     "a label and a short program the room runs when they choose it -- looking "
                     "at the object lists its actions, in the order given. Think about what the "
                     "thing is FOR. A chair is "
@@ -6634,6 +6662,7 @@ TOOLS = [
          "world_id": {"type": "string"}, "name": {"type": "string"},
          "actions": {"type": "array", "maxItems": MAX_ACTIONS, "items": {
              "type": "object", "required": ["label", "steps"], "properties": {
+                 "primary": {"type": "boolean", "description": "Exactly one core Use action per product."},
                  "label": {"type": "string",
                            "description": "What the person reads beside the key, like \"Pull "
                                           "it out from the table\": at most 60 characters."},
@@ -6676,11 +6705,11 @@ TOOLS = [
                          "toward": dict(ACTION_PLACE, description="push: the way to push, "
                                         "toward this place. " + ACTION_PLACE["description"]),
                          "distance_m": {"type": "number",
-                                        "description": "push: how far, 0.05 to 1.5 m. slide: "
+                                        "description": "strike: 0.05 to 0.8 m. push_forward and push: 0.05 to 1.5 m. slide: "
                                                        "how far along its groove, -3 to 3 m "
                                                        "-- or give stop instead."},
                          "speed_m_s": {"type": "number",
-                                       "description": "carry_to, push: how fast the hand "
+                                       "description": "strike: 0.1 to 5 m/s. push_forward, carry_to, push: how fast the hand "
                                                       "goes, 0.1 to 1.5 m/s."},
                          "power_w": {"type": "number", "description": "heat: 100 to 10,000 W."},
                          "seconds": {"type": "number",
@@ -7225,10 +7254,11 @@ TOOLS = [
                     "the motor, as drive does, and an action with a step the person's hand takes "
                     "is refused with why. Refused, with why: nothing of that name, a thing with "
                     "no actions, and an action it does not have.",
-     "inputSchema": {"type": "object", "required": ["world_id", "name", "action"],
+     "inputSchema": {"type": "object", "required": ["world_id", "name"],
                      "properties": {
          "world_id": {"type": "string"},
          "name": {"type": "string", "description": "The thing whose action it is, like 'hoist drum'."},
+         "primary": {"type": "boolean", "description": "Run its core Use instead of selecting an action."},
          "action": {"type": "string",
                     "description": "Its label, like 'Wind it up', or its number from 1 in the order "
                                    "offer_actions gave them."}}}},
