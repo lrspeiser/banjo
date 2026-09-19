@@ -85,14 +85,22 @@ numbered 19 on its branch and landed second, so no header was ever 19:
   `banjo_control` (see [A machine's controller](#a-machines-controller)). It
   changed no function or struct that was already there; `banjo_drive_motor` on a
   motor with a controller tells the controller.
+- **25** added a shared, stateful DC/thermal network
+  ([machine-circuits.md](../machine-circuits.md)): `banjo_make_circuit` declares
+  one from JSON and returns an id above zero or a negative status,
+  `banjo_circuit_switch` opens or closes a named branch, and `banjo_circuits`
+  reports the network as JSON the world owns until its next circuit report. A
+  declaration must include every motor drawing on its store, and no second owner
+  may spend that store. It changed no function or struct that was already there.
 
-A library at 24 has all of them, and none was ever 19. Nothing that was in 12
-changed, and nothing that was in 14 changed in 15. None of 16 to 24 changed a
+A library at 25 has all of them, and none was ever 19. Nothing that was in 12
+changed, and nothing that was in 14 changed in 15. None of 16 to 25 changed a
 function that was already there, but structs grew at their ends --
 `banjo_joint`, `banjo_overload` and `banjo_energy` in 16, `banjo_body` and
 `banjo_joint` again in 17, `banjo_body` and `banjo_body_mechanics` in 21 -- so a
 caller built against an older header must be rebuilt, and every field that was
-there keeps its place and its meaning. 18, 20, 22, 23 and 24 changed no struct.
+there keeps its place and its meaning. 18, 20, 22, 23, 24 and 25 changed no
+struct.
 
 ---
 
