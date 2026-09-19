@@ -1,5 +1,9 @@
 # Executable machine networks, first checkpoint
 
+The current [API/MCP reference](api/machine-networks.md) documents all circuit
+calls, product installation, runner commands and unchanged-world restart. Both
+MCP servers now expose the network at version 1.2.0 (native ABI remains 25).
+
 Initial base: main `1b27e67`, September 19, 2026, immediately after `434ff2b`.
 Integrated concurrent main through `4e00a52` before publishing; its source
 change to `TileImpactScene.hpp` is commentary, alongside product/root-body and

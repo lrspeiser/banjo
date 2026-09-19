@@ -177,6 +177,7 @@
 #include <array>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -423,6 +424,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"drawn_j", tidy(m.drawn_j)},
                                  {"friction_heat_j", tidy(m.friction_heat_j)}});
     }
+    out["circuits"] = nlohmann::json::parse(world.circuits());
     return out;
 }
 
@@ -1905,6 +1907,19 @@ int main(int argc, char **argv) {
                             "a motor goes on a pin with none, wired to a store, with a stall torque and an "
                             "unloaded speed above zero");
                     reply["motor"] = motor;
+                } else if (op == "circuit") {
+                    reply["circuit"] = world->circuit(command.at("network").dump());
+                } else if (op == "circuit_switch") {
+                    const auto &id = command.at("circuit");
+                    if (!id.is_number_integer() || id.get<std::int64_t>() <= 0 ||
+                        id.get<std::int64_t>() > std::numeric_limits<unsigned>::max())
+                        throw std::invalid_argument("circuit must be a positive uint32 handle");
+                    world->circuitSwitch(id.get<unsigned>(), command.at("branch").get<std::string>(),
+                                         command.at("closed").get<bool>());
+                } else if (op == "circuits") {
+                    std::cout << nlohmann::json{{"ok", true},
+                        {"circuits", nlohmann::json::parse(world->circuits())}}.dump() << std::endl;
+                    continue;
                 } else if (op == "drive") {
                     // What a motor is told: a command from -1 to 1, and its brake.
                     if (!world->driveMotor(command.at("motor").get<unsigned>(), command.value("command", 0.0),

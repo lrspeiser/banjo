@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Machine API coverage, September 19:** complete for the implemented bounded
+DC/thermal checkpoint across C, Python, both standalone MCP servers and the
+native runner. [Reference and capability matrix](api/machine-networks.md).
+Whole-world server restart is tested with charge, heat and fuse history intact.
+Next integration gate: component/state remapping into edited browser rooms and
+Workshop controls, before exposing circuit authoring there. Remaining physics
+capabilities retain the acceptance gates below and in the machine roadmap.
+
 **Stateful machine priority, September 19:** [Four connected systems and all
 fifteen retained capabilities](machine-network-roadmap.md) organize the next
 machine work. [Milestone 1's native DC/thermal increment](machine-circuits.md)

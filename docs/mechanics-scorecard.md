@@ -1,5 +1,11 @@
 # Banjo mechanics scorecard
 
+**Machine API integration, September 19:** [C/Python/MCP reference](api/machine-networks.md)
+and runner commands expose the existing circuit model. Seven focused CTest
+suites pass, including process restart with persistent fuse failure. This is
+adapter/lifecycle coverage; the model's numerical residuals and material-law
+qualification remain those of the circuit checkpoint below.
+
 **DC/thermal machine checkpoint, September 19:** [Circuit model and evidence](machine-circuits.md)
 add shared supply loading, open circuits, fuse history, winding/source heat,
 thermal links, ideal gearing, support reaction and full-world restart. Tests

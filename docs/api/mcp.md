@@ -42,6 +42,13 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
+Current world and platform server version: **1.2.0**, requiring native ABI **25**.
+For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
+the same environment; it includes every world tool below. See
+[Workshop setup](workshop.md#mcp-server) and the
+[machine-network reference](machine-networks.md) for schemas, units, lifecycle,
+examples and the supported/remaining capability table for all fifteen areas.
+
 ## The tools
 
 Deliberately above the level of the C API. A model does not want to take four
@@ -50,6 +57,12 @@ broke.
 
 | tool | what it does |
 |---|---|
+| `circuit` | attach a bounded shared DC/thermal network to an existing store and all its motors; returns a positive circuit handle. Full nested declaration is published in `tools/list`. |
+| `install_circuit` | compile a ProductGraph and bind a named operating circuit to existing stores and motors by component identity; no geometry creation or state reset. |
+| `circuit_switch` | open/close a switch by world id, circuit handle, branch id and boolean `closed`; cannot repair failure. |
+| `circuits` | read circuit state, component temperatures, currents, torques, fuse history and energy/residual ledgers; also included in `run` / `describe_world` machine reports. |
+| `snapshot_world` | read a whole-world checkpoint with MCP names and native state; save the returned `checkpoint` as JSON. |
+| `restore_world` | resume the unchanged `checkpoint` into a new world id, preserving charge, heat and damage; rejects edited or incompatible snapshots and incomplete restore. |
 | `list_materials` | the eight materials and what each actually does, with measured speeds, and each one's rolling resistance -- marked sourced or a demonstration value -- with the floor's, rock's, soil's and sand's. A ball is resisted with its own plus the surface's, rests on any slope whose tangent is below that, and on the level stops in v² / (2 · 5/7 c g). **Worth calling first** — the numbers are not the ones you would guess. |
 | `create_world` | build a world from a list of objects; returns an id |
 | `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed; and which balls rolling resistance holds still, which are rolling against it, and the energy it took |

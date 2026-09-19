@@ -19,7 +19,7 @@ a log line: the day it was built and the floating-point profile it was compiled
 to ([One floating-point model](../floating-point-model.md)). Never parse it: the
 number to compare is `banjo_abi_version()`.
 
-Current ABI: **23**. 13 and 14 were two additions made side by side and then
+Current ABI: **25**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18
 were added on top of both; 20 and 21 were two more made side by side -- 21 was
 numbered 19 on its branch and landed second, so no header was ever 19:
@@ -88,10 +88,12 @@ numbered 19 on its branch and landed second, so no header was ever 19:
 - **25** added a shared, stateful DC/thermal network
   ([machine-circuits.md](../machine-circuits.md)): `banjo_make_circuit` declares
   one from JSON and returns an id above zero or a negative status,
-  `banjo_circuit_switch` opens or closes a named branch, and `banjo_circuits`
+  `banjo_circuit_switch` opens or closes a named switch branch, and `banjo_circuits`
   reports the network as JSON the world owns until its next circuit report. A
   declaration must include every motor drawing on its store, and no second owner
   may spend that store. It changed no function or struct that was already there.
+  See [Machine circuits](#machine-circuits) and the
+  [complete machine API/MCP reference](machine-networks.md).
 
 A library at 25 has all of them, and none was ever 19. Nothing that was in 12
 changed, and nothing that was in 14 changed in 15. None of 16 to 25 changed a
@@ -905,6 +907,30 @@ Newton metres for a pin, newtons for a slide. Taking the joint out drops
 whatever it was holding up — both kinds; the name is historical.
 
 ---
+
+## Machine circuits
+
+```c
+int banjo_make_circuit(banjo_world *world, const char *declaration_json);
+int banjo_circuit_switch(banjo_world *world, unsigned circuit, const char *branch, int closed);
+const char *banjo_circuits(const banjo_world *world);
+```
+
+ABI 25. Attach a `banjo.circuit.v1` DC/thermal network after creating its store
+and motors. Creation returns a positive world-local handle or negative status.
+Switching returns `BANJO_OK` or negative status; `closed` is exactly 0 or 1.
+Only switch branches can be toggled; failure history is not repaired.
+Inspection returns a JSON array in handle order (index + 1), or NULL on error;
+read `banjo_last_error`. The string belongs to the world until its next circuit
+query or destruction. It contains current state, not a replacement declaration.
+
+Python equivalents are `World.circuit(network)`,
+`World.circuit_switch(handle, branch, closed)` and `World.circuits()`.
+Every source store and all its motors belong to one circuit; duplicate or partial
+ownership is refused. Full-world snapshots preserve charge, temperatures,
+fuse damage and ledgers. Edited-scene carry is refused. See
+[machine-networks.md](machine-networks.md) for the complete declaration, units,
+errors, all MCP/runner calls, product binding, examples and unsupported domains.
 
 ## Machines
 

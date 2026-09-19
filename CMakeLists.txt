@@ -495,6 +495,10 @@ if(BANJO_BUILD_HEADLESS)
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/product_circuit_tests.py)
         set_tests_properties(banjo_product_circuit_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        add_test(NAME banjo_machine_api_tests
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_api_tests.py)
+        set_tests_properties(banjo_machine_api_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
         # Pins through the same boundary. An outside program holding nothing but
         # banjo.h builds a gateway, hangs a gate on it, shoves it open and reads
         # back where it got to -- which is the half of a playground people and

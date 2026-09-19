@@ -2,6 +2,9 @@
 
 **A physics engine where things are made of something.**
 
+[API documentation](docs/api/README.md) ·
+[Machine networks: C, Python and MCP](docs/api/machine-networks.md)
+
 An object here is not a shape with a "breakable" flag on it: it is cells joined
 by bonds, the bonds carry tension and compression, they yield and they fail, and
 what happens to a thing is worked out rather than looked up. Drop a glass ball

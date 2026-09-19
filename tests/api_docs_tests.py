@@ -55,6 +55,27 @@ def named_in(text: str, name: str) -> bool:
 
 
 class TheDocsNameEverything(unittest.TestCase):
+    def test_machine_versions_and_schema_fields_are_documented(self):
+        import banjo
+        from circuit_api import CIRCUIT_SCHEMA
+        header = (ROOT / "include" / "banjo" / "banjo.h").read_text(encoding="utf-8")
+        version = int(re.search(r"#define BANJO_ABI_VERSION (\d+)", header).group(1))
+        self.assertEqual(version, banjo.ABI_VERSION)
+        doc = (DOCS / "c-api.md").read_text(encoding="utf-8")
+        self.assertIn(f"Current ABI: **{version}**", doc)
+        reference = (DOCS / "machine-networks.md").read_text(encoding="utf-8")
+        self.assertIn(f"**{banjo_platform_mcp.core.SERVER['version']}**", reference)
+        def fields(schema):
+            for name, child in schema.get("properties", {}).items():
+                yield name
+                yield from fields(child)
+            if "items" in schema:
+                yield from fields(schema["items"])
+        missing = sorted({field for field in fields(CIRCUIT_SCHEMA) if not named_in(reference, field)})
+        self.assertFalse(missing, f"circuit schema fields missing from reference: {missing}")
+        names = set(re.findall(r"`(banjo_[a-z0-9_]+)`", reference))
+        self.assertFalse(names - set(declared()), f"unknown C API functions: {names-set(declared())}")
+
     def test_every_world_mcp_tool_has_exactly_one_documented_surface(self):
         documented = tabled_tools(DOCS / "mcp.md", "## The tools")
         self.assertEqual(WORLD_TOOLS, documented,

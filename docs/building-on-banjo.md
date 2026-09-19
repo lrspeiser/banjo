@@ -3,6 +3,11 @@
 The engine is a C library. One header, one shared object, an opaque handle.
 Anything that can call a C function can drive a world.
 
+ABI 25 includes stateful DC/thermal machine networks. The
+[machine API/MCP reference](api/machine-networks.md) covers creation, switching,
+product installation, inspection and restart, with a capability table for the
+remaining machine physics. Both standalone MCP servers expose these functions.
+
 ```c
 #include "banjo/banjo.h"
 

@@ -8,11 +8,16 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
+Current native ABI: **25**. Both MCP entry points are **1.2.0**.
+
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.
 - **[materials.md](materials.md)** — the eight materials, what each actually
   does, and the measured numbers you need to design an experiment that shows
   something.
+- **[machine-networks.md](machine-networks.md)** — every circuit API/MCP call,
+  product binding, thermal/electrical state, restart and errors; supported
+  functions and remaining work across all fifteen machine capability areas.
 - **[mcp.md](mcp.md)** — the MCP server, so Claude or ChatGPT can run
   experiments instead of guessing at them.
 - **[../cutting-model.md](../cutting-model.md)** — blades: an edge declared on a

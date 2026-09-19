@@ -53,6 +53,12 @@ import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's 
 # Everything the MCP offers reaches the chat except these, each for a reason
 # that is about the ROOM rather than about the tool.
 NOT_FOR_THE_ROOM = {
+    "circuit": "circuit construction awaits state-preserving room editing; use the standalone MCP world",
+    "install_circuit": "product circuit installation awaits state-preserving room editing",
+    "circuit_switch": "room circuit controls require the persistent live-room adapter",
+    "circuits": "the authoring copy cannot report the running room's circuit state",
+    "snapshot_world": "the room uses its own native snapshot persistence",
+    "restore_world": "the room uses its own native snapshot persistence",
     "create_world": "the room already exists; clear_world empties it and "
                     "add_object builds it up again",
     "close_world": "the room is the person's and stays open",

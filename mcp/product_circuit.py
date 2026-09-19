@@ -82,13 +82,9 @@ def compile_circuits(document: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def install_circuit(world: Any, contract: dict[str, Any], circuit_id: str, *,
-                    stores: dict[str, int], motors: dict[str, int]) -> int:
-    """Bind preserved component identities to already installed native parts.
-
-    Call once at installation, never on inspection or full-world restore. The
-    native world refuses duplicate stores and partial shared-store ownership.
-    """
+def bind_circuit(contract: dict[str, Any], circuit_id: str, *,
+                 stores: dict[str, int], motors: dict[str, int]) -> dict[str, Any]:
+    """Resolve component identities without changing the contract or a world."""
     models = contract.get("operating_model", {}).get("circuits", [])
     found = [model for model in models if model["id"] == circuit_id]
     if len(found) != 1:
@@ -99,4 +95,10 @@ def install_circuit(world: Any, contract: dict[str, Any], circuit_id: str, *,
     for branch in network["branches"]:
         if branch.get("kind") == "motor":
             branch["motor"] = motors[branch.pop("motor_component")]
-    return world.circuit(network)
+    return network
+
+
+def install_circuit(world: Any, contract: dict[str, Any], circuit_id: str, *,
+                    stores: dict[str, int], motors: dict[str, int]) -> int:
+    """Install once, never on inspection/restore; native ownership is authoritative."""
+    return world.circuit(bind_circuit(contract, circuit_id, stores=stores, motors=motors))

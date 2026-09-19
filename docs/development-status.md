@@ -1,5 +1,20 @@
 # Development status and handoff
 
+**September 19 machine API/MCP checkpoint (base `45ab4e3`, integrated `aec206f`):**
+[Public reference](api/machine-networks.md) covers every implemented machine
+entry point and distinguishes the remaining work across all fifteen areas.
+Both MCP servers at 1.2.0 expose circuit creation, ProductGraph circuit binding,
+switching, inspection and whole-world checkpoint/resume; ABI remains 25.
+Native runner commands and machine reports include circuits. Strict input and
+edited-scene guards prevent silent state resets; browser room circuit authoring
+is explicitly excluded until its state remapping exists. Closing an already
+cleared MCP world is fixed. No physics law or proposed joint factor changed.
+Windows/MSVC Release: seven focused CTest suites pass (7.84 s), including real
+MCP server restarts preserving a blown fuse, and native runner restart. The
+separate 17 chat parity and nine legacy MCP handshake/machine checks pass.
+Source registration covers all 275 sources. This is API integration verification,
+not fresh full-engine, interactive browser or cross-platform qualification.
+
 **September 19 machine networks:** [Executable DC/thermal circuits](machine-circuits.md)
 extend the existing motors and stores with shared nodal electrical solving,
 switches, fuses, temperature-dependent resistance, lumped heat paths and

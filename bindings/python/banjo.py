@@ -2056,13 +2056,25 @@ class World:
             self._alive(), json.dumps(declaration, allow_nan=False).encode("utf-8")), "adding a circuit")
 
     def circuit_switch(self, circuit: int, branch: str, closed: bool) -> None:
+        """Change a switch on the next accepted step; never repair a failed fuse."""
+        if type(circuit) is not int or not 0 < circuit <= 4294967295:
+            raise ValueError("circuit must be a positive uint32 handle")
+        if not isinstance(branch, str) or not branch or "\0" in branch:
+            raise ValueError("branch must be a nonempty id without NUL")
+        if type(closed) is not bool:
+            raise ValueError("closed must be a boolean")
         self._check(self._lib.banjo_circuit_switch(self._alive(), circuit, branch.encode("utf-8"),
                                                   int(closed)), "setting a circuit switch")
 
     def circuits(self) -> list[dict[str, Any]]:
+        """Read declarations and state in native-handle order (index + 1).
+
+        Includes component temperatures, fuse damage, last electrical readings
+        and energy/residual ledgers. Use snapshot(), not this report, to resume.
+        """
         text = self._lib.banjo_circuits(self._alive())
         if text is None:
-            raise RuntimeError("reading circuits failed")
+            raise BanjoError(f"reading circuits: {self._error() or 'the engine refused'}")
         return json.loads(text.decode("utf-8"))
 
     def energy_store(self, name: str, body: str, capacity_j: float, charge_j: float,

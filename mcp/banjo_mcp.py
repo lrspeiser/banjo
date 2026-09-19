@@ -41,14 +41,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bindings" / "pytho
 # Beside this file: the rules for how a person uses a thing, which the
 # playground's room holds its own profiles to as well.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
 import progression  # noqa: E402
 import constructions  # noqa: E402
+import machine_mcp_tools  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER = {"name": "banjo", "version": "1.0.0"}
+SERVER = {"name": "banjo", "version": "1.2.0"}
 
 # How many worlds may be open at once. Each is a physics engine with its scene
 # resident in it, and nothing here is a long-lived service.
@@ -693,6 +695,7 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
     Nothing is committed until the new world exists: a refused scene leaves the
     old world, its scene and its joints exactly as they were.
     """
+    machine_mcp_tools.refuse_rebuild(sys.modules[__name__], entry)
     joints = list(entry.get("joints", [])) if joints is None else list(joints)
     # Whoever owns this world can add their own conditions -- the playground's
     # room refuses what its lane could not open, so that the model is told at
@@ -2446,13 +2449,15 @@ def tool_store(args: dict[str, Any]) -> dict[str, Any]:
               "voltage_v": _action_number(args.get("voltage_v"), "voltage_v", 0.001, 1e6, 24.0),
               "max_power_w": _action_number(args.get("max_power_w"), "max_power_w", 0.0, 1e12, 0.0)}
     _add_store(entry, record)
-    return {"store": name, "in": body,
+    return {"store": name, "store_id": record["live"], "in": body,
             **{k: record[k] for k in ("capacity_j", "charge_j", "voltage_v", "max_power_w")},
             "note": f"{name} is in {body}, holding {record['charge_j']:g} J of {capacity:g}. A motor "
                     f"draws on it by its name (motor), and what it gives is what its motors drew. "
                     f"Nothing goes back into it: a load that runs its motor backwards gives it "
-                    f"nothing, and that becomes heat in the motor. Empty, it stops its motors. run "
-                    f"and describe_world say what it holds and has given."}
+                    f"nothing. Direct-store motors dissipate back-driven energy as heat; an "
+                    f"attached circuit may feed connected loads, but cannot recharge the store. "
+                    f"run and describe_world say what it holds and has given. Use store_id in "
+                    f"circuit.source.store to attach a shared electrical/thermal network."}
 
 
 def _drum_sense(entry: dict[str, Any], motor: dict[str, Any]) -> list[tuple[dict[str, Any], int]]:
@@ -2571,6 +2576,7 @@ def tool_motor(args: dict[str, Any]) -> dict[str, Any]:
         motors.remove(record)
         raise
     answer: dict[str, Any] = {
+        "motor_id": record["live"],
         "motor": {"on": on, "store": store["name"]},
         "unloaded_rad_s": round(record["no_load_rpm"] * math.pi / 30.0, 4),
         "state": "braking" if record["brake"] else "coasting",
@@ -2997,6 +3003,11 @@ def tool_drive(args: dict[str, Any]) -> dict[str, Any]:
                 for rope, sense in _drum_sense(entry, motor)]
         if ways:
             does += "; it " + "; ".join(ways)
+        if any(branch.get("motor") == motor["live"] for circuit in _live(entry).circuits()
+               for branch in circuit["branches"]):
+            does = (f"commanding {motor['on'][1]} at {command:g} of its circuit terminal voltage; "
+                    "shared supply loading, switches, fuse state and shaft load determine current "
+                    "and motion. Read circuits for winding heat and the complete network ledger")
     answer: dict[str, Any] = {
         "motor": {"on": motor["on"], "store": motor["store"]}, "command": command, "brake": brake,
         "does": does,
@@ -3117,7 +3128,7 @@ def _machines_said(entry: dict[str, Any]) -> dict[str, Any] | None:
     for store in block["stores"]:
         now = stores.get(store.get("live"))
         if now is not None:
-            said["stores"].append({"name": store["name"], "in": store["body"],
+            said["stores"].append({"id": now.id, "name": store["name"], "in": store["body"],
                                    "charge_j": round(now.charge_j, 3),
                                    "capacity_j": round(now.capacity_j, 3),
                                    "given_j": round(now.given_j, 3),
@@ -3127,10 +3138,11 @@ def _machines_said(entry: dict[str, Any]) -> dict[str, Any] | None:
     for motor in block["motors"]:
         now = motors.get(motor.get("live"))
         if now is not None:
-            said["motors"].append({"on": motor["on"], "store": motor["store"], "state": now.state,
+            said["motors"].append({"id": now.id, "on": motor["on"], "store": motor["store"], "state": now.state,
                                    "command": round(now.command, 4), "brake": now.brake,
                                    "speed_rad_s": round(now.speed_rad_s, 4),
                                    "torque_n_m": round(now.torque_n_m, 3),
+                                   "current_a": now.current_a,
                                    "power_w": round(now.power_w, 2),
                                    "turned_rad": round(now.turned_rad, 4),
                                    "drawn_j": round(now.drawn_j, 3), "work_j": round(now.work_j, 3),
@@ -3152,6 +3164,7 @@ def _machines_said(entry: dict[str, Any]) -> dict[str, Any] | None:
     said["ropes"] = [{"joint": stable.get(r.id, r.id), "drum": r.drum, "load": r.load,
                       "out_m": round(r.out_m, 4), "on_the_drum_m": round(r.wound_m, 4),
                       "tension_n": round(r.tension_n, 2)} for r in world.drum_ropes()]
+    said["circuits"] = machine_mcp_tools.reports(world)
     return {k: v for k, v in said.items() if v}
 
 
@@ -6410,7 +6423,8 @@ def tool_set_river(args: dict[str, Any]) -> dict[str, Any]:
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
-    entry["world"].close()
+    if entry.get("world") is not None:
+        entry["world"].close()
     WORLDS.pop(world_id, None)
     return {"closed": world_id, "still_open": list(WORLDS)}
 
@@ -8036,6 +8050,7 @@ HANDLERS = {
 # And every one of them says in its answer what its change withdrew: a bow that
 # can no longer be loosed, and why (see _recheck_interactions).
 HANDLERS = {name: _saying_what_was_withdrawn(handler) for name, handler in HANDLERS.items()}
+machine_mcp_tools.register(sys.modules[__name__])
 
 
 # ---------------------------------------------------------------------------

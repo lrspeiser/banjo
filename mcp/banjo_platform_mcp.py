@@ -52,7 +52,7 @@ core.TOOLS = list(core.TOOLS) + [tool for tool in workshop_mcp_tools.TOOLS
 for name, handler in workshop_mcp_tools.HANDLERS.items():
     core.HANDLERS[name] = _model_error(handler)
 
-core.SERVER = {"name": "banjo-platform", "version": "1.1.0"}
+core.SERVER = {"name": "banjo-platform", "version": "1.2.0"}
 _CORE_HANDLE = core.handle
 
 
