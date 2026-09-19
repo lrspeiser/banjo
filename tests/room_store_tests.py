@@ -475,6 +475,25 @@ class TheSpecAWorldIsSavedFrom(unittest.TestCase):
         built = dict(self.SPEC, bodies=self.SPEC["bodies"] + [dict(CRATE, name="another crate")])
         self.assertNotEqual(live_session.spec_digest(built), live_session.spec_digest(self.SPEC))
 
+    def test_a_room_that_declares_nothing_new_has_the_word_it_always_had(self):
+        """A pinned value, because what it guards is every saved world there is.
+
+        The word is taken from the spec as the ROOM holds it: authored, kept
+        verbatim (room_store), written back field by field
+        (room_world.export_spec). It is not taken from what
+        fracture_lab.validate returns, which invents fields of its own -- an id,
+        the size actually built, a cell count, and since #20 which part of a
+        joined object a body is. Digesting the validated spec instead would be a
+        new word for every room that had not changed, and each would open from
+        its spec with its saved world set aside. So if this value moves, check
+        that it moved because a room really is made of something different --
+        not because the spec grew a field on the way to the engine."""
+        self.assertEqual("cf591eb8f10962fccb565da5c058757491ac0323e420aee8da4bdc3ed4c1a2a5",
+                         live_session.spec_digest(self.SPEC))
+        # A room that does declare a part is a different thing, and says so.
+        declared = dict(self.SPEC, bodies=[dict(CRATE, join="t", part="side")])
+        self.assertNotEqual(live_session.spec_digest(declared), live_session.spec_digest(self.SPEC))
+
 
 class WhatThePersonHoldsThroughARestart(unittest.TestCase):
     """inventory_room.after_open on a room opened again whole: a thing in the
