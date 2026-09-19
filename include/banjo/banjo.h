@@ -150,7 +150,7 @@ extern "C" {
  * banjo_operate, banjo_control_count, banjo_controls). banjo_control is a new
  * struct. No struct or signature that was in 23 changed; banjo_drive_motor on a
  * motor with a controller tells the controller. */
-#define BANJO_ABI_VERSION 24
+#define BANJO_ABI_VERSION 25
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -947,6 +947,14 @@ BANJO_API int banjo_motor_count(const banjo_world *world);
 /* Fills up to `max` and returns how many were written. The strings stay good
  * until the next call on this world. */
 BANJO_API int banjo_motors(const banjo_world *world, banjo_motor *out, int max);
+
+/* ABI 25: a shared, stateful DC/thermal network (docs/machine-circuits.md).
+ * Additive declaration: returns an id > 0 or a negative status. All motors
+ * using its store must be included; no second owner can spend that store.
+ * Reports are JSON, owned by the world until its next circuit report. */
+BANJO_API int banjo_make_circuit(banjo_world *world, const char *declaration_json);
+BANJO_API int banjo_circuit_switch(banjo_world *world, unsigned circuit, const char *branch, int closed);
+BANJO_API const char *banjo_circuits(const banjo_world *world);
 
 /* A machine's controller (docs/machine-world.md, "Operating a machine"): what a
  * person or a program means -- power on or off, a direction, a drive setting --

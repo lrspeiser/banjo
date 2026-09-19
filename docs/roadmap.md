@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Stateful machine priority, September 19:** [Four connected systems and all
+fifteen retained capabilities](machine-network-roadmap.md) organize the next
+machine work. [Milestone 1's native DC/thermal increment](machine-circuits.md)
+now connects explicit product circuits to live mechanical loads and persistent
+component state. Its bounded solver and time-coupling limits do not complete
+the general machinery roadmap or replace the existing physical-validation gates.
+
 **A product's joints reach the live room (2026-09-19):** a product installed in the yard now carries which component each cell is, and the road its joints will travel is built and tested end to end -- though no law is in force today, so nothing is declared and nothing breaks differently. A joint whose parts an edit has moved apart or taken out is dropped where the world is rebuilt, because the engine refuses a scene whose joint crosses nothing and a room must still open. A bare template still declares no joints: they come from a design built part by part. No room's digest moves, and that is now pinned. See [product-framework.md](product-framework.md).
 
 **A joint is weaker than the wood it joins (2026-09-19):** [#20](https://github.com/lrspeiser/banjo/issues/20) is built. A Workshop product's cells now keep which component they came from through the scene's join, a scene declares what each joint leaves the bonds that cross it, and the engine applies it once at asset build through the one bond law (`weakenBond`, moved to `matter/Lattice.hpp`, which heat uses too). What a joint would keep is declared with its sources in `mcp/joint_efficiency.py`: an end-grain butt joint about a quarter of the wood, a side-grain joint or a weld all of it, a press fit a stated demonstration value, a bearing left alone and saying so. **None of it is in force**, by the owner's call of 2026-09-19 -- a number below 1 is a declaration about real joints and is theirs to make, so every law keeps the material whole, declares nothing to a scene, and no product breaks differently than it did. Each figure is recorded beside its law as `proposed` and pinned by a test, so putting one in force is one edit and a deliberate one. Measured with the quarter put in force, to show the mechanism reaches the engine: the bar a blow must pass falls from 13.75 to 3.44 m/s, that quarter exactly. Not reached: the load survey. See [product-framework.md](product-framework.md).

@@ -45,7 +45,8 @@ from typing import Any, Iterator
 # a DC motor on a pin with a brake, a rope that winds onto a drum, and how hard
 # a thing is to turn (energy_store, motor, drive_motor, drum, inertia_about).
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 24
+# 25 adds stateful shared DC/thermal circuits.
+ABI_VERSION = 25
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -1395,6 +1396,12 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_motor_count.restype = ctypes.c_int
     lib.banjo_motors.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Motor), ctypes.c_int]
     lib.banjo_motors.restype = ctypes.c_int
+    lib.banjo_make_circuit.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.banjo_make_circuit.restype = ctypes.c_int
+    lib.banjo_circuit_switch.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_char_p, ctypes.c_int]
+    lib.banjo_circuit_switch.restype = ctypes.c_int
+    lib.banjo_circuits.argtypes = [ctypes.c_void_p]
+    lib.banjo_circuits.restype = ctypes.c_char_p
     lib.banjo_inertia_about.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double * 3,
                                         ctypes.POINTER(ctypes.c_double)]
     lib.banjo_inertia_about.restype = ctypes.c_int
@@ -2039,6 +2046,25 @@ class World:
         self._check(self._lib.banjo_unhinge(self._alive(), joint), "taking a pin out")
 
     # -- machines: stores of energy, motors and drums (ABI 23) ---------------
+    def circuit(self, declaration: dict[str, Any]) -> int:
+        """Attach a banjo.circuit.v1 network to an existing store and its motors.
+
+        Thermal state, fuse history and switching persist in world snapshots.
+        Construction is additive; querying circuits() never resets the machine.
+        """
+        return self._check(self._lib.banjo_make_circuit(
+            self._alive(), json.dumps(declaration, allow_nan=False).encode("utf-8")), "adding a circuit")
+
+    def circuit_switch(self, circuit: int, branch: str, closed: bool) -> None:
+        self._check(self._lib.banjo_circuit_switch(self._alive(), circuit, branch.encode("utf-8"),
+                                                  int(closed)), "setting a circuit switch")
+
+    def circuits(self) -> list[dict[str, Any]]:
+        text = self._lib.banjo_circuits(self._alive())
+        if text is None:
+            raise RuntimeError("reading circuits failed")
+        return json.loads(text.decode("utf-8"))
+
     def energy_store(self, name: str, body: str, capacity_j: float, charge_j: float,
                      voltage_v: float = 24.0, max_power_w: float = 0.0) -> int:
         """Put a store of energy -- a battery -- in a named body, or in nothing

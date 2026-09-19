@@ -1310,6 +1310,12 @@ public:
     bool driveMotor(unsigned motor, double command, bool brake = false);
     [[nodiscard]] std::vector<LiveEnergyStore> energyStores() const;
     [[nodiscard]] std::vector<LiveMotor> motors() const;
+    // Attach a bounded DC/thermal circuit to one existing store and ALL its
+    // motors. Additive only: inspection/reopening cannot reset state.
+    // Returns an id (1-based); throws on invalid/unsupported declarations.
+    unsigned circuit(const std::string &declaration);
+    void circuitSwitch(unsigned circuit, const std::string &branch, bool closed);
+    [[nodiscard]] std::string circuits() const;
     // A controller for a motor (LiveControl): a hoist's when `rope` is a rope
     // on a drum that the motor's pin turns -- `top_out_m` and `bottom_out_m`
     // the rope out at the two ends of its travel, the top the less -- and a

@@ -407,11 +407,15 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_environment PUBLIC banjo_terrain banjo_water banjo_runtime
                                             PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_environment)
+    add_library(banjo_circuits src/machines/Circuit.cpp)
+    target_include_directories(banjo_circuits PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(banjo_circuits PUBLIC nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_circuits)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp
                                        src/fastlattice/ToolTerrain.cpp
     src/fastlattice/PreciseRigidScene.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
@@ -486,6 +490,10 @@ if(BANJO_BUILD_HEADLESS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_ffi_tests.py)
         set_tests_properties(banjo_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        add_test(NAME banjo_product_circuit_tests
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/product_circuit_tests.py)
+        set_tests_properties(banjo_product_circuit_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # Pins through the same boundary. An outside program holding nothing but
         # banjo.h builds a gateway, hangs a gate on it, shoves it open and reads
@@ -1107,6 +1115,10 @@ if(BANJO_BUILD_TESTS)
             # world's first joint that is driven, checked against the motor's
             # line and the energy it takes (docs/machine-world.md).
             add_executable(banjo_motor_tests tests/motor_tests.cpp)
+            add_executable(banjo_circuit_tests tests/circuit_tests.cpp)
+            target_link_libraries(banjo_circuit_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_circuit_tests)
+            add_test(NAME banjo_circuit_tests COMMAND banjo_circuit_tests)
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)
             add_test(NAME banjo_motor_tests COMMAND banjo_motor_tests)

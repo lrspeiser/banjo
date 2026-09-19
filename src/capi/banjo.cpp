@@ -114,6 +114,7 @@ struct banjo_world {
     // from a saved one gave back.
     std::string snapshot;
     std::string restored;
+    std::string circuits;
     // Stores of energy, motors and the drums' ropes, last time anyone asked:
     // the names and states handed out point in here.
     std::vector<LiveEnergyStore> stores;
@@ -869,6 +870,27 @@ int banjo_unhinge(banjo_world *world, unsigned joint) {
 }
 
 // ---- machines: stores of energy, motors and drums (ABI 23) -------------------
+
+int banjo_make_circuit(banjo_world *world, const char *declaration_json) {
+    if (!world || !declaration_json) { setError("no world or circuit declaration"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { return static_cast<int>(world->world->circuit(declaration_json)); });
+}
+int banjo_circuit_switch(banjo_world *world, unsigned circuit, const char *branch, int closed) {
+    if (!world || !branch || (closed != 0 && closed != 1)) { setError("invalid circuit switch request"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        world->world->circuitSwitch(circuit, branch, closed != 0);
+        return static_cast<int>(BANJO_OK);
+    });
+}
+const char *banjo_circuits(const banjo_world *world) {
+    if (!world) { setError("no world"); return nullptr; }
+    try {
+        clearError();
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->circuits = world->world->circuits();
+        return kept->circuits.c_str();
+    } catch (const std::exception &e) { setError(e.what()); return nullptr; }
+}
 
 int banjo_make_energy_store(banjo_world *world, const char *name, const char *body, double capacity_j,
                             double charge_j, double voltage_v, double max_power_w) {

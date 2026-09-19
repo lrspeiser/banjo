@@ -1,4 +1,5 @@
 #include "fastlattice/LiveWorld.hpp"
+#include "machines/Circuit.hpp"
 #include "fastlattice/ToolTerrain.hpp"
 #include "fastlattice/PreciseRigidScene.hpp"
 
@@ -915,8 +916,12 @@ struct LiveWorld::Impl {
         // on) wakes what it held: a body still for half a second is asleep,
         // and a sleeping body does not notice that its pin has let go.
         double friction_set{-1.0};
+        bool on_circuit{};
+        double circuit_torque{};
     };
     std::vector<Motor> motors;
+    std::vector<machines::Circuit> circuits;
+    std::vector<machines::CircuitStep> circuit_steps;
     unsigned next_energy_store{1}, next_motor{1};
     // A machine's controller (LiveControl), and what it keeps between steps.
     struct Control {
@@ -1007,6 +1012,7 @@ struct LiveWorld::Impl {
     // refused step sets the same again.
     void prepareMotors(double dt_s) {
         for (Motor &m : motors) {
+            if (m.on_circuit) continue;
             LiveMotor &s = m.said;
             // Whether it drove in the step before: one starting to drive wakes
             // what it moves (below).
@@ -1081,6 +1087,7 @@ struct LiveWorld::Impl {
     void settleMotors(double dt_s) {
         constexpr double kTurn = 2.0 * 3.14159265358979323846;
         for (Motor &m : motors) {
+            if (m.on_circuit) continue;
             LiveMotor &s = m.said;
             SceneJoint *pin = motorPin(s.joint);
             if (pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) {
@@ -1120,6 +1127,131 @@ struct LiveWorld::Impl {
                 store->given_j += given;
                 s.current_a = torque * s.no_load_rad_s / store->voltage_v;
             }
+        }
+    }
+
+    void attachCircuit(machines::Circuit c) {
+        if (circuits.size() >= 32) throw std::invalid_argument("at most 32 live circuits");
+        if (!energyStoreById(c.store())) throw std::invalid_argument("circuit store does not exist");
+        for (const auto &old : circuits)
+            if (old.store() == c.store()) throw std::invalid_argument("store already has a circuit");
+        const auto ids = c.motors();
+        for (unsigned id : ids) {
+            auto *m = motorById(id);
+            if (!m || m->said.store != c.store() || m->on_circuit)
+                throw std::invalid_argument("circuit motor must belong to its store and to no other circuit");
+        }
+        for (const auto &m : motors)
+            if (m.said.store == c.store() && std::find(ids.begin(), ids.end(), m.said.id) == ids.end())
+                throw std::invalid_argument("circuit must include every motor sharing the store");
+        circuits.push_back(std::move(c));
+        for (unsigned id : ids) motorById(id)->on_circuit = true;
+    }
+    void prepareCircuits(double dt) {
+        circuit_steps.clear();
+        for (const auto &c : circuits) {
+            const auto *store = energyStoreById(c.store());
+            std::vector<machines::CircuitMotorInput> inputs;
+            for (unsigned id : c.motors()) {
+                auto &m = *motorById(id);
+                auto *pin = motorPin(m.said.joint);
+                const bool present = pin && pin->rigid && world->hasJoint(pin->rigid);
+                inputs.push_back({id, m.said.command, present ? world->hingeRate(pin->rigid) : 0.0,
+                    store->voltage_v / m.said.no_load_rad_s,
+                    store->voltage_v * store->voltage_v / (m.said.stall_torque_n_m * m.said.no_load_rad_s), present});
+            }
+            circuit_steps.push_back(c.solve(dt, store->voltage_v, store->charge_j, store->max_power_w, inputs));
+            const auto &s = circuit_steps.back();
+            for (std::size_t b = 0; b < c.size(); ++b) {
+                if (!c.motor(b)) continue;
+                auto &m = *motorById(c.motor(b)); auto &out = m.said;
+                auto *pin = motorPin(out.joint);
+                m.circuit_torque = s.torque_n_m[b];
+                m.drove = m.circuit_torque != 0.0; m.limited = s.limited;
+                if (!pin || !pin->rigid || !world->hasJoint(pin->rigid)) { out.state = "gone"; continue; }
+                m.at_before = world->jointState(pin->rigid).at;
+                world->coastHinge(pin->rigid);
+                const bool brake = out.command == 0.0 && out.brake && out.brake_torque_n_m > 0.0;
+                const double friction = brake ? std::max(pin->friction, out.brake_torque_n_m) : pin->friction;
+                world->setJointFriction(pin->rigid, friction);
+                if (friction != m.friction_set || m.drove) wakeMachine(*pin);
+                m.friction_set = friction; m.coasted_on_friction = friction > 0.0;
+                for (const auto *name : {&pin->a, &pin->b}) {
+                    const auto found = index_of.find(*name);
+                    if (found != index_of.end() && inWorld(found->second))
+                        world->setDamping(body_of[found->second], 0.0, 0.0);
+                }
+                out.state = m.drove ? "driving" : brake ? "braking" : out.command == 0.0 ? "coasting" :
+                            store->charge_j <= 0.0 ? "flat" : "open-circuit";
+            }
+        }
+    }
+    void validateCircuitStep(double dt) {
+        // Explicit electrical damping must resolve the smallest relative-shaft
+        // time constant. Refuse an unsupported step BEFORE mutating the world;
+        // the caller can reduce its step rather than silently losing energy.
+        double bound = 1.0 / 60.0;
+        for (const auto &c : circuits) for (std::size_t b = 0; b < c.size(); ++b) {
+            if (!c.motor(b)) continue;
+            const auto &m = *motorById(c.motor(b));
+            const auto *pin = motorPin(m.said.joint);
+            if (!pin || !pin->rigid || !world->hasJoint(pin->rigid)) continue;
+            const Vec3 axis = worldAxis(pin->a, pin->axis_local_a);
+            double inverse_inertia = 0.0;
+            for (const auto *name : {&pin->a, &pin->b}) {
+                const auto at = index_of.find(*name);
+                if (at != index_of.end() && inWorld(at->second))
+                    inverse_inertia += 1.0 / world->inertiaAbout(body_of[at->second], axis);
+            }
+            const double damping = m.said.stall_torque_n_m / m.said.no_load_rad_s * c.ratio(b) * c.ratio(b);
+            if (inverse_inertia > 0.0)
+                bound = std::min(bound, 0.1 * c.resistanceFactor(b) / (inverse_inertia * damping));
+            const double speed = std::abs(world->hingeRate(pin->rigid));
+            if (speed > 0.0) bound = std::min(bound, 0.5 / speed);
+        }
+        if (!std::isfinite(dt) || dt > bound * (1.0 + 1e-12))
+            throw std::invalid_argument("circuit coupling needs dt <= " + nlohmann::json(bound).dump() + " seconds");
+    }
+    // Inside each mechanical trial: equal/opposite torques, so mounts and
+    // world contacts see the same loads as exposed parts. No prescribed speed.
+    void pushCircuits() {
+        for (const auto &m : motors) {
+            if (!m.on_circuit || !m.drove) continue;
+            const auto *pin = motorPin(m.said.joint);
+            if (!pin || !pin->rigid || !world->hasJoint(pin->rigid)) continue;
+            const Vec3 torque = m.circuit_torque * worldAxis(pin->a, pin->axis_local_a);
+            world->twistBody(body_of[index_of.at(pin->a)], -1.0 * torque);
+            world->twistBody(body_of[index_of.at(pin->b)], torque);
+        }
+    }
+    void settleCircuits(double dt) {
+        constexpr double turn_rad = 2.0 * 3.14159265358979323846;
+        for (std::size_t ci = 0; ci < circuits.size(); ++ci) {
+            auto &c = circuits[ci]; auto &s = circuit_steps[ci];
+            double actual_work = 0.0;
+            for (std::size_t b = 0; b < c.size(); ++b) {
+                if (!c.motor(b)) continue;
+                auto &m = *motorById(c.motor(b)); auto &out = m.said;
+                const auto *pin = motorPin(out.joint);
+                if (!pin || !pin->rigid || !world->hasJoint(pin->rigid)) {
+                    out.speed_rad_s = out.torque_n_m = out.current_a = out.power_w = 0.0; continue;
+                }
+                double turn = world->jointState(pin->rigid).at - m.at_before;
+                turn -= turn_rad * std::round(turn / turn_rad);
+                const double work = m.circuit_torque * turn;
+                const double friction = m.coasted_on_friction ?
+                    std::max(0.0, -world->hingeMotorImpulse(pin->rigid) * turn / dt) : 0.0;
+                out.turned_rad += turn; out.speed_rad_s = world->hingeRate(pin->rigid);
+                out.torque_n_m = m.circuit_torque; out.current_a = s.motor_current_a[b];
+                out.power_w = (s.branch_heat_j[b] + s.shaft_j[b]) / dt;
+                out.drawn_j += out.power_w * dt; out.heat_j += s.branch_heat_j[b];
+                out.work_j += work; out.friction_heat_j += friction;
+                c.addFrictionHeat(s, b, friction); actual_work += work - friction;
+            }
+            c.commit(s, actual_work);
+            auto *store = energyStoreById(c.store());
+            store->charge_j = std::max(0.0, store->charge_j - s.source_j);
+            store->given_j += s.source_j;
         }
     }
 
@@ -3367,6 +3499,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     }
     impl.next_energy_store = doc.value("next_energy_store", 1U);
     impl.next_motor = doc.value("next_motor", 1U);
+    if (carrying && doc.contains("circuits") && !doc.at("circuits").empty())
+        throw std::invalid_argument("circuit state needs an unchanged-world restore; edited-scene carry is not supported");
+    for (const auto &c : doc.value("circuits", nlohmann::json::array()))
+        impl.attachCircuit(machines::Circuit::read(c, true));
     // Each machine's controller, as it was told; carried while its motor, and a
     // hoist's rope, came back and the host still declares it the same way.
     for (const nlohmann::json &o : doc.value("controls", nlohmann::json::array())) {
@@ -3625,6 +3761,7 @@ bool LiveWorld::judgeStep() {
 
 void LiveWorld::step(double dt_s) {
     if (!(dt_s > 0.0)) throw std::invalid_argument("a live step needs a positive dt");
+    if (!impl_->circuits.empty()) impl_->validateCircuitStep(dt_s);
 
     // A held object goes back where the hand put it after the step. This is a
     // kinematic hold rather than a constraint: a world-fixed constraint
@@ -3787,6 +3924,7 @@ void LiveWorld::step(double dt_s) {
     // controller, if it has one, has said what the motor is to do this step.
     if (!impl_->controls.empty()) impl_->prepareControls(dt_s);
     if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
+    if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
         try {
@@ -3794,6 +3932,7 @@ void LiveWorld::step(double dt_s) {
                 pushGas();
                 pushHand();
                 pushWater();
+                impl_->pushCircuits();
                 impl_->world->step(dt_s);
                 holdStill();
                 holdPending();
@@ -3835,6 +3974,7 @@ void LiveWorld::step(double dt_s) {
         // What each motor did, once the step is kept: a refused step takes
         // nothing from a store.
         if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
+        if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
         if (!impl_->controls.empty()) impl_->settleControls(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
@@ -3863,6 +4003,7 @@ void LiveWorld::step(double dt_s) {
     pushGas();
     pushHand();
     pushWater();
+    impl_->pushCircuits();
     impl_->world->step(dt_s);
     holdStill();
     holdPending();
@@ -3871,6 +4012,7 @@ void LiveWorld::step(double dt_s) {
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
+    if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     settleCuts(dt_s);
     if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
@@ -4565,6 +4707,7 @@ unsigned LiveWorld::energyStore(const std::string &name, const std::string &body
 
 unsigned LiveWorld::motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
                           double brake_torque_n_m) {
+    for (const auto &c : impl_->circuits) if (c.store() == store) return 0;
     const Impl::SceneJoint *pin = impl_->motorPin(joint);
     if (pin == nullptr || pin->kind != JoltWorld::JointKind::Hinge) return 0;
     if (impl_->energyStoreById(store) == nullptr) return 0;
@@ -4610,6 +4753,21 @@ bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
 }
 
 std::vector<LiveEnergyStore> LiveWorld::energyStores() const { return impl_->energy_stores; }
+
+unsigned LiveWorld::circuit(const std::string &declaration) {
+    auto c = machines::Circuit::read(nlohmann::json::parse(declaration));
+    impl_->attachCircuit(std::move(c));
+    return static_cast<unsigned>(impl_->circuits.size());
+}
+void LiveWorld::circuitSwitch(unsigned id, const std::string &branch, bool closed) {
+    if (!id || id > impl_->circuits.size()) throw std::invalid_argument("unknown circuit");
+    impl_->circuits[id - 1].setSwitch(branch, closed);
+}
+std::string LiveWorld::circuits() const {
+    auto out = nlohmann::json::array();
+    for (const auto &c : impl_->circuits) out.push_back(c.saved());
+    return out.dump();
+}
 
 std::vector<LiveMotor> LiveWorld::motors() const {
     std::vector<LiveMotor> out;
@@ -11989,6 +12147,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"drawn_j", savedNumber(m.said.drawn_j)},
                           {"friction_heat_j", savedNumber(m.said.friction_heat_j)}});
     doc["motors"] = std::move(motors);
+    doc["circuits"] = nlohmann::json::parse(circuits());
     // And each machine's controller: what it was told and by whom, the counts
     // it has applied, and a stall it stopped for.
     nlohmann::json controls = nlohmann::json::array();

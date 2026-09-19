@@ -11,6 +11,7 @@ from math import isfinite, pi
 from typing import Any
 
 from mcp.product_graph import PRODUCT_SCHEMA, ProductGraph
+from mcp.product_circuit import compile_circuits
 
 CONTRACT_SCHEMA = "banjo.physics-contract.v1"
 MECHANISM_KINDS = {"hinge", "slider", "bearing", "rope", "pulley", "drum", "spring", "gear", "rack"}
@@ -228,6 +229,12 @@ def compile_contract(graph: ProductGraph | dict[str, Any], *,
         "load_paths": load_paths,
         "failure_modes": failures,
         "energy": list(document.get("energy") or []),
+        "operating_model": {
+            "schema": "banjo.operating-model.v1",
+            "circuits": compile_circuits(document),
+            "state_owner": "live-world snapshot; construction is not mutable operating state",
+            "unsupported_domains": ["fluid-network", "material-process", "general-control-network"],
+        },
         "controls": list(document.get("controls") or []),
         "contents": list(document.get("contents") or []),
         "validated_ranges": validated,

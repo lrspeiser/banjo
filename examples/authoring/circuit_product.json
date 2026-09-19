@@ -1,0 +1,166 @@
+{
+  "schema": "banjo.product-graph.v1",
+  "product_id": "drive",
+  "components": [
+    {
+      "id": "battery",
+      "role": "battery",
+      "geometry": {},
+      "interfaces": [
+        {
+          "id": "p",
+          "kind": "electrical"
+        },
+        {
+          "id": "n",
+          "kind": "electrical"
+        }
+      ]
+    },
+    {
+      "id": "switch",
+      "role": "switch",
+      "geometry": {},
+      "interfaces": [
+        {
+          "id": "p",
+          "kind": "electrical"
+        },
+        {
+          "id": "n",
+          "kind": "electrical"
+        }
+      ]
+    },
+    {
+      "id": "fuse",
+      "role": "fuse",
+      "geometry": {},
+      "interfaces": [
+        {
+          "id": "p",
+          "kind": "electrical"
+        },
+        {
+          "id": "n",
+          "kind": "electrical"
+        }
+      ]
+    },
+    {
+      "id": "motor",
+      "role": "motor",
+      "geometry": {},
+      "interfaces": [
+        {
+          "id": "p",
+          "kind": "electrical"
+        },
+        {
+          "id": "n",
+          "kind": "electrical"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "0",
+      "kind": "electrical",
+      "a": "battery",
+      "b": "switch",
+      "a_interface": "p",
+      "b_interface": "p"
+    },
+    {
+      "id": "1",
+      "kind": "electrical",
+      "a": "switch",
+      "b": "fuse",
+      "a_interface": "n",
+      "b_interface": "p"
+    },
+    {
+      "id": "2",
+      "kind": "electrical",
+      "a": "fuse",
+      "b": "motor",
+      "a_interface": "n",
+      "b_interface": "p"
+    },
+    {
+      "id": "3",
+      "kind": "electrical",
+      "a": "motor",
+      "b": "battery",
+      "a_interface": "n",
+      "b_interface": "n"
+    }
+  ],
+  "energy": [
+    {
+      "kind": "circuit",
+      "network": {
+        "schema": "banjo.circuit.v1",
+        "id": "drive",
+        "source": {
+          "store_component": "battery",
+          "positive": "battery.p",
+          "negative": "battery.n",
+          "resistance_ohm": 0.1,
+          "thermal": "case"
+        },
+        "thermal_nodes": [
+          {
+            "id": "case",
+            "component": "battery",
+            "capacity_j_k": 100
+          },
+          {
+            "id": "winding",
+            "component": "motor",
+            "capacity_j_k": 10
+          }
+        ],
+        "thermal_links": [
+          {
+            "a": "winding",
+            "b": "case",
+            "conductance_w_k": 1
+          }
+        ],
+        "branches": [
+          {
+            "id": "switch",
+            "kind": "switch",
+            "component": "switch",
+            "a": "switch.p",
+            "b": "switch.n",
+            "resistance_ohm": 0.1,
+            "thermal": "case"
+          },
+          {
+            "id": "fuse",
+            "kind": "fuse",
+            "component": "fuse",
+            "a": "fuse.p",
+            "b": "fuse.n",
+            "resistance_ohm": 0.05,
+            "fuse_a2_s": 1000,
+            "thermal": "case"
+          },
+          {
+            "id": "motor",
+            "kind": "motor",
+            "component": "motor",
+            "motor_component": "motor",
+            "a": "motor.p",
+            "b": "motor.n",
+            "thermal": "winding",
+            "gear_ratio": 2
+          }
+        ]
+      }
+    }
+  ]
+}
