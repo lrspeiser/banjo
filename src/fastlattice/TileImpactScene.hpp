@@ -312,9 +312,10 @@ struct TileImpactSetup {
     // Which bodies each part was built from. One entry for a plain body,
     // several for a joined group, whose first body names and colours it.
     std::vector<std::vector<std::size_t>> part_bodies;
-    // How many bonds a declared joint was applied to. Zero with interfaces
-    // declared means they reached nothing, which the host is told rather than
-    // left to wonder about.
+    // How many bonds a declared joint was applied to. Read by the tests, which
+    // is the only thing that reads it: no host is told, and a joint that
+    // reaches nothing is caught by the refusal below rather than by this
+    // counting zero. Wire it out to a reply before relying on it elsewhere.
     std::size_t interface_bonds{};
     LatticeAsset asset{};
     BoxLatticeLayout layout{};
