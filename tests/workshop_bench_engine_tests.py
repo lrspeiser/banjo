@@ -20,6 +20,25 @@ sys.path.insert(0, str(ROOT / "playground"))
 import workshop_bench  # noqa: E402
 from mcp.workshop import assemble  # noqa: E402
 
+
+def with_the_quarter_in_force():
+    """Put the end-grain law's proposed figure in force, for one test.
+
+    No joint efficiency number is in force -- the owner's call of 2026-09-19,
+    see mcp/joint_efficiency.py -- so no design declares a joint to any scene
+    and both drops below would be two carved tables. What these tests measure
+    is that a DECLARED joint reaches the engine and changes what a blow does:
+    the mechanism, not the number. So the number is put in force here, out
+    loud, and only here.
+    """
+    import dataclasses
+    from unittest import mock
+    from mcp import joint_efficiency
+    return mock.patch.object(
+        joint_efficiency, "_END_GRAIN",
+        dataclasses.replace(joint_efficiency._END_GRAIN, tension=.25, shear=.25))
+
+
 ENGINE = Path(os.environ["BANJO_LIVE_ENGINE"]).resolve() if os.environ.get("BANJO_LIVE_ENGINE") else None
 
 
@@ -328,10 +347,14 @@ class VisibleSimulationEngine(unittest.TestCase):
         piece, once with its legs glued into the top. Gluing is declared by the
         design's own joints (mcp/workshop_construction.py) and what a glue line
         keeps of the wood is the declared law (mcp/joint_efficiency.py) -- here
-        an end-grain butt joint, a quarter of it.
+        an end-grain butt joint, a quarter of it, put in force for this test
+        because no number is in force in the product.
         """
         import workshop_motion
         from mcp import joint_efficiency, workshop_components, workshop_construction
+        quarter = with_the_quarter_in_force()
+        quarter.start()
+        self.addCleanup(quarter.stop)
 
         def table(glued):
             design = assemble("table", design_id="glue", parameters={"material": "oak"})
@@ -378,11 +401,15 @@ class VisibleSimulationEngine(unittest.TestCase):
         (admitRefracture), and it is read off the weakest bond the body has. A
         joint at a quarter of the wood makes a quarter of the bar, which is the
         declaration arriving intact. Driven through a session directly, because
-        the bar rides on the step's own reply and not on a recording.
+        the bar rides on the step's own reply and not on a recording. The
+        quarter is put in force for this test; none is in the product.
         """
         import live_session
         import workshop_motion
         from mcp import workshop_components, workshop_construction
+        quarter = with_the_quarter_in_force()
+        quarter.start()
+        self.addCleanup(quarter.stop)
 
         design = assemble("table", design_id="bar", parameters={"material": "oak"})
         glued = workshop_components.design_from_spec(
