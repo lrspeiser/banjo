@@ -229,6 +229,23 @@ class ReachingTheScene(unittest.TestCase):
                 {"name": "lone", "shape": "box", "material": "oak", "size_mm": [40, 40, 40],
                  "center_mm": [0, 20, 0], "part": "top"}]})
 
+    def test_the_root_body_is_the_products_main_part_and_not_the_first_by_name(self):
+        """The first box takes the product's root name, and everything after
+        calls that body the product: the install, the bench's `root_body`, the
+        page, and every `startswith(root)` that counts its pieces. Decomposing
+        part by part put the parts in NAME order, which quietly made a table's
+        root `leg-1` -- 18 cells -- where the whole-heap decomposition before it
+        had happened to start with the top. Biggest first, on purpose now."""
+        import workshop_motion
+        setup = workshop_motion.scene(self.table(), "drop_product",
+                                      {"height_m": 1.0, "cell_size_m": .02})
+        bodies = setup["spec"]["bodies"]
+        root = next(b for b in bodies if b["name"] == setup["root"])
+        self.assertEqual("top", root["part"])
+        bulk = [b["size_mm"][0] * b["size_mm"][1] * b["size_mm"][2]
+                for b in bodies if b.get("part")]
+        self.assertEqual(max(bulk), bulk[0], "the root is not the largest box")
+
     def test_the_products_cells_are_decomposed_part_by_part(self):
         import workshop_motion
         import workshop_sparse_trial as sparse

@@ -68,6 +68,15 @@ def decompose_by_part(cells: set[Grid], part_of: dict[Grid, str]) -> list[tuple[
     still say which part they are, so the whole object is no longer decomposed
     as one heap of cells (#20). The union is unchanged: the components
     partition the cells, so the same set comes back.
+
+    **Biggest box first**, which is not cosmetic: the first box is the one that
+    takes the product's root name, and everything downstream calls that body the
+    product -- the install, the bench's `root_body`, the page. Decomposing part
+    by part in name order had quietly made a table's root `leg-1` instead of its
+    top, because `leg-1` sorts first; the old whole-heap decomposition happened
+    to put the top first because it is the largest run. Sorting by size restores
+    that on purpose rather than by luck, and ties break on the part's name and
+    then its corner so the order is the same every run.
     """
     grouped: dict[str, set[Grid]] = {}
     for cell in cells:
@@ -75,6 +84,15 @@ def decompose_by_part(cells: set[Grid], part_of: dict[Grid, str]) -> list[tuple[
     out: list[tuple[Box, str]] = []
     for part in sorted(grouped):
         out += [(box, part) for box in decompose_cells(grouped[part])]
+
+    def bulk(entry: tuple[Box, str]) -> tuple[int, str, Box]:
+        (lo, hi), part = entry
+        run = 1
+        for axis in range(3):
+            run *= hi[axis] - lo[axis] + 1
+        return (-run, part, lo)
+
+    out.sort(key=bulk)
     return out
 
 
