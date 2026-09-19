@@ -196,13 +196,18 @@ def described() -> list[dict[str, Any]]:
         (_PRESSED, "a shaft held in its bore by the fit alone"))]
 
 
-def scene_interfaces(design: Any) -> list[dict[str, Any]]:
+def scene_interfaces(design: Any, prefix: str = "") -> list[dict[str, Any]]:
     """The joints of a built design, as the scene's own ``interfaces`` block.
 
     One entry per declared joint that a law applies to, naming the two parts by
     the labels its cells carry. A joint no law applies to -- a bearing -- is
     left out, so those bonds stay the material's own, which is what today
     already does and is said in :func:`efficiency`.
+
+    `prefix` goes in front of both labels, for a scene that holds more than one
+    product: two of the same design standing in a room are two objects, and a
+    joint in one is not a joint in the other. A scene with one product under
+    test needs none, and the labels are the design's own.
     """
     from mcp import workshop_construction
 
@@ -214,6 +219,7 @@ def scene_interfaces(design: Any) -> list[dict[str, Any]]:
         keeps = efficiency(joint, parts[joint["a"]], parts[joint["b"]])
         if not keeps["rated"]:
             continue
-        out.append({"a": joint["a"], "b": joint["b"], "tension": keeps["tension"],
-                    "shear": keeps["shear"], "compression": keeps["compression"]})
+        out.append({"a": prefix + joint["a"], "b": prefix + joint["b"],
+                    "tension": keeps["tension"], "shear": keeps["shear"],
+                    "compression": keeps["compression"]})
     return out

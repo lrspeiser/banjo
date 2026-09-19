@@ -29,7 +29,8 @@ import world_access
 import world_room
 import precise_rigid
 import workshop_sparse_trial as sparse
-from mcp import engine_materials, workshop_components, workshop_visual, workshop_matter_metrics, workshop_rigid
+from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_visual,
+                 workshop_matter_metrics, workshop_rigid)
 
 SCHEMA = "banjo.workshop-install.v1"
 MAX_PREVIEWS = 8
@@ -305,16 +306,42 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("Mixed-material installation requires explicit interfaces; it cannot be fused into one material")
         shift = (round(pos[0]/h), -min(g[1] for g in cells), round(pos[1]/h))
         placed = {tuple(g[a]+shift[a] for a in range(3)) for g in cells}
-        boxes = sparse.decompose_cells(placed)
+        root = "workshop-" + uuid.uuid4().hex[:16]
+        # Decomposed component by component, so every box still says which part
+        # of the product it is and the joints declared in the Workshop have
+        # something to name once the product is standing in the room (#20).
+        # Moving every cell by the same whole number of cells leaves which
+        # component each one is untouched. The labels carry the root, because a
+        # room may hold two of the same design and a joint in one of them is not
+        # a joint in the other.
+        placed_parts = {tuple(g[a]+shift[a] for a in range(3)): f"{root}/{name}"
+                        for g, name in sparse._grid_parts(matter).items()}
+        labelled = sparse.decompose_by_part(placed, placed_parts)
+        boxes = [box for box, _ in labelled]
         if len(boxes)>sparse.MAX_SCENE_BOXES or sparse.cells_from_boxes(boxes)!=placed:
             raise ValueError("Prototype geometry cannot be represented exactly within the native scene limit")
-        root = "workshop-" + uuid.uuid4().hex[:16]
-        added = [sparse._box_body(root if i==0 else f"{root}-{i}", box, h, next(iter(materials)), root)
-                 for i,box in enumerate(boxes)]
+        added = [sparse._box_body(root if i==0 else f"{root}-{i}", box, h, next(iter(materials)), root, part)
+                 for i,(box,part) in enumerate(labelled)]
         saved = _snapshot(live)
         _clearance(saved, placed, h)
         spec = deepcopy(room.spec)
         spec["bodies"] = spec["bodies"] + added
+        # What each of its joints leaves the bonds that cross it, so a blow
+        # landing on it in the room breaks it where it is actually weak rather
+        # than treating every joint as the solid wood.
+        declared = joint_efficiency.scene_interfaces(design, prefix=f"{root}/")
+        # Every one of them has to be a joint the room can still recognise as it
+        # is edited: two parts meeting across a face. One that the cell grid
+        # leaves apart would be honoured by the engine now -- its bonds reach
+        # further than a face -- and then silently dropped the first time the
+        # chat rewrote the room, so the joint would quietly become solid wood.
+        # Refused here, where it can still be said.
+        if len(fracture_lab.standing_interfaces(added, declared)) != len(declared):
+            raise ValueError(
+                "At this cell size some of the prototype's joints do not meet face to face, so they "
+                "could not be kept as the room is edited. Use a finer cell or move the parts to touch")
+        if declared:
+            spec["interfaces"] = (spec.get("interfaces") or []) + declared
         fracture_lab.validate(spec)  # admission only; never rewrite the old declarations
         staged, _ = _stage(app, live, old, spec, saved, matter, root, shift)
         staged.session.close()

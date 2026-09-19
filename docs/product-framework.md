@@ -87,7 +87,7 @@ So the product layer is what was missing, not the break machinery:
 | a design whose parts and joints are data a person can change | **built** (below) |
 | what a declared joint can carry, from declared things only | **built** |
 | a fast answer to "which joint goes first" while designing | **built**, as a screen |
-| a joint weaker than the material it joins, in the engine | **built** (below), for a product under test |
+| a joint weaker than the material it joins, in the engine | **built** (below), on the bench and in a live room |
 | the same product in the world: few bodies, real joints, one item | not built |
 | a joint's bending, and a bearing's load, checked by the engine | not built |
 | the struck part refined on demand when it is a thin precise part | not built |
@@ -276,22 +276,53 @@ fifth of the energy, and loses them **as legs**: at the joint, which is where it
 already parted. A separate two-part probe (a slab on a post) holds to 4.5 m
 carved and parts in two at 4.5 m glued.
 
+**In a live room, too.** A product installed in the yard used to arrive as one
+heap of cells with no labels on them, so every joint in it was solid wood. Its
+cells now carry their component through the install, and its joints go into the
+room's spec as an `interfaces` block, namespaced by the body root -- two tables
+of the same design standing in one room are two objects, and a joint in one is
+not a joint in the other.
+
+A **template installed as it comes still declares no joints.** Its parts are
+labelled, but nothing in a bare template says how it was put together, and
+inventing that would be asserting a construction nobody chose. Joints arrive
+once a design's own are (`workshop_construction.adopted`), which is what
+building it part by part makes.
+
+The hard part was not the install but **the chat's hands.** A room is written
+back field by field after every edit (`room_world.export_spec`), and anything
+that pass does not carry is silently gone; joints were not carried. Worse, the
+engine refuses a scene whose declared joint names a part that is gone or crosses
+no bond -- right where someone wrote that joint by hand, and fatal here: moving
+or removing a jointed part would have been refused, and a room that had been
+saved with one could have stopped opening at all. So a joint that no longer
+stands is dropped where the world is rebuilt (`banjo_mcp._rebuild`), before the
+engine sees it, and said with the rest of what an edit lost -- the same
+discipline that already drops a bow's controls, a blade, a tool's point and a
+motor when what they name goes.
+
+Standing means the two parts still meet across a face
+(`fracture_lab.standing_interfaces`). The engine's bonds reach further, as far
+as its neighbour horizon -- across a diagonal, or a cell of air -- so this rule
+deliberately keeps **less** than the engine would honour and can never leave
+behind a joint the engine will refuse. It can drop one the engine would still
+reach across, which is why an install refuses a joint whose parts do not meet
+rather than quietly shipping one a later edit would lose.
+
+**No room's digest moves.** A room's saved world is only reopened into a spec
+with the same digest, and the digest is taken from the spec as the room holds
+it, never from what the validator returns -- checked across both changes, and
+now pinned (`room_store_tests`, `TheSpecAWorldIsSavedFrom`).
+
 **What this does not reach.** The load survey (`surveyLoads`, which is what
 warns that a shelf is overloaded) reads per-body material strengths and not
-bonds, so a weak joint does not show up there. A product **installed in a live
-room** does not carry its joints either: that path builds its own bodies, and
-adding to them changes a room's spec, which decides whether a saved world can be
-reopened -- so it is the next step and not a quiet one. Precise-rigid bodies
-have no bonds to weaken. Mixed materials are still refused upstream.
+bonds, so a weak joint does not show up there. Precise-rigid bodies have no
+bonds to weaken. Mixed materials are still refused upstream. And a product in
+the world is still many bodies rather than one item, which is the next step.
 
 ## Not built, in the order it should be
 
-1. **The declared joints reaching a product installed in a live room.** The
-   three lines are the same as the test path's, but a room's spec is what
-   decides whether its saved world can be reopened, and the owner's standing
-   rule is that nothing resets a room. So it needs its own care: a spec
-   migration, or interfaces kept out of the digest.
-2. **The product in the world as few bodies and real joints, handled as one
+1. **The product in the world as few bodies and real joints, handled as one
    item.** The contract's runtime bodies (the cart's three) as precise-rigid
    compounds, its bearings as native hinges, its breakable joints as native
    fixings rated by `engine_fixing`. It needs: the one guard that refuses every
@@ -304,22 +335,22 @@ have no bonds to weaken. Mixed materials are still refused upstream.
    anything jointed today, and a precise body is not an inventory item at all).
    Done when a built cart placed in the yard rolls when pushed, is picked up
    and put in the bag as one thing, and the room runs at realtime.
-3. **The engine checking what the bench checks.** Read a fixing's rotational
+2. **The engine checking what the bench checks.** Read a fixing's rotational
    impulse for a bending capacity; give a hinge a radial capacity. With
    glass/oak/iron tests, as `fixing_tests.cpp` has for tension and shear. Then
    the bench screen can be checked against the engine on the same product, which
    is the evidence that would let its uncertain band be narrowed.
-4. **Coming apart in the world.** A fixed group is one compound today, so a
+3. **Coming apart in the world.** A fixed group is one compound today, so a
    joint inside it has no constraint to measure. Either keep breakable joints
    as fixings between bodies (more bodies, no new physics) or split a compound
    on the screen's answer; `CompiledRuntime::split` is the pattern (each piece
    inherits `v + w x r` and the same spin, conservation measured, new before
    old). The pieces are the sub-components, by name.
-5. **Stage B for a thin precise part.** Refine the one struck part to a lattice
+4. **Stage B for a thin precise part.** Refine the one struck part to a lattice
    when `admitRefracture`'s bound is passed. It needs a cell size per body.
-6. **Into the Workshop and back.** Carry a world product in, open it as its
+5. **Into the Workshop and back.** Carry a world product in, open it as its
    parts, take it apart or reclaim its materials. It needs the material and
    energy ledger that installation still lacks.
-7. **Melting.** No material has a melting point and no live body a phase. The
+6. **Melting.** No material has a melting point and no live body a phase. The
    enthalpy law exists apart from the live world. Softening by heat exists for
    three materials and already re-rates a fixing.

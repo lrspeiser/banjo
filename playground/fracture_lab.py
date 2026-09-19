@@ -413,6 +413,66 @@ FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rig
 INTERFACE_SHARES = ("tension", "shear", "compression", "stiffness")
 
 
+def _shares_a_face(one: tuple[str, list[float], list[float]],
+                   two: tuple[str, list[float], list[float]]) -> bool:
+    """Whether two boxes of one joined object meet across a face."""
+    join_one, centre_one, size_one = one
+    join_two, centre_two, size_two = two
+    if not join_one or join_one != join_two:
+        return False        # bonds are built per join group; none cross between two
+    met = 0
+    for axis in range(3):
+        gap = (abs(centre_one[axis] - centre_two[axis])
+               - (size_one[axis] + size_two[axis]) / 2.0)
+        near = 1.0e-6 * max(size_one[axis], size_two[axis])
+        if gap < -near:
+            continue        # they share length along this axis
+        if gap > near:
+            return False    # daylight here, so no face is shared
+        met += 1            # they meet exactly on this one
+    return met == 1
+
+
+def standing_interfaces(bodies: list[dict[str, Any]], interfaces: Any, *,
+                        centre: str = "center_mm",
+                        size: str = "size_mm") -> list[dict[str, Any]]:
+    """The declared joints that still have two parts meeting across them.
+
+    A room's joints outlive whatever declared them. The chat can move a leg
+    away or take it out altogether, and the engine refuses a joint whose parts
+    it cannot find or whose bonds cross nothing -- which is right where a person
+    wrote that joint by hand, and here would mean a room that will not open at
+    all. So a joint that no longer stands is dropped as the room is written
+    back, the way a bow's controls, a blade, a tool's point and a motor already
+    are (room_world.export_spec).
+
+    Meeting means sharing a face on the grid, which is what two parts of one
+    product do where they are joined. The engine's bonds reach further -- as far
+    as its neighbour horizon, across a diagonal or a cell of air -- so this
+    keeps strictly LESS than the engine would honour and can never leave behind
+    a joint it will refuse. It can drop one the engine would still reach across;
+    that is why an install refuses a joint whose parts do not meet
+    (workshop_install) rather than quietly shipping one a later edit would lose.
+
+    `centre` and `size` name the two spellings a body comes in: a room's, in
+    millimetres, and the engine's scene document, in metres. Only the ratio of
+    a gap to a size is read, so either does.
+    """
+    if not interfaces:
+        return []
+    boxes: dict[str, list[tuple[str, list[float], list[float]]]] = {}
+    for body in bodies:
+        label = str(body.get("part") or "")
+        if label:
+            boxes.setdefault(label, []).append(
+                (str(body.get("join") or ""), [float(v) for v in body[centre]],
+                 [float(v) for v in body[size]]))
+    return [dict(face) for face in interfaces
+            if any(_shares_a_face(one, two)
+                   for one in boxes.get(str(face.get("a", "")), [])
+                   for two in boxes.get(str(face.get("b", "")), []))]
+
+
 def normalise_interfaces(interfaces: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Check every declared joint against the parts the bodies actually carry."""
     if interfaces is None:

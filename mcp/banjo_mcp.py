@@ -703,6 +703,23 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
             check(scene, joints)
         except ValueError as problem:
             raise Refused(str(problem)) from None
+    # The joints declared between the parts of a product (#20) outlive whatever
+    # edit is being made: the engine refuses a scene whose declared joint names
+    # a part that is gone or crosses nothing, so moving or taking out a jointed
+    # part would be refused rather than done. One that no longer stands is
+    # dropped here, before the world is built, and said with the rest.
+    dropped_joints: list[str] = []
+    if scene.get("interfaces"):
+        import fracture_lab
+        standing = fracture_lab.standing_interfaces(
+            scene["bodies"], scene["interfaces"], centre="center_m", size="dimensions_m")
+        if len(standing) != len(scene["interfaces"]):
+            keeping = {(f["a"], f["b"]) for f in standing}
+            dropped_joints = [f"the joint between {f['a']} and {f['b']}: they no longer meet"
+                              for f in scene["interfaces"] if (f["a"], f["b"]) not in keeping]
+            scene = {k: v for k, v in scene.items() if k != "interfaces"}
+            if standing:
+                scene["interfaces"] = standing
     fresh = None
     old = entry.get("world")
     if scene["bodies"]:
@@ -732,7 +749,7 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
     entry["poses"] = ({b.name: (list(b.position_m), list(b.orientation_wxyz)) for b in fresh.bodies()}
                       if fresh is not None else {})
     kept: list[dict[str, Any]] = []
-    lost: list[str] = []
+    lost: list[str] = list(dropped_joints)
     for record in joints:
         if fresh is None:
             lost.append(f"{_joint_words(record)}: the world is empty")

@@ -39,6 +39,15 @@ class NativeInstallation(unittest.TestCase):
         return {'scene':'yard','session':self.ctx['session'],'preview_id':p['preview_id'],'request_id':request}
     def do_commit(self,p,request='install-request-1'):return install.commit(self.app,self.request(p,request))
 
+    def built(self,material='oak'):
+        """A table whose joints are its own, as building it part by part leaves
+        it: a bare template says nothing about how it was put together."""
+        from mcp import workshop_components,workshop_construction
+        spec={'kind':'table','design_id':'t','parameters':{'material':material}}
+        design=workshop_components.design_from_spec(spec)[0]
+        return {**spec,'component_overrides':{workshop_construction.CONSTRUCTION_KEY:
+                                              workshop_construction.adopted(design)}}
+
     def test_preview_and_install_glass_oak_iron_use_exact_matter_and_keep_original(self):
         for index,material in enumerate(('glass','oak','iron')):
             with self.subTest(material=material):
@@ -58,6 +67,42 @@ class NativeInstallation(unittest.TestCase):
                 # in a saved recipe or a separate demonstration scene.
                 reply=self.live.act({'session':self.live.session.id,'op':'step','dt':1/120,'n':2})
                 self.assertIn(result['root_body'],[b['name'] for b in reply['bodies']])
+
+    def test_an_installed_product_carries_its_joints_into_the_room(self):
+        """#20 in a live room. A product used to arrive as one heap of cells, so
+        every joint in it was as strong as the solid wood. Its cells now keep
+        which component they are and the joints declared in the Workshop come
+        with them, so a blow lands on a table that is glued, not carved."""
+        # A template installed as it comes declares no joints: its parts are
+        # labelled, but nothing says how they were put together, and inventing
+        # that would be asserting a construction nobody chose. Joints arrive
+        # once the design's own are (workshop_construction.adopted) -- which is
+        # what building it part by part in the Workshop makes.
+        plain=self.do_commit(self.preview(position=(11,0)),request='install-plain')
+        self.assertNotIn('interfaces',self.room.spec)
+        self.assertTrue({b['part'] for b in self.room.spec['bodies'] if b.get('part')})
+        self.assertTrue(plain['root_body'])
+        self.ctx=install.context(self.app,{})
+        result=self.do_commit(self.preview(candidate=self.built()));root=result['root_body']
+        spec=self.room.spec
+        self.assertEqual({f'{root}/top'}|{f'{root}/leg-{i}' for i in range(1,5)},
+                         {b['part'] for b in spec['bodies'] if b.get('part')}-
+                         {b['part'] for b in spec['bodies']
+                          if b.get('part','').startswith(plain['root_body'])})
+        self.assertEqual(4,len(spec['interfaces']))
+        for face in spec['interfaces']:
+            self.assertEqual(f'{root}/top',face['a'])
+            self.assertEqual((.25,.25,1.0),(face['tension'],face['shear'],face['compression']))
+        # Every label carries the root, so a second table of the same design is
+        # its own object with its own four joints, not a second claim on these.
+        self.ctx=install.context(self.app,{})
+        second=self.do_commit(self.preview(position=(7,0),candidate=self.built()),
+                              request='install-request-2')['root_body']
+        self.assertNotEqual(root,second)
+        roots=[f['a'].split('/')[0] for f in self.room.spec['interfaces']]
+        self.assertEqual({root:4,second:4},{r:roots.count(r) for r in set(roots)})
+        # And what is written to disk is what comes back, joints and all.
+        self.assertEqual(self.room.spec,self.app.store.load('yard').spec)
 
     def test_retry_and_restart_return_one_persistent_receipt(self):
         p=self.preview();req=self.request(p);first=install.commit(self.app,req)

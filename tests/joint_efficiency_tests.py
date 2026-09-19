@@ -4,10 +4,12 @@
 The numbers themselves are declared (mcp/joint_efficiency.py) and are the
 owner's to change; what is pinned here is that each case gets the law it should,
 that every number says where it comes from, and that the law arrives at the
-scene intact.
+scene intact -- and survives the chat's hands once the product is standing in a
+live room.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -18,11 +20,15 @@ sys.path.insert(0, str(ROOT / "playground"))
 
 import fracture_lab  # noqa: E402
 import mcp  # noqa: E402,F401
+import room_world  # noqa: E402  (puts mcp/ on the path)
 from mcp import joint_efficiency as je  # noqa: E402
 from mcp import workshop_components, workshop_construction as con  # noqa: E402
 from mcp.workshop import WirePart  # noqa: E402
 
 KEY = con.CONSTRUCTION_KEY
+LIBRARY = os.environ.get("BANJO_LIBRARY", "")
+NEEDS_LIBRARY = unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(),
+                                    "set BANJO_LIBRARY to the built engine to run this")
 
 
 def part(name, size, centre, *, material="oak", role="beam", shape="box"):
@@ -214,6 +220,96 @@ class ReachingTheScene(unittest.TestCase):
         part_of = sparse._grid_parts(matter)
         self.assertEqual(matter["total_cells"], len(part_of))
         self.assertEqual(set(part_of), sparse._grid_set(matter))
+
+
+# ---------------------------------------------------------------------------
+# A product standing in a live room, through the chat's hands
+# ---------------------------------------------------------------------------
+
+def jointed(gap_mm=0.0, apart=False):
+    """A post glued under a slab, as the install path spells one: two bodies of
+    one joined object, each labelled with the part it is."""
+    return [{"name": "p-0", "shape": "box", "material": "oak", "size_mm": [400, 40, 200],
+             "center_mm": [0, 420 + gap_mm, 0], "join": "p", "part": "p/top"},
+            {"name": "p-1", "shape": "box", "material": "oak", "size_mm": [40, 400, 40],
+             "center_mm": [3000 if apart else 0, 200, 0], "join": "p", "part": "p/leg"}]
+
+
+FACE = {"a": "p/top", "b": "p/leg", "tension": .25, "shear": .25, "compression": 1.0}
+
+
+class AJointThatNoLongerStands(unittest.TestCase):
+    """fracture_lab.standing_interfaces: the rule that keeps a room openable
+    when the chat has moved or removed a part a joint was declared between."""
+
+    def test_two_parts_meeting_across_a_face_still_stand(self):
+        self.assertEqual([FACE], fracture_lab.standing_interfaces(jointed(), [FACE]))
+
+    def test_a_part_moved_away_drops_its_joint(self):
+        self.assertEqual([], fracture_lab.standing_interfaces(jointed(apart=True), [FACE]))
+
+    def test_a_part_taken_out_drops_its_joint(self):
+        self.assertEqual([], fracture_lab.standing_interfaces(jointed()[:1], [FACE]))
+
+    def test_daylight_between_them_is_not_a_joint(self):
+        # The engine's bonds reach across a cell of air; this deliberately does
+        # not, so it can only ever keep less than the engine will honour.
+        self.assertEqual([], fracture_lab.standing_interfaces(jointed(gap_mm=20), [FACE]))
+
+    def test_parts_of_two_different_objects_are_never_joined(self):
+        bodies = jointed()
+        bodies[1] = dict(bodies[1], join="other")
+        self.assertEqual([], fracture_lab.standing_interfaces(bodies, [FACE]))
+
+    def test_meeting_only_along_an_edge_is_not_a_face(self):
+        bodies = jointed()
+        bodies[1] = dict(bodies[1], center_mm=[220, 200, 0])   # touching corner to corner
+        self.assertEqual([], fracture_lab.standing_interfaces(bodies, [FACE]))
+
+
+@NEEDS_LIBRARY
+class TheChatsHands(unittest.TestCase):
+    """A product's joints have to survive the chat: the room is written back
+    field by field after every edit (room_world.export_spec), and anything it
+    does not carry is silently gone. The joints used to be -- and a joint that
+    has stopped standing has to go, or the engine refuses the scene and the room
+    will not open at all."""
+
+    def room(self, bodies):
+        spec = {"algorithm": "lattice", "cell_m": .02, "bodies": bodies, "interfaces": [FACE]}
+        world = room_world.open_room(spec)
+        self.addCleanup(room_world.close_room, world)
+        return world
+
+    def written_back(self, world):
+        return room_world.export_spec(room_world.entry_of(world))
+
+    def test_a_product_keeps_its_parts_and_its_joints_through_an_edit(self):
+        world = self.room(jointed())
+        spec = self.written_back(world)
+        self.assertEqual(["p/top", "p/leg"], [b.get("part") for b in spec["bodies"]])
+        self.assertEqual([FACE], spec["interfaces"])
+        # And opened again from what was written back, they are still there:
+        # this is the path a restart and every chat edit take.
+        again = self.written_back(self.room(spec["bodies"]))
+        self.assertEqual([FACE], again["interfaces"])
+
+    def test_moving_a_part_away_takes_its_joint_with_it(self):
+        world = self.room(jointed())
+        answer = room_world.call(world, "move_object", {"name": "p-1", "position_m": [3.0, .2, 0]})
+        self.assertNotIn("error", answer, answer)
+        spec = self.written_back(world)
+        self.assertNotIn("interfaces", spec)
+        # The room still opens from it, which is the whole point.
+        self.assertTrue(fracture_lab.validate(spec)["bodies"])
+
+    def test_taking_a_part_out_takes_its_joint_with_it(self):
+        world = self.room(jointed())
+        answer = room_world.call(world, "remove_object", {"name": "p-1"})
+        self.assertNotIn("error", answer, answer)
+        spec = self.written_back(world)
+        self.assertNotIn("interfaces", spec)
+        self.assertTrue(fracture_lab.validate(spec)["bodies"])
 
 
 if __name__ == "__main__":

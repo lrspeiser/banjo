@@ -29,9 +29,13 @@ order. The ones most easily mistaken for done:
   bound both read them -- but `surveyLoads`, which is what warns that something
   is overloaded, reads per-body material strengths and never touches a bond. A
   glued shelf is warned about as if it were carved.
-- **A product installed in a live room has no joints.** The install path builds
-  its own bodies without part labels, so only a product under test on the bench
-  breaks at its joints.
+- **A bare template installed in a live room declares no joints.** Its parts
+  are labelled and a design built part by part carries its joints all the way
+  in, but a template says nothing about how it was put together, so one placed
+  as it comes is still solid wood at every joint.
+- **A joint dropped by an edit is not reported to the person.** Move a jointed
+  part away and the joint goes with it, said in what the rebuild lost; nothing
+  surfaces that in the room.
 - **The joint efficiency numbers are declared, not validated**, and the press
   fit's is a stated demonstration value. They are the owner's to sign off
   ([product-framework.md](product-framework.md)).

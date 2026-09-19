@@ -255,7 +255,7 @@ def room_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 # The fields a room body carries that the engine's scene document also carries,
 # beyond the ones every body has. Passed through untouched both ways.
-_PASSED = ("id", "join", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
+_PASSED = ("id", "join", "part", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
            "temperature_k")
 
 
@@ -344,6 +344,13 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
                 for name, record in (entry.get("constructions") or {}).items()]
     if declared:
         spec["constructions"] = declared
+    # What each of its declared joints leaves the bonds crossing it (#20). The
+    # scene holds only the ones still standing -- _rebuild drops a joint whose
+    # parts an edit has moved apart or taken out -- and they are read back here
+    # in the room's own spelling.
+    standing = fracture_lab.standing_interfaces(bodies, scene.get("interfaces") or [])
+    if standing:
+        spec["interfaces"] = standing
     # The ground as it was made and every edit since, and the rivers. Water
     # carried from a running world is never part of what the room IS: it is
     # handed to the one open at the moment it is reopened, and no further.
@@ -450,6 +457,14 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
     if spec.get("precise_rigid_bodies"):
         raise ValueError("The chat authoring adapter cannot yet edit precise-rigid rooms. Use live picking/carrying or Workshop placement; the existing room was not changed.")
     validated = fracture_lab.validate(spec)
+    # A room's spec outlives what declared its joints, and one whose parts no
+    # longer meet is dropped before the world is built rather than refused by
+    # the engine -- which would be a room that cannot be opened at all. Done
+    # here so that _rebuild finds nothing left to drop as the room opens.
+    standing = fracture_lab.standing_interfaces(validated["bodies"], validated.get("interfaces"))
+    validated = {k: v for k, v in validated.items() if k != "interfaces"}
+    if standing:
+        validated["interfaces"] = standing
     document = fracture_lab.scene_document(validated)
     world_id = "room-" + uuid.uuid4().hex[:8]
     entry: dict[str, Any] = {
