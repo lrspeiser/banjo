@@ -8,7 +8,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. Both MCP entry points are **1.2.0**.
+Current native ABI: **25**. Both MCP entry points are **1.3.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.
@@ -18,6 +18,7 @@ Current native ABI: **25**. Both MCP entry points are **1.2.0**.
 - **[machine-networks.md](machine-networks.md)** — every circuit API/MCP call,
   product binding, thermal/electrical state, restart and errors; supported
   functions and remaining work across all fifteen machine capability areas.
+- **[../gameplay.md](../gameplay.md)** — finite-resource expedition, world time, drying process, HTTP/Python/MCP operations and persistence boundaries.
 - **[mcp.md](mcp.md)** — the MCP server, so Claude or ChatGPT can run
   experiments instead of guessing at them.
 - **[../cutting-model.md](../cutting-model.md)** — blades: an edge declared on a

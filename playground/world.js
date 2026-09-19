@@ -12,6 +12,7 @@
 // what a ray hits, takes hold of things and lets go of them. If it can be done
 // from here it can be done from anything.
 import * as THREE from "/vendor/three.module.js";
+import { expeditionUI } from "/gameplay.js";
 import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
          narrateCuts } from "/blades.js";
 import { BINDINGS, isKey, isButton, keyOf, controls, holdPoint, windUpPoint,
@@ -215,6 +216,21 @@ scene.add(rim);
 const fill = new THREE.DirectionalLight(0xffffff, 0.35);
 fill.position.set(0, 2, 8);
 scene.add(fill);
+const expedition = expeditionUI({
+  scene, camera, sun: key,
+  request: action => api("/api/world/gameplay", {session: world.session, op: "action", action}),
+  pause: value => { world.paused = value; world.lastTick = 0; },
+  isPaused: () => world.paused,
+  wait: async () => {
+    while (world.busy) await new Promise(resolve => setTimeout(resolve, 20));
+    const state = await act("step", {dt: 1/120, n: 120});
+    world.clock = state.t;
+    expedition.update(state.gameplay);
+    draw(state);
+    if (state.water) drawWater(state.water);
+    return state;
+  }
+});
 
 // The floor the engine actually uses is a plane at y = 0. This draws it.
 const grid = new THREE.GridHelper(60, 60, 0x24424f, 0x152229);
@@ -4682,6 +4698,7 @@ function recordLostLink(gaveUp) {
 }
 
 async function tick() {
+  if (document.hidden) { world.lastTick = 0; return; }
   if (!world.session || world.busy || world.paused) return;
   // Waiting out a request that got no answer before asking again.
   if (performance.now() < world.retryAt) return;
@@ -4918,6 +4935,7 @@ async function tick() {
     }
     if (here < 150) world.warnedFull = false;
     world.clock = state.t;
+    expedition.update(state.gameplay);
     $("room-clock").textContent = `The room's clock: ${state.t.toFixed(1)} s · ${steps} steps a frame`;
     $("panel-state").textContent = world.held ? `Holding ${heldName()}.` : "Live.";
     // After the line above, not before it: a draw has something better to say
@@ -5808,6 +5826,7 @@ async function open({ again = false } = {}) {
     const data = await api("/api/world/open",
                            qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
+    expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
     world.scene = data.scene || null;   // what the server says it opened
@@ -5857,7 +5876,9 @@ async function open({ again = false } = {}) {
       if (data.water) drawWater(data.water);
       // Somewhere to stand that looks at something: the valley says where --
       // or, when the room is as it stood, where the person was standing.
-      placeCamera((asItStood && keptView(data.scene)) || data.terrain.view);
+      placeCamera((asItStood && keptView(data.scene)) || (data.gameplay
+        ? {eye_m: data.gameplay.spawn_m, look_m: data.gameplay.nodes[0].at_m}
+        : data.terrain.view));
     } else {
       clearGround();
       if (asItStood) placeCamera(keptView(data.scene));

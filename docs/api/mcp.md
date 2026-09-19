@@ -42,7 +42,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world and platform server version: **1.2.0**, requiring native ABI **25**.
+Current world and platform server version: **1.3.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -59,6 +59,10 @@ broke.
 |---|---|
 | `circuit` | attach a bounded shared DC/thermal network to an existing store and all its motors; returns a positive circuit handle. Full nested declaration is published in `tools/list`. |
 | `install_circuit` | compile a ProductGraph and bind a named operating circuit to existing stores and motors by component identity; no geometry creation or state reset. |
+| `expedition_open` | open/rejoin the persistent local browser expedition; returns its session and gameplay state. |
+| `expedition_state` | read finite resources, pack, dryer, clock and conservation residuals for a live expedition session. |
+| `expedition_action` | durably gather/build/load/fuel/light/extinguish/collect using a retry-safe request_id and metre coordinates. |
+| `expedition_wait` | advance the same native expedition 1–30 seconds; read state before retrying an uncertain wait. |
 | `circuit_switch` | open/close a switch by world id, circuit handle, branch id and boolean `closed`; cannot repair failure. |
 | `circuits` | read circuit state, component temperatures, currents, torques, fuse history and energy/residual ledgers; also included in `run` / `describe_world` machine reports. |
 | `snapshot_world` | read a whole-world checkpoint with MCP names and native state; save the returned `checkpoint` as JSON. |
@@ -1000,3 +1004,7 @@ drive it as a real subprocess through the real protocol, because calling the
 handlers directly would miss everything that goes wrong at a protocol
 boundary — a notification answered when it should not be, a schema a client will
 reject, an exception escaping as a crash instead of an answer.
+
+## Personal expedition
+
+The four expedition tools forward to the running local playground, not the MCP authoring copy. See [the gameplay contract](../gameplay.md) for all action fields, units, limits, examples, save ownership, and the declared dryer model.

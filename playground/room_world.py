@@ -53,6 +53,10 @@ import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's 
 # Everything the MCP offers reaches the chat except these, each for a reason
 # that is about the ROOM rather than about the tool.
 NOT_FOR_THE_ROOM = {
+    "expedition_wait": "advances the live game, not the chat authoring copy",
+    "expedition_open": "opens the live personal game, not the chat authoring copy",
+    "expedition_state": "requires the live expedition session",
+    "expedition_action": "player inventory actions require the live expedition session",
     "circuit": "circuit construction awaits state-preserving room editing; use the standalone MCP world",
     "install_circuit": "product circuit installation awaits state-preserving room editing",
     "circuit_switch": "room circuit controls require the persistent live-room adapter",

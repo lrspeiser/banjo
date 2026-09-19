@@ -334,3 +334,11 @@ kbd {
   .slot { width: 46px; height: 46px; }
   .slot i { top: 9px; width: 13px; height: 13px; margin-left: -6.5px; }
 }
+
+#expedition { padding: 12px; border-bottom: 1px solid #45535d; }
+#expedition h2 { font-size: 1rem; color: #f0d9a0; }
+#expedition p { font-size: .78rem; line-height: 1.5; }
+#expedition button { display: block; width: 100%; margin: 5px 0; padding: 7px; text-align: left; }
+#expedition button:disabled { opacity: .45; }
+
+#talk[hidden], #details[hidden] { display: none; }

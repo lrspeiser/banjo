@@ -38,6 +38,7 @@ import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import inventory_room
+import gameplay_room
 import tool_use
 import access_gate
 import workshop_api
@@ -1132,7 +1133,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
-                "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
+                "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
@@ -1178,7 +1179,22 @@ class Handler(BaseHTTPRequestHandler):
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith("/api/world/workshop/")
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.server.app).enter() if world_call else nullcontext()):
+        with (world_access.gate(self.server.app).enter() if world_call else nullcontext()), \
+             (gameplay_room.LOCK if world_call and (gameplay_room.active(self.server.app)
+                 or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
+            if gameplay_room.active(self.server.app):
+                if world_call and not isinstance(body, dict):
+                    raise ValueError("Expected a JSON object")
+                if path.startswith("/api/world/") and path not in ("/api/world/open", "/api/world/gameplay"):
+                    raise ValueError("Expedition resources use the gameplay panel; sandbox authoring belongs in other scenes")
+                if path == "/api/live/act" and body.get("op") not in ("step", "poses", "environment", "terrain", "survey"):
+                    raise ValueError("This operation is not part of the bounded expedition")
+            if path == "/api/world/gameplay":
+                try:
+                    answer = gameplay_room.request(self.server.app, body, keep_world)
+                except OSError as exc:
+                    return self.send({"error": "Expedition action was not saved: " + str(exc)}, 503)
+                return self.send(answer)
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
             if path=="/api/packages/run": return self.send(self.server.app.run_package(body),202)
             # Pure computation: admission verdict, repair and cost for a builder
@@ -1236,6 +1252,8 @@ class Handler(BaseHTTPRequestHandler):
                 # Nothing is kept, and the room already open is left alone,
                 # unless the new world actually opens.
                 if "qa" in body:
+                    if gameplay_room.active(app) and not keep_world(app, "opening QA room"):
+                        raise ValueError("Save the expedition before opening the QA room")
                     qa=body["qa"]
                     qa_path(qa)   # anything that is not exactly an id stops here
                     key="qa:"+qa
@@ -1252,7 +1270,14 @@ class Handler(BaseHTTPRequestHandler):
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
                     return self.send(opened)
+                if gameplay_room.active(app):
+                    if not keep_world(app, "leaving or reopening expedition"):
+                        raise ValueError("Save the expedition before leaving it")
                 scene=str(body.get("scene","world"))
+                if scene == "expedition":
+                    if body.get("fresh"):
+                        raise ValueError("The expedition is persistent; fresh would erase its material history")
+                    body.pop("again", None)
                 if scene not in world_room.SCENES: scene="world"
                 # Kept on disk as well (room_store): a room this server has not
                 # opened since it started is read back as it was left, so a
@@ -1278,18 +1303,20 @@ class Handler(BaseHTTPRequestHandler):
                 # and only a world saved from the spec the room has now: the
                 # chat's changes are a new spec, and a world saved before them is
                 # not the room they made.
-                world=getattr(room,"world_record",None) if kept else None
-                if not kept: room.world_record=None
+                world=getattr(room,"world_record",None) if kept or scene == "expedition" else None
+                if not kept and scene != "expedition": room.world_record=None
                 if world is not None and world.get("spec_digest")!=live_session.spec_digest(room.spec):
                     log.info("rooms: the world kept with %s was saved from another spec; the room opens from its spec",
                              scene)
+                    if scene == "expedition":
+                        raise ValueError("Expedition spec changed; refusing to reset its clock or inventories")
                     room.world_record=world=None
                 world_problem=None
                 try:
                     try:
                         opened=app.live.open(app,{"spec":room.spec,**({"snapshot":world} if world else {})})
                     except Exception as failed:
-                        if world is None: raise
+                        if world is None or scene == "expedition": raise
                         # A saved world the engine would not open at all: set
                         # aside, never deleted, and the room opens from its spec.
                         world_problem=str(failed)[:300]
@@ -1297,7 +1324,7 @@ class Handler(BaseHTTPRequestHandler):
                         world=None
                         opened=app.live.open(app,{"spec":room.spec})
                 except Exception as problem:
-                    if not kept: raise
+                    if not kept or scene == "expedition": raise
                     # A kept room that no longer opens -- kept by an older build,
                     # say -- is set aside, never deleted, and the room opens as
                     # it was first made.
@@ -1311,7 +1338,12 @@ class Handler(BaseHTTPRequestHandler):
                 # Opened, but not as it stood: the engine said why (its
                 # `restored`). Set aside with that, and said.
                 restored=opened.get("restored") if world is not None else None
+                if scene == "expedition" and world is not None and (
+                        not isinstance(restored, dict) or restored.get("tier") != "whole"):
+                    raise ValueError("A complete native restore is required for an expedition")
                 if isinstance(restored,dict) and restored.get("tier")!="whole":
+                    if scene == "expedition":
+                        raise ValueError("A complete native restore is required for an expedition")
                     world_problem=str(restored.get("why") or "the engine could not put it back")[:300]
                     app.store.set_aside_world(room,world_problem)
                 if world_problem:
@@ -1329,7 +1361,10 @@ class Handler(BaseHTTPRequestHandler):
                 # Saved now, so what a restart gives back is this world from
                 # here on -- the one just opened again, or the one just opened
                 # from its spec, which a restart must not trade for an older one.
-                keep_world(app,"the room opened")
+                gameplay_room.opened(app, opened)
+                saved_now = keep_world(app,"the room opened")
+                if gameplay_room.active(app) and not saved_now:
+                    raise ValueError("The new expedition could not be saved")
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
                 opened["kept"]=kept
@@ -1466,6 +1501,8 @@ class Handler(BaseHTTPRequestHandler):
                 _this_pages_room(self.server.app,body)
                 return self.send(inventory_room.shown(self.server.app))
             if path=="/api/live/open":
+                if gameplay_room.active(self.server.app) and not keep_world(self.server.app, "opening laboratory"):
+                    raise ValueError("Save the expedition before opening the laboratory")
                 opened=self.server.app.live.open(self.server.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
                 self.server.app.live_holder="lab"
@@ -1475,6 +1512,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the notebook when the server's is newer (with_notebook).
                 seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
                 answer=self.server.app.live.act(body)
+                gameplay_room.sync(self.server.app, answer)
                 remember_ground(self.server.app,body,answer)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.server.app,answer)
                 self.send(with_notebook(self.server.app,answer,seen))
@@ -2080,14 +2118,20 @@ def keep_world(app,why=""):
     if snapshot is None: return False
     lock=getattr(app,"world_lock",None)
     if lock is None: lock=app.world_lock=threading.Lock()
-    with lock:
+    with gameplay_room.LOCK, lock:
         saved,refused=snapshot()
         if saved is None:
             log.info("rooms: the running world was not saved (%s): %s; the last one saved is kept",why,refused)
             return False
+        gameplay_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         room.world_record=saved
+        if gameplay_room.active(app):
+            store = getattr(app, "store", None)
+            if store is None or not store.save(room):
+                return False
+        else:
+            room_store.keep(app,room)
         room.world_saved_t=float(saved.get("t_s") or 0.0)
-        room_store.keep(app,room)
     return True
 
 
@@ -2125,6 +2169,7 @@ def _rejoin(app,scene):
     rejoin=getattr(app.live,"rejoin",None)
     opened=rejoin(app) if rejoin is not None else None
     if opened is None: return None
+    gameplay_room.opened(app, opened)
     opened["inventory"]=inventory_room.shown(app)
     opened["scene"]=room.scene
     opened["scenes"]=sorted(world_room.SCENES)

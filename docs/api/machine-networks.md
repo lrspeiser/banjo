@@ -1,6 +1,6 @@
 # Machine API and MCP reference
 
-September 19, 2026. Native ABI **25**, world and platform MCP servers **1.2.0**.
+September 19, 2026. Native ABI **25**, world and platform MCP servers **1.3.0**.
 This reference covers the executable functions and the boundaries of the fifteen
 requested machine capabilities. It does not turn planned solvers into callable
 appliances. Model laws and measured numerical errors are in

@@ -1,5 +1,22 @@
 # Banjo mechanics scorecard
 
+
+**Expedition gameplay, September 19:** [Playable checkpoint and full API contract](gameplay.md)
+add finite surface stocks on the native generated valley, reach-limited gathering,
+a material pack, and one fuel-powered timber dryer. Native elapsed time drives
+production and the 30-minute sun cycle; complete room saves retain material,
+fuel, heat, unfinished work, damage and action receipts. Browser and both MCP
+servers share that live world. Eight focused model/persistence tests pass; a
+53.3-second native HTTP/MCP test completes a batch across scene switching and
+server restart (1,438 simulated seconds; residuals 1.95e-14 kg and 4.25e-9 J).
+All four registered gameplay/API/MCP suites pass (216.4 seconds), including the
+68-test MCP suite. Browser gathering, reload and native waiting were exercised. This is a bounded
+Python process with ambient boundary losses and location markers, not native
+manufacturing, geological ore generation, product collision geometry or a full
+engine qualification. Next: real construction geometry, geological resource
+placement and native thermal/material ports. See the gameplay note for scope.
+
+
 **Machine API integration, September 19:** [C/Python/MCP reference](api/machine-networks.md)
 and runner commands expose the existing circuit model. Seven focused CTest
 suites pass, including process restart with persistent fuse failure. This is

@@ -84,6 +84,9 @@ class RoomStore:
         receipts = getattr(room, "workshop_installs", None)
         if isinstance(receipts, list):
             record["workshop_installs"] = receipts[-64:]
+        gameplay = getattr(room, "gameplay_record", None)
+        if isinstance(gameplay, dict):
+            record["gameplay"] = gameplay
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -110,12 +113,18 @@ class RoomStore:
                         or not isinstance(record.get("chat", []), list)):
                     raise ValueError("it is not a kept room")
             except (OSError, ValueError) as problem:
+                if scene == "expedition":
+                    raise ValueError("Expedition save is unreadable; refusing a reset") from problem
                 self._set_aside(path, str(problem))
                 return None
         room = world_room.Room(scene)
         room.spec = record["spec"]
         room.chat = [turn for turn in record.get("chat", []) if isinstance(turn, dict)]
         room.kept_since = record.get("saved_unix_s")
+        room.gameplay_record = record.get("gameplay")
+        if scene == "expedition" and (not isinstance(room.gameplay_record, dict)
+                                      or not isinstance(record.get("world"), dict)):
+            raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
         receipts = record.get("workshop_installs")
