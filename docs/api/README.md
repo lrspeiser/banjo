@@ -1,5 +1,7 @@
 # The Banjo API
 
+Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
+
 Banjo simulates matter. An object is not a shape with a "breakable" flag on it:
 it is cells joined by bonds, the bonds carry tension and compression, they yield
 and they fail, and what happens to a thing is worked out rather than looked up.
@@ -8,7 +10,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. Both MCP entry points are **1.4.0**.
+Current native ABI: **25**. Both MCP entry points are **1.5.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.

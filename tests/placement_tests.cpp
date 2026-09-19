@@ -179,6 +179,15 @@ void askingMovesNothing() {
     }
 }
 
+void supportRemainsVisibleWhenTheItemHasArrived() {
+    const auto world = LiveWorld::open(room());
+    // The query origin is inside the actual crate now. It must see the slab
+    // beneath it, not stop at the same item whose destination is being checked.
+    const LivePlacement p = world->placement("oak crate", Vec3{1.0, 0.0, 0.0}, 0.0, "slab");
+    require(p.fits && p.rests_on == "slab" && p.supported_corners == 4,
+            "an arrived item hid its own support: " + p.why);
+}
+
 void theSlabIsFixedAndWhatIsNotThereIsSaid() {
     const auto world = LiveWorld::open(room());
     const LivePlacement fixed = world->placement("slab", Vec3{0.0, 0.0, 0.0}, 0.0);
@@ -207,6 +216,8 @@ int main() {
         std::cout << "[PASS] on the crate's side it is too steep\n";
         askingMovesNothing();
         std::cout << "[PASS] asking moves nothing\n";
+        supportRemainsVisibleWhenTheItemHasArrived();
+        std::cout << "[PASS] an arrived item does not hide its own support\n";
         theSlabIsFixedAndWhatIsNotThereIsSaid();
         std::cout << "[PASS] the slab is fixed, and what is not there is said\n";
         std::cout << "\nall placement tests passed\n";

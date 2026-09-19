@@ -34,6 +34,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
 import core_use  # noqa: E402
+import interaction_points  # noqa: E402
 
 GRAVITY_M_S2 = 9.81
 REALTIME_LIMIT = 1.1
@@ -401,7 +402,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces"}
+                         "interfaces", "interaction_points"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -1960,6 +1961,8 @@ def validate(spec: Any) -> dict[str, Any]:
                                                         result["tool_points"])
         result["actions"] = normalise_actions(result.get("actions") or [],
                                                result["bodies"] + result.get("precise_rigid_bodies", []))
+        result["interaction_points"] = interaction_points.normalise(
+            result.get("interaction_points", []), result["bodies"] + result.get("precise_rigid_bodies", []))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

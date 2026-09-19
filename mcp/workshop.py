@@ -836,6 +836,9 @@ class WorkshopDesign:
             raise ValueError("purpose is required")
         if not self.parts:
             raise ValueError("a workshop design must contain at least one part")
+        if "interaction_points" in self.parameters:
+            from mcp import interaction_points
+            interaction_points.checked(self.parameters["interaction_points"])
         if "primary_use" in self.parameters:
             from mcp import core_use
             core_use.checked_program(self.parameters["primary_use"])
@@ -977,10 +980,14 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     library = library or ComponentLibrary()
     from mcp import core_use
     supplied = dict(parameters or {})
+    points = supplied.pop("interaction_points", None)
     use = supplied.pop("primary_use", None)
     values = spec.checked(supplied)
     if use is not None:
         values["primary_use"] = core_use.checked_program(use)
+    if points is not None:
+        from mcp import interaction_points
+        values["interaction_points"] = interaction_points.checked(points)
     parts = spec.build(library, values)
     design = WorkshopDesign(
         design_id=design_id or kind,

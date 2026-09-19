@@ -6,19 +6,19 @@ import math
 
 # These additional hand primitives share validation between Workshop, saved
 # rooms and MCP. Existing action primitives retain their richer MCP checks.
-STEPS = ("inspect", "strike", "push_forward")
+STEPS = ("inspect", "strike", "push_forward", "place")
 DEFAULT = {"label": "Inspect", "steps": [{"do": "inspect"}]}
 
 
 def checked_step(value):
     if not isinstance(value, dict) or value.get("do") not in STEPS:
-        raise ValueError("core step must be inspect, strike or push_forward")
+        raise ValueError("core step must be inspect, strike, push_forward or place")
     do = value["do"]
-    allowed = {"do"} if do == "inspect" else {"do", "distance_m", "speed_m_s"}
+    allowed = {"do"} if do in ("inspect", "place") else {"do", "distance_m", "speed_m_s"}
     if set(value) - allowed:
         raise ValueError(f"{do} cannot say {sorted(set(value) - allowed)}")
     out = {"do": do}
-    if do != "inspect":
+    if do not in ("inspect", "place"):
         limits = (0.05, 0.8, 0.35, 0.1, 5.0, 3.0) if do == "strike" else (0.05, 1.5, 0.4, 0.1, 1.5, 0.4)
         for key, low, high, default in (
                 ("distance_m", *limits[:3]), ("speed_m_s", *limits[3:])):
@@ -46,7 +46,7 @@ def checked_program(value):
     kept = [checked_step(s) for s in steps]
     physical = {s["do"] for s in kept} - {"inspect"}
     if len(physical) > 1:
-        raise ValueError("primary_use cannot mix held strikes with an empty-hand push")
+        raise ValueError("primary_use cannot mix different physical gestures")
     return {"label": label.strip(), "steps": kept}
 
 

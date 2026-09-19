@@ -328,6 +328,9 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         spec["bodies"] = spec["bodies"] + added
         from mcp import core_use
         spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
+        from mcp import interaction_points
+        com = [sum((g[a]+0.5)*h for g in cells)/len(cells) for a in range(3)]
+        spec["interaction_points"] = spec.get("interaction_points", []) + [interaction_points.installed(design, root, com)]
         # What each of its joints leaves the bonds that cross it, so a blow
         # landing on it in the room breaks it where it is actually weak rather
         # than treating every joint as the solid wood.
@@ -380,6 +383,9 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + [body]
     from mcp import core_use
     spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
+    from mcp import interaction_points
+    spec["interaction_points"] = spec.get("interaction_points", []) + [
+        interaction_points.installed(design, root, artifact["centre_of_mass_m"])]
     # Admission before any new process; this does not rewrite old declarations.
     normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
     body = normalised[-1]

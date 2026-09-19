@@ -20,7 +20,7 @@ import re
 from typing import Any
 from urllib import error, request
 
-from mcp import engine_materials, workshop_components, workshop_graph
+from mcp import engine_materials, workshop_components, workshop_graph, interaction_points
 from mcp.product_contract import compile_contract
 from mcp.workshop import assemble, assembly
 from mcp.workshop_statics import declared_statics
@@ -39,6 +39,10 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- Define the finished product\'s key interaction points with define_interaction_points:
+  grip/use plus real receiving surfaces or cargo interiors. Positions are in the
+  design frame; receiving position is on the floor and size_m is usable space.
+  Update these points when geometry changes. Metadata never creates a cavity.
 - Every finished product needs a primary_use program. Call program_use to write
   its purpose-specific core action when creating or completing it; it is stored
   with the design, exposed in ProductGraph controls and carried into the world.
@@ -154,14 +158,18 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         },
     }
     return [
+        {"type": "function", "name": "define_interaction_points",
+         "description": "Define the product's key interactions in design-local metres. grip/use points and surface/container receiving floors; size_m is usable width/height/depth above the floor. Does not add geometry.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["points"],
+                        "properties": {"points": interaction_points.LIST_SCHEMA}}},
         {"type": "function", "name": "program_use",
-         "description": "Program the product's single core Use on Left mouse / J. Physical bounded steps; never arbitrary code. strike requires holding it; push_forward requires an empty hand. Use inspect for a passive product, not as a pretend machine function.",
+         "description": "Program the product's single core Use on Left mouse / J. Physical bounded steps; never arbitrary code. strike and place require holding it; place uses the visible contextual destination. push_forward requires an empty hand. Use inspect for a passive product, not as a pretend machine function.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["label", "steps"],
                         "properties": {
                             "label": {"type": "string", "minLength": 1, "maxLength": 60},
                             "steps": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
                                 "type": "object", "additionalProperties": False, "required": ["do"],
-                                "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward"]},
+                                "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward", "place"]},
                                                "distance_m": {"type": "number"},
                                                "speed_m_s": {"type": "number"}}}}}}},
         {"type": "function", "name": "inspect_design",
@@ -312,6 +320,16 @@ class _State:
                                       "changed": names, "action": action,
                                       "components": [_part_doc(next(p for p in self.design.parts if p.name == name))
                                                      for name in names]})
+
+        if tool == "define_interaction_points":
+            points = interaction_points.checked(args.get("points"))
+            parameters = {**self.design.parameters, "interaction_points": points}
+            base = assemble(str(self.design.kind), design_id=self.design.design_id,
+                            purpose=self.design.purpose, parameters=parameters)
+            self.design = workshop_components.apply_overrides(base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append("interaction_points")
+            return self.record(tool, {"summary": "Defined interaction points", "points": points})
 
         if tool == "program_use":
             from mcp import core_use

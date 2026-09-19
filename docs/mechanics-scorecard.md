@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Contextual placement, September 19:** [Interaction-point and API contract](placement-and-interaction-points.md). Nearby receiving surfaces and container floors offer snap targets; held objects show a ghost before placement. Saved `place` actions and the drop control share native geometry checks. Local anchors survive Workshop graph/contract, installation and room persistence; stale or blocked destinations keep the item held. MCP 1.5.0, ABI 25. Focused verification is recorded in the linked contract; this is not full-engine qualification.
+
 **Primary Use programs, September 19:** [Control and API contract](primary-use.md).
 Left mouse / J runs one saved action on the held or aimed product. The LLM
 programs it through room `offer_actions(primary=true)` or Workshop

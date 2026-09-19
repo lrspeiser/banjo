@@ -46,12 +46,13 @@ import core_use
 
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
+import interaction_points  # noqa: E402
 import progression  # noqa: E402
 import constructions  # noqa: E402
 import machine_mcp_tools  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER = {"name": "banjo", "version": "1.4.0"}
+SERVER = {"name": "banjo", "version": "1.5.0"}
 
 # How many worlds may be open at once. Each is a physics engine with its scene
 # resident in it, and nothing here is a long-lived service.
@@ -1512,7 +1513,7 @@ def _action_number(value: Any, what: str, low: float, high: float,
 # sent every step every field six times over and gave up. So a step reads only
 # its kind's fields and a place only its kind's, and the rest is set aside and
 # said, as the interaction profiles do.
-STEP_FIELDS = {"inspect": (), "strike": ("distance_m", "speed_m_s"),
+STEP_FIELDS = {"inspect": (), "place": (), "strike": ("distance_m", "speed_m_s"),
                "push_forward": ("distance_m", "speed_m_s"), "stand": ("stand", "along", "where"), "take_hold": ("part",),
                "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
                "push": ("part", "toward", "distance_m", "speed_m_s"),
@@ -1666,6 +1667,7 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
                                               if k in STEP_FIELDS[do] and v is not None}})
             except ValueError as error:
                 raise Refused(str(error)) from error
+            if do == "place": holding = None
             if do != "inspect" and body.get("anchored"):
                 raise Refused(f"{where}: {name} is fixed in place")
         elif do == "stand":
@@ -1793,6 +1795,24 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
     return {"label": label, "steps": kept, **({"primary": action["primary"]} if "primary" in action else {})}
 
 
+def tool_define_interaction_points(args: dict[str, Any]) -> dict[str, Any]:
+    """Replace/query an object's saved local interaction points atomically."""
+    entry = _world(str(args.get("world_id")))
+    name = str(args.get("name", ""))
+    names = {b["name"] for b in entry["scene"]["bodies"]}
+    if name not in names:
+        raise Refused(f"there is nothing called {name!r}")
+    existing = next((r["points"] for r in entry.get("interaction_points", []) if r["body"] == name), [])
+    try:
+        points = interaction_points.checked(args.get("points", existing))
+    except ValueError as failure:
+        raise Refused(str(failure)) from None
+    if "points" in args:
+        entry["interaction_points"] = [r for r in entry.get("interaction_points", []) if r["body"] != name] + [
+            {"body": name, "points": points}]
+    return {"body": name, "frame": "body centre of mass, local axes", "points": points}
+
+
 def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
     """Give a thing the actions a person takes with it, kept with it (above)."""
     world_id = str(args.get("world_id"))
@@ -1906,6 +1926,7 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
         entry["interactions"] = []
     # Nor anything left to do anything with.
     entry.pop("actions", None)
+    entry.pop("interaction_points", None)
     entry["world"] = None
     if old is not None:
         old.close()
@@ -3300,6 +3321,9 @@ def _recheck_interactions(entry: dict[str, Any]) -> None:
     did it (see _saying_what_was_withdrawn). A bow whose arrow was taken away is
     not a bow anyone can loose, and saying nothing would leave it looking like
     one until somebody tried."""
+    names = {b["name"] for b in entry["scene"]["bodies"]}
+    if "interaction_points" in entry:
+        entry["interaction_points"] = [r for r in entry["interaction_points"] if r["body"] in names]
     kept, gone = [], []
     for profile in entry.get("interactions", []):
         try:
@@ -3940,6 +3964,10 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
                 if (motor["command"], motor["brake"]) != (copy["command"], copy["brake"]):
                     _set_drive(entry, copy, motor["command"], motor["brake"])
                 machines_made.append(f"the motor on {copy['on'][0]} and {copy['on'][1]}")
+        for record in list(entry.get("interaction_points", [])):
+            if record["body"] in renamed:
+                tool_define_interaction_points({"world_id": world_id, "name": renamed[record["body"]],
+                                                "points": record["points"]})
         for profile in list(entry.get("interactions", [])):
             if not set(profile["parts"]) <= set(renamed):
                 continue
@@ -6623,6 +6651,11 @@ TOOLS = [
          "along": dict(VECTOR, description="Lying only: the level direction its longest "
                                            "side runs, like [1, 0, 0]. Left out, the way it "
                                            "runs now.")}}},
+    {"name": "define_interaction_points",
+     "description": "Define or inspect an object's grip/use points and receiving surfaces or containers. Coordinates are body-local metres from its centre of mass. Receiving position is the centre of the supporting floor, size_m is usable width/height/depth, yaw_deg is local alignment, max_mass_kg an optional capacity. The engine still checks real geometry. Omitting points reads; supplying points replaces them, adding grip/use defaults.",
+     "inputSchema": {"type": "object", "additionalProperties": False, "required": ["world_id", "name"],
+                     "properties": {"world_id": {"type": "string"}, "name": {"type": "string"},
+                                    "points": interaction_points.LIST_SCHEMA}}},
     {"name": "offer_actions",
      "description": "Program every created product\'s core Use. Set primary=true on exactly one action; "
                     "Left mouse / J runs it. With none marked, the first is primary. "
@@ -8024,6 +8057,7 @@ HANDLERS = {
     "remove_object": tool_remove_object,
     "move_object": tool_move_object,
     "turn_object": tool_turn_object,
+    "define_interaction_points": tool_define_interaction_points,
     "offer_actions": tool_offer_actions,
     "use_action": tool_use_action,
     "read_knowledge": tool_read_knowledge,

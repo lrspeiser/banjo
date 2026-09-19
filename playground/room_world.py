@@ -23,6 +23,7 @@ the room refuses anything its lane could not open, at the call that did it, so
 the model is told and can fix it rather than the person being told at reopen.
 """
 from __future__ import annotations
+from copy import deepcopy
 
 import math
 import os
@@ -85,7 +86,7 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              "build_recipe",
              # And the actions a thing is given: the page lists them in its
              # side view from it.
-             "offer_actions",
+             "offer_actions", "define_interaction_points",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.
              "make_terrain", "dig", "fill", "cut_block", "set_river",
@@ -348,6 +349,11 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
                for action in actions if _names_in(action) <= names]
     if offered:
         spec["actions"] = offered
+    import interaction_points
+    all_bodies = bodies + spec.get("precise_rigid_bodies", [])
+    live_names = {b["name"] for b in all_bodies}
+    spec["interaction_points"] = interaction_points.normalise(
+        [r for r in entry.get("interaction_points", []) if r["body"] in live_names], all_bodies)
     # The structures its chat declared (plan_construction), each with what it
     # must do and its parts as the room stands.
     declared = [constructions_spec(name, record, names)
@@ -566,6 +572,7 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
         # room opens on every turn, so a thing's actions that no longer check --
         # it has since been anchored or joined to another, say -- are left out
         # rather than refusing the room.
+        entry["interaction_points"] = deepcopy(validated.get("interaction_points", []))
         offered: dict[str, list[dict[str, Any]]] = {}
         for action in validated.get("actions", []):
             offered.setdefault(action["body"], []).append(

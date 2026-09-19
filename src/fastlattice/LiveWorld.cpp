@@ -7868,13 +7868,13 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // What is under its middle, and under each corner of its footprint -- a
     // little in from the corners, so a rounded or tapered underside counts.
     // Its own body is where the hand has it, not here, and is not an answer.
-    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down, 0.06);
+    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down, 0.06, id);
     if (under.hit && !(under.named && under.body_id == id)) out.rests_on = called(under.named, under.body_id);
     double highest = -1e30, lowest = 1e30;
     for (const double cx : {0.8 * low.x, 0.8 * high.x})
         for (const double cz : {0.8 * low.z, 0.8 * high.z}) {
             const RayHit corner = impl_->world->castRay(
-                Vec3{out.at_m.x + cx, underside + 0.005, out.at_m.z + cz}, down, 0.04);
+                Vec3{out.at_m.x + cx, underside + 0.005, out.at_m.z + cz}, down, 0.04, id);
             if (!corner.hit || (corner.named && corner.body_id == id)) continue;
             ++out.supported_corners;
             highest = std::max(highest, corner.point_world_m.y);

@@ -8,6 +8,7 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from typing import Any
+from mcp import core_use
 
 MODEL = "precise-rigid-v1"
 MAX_BODIES = 32
@@ -30,9 +31,18 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not spec.get("bodies") or any(not b.get("anchored") for b in spec["bodies"]):
         raise ValueError("Precise rigid bodies currently require anchored scenery, not dynamic lattice bodies; use an empty yard")
-    for key in ("terrain", "water", "thermo", "joints", "machines", "blades", "tool_points", "interactions", "actions"):
+    for key in ("terrain", "water", "thermo", "joints", "machines", "blades", "tool_points", "interactions"):
         if spec.get(key):
             raise ValueError(f"Precise rigid rooms do not yet support {key}; nothing was installed")
+    # Saved core gestures use the existing rigid hand/contact path. Rich
+    # machine/heat/action DSL remains unavailable in this deliberately narrow lane.
+    actions = spec.get("actions", [])
+    if not isinstance(actions, list):
+        raise ValueError("Precise rigid actions must be a list")
+    for action in actions:
+        if not isinstance(action, dict):
+            raise ValueError("Precise rigid actions need a saved core program")
+        core_use.checked_program({k: action[k] for k in ("label", "steps") if k in action})
     if any(any(b.get(k) is not None for k in ("contents", "temperature_k", "layer_depth_m", "environment")) for b in spec["bodies"]):
         raise ValueError("Precise rigid rooms do not yet support thermal scenery declarations")
     names = {n for b in spec["bodies"] for n in (b.get("name"), b.get("join")) if n}

@@ -1,6 +1,8 @@
 # Machine API and MCP reference
 
-September 19, 2026. Native ABI **25**, world and platform MCP servers **1.4.0**.
+Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
+
+September 19, 2026. Native ABI **25**, world and platform MCP servers **1.5.0**.
 This reference covers the executable functions and the boundaries of the fifteen
 requested machine capabilities. It does not turn planned solvers into callable
 appliances. Model laws and measured numerical errors are in

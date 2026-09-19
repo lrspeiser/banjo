@@ -15,6 +15,7 @@
 #include "physics/RigidAttachment.hpp"
 
 #include <memory>
+#include <optional>
 #include <functional>
 #include <vector>
 
@@ -790,7 +791,7 @@ public:
                                                            const Quat &orientation_world,
                                                            double tolerance_m) const;
     [[nodiscard]] RayHit castRay(const Vec3 &from_world_m,const Vec3 &direction,
-                                 double max_distance_m) const;
+                                 double max_distance_m, std::optional<MatterBodyId> ignore_body = std::nullopt) const;
     // Put a body back into simulation and clear how long it has been still.
     // A body that has come to rest is dropped from the step -- that is what
     // keeps a scene of a hundred settled pieces cheap -- and nothing that only

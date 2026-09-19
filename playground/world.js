@@ -1848,7 +1848,15 @@ function showInventory() {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
-    b.addEventListener("click", (e) => { e.stopPropagation(); b.blur(); inventoryChange(op, item); });
+    b.addEventListener("click", (e) => {
+      e.stopPropagation(); b.blur();
+      if (op !== "drop") { inventoryChange(op, item); return; }
+      if (world.held?.name === item) { intend("put down"); return; }
+      if (world.held) { lastAction("Put down what you are holding first.", "refused"); return; }
+      // Take a bag item into the hand so its destination is visible before
+      // committing. E then uses precisely that preview.
+      inventoryChange("equip", item);
+    });
     return b;
   };
   $("inv-right").replaceChildren(document.createTextNode(held ? `${titled(heldName())}${mass}` : "free"));
@@ -1861,7 +1869,7 @@ function showInventory() {
     key.className = "slot-key";
     key.textContent = i < SLOT_KEYS ? String(i + 1) : "";
     li.append(key, document.createTextNode(bagName(thing)),
-              button("Hold", "equip", thing.id), button("Put down", "drop", thing.id));
+              button("Hold", "equip", thing.id), button("Hold to place", "drop", thing.id));
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "none",
          textContent: `nothing yet: ${keyOf("stow")} puts what you hold, or look at, in it` })]));
@@ -2002,14 +2010,13 @@ function heldChoices() {
     });
     return [...out, ...latch];
   }
-  // E shows where it will go, and E again puts it there (the owner, 2026-09-15:
-  // "E shows, E places"). Tab reaches a quick drop.
+  // Preview is visible before the key is pressed; E commits that destination.
   if (world.placing) {
-    return [{ label: "Put it here", run: () => placeHere() },
+    return [{ label: "Put it here", run: () => intend(placeHere) },
             { label: "Stop placing", run: () => stopPlacing(true) }];
   }
   return [{ label: "Place it…", run: () => startPlacing() },
-          { label: "Drop it here", run: () => intend("drop") }, ...latch];
+          { label: "Put it down", run: () => intend("drop") }, ...latch];
 }
 
 function choices() {
@@ -2725,12 +2732,15 @@ function primaryAction(name) {
 }
 
 function pressPrimary() {
-  if (!world.session || world.placing) return false;
+  if (!world.session) return false;
+  if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
   const name = world.held?.name || world.aim?.name;
   if (name && actionsFor(name).length) {
-    runAction(name, 0, true);
+    const program = primaryAction(name);
+    if (world.held && program.steps?.length === 1 && program.steps[0].do === "place") intend(placeHere);
+    else runAction(name, 0, true);
     return true;
   }
   if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) startWindUp();
@@ -3399,8 +3409,10 @@ async function pickUp() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
-async function dropIt() {
+async function dropIt(raw = false) {
   if (!world.held) return;
+  if (!raw && placementEligible()) { await placeHere(); return; }
+  stopPlacing(false);
   const name = world.held.name;
   const entry = world.bodies.get(name);
   const at = entry ? entry.mesh.position.clone() : null;
@@ -3487,6 +3499,7 @@ async function letFly() {
 // Put it down: lowered by the same hand onto what is under it, and let go of
 // when it gets there. A carried thing is set down as it always was.
 async function putDown() {
+  if (placementEligible()) { await placeHere(); return; }
   const held = world.held;
   if (!held) return;
   if (held.pick) {
@@ -3559,7 +3572,6 @@ async function settleDown() {
 // it may tip off. E again carries it there with the hand -- the same bounded
 // hand, so what is in the way stops it -- and lets go. Esc, and the copy goes;
 // the thing stays in the hand. Nothing in the room moves for the copy.
-const PLACE_REACH_M = 3.0;
 const ghostLook = (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4,
                                                             depthWrite: false });
 const GHOST_LOOK = { fits: ghostLook(0x9fe8b0), tips: ghostLook(0xf2c46b), no: ghostLook(0xf07a6a) };
@@ -3570,7 +3582,13 @@ function headingOf(q) {
   return Math.hypot(v.x, v.z) < 1e-6 ? 0 : Math.atan2(-v.z, v.x);
 }
 
-function startPlacing() {
+function placementEligible() {
+  return world.held && (world.held.throwable || world.held.loose) && !world.held.blade
+    && !world.held.pick && !world.held.bow && !workingJoint()
+    && ["ready", "blocked", "carrying", "carrying-to"].includes(world.use.mode);
+}
+
+function startPlacing(automatic = false) {
   const held = world.held;
   const entry = held && world.bodies.get(held.name);
   if (!entry || world.placing) return;
@@ -3582,8 +3600,9 @@ function startPlacing() {
   // What the wrist can turn is turned with the wheel; a thing carried in the
   // arms goes down the way it is held.
   world.placing = { name: held.name, ghost, yaw: headingOf(entry.mesh.quaternion), turnable: !!held.throwable,
-                    answer: null, asked: 0, busy: false, carrying: null };
-  lastAction(`Look where ${titled(held.name)} should go${held.throwable ? " and turn it with the wheel" : ""};`
+                    answer: null, asked: 0, busy: false, carrying: null, automatic };
+  world.placeDismissed = null;
+  if (!automatic) lastAction(`Look where ${titled(held.name)} should go${held.throwable ? " and turn it with the wheel" : ""};`
              + ` ${keyOf("interact")} puts it there, Esc keeps it in your hand.`);
   showDetails(true);
 }
@@ -3593,46 +3612,30 @@ function stopPlacing(said) {
   if (!p) return;
   world.placing = null;
   scene.remove(p.ghost);
-  if (said) lastAction(`Stopped placing: ${titled(p.name)} is still in your hand.`);
+  if (said) {
+    world.placeDismissed = p.name;
+    if (p.carrying) world.use.mode = p.carrying.was;
+    lastAction(`Stopped placing: ${titled(p.name)} is still in your hand.`);
+  }
   showDetails(true);
 }
 
-// What is ahead of the crosshair within reach -- past the thing in the hand,
-// which is in front of the eye and not where it is to go.
-async function surfaceAhead(name) {
-  const dir = forwardVector();
-  let from = camera.position.clone(), left = PLACE_REACH_M;
-  for (let tries = 0; tries < 3 && left > 0; ++tries) {
-    const hit = await act("pick", { from: from.toArray(), dir: dir.toArray(), max_m: left });
-    if (!hit.hit) return null;
-    if (hit.name !== name) return hit;
-    const past = hit.distance_m + 0.02;
-    from = from.addScaledVector(dir, past);
-    left -= past;
-  }
-  return null;
+function placementRequest(p, expected = null) {
+  return api("/api/world/placement", { session: world.session, name: p.name,
+    person: whereIAm(), yaw_deg: p.yaw * 180 / Math.PI, ...(expected ? { expected } : {}) });
 }
 
 async function askWhere(p) {
   try {
-    const hit = await surfaceAhead(p.name);
-    if (world.placing !== p || p.carrying) return;
-    if (!hit) {
-      p.answer = { fits: false, why: "that is out of reach: look at a surface nearer you" };
-    } else {
-      const yawAsked = p.yaw;
-      // What the spot is on goes with it: the engine lifts the copy off that,
-      // and off the ground, and says anything else it would go into.
-      const onto = hit.name || "";
-      const answer = await act("place_check", { name: p.name, on: hit.point_m, onto,
-                                                yaw_deg: yawAsked * 180 / Math.PI });
-      if (world.placing !== p || p.carrying) return;
-      // The answer keeps the spot and the turn it was asked about, so what is
-      // put down is what was checked -- never a newer pose nobody asked about.
-      p.answer = Object.assign(answer, { on: hit.point_m, onto, yaw: yawAsked });
-    }
+    const answer = await placementRequest(p);
+    if (world.placing !== p || p.carrying || p.confirming) return;
+    p.answer = answer;
     drawGhost(p);
-  } catch { /* the next frame asks again */ }
+  } catch (error) {
+    if (world.placing !== p) return;
+    p.answer = { fits: false, why: error.message || String(error) };
+    drawGhost(p);
+  }
 }
 
 function drawGhost(p) {
@@ -3657,13 +3660,16 @@ function placingNote() {
 }
 
 function updatePlacing(now) {
+  if (!world.held) world.placeDismissed = null;
+  if (!world.placing && placementEligible() && !world.acting && !world.asking
+      && !world.paused && world.placeDismissed !== world.held.name) startPlacing(true);
   const p = world.placing;
   if (!p) return;
   if (!world.held || world.held.name !== p.name || ["preparing", "throwing"].includes(world.use.mode)) {
     stopPlacing(false);
     return;
   }
-  if (p.carrying || p.busy || now - p.asked < 125) return;
+  if (p.carrying || p.confirming || p.busy || world.paused || now - p.asked < 200) return;
   p.asked = now;
   p.busy = true;
   askWhere(p).finally(() => { p.busy = false; });
@@ -3672,22 +3678,34 @@ function updatePlacing(now) {
 // E, with the copy shown: asked once more of the room as it is now -- something
 // may have moved into the spot -- and then carried there.
 async function placeHere() {
+  if (!placementEligible() || world.paused || world.acting || world.asking) return;
+  if (!world.placing) { startPlacing(); await askWhere(world.placing); }
   const p = world.placing;
-  if (!p || p.carrying) return;
+  if (!p || p.carrying || p.confirming) return;
   const a = p.answer;
-  if (!a || !a.fits || !a.on) {
-    lastAction(a ? a.why : "Look at where it should go first.", "refused");
+  if (!a?.fits || !a.target) {
+    lastAction(a?.why || "Wait for a clear placement preview.", "refused");
     return;
   }
-  let now;
+  p.confirming = true;
   try {
-    now = await act("place_check", { name: p.name, on: a.on, onto: a.onto, yaw_deg: a.yaw * 180 / Math.PI });
-  } catch (error) { lastAction(String(error.message || error), "refused"); return; }
-  if (world.placing !== p || p.carrying) return;
-  p.answer = Object.assign(now, { on: a.on, onto: a.onto, yaw: a.yaw });
-  drawGhost(p);
-  if (!now.fits) { lastAction(now.why, "refused"); return; }
-  carryTo(p, now);
+    const checked = await placementRequest(p, a.target);
+    if (world.placing !== p || !world.held) return;
+    p.answer = checked;
+    drawGhost(p);
+    if (!checked.fits) { lastAction(checked.why, "refused"); return; }
+    if (!world.held.throwable) {
+      const entry = world.bodies.get(p.name);
+      await act("wield", { name: p.name, grip: entry.mesh.position.toArray() });
+      if (world.placing !== p || !world.held) return;
+      world.held.throwable = true;
+      world.held.turn = startTurning(entry);
+      world.use.grip = entry.mesh.position.clone();
+      p.turnable = true;
+    }
+    carryTo(p, checked);
+  } catch (error) { lastAction(String(error.message || error), "refused"); }
+  finally { p.confirming = false; }
 }
 
 // Along a path a hand can take -- up, over, and down onto the spot -- at the
@@ -3731,7 +3749,9 @@ function placingHand(now) {
   if (now - c.since >= c.ms) {
     if (!c.arrived) c.arrived = now;
     const entry = world.bodies.get(world.placing.name);
-    const there = entry && entry.mesh.position.distanceTo(c.at) < 0.03;
+    const desired = new THREE.Quaternion(c.facing[1], c.facing[2], c.facing[3], c.facing[0]);
+    const there = entry && entry.mesh.position.distanceTo(c.at) < 0.03
+      && entry.mesh.quaternion.angleTo(desired) < 0.15;
     if ((there || now - c.arrived > 1500) && !c.letting) intend(letGoWhereItWent);
   }
   return [p.x, p.y, p.z];
@@ -3743,8 +3763,21 @@ async function letGoWhereItWent() {
   c.letting = true;
   const name = p.name;
   const entry = world.bodies.get(name);
+  let check;
+  try { check = await placementRequest(p, p.answer.target); }
+  catch (error) { check = { fits: false, why: error.message || String(error) }; }
+  if (world.placing !== p || !world.held) return;
+  if (!check.fits) {
+    p.carrying = null;
+    world.use.mode = c.was;
+    p.answer = check;
+    drawGhost(p);
+    lastAction(check.why, "refused");
+    return;
+  }
   const off = entry ? entry.mesh.position.distanceTo(c.at) : Infinity;
-  if (off > 0.1) {
+  const desired = new THREE.Quaternion(c.facing[1], c.facing[2], c.facing[3], c.facing[0]);
+  if (off > 0.05 || (entry && entry.mesh.quaternion.angleTo(desired) > 0.15)) {
     // It did not get there: something is in the way. The hand keeps hold.
     p.carrying = null;
     world.use.mode = c.was;
@@ -3753,20 +3786,23 @@ async function letGoWhereItWent() {
                + ` (it stopped ${off.toFixed(2)} m short).`, "refused");
     return;
   }
-  stopPlacing(false);
-  world.held = null;
-  showHolding(false);
-  clearGuides();
-  aimArc.hide();
-  world.use = { mode: "none" };
-  showUse();
   try {
     await act("release");
-    // Put down, a thing the record says the hand held is in the world now.
+    stopPlacing(false);
+    world.held = null;
+    showHolding(false);
+    clearGuides();
+    aimArc.hide();
+    world.use = { mode: "none" };
+    showUse();
     leftTheHand(name);
     lastAction(`Put ${name} there.`);
     remember(`placed ${name} at ${c.at.x.toFixed(2)}, ${c.at.y.toFixed(2)}, ${c.at.z.toFixed(2)} m`);
-  } catch (error) { say("bad", String(error.message || error)); }
+  } catch (error) {
+    p.carrying = null;
+    world.use.mode = c.was;
+    say("bad", String(error.message || error));
+  }
 }
 
 // Where the hand wants a throwable thing this tick: brought in to the hand,
@@ -5600,6 +5636,8 @@ async function runAction(name, index, primary = false) {
   const previousHold = world.held;
   const previousUse = world.use;
   const person = whereIAm();
+  const placementTarget = world.placing?.answer?.target;
+  stopPlacing(false);
   const aside = !!previousHold;
   if (aside) setHoldAside();
   // Said in the details while it runs, and what it came to after.
@@ -5609,7 +5647,7 @@ async function runAction(name, index, primary = false) {
     // On the room this page has open: a page whose room was opened again
     // elsewhere is refused, and nothing is done in the room somebody else has.
     const answer = await api("/api/world/action", { session: world.session, object: name,
-                                                     ...action.ask, person });
+                                                     ...action.ask, person, placement_target: placementTarget });
     const done = (answer.done || []).join(", ");
     if (answer.refused) {
       lastAction(`${action.label}: ${answer.refused}` + (done ? ` (done first: ${done})` : ""), "refused");
@@ -5617,6 +5655,7 @@ async function runAction(name, index, primary = false) {
       lastAction(`${action.label}: ${done || "done"}.`);
     }
     if (answer.reopened) adoptRebuilt(answer);
+    if (previousHold && !answer.holding) leftTheHand(previousHold.name);
     if (answer.holding && previousHold?.name === answer.holding) {
       world.held = previousHold;
       world.use = previousUse;

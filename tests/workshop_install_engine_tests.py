@@ -107,6 +107,30 @@ class NativeInstallation(unittest.TestCase):
         self.assertTrue(answer.get("done") or answer.get("refused"), answer)
         self.assertFalse((self.live.session.state.get("hand") or {}).get("holding"))
 
+    def test_interaction_points_follow_native_com_in_both_installers(self):
+        from mcp import workshop, interaction_points
+        for rigid in (False, True):
+            with self.subTest(rigid=rigid):
+                self.open(world_room.yard())
+                self.ctx=install.context(self.app,{})
+                design=workshop.assemble("table")
+                candidate={"kind":"table","parameters":{}}
+                if rigid:
+                    candidate["component_overrides"]={p.name:{"mechanics":{"model":"rigid"}} for p in design.parts}
+                preview=self.preview(candidate=candidate,position=(3,2 if rigid else 0))
+                result=self.do_commit(preview,request="points-rigid" if rigid else "points-lattice")
+                root=result["root_body"]
+                saved=self.app.store.load("yard")
+                record=next(r for r in saved.spec["interaction_points"] if r["body"]==root)
+                point=next(p for p in record["points"] if p["id"]=="top")
+                pose=next(b for b in self.snap()["bodies"] if b["name"]==root)
+                source=next(p for p in interaction_points.for_design(design) if p["id"]=="top")
+                actual=[pose["pose"]["com_m"][a]+point["position_m"][a] for a in range(3)]
+                expected=[source["position_m"][a]+preview["applied_translation_m"][a] for a in range(3)]
+                for a,b in zip(actual,expected): self.assertAlmostEqual(a,b,places=6)
+                self.assertEqual(record,next(r for r in self.room.spec["interaction_points"] if r["body"]==root))
+
+
     def test_an_installed_product_carries_its_parts_into_the_room(self):
         """#20 in a live room. A product used to arrive as one anonymous heap of
         cells, so nothing in the room could tell an interface bond from an

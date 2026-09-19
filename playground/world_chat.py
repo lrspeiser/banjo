@@ -335,7 +335,15 @@ for them with turn_object when they ask.
 
 ACTIONS. Every completed product must have one core Use program. The same Left mouse / J
 control runs it on the held product, or on the product under the crosshair. E
-continues to pick up and put down. Use offer_actions with primary=true on exactly
+continues to pick up and put down. Define key interaction points with
+define_interaction_points on every created product: grip/use plus real receiving
+surfaces or container floors when applicable. Positions are local metres from
+the body's centre of mass; size_m describes usable space above the floor.
+A cart needs a cargo-deck receiving point, not a point above its handle.
+Keep points consistent after geometry edits; they never create geometry.
+Nearby valid receivers attract placement, with a ghost preview and ground fallback.
+A core action with a single step {do:"place"} sets the held product at that destination.
+Use offer_actions with primary=true on exactly
 one action, named for the product's purpose. The LLM writes this bounded program
 at creation; no LLM call is needed per press. A hand tool can use strike (held
 first, 0.05–0.8 m, 0.1–5 m/s); a cart can use push_forward (empty hand, 0.05–1.5 m,

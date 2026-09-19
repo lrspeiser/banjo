@@ -40,6 +40,7 @@ import room_store
 import inventory_room
 import gameplay_room
 import tool_use
+import placement
 import access_gate
 import workshop_api
 import workshop_install
@@ -1457,6 +1458,9 @@ class Handler(BaseHTTPRequestHandler):
                                          " screen is the last one. Ask for something to"
                                          " be added and it will be built.").strip()
                 return self.send(answer)
+            if path=="/api/world/placement":
+                _this_pages_room(self.server.app,body)
+                return self.send(placement.resolve(self.server.app,body))
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
                 # no model is asked: the room's chat wrote the program when it
@@ -2331,7 +2335,7 @@ def _core_hand_step(app, name, step, person):
     if target.get("anchored"):
         raise ValueError(f"{name} is fixed in place")
     hand = (app.live.session.state or {}).get("hand") or {}
-    held = hand.get("name") if hand.get("holding") else None
+    held = (hand.get("name") or hand.get("holding")) if hand.get("holding") else None
     at = [float(v) for v in target["position_m"]]
     if step["do"] == "strike":
         if held != name:
@@ -2424,7 +2428,7 @@ def _run_action(app,body):
     # letting go first would drop the gate. Anything else needs the hand free.
     hand = (app.live.session.state or {}).get("hand") or {}
     held = (hand.get("name") or hand.get("holding")) if hand.get("holding") else None
-    if held and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect"):
+    if held and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     # What the hand held before the action: the action lets go only of what it
@@ -2433,7 +2437,12 @@ def _run_action(app,body):
     try:
         for index,step in enumerate(action["steps"]):
             do=step["do"]
-            if do in ("inspect", "strike", "push_forward"):
+            if do == "place":
+                line, problem = placement.execute(app, name, person, _stroke_along, body.get("placement_target"))
+                if line: done.append(line)
+                if problem: break
+                holding = None
+            elif do in ("inspect", "strike", "push_forward"):
                 line, problem = _core_hand_step(app, name, step, person)
                 if line: done.append(line)
                 if problem: break
