@@ -209,7 +209,7 @@ On the default cart, each answered in 0.1 to 0.35 s of pure Python:
 The first is a finding about the template -- someone leaning their weight on
 that handle -- and the kind this is for.
 
-## Built: a joint is weaker than the wood it joins, in the engine
+## Built: the machinery for a joint weaker than the wood it joins
 
 [Issue #20](https://github.com/lrspeiser/banjo/issues/20). A Workshop product
 compiles to ONE fused lattice, so a bond between a leg's cell and the top's was
@@ -283,12 +283,17 @@ every law is whole and the left-hand column is what happens. Default oak table,
 | 10 m | 63 pieces, none leg-sized | 111 pieces, and the four legs still come off whole |
 
 With the quarter in force the bar a blow has to pass falls from **13.75 to
-3.44 m/s**, which is that quarter exactly -- the measurement that says the
-mechanism reaches the engine, waiting on a number. Carved, the table survives to 10 m and then shatters
-*through the wood* -- not one piece is leg-sized. Glued, it loses legs at 2 m, a
-fifth of the energy, and loses them **as legs**: at the joint, which is where it
-already parted. A separate two-part probe (a slab on a post) holds to 4.5 m
-carved and parts in two at 4.5 m glued.
+3.44 m/s**, which is that quarter exactly: the measurement that says the
+declaration arrives intact, waiting only on a number. Whole, the table survives
+to 10 m and then shatters *through the wood* -- not one piece is leg-sized. With
+the quarter in force it loses legs at 2 m, a fifth of the energy, and loses them
+**as legs**: at the joint, which is where it already parted. A separate two-part
+probe (a slab on a post) holds to 4.5 m whole and parts in two at 4.5 m with the
+quarter in force.
+
+Two tests keep that measurement honest without putting anything in force in the
+product: `workshop_bench_engine_tests` patches the end-grain law for itself, out
+loud, so what it proves is the mechanism rather than the figure.
 
 **In a live room, too.** A product installed in the yard used to arrive as one
 heap of cells with no labels on them, so every joint in it was solid wood. Its
