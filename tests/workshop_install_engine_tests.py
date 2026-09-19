@@ -68,40 +68,32 @@ class NativeInstallation(unittest.TestCase):
                 reply=self.live.act({'session':self.live.session.id,'op':'step','dt':1/120,'n':2})
                 self.assertIn(result['root_body'],[b['name'] for b in reply['bodies']])
 
-    def test_an_installed_product_carries_its_joints_into_the_room(self):
-        """#20 in a live room. A product used to arrive as one heap of cells, so
-        every joint in it was as strong as the solid wood. Its cells now keep
-        which component they are and the joints declared in the Workshop come
-        with them, so a blow lands on a table that is glued, not carved."""
-        # A template installed as it comes declares no joints: its parts are
-        # labelled, but nothing says how they were put together, and inventing
-        # that would be asserting a construction nobody chose. Joints arrive
-        # once the design's own are (workshop_construction.adopted) -- which is
-        # what building it part by part in the Workshop makes.
-        plain=self.do_commit(self.preview(position=(11,0)),request='install-plain')
-        self.assertNotIn('interfaces',self.room.spec)
-        self.assertTrue({b['part'] for b in self.room.spec['bodies'] if b.get('part')})
-        self.assertTrue(plain['root_body'])
-        self.ctx=install.context(self.app,{})
-        result=self.do_commit(self.preview(candidate=self.built()));root=result['root_body']
+    def test_an_installed_product_carries_its_parts_into_the_room(self):
+        """#20 in a live room. A product used to arrive as one anonymous heap of
+        cells, so nothing in the room could tell an interface bond from an
+        interior one and every joint in it was solid wood. Its cells now keep
+        which component they are, all the way onto the floor of the yard.
+
+        No joint is DECLARED today: the owner's call of 2026-09-19 leaves every
+        law whole, so nothing about how the table breaks changes. What is built
+        is the road the numbers will travel when they are set."""
+        first=self.do_commit(self.preview(candidate=self.built()));root=first['root_body']
         spec=self.room.spec
         self.assertEqual({f'{root}/top'}|{f'{root}/leg-{i}' for i in range(1,5)},
-                         {b['part'] for b in spec['bodies'] if b.get('part')}-
-                         {b['part'] for b in spec['bodies']
-                          if b.get('part','').startswith(plain['root_body'])})
-        self.assertEqual(4,len(spec['interfaces']))
-        for face in spec['interfaces']:
-            self.assertEqual(f'{root}/top',face['a'])
-            self.assertEqual((.25,.25,1.0),(face['tension'],face['shear'],face['compression']))
+                         {b['part'] for b in spec['bodies'] if b.get('part')})
+        self.assertNotIn('interfaces',spec)
         # Every label carries the root, so a second table of the same design is
-        # its own object with its own four joints, not a second claim on these.
+        # its own object: a joint in one could never be read as a joint in the
+        # other once the two are standing in one room.
         self.ctx=install.context(self.app,{})
         second=self.do_commit(self.preview(position=(7,0),candidate=self.built()),
                               request='install-request-2')['root_body']
         self.assertNotEqual(root,second)
-        roots=[f['a'].split('/')[0] for f in self.room.spec['interfaces']]
-        self.assertEqual({root:4,second:4},{r:roots.count(r) for r in set(roots)})
-        # And what is written to disk is what comes back, joints and all.
+        roots=[b['part'].split('/')[0] for b in self.room.spec['bodies'] if b.get('part')]
+        self.assertEqual({root,second},set(roots))
+        self.assertEqual(5,len({b['part'] for b in self.room.spec['bodies']
+                                if b.get('part','').startswith(f'{second}/')}))
+        # And what is written to disk is what comes back, labels and all.
         self.assertEqual(self.room.spec,self.app.store.load('yard').spec)
 
     def test_retry_and_restart_return_one_persistent_receipt(self):

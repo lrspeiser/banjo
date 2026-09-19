@@ -16,7 +16,17 @@ sys.path.insert(0, str(ROOT))
 
 import mcp  # noqa: E402,F401
 from mcp import engine_materials, product_breakscreen as screen, product_joints  # noqa: E402
+from mcp import joint_efficiency as je  # noqa: E402
 from mcp import workshop_components, workshop_construction as con  # noqa: E402
+
+
+def keeps_of(design, index=0):
+    """What the law leaves this joint, read from the table rather than written
+    down here, so these oracles stay right whichever way the numbers are set.
+    Every law is whole today by the owner's call; see mcp/joint_efficiency.py."""
+    row = con.joints(design)[index]
+    parts = {p.name: p for p in design.parts}
+    return je.efficiency(row, parts[row["a"]], parts[row["b"]])
 
 KEY = con.CONSTRUCTION_KEY
 G = 9.80665
@@ -70,9 +80,9 @@ class FreeBody(unittest.TestCase):
             self.assertAlmostEqual(100.0, row["load"]["axial_n"], places=3, msg=material)
             tensile = engine_materials.mechanics(material)["tensile_strength_pa"]
             # a is 0.2 m along x and so is grained that way: gluing b to its face-x+ is an
-            # end-grain butt joint, which in oak holds a quarter of the wood.
-            keeps = 0.25 if material == "oak" else 1.0
-            held = tensile * keeps * 0.01
+            # end-grain butt joint in oak, whose law is recognised even while its
+            # number is not in force.
+            held = tensile * keeps_of(design)["tension"] * 0.01
             self.assertAlmostEqual(100.0 / held, row["utilisation"], places=9, msg=material)
             self.assertEqual("pulled apart", row["would_be"])
             # A third of the pull reaches the joint, so it parts at three times what it holds.
@@ -139,15 +149,17 @@ class Resting(unittest.TestCase):
         for material in MATERIALS:
             # A slender post, so that it fails long before the floor lets the base slide or tip
             # (that takes some 3.9 kN here): the force is found with the floor asked at each step.
-            answer = screen.screen(self.column(material, post=0.02), component_name="cap",
+            design = self.column(material, post=0.02)
+            answer = screen.screen(design, component_name="cap",
                                    point_m=(-0.15, 0.65, 0), direction=(1, 0, 0), force_n=50.0)
             m = engine_materials.mechanics(material)
             rho = engine_materials.density(material)
             section, area, arm = 0.02 * 0.02 ** 2 / 6.0, 0.0004, 0.55
             weight = (rho * 0.3 * 0.1 * 0.3 + rho * 0.02 * 0.5 * 0.02) * G
-            # The post's end is glued to the base, so in a material with a grain the joint
-            # keeps a quarter of it in tension and shear, and all of it in compression.
-            keeps = 0.25 if material == "oak" else 1.0
+            # The post's end is glued to the base, so in a material with a grain it is an
+            # end-grain butt joint; compression is always all of it, because there the
+            # glue line is not what carries.
+            keeps = keeps_of(design)["tension"]
             # Foot joint, bending about one axis with the weight pressing it. Three ways to go:
             #   the far fibre in tension   F*arm/(st*Z)                     = 1  (the weight is not credited)
             #   the near fibre crushing    W/(sc*A) + F*arm/(sc*Z)          = 1
@@ -161,10 +173,11 @@ class Resting(unittest.TestCase):
             # The answer is reported to the newton's hundredth, which for a joint this
             # weak is a wider tolerance than the search's own.
             self.assertAlmostEqual(expected, first["force_n"], delta=max(expected * 2e-5, 0.01), msg=material)
-            # Oak used to crush first (52 against 90 MPa). With the glue line a quarter of
-            # the wood it tears at 54.5 N instead of crushing at 126, which is the joint
-            # being the weak thing and not the timber.
-            self.assertEqual("pulled apart", first["would_be"], material)
+            # Which mode gives first follows the law: whole, oak tears at 126 N; were the
+            # end-grain quarter put in force it would tear at 54.5 N instead of crushing,
+            # which is the joint being the weak thing rather than the timber.
+            self.assertEqual("pulled apart" if keeps < 1.0 or tension <= crushing else "crushed",
+                             first["would_be"], material)
 
     def test_a_table_shares_a_central_load_equally_between_its_four_legs(self):
         legs = [(0.35, 0.2), (-0.35, 0.2), (0.35, -0.2), (-0.35, -0.2)]
@@ -295,9 +308,9 @@ class Capacity(unittest.TestCase):
         block = part("block", (0.0345, 0.18, 0.0345), (0.19, 0.25, 0.0))
         axle = part("axle", (0.03, 0.76, 0.03), (0, 0.16, 0), shape="cylinder", role="axle",
                     rotation=(0, 0, -90), material="iron")
-        for kind, method, keeps in (("fixed", "bonded", 1.0), ("fixed", "pressed", 0.15),
-                                    ("bearing", "bearing", 1.0)):
+        for kind, method in (("fixed", "bonded"), ("fixed", "pressed"), ("bearing", "bearing")):
             design = built([block, axle], [("block", "axle", kind)], method=method)
+            keeps = keeps_of(design)["shear"]
             rated = product_joints.capacity(con.joints(design)[0], *design.parts)
             crush = 52.0e6 * 0.03 * 0.0345                       # oak's bore under the projected area
             shear = 170.0e6 * keeps * pi * 0.03 ** 2 / 4         # the iron shaft across, through its fit
@@ -310,13 +323,15 @@ class Capacity(unittest.TestCase):
             else:
                 self.assertAlmostEqual(11.0e6 * keeps * pi * 0.03 * 0.0345, rated["axial_n"],
                                        delta=1e-3, msg=method)
-        # A press fit is held by friction, which is a sixth of a glued one here, so it is
-        # the shaft that gives and not the bore.
-        pressed = product_joints.capacity(
-            con.joints(built([block, axle], [("block", "axle", "fixed")], method="pressed"))[0],
-            *built([block, axle], [("block", "axle", "fixed")], method="pressed").parts)
-        self.assertEqual("the shaft shearing across", pressed["radial_governed_by"])
+        # A press fit is held by friction, and what that leaves is a stated
+        # demonstration figure rather than anything derived -- which is exactly
+        # why it is not in force. Were it, the shaft would give before the bore.
+        squeezed = built([block, axle], [("block", "axle", "fixed")], method="pressed")
+        pressed = product_joints.capacity(con.joints(squeezed)[0], *squeezed.parts)
         self.assertEqual("demonstration", pressed["efficiency"]["provenance"])
+        self.assertEqual([.15, .15], pressed["efficiency"]["proposed"])
+        self.assertFalse(pressed["efficiency"]["in_force"])
+        self.assertEqual("the bore crushing under the shaft", pressed["radial_governed_by"])
 
     def test_a_material_the_engine_does_not_have_leaves_the_joint_unrated_and_says_why(self):
         design = built([part("a", (0.2, 0.1, 0.1), (0, 1, 0), material="pine"),

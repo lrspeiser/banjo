@@ -36,9 +36,11 @@ order. The ones most easily mistaken for done:
 - **A joint dropped by an edit is not reported to the person.** Move a jointed
   part away and the joint goes with it, said in what the rebuild lost; nothing
   surfaces that in the room.
-- **The joint efficiency numbers are declared, not validated**, and the press
-  fit's is a stated demonstration value. They are the owner's to sign off
-  ([product-framework.md](product-framework.md)).
+- **No joint efficiency number is in force**, by the owner's call of
+  2026-09-19: every law keeps the material whole, so the mechanism is built and
+  inert and no product breaks differently than it did. What each source would
+  support is recorded beside its law as `proposed` and pinned by a test, so
+  putting a figure in force is deliberate ([product-framework.md](product-framework.md)).
 - **A bearing's hold along its axis is not rated**, and the engine's fixings
   check tension and shear only: a joint pried off by a long lever is caught by
   the bench screen and by nothing in the world.

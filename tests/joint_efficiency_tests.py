@@ -79,10 +79,14 @@ class WhichLawEachJointGets(unittest.TestCase):
                        [("top", "leg", "fixed", "bonded")])
         keeps = only(design)
         self.assertEqual("bonded, end grain butted to another part", keeps["id"])
-        self.assertEqual((.25, .25, 1.0), (keeps["tension"], keeps["shear"], keeps["compression"]))
         self.assertIn("leg's end grain", keeps["basis"])
         self.assertEqual("reference-derived", keeps["provenance"])
         self.assertIn("Wood Handbook", keeps["source"])
+        # The law is recognised; its number is not in force. The source would
+        # support a quarter, and putting it there is the owner's to decide.
+        self.assertEqual((1.0, 1.0, 1.0), (keeps["tension"], keeps["shear"], keeps["compression"]))
+        self.assertFalse(keeps["in_force"])
+        self.assertEqual([.25, .25], keeps["proposed"])
 
     def test_two_boards_glued_face_to_face_are_as_strong_as_the_wood(self):
         design = built([part("a", (.8, .04, .5), (0, .02, 0), role="panel"),
@@ -100,11 +104,14 @@ class WhichLawEachJointGets(unittest.TestCase):
         keeps = only(design)
         self.assertEqual("bonded, side grain or isotropic", keeps["id"])
         self.assertEqual(1.0, keeps["tension"])
-        # The same shapes in oak are an end-grain butt: the material decides.
+        self.assertIsNone(keeps["proposed"])   # a weld is the plate; nothing is pending
+        # The same shapes in oak are an end-grain butt: the material decides
+        # which law applies, even while no law's number is in force.
         oak = built([part("a", (.2, .02, .2), (0, .01, 0), role="panel"),
                      part("b", (.05, .30, .05), (0, .17, 0), role="post")],
                     [("a", "b", "fixed", "bonded")])
-        self.assertEqual(.25, only(oak)["tension"])
+        self.assertEqual("bonded, end grain butted to another part", only(oak)["id"])
+        self.assertEqual([.25, .25], only(oak)["proposed"])
 
     def test_a_press_fit_is_a_demonstration_number_and_says_so(self):
         design = built([part("block", (.0345, .18, .0345), (.19, .25, 0)),
@@ -113,8 +120,9 @@ class WhichLawEachJointGets(unittest.TestCase):
         keeps = only(design)
         self.assertEqual("pressed fit", keeps["id"])
         self.assertEqual("demonstration", keeps["provenance"])
-        self.assertEqual(.15, keeps["tension"])
         self.assertIn("DEMONSTRATION", keeps["source"])
+        self.assertEqual(1.0, keeps["tension"])
+        self.assertEqual([.15, .15], keeps["proposed"])
 
     def test_a_bearing_is_not_a_bond_and_is_left_alone_out_loud(self):
         design = built([part("block", (.0345, .18, .0345), (.19, .25, 0)),
@@ -150,14 +158,28 @@ class ReachingTheScene(unittest.TestCase):
             {"kind": "table", "design_id": "t", "parameters": {"material": "oak"}})[0]
         self.assertEqual([], je.scene_interfaces(plain))
 
-    def test_every_leg_reaches_the_scene_as_its_own_joint(self):
-        declared = je.scene_interfaces(self.table())
-        self.assertEqual(4, len(declared))
-        self.assertEqual({"top"}, {face["a"] for face in declared})
-        self.assertEqual({f"leg-{i}" for i in range(1, 5)}, {face["b"] for face in declared})
-        for face in declared:
-            self.assertEqual({"a": face["a"], "b": face["b"], "tension": .25,
-                              "shear": .25, "compression": 1.0}, face)
+    def test_nothing_is_declared_to_a_scene_while_every_law_is_whole(self):
+        """The owner's call, 2026-09-19: no number goes below 1 until they say
+        so. A law that keeps the material whole has nothing to tell a scene, so
+        a built design declares none and no product breaks differently than it
+        did. This is the pin that makes putting them in force deliberate."""
+        self.assertEqual([], je.scene_interfaces(self.table()))
+        self.assertTrue(all(law.whole() for law in (je._FAILS_IN_THE_PARENT,
+                                                    je._END_GRAIN, je._PRESSED)))
+
+    def test_every_leg_is_still_recognised_as_its_own_joint(self):
+        """What the laws decide is unchanged: each leg is an end-grain butt into
+        the top, and the day a number goes in force all four reach the scene."""
+        design = self.table()
+        parts = {p.name: p for p in design.parts}
+        rows = con.joints(design)
+        self.assertEqual(4, len(rows))
+        for row in rows:
+            keeps = je.efficiency(row, parts[row["a"]], parts[row["b"]])
+            self.assertEqual("top", row["a"])
+            self.assertEqual("bonded, end grain butted to another part", keeps["id"])
+            self.assertEqual([.25, .25], keeps["proposed"])
+        self.assertEqual({f"leg-{i}" for i in range(1, 5)}, {row["b"] for row in rows})
 
     def test_an_open_joint_crosses_nothing_so_it_is_left_out(self):
         design = self.table()
@@ -166,7 +188,7 @@ class ReachingTheScene(unittest.TestCase):
         moved = workshop_components.design_from_spec(
             {"kind": "table", "design_id": "t", "parameters": {"material": "oak"},
              "component_overrides": overrides})[0]
-        self.assertEqual(3, len(je.scene_interfaces(moved)))
+        self.assertEqual(3, len([j for j in con.joints(moved) if not j.get("open")]))
 
     def test_the_scene_carries_the_parts_and_their_joints_to_the_engine(self):
         bodies = [{"name": "top", "shape": "box", "material": "oak", "size_mm": [400, 40, 200],
@@ -214,7 +236,9 @@ class ReachingTheScene(unittest.TestCase):
         setup = workshop_motion.scene(design, "drop_product", {"height_m": 1.0, "cell_size_m": .02})
         labelled = [b for b in setup["spec"]["bodies"] if b.get("part")]
         self.assertEqual({"top", "leg-1", "leg-2", "leg-3", "leg-4"}, {b["part"] for b in labelled})
-        self.assertEqual(4, len(setup["spec"]["interfaces"]))
+        # The labels go whether or not a joint is declared: they are what a
+        # joint would have to name, and no law is in force today.
+        self.assertEqual([], setup["spec"].get("interfaces", []))
         # Every cell is still there, and each belongs to exactly one part.
         matter = setup["matter"]
         part_of = sparse._grid_parts(matter)

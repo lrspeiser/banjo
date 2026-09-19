@@ -27,6 +27,15 @@ parts pushed together bear on each other directly: an end-grain butt joint that
 holds a quarter of the wood in tension carries the wood's full compression,
 because in compression the glue line is not what is carrying. A joint fails in
 tension or in shear.
+
+**Nothing here is in force yet, by the owner's call of 2026-09-19.** Every law
+keeps the material whole -- 1.0 in every mode -- and what the sources would
+support is recorded beside it as ``proposed``, read by nothing but the test that
+pins it. Setting a number below 1 is a declaration about real joints, and it is
+the owner's to make deliberately, not one to arrive with an implementation. So
+the mechanism ships inert: a law that keeps everything is not declared to a
+scene at all, no product breaks differently than it did, and putting the figures
+in force later is an edit to this table and nothing else.
 """
 from __future__ import annotations
 
@@ -46,6 +55,8 @@ class JointLaw:
     """What one way of making a joint leaves of the material it joins."""
 
     id: str
+    #: What this law leaves of the material, IN FORCE. 1.0 everywhere today:
+    #: see the module docstring on the owner's call of 2026-09-19.
     tension: float
     shear: float
     #: reference-derived: from a published source. demonstration: a stated
@@ -53,12 +64,22 @@ class JointLaw:
     provenance: str
     source: str
     compression: float = 1.0
+    #: (tension, shear) the source would support, for whoever puts it in force.
+    #: Documentation. Nothing reads it but the test that pins what is in force.
+    proposed: tuple[float, float] | None = None
     not_modelled: tuple[str, ...] = ()
+
+    def whole(self) -> bool:
+        """Whether this law leaves the material exactly as it is, so that there
+        is nothing to declare to a scene."""
+        return (self.tension, self.shear, self.compression) == (1.0, 1.0, 1.0)
 
     def described(self, basis: str) -> dict[str, Any]:
         return {"schema": EFFICIENCY_SCHEMA, "id": self.id, "basis": basis,
                 "tension": self.tension, "shear": self.shear, "compression": self.compression,
                 "provenance": self.provenance, "source": self.source,
+                "in_force": not self.whole(),
+                "proposed": list(self.proposed) if self.proposed else None,
                 "not_modelled": list(self.not_modelled)}
 
 
@@ -80,7 +101,7 @@ _FAILS_IN_THE_PARENT = JointLaw(
 
 _END_GRAIN = JointLaw(
     id="bonded, end grain butted to another part",
-    tension=0.25, shear=0.25, provenance="reference-derived",
+    tension=1.0, shear=1.0, proposed=(0.25, 0.25), provenance="reference-derived",
     source=(
         "An end-grain butt joint in wood cannot be made to hold more than about a quarter of what a "
         "comparable side-grain joint holds: the open ends of the cells drink the adhesive and leave "
@@ -99,7 +120,7 @@ _END_GRAIN = JointLaw(
 
 _PRESSED = JointLaw(
     id="pressed fit",
-    tension=0.15, shear=0.15, provenance="demonstration",
+    tension=1.0, shear=1.0, proposed=(0.15, 0.15), provenance="demonstration",
     source=(
         "A press fit holds by friction: what it carries is the coefficient of friction times the "
         "interface pressure times the area, and the pressure follows from the interference, the "
@@ -218,6 +239,14 @@ def scene_interfaces(design: Any, prefix: str = "") -> list[dict[str, Any]]:
             continue          # its parts no longer touch: there is nothing to cross
         keeps = efficiency(joint, parts[joint["a"]], parts[joint["b"]])
         if not keeps["rated"]:
+            continue
+        if (keeps["tension"], keeps["shear"], keeps["compression"]) == (1.0, 1.0, 1.0):
+            # The law leaves the material exactly as it is, so there is nothing
+            # to say: the bonds across this joint are already the wood's own.
+            # This is what every law does today (the owner's call, 2026-09-19),
+            # so a scene is declared nothing and no product changes. It also
+            # keeps the engine's guard honest -- it refuses a declared joint
+            # that weakens no bond, and a whole one would weaken none.
             continue
         out.append({"a": prefix + joint["a"], "b": prefix + joint["b"],
                     "tension": keeps["tension"], "shear": keeps["shear"],

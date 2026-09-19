@@ -224,9 +224,19 @@ the way `src/thermo/ThermalMechanics.cpp` declares the heat curves: every number
 carries its source and what it does not cover, and a demonstration value says so
 in the answer rather than in a comment.
 
-| joint | tension | shear | compression | where from |
+**None of these numbers is in force.** The owner's call, 2026-09-19: leave
+every joint at the material's own strength for now, ship the mechanism inert,
+and set the figures deliberately later, because a number below 1 is a
+declaration about real joints and is theirs to make rather than something that
+arrives with an implementation. So the column below is what each source would
+support, recorded as `proposed` beside a law that currently keeps the material
+whole. A law that keeps everything is not declared to a scene at all, so no
+product breaks differently than it did, and putting the figures in force is an
+edit to one table.
+
+| joint | proposed tension | proposed shear | compression | where from |
 |---|---:|---:|---:|---|
-| bonded, side grain, or a weld | 1.0 | 1.0 | 1.0 | a properly made side-grain glue joint fails in the wood beside the bond line, not in it (Wood Handbook FPL-GTR-190 ch. 10); a full-penetration weld with matching filler develops the base metal (AWS D1.1, EN 1993-1-8) |
+| bonded, side grain, or a weld | 1.0 (nothing pending) | 1.0 | 1.0 | a properly made side-grain glue joint fails in the wood beside the bond line, not in it (Wood Handbook FPL-GTR-190 ch. 10); a full-penetration weld with matching filler develops the base metal (AWS D1.1, EN 1993-1-8) |
 | bonded, end grain butted on | 0.25 | 0.25 | 1.0 | an end-grain butt joint cannot be made to hold more than about a quarter of a comparable side-grain one -- the open cells drink the adhesive (same chapter). It is why scarf and finger joints exist. The quarter is the source's figure for TENSION; the same share for shear is an assumption |
 | pressed fit | 0.15 | 0.15 | 1.0 | **demonstration.** A press fit holds by friction, and the interference, finish and moduli it follows from are declared nowhere in a design, so no number can be derived. A design that turns on it should declare its interference |
 | a bearing | -- | -- | -- | not a bond at all. What holds a wheel on its axle -- a pin, a washer, a nut -- is not in the design, so neither weakening it nor welding it would be that. Left as the material's own, and said |
@@ -259,9 +269,12 @@ asset build, so a product carries its joints from the moment it exists and a
 blow, a landing, the admission bound and the fracture run all read the same
 bonds. Nothing else changed.
 
-**Measured**, default oak table, 20 mm cells, dropped on its top:
+**Measured with the end-grain quarter put in force**, to show that the
+mechanism does what it says -- not how anything behaves today, because today
+every law is whole and the left-hand column is what happens. Default oak table,
+20 mm cells, dropped on its top:
 
-| drop | carved from one piece | glued (end grain, 0.25) |
+| drop | as it is today (every law whole) | were the quarter in force |
 |---|---|---|
 | 1 m | holds | holds |
 | 2 m | holds | **two legs off** |
@@ -269,8 +282,9 @@ bonds. Nothing else changed.
 | 6 m | holds | all four legs off |
 | 10 m | 63 pieces, none leg-sized | 111 pieces, and the four legs still come off whole |
 
-The bar a blow has to pass fell from **13.75 to 3.44 m/s**, which is the
-declared quarter exactly. Carved, the table survives to 10 m and then shatters
+With the quarter in force the bar a blow has to pass falls from **13.75 to
+3.44 m/s**, which is that quarter exactly -- the measurement that says the
+mechanism reaches the engine, waiting on a number. Carved, the table survives to 10 m and then shatters
 *through the wood* -- not one piece is leg-sized. Glued, it loses legs at 2 m, a
 fifth of the energy, and loses them **as legs**: at the joint, which is where it
 already parted. A separate two-part probe (a slab on a post) holds to 4.5 m
