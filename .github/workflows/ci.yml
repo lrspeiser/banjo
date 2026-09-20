@@ -27,6 +27,8 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
+          node --check playground/material-qa.js
+          python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v
@@ -99,6 +101,8 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
+          node --check playground/material-qa.js
+          python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/playground_tests.py -v
           python3 tests/playground_control_tests.py -v
@@ -167,6 +171,20 @@ jobs:
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/workshop_browser_tests.py -v
           python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
+
+      - name: Record and compare the complete material impact range
+        run: >-
+          python3 scripts/material_qa.py
+          --engine build/ci/banjo_fast_lattice_run
+          --out build/ci/material-qa
+
+      - name: Keep material impact reports and recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: banjo-material-qa-${{ github.sha }}
+          path: build/ci/material-qa/
+          if-no-files-found: warn
 
       - name: Generate deterministic scenario projections
         run: |

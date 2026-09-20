@@ -1,5 +1,7 @@
 # The Banjo API
 
+The recorded material impact range, HTTP endpoints and five platform MCP tools are documented in [Material QA](../material-qa.md).
+
 Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
 
 Banjo simulates matter. An object is not a shape with a "breakable" flag on it:
@@ -10,7 +12,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. Both MCP entry points are **1.5.0**.
+Current native ABI: **25**. World MCP is **1.5.0**; platform MCP is **1.6.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.

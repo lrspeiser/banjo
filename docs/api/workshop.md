@@ -1,5 +1,7 @@
 # Workshop and Product platform API
 
+The recorded material impact range, HTTP endpoints and five platform MCP tools are documented in [Material QA](../material-qa.md).
+
 Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
 
 Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](../primary-use.md) for programming, API payloads, bounds and compatibility.

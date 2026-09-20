@@ -1,5 +1,7 @@
 # Banjo as a tool a model can use
 
+The recorded material impact range, HTTP endpoints and five platform MCP tools are documented in [Material QA](../material-qa.md).
+
 Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](../primary-use.md) for programming, API payloads, bounds and compatibility.
 
 A model asked "does a glass ball break if I drop it two metres onto concrete"
@@ -44,7 +46,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world and platform server version: **1.5.0**, requiring native ABI **25**.
+Current world server version: **1.5.0**; platform server: **1.6.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banjo · Material range</title><link rel="stylesheet" href="/material-qa.css"></head>
+<body>
+<header><a class="brand" href="/">BANJO <span>/ MATERIAL RANGE</span></a><nav><a href="/">Physics lab</a><a href="/world">World</a></nav></header>
+<main>
+<div class="intro"><div><p class="eyebrow">PHYSICS REGRESSION / 01</p><h1>Watch matter respond.</h1><p>Eight materials. Three thicknesses. Four impacts. The same fixture, every time.</p></div>
+<div class="fixture">120 × 120 mm specimen<br>40 mm iron striker · two support ledges<br>10 mm cells · recorded native simulation</div></div>
+<section class="toolbar" aria-label="Run controls">
+<label>Recorded run<select id="runs"><option value="">No saved runs</option></select></label>
+<button id="run-all" class="primary" disabled>Run all 96 impacts</button>
+<button id="run-filtered" disabled>Run filtered cases</button>
+<button id="cancel" disabled>Cancel run</button>
+<p id="progress" role="status">Loading range…</p>
+</section>
+<div class="workspace">
+<section class="specimens">
+<div class="filters">
+<label>Material<select id="material"><option value="">All materials</option></select></label>
+<label>Thickness<select id="thickness"><option value="">All</option></select></label>
+<label>Speed<select id="speed"><option value="">All</option></select></label>
+</div>
+<div class="table-scroll"><table><thead><tr><th>Specimen</th><th>Impact</th><th>Result</th></tr></thead><tbody id="cases"></tbody></table></div>
+<p class="key">Initial speeds are inputs. Contact impulse is measured. Peak force is not available.</p>
+</section>
+<section class="inspection" aria-label="Recorded impact viewer">
+<div class="viewer-title"><h2 id="case-title">Select a recorded impact</h2><span id="verdict"></span></div>
+<div id="stage"><p>Native recordings appear here when a case finishes.</p></div>
+<div class="transport">
+<button id="play" disabled>Play</button><button id="back" disabled aria-label="Previous frame">←</button>
+<input type="range" id="frame" min="0" max="0" value="0" aria-label="Recorded frame" disabled>
+<button id="next" disabled aria-label="Next frame">→</button>
+<label><input type="checkbox" id="slow" checked> Hold crack frames</label>
+<label><input type="checkbox" id="damage"> Show bond damage</label>
+<span id="clock">0.0000 s</span>
+</div>
+<div id="metrics" class="metrics"></div>
+<div id="notes" role="status"></div>
+<div class="downloads"><a id="report-link" hidden>Native report</a><a id="recording-link" hidden>Recording JSON</a></div>
+</section>
+</div>
+<details class="limits"><summary>What this range checks</summary><p>Each specimen starts fresh. Cases check finite results, material-cell identity through fracture, actual contact, valid damage counts and changes against a measured baseline. Baseline changes require review; they do not automatically replace the reference.</p><p>This tests the detailed fracture solver. It does not qualify the live-world damage trigger, a complete building, plastic flow, fatigue, grain, or thermal damage. The catalog is experimental. A passed run is not a real-material calibration or a complete energy-conservation test.</p><p>Intact world objects already move as rigid bodies. Fine cells are still allocated at world creation; allocating damage detail only when needed remains planned.</p></details>
+</main><script type="module" src="/material-qa.js"></script></body></html>

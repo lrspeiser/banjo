@@ -30,6 +30,7 @@ import uuid
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
 import builder
 import fracture_lab
+import material_qa
 import live_session
 import live_inprocess
 import world_chat
@@ -1113,6 +1114,16 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
+            if path=="/api/material-qa": return self.send(material_qa.catalog(app.engine_path))
+            if path=="/api/material-qa/runs": return self.send(material_qa.manager(app).list_runs())
+            match=re.fullmatch(r"/api/material-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|native))?)?",path)
+            if match:
+                qa=material_qa.manager(app)
+                if not match[2]: return self.send(qa.status(match[1]))
+                material_qa.select([match[2]])
+                if match[3]=="native":
+                    return self.send(material_qa.read_json(qa.folder(match[1])/match[2]/"native-report.json"))
+                return self.send(qa.case(match[1],match[2],playback=match[3]=="playback"))
             if path=="/api/fracture": return self.send(fracture_lab.describe(self.server.app.engine_path))
             if path=="/api/builder": return self.send({
                 "schema":builder.BUILDER_SCHEMA,"default":builder.DEFAULT,
@@ -1133,7 +1144,8 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
+            allowed={"/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+                "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
@@ -1216,6 +1228,12 @@ class Handler(BaseHTTPRequestHandler):
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
+            if path=="/api/material-qa/run":
+                return self.send(material_qa.manager(self.server.app).start(body),202)
+            if path=="/api/material-qa/cancel":
+                if not isinstance(body,dict) or set(body)!={"run_id"}:
+                    raise ValueError("QA cancel requires only run_id")
+                return self.send(material_qa.manager(self.server.app).cancel(body["run_id"]))
             if path=="/api/fracture/run": return self.send(fracture_lab.run(self.server.app,body))
             # Words in, a validated scene spec out. The model fills the same
             # fields the manual controls do and nothing skips fracture_lab.validate.
@@ -2792,6 +2810,7 @@ def main():
         # The room as it stands now, for the server that starts next.
         try: keep_world(app,"the server stopped")
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
+        if hasattr(app,"material_qa"): app.material_qa.shutdown()
         app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
 
 if __name__=="__main__": main()
