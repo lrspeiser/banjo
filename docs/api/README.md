@@ -384,3 +384,5 @@ The wood model is a declared simplified model with demonstration parameters;
 Saved browser worlds: [startup additions and world_open_saved](../world-startup-upgrades.md).
 
 Thermal state in saved worlds: [native snapshot persistence and legacy limits](../thermal-world-persistence.md). Existing world_open_saved uses this behavior when the server runs the updated native build.
+
+Ground state in saved worlds: [native ground snapshot and carry contract](../terrain-and-water.md#live-ground-state-snapshots-september-20). Existing save/open and installation operations use it with the updated native runtime; operation signatures are unchanged. Corrupt ground-bearing restores refuse rather than replay terrain. Legacy saves cannot recover missing pending state. Source checkpoint; local deployment pending.

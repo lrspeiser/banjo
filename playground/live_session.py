@@ -585,6 +585,10 @@ class Live:
                 was = getattr(source, "declared", None) if source is not None else None
                 if isinstance(was, dict):
                     plan = carry_plan(was, spec)
+                    # Terrain continuation is separate from body carry. An edit
+                    # to the terrain declaration must not inherit the old ground.
+                    source_spec = getattr(source, "spec", {})
+                    plan["engine"]["ground"] = bool(source_spec.get("terrain")) and source_spec.get("terrain") == spec.get("terrain")
                 else:
                     snapshot = None
             if self.session is not None:

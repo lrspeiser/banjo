@@ -11,6 +11,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 
 namespace banjo::terrain {
@@ -230,7 +231,7 @@ std::vector<std::uint8_t> decodeBase64(const std::string &text) {
 
 // ---- building one -----------------------------------------------------------
 
-std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_json) {
+std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_json, const std::string &ground_state) {
     const Json document = Json::parse(scene_json);
     if (!document.is_object() || (!document.contains("terrain") && !document.contains("water")))
         return nullptr;
@@ -418,7 +419,8 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         join.first.connection = environment->water_->addConnection(join.second);
         environment->links_.push_back(join.first);
     }
-    if (terrain.contains("edits")) environment->applyEdits(terrain.at("edits").dump());
+    if (!ground_state.empty()) environment->restoreGroundState(ground_state);
+    else if (terrain.contains("edits")) environment->applyEdits(terrain.at("edits").dump());
     // A river's discharge, overridden: one number for every source, or by name
     // -- a source that became a connection feeding what stands beyond it.
     if (water.contains("discharge_m3_s")) {
@@ -619,13 +621,130 @@ std::vector<float> Environment::chunkHeights(int chunk) const {
     return heights;
 }
 
+std::string Environment::groundStateJson() const {
+    const auto s=terrain_->state();
+    const auto packed=[](const auto &v) { return encodeBase64(v.data(),v.size()*sizeof(v[0])); };
+    const auto rect=[](const auto &r) { return Json::array({r.i0,r.j0,r.ni,r.nj}); };
+    Json colliders=Json::array();
+    for (int k=0;k<static_cast<int>(stats_.chunks);++k)
+        colliders.push_back(packed(collider_heights_.empty()?chunkHeights(k):collider_heights_[static_cast<std::size_t>(k)]));
+    return Json{{"schema","banjo.ground-state.v1"},
+        {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
+        {"rock",packed(s.rock)},{"soil",packed(s.soil)},{"sand",packed(s.sand)},
+        {"loose",packed(s.loose)},{"moisture",packed(s.moisture)},{"floor",s.floor},
+        {"ledger",{{"initial",volumesJson(s.ledger.initial)},{"dug",volumesJson(s.ledger.dug)},
+            {"cut",volumesJson(s.ledger.cut)},{"deposited",volumesJson(s.ledger.deposited)},
+            {"slumped_m3",s.ledger.slumped_m3},{"loosened_m3",s.ledger.loosened_m3}}},
+        {"frontier",s.frontier},{"dirty_chunks",s.dirty_chunks},{"changed",rect(s.changed)},
+        {"checked_total",s.checked_total},{"frontier_peak",s.frontier_peak},
+        {"carried",volumesJson(carried_)},{"carry_limit_kg",std::isfinite(carry_limit_kg_)?Json(carry_limit_kg_):Json(nullptr)},
+        {"time_s",time_s_},{"ground_behind_s",ground_behind_s_},{"water_behind_s",water_behind_s_},
+        {"since_rebuild_s",since_rebuild_s_},{"commits",commits_},
+        {"pending_chunks",pending_chunks_},{"pending_wake",rect(pending_wake_)},{"colliders",colliders}}.dump();
+}
+
+void Environment::restoreGroundState(const std::string &text) {
+    if (attached_) throw std::invalid_argument("ground state must be restored before attachment");
+    const Json d=Json::parse(text);
+    const std::initializer_list<const char *> keys={"schema","grid","rock","soil","sand","loose","moisture",
+        "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
+        "carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
+        "pending_chunks","pending_wake","colliders"};
+    if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
+    onlyKeys(d,keys,"ground state");
+    for (const char *key:keys) if (!d.contains(key)) throw std::invalid_argument(std::string("missing ground state ")+key);
+    const auto integer=[](const Json &v,std::uint64_t maximum) {
+        if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
+            v.get<std::uint64_t>()>maximum) throw std::invalid_argument("invalid ground state integer");
+        return v.get<std::uint64_t>();
+    };
+    const auto indices=[&](const Json &v,auto &out,std::uint64_t maximum) {
+        if (!v.is_array()) throw std::invalid_argument("ground indices must be an array");
+        out.clear();
+        for (const auto &entry:v) {
+            using Index=typename std::decay_t<decltype(out)>::value_type;
+            if (!out.insert(static_cast<Index>(integer(entry,maximum))).second)
+                throw std::invalid_argument("duplicate ground index");
+        }
+    };
+    if (d.at("schema")!="banjo.ground-state.v1") throw std::invalid_argument("unsupported ground state");
+    auto s=terrain_->state(); const auto &g=d.at("grid");
+    if (!g.is_array() || g.size()!=5 || !g[0].is_number_integer() || !g[1].is_number_integer())
+        throw std::invalid_argument("invalid ground grid");
+    s.grid={g[0].get<int>(),g[1].get<int>(),g[2].get<double>(),g[3].get<double>(),g[4].get<double>()};
+    const auto unpack=[&](const char *key,auto &v) {
+        const auto bytes=decodeBase64(d.at(key).get<std::string>());
+        if (bytes.size()!=v.size()*sizeof(v[0])) throw std::invalid_argument("ground array size mismatch");
+        std::memcpy(v.data(),bytes.data(),bytes.size());
+    };
+    unpack("rock",s.rock);unpack("soil",s.soil);unpack("sand",s.sand);unpack("loose",s.loose);unpack("moisture",s.moisture);
+    s.floor=d.at("floor").get<double>();
+    const auto volumes=[](const Json &v) {
+        return Volumes{v.at("rock_m3").get<double>(),v.at("soil_m3").get<double>(),v.at("sand_m3").get<double>()};
+    };
+    const auto &l=d.at("ledger");
+    s.ledger={volumes(l.at("initial")),volumes(l.at("dug")),volumes(l.at("cut")),volumes(l.at("deposited")),
+        l.at("slumped_m3").get<double>(),l.at("loosened_m3").get<double>()};
+    indices(d.at("frontier"),s.frontier,s.grid.cells()-1);
+    indices(d.at("dirty_chunks"),s.dirty_chunks,stats_.chunks-1);
+    const auto rect=[](const Json &v) {
+        if (!v.is_array() || v.size()!=4) throw std::invalid_argument("invalid ground rectangle");
+        for (const auto &n:v) if (!n.is_number_integer()) throw std::invalid_argument("invalid ground rectangle index");
+        return TerrainField::Rect{v[0].get<int>(),v[1].get<int>(),v[2].get<int>(),v[3].get<int>()};
+    };
+    s.changed=rect(d.at("changed"));
+    s.checked_total=static_cast<std::size_t>(integer(d.at("checked_total"),std::numeric_limits<std::size_t>::max()));
+    s.frontier_peak=static_cast<std::size_t>(integer(d.at("frontier_peak"),s.grid.cells()));
+    const auto carried=volumes(d.at("carried"));
+    for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
+        if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
+    const double limit=d.at("carry_limit_kg").is_null()?std::numeric_limits<double>::infinity():
+        number(d,"carry_limit_kg",0,0,1e12);
+    const double time=number(d,"time_s",0,0,1e12), ground=number(d,"ground_behind_s",0,0,1e12),
+        water=number(d,"water_behind_s",0,0,1e12), since=number(d,"since_rebuild_s",0,0,1e12);
+    std::set<int> chunks;indices(d.at("pending_chunks"),chunks,stats_.chunks-1);
+    const auto wake=rect(d.at("pending_wake"));
+    auto candidate=std::make_unique<TerrainField>(*terrain_);candidate->restore(s);
+    // Reuse the terrain's strict rectangle validation for queued wakes too.
+    auto wake_check=s;wake_check.changed=wake;candidate->restore(wake_check);candidate->restore(s);
+    for (int k:chunks) if (k<0 || k>=static_cast<int>(stats_.chunks)) throw std::invalid_argument("invalid pending chunk");
+    const auto &cs=d.at("colliders");
+    if (!cs.is_array() || cs.size()!=stats_.chunks) throw std::invalid_argument("invalid collider count");
+    std::vector<std::vector<float>> colliders;
+    constexpr int count=TerrainField::kChunkCells+1;
+    for (std::size_t k=0;k<cs.size();++k) {
+        const auto bytes=decodeBase64(cs[k].get<std::string>());
+        if (bytes.size()!=count*count*sizeof(float)) throw std::invalid_argument("invalid collider size");
+        std::vector<float> heights(count*count);std::memcpy(heights.data(),bytes.data(),bytes.size());
+        const int x0=static_cast<int>(k)%terrain_->chunksX()*TerrainField::kChunkCells;
+        const int z0=static_cast<int>(k)/terrain_->chunksX()*TerrainField::kChunkCells;
+        for (int j=0;j<count;++j) for(int i=0;i<count;++i) {
+            const float h=heights[static_cast<std::size_t>(j*count+i)];
+            if (x0+i<s.grid.nx && z0+j<s.grid.nz ? !std::isfinite(h) : !std::isnan(h))
+                throw std::invalid_argument("invalid collider height");
+        }
+        colliders.push_back(std::move(heights));
+    }
+    const auto commits=integer(d.at("commits"),std::numeric_limits<std::uint64_t>::max());
+    terrain_=std::move(candidate);carried_=carried;carry_limit_kg_=limit;
+    time_s_=time;ground_behind_s_=ground;water_behind_s_=water;since_rebuild_s_=since;commits_=commits;
+    pending_chunks_=chunks;pending_wake_=wake;collider_heights_=std::move(colliders);
+    for (std::size_t c=0;c<s.grid.cells();++c) water_->setTerrain(c,terrain_->height(c));
+}
+
 void Environment::attach(JoltWorld &world) {
     const Grid &g = landscape_.grid;
     const MaterialDefinition contact = groundContact();
+    const bool restored = !collider_heights_.empty();
+    if (!restored) {
+        collider_heights_.reserve(stats_.chunks);
+        for (int chunk=0; chunk<static_cast<int>(stats_.chunks); ++chunk)
+            collider_heights_.push_back(chunkHeights(chunk));
+    }
     for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk) {
         const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
         patch_of_chunk_[static_cast<std::size_t>(chunk)] = world.addGroundPatch(
-            chunkHeights(chunk), TerrainField::kChunkCells + 1, g.dx,
+            collider_heights_[static_cast<std::size_t>(chunk)], TerrainField::kChunkCells + 1, g.dx,
             g.x0 + cx * TerrainField::kChunkCells * g.dx, g.z0 + cz * TerrainField::kChunkCells * g.dx,
             contact);
     }
@@ -634,7 +753,7 @@ void Environment::attach(JoltWorld &world) {
     // so a dig, a slump or a heap of sand changes it as it changes the ground.
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
-    (void)terrain_->takeDirtyChunks();
+    if (!restored) (void)terrain_->takeDirtyChunks();
 }
 
 double Environment::rollingResistanceAt(double x_m, double z_m) const {
@@ -663,7 +782,9 @@ void Environment::rebuildChunks(JoltWorld &world, const std::set<int> &chunks, E
     for (const int chunk : chunks) {
         const unsigned patch = patch_of_chunk_[static_cast<std::size_t>(chunk)];
         if (patch == 0) continue;
-        world.replaceGroundPatch(patch, chunkHeights(chunk));
+        auto heights = chunkHeights(chunk);
+        world.replaceGroundPatch(patch, heights);
+        collider_heights_[static_cast<std::size_t>(chunk)] = std::move(heights);
         ++stats_.chunks_rebuilt;
     }
     // Whatever the changed ground was holding up: wake it, and let the solver

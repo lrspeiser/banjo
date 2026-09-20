@@ -919,6 +919,8 @@ struct LiveRestore {
 // has for it (LiveWorld::snapshot). One it does not name comes back no more: the
 // host declares what it has now in its place.
 struct LiveCarry {
+    // Explicit host assertion that terrain declarations/edits are unchanged.
+    bool ground{};
     std::set<unsigned> joints, energy_stores, motors, controls, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as

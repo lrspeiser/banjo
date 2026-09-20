@@ -1036,3 +1036,5 @@ The [fabrication contract](../fabrication.md) documents every setting, field, st
 Thermal state in saved worlds: [native snapshot persistence and legacy limits](../thermal-world-persistence.md). Existing world_open_saved uses this behavior when the server runs the updated native build.
 
 Workshop installation and startup additions use the same [active thermal carry capability check](../thermal-world-persistence.md). Current native builds can retain active heaters/gas while adding an unrelated part; older engines refuse that operation. Existing MCP tool signatures are unchanged.
+
+Ground state in saved worlds: [native ground snapshot and carry contract](../terrain-and-water.md#live-ground-state-snapshots-september-20). Existing save/open and installation operations use it with the updated native runtime; operation signatures are unchanged. Corrupt ground-bearing restores refuse rather than replay terrain. Legacy saves cannot recover missing pending state. Source checkpoint; local deployment pending.

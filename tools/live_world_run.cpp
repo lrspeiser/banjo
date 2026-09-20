@@ -275,6 +275,7 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
 // declares the same way, and the things it will declare something new on.
 LiveCarry carryFrom(const nlohmann::json &doc) {
     LiveCarry carry;
+    if (doc.contains("ground")) carry.ground = doc.at("ground").get<bool>();
     const auto ids = [&doc](const char *key, std::set<unsigned> &into) {
         if (!doc.contains(key)) return;
         for (const nlohmann::json &id : doc.at(key)) into.insert(id.get<unsigned>());

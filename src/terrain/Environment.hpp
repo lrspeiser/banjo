@@ -108,7 +108,8 @@ public:
     // Built from a scene's "terrain" and "water" blocks; null when the scene
     // declares neither. Throws, with the reason, on a declaration it cannot
     // honour.
-    [[nodiscard]] static std::unique_ptr<Environment> fromScene(const std::string &scene_json);
+    [[nodiscard]] static std::unique_ptr<Environment> fromScene(const std::string &scene_json,
+                                                              const std::string &ground_state = {});
     explicit Environment(Landscape landscape);
     ~Environment();
     Environment(const Environment &) = delete;
@@ -200,6 +201,9 @@ public:
     // The water as it stands, for carrying into a world opened again from an
     // edited scene: depth over the ground, discharge, the clock, the ledger.
     [[nodiscard]] std::string stateJson() const;
+    // Accepted ground state and clocks, including colliders that may still be
+    // waiting for the next rebuild stride. Restored only before attachment.
+    [[nodiscard]] std::string groundStateJson() const;
     // What is at a point: ground, what it is made of, water, flow.
     [[nodiscard]] std::string surveyJson(double x, double z) const;
 
@@ -228,6 +232,7 @@ public:
 
 private:
     void applyEdits(const std::string &edits_json);
+    void restoreGroundState(const std::string &state_json);
     void rebuildChunks(JoltWorld &world, const std::set<int> &chunks, EditEffect *effect);
     void syncWaterBed(const std::vector<std::size_t> &cells);
     // Grow the rectangle of ground that bodies will be woken over.
@@ -249,6 +254,7 @@ private:
     std::vector<water::Reaction> reactions_;
     std::vector<water::BodyForce> forces_;
     std::vector<unsigned> patch_of_chunk_;
+    std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
     Volumes carried_{};
     double carry_limit_kg_{std::numeric_limits<double>::infinity()};

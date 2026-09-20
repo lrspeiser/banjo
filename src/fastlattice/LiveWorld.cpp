@@ -2687,6 +2687,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     const bool carrying = saved != nullptr && carry != nullptr;
     std::string water_note;
     if (!r.environment_scene_json.empty()) {
+        const bool carry_ground = saved != nullptr && (!carrying || carry->ground) && saved->doc.contains("ground");
         const bool carry_water = saved != nullptr && !carrying && saved->doc.contains("water") &&
                                  saved->doc.at("water").is_object();
         try {
@@ -2696,8 +2697,11 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 scene["water"]["state"] = saved->doc.at("water");
                 scene_text = scene.dump();
             }
-            impl.environment = terrain::Environment::fromScene(scene_text);
+            impl.environment = terrain::Environment::fromScene(scene_text,
+                carry_ground ? saved->doc.at("ground").dump() : std::string{});
         } catch (const std::exception &error) {
+            // A corrupt ground continuation must never become replayed terrain.
+            if (carry_ground) throw;
             if (!carry_water) throw;
             water_note = std::string("the water: it could not be put back (") + error.what() +
                          "), so it is as the room declares it";
@@ -12638,6 +12642,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                    {"work_j", savedNumber(I.hand_work_j)}};
     // The water as it stands, for the scene's own "water": {"state": ...}.
     if (I.environment) {
+        doc["ground"] = nlohmann::json::parse(I.environment->groundStateJson());
         const nlohmann::json water = nlohmann::json::parse(I.environment->stateJson(), nullptr, false);
         if (water.is_object() && water.contains("depth_b64")) doc["water"] = water;
     }
@@ -12738,10 +12743,10 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
     try {
         return openFrom(request, &saved);
     } catch (const SavedWorldMismatch &mismatch) {
-        if (exact_required) throw;
+        if (exact_required || saved.doc.contains("ground")) throw;
         why = mismatch.what();
     } catch (const std::exception &error) {
-        if (exact_required) throw;
+        if (exact_required || saved.doc.contains("ground")) throw;
         why = std::string("the saved world could not be put back: ") + error.what();
     }
     std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
@@ -12770,7 +12775,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
     try {
         return openFrom(request, &saved, &carry);
     } catch (const std::exception &error) {
-        if (exact_required) throw;
+        if (exact_required || (carry.ground && saved.doc.contains("ground"))) throw;
         // Nothing half carried: the scene as it is, and why.
         std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
         LiveRestore said;

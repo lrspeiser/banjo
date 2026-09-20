@@ -82,17 +82,12 @@ class NativeInstallation(unittest.TestCase):
         from fabrication_tests import candidate
         request={"scene":"world","session":self.live.session.id,"mode":"authoring",
                  "candidate":candidate(),"position_m":[13,-7]}
-        with self.assertRaisesRegex(ValueError,"changed terrain"):
-            install.preview(self.app,request)
-        self.assertEqual(before,self.snap())
-        # Edits are currently replayed to rest by the native restore path.
-        # Until frontier persistence exists, admit only an unchanged settled
-        # ground state; never erase pending settling to make placement pass.
-        self.live.act({"session":self.live.session.id,"op":"step","dt":1/240,"n":120})
-        ground=install._terrain_state(self.live.session)
-        self.assertEqual(ground["material_accounting"]["unsettled_columns"],0)
-        before=self.snap()
+        self.assertGreater(ground["material_accounting"]["unsettled_columns"],0)
+        self.assertEqual(self.room.spec["terrain"],self.live.session.spec["terrain"])
+        # Install immediately: the frontier and old collision patches must
+        # survive, rather than replaying the dig until the terrain is at rest.
         preview=install.preview(self.app,request)
+        self.assertEqual(before,self.snap())
         result=install.commit(self.app,{"scene":"world","session":self.live.session.id,
                               "preview_id":preview["preview_id"],"request_id":"terrain-author-0001"})
         install._preserved(before,self.snap(),result["root_body"])
@@ -110,6 +105,38 @@ class NativeInstallation(unittest.TestCase):
                 install.preview(self.app,request)
         self.assertIs(self.live.session,old)
         self.assertEqual(ground,install._terrain_state(old))
+
+    def test_pending_ground_restart_retains_fractional_clock_and_continuation(self):
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.open()
+        self.live.session.send(op="dig",**{"from":[13,-7],"to":[13,-7],"width_m":.5,"depth_m":.05})
+        self.live.session.send(op="step",dt=1/240,n=1)
+        saved=self.snap()
+        self.assertGreater(saved["ground"]["ground_behind_s"],0)
+        resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+        resumed.open(self.app,{"spec":self.room.spec,"snapshot":saved})
+        self.assertEqual(saved["ground"],install._snapshot(resumed)["ground"])
+        for steps in (1,3,5,11,23):
+            self.live.session.send(op="step",dt=1/240,n=steps)
+            resumed.session.send(op="step",dt=1/240,n=steps)
+            self.assertEqual(self.snap()["ground"],install._snapshot(resumed)["ground"])
+            self.assertEqual(install._terrain_state(self.live.session),install._terrain_state(resumed.session))
+
+    def test_corrupt_ground_snapshot_is_refused_without_replaying_edits(self):
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.open();saved=self.snap()
+        for key,value in (("time_s",None),("frontier",[0,0]),("frontier",[.5]),
+                          ("commits",-1),("colliders",[]),("sand","invalid")):
+            with self.subTest(key=key,value=value):
+                bad=deepcopy(saved)
+                if value is None:del bad["ground"][key]
+                else:bad["ground"][key]=value
+                resumed=live_session.Live()
+                try:
+                    with self.assertRaises(live_session.LiveError):
+                        resumed.open(self.app,{"spec":self.room.spec,"snapshot":bad})
+                finally:resumed.shutdown()
+                self.assertEqual(saved,self.snap())
 
     def test_precise_rigid_terrain_remains_explicitly_refused(self):
         from fabrication_tests import candidate

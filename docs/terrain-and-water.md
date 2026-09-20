@@ -440,3 +440,43 @@ snapshots and changed-scene installation. Until that is implemented and tested,
 the live installer still refuses terrain replay that loses pending settling.
 There is no new HTTP/MCP operation, ABI change or deployed world behavior in this
 checkpoint. Ground-to-manufacturing material transfer remains pending.
+
+
+## Live ground-state snapshots (September 20)
+
+The source implementation now adds `ground` to native world snapshots with
+schema `banjo.ground-state.v1`. It retains the TerrainField state above, carried
+volumes and carry limit, environment time and ground/water scheduling remainders,
+collider rebuild timer, commit counter, queued collider chunks/wake rectangle,
+and the actual installed float32 collider heights. Column arrays use existing
+base64 native scalar encoding (float64 layers, float32 moisture); portability
+across byte orders is not established. Collider padding retains NaNs. Restore
+occurs before attachment and water-state restoration, without replaying edits.
+
+Whole snapshot restoration uses this record automatically. Changed-scene carry
+requires the internal `LiveCarry.ground` / carry JSON `ground` boolean: the host
+sets it only when source and destination terrain declarations match. Accepted
+native digs/deposits update the source declaration as well as the room record.
+Changing the terrain declaration therefore does not inherit unrelated old ground.
+The existing HTTP and MCP operations keep their signatures; clients should not
+manufacture this internal saved state or use the carry flag to bypass validation.
+
+Missing required fields, duplicate/fractional indices, invalid counters, malformed
+arrays and invalid colliders are refused. A restoration error for a ground-bearing
+whole snapshot, or a requested ground carry, must not fall back to a freshly
+replayed scene. Older snapshots without `ground` retain their legacy behavior;
+they cannot recover a settling frontier that was never saved.
+
+All 25 native installation tests pass with the new runtime. The terrain case
+installs immediately after a dig with nonzero unsettled columns and compares
+all saved ground state; altered staged terrain is still refused. A separate
+restart after one 1/240 s step retains the fractional clock and compares exact
+ground records and terrain queries after batches of 1, 3, 5, 11 and 23 steps.
+Six corrupted snapshots are refused while the original session stays unchanged.
+This is ground continuation evidence, not complete water/contact-cache or global
+conservation qualification. No terrain constitutive law changed. The running
+local server has not yet been switched to this build.
+
+The 11 native room-carry cases and 25 host room-store tests also pass. The host room loader still has its existing recovery policy that sets an unreadable world aside before opening a fresh room; this checkpoint changes native restoration, not that recovery UI. Original saved files remain available under the set-aside name.
+
+All 56 world-room tests pass (45.270 s) using the new ground-state live executable and existing geometry-save ABI-25 C library. This mixed-runner check covers the existing world interactions; it is not a rebuilt C-library qualification.

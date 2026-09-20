@@ -2813,6 +2813,11 @@ def remember_ground(app,body,answer=None):
         if not new: return
     terrain["edits"]=edits+new
     room.spec=dict(spec,terrain=terrain)
+    # These edits already happened in this native session. Keep its declaration
+    # in sync so installing another object can carry the live settling state.
+    session=getattr(getattr(app,"live",None),"session",None)
+    if session is not None and isinstance(getattr(session,"spec",None),dict):
+        session.spec=dict(session.spec,terrain=deepcopy(terrain))
     # The ground is part of what the room is, so it is kept with it (room_store),
     # and with the world standing on it as it is now.
     if not keep_world(app,"the ground changed"): room_store.keep(app,room)
