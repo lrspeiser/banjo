@@ -105,7 +105,7 @@ that current `scene` and `session`. Unknown fields refuse.
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.12.0, platform MCP 1.15.0; native ABI remains 25.
+inventory. World MCP is 1.12.1, platform MCP 1.15.1; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -310,3 +310,11 @@ Ground-state v3 retains cumulative `exported` and `returned` quantities separate
 Fabrication retains immutable original `raw_lots` plus `raw_returns` keyed by request ID (source `lot_id` and a substance-preserving packet). `raw_inventory` in each reported state gives remaining contents per lot. Empty lots remain as provenance, not available stock. Saves compare original lots against cumulative exports and return receipts against cumulative native returns. The API returns a replacement session; use it for subsequent calls. An identical request ID is replayable with its original session, including after restart. Changed requests and overdraw refuse; a failed save leaves the running world and original lot unchanged.
 
 The browser accepts a mass to retrieve from each lot; mixed lots are retrieved in their remaining proportions. API/MCP callers may select sand and soil independently. Retrieved material can use the existing native carried-material deposit action. No object is consumed and no material conversion, thermal transport, physical container or handling-work model is added.
+
+### Shared carrying budget
+
+In native terrain worlds, the configured carrying limit now covers excavated sand/soil plus the actual solver mass of held and parked/stored objects. Digging (including tool breakout) is capped to the remaining mass capacity; raw retrieval and taking an additional object refuse when full. Moving an already held object into storage does not count it twice. Dropping an object releases its share. Stored objects retain their native saved mass; construction recipes are not used to recreate missing matter.
+
+`carried_ground` and native environment/terrain reports add `objects_kg`, `total_kg`, `available_kg` and `over_limit_kg`. Existing `sand_kg`, `soil_kg` and `limit_kg` remain. The browser's load meter and movement modifier include objects once. The native mass can differ slightly from the geometry report because the rigid solver stores mass in float32; the comparison test permits 1e-6 kg between those representations, while quantity-transfer checks remain unchanged.
+
+This is an admission budget, not a new player-body or cargo-support solver. Existing overweight saves are retained and reported rather than deleting objects. Terrain-free laboratory scenes retain their prior unbounded storage policy. Fatigue, anatomical carrying, articulated cargo and bag thermal evolution remain incomplete.

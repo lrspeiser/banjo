@@ -1759,6 +1759,15 @@ struct LiveWorld::Impl {
     [[nodiscard]] bool inWorld(std::size_t slot) const {
         return slot < body_of.size() && world->contains(body_of[slot]);
     }
+    [[nodiscard]] double carriedObjectsKg(bool include_hand = true) const {
+        // Use native mass, including saved parked mass. Construction recipes
+        // would silently restore material removed by damage or burning.
+        double kg=0;
+        for (const auto &entry:parked) kg+=entry.second.mass_kg;
+        if (include_hand && holding!=static_cast<std::size_t>(-1) && inWorld(holding))
+            kg+=world->mechanicalState(body_of[holding]).mass_kg;
+        return kg;
+    }
     // The lattice this world's scene builds, in a few numbers (fingerprintOf):
     // a saved world carries them, and is only ever opened into the same cells.
     std::size_t fingerprint_nodes{}, fingerprint_bonds{};
@@ -5552,6 +5561,11 @@ bool LiveWorld::grab(const std::string &name) {
     // Nor can a hand take what is not in the world: a thing set aside (park)
     // is somewhere else until it is brought back.
     if (!impl_->inWorld(found->second)) return false;
+    if (impl_->environment && impl_->holding!=found->second) {
+        const double new_mass=impl_->world->mechanicalState(impl_->body_of[found->second]).mass_kg;
+        if (impl_->carriedObjectsKg(false)+new_mass+impl_->environment->carriedKg()>
+            impl_->environment->carryLimitKg()) return false;
+    }
     if (impl_->holding != static_cast<std::size_t>(-1)) release();
     impl_->holding = found->second;
     // Carried, which is placement. wield() makes a grip of it afterwards.
@@ -9693,8 +9707,10 @@ terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environm
 
 terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, double width_m,
                                    double depth_m) {
-    return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m);
+    return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m, impl_->carriedObjectsKg());
 }
+
+double LiveWorld::carriedObjectsKg() const { return impl_->carriedObjectsKg(); }
 
 void LiveWorld::setCarryLimitKg(double kg) {
     if (impl_->environment) impl_->environment->setCarryLimitKg(kg);
@@ -9709,7 +9725,7 @@ std::string LiveWorld::withdrawGround(double sand_m3, double soil_m3) {
 }
 
 void LiveWorld::returnGround(double sand_m3, double soil_m3) {
-    requireEnvironment(impl_->environment).returnCarried(sand_m3,soil_m3);
+    requireEnvironment(impl_->environment).returnCarried(sand_m3,soil_m3,impl_->carriedObjectsKg());
 }
 
 std::optional<terrain::CutBlock> LiveWorld::cutBlock(double x, double z, int cells_x, int cells_z,
@@ -9747,7 +9763,17 @@ bool LiveWorld::setDischarge(const std::string &river, double discharge_m3_s) {
 
 std::string LiveWorld::environmentReport(bool full) const {
     if (!impl_->environment) return "{}";
-    return impl_->environment->reportJson(full);
+    auto report=nlohmann::json::parse(impl_->environment->reportJson(full));
+    auto &carried=report["ground"]["carried"];
+    const double objects=impl_->carriedObjectsKg();
+    const double total=objects+impl_->environment->carriedKg();
+    carried["objects_kg"]=objects;carried["total_kg"]=total;
+    if (std::isfinite(impl_->environment->carryLimitKg())) {
+        carried["limit_kg"]=impl_->environment->carryLimitKg();
+        carried["available_kg"]=std::max(0.0,impl_->environment->carryLimitKg()-total);
+        carried["over_limit_kg"]=std::max(0.0,total-impl_->environment->carryLimitKg());
+    }
+    return report.dump();
 }
 
 std::string LiveWorld::environmentState() const {
@@ -12010,6 +12036,7 @@ ToolTerrainHost LiveWorld::toolHost() const {
     host.floor_y = I.setup ? I.setup->ground_y : 0.0;
     host.cell_m = I.request.cell_size_m;
     host.time_s = I.time_s;
+    host.carried_objects_kg = I.carriedObjectsKg();
     host.id_of = [this](const std::string &name) -> std::optional<MatterBodyId> {
         const auto found = impl_->index_of.find(name);
         if (found == impl_->index_of.end()) return std::nullopt;
@@ -12208,6 +12235,13 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     const MatterBodyId id = I.body_of[which];
     if (!I.world->jointsOn(id).empty()) {
         why = "something in the world is holding it";
+        return false;
+    }
+
+    if (I.environment && I.holding!=which &&
+        I.carriedObjectsKg()+I.world->mechanicalState(id).mass_kg+I.environment->carriedKg()>
+            I.environment->carryLimitKg()) {
+        why="carrying capacity includes held items, stored items and excavated ground";
         return false;
     }
 

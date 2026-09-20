@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-20",
+  "base_revision": "595552a",
+  "carried": {
+    "available_kg": 78.78320005249999,
+    "limit_kg": 80.0,
+    "objects_kg": 0.7167999475000039,
+    "over_limit_kg": 0.0,
+    "sand_kg": 0.34579380762576534,
+    "sand_m3": 0.00021612112976610333,
+    "soil_kg": 0.15420619237423464,
+    "soil_m3": 9.637887023389665e-05,
+    "total_kg": 1.2167999475000038
+  },
+  "preservation": {
+    "spec": true,
+    "inventory": true,
+    "workshop_installs": true,
+    "world_upgrades": true,
+    "fabrication": true,
+    "native_state": true
+  },
+  "screenshot": "shared-carry.png",
+  "tests": {
+    "native_installation": 30,
+    "native_inventory": 12,
+    "fabrication": 24,
+    "api_docs": 11,
+    "ground_work_cases": 8
+  },
+  "limits": [
+    "Terrain worlds only; terrain-free labs retain prior policy",
+    "Admission budget, not a player-body force solver",
+    "Stored thermal evolution and articulated cargo remain incomplete"
+  ]
+}

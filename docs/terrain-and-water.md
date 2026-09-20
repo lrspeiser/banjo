@@ -482,3 +482,9 @@ The 11 native room-carry cases and 25 host room-store tests also pass. The host 
 All 56 world-room tests pass (45.270 s) using the new ground-state live executable and existing geometry-save ABI-25 C library. This mixed-runner check covers the existing world interactions; it is not a rebuilt C-library qualification.
 
 Deployment follow-up: source ebded33 is now running on local port 8793 with a rebuilt C API library. The main world restores all 55 bodies and retains identical saved ground state across repeated room opens. See [deployment evidence](evidence/ground-state-deployment.json). Eleven native inventory regressions pass; the rendered world, bagged part, hoist energy and manufacturing link were checked with no browser console errors. Earlier source-only status above describes the checkpoint before this deployment.
+
+## Shared carrying admission (September 20)
+
+The native terrain-world carrying budget includes stored bodies and the held body, measured from native rigid mass (stored mass for parked objects). Ground digging and tool-pry breakout receive only the capacity left after that load. Raw-stock returns enforce the same limit. Taking another body through native grab/wield or park refuses before changing the world when it exceeds the limit; stowing an already held body does not count it twice. Existing overweight saves are retained, reported and prevented from collecting additional load.
+
+Environment and line-protocol carried reports expose `objects_kg`, `total_kg`, `available_kg`, `over_limit_kg` and `limit_kg` alongside raw quantities. The main-world UI includes object mass in its load meter and movement modifier. Terrain-free lab storage remains unchanged. This is an admission policy, not anatomical force calibration or a physical cargo-container model. See [shared carrying contract](fabrication.md#shared-carrying-budget).

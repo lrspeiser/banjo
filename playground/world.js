@@ -1719,7 +1719,7 @@ async function changeInventory(op, item, options, again = false) {
     say("bad", String(error.message || error));
     return null;
   }
-  if (answer.shown) world.inventory = answer.shown;
+  if (answer.shown) { world.inventory = answer.shown; if(answer.shown.carried) carryGround(answer.shown.carried); }
   inventorySaid = "";
   showInventory();
   if (!answer.ok) {
@@ -1841,7 +1841,7 @@ function showInventory() {
     carrying.unshift({ what: wet.head_under ? "under water" : wet.under >= WADE_TO_SWIM_M ? "swimming" : "wading",
                        much: `${Math.round(100 * wet.under)} cm of you under · moving at ${Math.round(100 * wet.pace)}%`
                          + (wet.carried > 0 && wet.speed > 0.005 ? ` · the water carries you at ${(wet.speed * wet.carried).toFixed(2)} m/s` : "") });
-  if (world.stock.size && world.carryLimitKg)
+  if (carriedKg() > 0 && world.carryLimitKg)
     carrying.push({ what: carriedKg() >= world.carryLimitKg - 0.05 ? "all you can carry" : "of what you can carry",
                     much: `${Math.round(carriedKg())} of ${Math.round(world.carryLimitKg)} kg · walking at ${Math.round(100 * loadPace())}%` });
   const uses = [
@@ -2864,15 +2864,14 @@ function lookFromKeys(dt) {
 // they walk at two fifths of the pace and cannot run. It was all weightless:
 // 435 kg of sand crossed the owner's room at a run.
 function carriedKg() {
-  let kg = 0;
+  let kg = Number(world.carriedGround?.objects_kg) || 0;
   for (const [, have] of world.stock) kg += Number(have.kg) || 0;
   return kg;
 }
 function loadFraction() {
   const limit = world.carryLimitKg;
   if (!limit) return 0;
-  const held = world.held && world.bodies.get(world.held.name);
-  return Math.min(1, (carriedKg() + (held && held.mass ? held.mass : 0)) / limit);
+  return Math.min(1, carriedKg() / limit);
 }
 function loadPace() { return 1 - 0.6 * loadFraction(); }
 

@@ -383,9 +383,10 @@ void soilAgainstRock() {
     require(i.loosened.total() == 0.0, "an unsupported regime loosened something");
 }
 
-void aPryBreaksGroundOutAndItIsCarried() {
+void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {
     Swing swing = swingAt(0.4, 0.0, "oak");
     LiveWorld &live = *swing.live;
+    if (limited) live.setCarryLimitKg(live.carriedObjectsKg()+0.001);
     require(!swing.work.empty() && swing.work.front().open, "the pick is not in the ground to pry with");
     const terrain::Environment &env = *live.environment();
     const terrain::Volumes carried_before = env.carried();
@@ -426,6 +427,12 @@ void aPryBreaksGroundOutAndItIsCarried() {
     near(residual.soil_m3 - residual_before.soil_m3, 0.0, 1e-9, "the ground's soil ledger");
     near(residual.sand_m3 - residual_before.sand_m3, 0.0, 1e-9, "the ground's sand ledger");
     require(w.tool_whole, "the pick did not come through a pry in soil");
+
+    if (limited) {
+        require(w.loosened_kg<=0.001+1e-10, "the tool bypassed shared carrying capacity");
+        near(env.carriedKg(),0.001,1e-10,"the tool fills only the gram left after its own mass");
+        return;
+    }
 
     // 7. The ground opened again from the dig as the report says it -- the edit
     // a room keeps -- once both have come to rest: the same hole, to the bit,
@@ -546,7 +553,8 @@ int main() {
         {"a stake dropped into soil, and drawn out", aStakeDroppedIntoSoilAndDrawnOut},
         {"the same swing is the same meeting", theSameSwingIsTheSameMeeting},
         {"soil against rock", soilAgainstRock},
-        {"a pry breaks ground out, and it is carried", aPryBreaksGroundOutAndItIsCarried},
+        {"a pry breaks ground out, and it is carried", [] { aPryBreaksGroundOutAndItIsCarried(); }},
+        {"a held tool shares the excavation budget", [] { aPryBreaksGroundOutAndItIsCarried(true); }},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
     };

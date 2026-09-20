@@ -116,3 +116,7 @@ Raw lots retain substance, mass, volume, granular form and explicitly unmodeled 
 Ground-state v3 adds cumulative `returned` beside cumulative `exported`, so repeated storage cycles preserve history without counting matter twice. Existing v1/v2 saves migrate with zero returns. Capacity checks use the native ground carrying limit, currently distinct from bag/equipment mass. Existing carried-material deposit puts retrieved matter back into terrain. This does not create a physical storage container, processing law, handling-work cost or thermal state. The browser's mixed-lot mass selector preserves remaining proportions; API clients may select the two substances independently.
 
 [Before](evidence/raw-retrieval-before.png), [after](evidence/raw-retrieval-after.png) and [saved-state evidence](evidence/raw-retrieval-deployment.json) show a 0.500 kg retrieval from the main-world lot and preservation through reopening.
+
+## Shared carrying admission (September 20)
+
+The preceding ground-only limit is superseded in terrain worlds by a budget including native held/stored body mass. Retrieving raw stock, digging and tool breakout cannot use capacity already occupied by crafted objects. Native grab/wield and park refuse additional load before mutation. Existing items keep identity and saved physical state; stow/equip does not duplicate mass. [Carrying contract](fabrication.md#shared-carrying-budget) documents reported quantities, float32 mass precision and unsupported cases.

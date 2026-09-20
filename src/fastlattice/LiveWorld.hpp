@@ -1445,6 +1445,7 @@ public:
     // How much dug ground the person can carry (terrain::Environment). A world
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);
+    [[nodiscard]] double carriedObjectsKg() const;
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
     [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3);

@@ -128,7 +128,7 @@ public:
     // Edits from the host, between steps. Each rebuilds exactly the chunks it
     // changed and wakes exactly what they held.
     EditEffect dig(JoltWorld &world, double ax, double az, double bx, double bz,
-                   double width_m, double depth_m);
+                   double width_m, double depth_m, double carried_objects_kg = 0);
     EditEffect deposit(JoltWorld &world, double x, double z, double radius_m,
                        double sand_m3, double soil_m3);
     // A cut out of bare rock; the host adds the block as a body.
@@ -172,7 +172,7 @@ public:
     // one transaction. This does not turn sand into glass or consume an object.
     [[nodiscard]] std::string withdrawCarried(double sand_m3, double soil_m3);
     // Host atomically debits stored lots with this return into carrying.
-    void returnCarried(double sand_m3, double soil_m3);
+    void returnCarried(double sand_m3, double soil_m3, double carried_objects_kg = 0);
     // What that weighs, and how much of it a person can carry. Carried ground
     // had no weight and no end: six presses of Dig here put 435 kg of sand and
     // soil on the person in the owner's room, who walked off with it. With a

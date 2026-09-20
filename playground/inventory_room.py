@@ -92,7 +92,7 @@ def shown(app: Any) -> dict[str, Any]:
             out["slot"] = slot
         return out
 
-    return {"record": record,
+    return {"record": record, "carried": _state(app).get("carried"),
             "hands": {hand: named(item, record["home"].get(item)) for hand, item in record["hands"].items()},
             "stowed": [named(item) for item in record["stowed"]],
             # The hand the engine has: the only one that holds anything yet.

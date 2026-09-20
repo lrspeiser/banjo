@@ -177,6 +177,49 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual(empty["exported"],have)
         with self.assertRaises(live_session.LiveError):resumed.session.send(op="ground_withdraw",**moved)
 
+    def test_native_carry_budget_combines_objects_and_ground(self):
+        for material in ("glass","oak","iron"):
+            with self.subTest(material=material):
+                self.open({"algorithm":"lattice","cell_m":.04,
+                    "bodies":[{"name":name,"shape":"box","material":material,
+                        "size_mm":[120,120,120],"center_mm":[x,1000,0]} for name,x in (("one",0),("two",400))],
+                    "terrain":{"generate":{"kind":"flat","nx":32,"nz":32,"cell_m":.25,"soil_m":.2,"sand_m":.02}}})
+                def send(op,**kw):return self.live.session.send(op=op,**kw)
+                def burden():return send("environment")["environment"]["ground"]["carried"]
+                mass=next(b["mass_kg"] for b in self.live.session.state["bodies"] if b["name"]=="one")
+                send("carry_limit",kg=mass*1.5)
+                send("wield",name="one",grip=[0,1,0])
+                # The admission budget uses Jolt's native mass (float32), not
+                # the geometric mass printed in the ordinary pose report.
+                self.assertAlmostEqual(burden()["objects_kg"],mass,delta=1e-6)
+                mass=burden()["objects_kg"];send("carry_limit",kg=mass*1.5)
+                self.assertEqual(burden()["limit_kg"],mass*1.5)
+                self.assertAlmostEqual(burden()["available_kg"],mass*.5)
+                before=self.snap()
+                with self.assertRaises(live_session.LiveError):send("park",name="two")
+                self.assertEqual(before,self.snap())
+                send("dig",**{"from":[1,1],"to":[1,1],"width_m":2,"depth_m":.2})
+                self.assertAlmostEqual(burden()["total_kg"],mass*1.5,places=8)
+                send("park",name="one")
+                self.assertAlmostEqual(burden()["objects_kg"],mass)
+                full=self.snap()
+                with self.assertRaises(live_session.LiveError):send("wield",name="two",grip=[.4,1,0])
+                self.assertEqual(full,self.snap())
+                ground=burden();amounts={k:ground[k] for k in ("sand_m3","soil_m3")}
+                send("ground_withdraw",**amounts)
+                send("ground_return",**amounts)
+                self.assertAlmostEqual(burden()["total_kg"],mass*1.5,places=8)
+                # Replay the native saved masses; no recipe-derived refilling.
+                saved=self.snap();resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+                resumed.open(self.app,{"spec":self.room.spec,"snapshot":saved})
+                report=resumed.session.send(op="environment")["environment"]["ground"]["carried"]
+                self.assertAlmostEqual(report["objects_kg"],mass)
+                self.assertAlmostEqual(report["total_kg"],mass*1.5,places=8)
+                send("unpark",name="one",at=[0,1,0])
+                self.assertAlmostEqual(burden()["objects_kg"],0)
+                send("wield",name="two",grip=[.4,1,0])
+                self.assertAlmostEqual(burden()["objects_kg"],mass)
+
     def test_returned_ground_is_bounded_persistent_and_depositable(self):
         self.room=world_room.Room("world");self.app.room=self.room
         self.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,

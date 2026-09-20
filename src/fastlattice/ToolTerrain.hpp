@@ -44,6 +44,7 @@ struct ToolTerrainHost {
     double floor_y{};                      // that floor, where there is no ground
     double cell_m{};
     double time_s{};
+    double carried_objects_kg{}; // measured held and stored bodies share the ground budget
     std::function<std::optional<MatterBodyId>(const std::string &)> id_of;
     // A body's cells: node number, and its centre in the body's own frame.
     std::function<std::vector<std::pair<std::uint32_t, Vec3>>(const std::string &)> cells_of;

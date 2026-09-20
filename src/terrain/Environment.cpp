@@ -1048,25 +1048,29 @@ std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
     return packet;
 }
 
-void Environment::returnCarried(double sand_m3, double soil_m3) {
+void Environment::returnCarried(double sand_m3, double soil_m3, double carried_objects_kg) {
+    if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
+        throw std::invalid_argument("invalid carried object mass");
     if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
         sand_m3+soil_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
         soil_m3>exported_.soil_m3-returned_.soil_m3)
         throw std::invalid_argument("return needs positive quantities previously exported and not returned");
     const double kg=sand_m3*sandMaterial().density_kg_m3+soil_m3*soilMaterial().density_kg_m3;
-    if (!std::isfinite(kg) || kg>carry_limit_kg_-carriedKg())
+    if (!std::isfinite(kg) || kg>carry_limit_kg_-carriedKg()-carried_objects_kg)
         throw std::invalid_argument("returned material exceeds carrying capacity");
     carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;
     returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;
 }
 
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,
-                            double width_m, double depth_m) {
+                            double width_m, double depth_m, double carried_objects_kg) {
+    if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
+        throw std::invalid_argument("invalid carried object mass");
     EditEffect effect;
     terrain_->resetActivity();
     // What comes out is carried, so no more comes out than can be.
     effect.edit = terrain_->dig(ax, az, bx, bz, width_m, depth_m,
-                                std::max(0.0, carry_limit_kg_ - carriedKg()));
+                                std::max(0.0, carry_limit_kg_ - carriedKg() - carried_objects_kg));
     carry(effect.edit.moved);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);

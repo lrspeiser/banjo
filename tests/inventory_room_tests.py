@@ -79,6 +79,27 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
         return inventory_room.request(self.app, dict({"request": request, "revision": revision, "op": op,
                                                       "item": "ball", "person": PERSON}, **more))
 
+    def test_inventory_replies_track_shared_mass_without_double_counting(self):
+        self.app.room.spec=spec()
+        self.app.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,
+            "cell_m":.25,"soil_m":.2,"sand_m":.02}}
+        self.session=self.live.open(self.app,{"spec":self.app.room.spec})["session"]
+        taken=self.ask("shared-take",0,"take")
+        self.assertTrue(taken["ok"],taken)
+        mass=taken["shown"]["carried"]["objects_kg"]
+        self.assertGreater(mass,0)
+        self.assertAlmostEqual(taken["shown"]["carried"]["total_kg"],mass)
+        self.assertEqual(taken["shown"]["carried"]["limit_kg"],80)
+        held=self.ask("shared-equip",1,"equip")
+        self.assertTrue(held["ok"],held)
+        self.assertAlmostEqual(held["shown"]["carried"]["objects_kg"],mass)
+        stowed=self.ask("shared-stow",2,"stow")
+        self.assertTrue(stowed["ok"],stowed)
+        self.assertAlmostEqual(stowed["shown"]["carried"]["objects_kg"],mass)
+        dropped=self.ask("shared-drop",3,"drop")
+        self.assertTrue(dropped["ok"],dropped)
+        self.assertEqual(dropped["shown"]["carried"]["objects_kg"],0)
+
     def test_taken_held_stowed_and_put_down_the_ball_is_one_ball_where_it_is_said_to_be(self):
         took = self.ask("t1", 0, "take")
         self.assertTrue(took["ok"], took)

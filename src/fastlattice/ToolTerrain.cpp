@@ -733,7 +733,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         const std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
         if (columns > 0) {
             const double depth = volume / (static_cast<double>(columns) * dx * dx);
-            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, width, depth);
+            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, width, depth, host.carried_objects_kg);
             r.loosened = effect.edit.moved;
             r.loosened_kg = effect.edit.mass_kg;
             // And the dig as an edit would say it, exactly: made again from

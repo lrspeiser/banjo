@@ -321,3 +321,5 @@ Carried sand/soil now transfer atomically into persistent, substance-preserving 
 The raw-receiving checkpoint now exposes independent transfer and excavation diagnostics in browser/HTTP/MCP. See [current measured report](evidence/raw-material-balance.json); external authoring inputs remain explicitly unqualified.
 
 Stored excavated material can now return to native carrying and be redeposited, using durable receipts and remaining-lot quantities rather than recreating resources. [Main-world retrieval evidence](evidence/raw-retrieval-deployment.json) covers browser use and restart; physical cargo containers and raw processing remain open.
+
+Terrain-world carrying now uses a shared native mass budget for held objects, stored objects and excavated material. [Measured evidence](evidence/shared-carry-deployment.json) records the deployed world; terrain-free lab policy and physically supported cargo remain open.
