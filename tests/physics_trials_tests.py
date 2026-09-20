@@ -24,7 +24,7 @@ def example(name="bounded-lift-oak"):
 
 class Contracts(unittest.TestCase):
     def test_all_fixtures_use_the_same_validator(self):
-        self.assertEqual(len(qa.cases()),23)
+        self.assertEqual(len(qa.cases()),44)
         for c in qa.cases(): trial.validate(c["document"])
         self.assertFalse(qa.catalog(None)["engine_available"])
 
@@ -69,6 +69,26 @@ class Contracts(unittest.TestCase):
         self.assertIn("actuator",normalized)
         d["checks"][0]["min"]=-1
         self.assertEqual(example("support-oak"),original)
+
+    def test_named_connections_samples_and_metric_types_are_checked_before_execution(self):
+        d=example("rope-release-oak");trial.validate(d)
+        edits=[lambda x:x["steps"][0].update(id=[]),
+               lambda x:x["steps"][3].update(joint="missing"),
+               lambda x:x["checks"][0].update(sample="missing"),
+               lambda x:x["checks"][0].update(metric="joint_ratio"),
+               lambda x:x["checks"][0].update(body="load"),
+               lambda x:x["steps"].insert(0,{"op":"sample","label":"supported"}),
+               lambda x:x["steps"].insert(0,deepcopy(x["steps"][0]))]
+        for edit in edits:
+            bad=deepcopy(d);edit(bad)
+            with self.subTest(document=bad),self.assertRaises(ValueError):trial.validate(bad)
+        bad=deepcopy(d);bad["steps"].insert(0,{"op":"sample","label":"before"})
+        bad["checks"][0]["sample"]="before"
+        with self.assertRaisesRegex(ValueError,"does not exist"):trial.validate(bad)
+        short=example("rope-slack-oak")
+        normalized,spec=trial.validate(short)
+        self.assertEqual(normalized["steps"][-1]["duration_s"],.1)
+        self.assertEqual(spec["duration_s"],.2)
 
     def test_mcp_calls_the_same_validator(self):
         d=example()
@@ -157,7 +177,7 @@ class HTTP(WorkbenchTestCase):
         app=self.start()
         original=app.live
         data=self.get(app,"/api/mechanics-qa")
-        self.assertEqual(len(data["cases"]),23)
+        self.assertEqual(len(data["cases"]),44)
         data=self.post(app,"/api/mechanics-qa/validate",{"document":example()})
         self.assertTrue(data["valid"])
         status,content,raw=self.request(app,"GET","/mechanics-qa")
@@ -178,13 +198,13 @@ class NativeProtocol(unittest.TestCase):
                 watchdog=threading.Timer(30,client.process.kill);watchdog.start()
                 try:
                     hello=client.send("initialize",{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qa","version":"1"}})
-                    self.assertEqual(hello["result"]["serverInfo"]["version"],"1.8.0")
+                    self.assertEqual(hello["result"]["serverInfo"]["version"],"1.9.0")
                     offered=client.send("tools/list")["result"]["tools"]
                     names=[t["name"] for t in offered]
                     self.assertEqual(len(names),len(set(names)))
                     self.assertTrue(set(tools.HANDLERS).issubset(names))
                     catalog=client.call("physics_trial_catalog")
-                    self.assertEqual(len(catalog["cases"]),23)
+                    self.assertEqual(len(catalog["cases"]),44)
                     doc=example()
                     self.assertTrue(client.call("physics_trial_validate",document=doc)["valid"])
                     client.refuse("physics_trial_validate",document={**doc,"steps":[{"op":"teleport"}]})

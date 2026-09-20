@@ -14,7 +14,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.6.0**; platform MCP is **1.8.0**.
+Current native ABI: **25**. World MCP is **1.6.0**; platform MCP is **1.9.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.

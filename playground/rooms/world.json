@@ -1403,6 +1403,106 @@
     0.0
    ],
    "anchored": false
+  },
+  {
+   "name": "hoist: post",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    80,
+    2400,
+    80
+   ],
+   "center_mm": [
+    11000.0,
+    2200.0,
+    -6725.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hoist: drum",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200,
+    200,
+    320
+   ],
+   "center_mm": [
+    11000.0,
+    3000.0,
+    -6500.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hoist: crate",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160,
+    160,
+    160
+   ],
+   "center_mm": [
+    11100.0,
+    1425.0,
+    -6500.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hoist: battery",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    200,
+    320,
+    160
+   ],
+   "center_mm": [
+    10600.0,
+    1150.0,
+    -6725.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hoist: foundation",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    1200,
+    400,
+    800
+   ],
+   "center_mm": [
+    10800,
+    800,
+    -6620
+   ],
+   "anchored": true
   }
  ],
  "joints": [
@@ -1867,6 +1967,47 @@
    ],
    "holds_tension_n": 0.0,
    "holds_shear_n": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "hoist: post",
+   "b": "hoist: drum",
+   "at_mm": [
+    11000.0,
+    3000.0,
+    -6500.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower_deg": -180,
+   "upper_deg": 180,
+   "friction_n_m": 0
+  },
+  {
+   "kind": "drum",
+   "a": "hoist: drum",
+   "b": "hoist: crate",
+   "at_mm": [
+    11000.0,
+    3000.0,
+    -6500.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "radius_mm": 100.0,
+   "to_mm": [
+    11100.0,
+    1500.0,
+    -6500.0
+   ],
+   "winds": 1,
+   "length_mm": 2000.0
   }
  ],
  "thermo": {
@@ -2315,6 +2456,37 @@
      "do": "put_down"
     }
    ]
+  },
+  {
+   "body": "hoist: drum",
+   "label": "Wind it up",
+   "steps": [
+    {
+     "do": "drive",
+     "command": 1.0
+    }
+   ],
+   "primary": true
+  },
+  {
+   "body": "hoist: drum",
+   "label": "Stop",
+   "steps": [
+    {
+     "do": "drive",
+     "command": 0.0
+    }
+   ]
+  },
+  {
+   "body": "hoist: drum",
+   "label": "Let it down",
+   "steps": [
+    {
+     "do": "drive",
+     "command": -0.3
+    }
+   ]
   }
  ],
  "terrain": {
@@ -2355,6 +2527,27 @@
      "sand_m3": 0.472,
      "soil_m3": 0.0
     }
+   }
+  ]
+ },
+ "machines": {
+  "stores": [
+   {
+    "name": "hoist battery",
+    "body": "hoist: battery",
+    "capacity_j": 5000.0
+   }
+  ],
+  "motors": [
+   {
+    "on": [
+     "hoist: post",
+     "hoist: drum"
+    ],
+    "store": "hoist battery",
+    "stall_torque_n_m": 60.0,
+    "no_load_rpm": 95.5,
+    "brake_torque_n_m": 200.0
    }
   ]
  }

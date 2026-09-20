@@ -24,7 +24,7 @@ async function inspect(id){
  $("case-title").textContent=r.title;
  $("outcome").textContent=(report.kind==="custom"?"Authored checks: ":"Regression checks: ")+r.status;
  $("outcome").className=r.status;
- for(const c of r.checks||[]){const tr=document.createElement("tr");for(const text of [(c.body?c.body+" · ":"")+c.metric,Number(c.value).toPrecision(6),c.min+" … "+c.max,c.passed?"Pass":"FAIL"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}tr.className=c.passed?"passed":"failed";$("checks").append(tr);}
+ for(const c of r.checks||[]){const tr=document.createElement("tr");for(const text of [(c.sample?c.sample+" · ":"")+(c.body||c.joint?(c.body||c.joint)+" · ":"")+c.metric,Number(c.value).toPrecision(6),c.min+" … "+c.max,c.passed?"Pass":"FAIL"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}tr.className=c.passed?"passed":"failed";$("checks").append(tr);}
  $("failures").textContent=r.error||((r.joints||[]).filter(j=>!j.attached).map(j=>j.a+" → "+j.b+": "+j.parted_because).join("\n"));
  $("evidence").textContent=JSON.stringify({measured:r.measured,limits:r.limitations,provenance:report.provenance,request_hash:r.request_hash},null,2);
  const playback=await api("/api/mechanics-qa/runs/"+run+"/"+id+"/playback");

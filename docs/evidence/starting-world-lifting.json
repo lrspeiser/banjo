@@ -1,0 +1,1729 @@
+{
+  "scope": "Starting-world native hoist and bounded comparative connection trials, not all 30 completed capabilities",
+  "date": "2026-09-20",
+  "dt_s": 0.004166666666666667,
+  "native_build": "build/circuits/placement-qa",
+  "cases": 44,
+  "status": "passed",
+  "results": [
+    {
+      "title": "Supported glass load",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.49999999999999944,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "glass load / 1 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "broken_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.5,
+          "max": -0.1,
+          "body": "load",
+          "value": -0.30094,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "glass load / 1000 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "Restart a moving glass body",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "elapsed_s",
+          "min": 0.1999999,
+          "max": 0.20000010000000001,
+          "value": 0.2000000000000002,
+          "passed": true
+        },
+        {
+          "metric": "position_y_m",
+          "min": 1.79,
+          "max": 1.82,
+          "body": "load",
+          "value": 1.79999,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "Supported oak load",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.49999999999999944,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "oak load / 1 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "broken_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.5,
+          "max": -0.1,
+          "body": "load",
+          "value": -0.30094,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "oak load / 1000 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "Restart a moving oak body",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "elapsed_s",
+          "min": 0.1999999,
+          "max": 0.20000010000000001,
+          "value": 0.2000000000000002,
+          "passed": true
+        },
+        {
+          "metric": "position_y_m",
+          "min": 1.79,
+          "max": 1.82,
+          "body": "load",
+          "value": 1.79999,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "Supported iron load",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.49999999999999944,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "iron load / 1 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "broken_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.5,
+          "max": -0.1,
+          "body": "load",
+          "value": -0.30094,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "iron load / 1000 N fixing",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.005,
+          "max": 0.005,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "Restart a moving iron body",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "checkpoints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "elapsed_s",
+          "min": 0.1999999,
+          "max": 0.20000010000000001,
+          "value": 0.2000000000000002,
+          "passed": true
+        },
+        {
+          "metric": "position_y_m",
+          "min": 1.79,
+          "max": 1.82,
+          "body": "load",
+          "value": 1.79999,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "20 N grip lifting oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "max_grip_force_n",
+          "min": 1,
+          "max": 20.00001,
+          "value": 20.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": 0.02,
+          "max": 0.3,
+          "body": "load",
+          "value": 0.16666000000000003,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 20.0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "20 N grip lifting iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "max_grip_force_n",
+          "min": 1,
+          "max": 20.00001,
+          "value": 20.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.5,
+          "max": -0.1,
+          "body": "load",
+          "value": -0.26449,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 20.0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "hinge / glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.55,
+          "max": 0.69,
+          "body": "load",
+          "value": 0.57999,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "slide / glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.105,
+          "max": -0.095,
+          "body": "load",
+          "value": -0.09999999999999998,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "spring / glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.008,
+          "max": 0,
+          "body": "load",
+          "value": -0.0015699999999999603,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "hinge / oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.55,
+          "max": 0.69,
+          "body": "load",
+          "value": 0.57999,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "slide / oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.105,
+          "max": -0.095,
+          "body": "load",
+          "value": -0.09999999999999998,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "spring / oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.008,
+          "max": 0,
+          "body": "load",
+          "value": -0.00043999999999999595,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "hinge / iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.55,
+          "max": 0.69,
+          "body": "load",
+          "value": 0.57999,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "slide / iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.105,
+          "max": -0.095,
+          "body": "load",
+          "value": -0.09999999999999998,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "spring / iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.008,
+          "max": 0,
+          "body": "load",
+          "value": -0.0049399999999999444,
+          "passed": true
+        },
+        {
+          "metric": "speed_m_s",
+          "min": 0,
+          "max": 0.03,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "active_joints",
+          "min": 1,
+          "max": 1,
+          "value": 1,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope load \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.99,
+          "max": 1.001,
+          "body": "load",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 23.298750000000002,
+          "max": 25.751250000000002,
+          "joint": "rope",
+          "value": 24.52296,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope slack \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.055,
+          "max": -0.045,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 0,
+          "max": 1e-07,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.09999999999999999,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope overload \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.23,
+          "max": -0.15,
+          "body": "load",
+          "value": -0.19184999999999997,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "rope release \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 1,
+          "max": 1,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 23.298750000000002,
+          "max": 25.751250000000002,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 24.52296,
+          "passed": true
+        },
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.065,
+          "max": -0.04,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley balanced \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.001,
+          "max": 0.001,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 11.649375000000001,
+          "max": 12.875625000000001,
+          "joint": "tackle",
+          "value": 12.26148,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley heavy \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": 0.04,
+          "max": 0.09,
+          "body": "load",
+          "value": 0.06223000000000001,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley light \u00b7 glass",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.1,
+          "max": -0.03,
+          "body": "load",
+          "value": -0.07777999999999996,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope load \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.99,
+          "max": 1.001,
+          "body": "load",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 6.523650000000001,
+          "max": 7.210350000000001,
+          "joint": "rope",
+          "value": 6.86643,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope slack \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.055,
+          "max": -0.045,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 0,
+          "max": 1e-07,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.09999999999999999,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope overload \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.23,
+          "max": -0.15,
+          "body": "load",
+          "value": -0.19184999999999997,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "rope release \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 1,
+          "max": 1,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 6.523650000000001,
+          "max": 7.210350000000001,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 6.86643,
+          "passed": true
+        },
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.065,
+          "max": -0.04,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley balanced \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.001,
+          "max": 0.001,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 3.2618250000000004,
+          "max": 3.6051750000000005,
+          "joint": "tackle",
+          "value": 3.43321,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley heavy \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": 0.04,
+          "max": 0.09,
+          "body": "load",
+          "value": 0.06223000000000001,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley light \u00b7 oak",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.1,
+          "max": -0.03,
+          "body": "load",
+          "value": -0.07777999999999996,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope load \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "position_y_m",
+          "min": 0.99,
+          "max": 1.001,
+          "body": "load",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 73.344465,
+          "max": 81.064935,
+          "joint": "rope",
+          "value": 77.19827,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.9999999999999977,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope slack \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.055,
+          "max": -0.045,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 0,
+          "max": 1e-07,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.09999999999999999,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "rope overload \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.23,
+          "max": -0.15,
+          "body": "load",
+          "value": -0.19184999999999997,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.2000000000000002,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 0,
+        "broken_joints": 1
+      }
+    },
+    {
+      "title": "rope release \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "joint_attached",
+          "min": 1,
+          "max": 1,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 1.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 73.344465,
+          "max": 81.064935,
+          "joint": "rope",
+          "sample": "supported",
+          "value": 77.19827,
+          "passed": true
+        },
+        {
+          "metric": "joint_attached",
+          "min": 0,
+          "max": 0,
+          "joint": "rope",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "displacement_y_m",
+          "min": -0.065,
+          "max": -0.04,
+          "body": "load",
+          "value": -0.051059999999999994,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.30000000000000016,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 0,
+        "active_joints": 0,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley balanced \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.001,
+          "max": 0.001,
+          "body": "load",
+          "value": 0.0,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        },
+        {
+          "metric": "joint_tension_n",
+          "min": 36.6722325,
+          "max": 40.5324675,
+          "joint": "tackle",
+          "value": 38.59913,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley heavy \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": 0.04,
+          "max": 0.09,
+          "body": "load",
+          "value": 0.06223000000000001,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    },
+    {
+      "title": "pulley light \u00b7 iron",
+      "status": "passed",
+      "checks": [
+        {
+          "metric": "displacement_y_m",
+          "min": -0.1,
+          "max": -0.03,
+          "body": "load",
+          "value": -0.07777999999999996,
+          "passed": true
+        },
+        {
+          "metric": "joint_span_m",
+          "min": 2.399,
+          "max": 2.401,
+          "joint": "tackle",
+          "value": 2.4,
+          "passed": true
+        },
+        {
+          "metric": "joint_ratio",
+          "min": 2,
+          "max": 2,
+          "joint": "tackle",
+          "value": 2.0,
+          "passed": true
+        },
+        {
+          "metric": "checkpoint_error",
+          "min": 0,
+          "max": 1e-07,
+          "value": 0,
+          "passed": true
+        }
+      ],
+      "measured": {
+        "elapsed_s": 0.25000000000000033,
+        "dynamic_mass_residual_kg": 0.0,
+        "max_grip_force_n": 0,
+        "checkpoint_error": 0,
+        "checkpoints": 1,
+        "active_joints": 1,
+        "broken_joints": 0
+      }
+    }
+  ],
+  "tests": {
+    "machine_room": 25,
+    "physics_trials": 14,
+    "api_docs": 11,
+    "registered_cpp_sources": 275
+  },
+  "browser": "Staging port 8794: fresh world machine readings; 44-case suite; oak rope release guide and intermediate force; no captured JS errors. Existing port 8793 backend not yet restarted.",
+  "remaining": [
+    "State-preserving upgrade of existing starting worlds",
+    "Load-rated mount reaction QA",
+    "All other unfinished capability requirements"
+  ]
+}

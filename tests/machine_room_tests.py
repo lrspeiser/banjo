@@ -1095,6 +1095,45 @@ class AControllerComesBackAfterARestart(unittest.TestCase):
         self.assertGreater(crate() - y0, 0.3, "the controller the old world was given did not raise the crate")
 
 
+@unittest.skipIf(ENGINE is None, "the live world runner is not built")
+class StartingWorldMachines(unittest.TestCase):
+    def test_starting_world_lifts_spends_energy_and_holds(self):
+        """Exercise the shipped world, including terrain and neighboring builds."""
+        import world_room
+        from types import SimpleNamespace
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        opened = live.open(SimpleNamespace(engine_path=ENGINE,
+            runs_path=ROOT / "build/playground-runs", live_inprocess=False),
+            {"spec": world_room.world()})
+        self.assertFalse(opened.get("joint_problems"), opened.get("joint_problems"))
+        self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        session = live.session
+        def step(seconds):
+            for _ in range(round(seconds * 30)):
+                session.send(op="step", dt=1 / 240, n=8)
+        def height():
+            return next(b for b in session.state["bodies"]
+                        if b["name"] == "hoist: crate")["position_m"][1]
+        step(.5)
+        initial_y = height()
+        motor = session.state["machines"]["motors"][0]
+        session.send(op="drive", motor=motor["id"], command=1)
+        step(1)
+        self.assertGreater(height() - initial_y, .2)
+        machines = session.state["machines"]
+        self.assertGreater(machines["stores"][0]["given_j"], 0)
+        self.assertAlmostEqual(machines["stores"][0]["given_j"],
+                               machines["motors"][0]["drawn_j"], delta=.01)
+        session.send(op="drive", motor=motor["id"], command=0, brake=True)
+        step(.5)
+        held_y = height()
+        spent = session.state["machines"]["stores"][0]["given_j"]
+        step(.5)
+        self.assertAlmostEqual(height(), held_y, delta=.002)
+        self.assertEqual(session.state["machines"]["stores"][0]["given_j"], spent)
+
+
 class TheTestRoomIsAHoist(unittest.TestCase):
     """The tests-machines room (playground/rooms/tests-machines.json), which
     the page opens by link: a hoist that the room's own checks take as it is."""

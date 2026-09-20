@@ -1,7 +1,7 @@
 # Editable physics experiments and regression QA
 
 September 19, 2026. Implemented first increment on base `f005056`.
-Platform MCP **1.7.0**; legacy world MCP **1.5.0**; native ABI **25**.
+Platform MCP **1.9.0**; legacy world MCP **1.6.0**; native ABI **25**.
 This adds reusable experiment orchestration around existing native laws.
 It does not change those laws or enable proposed joint-strength factors.
 
@@ -37,16 +37,16 @@ and unsupported operations are rejected before starting a solver.
 
 | Declaration | Meaning and bounds |
 |---|---|
-| Body `name` | Unique 1–48 character reference: starts with a letter, then letters, digits, space, underscore or hyphen |
+| Body `name` | Unique 1â€“48 character reference: starts with a letter, then letters, digits, space, underscore or hyphen |
 | `shape`, `material` | box or sphere; an existing native material catalog id |
 | `size_m` | Three dimensions, positive multiples of cell_m, at most 2 m each; sphere dimensions equal |
-| `position_m`, optional `velocity_m_s` | World-space center in metres (each coordinate ±10 m); initial velocity ±10 m/s, default zero |
+| `position_m`, optional `velocity_m_s` | World-space center in metres (each coordinate Â±10 m); initial velocity Â±10 m/s, default zero |
 | Optional `anchored` | Boolean, default false; an external fixed support |
-| `actuator` | Force 0–1000 N, torque 0–100 N m, virtual hand mass 0–50 kg; externally supplied work |
-| `checks` | 1–32 final measurements, each with metric, optional body, inclusive min/max |
+| `actuator` | Force 0â€“1000 N, torque 0â€“100 N m, virtual hand mass 0â€“50 kg; externally supplied work |
+| `checks` | 1â€“32 final measurements, each with metric, optional body, inclusive min/max |
 
-There are 1–16 bodies and at most 4096 bounding-box cells; cell_m is
-0.02–0.1 m. Bodies start above the floor. Initial overlapping bounding boxes
+There are 1â€“16 bodies and at most 4096 bounding-box cells; cell_m is
+0.02â€“0.1 m. Bodies start above the floor. Initial overlapping bounding boxes
 are rejected conservatively, even for spheres. At most 48 operations and
 5 simulated seconds are allowed, at a fixed 1/240 s timestep. Each advance
 must be a positive whole number of timesteps. Native startup and blocked
@@ -58,19 +58,47 @@ only the trial's owned child.
 | `fix` | a, b, at | axis defaults [0,1,0]; holds_tension_n and holds_shear_n default 0, meaning unlimited, maximum 1e9 N |
 | `hinge` | a, b, at, axis | lower_deg/upper_deg default -180/180, must bracket zero within those bounds; friction_n_m default 0, maximum 1e6 |
 | `slide` | a, b, at | axis defaults [0,1,0]; lower_m/upper_m default -1/1, bracket zero, at most 100 m travel; friction_n default 0, maximum 1e9 |
-| `spring` | a, b, at_a, at_b | rest_m 0–100 (0 uses initial length); stiffness_n_m above 0 through 1e9, default 1000; damping_n_s_m 0–1e9, default 0 |
+| `spring` | a, b, at_a, at_b | rest_m 0â€“100 (0 uses initial length); stiffness_n_m above 0 through 1e9, default 1000; damping_n_s_m 0â€“1e9, default 0 |
+| `tie` | a, b, at_a, at_b | length_m 0â€“100 (0 uses initial separation); breaks_at_n 0â€“1e9 (0 unlimited); pulls only, slack exerts no force |
+| `reeve` | a, b, at_a, at_b, over_a, over_b | Ideal pulley; ratio >0 through 100, default 1, multiplies B's run; length_m 0â€“500, default 0 uses initial runs |
+| `unhinge` | joint | Release an earlier connection's symbolic id; native release removes the constraint, without deleting bodies |
+| `sample` | label | Retain native bodies, joint readouts and measurements at this step; up to 16 unique labels |
 | `wield` | name | grip is an optional world-space point, default body center |
 | `move` | to | Target for an existing bounded grip; requests force, never assigns body position or velocity |
-| `release` | — | Releases the bounded grip |
+| `release` | â€” | Releases the bounded grip |
 | `advance` | duration_s | Native time advancement; every tick and hand-force magnitude are observed |
-| `checkpoint` | — | Native whole-world save, child restart and restore; release grip first; at most two |
+| `checkpoint` | â€” | Native whole-world save, child restart and restore; release grip first; at most two |
 
 Connection points, grip and target are world-space vectors in metres, with
-coordinates ±10. Axes are nonzero direction vectors. Connections reference
+coordinates Â±10. Axes are nonzero direction vectors. Connections reference
 two distinct bodies and must be declared before any advance. Remaining
-scalar operation fields must be finite numbers within ±1e9 before the tighter
+scalar operation fields must be finite numbers within Â±1e9 before the tighter
 native validation above. These are laboratory initial conditions, not a
 runtime welding/repair/manufacturing process.
+
+Any connection operation may have an optional `id`: a unique 1â€“48 character
+identifier starting with a letter, followed by letters/digits/underscore/hyphen.
+`unhinge.joint` and joint checks refer to this ID, never a guessed native handle.
+Sample labels use the same syntax. A check may have `sample` to read that earlier
+observation instead of the final state. Unknown or forward references refuse.
+Joint checks specify `joint` instead of `body`. Supported metrics are
+`joint_attached` (0/1), `joint_tension_n` (fix/tie/reeve), `joint_span_m`
+(spring/slide/tie/reeve), `joint_length_m` (tie/reeve), `joint_ratio` (reeve),
+`joint_force_n` and `joint_stored_j` (spring). Unsupported metric/type pairs
+refuse. A deliberately released joint reads attached=0; missing force data is
+unavailable, never silently fabricated as zero. Results include `samples` and
+`connection_ids`. Checkpoint validation additionally preserves rope length,
+rating, ratio and fixed pulley routing points.
+
+The 21 added comparative cases bring the suite to **44**: glass/oak/iron ropes
+under load, slack, overload and deliberate release; and 2:1 ideal pulleys with
+balanced, heavy and light counterweights. Equal geometry uses catalog density;
+rope ratings scale with the declared weight. A .1-second slack test checks the
+free fall against gravity before rope engagement. Native guide lines follow
+attachment points and poses; they do not model cable sag or collision geometry.
+Ideal pulley routing points are prescribed external supports, with no wheel
+inertia, wrap friction or support-body reaction claim. Powered drum qualification
+and general load-rated mount coupling remain separate work.
 
 Body metrics: `mass_kg`, `speed_m_s`, `translational_kinetic_j`,
 `position_x_m`, `position_y_m`, `position_z_m`,
@@ -85,7 +113,7 @@ Mass residual is the sum of native reported dynamic masses after minus before;
 anchored bodies report zero. It is not a full material inventory.
 Checkpoint error is the maximum absolute numeric component difference across
 time (s), dynamic mass (kg), position (m), velocity (m/s) and quaternion components.
-The runner separately requires each to be ≤1e-7, unchanged body identities,
+The runner separately requires each to be â‰¤1e-7, unchanged body identities,
 whole-world restoration and preserved joint identity/attachment/failure history.
 This is a bounded restart check, not full thermodynamic state equivalence.
 Force must stay within its cap plus 1e-5 N; dynamic mass may differ by at most
@@ -116,16 +144,16 @@ restart, an unfinished run is reported as unattached, never passed.
 
 | Platform MCP tool | Input/result |
 |---|---|
-| `physics_trial_catalog` | {} → same catalog |
-| `physics_trial_validate` | {document} → same validator |
-| `physics_trial_run` | {} / {case_ids} / {document} → same asynchronous manager |
-| `physics_trial_status` | {run_id} → report; omit run_id to list runs |
+| `physics_trial_catalog` | {} â†’ same catalog |
+| `physics_trial_validate` | {document} â†’ same validator |
+| `physics_trial_run` | {} / {case_ids} / {document} â†’ same asynchronous manager |
+| `physics_trial_status` | {run_id} â†’ report; omit run_id to list runs |
 | `physics_trial_case` | {run_id,case_id,artifact?}; artifact is result, request or playback |
-| `physics_trial_cancel` | {run_id} → cancel active owned trial |
+| `physics_trial_cancel` | {run_id} â†’ cancel active owned trial |
 
 These six tools are registered in mcp/banjo_platform_mcp.py; the legacy world
-MCP remains unchanged. An external LLM uses catalog → edit → validate → run →
-status → case, using the same physical contract as the browser. The browser's
+MCP remains unchanged. An external LLM uses catalog â†’ edit â†’ validate â†’ run â†’
+status â†’ case, using the same physical contract as the browser. The browser's
 optional model proposal endpoint is an editor convenience, not a separate solver.
 The model never rewrites regression fixtures or grants itself unbounded commands.
 
@@ -133,7 +161,7 @@ The model never rewrites regression fixtures or grants itself unbounded commands
 
 [Committed measured checkpoint](evidence/mechanics-qa-checkpoint.json).
 
-The 23 fixed native cases cover glass/oak/iron for supported loads, weak and
+The original 23 fixed native cases cover glass/oak/iron for supported loads, weak and
 strong fixings, falling-body restart, hinges, sliders and springs, plus oak
 and iron under the same 20 N hand. Checks retain deliberately specified
 geometric/force/time bounds; results do not train their own acceptance limits.
@@ -154,7 +182,7 @@ python scripts/mechanics_qa.py --engine build/ci/banjo_live_world_run --out buil
 ```
 
 Use .exe on Windows and a fresh output directory. Failure is a nonzero CLI exit.
-CI builds the native engine first, runs all 23 plus the existing 96-case material
+CI builds the native engine first, runs all 44 plus the existing 96-case material
 range, and uploads both lanes' evidence even on failure. The fixed fixtures
 are versioned; intentional changes to laws or acceptance bounds require review.
 Unit tests also cover malformed input, planner validation/no execution, HTTP/MCP

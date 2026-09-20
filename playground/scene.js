@@ -1176,7 +1176,7 @@ function create(container, hooks = {}) {
         b.edge.quaternion.copy(m.quaternion);
         m.userData.component_id = p.component_id;
       });
-      bondLines(f.bonds || []);
+      bondLines([...(f.bonds || []), ...(f.connections || [])]);
     }
     hooks.onFrame?.({
       index: frame,
