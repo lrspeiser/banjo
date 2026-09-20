@@ -412,3 +412,31 @@ fits, and the second time it was built whole.
 | `tests/environment_ffi_tests.py` | 10: through the C library, from Python |
 | `tests/banjo_mcp_tests.py` | a dam, a drained pond and a floating log through the MCP server's own protocol |
 | `tests/agent_build_tests.py` | cases and `--recipes` for `dam-river`, `drain-pond`, `log-river` and `boulder-dug` |
+
+## Exact terrain continuation foundation (September 20)
+
+`TerrainField::state()` returns a copy of the accepted material columns (rock,
+soil, sand, loose soil and moisture), original rock floor, material ledger,
+pending stability frontier, dirty collider chunks, changed rectangle and activity
+counters. `TerrainField::restore(const State&)` validates a same-grid candidate
+before replacing any current state. It does not replay an edit, advance time,
+settle the bank or reset the material ledger. Invalid layers, indices, rectangles,
+moisture, ledgers and grids leave the original field intact. Ledger validation
+allows a residual up to `1e-9 * max(1, initial + deposited + dug + cut)` cubic
+metres; successful own-state continuation comparisons use exact equality.
+
+The native terrain suite now has 11 passing cases. New sand and cohesive-soil
+cases dig a 1.9 m trench and compare all retained state plus each of 180 subsequent
+relaxation passes at 1/60 s, repeatedly restoring and consuming dirty-region
+notifications. Both cases actually slump. A whole-footprint rock cut verifies
+that restore retains the original floor; 12 malformed-state cases verify atomic
+refusal. Existing excavation, slope, material-budget and generated-valley checks
+remain in the suite. No soil law or material calibration changed.
+
+This C++ state-copy API is a foundation, not yet a live-world save format. The
+Environment must also retain its ground clock, queued collider rebuilds and
+actual installed collider surfaces, then connect those records to native
+snapshots and changed-scene installation. Until that is implemented and tested,
+the live installer still refuses terrain replay that loses pending settling.
+There is no new HTTP/MCP operation, ABI change or deployed world behavior in this
+checkpoint. Ground-to-manufacturing material transfer remains pending.

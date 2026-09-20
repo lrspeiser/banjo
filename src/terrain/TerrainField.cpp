@@ -31,6 +31,59 @@ double TerrainField::stableDrop(const GroundMaterial &material, double run_m) {
     return std::max(friction, criticalHeight(material)) + 2.0 * kStopLayerM;
 }
 
+TerrainField::State TerrainField::state() const {
+    Rect changed{};
+    if (changed_i1_ >= changed_i0_ && changed_j1_ >= changed_j0_)
+        changed = {changed_i0_, changed_j0_, changed_i1_ - changed_i0_ + 1, changed_j1_ - changed_j0_ + 1};
+    return {grid_, rock_, soil_, sand_, loose_, moisture_, floor_, ledger_, frontier_,
+            dirty_chunks_, changed, checked_total_, frontier_peak_};
+}
+
+void TerrainField::restore(const State &s) {
+    const auto refuse = [] { throw std::invalid_argument("invalid terrain continuation state"); };
+    if (s.grid.nx != grid_.nx || s.grid.nz != grid_.nz || s.grid.dx != grid_.dx ||
+        s.grid.x0 != grid_.x0 || s.grid.z0 != grid_.z0) refuse();
+    const auto n = grid_.cells();
+    if (s.rock.size() != n || s.soil.size() != n || s.sand.size() != n ||
+        s.loose.size() != n || s.moisture.size() != n || !std::isfinite(s.floor)) refuse();
+    for (std::size_t c = 0; c < n; ++c) {
+        if (!std::isfinite(s.rock[c]) || s.rock[c] < s.floor ||
+            !std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
+        for (double v : {s.soil[c], s.sand[c], s.loose[c]})
+            if (!std::isfinite(v) || v < 0) refuse();
+        if (!std::isfinite(s.rock[c] + s.soil[c] + s.sand[c] + s.loose[c])) refuse();
+    }
+    for (const auto &v : {s.ledger.initial, s.ledger.dug, s.ledger.cut, s.ledger.deposited})
+        for (double x : {v.rock_m3, v.soil_m3, v.sand_m3})
+            if (!std::isfinite(x) || x < 0) refuse();
+    for (double x : {s.ledger.slumped_m3, s.ledger.loosened_m3})
+        if (!std::isfinite(x) || x < 0) refuse();
+    for (auto c : s.frontier) if (c >= n) refuse();
+    for (int c : s.dirty_chunks) if (c < 0 || c >= chunks_x_ * chunks_z_) refuse();
+    const auto &r = s.changed;
+    if (r.i0 < 0 || r.j0 < 0 || r.i0 > grid_.nx || r.j0 > grid_.nz ||
+        r.ni < 0 || r.nj < 0 || r.ni > grid_.nx - r.i0 || r.nj > grid_.nz - r.j0 ||
+        ((r.ni == 0) != (r.nj == 0)) || s.frontier_peak > n) refuse();
+
+    // Construct and validate a candidate before touching this field, including
+    // allocations. The saved rock floor is not recomputed from the cut surface.
+    TerrainField candidate(grid_, s.rock, s.soil, s.sand, s.loose, s.moisture);
+    candidate.floor_ = s.floor;
+    candidate.ledger_ = s.ledger;
+    const auto residual = candidate.residual();
+    const double scale = std::max(1.0, s.ledger.initial.total() + s.ledger.deposited.total() +
+                                      s.ledger.dug.total() + s.ledger.cut.total());
+    for (double v : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        if (!std::isfinite(v) || std::abs(v) > 1e-9 * scale) refuse();
+    candidate.frontier_ = s.frontier;
+    candidate.dirty_chunks_ = s.dirty_chunks;
+    candidate.changed_i0_ = r.i0; candidate.changed_j0_ = r.j0;
+    candidate.changed_i1_ = r.i0 + r.ni - 1; candidate.changed_j1_ = r.j0 + r.nj - 1;
+    candidate.checked_total_ = s.checked_total;
+    candidate.frontier_peak_ = s.frontier_peak;
+    *this = std::move(candidate);
+}
+
 const GroundMaterial &rockMaterial() {
     // Rock does not slump. The friction angle is the reason the stability
     // check skips it, not a number anybody should read as a measurement.

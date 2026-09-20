@@ -233,6 +233,23 @@ public:
     struct Rect { int i0{}, j0{}, ni{}, nj{}; };
     [[nodiscard]] Rect takeChangedRect();
 
+    // An accepted state, not an edit recipe. In particular, pending columns
+    // resume their next relaxation pass instead of settling during restore.
+    struct State {
+        Grid grid;
+        std::vector<double> rock, soil, sand, loose;
+        std::vector<float> moisture;
+        double floor{};
+        Ledger ledger;
+        std::set<std::size_t> frontier;
+        std::set<int> dirty_chunks;
+        Rect changed;
+        std::size_t checked_total{}, frontier_peak{};
+    };
+    [[nodiscard]] State state() const;
+    // Same-grid restoration. Invalid input leaves every current field intact.
+    void restore(const State &saved);
+
     [[nodiscard]] Volumes volumes() const;
     [[nodiscard]] const Ledger &ledger() const { return ledger_; }
     // now - (initial - dug - cut + deposited), by kind: rounding and nothing else.

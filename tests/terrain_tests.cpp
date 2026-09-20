@@ -46,6 +46,74 @@ void settle(TerrainField &ground, double seconds) {
         (void)ground.relax(1.0 / 60.0);
 }
 
+void sameContinuation(const TerrainField::State &a, const TerrainField::State &b) {
+    require(a.rock == b.rock && a.soil == b.soil && a.sand == b.sand && a.loose == b.loose &&
+            a.moisture == b.moisture && a.floor == b.floor, "restored layers or floor differ");
+    require(a.frontier == b.frontier && a.dirty_chunks == b.dirty_chunks &&
+            a.changed.i0 == b.changed.i0 && a.changed.j0 == b.changed.j0 &&
+            a.changed.ni == b.changed.ni && a.changed.nj == b.changed.nj &&
+            a.checked_total == b.checked_total && a.frontier_peak == b.frontier_peak,
+            "restored pending work differs");
+    const auto volumes = [](const Volumes &x, const Volumes &y) {
+        return x.rock_m3 == y.rock_m3 && x.soil_m3 == y.soil_m3 && x.sand_m3 == y.sand_m3;
+    };
+    require(volumes(a.ledger.initial,b.ledger.initial) && volumes(a.ledger.dug,b.ledger.dug) &&
+            volumes(a.ledger.cut,b.ledger.cut) && volumes(a.ledger.deposited,b.ledger.deposited) &&
+            a.ledger.slumped_m3 == b.ledger.slumped_m3 && a.ledger.loosened_m3 == b.ledger.loosened_m3,
+            "restored material ledger differs");
+}
+
+void unsettledStateResumesExactly() {
+    for (bool sand : {false,true}) {
+        auto original = flat(40,40,sand ? 0.0 : 2.0,sand ? 2.0 : 0.0);
+        (void)original.dig(4,4,5,4,1,1.9);
+        require(!original.settled(), "dig must leave pending stability checks");
+        auto restored = flat(40,40,0,0);
+        restored.restore(original.state());
+        sameContinuation(original.state(),restored.state());
+        for (int tick=0; tick<180; ++tick) {
+            const auto a=original.relax(1.0/60), b=restored.relax(1.0/60);
+            require(a.checked==b.checked && a.failed==b.failed && a.moved_m3==b.moved_m3 && a.changed==b.changed,
+                    "next settling pass differs after restore");
+            sameContinuation(original.state(),restored.state());
+            if (tick%11==0) {
+                require(original.takeDirtyChunks()==restored.takeDirtyChunks(), "dirty collider chunks differ");
+                const auto x=original.takeChangedRect(), y=restored.takeChangedRect();
+                require(x.i0==y.i0 && x.j0==y.j0 && x.ni==y.ni && x.nj==y.nj,"changed rectangles differ");
+                restored.restore(original.state());
+            }
+        }
+        require(original.ledger().slumped_m3>0,"scenario must actually move material");
+    }
+    auto rock=flat(8,8,0,0);
+    std::string why;
+    require(rock.cut(.875,.875,8,8,.25,&why).has_value(),"whole rock cut must succeed");
+    auto other=flat(8,8,0,0);
+    other.restore(rock.state());
+    sameContinuation(rock.state(),other.state());
+    require(other.floor()==-2.0,"restoring a cut must not lower the reference floor");
+}
+
+void invalidContinuationIsAtomic() {
+    auto original=flat(8,8,.4,.6);
+    (void)original.dig(.5,.5,.5,.5,.5,.2);
+    const auto before=original.state();
+    const std::vector<std::function<void(TerrainField::State &)>> corrupt{
+        [](auto &s){s.grid.dx*=2;}, [](auto &s){s.sand.pop_back();},
+        [](auto &s){s.soil[0]=-.01;}, [](auto &s){s.rock[0]=std::numeric_limits<double>::quiet_NaN();},
+        [](auto &s){s.moisture[0]=2;}, [](auto &s){s.frontier.insert(s.grid.cells());},
+        [](auto &s){s.dirty_chunks.insert(-1);}, [](auto &s){s.changed.ni=s.grid.nx+1;},
+        [](auto &s){s.ledger.dug.sand_m3+=1;}, [](auto &s){s.floor=1;},
+        [](auto &s){s.ledger.slumped_m3=-1;}, [](auto &s){s.frontier_peak=s.grid.cells()+1;},
+    };
+    for (const auto &change:corrupt) {
+        auto bad=before; change(bad); bool refused=false;
+        try {original.restore(bad);} catch (const std::invalid_argument &) {refused=true;}
+        require(refused,"corrupt state was accepted");
+        sameContinuation(before,original.state());
+    }
+}
+
 double steepestLooseSlopeDeg(const TerrainField &ground) {
     const Grid &g = ground.grid();
     double worst = 0.0;
@@ -320,6 +388,8 @@ void aValleyIsShapedByWaterAndSaved() {
 
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"unsettled state resumes exactly", unsettledStateResumesExactly},
+        {"invalid continuation is atomic", invalidContinuationIsAtomic},
         {"digging is accounted by material", diggingIsAccountedByMaterial},
         {"a dig takes out no more than may be carried", aDigTakesOutNoMoreThanMayBeCarried},
         {"a pit in sand slumps to its angle of repose", aPitInSandSlumpsToItsAngleOfRepose},
