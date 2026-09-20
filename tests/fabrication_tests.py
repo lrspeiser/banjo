@@ -273,6 +273,14 @@ class NativeHTTP(WorkbenchTestCase):
                 validate(args,schema,"arguments")
                 return tools.call("fabrication_"+op,args)
             call("configure",settings=settings(),request_id="main-config-0001")
+            surveyed=self.post(app,"/api/live/act",{"session":ctx["session"],"op":"survey","at":[13,-7]})
+            self.assertTrue(surveyed["survey"]["on_the_ground"])
+            control=app.live.session.state["machines"]["controls"][0]
+            operated=self.post(app,"/api/world/machine",{"session":ctx["session"],"control":control["id"],
+                              "sender":"funded-world-test","seq":1,"power":False})
+            self.assertEqual(operated["operated"],"applied")
+            self.post(app,"/api/live/act",{"session":ctx["session"],"op":"dig",
+                      "from":[13,-7],"to":[13,-7],"width_m":.5,"depth_m":.02})
             self.assertEqual(app.store.load("world").world_upgrades,receipts)
             call("start",candidate=candidate(),stock_kg=10,revision=0,request_id="main-job-0001")
             call("wait",seconds=1)

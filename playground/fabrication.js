@@ -1,21 +1,30 @@
 import "/scene.js";
 const $=id=>document.getElementById(id);
+const requestedScene=new URLSearchParams(location.search).get("scene")||"fabrication";
+const roomName=/^[a-z][a-z0-9_-]{0,63}$/.test(requestedScene)?requestedScene:"fabrication";
+const pendingKey=roomName==="fabrication"?"banjo-fabrication-pending":"banjo-fabrication-pending:"+roomName;
+const roomLabel=roomName==="world"?"Main world":roomName==="fabrication"?"Fabrication room":roomName;
+$("room-label").textContent=roomLabel+" - manufacturing";
+$("connect").textContent="Connect to "+roomLabel.toLowerCase();
+for(const link of document.querySelectorAll("[data-return-world]"))link.href="/world?scene="+encodeURIComponent(roomName);
+if(roomName==="world"){$("place-x").value=13;$("place-z").value=-7;}
+
 let token, session="", state=null, preview=null, busy=false, viewer=null, cellSize=.04;
 let pending={};
-try{pending=JSON.parse(sessionStorage.getItem("banjo-fabrication-pending")||"{}");if(!pending||Array.isArray(pending)||typeof pending!=="object")pending={};}catch{pending={};}
+try{pending=JSON.parse(sessionStorage.getItem(pendingKey)||"{}");if(!pending||Array.isArray(pending)||typeof pending!=="object")pending={};}catch{pending={};}
 const fmt=(n,d=3)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
 async function api(path,body){
  const r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json","X-Banjo-Token":token},body:JSON.stringify(body)});
  const d=await r.json();if(!r.ok||d.error){const e=Error(d.error||"Request failed");e.definitive=r.status>=400&&r.status<500;throw e;}return d;
 }
-const context=()=>({session,scene:"fabrication"});
+const context=()=>({session,scene:roomName});
 async function command(op,body={},retry=false){
  const key=op;let payload=body;
- if(retry){payload=pending[key]||{...body,request_id:crypto.randomUUID()};pending[key]=payload;sessionStorage.setItem("banjo-fabrication-pending",JSON.stringify(pending));}
+ if(retry){payload=pending[key]||{...body,request_id:crypto.randomUUID()};pending[key]=payload;sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
  try{const answer=await api("/api/world/fabrication/"+op,{...context(),...payload});
- if(retry){delete pending[key];sessionStorage.setItem("banjo-fabrication-pending",JSON.stringify(pending));}
+ if(retry){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
  if(answer.cell_m)cellSize=answer.cell_m;if(answer.session)session=answer.session;if(answer.state)render(answer.state);if(answer.native)draw(answer.native);return answer;
- }catch(e){if(retry&&e.definitive){delete pending[key];sessionStorage.setItem("banjo-fabrication-pending",JSON.stringify(pending));}throw e;}
+ }catch(e){if(retry&&e.definitive){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}throw e;}
 }
 function controls(){
  for(const id of ["refresh","configure","quote","start","wait-one","wait-ten","preview","commit"])$(id).disabled=busy||!session;
@@ -61,7 +70,7 @@ function design(){
 }
 $("settings").value=JSON.stringify({mode:"authoring",stock_kg:{oak:50,glass:50,iron:50},energy_j:50000,power_w:250,work_j_kg:100,efficiency:1,heat_capacity_j_k:10000,cooling_w_k:5,max_temperature_k:393.15},null,2);
 $("design").onclick=design;$("material").onchange=design;design();
-$("connect").onclick=()=>run(async()=>{const n=await api("/api/world/open",{scene:"fabrication"});session=n.session;preview=null;draw(n);const r=await command("state");if(!r.configured){state=null;controls();}},"Fabrication room connected. Time is paused until advanced.");
+$("connect").onclick=()=>run(async()=>{const n=await api("/api/world/open",{scene:roomName});if(n.scene!==roomName)throw Error("The requested room was not opened; no manufacturing changes were made.");session=n.session;preview=null;draw(n);const r=await command("state");if(!r.configured){state=null;controls();}},roomLabel+" connected. This page advances time only when requested; another open world view may also advance it.");
 $("refresh").onclick=()=>run(async()=>{preview=null;await command("state");draw(await api("/api/live/act",{session,op:"poses"}));},"Current state read.");
 $("configure").onclick=()=>run(()=>command("configure",{settings:JSON.parse($("settings").value)},true),"Initial resources declared.");
 const recipe=()=>({candidate:JSON.parse($("candidate").value),stock_kg:Number($("stock").value)});

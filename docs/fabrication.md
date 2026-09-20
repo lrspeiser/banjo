@@ -5,11 +5,16 @@ native world. It advances gameplay items 2, 3, 16 and 27. It does not complete
 those broad capabilities or claim physical drilling, general assembly, casting,
 repair, machining calibration or automated production.
 
-Open `/fabrication`, connect to its persistent room, explicitly declare initial
-resources, quote a Workshop candidate, start it, advance world time, and preview
-and place the finished workpiece. `/world?scene=fabrication&hold=1` opens the same
-native parts for primary Use, carrying and contact. The ordinary yard is a
-separate room. The [30-item priority list](physics-gameplay-backlog.md) and
+In the main world, open **ROOM > Manufacture parts**. `/fabrication?scene=world`
+connects to the same persistent world; the return links preserve that room.
+Explicitly declare initial resources once, quote a Workshop candidate, start it,
+advance world time, and preview and place the finished workpiece. Main-world
+placement defaults to the east terrace at x=13, z=-7 m and uses the native terrain
+envelope. `/fabrication` still opens the separate fabrication room. Retry receipts
+in browser session storage are scoped by room. This page advances time only on
+request; another open live world view can also advance the shared clock.
+Configuring a funded station retains surveying, excavation, tool use and machine
+controls; free authoring operations remain restricted. The [30-item priority list](physics-gameplay-backlog.md) and
 `GET /api/gameplay/capabilities` retain incomplete acceptance gates.
 
 ## Operating law and boundary

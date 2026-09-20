@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Banjo · Fabrication</title><link rel="stylesheet" href="/material-qa.css"><link rel="stylesheet" href="/mechanics-qa.css"><link rel="stylesheet" href="/fabrication.css"></head>
-<body><header><a class="brand" href="/mechanics-qa">BANJO <span>/ FABRICATION</span></a><nav><a href="/mechanics-qa">Mechanics QA</a><a href="/qa">Material impacts</a><a href="/world?scene=fabrication&hold=1">Use the parts in 3D</a></nav></header>
-<main><div class="intro"><div><p class="eyebrow">STOCK → WORK → PHYSICAL PART</p><h1>Make it from something.</h1><p>Reserve material, supply work over world time, and place the finished part. Pausing keeps the unfinished workpiece.</p></div></div>
-<section class="toolbar"><button id="connect">Open fabrication room</button><button id="refresh" disabled>Refresh state</button><button id="wait-one" disabled>Advance 1 second</button><button id="wait-ten" disabled>Advance 10 seconds</button><p id="message" role="status">Open the persistent room to begin. Its clock advances only when requested.</p></section>
+<body><header><a class="brand" href="/mechanics-qa">BANJO <span>/ FABRICATION</span></a><nav><a href="/mechanics-qa">Mechanics QA</a><a href="/qa">Material impacts</a><a data-return-world href="/world?scene=fabrication">Use the parts in 3D</a></nav></header>
+<main><div class="intro"><div><p class="eyebrow" id="room-label">STOCK → WORK → PHYSICAL PART</p><h1>Make it from something.</h1><p>Reserve material, supply work over world time, and place the finished part. Pausing keeps the unfinished workpiece.</p></div></div>
+<section class="toolbar"><button id="connect">Open fabrication room</button><button id="refresh" disabled>Refresh state</button><button id="wait-one" disabled>Advance 1 second</button><button id="wait-ten" disabled>Advance 10 seconds</button><p id="message" role="status">Open the persistent room to begin. This page advances time only when requested.</p></section>
 <section class="toolbar"><h2>Repeatable fabrication QA</h2><p>Run glass, oak and iron through finite stock, interrupted work, restart and native installation. Tests use isolated rooms.</p><button id="qa-run">Run fabrication QA</button><button id="qa-cancel" disabled>Cancel QA</button><button id="qa-history">Recorded runs</button><p id="qa-status" role="status">No run selected.</p><div id="qa-runs"></div><details id="qa-details"><summary>Test results and measurements</summary><pre id="qa-report"></pre></details></section>
 <div class="workspace"><section class="specimens">
 <h2>Initial resources</h2><p id="setup-note">Authoring supplies the initial stock and energy once. It cannot refill an existing station.</p>
@@ -19,6 +19,6 @@
 <h2>Workpieces</h2><div id="jobs"></div>
 <h2>Placement</h2><label>Finished workpiece<select id="finished"></select></label><div class="dimensions"><label>X (m)<input id="place-x" type="number" value="0" step=".2"></label><label>Z (m)<input id="place-z" type="number" value="0" step=".2"></label></div>
 <div class="transport"><button id="preview" disabled>Preview placement</button><button id="commit" disabled>Place finished part</button></div><p id="placement" role="status"></p>
-<div id="stage"></div><p>Native geometry and current poses. <a href="/world?scene=fabrication&hold=1">Open the room to pick up and use the parts.</a></p>
+<div id="stage"></div><p>Native geometry and current poses. <a data-return-world href="/world?scene=fabrication">Open the room to pick up and use the parts.</a></p>
 <details><summary>Material and energy audit</summary><pre id="audit"></pre></details>
 </section></div></main><script type="module" src="/fabrication.js"></script></body></html>

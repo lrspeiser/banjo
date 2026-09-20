@@ -5910,7 +5910,8 @@ async function open({ again = false } = {}) {
     expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
-    world.scene = data.scene || null;   // what the server says it opened
+    world.scene = data.scene || null;
+    $("manufacture-link").href="/fabrication?scene="+encodeURIComponent(world.scene||"world");   // what the server says it opened
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;

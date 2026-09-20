@@ -1222,11 +1222,12 @@ class Handler(BaseHTTPRequestHandler):
                  or fabrication_room.active(self.server.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
             if fabrication_room.active(self.server.app):
-                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/inventory", "/api/world/inventory/shown"}
+                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/tool", "/api/world/tool/use"}
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
-                if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check"}:
+                if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check",
+                    "survey","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
                     raise ValueError("This authoring operation is not allowed in the funded room")
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]
