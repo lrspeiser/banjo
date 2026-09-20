@@ -28,6 +28,7 @@ jobs:
           OPENAI_API_KEY: ""
         run: |
           node --check playground/material-qa.js
+          node --check playground/tool-qa.js
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/workshop_buildability_tests.py -v
@@ -175,6 +176,19 @@ jobs:
 
       - name: Test generic physics trial contracts
         run: BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_TRIAL_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/physics_trials_tests.py -v
+
+      - name: Verify recorded product use and unsupported rock outcomes
+        run: |
+          BANJO_TRIAL_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/tool_qa_tests.py -v
+          python3 scripts/tool_qa.py --engine build/ci/banjo_live_world_run --out build/ci/tool-qa
+
+      - name: Keep tool use results and recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: banjo-tool-qa-${{ github.sha }}
+          path: build/ci/tool-qa/
+          if-no-files-found: warn
 
       - name: Qualify finite-stock fabrication against the native engine
         run: |

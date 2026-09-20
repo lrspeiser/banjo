@@ -41,8 +41,8 @@ function create(container, hooks = {}) {
     dead = false,
     target = new THREE.Vector3(),
     radius = 5,
-    azimuth = 0.75,
-    polar = 1.05;
+    azimuth = hooks.view === "front" ? 0 : 0.75,
+    polar = hooks.view === "front" ? Math.PI / 2 : 1.05;
   // Moving objects by hand. The stage is a recording, so a grab cannot fall
   // where it stands: dragging repositions the object and the app re-runs the
   // engine from there, which is what makes the fall real physics rather than an
