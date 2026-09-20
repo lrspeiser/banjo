@@ -120,3 +120,9 @@ Ground-state v3 adds cumulative `returned` beside cumulative `exported`, so repe
 ## Shared carrying admission (September 20)
 
 The preceding ground-only limit is superseded in terrain worlds by a budget including native held/stored body mass. Retrieving raw stock, digging and tool breakout cannot use capacity already occupied by crafted objects. Native grab/wield and park refuse additional load before mutation. Existing items keep identity and saved physical state; stow/equip does not duplicate mass. [Carrying contract](fabrication.md#shared-carrying-budget) documents reported quantities, float32 mass precision and unsupported cases.
+
+## Internal heat while stored (September 20)
+
+Stored native objects now continue their existing surface-to-core heat conduction over accepted world time. Parking still disconnects external heaters, ambient/floor/contact heat paths and reaction exchange. This is explicitly insulated, nonreacting storage; it does not model a physical bag, finite container air, contact between packed items or a safe way to store reactive material. Total internal energy and composition stay with the object. Single-temperature objects remain unchanged until an external connection is restored.
+
+The same two-node conductance/capacity law used in the world runs while parked. Save/restore retains its temperatures and energy, and returning the object uses those evolved temperatures. The regression compares 400 K surfaces and 300 K cores against exponential equilibration for glass/oak/iron, checks energy and material closure, and checks exact continuation after restoring an intermediate state. Existing higher-temperature live inventory cases separately verify preserved material and total energy while stored. No external cooling or general chemical-storage claim is made.

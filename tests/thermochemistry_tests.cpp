@@ -562,6 +562,37 @@ void aSceneDeclaresItsThermochemistry() {
     require(report.find("demonstration") != std::string::npos, "and says where its numbers came from");
 }
 
+void storedObjectsEquilibrateWithoutAnExternalBath() {
+    for (const auto &[material,density]:std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
+        ThermoWorld world;
+        world.refresh({box("stored",material,{0,1,0},{.12,.12,.12},density)},0);
+        world.declareContents({"stored",{},300,.002,""});
+        auto initial=world.state();auto &l=initial.lumps.front();
+        l.surface=parcelAt(world.model(),l.surface.kg,400);
+        l.core=parcelAt(world.model(),l.core.kg,300);
+        const double cs=heatCapacityJK(world.model(),l.surface),cc=heatCapacityJK(world.model(),l.core);
+        require(cs>0 && cc>0 && l.core_conductance_w_k>0,"fixture has two thermal nodes");
+        const double equilibrium=(cs*400+cc*300)/(cs+cc);
+        const double difference=100*std::exp(-l.core_conductance_w_k*(1/cs+1/cc)*10);
+        const double energy=l.surface.internal_energy_j+l.core.internal_energy_j;
+        world.restore(initial);world.park("stored");
+        run(world,5,.05);const auto saved=world.state();
+        run(world,5,.05);const auto uninterrupted=world.state();
+        const auto &final=uninterrupted.lumps.front();
+        near(temperatureK(world.model(),final.surface),equilibrium+cc/(cs+cc)*difference,1e-8,"surface analytical relaxation");
+        near(temperatureK(world.model(),final.core),equilibrium-cs/(cs+cc)*difference,1e-8,"core analytical relaxation");
+        near(final.surface.internal_energy_j+final.core.internal_energy_j,energy,std::abs(energy)*1e-12,"stored internal energy");
+        require(final.surface.kg==initial.lumps.front().surface.kg && final.core.kg==initial.lumps.front().core.kg,"storage cannot create or consume material");
+        near(world.ledger().heat_to_surroundings_j,0,0,"no external cooling");
+        near(world.ledger().heater_in_j,0,0,"no external heat source");
+        world.restore(saved);run(world,5,.05);
+        require(world.state().lumps.front().surface.internal_energy_j==final.surface.internal_energy_j &&
+                world.state().lumps.front().core.internal_energy_j==final.core.internal_energy_j,"restart continues exact stored conduction");
+        std::cout<<"stored "<<material<<": "<<temperatureK(world.model(),final.surface)<<" K surface, "
+                 <<temperatureK(world.model(),final.core)<<" K core; internal energy retained\n";
+    }
+}
+
 } // namespace
 
 int main() {
@@ -583,6 +614,7 @@ int main() {
         {"piston lift converges as the step shrinks", pistonLiftConvergesAsTheStepShrinks},
         {"an open vent lets the gas out", anOpenVentLetsTheGasOut},
         {"a scene declares its thermochemistry", aSceneDeclaresItsThermochemistry},
+        {"stored objects equilibrate without an external bath", storedObjectsEquilibrateWithoutAnExternalBath},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

@@ -105,7 +105,7 @@ that current `scene` and `session`. Unknown fields refuse.
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.12.1, platform MCP 1.15.1; native ABI remains 25.
+inventory. World MCP is 1.12.2, platform MCP 1.15.2; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.

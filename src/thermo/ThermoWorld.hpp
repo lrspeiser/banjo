@@ -147,8 +147,8 @@ struct Lump {
     double gained_w{};             // from other bodies, conduction and radiation
     double lost_w{};               // to the surroundings
     // Set aside with its body (ThermoWorld::park): out of the world, so no heat
-    // path reaches it, nothing in it reacts and no heater warms it. Kept exactly
-    // as it was put away, and still the network's -- on its ledger, not left it.
+    // external path reaches it, reactions are suspended and no heater warms it.
+    // Internal surface/core conduction continues, on the same energy ledger.
     bool parked{};
 };
 
@@ -258,7 +258,7 @@ struct BodyHeat {
     bool reacting{};
     bool declared{};
     std::vector<std::pair<std::string, double>> contents_kg;
-    // Set aside (ThermoWorld::park): held as it was put away, out of the world.
+    // Set aside (ThermoWorld::park): insulated, with internal conduction continuing.
     bool parked{};
 };
 
@@ -339,10 +339,10 @@ public:
     // A body gone from the world with whatever it held.
     void remove(const std::string &body);
     // A body set aside -- out of the world, not gone (LiveWorld::park) -- and
-    // brought back. While it is away its lump is kept exactly as it was put
-    // away: no heat path reaches it, nothing in it reacts, no heater warms it,
-    // and the host's refreshes do not count it as having left. Time stands
-    // still for it. It is on the ledger the whole time, because it never left
+    // brought back. Stored material retains its energy and composition; its
+    // surface/core temperatures continue to equilibrate. No external heat path
+    // reaches it, reactions remain suspended and no heater warms it. The host's
+    // refreshes do not count it as having left. It stays on the ledger because it never left
     // the network. A body the network does not hold has nothing to keep and is
     // only forgotten as a shape. Between steps, like refresh().
     void park(const std::string &body);

@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-20",
+  "base_revision": "2e1d275",
+  "deployment_preservation": {
+    "spec": true,
+    "inventory": true,
+    "workshop_installs": true,
+    "world_upgrades": true,
+    "fabrication": true,
+    "native_state": true
+  },
+  "tests": {
+    "thermochemistry": 18,
+    "native_inventory": 12,
+    "thermo_ffi": 10,
+    "native_installation": 30,
+    "api_docs": 11
+  },
+  "experiment": {
+    "initial_surface_k": 400,
+    "initial_core_k": 300,
+    "duration_s": 10,
+    "dt_s": 0.05,
+    "layer_m": 0.002,
+    "cube_m": 0.12,
+    "reported_temperatures_rounded_k": {
+      "glass": [
+        388.302,
+        301.3
+      ],
+      "oak": [
+        395.758,
+        300.471
+      ],
+      "iron": [
+        310.118,
+        309.987
+      ]
+    },
+    "analytic_temperature_tolerance_k": 1e-08,
+    "internal_energy_relative_tolerance": 1e-12,
+    "restart_continuation": "exact parcel energies"
+  },
+  "limits": [
+    "Insulated nonreacting storage boundary",
+    "No external cooling or packed-item heat exchange",
+    "Not a physical bag or general chemical-storage model"
+  ]
+}

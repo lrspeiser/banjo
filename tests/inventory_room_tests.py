@@ -435,16 +435,25 @@ class StoredMaterialState(unittest.TestCase):
                     restored,why=live.snapshot();self.assertIsNotNone(restored,why)
                     self.assertEqual(heat(restored),expected)
                     self.assertEqual(restored["material_geometry"],stored["material_geometry"])
-                    # Current bag semantics suspend the stored parcel. This is
-                    # preservation coverage, not a claim of physical bag cooling.
+                    # Insulated storage retains energy/material, while any
+                    # surface/core gradient continues to equilibrate.
                     live.act({"session":sid,"op":"step","dt":1/240,"n":120})
-                    parked,_=live.snapshot();self.assertEqual(heat(parked,False),heat(before,False))
+                    parked,_=live.snapshot()
+                    aheat,bheat=heat(before,False),heat(parked,False)
+                    ea=sum(aheat[z]["internal_energy_j"] for z in ("surface","core"))
+                    eb=sum(bheat[z]["internal_energy_j"] for z in ("surface","core"))
+                    self.assertAlmostEqual(ea,eb,delta=max(1e-7,abs(ea)*1e-12))
+                    for zone in ("surface","core"):
+                        self.assertEqual(aheat[zone]["kg_b64"],bheat[zone]["kg_b64"])
+                    if aheat["core"]["internal_energy_j"]!=0:
+                        self.assertNotEqual(aheat["surface"]["internal_energy_j"],bheat["surface"]["internal_energy_j"])
+                    expected_parked=deepcopy(bheat)
                     dropped=inventory_room.request(app,{"request":"return-material-0001",
                         "revision":shown["record"]["revision"],"op":"drop","item":"crafted part","person":PERSON})
                     self.assertTrue(dropped["ok"],dropped)
                     returned,why=live.snapshot();self.assertIsNotNone(returned,why)
                     returned_heat=heat(returned,False)
-                    expected_heat=heat(before,False)
+                    expected_heat=expected_parked
                     # The part was on the floor and is now in free space:
                     # exposed area is a derived boundary, not stored material.
                     self.assertAlmostEqual(returned_heat.pop("exposed_area_m2"),6*.12**2)
