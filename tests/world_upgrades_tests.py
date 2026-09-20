@@ -105,9 +105,9 @@ class NativeUpgrades(unittest.TestCase):
         self.app.live.session.send(op="heat", target="oak crate", power_w=100, seconds=10)
         before = self.snapshot()
         answer = upgrades.apply(self.app, {})
-        self.assertEqual(answer["world_upgrades"][0]["status"], "pending")
-        self.assertIn("heater", answer["world_upgrades"][0]["reason"])
-        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(answer["world_upgrades"][0]["status"], "installed")
+        upgrades.verify(before, self.snapshot(), self.names, self.package)
+        self.assertEqual(self.snapshot()["heat"], before["heat"])
 
     def test_existing_equipment_is_recorded_without_refilling(self):
         self.room.spec = world_room.world()
@@ -142,6 +142,8 @@ class NativeUpgrades(unittest.TestCase):
         from urllib import request
         import server
         import world_upgrade_mcp_tools
+        self.app.live.session.send(op="heat", target="oak crate", power_w=100, seconds=10)
+        active_heat = self.snapshot()["heat"]
         with mock.patch.object(server, "local_configuration", return_value=("", "unused")):
             host = server.Playground(ENGINE, ENGINE, self.app.runs_path)
         self.addCleanup(host.pool.shutdown, wait=True)
@@ -163,6 +165,7 @@ class NativeUpgrades(unittest.TestCase):
         with request.urlopen(req, timeout=15) as response:
             opened = json.load(response)
         self.assertEqual(opened["world_upgrades"][0]["status"], "installed")
+        self.assertEqual(active_heat, self.snapshot()["heat"])
         self.assertEqual(opened["session"], host.live.session.id)
         core = SimpleNamespace(TOOLS=[], HANDLERS={}, Refused=ValueError)
         world_upgrade_mcp_tools.register(core)

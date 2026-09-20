@@ -2413,6 +2413,16 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     return l;
 }
 
+// Global thermal declarations are a compatibility boundary for carrying a
+// running network into an edited scene. Body-local declarations already have
+// per-component fingerprints in CarryPlan.
+nlohmann::json thermalSettings(const std::string &scene) {
+    if (scene.empty()) return nlohmann::json::object();
+    const auto doc = nlohmann::json::parse(scene);
+    return doc.contains("thermo") && !doc.at("thermo").is_null()
+        ? doc.at("thermo") : nlohmann::json::object();
+}
+
 // Versioned complete thermal state for reopening the identical world.
 // Doubles use the same lossless representation as mechanical snapshots.
 nlohmann::json savedHeaterDeclaration(const thermo::HeaterDeclaration &v) {
@@ -3306,21 +3316,33 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             }
         }
     }
-    // An append-only edit with every thermal lump unchanged can retain the
-    // complete quiescent network too. Recompute geometric paths for the new
-    // scene; the host's strict staging check detects any changed heat boundary.
-    // General edits involving gas or scheduled heat still use the declared
-    // changed-scene policy and are not admitted by atomic installation.
+    bool carried_thermal_network = false;
+    // Preserve an unchanged operating network through a scene edit. Native
+    // geometry refresh may change paths or admit a new thermal lump; atomic
+    // installation compares all network fields and refuses such changes.
     if (carrying && plan.exact && saved->doc.contains("heat") &&
         saved->doc.at("heat").contains("network") && impl.thermo) {
         const auto &heat = saved->doc.at("heat");
         const auto &networkDoc = heat.at("network");
         const auto &current = impl.thermo->state();
-        if (carried_heat == heat.at("lumps").size() && current.lumps.size() == carried_heat &&
-            current.regions.empty() && current.heaters.empty() &&
-            networkDoc.at("regions").empty() && networkDoc.at("heaters").empty()) {
+        const bool stamped = heat.contains("scene_settings");
+        const bool compatible = stamped
+            ? heat.at("scene_settings") == thermalSettings(r.thermo_scene_json)
+            : current.regions.empty() && current.heaters.empty() &&
+              networkDoc.at("regions").empty() && networkDoc.at("heaters").empty();
+        bool supports = true;
+        for (const auto &region : networkDoc.at("regions")) {
+            if (!region.contains("piston")) continue;
+            const auto &piston = region.at("piston");
+            const auto body = piston.at("body").get<std::string>();
+            const auto container = piston.at("container").get<std::string>();
+            supports = supports && plan.carries(body) && (container.empty() || plan.carries(container));
+        }
+        if (compatible && supports && carried_heat == heat.at("lumps").size() &&
+            current.lumps.size() == carried_heat) {
             impl.thermo->restore(readThermoState(heat, impl.thermo->model().size()));
             impl.thermo->refresh(live->thermoShapes(), setup.ground_y);
+            carried_thermal_network = true;
         }
     }
     // Legacy saves already contain body parcels and damage history. Import
@@ -3396,6 +3418,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     said.saved_t_s = numberFrom(doc.at("t_s"));
     said.bodies = placements.size();
     said.not_kept = carrying ? notCarried() : notKept();
+    if (carrying && carried_thermal_network && !said.not_kept.empty()) said.not_kept.erase(said.not_kept.begin());
     if (!water_note.empty()) said.not_kept.push_back(water_note);
     // What comes back of what the host declared: all of it, for a world opened
     // whole; carried into a changed scene, what the host still declares the
@@ -12524,7 +12547,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         nlohmann::json lumps = nlohmann::json::array();
         for (const thermo::Lump &lump : state.lumps) lumps.push_back(savedLump(lump, state));
         doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)},
-                       {"network", savedThermoState(state)}};
+                       {"network", savedThermoState(state)},
+                       {"scene_settings", thermalSettings(I.request.thermo_scene_json)}};
     }
     // A snapshot's old descriptive not_kept list is not enough for a caller
     // that promises an atomic changed-scene carry: a heater scheduled but not
@@ -12542,6 +12566,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
     doc["carry_readiness"] = {{"schema", "banjo.carry-readiness.v1"},
                               {"precise_rigid_version", 1},
+                              {"thermal_network_version", 1},
                               {"pending_heaters", pending_heaters},
                               {"gas_regions", gas_regions}};
     doc["not_kept"] = notKept();

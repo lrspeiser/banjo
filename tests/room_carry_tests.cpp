@@ -775,12 +775,32 @@ void completeThermalStateSurvivesRestart() {
     const auto before = nlohmann::json::parse(saved);
     const auto after = nlohmann::json::parse(back->snapshot(why));
     require(before.at("heat") == after.at("heat"), "thermal state changed on restart");
+    auto edited = r;
+    SceneBody extra = r.bodies.front();
+    extra.name = "new distant part"; extra.center_m = {100, 1, 0};
+    edited.bodies.push_back(extra);
+    auto carried = LiveWorld::open(edited, saved, LiveWorld::carryAll(saved));
+    require(carried->restored().tier == "carried", "active thermal network did not carry");
+    require(nlohmann::json::parse(carried->snapshot(why)).at("heat") == before.at("heat"),
+            "active gas/heaters changed when a distant part was added");
+    auto incompatible = edited;
+    auto declarations = nlohmann::json::parse(incompatible.thermo_scene_json);
+    declarations["thermo"]["gas_regions"][0]["pressure_pa"] = 180000;
+    incompatible.thermo_scene_json = declarations.dump();
+    auto changed = LiveWorld::open(incompatible, saved, LiveWorld::carryAll(saved));
+    require(nlohmann::json::parse(changed->snapshot(why)).at("heat").at("network") != before.at("heat").at("network"),
+            "changed gas declaration incorrectly reused old network");
+
     require(world->thermo()->ledger().heater_in_j > 0, "heaters did no work before restart");
     stepAnswering(*world, 240);
     stepAnswering(*back, 240);
     const auto continued = nlohmann::json::parse(world->snapshot(why));
     const auto restarted = nlohmann::json::parse(back->snapshot(why));
     require(continued.at("heat") == restarted.at("heat"), "thermal continuation differs after restart");
+    stepAnswering(*carried, 240);
+    require(nlohmann::json::parse(carried->snapshot(why)).at("heat") == continued.at("heat"),
+            "thermal continuation differs after adding an unrelated part");
+
     const auto &ledger = back->thermo()->ledger();
     require(std::abs(ledger.residualJ()) < 1e-7, "thermal energy ledger failed after restart");
     require(std::abs(ledger.massResidualKg()) < 1e-12, "thermal mass ledger failed after restart");
@@ -833,6 +853,14 @@ void pressureWorkSurvivesRestart() {
     const auto before = nlohmann::json::parse(saved);
     const auto after = nlohmann::json::parse(back->snapshot(why));
     require(before.at("heat") == after.at("heat"), "piston pressure/work history changed on restart");
+    auto edited = r;
+    SceneBody extra = base; extra.name = "new support"; extra.center_m = {100, 0.02, 0};
+    edited.bodies.push_back(extra);
+    auto carried = LiveWorld::open(edited, saved, LiveWorld::carryAll(saved));
+    require(carried->restored().tier == "carried", "piston network did not carry");
+    require(nlohmann::json::parse(carried->snapshot(why)).at("heat") == before.at("heat"),
+            "piston pressure/work changed when adding a part");
+
     require(back->thermo()->ledger().work_to_bodies_j > 0, "gas did no mechanical work");
     stepAnswering(*back, 120);
     const auto &ledger = back->thermo()->ledger();

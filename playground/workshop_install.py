@@ -99,15 +99,17 @@ def _snapshot(live: Any) -> dict[str, Any]:
     if not isinstance(readiness, dict) or readiness.get("schema") != "banjo.carry-readiness.v1":
         raise ValueError("Rebuild the native engine: this binary cannot check complete carry readiness")
     if readiness.get("pending_heaters") != 0 or readiness.get("gas_regions") != 0:
-        raise ValueError("Installation cannot preserve pending heaters or live gas regions; let the heater finish or use a supported room")
+        heat = saved.get("heat") or {}
+        if (readiness.get("thermal_network_version") != 1
+                or (heat.get("network") or {}).get("schema") != "banjo.thermal-state.v1"
+                or "scene_settings" not in heat):
+            raise ValueError("Rebuild the native engine: pending heaters and live gas regions require complete thermal carry")
     return saved
 
 
 def _supported(room: Any, old: Any) -> None:
     if room.spec.get("terrain") or room.spec.get("water"):
         raise ValueError("This prototype adapter supports flat-floor rooms only; terrain/water placement is not implemented. Use the yard")
-    if (room.spec.get("thermo") or {}).get("gas_regions") or (room.spec.get("thermo") or {}).get("heaters"):
-        raise ValueError("Installation cannot yet carry declared gas regions or timed heaters without resetting them")
     if room.scene not in world_room.SCENES:
         raise ValueError("Installation needs a persistently saved room")
     if not isinstance(getattr(old, "declared", None), dict):

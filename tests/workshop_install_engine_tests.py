@@ -263,12 +263,39 @@ class NativeInstallation(unittest.TestCase):
         p=self.preview();self.do_commit(p);install._preserved(before,self.snap(),p['root_body'])
         self.assertEqual(before['hand'],self.snap()['hand'])
 
-    def test_scheduled_heater_is_refused_even_before_first_step(self):
+    def test_scheduled_heater_is_preserved_even_before_first_step(self):
         old=self.live.session;old.send(op='heat',target='marker stone',power_w=100,seconds=1)
         raw,_=self.live.snapshot();self.assertEqual(1,raw['carry_readiness']['pending_heaters'])
-        with self.assertRaisesRegex(ValueError,'pending heaters'):self.preview()
-        self.assertIs(old,self.live.session)
-        self.assertEqual(raw,self.live.snapshot()[0])
+        preview=self.preview();self.do_commit(preview)
+        install._preserved(raw,self.snap(),preview['root_body'])
+        self.assertEqual(raw['heat'],self.snap()['heat'])
+        self.live.session.send(op='step',dt=1/120,n=12)
+        self.assertGreater(self.live.session.state['t'],raw['t_s'])
+
+    def test_live_gas_and_scene_heater_survive_atomic_installation(self):
+        spec=world_room.yard()
+        spec["thermo"]={"gas_regions":[{"name":"tank","contents":{"argon":1},
+            "volume_m3":.1,"temperature_k":400,"pressure_pa":150000,"vent_area_m2":.00001}],
+            "heaters":[{"target":"tank","power_w":100,"seconds":10}]}
+        self.open(spec)
+        self.live.session.send(op="step",dt=1/120,n=12)
+        before=self.snap()
+        p=self.preview();self.do_commit(p)
+        install._preserved(before,self.snap(),p["root_body"])
+        self.assertEqual(before["heat"],self.snap()["heat"])
+        self.live.session.send(op="step",dt=1/120,n=12)
+        after=self.snap()
+        self.assertGreater(after["heat"]["network"]["time_s"],before["heat"]["network"]["time_s"])
+        self.assertGreater(after["heat"]["network"]["ledger"]["heater_in_j"],
+                           before["heat"]["network"]["ledger"]["heater_in_j"])
+
+    def test_old_native_thermal_capability_is_still_refused(self):
+        self.live.session.send(op="heat",target="marker stone",power_w=100,seconds=1)
+        snapshot=self.live.snapshot()[0]
+        snapshot["carry_readiness"].pop("thermal_network_version",None)
+        with mock.patch.object(self.live,"snapshot",return_value=(snapshot,None)):
+            with self.assertRaisesRegex(ValueError,"complete thermal carry"):
+                self.preview()
 
     def test_physical_curve_and_requested_position_use_whole_grid_translation(self):
         candidate={'kind':'table','component_overrides':{'leg-1':{'skin':{'profile':'curve','bend_m':.04,'physical':True}}}}

@@ -25,13 +25,21 @@ suspended instead of replaying work. New heater commands remain available.
 The not_kept report explicitly identifies this boundary. This is partial
 legacy migration, not lossless recovery of information older saves omitted.
 
-Changing a scene remains a separate operation. An edit that carries every old
-thermal lump, introduces no new thermal lump, and has no gas or heater schedules
-can retain its network history and recompute geometric heat paths. Atomic
-installation compares the resulting network and refuses any changed existing
-state. General edits involving active heaters or gas are still refused by that
-installation adapter. Do not remove those checks based on whole-world restore
-support.
+Changing a scene remains a separate operation. New snapshots stamp global
+thermal declarations as heat.scene_settings and expose
+carry_readiness.thermal_network_version = 1. When every thermal body and piston
+support carries unchanged and global declarations still match, the native carry
+restores the operating network, including active heaters and gas, then refreshes
+geometry. Changing a pressure or heater declaration cannot silently reuse the
+previous network under this rule.
+
+Atomic installation compares the complete result with the old state. An unrelated
+part can be added while a heater or gas chamber operates. Additions that create
+new thermal lumps or alter existing heat paths still fail this exact preservation
+gate; admitting those requires accounting for the new thermal boundary. Older
+engines without the capability and declaration stamp still refuse active thermal
+installation. Old snapshots without the stamp retain the previous quiescent-only
+carry rule.
 
 Malformed network schemas, substance counts, references and path indices do not
 qualify for a whole restore. Existing world-open fallback reporting applies;
@@ -59,3 +67,19 @@ engine is deployed to the main-world server on port 8793. [Deployment evidence](
 records migration of the actual saves and an exact live save/reopen comparison.
 
 Verification on Windows: 10 native room-carry cases, 18 native installation tests, seven startup-upgrade tests, 25 room-store tests and 11 API-documentation tests passed. All 275 C++ sources remain registered. No constitutive law changed; the full impact matrix was not rerun for this persistence checkpoint.
+
+## Active thermal carry checkpoint
+
+Ten native room-carry cases now include active vented gas and glass/oak/iron
+heating during an unrelated addition, exact subsequent thermal continuation,
+changed-pressure declaration invalidation and preservation of a moving piston's
+pressure/work state. Twenty native installation tests include timed heaters,
+live gas and refusal of older capability reports. Seven startup-upgrade tests
+and twelve installation-boundary tests pass. No constitutive law changed.
+
+This active-carry build is verified in build/circuits/thermal-carry. Deployment
+to the main server remains pending; the previous restart/migration build remains
+live on port 8793. New heat paths, material-funded articulated assembly and the
+remaining 30-capability requirements are still open.
+
+The actual HTTP/MCP startup-upgrade test also carries an active heater and compares its thermal state exactly. All 44 mechanics cases pass; the fixed 96-case material matrix is running in build/thermal-carry-qa/materials and must be inspected before publishing this checkpoint.

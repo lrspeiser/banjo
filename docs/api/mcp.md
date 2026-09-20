@@ -1033,3 +1033,5 @@ The four expedition tools forward to the running local playground, not the MCP a
 The [fabrication contract](../fabrication.md) documents every setting, field, state, boundary and native QA gate for these tools.
 
 Thermal state in saved worlds: [native snapshot persistence and legacy limits](../thermal-world-persistence.md). Existing world_open_saved uses this behavior when the server runs the updated native build.
+
+Workshop installation and startup additions use the same [active thermal carry capability check](../thermal-world-persistence.md). Current native builds can retain active heaters/gas while adding an unrelated part; older engines refuse that operation. Existing MCP tool signatures are unchanged.

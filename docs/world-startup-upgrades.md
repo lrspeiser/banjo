@@ -40,8 +40,8 @@ the same exclusion. A separate native process stages the proposed scene.
 Every existing serialized body, topology, damage/plastic field, joint,
 battery, motor, controller and water state must survive unchanged. The comparison
 also checks unknown future global fields. Only documented new components and
-their identifier increments may appear. Existing thermal lumps are compared;
-this does not establish complete thermal-network persistence.
+their identifier increments may appear. Existing thermal lumps and the complete
+serialized network are compared; see [thermal carry](thermal-world-persistence.md).
 
 Changed-scene carry explicitly supplies the snapshot's water state to the new
 scene, preserving flow, volume, time and ledger values. Placement checks use
@@ -56,13 +56,13 @@ not preserve Jolt's full contact/warm-start cache or promise bitwise continuatio
 
 ## Remaining boundaries
 
-Active heaters, gas regions, pending fracture/cutting work, incompatible cell
-resolution, name conflicts and overlapping player builds can leave additions
-pending. In particular, declared thermal schedules may be recreated by the
-underlying carry path: the staged-state check refuses that outcome rather than
-restarting the schedule silently. Complete heater/gas persistence remains work.
-The ordinary room restore path has its own reported thermal limitations; this
-upgrade does not remove them.
+Pending fracture/cutting work, incompatible cell resolution, name conflicts and
+overlapping player builds can leave additions pending. Engines with complete
+thermal carry can retain active heaters and gas when their declarations, bodies,
+supports and existing heat paths are unchanged. Older engines still refuse them.
+An addition that changes the thermal network fails the strict staged comparison.
+The [thermal contract](thermal-world-persistence.md) documents legacy migration,
+capability checks and the active-carry deployment status.
 
 The hoist's support is anchored. Load-rated mount reactions, funded articulated
 construction and the other broad capability requirements remain open. This
