@@ -315,12 +315,23 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     for part in before["parts"]:
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
-    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints"}
+    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints", "material_geometry"}
     if not _joint_readouts_match(before.get("joints", []), after.get("joints", [])):
         raise ValueError("Staging changed existing joints; installation refused")
     for key in set(before) | set(after):
         if key not in exceptions and before.get(key) != after.get(key):
             raise ValueError(f"Staging changed existing {key}; installation refused")
+    bg, ag = before.get("material_geometry"), after.get("material_geometry")
+    if bg is not None or ag is not None:
+        if not isinstance(bg, dict) or not isinstance(ag, dict):
+            raise ValueError("Staging changed material geometry schema")
+        if {k:v for k,v in bg.items() if k != "records"} != {k:v for k,v in ag.items() if k != "records"}:
+            raise ValueError("Staging changed material geometry metadata")
+        br, ar = bg.get("records", {}), ag.get("records", {})
+        if not isinstance(br, dict) or not isinstance(ar, dict) or not set(ar) <= set(current):
+            raise ValueError("Staging has invalid material geometry bodies")
+        if any(ar.get(name) != state for name, state in br.items()) or set(ar) - set(br) - added:
+            raise ValueError("Staging changed existing material geometry")
     bnext, anext = before.get("next", {}), after.get("next", {})
     if set(bnext) != set(anext) or any(anext[k] != v+(len(added) if k=="body" else 0) for k,v in bnext.items()):
         raise ValueError("Staging changed unrelated native identifiers")

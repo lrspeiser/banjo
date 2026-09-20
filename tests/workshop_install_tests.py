@@ -60,6 +60,25 @@ class InstallationBoundary(unittest.TestCase):
             corrupt=deepcopy(after);corrupt[key]=value
             with self.assertRaises(ValueError):install._preserved(before,corrupt,'new')
 
+    def test_material_reference_geometry_must_survive_installation(self):
+        before={'bodies':[{'name':'old'}], 'parts':[], 'next':{'body':1},
+                'material_geometry':{'schema':'banjo.material-geometry.v1',
+                                     'records':{'old':{'applied_m':0.001}}}}
+        after=deepcopy(before)
+        after['bodies'].append({'name':'new'})
+        after['next']['body']=2
+        after['material_geometry']['records']['new']={'applied_m':0}
+        install._preserved(before,after,'new')
+        for change in ('depth','missing','unknown','schema'):
+            bad=deepcopy(after)
+            records=bad['material_geometry']['records']
+            if change=='depth': records['old']['applied_m']=0
+            elif change=='missing': del records['old']
+            elif change=='unknown': records['absent']={}
+            else: bad['material_geometry']['schema']='unknown'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                install._preserved(before,bad,'new')
+
     def test_only_the_derived_hinge_readout_allows_float32_roundoff(self):
         a = [{'held':{'at':-.03883189707994461,'lower':-3,'upper':3},'anchor':[0,0,0]}]
         b = deepcopy(a); b[0]['held']['at'] = -.03883189335465431

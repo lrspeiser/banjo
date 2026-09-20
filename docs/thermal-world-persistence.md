@@ -116,3 +116,27 @@ admission and deliberate corruptions of old energy, heater history and admitted
 energy. Seven startup and twelve boundary tests pass. The live server runs this
 build, with saved 54-body main, 20-body yard and four-body fabrication probes
 preserving all compared physical fields.
+
+
+### Material reference geometry (source implementation, deployment pending)
+
+New native snapshots include `material_geometry` with schema
+`banjo.material-geometry.v1` and records keyed by body name. Each record retains
+the thermal reference dimensions/frame, applied recession, geometry revision,
+burned-cell count, remaining volume, bond summaries and cached material factors.
+The associated fracture limits and acoustic impedance travel with those cache
+flags so reopening cannot suppress a needed strength update against cold limits.
+
+Identical-scene reopening and compatible body carry restore these records before
+thermal shapes are built. The installation comparator requires every old record
+to remain exact; additional records may only belong to newly installed bodies.
+No HTTP/MCP signature changes are required: these fields travel in the existing
+opaque native snapshot.
+
+Verification: actual oak combustion, glass/iron controls, three repeated
+save/reopen continuations, and a distant part addition pass in the 11-case
+native room-carry suite. All 13 installation-boundary tests pass, including
+rejection of changed recession, missing records and unknown body references.
+This does not qualify legacy saves: their missing reference history remains the
+next migration task. The running main world has not been restarted onto this
+new build. No full-engine or constitutive-law qualification is claimed.

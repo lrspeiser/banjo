@@ -908,6 +908,69 @@ void pressureWorkSurvivesRestart() {
     std::cout << "    pressure, piston boundary and work ledger survive and continue\n";
 }
 
+
+void burnedGeometrySurvivesRestart() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        SceneBody b;
+        b.name = materialPresetName(material); b.material = material; b.shape = BodyShape::Box;
+        b.anchored = true; b.dimensions_m = {0.12, 0.12, 0.12};
+        b.center_m = {static_cast<double>(r.bodies.size()), 1, 0};
+        r.bodies.push_back(b);
+    }
+    r.thermo_scene_json = R"({"bodies":[{"name":"glass","temperature_k":900},
+        {"name":"oak","temperature_k":900},{"name":"iron","temperature_k":900}]})";
+    auto world = LiveWorld::open(r);
+    const auto oakWidth = [](const LiveWorld &w) {
+        for (const auto &p : w.poses()) if (p.name == "oak") return p.dimensions_m.x;
+        return 0.0;
+    };
+    for (int i = 0; i < 72000 && oakWidth(*world) > .1196; ++i) stepAnswering(*world, 1);
+    require(oakWidth(*world) > 0 && oakWidth(*world) < .1196, "burned geometry premise was not reached; width=" + std::to_string(oakWidth(*world)));
+    std::string why;
+    const auto saved = world->snapshot(why);
+    require(!saved.empty(), "burned world could not save: " + why);
+    auto back = LiveWorld::open(r, saved);
+    require(back->restored().tier == "whole", "burned world did not restore whole");
+    const auto original = world->materialStates();
+    const auto restored = back->materialStates();
+    require(original.size() == restored.size(), "material records were lost");
+    for (std::size_t i = 0; i < original.size(); ++i)
+        require(length(original[i].reference_m - restored[i].reference_m) < 1e-14,
+                "restart rebased thermal reference dimensions on already-burned geometry");
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        stepAnswering(*world, 8);
+        stepAnswering(*back, 8);
+        const auto a = nlohmann::json::parse(world->snapshot(why));
+        const auto b = nlohmann::json::parse(back->snapshot(why));
+        require(a.at("bodies") == b.at("bodies"), "reopening reapplied recession or changed physical geometry");
+        require(a.at("heat") == b.at("heat"), "burned geometry restart changed thermal continuation");
+        back = LiveWorld::open(r, back->snapshot(why));
+        require(back->restored().tier == "whole", "repeated burned restore failed");
+    }
+    const auto current = world->snapshot(why);
+    auto edited = r;
+    auto extra = r.bodies.front(); extra.name = "cold distant addition"; extra.center_m.x = 100;
+    edited.bodies.push_back(extra);
+    auto carried = LiveWorld::open(edited, current, LiveWorld::carryAll(current));
+    require(carried->restored().tier == "carried", "burned geometry did not carry");
+    const auto expected = nlohmann::json::parse(current);
+    auto actual = nlohmann::json::parse(carried->snapshot(why));
+    require(expected.at("material_geometry") == actual.at("material_geometry"),
+            "installation changed saved material reference state");
+    stepAnswering(*world, 8); stepAnswering(*carried, 8);
+    const auto continued = nlohmann::json::parse(world->snapshot(why));
+    actual = nlohmann::json::parse(carried->snapshot(why));
+    for (const auto &body : continued.at("bodies")) {
+        const auto found = std::find_if(actual.at("bodies").begin(), actual.at("bodies").end(),
+            [&](const auto &b) { return b.at("name") == body.at("name"); });
+        require(found != actual.at("bodies").end() && *found == body,
+                "installation reapplied recession on continuation");
+    }
+    std::cout << "    burned oak retains its reference box across repeated restarts; glass/iron controls agree\n";
+}
+
 } // namespace
 
 int main() {
@@ -933,6 +996,7 @@ int main() {
         {"the same scene still comes back whole", theSameSceneStillComesBackWhole},
         {"complete thermal state survives restart", completeThermalStateSurvivesRestart},
         {"pressure work survives restart", pressureWorkSurvivesRestart},
+        {"burned geometry survives restart", burnedGeometrySurvivesRestart},
     };
     int failed = 0;
     for (const auto &[what, check] : checks) {

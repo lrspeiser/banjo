@@ -3244,6 +3244,51 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             }
         }
     }
+    if (saved && saved->doc.contains("material_geometry")) {
+        const auto &geometry = saved->doc.at("material_geometry");
+        if (geometry.at("schema") != "banjo.material-geometry.v1" || !geometry.at("records").is_object())
+            throw std::invalid_argument("unsupported saved material geometry");
+        for (const auto &[name, entry] : geometry.at("records").items()) {
+            if (carrying && !plan.carries(name)) continue;
+            const auto found = impl.index_of.find(name);
+            if (found == impl.index_of.end()) throw std::invalid_argument("saved material geometry body is absent");
+            const auto i = found->second;
+            MatterRecord m;
+            m.applied_m = numberFrom(entry.at("applied_m"));
+            m.remaining_volume_m3 = numberFrom(entry.at("remaining_volume_m3"));
+            m.bond_tension_min = numberFrom(entry.at("bond_tension_min"));
+            m.bond_tension_mean = numberFrom(entry.at("bond_tension_mean"));
+            m.bond_stiffness_mean = numberFrom(entry.at("bond_stiffness_mean"));
+            m.seen_consumed_m = numberFrom(entry.at("seen_consumed_m"));
+            m.round = entry.at("round").get<bool>();
+            m.revision = entry.at("revision").get<unsigned>();
+            m.cells_burned = entry.at("cells_burned").get<std::size_t>();
+            m.seen_cells = entry.at("seen_cells").get<std::size_t>();
+            m.limits_heated = entry.at("limits_heated").get<bool>();
+            m.box_m = vecFrom(entry.at("box_m"));
+            m.centre_m = vecFrom(entry.at("centre_m"));
+            m.turn = quatFrom(entry.at("turn"));
+            m.seen_surface.stiffness = numberFrom(entry.at("seen_surface").at("stiffness"));
+            m.seen_surface.tension = numberFrom(entry.at("seen_surface").at("tension"));
+            m.seen_surface.compression = numberFrom(entry.at("seen_surface").at("compression"));
+            m.seen_surface.shear = numberFrom(entry.at("seen_surface").at("shear"));
+            m.seen_core.stiffness = numberFrom(entry.at("seen_core").at("stiffness"));
+            m.seen_core.tension = numberFrom(entry.at("seen_core").at("tension"));
+            m.seen_core.compression = numberFrom(entry.at("seen_core").at("compression"));
+            m.seen_core.shear = numberFrom(entry.at("seen_core").at("shear"));
+            impl.limits_of[i].minimum_removal_stretch = numberFrom(entry.at("limits").at("minimum_removal_stretch"));
+            impl.limits_of[i].minimum_removal_energy_j = numberFrom(entry.at("limits").at("minimum_removal_energy_j"));
+            impl.limits_of[i].yield_stretch = numberFrom(entry.at("limits").at("yield_stretch"));
+            impl.limits_of[i].bar_wave_speed_m_s = numberFrom(entry.at("limits").at("bar_wave_speed_m_s"));
+            impl.limits_of[i].acoustic_impedance_pa_s_m = numberFrom(entry.at("limits").at("acoustic_impedance_pa_s_m"));
+            impl.limits_of[i].live_bonds = entry.at("limits").at("live_bonds").get<std::size_t>();
+            impl.limits_of[i].cells = entry.at("limits").at("cells").get<std::size_t>();
+            impl.impedance_of[i] = numberFrom(entry.at("impedance"));
+            if (!(m.box_m.x > 0 && m.box_m.y > 0 && m.box_m.z > 0) || !(m.applied_m >= 0))
+                throw std::invalid_argument("invalid saved material reference geometry");
+            impl.matter_of.emplace(name, std::move(m));
+        }
+    }
     // What the scene declares about heat, chemistry and gas. A declaration the
     // network refuses refuses the scene, with the network's own words, rather
     // than opening a world that quietly lacks the fire it was asked for. A world
@@ -12545,6 +12590,47 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         const nlohmann::json water = nlohmann::json::parse(I.environment->stateJson(), nullptr, false);
         if (water.is_object() && water.contains("depth_b64")) doc["water"] = water;
     }
+    // Reference geometry and its cached thermal strength belong to the same
+    // physical state. Restoring only the shrunken collision box burns it twice.
+    nlohmann::json geometry = nlohmann::json::object();
+    for (std::size_t i = 0; i < I.described.size(); ++i) {
+        const auto found = I.matter_of.find(I.described[i].name);
+        if (found == I.matter_of.end()) continue;
+        const auto &m = found->second;
+        nlohmann::json entry;
+        entry["applied_m"] = savedNumber(m.applied_m);
+        entry["remaining_volume_m3"] = savedNumber(m.remaining_volume_m3);
+        entry["bond_tension_min"] = savedNumber(m.bond_tension_min);
+        entry["bond_tension_mean"] = savedNumber(m.bond_tension_mean);
+        entry["bond_stiffness_mean"] = savedNumber(m.bond_stiffness_mean);
+        entry["seen_consumed_m"] = savedNumber(m.seen_consumed_m);
+        entry["round"] = m.round;
+        entry["revision"] = m.revision;
+        entry["cells_burned"] = m.cells_burned;
+        entry["seen_cells"] = m.seen_cells;
+        entry["limits_heated"] = m.limits_heated;
+        entry["box_m"] = savedVec(m.box_m);
+        entry["centre_m"] = savedVec(m.centre_m);
+        entry["turn"] = savedQuat(m.turn);
+        entry["seen_surface"]["stiffness"] = savedNumber(m.seen_surface.stiffness);
+        entry["seen_surface"]["tension"] = savedNumber(m.seen_surface.tension);
+        entry["seen_surface"]["compression"] = savedNumber(m.seen_surface.compression);
+        entry["seen_surface"]["shear"] = savedNumber(m.seen_surface.shear);
+        entry["seen_core"]["stiffness"] = savedNumber(m.seen_core.stiffness);
+        entry["seen_core"]["tension"] = savedNumber(m.seen_core.tension);
+        entry["seen_core"]["compression"] = savedNumber(m.seen_core.compression);
+        entry["seen_core"]["shear"] = savedNumber(m.seen_core.shear);
+        entry["limits"]["minimum_removal_stretch"] = savedNumber(I.limits_of[i].minimum_removal_stretch);
+        entry["limits"]["minimum_removal_energy_j"] = savedNumber(I.limits_of[i].minimum_removal_energy_j);
+        entry["limits"]["yield_stretch"] = savedNumber(I.limits_of[i].yield_stretch);
+        entry["limits"]["bar_wave_speed_m_s"] = savedNumber(I.limits_of[i].bar_wave_speed_m_s);
+        entry["limits"]["acoustic_impedance_pa_s_m"] = savedNumber(I.limits_of[i].acoustic_impedance_pa_s_m);
+        entry["limits"]["live_bonds"] = I.limits_of[i].live_bonds;
+        entry["limits"]["cells"] = I.limits_of[i].cells;
+        entry["impedance"] = savedNumber(I.impedance_of[i]);
+        geometry[I.described[i].name] = std::move(entry);
+    }
+    doc["material_geometry"] = {{"schema", "banjo.material-geometry.v1"}, {"records", std::move(geometry)}};
     // What the thermal network holds for each body, for a world carried into
     // this scene once it has changed: the heat of each thing that comes back
     // comes back with it. Identical-scene restores also retain the complete network.
