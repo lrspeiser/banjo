@@ -209,3 +209,34 @@ stock, spends one second of work, pauses, reopens, verifies unchanged work and
 startup receipts, and rejects reset/refill attempts. The 14 fabrication tests
 also retain comparative glass/oak/iron native outputs and actual stdio tool
 discovery in both servers. This does not complete capability 3 or 16.
+
+
+## Native terrain placement (source checkpoint)
+
+Manufactured lattice outputs can now be placed in the main world using the
+same preview/commit operations. The requested horizontal location remains
+`position_m: [x,z]`. The installer reads the current native terrain grid and
+takes the maximum of covering terrain vertices over the product's horizontal
+envelope. It adds at least 1 mm for float32 decoding uncertainty, then raises
+the whole lattice product to the next cell-aligned elevation. It never changes
+its cells, density or mass to fit the ground. Gravity settles it after transfer;
+the preview is not a stability or anchoring guarantee.
+
+The footprint must fit inside the simulated terrain. Staging supplies current
+water state explicitly and compares terrain grid/heights/surface materials,
+carried excavated material and the ground ledger/volumes, alongside all existing
+native physical-state checks. A funded room cannot bypass fabrication by using
+the ordinary authoring commit.
+
+Actual HTTP/native tests manufacture glass, oak and iron outputs on the main
+world's raised terrace, preserving all prior state and the paid process ledger.
+A separate native test digs terrain, verifies that pending-settling loss is
+refused, lets the original world settle, and then installs while retaining the
+excavation and carried soil. Injected altered staging terrain is refused.
+
+Limits: native terrain reopening currently replays edits to rest, so installation
+must refuse if pending soil settling would change. Exact frontier/timing
+persistence remains required. Precise rigid products still refuse terrain.
+Connected articulation, recovered-stock input and the main-world manufacturing
+UI remain unfinished. These operations are documented by world MCP 1.9.0 and
+platform MCP 1.12.0; no native ABI change was needed.

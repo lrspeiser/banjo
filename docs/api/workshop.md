@@ -495,12 +495,18 @@ and `cell_size_m`; it never opens or resets a room.
 ```
 
 X/Z are finite numbers within +/-100 m. Y is resolved by a whole-object integer-
-grid translation onto the flat floor. The room resolution is not changed. The
+grid translation above the native terrain envelope (or flat floor). The room resolution is not changed. The
 candidate accepts the ordinary design recipe and component overrides. The result
 reports `preview_id`, actual geometry hash/cells/mass, requested/applied placement,
 native verification and limitations. It is NOT an installation or a strength
-certificate. `mode` must explicitly be `authoring`; inventory-funded fabrication,
-articulated/mixed-material products and terrain/water are not supported yet.
+certificate. `mode` must explicitly be `authoring`; funded workpieces use the
+[separate fabrication transaction](../fabrication.md). Articulated/mixed-material
+products remain unsupported by this adapter. Native lattice installation checks
+the complete footprint against terrain bounds, preserves current water, compares
+terrain heights/surfaces/carried stock and ground material accounts, and refuses
+any changed old state. Pending soil settling may refuse because legacy terrain
+edit replay settles edits before reopening. Precise rigid terrain remains
+explicitly unsupported by its separate native admission path.
 
 `POST /api/world/workshop/commit` takes only `scene`, the source `session`,
 `preview_id`, and a unique `request_id` (8-80 ASCII letters/digits/hyphen/underscore).

@@ -224,6 +224,40 @@ class NativeHTTP(WorkbenchTestCase):
         self.addCleanup(app.live.shutdown)
         return app
 
+    def test_main_world_funded_outputs_preserve_terrain_water_and_stock(self):
+        app=self.native_server()
+        opened=self.post(app,"/api/world/open",{"scene":"world"})
+        ctx={"scene":"world","session":opened["session"]}
+        def call(op,**args):
+            return self.post(app,"/api/world/fabrication/"+op,{**ctx,**args})
+        call("configure",settings=settings(),request_id="terrain-config-0001")
+        for i,material in enumerate(("glass","oak","iron")):
+            job="terrain-job-"+material
+            call("start",candidate=candidate(material),stock_kg=10,
+                 revision=app.room.fabrication_record["revision"],request_id=job)
+            call("wait",seconds=2)
+            terrain=workshop_install._terrain_state(app.live.session)
+            before=workshop_install._snapshot(app.live)
+            p=call("preview",job_id=job,position_m=[13+i*.5,-7])
+            self.assertGreater(p["bounds_m"][0][1],0)
+            with self.assertRaisesRegex(ValueError,"material-funded"):
+                workshop_install.commit(app,{**ctx,"preview_id":p["preview_id"],"request_id":"unfunded-"+material})
+            result=call("commit",job_id=job,preview_id=p["preview_id"],request_id="terrain-install-"+material)
+            ctx["session"]=result["session"]
+            after=workshop_install._snapshot(app.live)
+            workshop_install._preserved(before,after,result["root_body"])
+            self.assertEqual(workshop_install._terrain_state(app.live.session),terrain)
+            self.assertTrue(result["resources_charged"])
+            self.assertEqual(app.room.fabrication_record["jobs"][job]["status"],"installed")
+            native=next(b for b in app.live.session.state["bodies"] if b["name"]==result["root_body"])
+            expected=app.room.fabrication_record["jobs"][job]["product_kg"]
+            self.assertAlmostEqual(native["mass_kg"],expected,places=7)
+        saved=app.store.load("world")
+        self.assertEqual(saved.fabrication_record,app.room.fabrication_record)
+        self.assertEqual(saved.world_record,workshop_install._snapshot(app.live))
+        self.assertTrue(saved.world_upgrades)
+        self.assertAlmostEqual(model.audit(saved.fabrication_record)["energy_residual_j"],0,places=7)
+
     def test_main_world_process_preserves_receipts_and_cannot_reset(self):
         app=self.native_server()
         opened=self.post(app,"/api/world/open",{"scene":"world"})

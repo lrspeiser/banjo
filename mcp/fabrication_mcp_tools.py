@@ -35,7 +35,7 @@ DESCRIPTIONS = {
     "start": "Reserve stock and start a bounded process using a trusted compiled quote. revision prevents concurrent spending; request_id makes retries safe.",
     "pause": "Interrupt a job while keeping its actual reserved workpiece, work and heat; no refund.",
     "resume": "Continue a paused workpiece from its retained work. Needs a free station; spent energy is not restored.",
-    "preview": "Check native placement and state carry for a finished funded workpiece in a supported flat-floor room. Terrain placement is not yet supported. position_m is [x,z]. Preview never installs.",
+    "preview": "Check native placement and state carry for a finished funded workpiece on native ground. Terrain and material accounts must carry unchanged; unsettled-ground edits can refuse. position_m is [x,z]. Preview never installs.",
     "commit": "Atomically transfer the finished workpiece into the native world, persist both ledgers and world, then acknowledge. Retry the same request_id after an uncertain result.",
     "wait": "Advance native physics and fabrication together for 1..10 seconds and save both. This is an elapsed-time action: after connection loss read state before repeating.",
 }

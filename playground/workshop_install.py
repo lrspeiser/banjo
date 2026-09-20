@@ -1,6 +1,6 @@
 """Explicit Workshop -> live world prototype placement.
 
-This first adapter installs a single-material, monolithic solid into a flat-floor
+This first adapter installs a single-material, monolithic solid onto native ground in a saved
 room in authoring mode. It does NOT manufacture from inventory, certify strength,
 or collapse articulated machines into solids. Preview runs a scratch native
 carry/geometry check; commit repeats it against an unchanged source snapshot,
@@ -108,8 +108,6 @@ def _snapshot(live: Any) -> dict[str, Any]:
 
 
 def _supported(room: Any, old: Any) -> None:
-    if room.spec.get("terrain") or room.spec.get("water"):
-        raise ValueError("This prototype adapter supports flat-floor rooms only; terrain/water placement is not implemented. Use the yard")
     if room.scene not in world_room.SCENES:
         raise ValueError("Installation needs a persistently saved room")
     if not isinstance(getattr(old, "declared", None), dict):
@@ -121,12 +119,58 @@ def context(app: Any, body: Any) -> dict[str, Any]:
     with _world(app) as (room, live, old):
         return {"schema": SCHEMA, "scene": room.scene, "session": old.id,
                 "cell_size_m": float(old.spec["cell_m"]), "mode": "authoring",
-                "limits": "Single-material monolithic prototypes, flat floor; no inventory or fabrication-energy charge; not strength certified."}
+                "limits": "Single-material monolithic prototypes on native ground; no inventory or fabrication-energy charge; not strength certified."}
 
 
 def _bounds(cells, h):
     return ([min(g[a] for g in cells)*h for a in range(3)],
             [(max(g[a] for g in cells)+1)*h for a in range(3)])
+
+
+def _terrain_state(old):
+    if not old.spec.get("terrain"):
+        return None
+    ground = old.send(op="terrain").get("terrain")
+    if not isinstance(ground, dict):
+        raise ValueError("Native engine did not return the current terrain")
+    # The collision grid, materials and carried excavated stock are physical
+    # state too; rendering/view and generation timings are not.
+    state = {key: deepcopy(ground[key]) for key in ("grid", "heights_b64", "ground_b64", "carried")}
+    ledger = old.send(op="environment").get("environment", {}).get("ground")
+    if not isinstance(ledger, dict):
+        raise ValueError("Native engine did not return terrain material accounting")
+    state["material_accounting"] = deepcopy(ledger)
+    return state
+
+
+def _terrain_floor(old, bounds):
+    """Conservative support elevation over the complete horizontal envelope."""
+    terrain = _terrain_state(old)
+    if terrain is None:
+        return 0.0
+    grid = terrain["grid"]
+    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
+    if type(nx) is not int or type(nz) is not int or nx < 2 or nz < 2 or nx*nz > 4_000_000:
+        raise ValueError("Unsupported terrain grid")
+    if type(h) not in (int,float) or not math.isfinite(h) or h <= 0:
+        raise ValueError("Invalid terrain spacing")
+    raw = base64.b64decode(terrain["heights_b64"], validate=True)
+    if len(raw) != nx*nz*4:
+        raise ValueError("Incomplete native terrain heights")
+    heights = struct.unpack("<"+"f"*(nx*nz),raw)
+    indices = []
+    for axis, count, origin in ((0,nx,grid["x0_m"]),(2,nz,grid["z0_m"])):
+        lo, hi = (bounds[k][axis]-origin for k in (0,1))
+        if lo < 0 or hi > (count-1)*h:
+            raise ValueError("The whole product must fit inside the simulated terrain")
+        indices.append((max(0,math.floor(lo/h)),min(count-1,math.ceil(hi/h))))
+    values = [heights[j*nx+i] for j in range(indices[1][0],indices[1][1]+1)
+              for i in range(indices[0][0],indices[0][1]+1)]
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError("Nonfinite terrain height")
+    # Covering grid vertices bound the triangle surface even between samples.
+    # Add a float32 decoding margin; gravity, not this preview, settles the part.
+    return max(values) + max(.001, max(abs(v) for v in values)*2**-22)
 
 
 def _body_bounds(body: dict[str, Any], h: float):
@@ -345,6 +389,9 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
     scratch = SimpleNamespace(engine_path=app.engine_path, runs_path=app.runs_path,
                               live_inprocess=False, on_live_reply=None)
     try:
+        terrain_before = _terrain_state(old)
+        if "water" in snapshot:
+            spec.setdefault("water", {})["state"] = deepcopy(snapshot["water"])
         opened = staging.open(scratch, {"spec": deepcopy(spec), "snapshot": snapshot, "carry": True}, carry_from=old)
         restored = opened.get("restored") or {}
         if restored.get("tier") != "carried" or restored.get("not_carried"):
@@ -352,6 +399,8 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
         if any(opened.get(k) for k in ("joint_problems", "machine_problems", "blade_problems", "tool_point_problems")):
             raise ValueError("Staging could not restore every existing joint, control or tool")
         saved = _snapshot(staging)
+        if _terrain_state(staging.session) != terrain_before:
+            raise ValueError("Staging changed terrain or carried excavated material")
         _preserved(snapshot, saved, root)
         if matter.get("schema") == workshop_rigid.SCHEMA:
             precise_rigid.verify(saved, matter, root)
@@ -404,7 +453,10 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         materials = {engine_materials.canonical(c["material"]) for c in matter["cells"]}
         if len(materials) != 1:
             raise ValueError("Mixed-material installation requires explicit interfaces; it cannot be fused into one material")
-        shift = (round(pos[0]/h), -min(g[1] for g in cells), round(pos[1]/h))
+        horizontal = (round(pos[0]/h), 0, round(pos[1]/h))
+        translated = {tuple(g[a]+horizontal[a] for a in range(3)) for g in cells}
+        floor = _terrain_floor(old, _bounds(translated,h))
+        shift = (horizontal[0], math.ceil(floor/h)-min(g[1] for g in cells), horizontal[2])
         placed = {tuple(g[a]+shift[a] for a in range(3)) for g in cells}
         root = "workshop-" + uuid.uuid4().hex[:16]
         # Decomposed component by component, so every box still says which part
@@ -529,7 +581,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
     import fabrication_room
     from mcp import fabrication
     with _world(app) as (room, live, old), fabrication_room.LOCK:
-        if room.scene == "fabrication" and funding_job is None:
+        if fabrication_room.active(app) and funding_job is None:
             raise ValueError("This room only accepts finished, material-funded workpieces")
         if body.get("scene") != room.scene:
             raise ValueError("The source room changed")

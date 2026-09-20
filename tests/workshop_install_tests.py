@@ -60,6 +60,21 @@ class InstallationBoundary(unittest.TestCase):
             corrupt=deepcopy(after);corrupt[key]=value
             with self.assertRaises(ValueError):install._preserved(before,corrupt,'new')
 
+    def test_terrain_support_bounds_interior_peaks_and_rejects_outside_grid(self):
+        terrain={"grid":{"nx":3,"nz":3,"cell_m":1,"x0_m":0,"z0_m":0},
+                 "heights_b64":base64.b64encode(struct.pack("<9f",0,0,0,0,2,0,0,0,0)).decode(),
+                 "ground_b64":"", "carried":{}}
+        old=SimpleNamespace(spec={"terrain":{}},send=lambda **kw:{"terrain":terrain,"environment":{"ground":{}}})
+        old.spec["terrain"]={"generate":{}}
+        height=install._terrain_floor(old,([.2,0,.2],[1.8,1,1.8]))
+        self.assertGreaterEqual(height,2)
+        self.assertLess(height,2.002)
+        with self.assertRaisesRegex(ValueError,"whole product"):
+            install._terrain_floor(old,([-0.1,0,0],[1,1,1]))
+        terrain["heights_b64"]=""
+        with self.assertRaisesRegex(ValueError,"Incomplete"):
+            install._terrain_floor(old,([0,0,0],[1,1,1]))
+
     def test_material_reference_geometry_must_survive_installation(self):
         before={'bodies':[{'name':'old'}], 'parts':[], 'next':{'body':1},
                 'material_geometry':{'schema':'banjo.material-geometry.v1',

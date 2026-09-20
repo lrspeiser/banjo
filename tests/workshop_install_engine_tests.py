@@ -69,6 +69,65 @@ class NativeInstallation(unittest.TestCase):
                 self.assertIn(result['root_body'],[b['name'] for b in reply['bodies']])
 
 
+    def test_native_terrain_install_keeps_excavation_and_rejects_changed_ground(self):
+        import server
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.open()
+        command={"op":"dig","from":[13,-7],"to":[13,-7],"width_m":.5,"depth_m":.05}
+        answer=self.live.act({"session":self.live.session.id,**command})
+        server.remember_ground(self.app,command,answer)
+        ground=install._terrain_state(self.live.session)
+        self.assertGreater(ground["carried"]["soil_kg"]+ground["carried"]["sand_kg"],0)
+        before=self.snap()
+        from fabrication_tests import candidate
+        request={"scene":"world","session":self.live.session.id,"mode":"authoring",
+                 "candidate":candidate(),"position_m":[13,-7]}
+        with self.assertRaisesRegex(ValueError,"changed terrain"):
+            install.preview(self.app,request)
+        self.assertEqual(before,self.snap())
+        # Edits are currently replayed to rest by the native restore path.
+        # Until frontier persistence exists, admit only an unchanged settled
+        # ground state; never erase pending settling to make placement pass.
+        self.live.act({"session":self.live.session.id,"op":"step","dt":1/240,"n":120})
+        ground=install._terrain_state(self.live.session)
+        self.assertEqual(ground["material_accounting"]["unsettled_columns"],0)
+        before=self.snap()
+        preview=install.preview(self.app,request)
+        result=install.commit(self.app,{"scene":"world","session":self.live.session.id,
+                              "preview_id":preview["preview_id"],"request_id":"terrain-author-0001"})
+        install._preserved(before,self.snap(),result["root_body"])
+        self.assertEqual(ground,install._terrain_state(self.live.session))
+        # A changed ground query from the staged engine must refuse before swap.
+        request["session"]=self.live.session.id;request["position_m"]=[15,-7]
+        real=install._terrain_state
+        old=self.live.session
+        def altered(session):
+            value=real(session)
+            if session is not old: value["heights_b64"]="changed"
+            return value
+        with mock.patch.object(install,"_terrain_state",side_effect=altered):
+            with self.assertRaisesRegex(ValueError,"changed terrain"):
+                install.preview(self.app,request)
+        self.assertIs(self.live.session,old)
+        self.assertEqual(ground,install._terrain_state(old))
+
+    def test_precise_rigid_terrain_remains_explicitly_refused(self):
+        from fabrication_tests import candidate
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.room.spec={"algorithm":"lattice","cell_m":.04,
+            "bodies":[{"name":"marker","shape":"box","material":"iron","size_mm":[80,80,80],
+                       "center_mm":[0,2000,0],"anchored":True}],
+            "terrain":deepcopy(world_room.world()["terrain"])}
+        self.open()
+        product=candidate()
+        product["component_overrides"]["part"]={"mechanics":{"model":"rigid"}}
+        before=self.snap()
+        request={"scene":"world","session":self.live.session.id,"mode":"authoring",
+                 "candidate":product,"position_m":[13,-7]}
+        with self.assertRaisesRegex(ValueError,"do not yet support terrain"):
+            install.preview(self.app,request)
+        self.assertEqual(before,self.snap())
+
     def test_programmed_use_survives_native_install_restart_and_runs(self):
         import server
         import threading
