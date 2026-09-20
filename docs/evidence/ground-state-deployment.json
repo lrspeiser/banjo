@@ -1,0 +1,52 @@
+{
+  "source_revision": "ebded33",
+  "body_count": 55,
+  "ground_identical": true,
+  "changed_world_fields": [
+    "joints"
+  ],
+  "preserved_room_fields": [
+    "spec",
+    "inventory",
+    "workshop_installs",
+    "fabrication",
+    "world_upgrades"
+  ],
+  "restored": {
+    "bodies": 55,
+    "not_kept": [
+      "legacy snapshots recover body heat; missing heaters are suspended and gas history restarts from the scene",
+      "anything under way: a world is saved only between breaks, strokes of the hand, cuts and a point's time in the ground, so the last one saved before any of those is what comes back",
+      "the solver's memory of its contacts: a thing that was moving carries on from where it was, but not step for step as it would have"
+    ],
+    "parked": [
+      {
+        "at_m": [
+          -1.751,
+          4.995,
+          -6.0135
+        ],
+        "facing_wxyz": [
+          0.9999905228614807,
+          0.0027100015431642532,
+          0.0,
+          -0.003400001907721162
+        ],
+        "name": "workshop-75401f9f96714b6c"
+      }
+    ],
+    "saved_t_s": 743.4333333358967,
+    "tier": "whole",
+    "why": ""
+  },
+  "schema": "banjo.ground-state-deployment.v1",
+  "local_url": "http://127.0.0.1:8793/world?scene=world&hold=1",
+  "server_pid": 3776,
+  "browser_errors": [],
+  "bagged_part": "workshop-75401f9f96714b6c",
+  "part_mass_kg": 0.7168,
+  "old_and_new_runtime_restore_equal_for_existing_fields": true,
+  "existing_hinge_reconstruction_delta_rad": 4.656612873077393e-10,
+  "inventory_regression_tests": 11,
+  "boundary": "Same-world ground-state persistence; not complete contact-cache or fluid-coupling qualification. One pre-existing float hinge-angle reconstruction change remains. Instantaneous rope tension is recomputed after stepping."
+}

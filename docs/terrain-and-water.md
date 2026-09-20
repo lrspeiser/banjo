@@ -480,3 +480,5 @@ local server has not yet been switched to this build.
 The 11 native room-carry cases and 25 host room-store tests also pass. The host room loader still has its existing recovery policy that sets an unreadable world aside before opening a fresh room; this checkpoint changes native restoration, not that recovery UI. Original saved files remain available under the set-aside name.
 
 All 56 world-room tests pass (45.270 s) using the new ground-state live executable and existing geometry-save ABI-25 C library. This mixed-runner check covers the existing world interactions; it is not a rebuilt C-library qualification.
+
+Deployment follow-up: source ebded33 is now running on local port 8793 with a rebuilt C API library. The main world restores all 55 bodies and retains identical saved ground state across repeated room opens. See [deployment evidence](evidence/ground-state-deployment.json). Eleven native inventory regressions pass; the rendered world, bagged part, hoist energy and manufacturing link were checked with no browser console errors. Earlier source-only status above describes the checkpoint before this deployment.
