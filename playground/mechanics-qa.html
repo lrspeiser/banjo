@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banjo · Mechanics lab</title><link rel="stylesheet" href="/material-qa.css"><link rel="stylesheet" href="/mechanics-qa.css"></head>
+<body><header><a class="brand" href="/qa">BANJO <span>/ MECHANICS LAB</span></a><nav><a href="/qa">Material impacts</a><a href="/world">World</a><a href="/world?workshop=1">Workshop</a></nav></header>
+<main><div class="intro"><div><p class="eyebrow">EDIT · RUN · MEASURE</p><h1>Build the experiment.</h1><p>Change the construction or the applied effort. The engine decides what moves, holds, or fails.</p></div></div>
+<section class="toolbar" aria-label="Experiment controls">
+<label>Example<select id="example"></select></label><button id="run-all">Run regression suite</button>
+<label>Recorded run<select id="runs"></select></label><button id="cancel" disabled>Cancel</button><p id="progress" role="status">Loading…</p></section>
+<div class="workspace">
+<section class="specimens"><h2>Experiment recipe</h2><p>SI units. Construction is an initial lab condition; operating motion uses bounded forces.</p>
+<form id="ask"><label for="ask-text">Ask the lab assistant to change this experiment</label><textarea id="ask-text" maxlength="2000" rows="3" placeholder="Make the load heavier, keeping the same grip strength"></textarea><button id="ask-send" type="submit">Edit with assistant</button></form><label for="recipe">Editable experiment JSON</label><textarea id="recipe" spellcheck="false"></textarea>
+<div class="transport"><button id="validate">Check recipe</button><button id="run-custom" class="primary">Run edited experiment</button></div>
+<p id="validation" role="status"></p>
+<details><summary>LLM authoring</summary><p>Use the platform MCP tools physics_trial_catalog, physics_trial_validate and physics_trial_run. The LLM can edit these same recipes and inspect the measured results. User-authored checks do not change the regression suite.</p></details>
+</section>
+<section class="inspection" aria-label="Native experiment recording">
+<label>Recorded case<select id="case"></select></label><h2 id="case-title">Select a recording</h2><div id="stage"></div>
+<div class="transport"><button id="play" disabled>Play</button><input id="frame" type="range" min="0" max="0" value="0" aria-label="Recorded frame" disabled><span id="clock"></span><label>Speed<select id="speed"><option value=".25">¼×</option><option value="1" selected>1×</option></select></label></div>
+<p id="outcome" role="status"></p><table><thead><tr><th>Measurement</th><th>Actual</th><th>Allowed</th><th>Check</th></tr></thead><tbody id="checks"></tbody></table>
+<pre id="failures"></pre><details><summary>Evidence and model limits</summary><pre id="evidence"></pre></details></section>
+</div></main><script type="module" src="/mechanics-qa.js"></script></body></html>

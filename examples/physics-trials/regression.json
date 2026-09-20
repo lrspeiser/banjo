@@ -1,0 +1,1779 @@
+{
+  "schema": "banjo.mechanics-qa.v1",
+  "cases": [
+    {
+      "id": "support-glass",
+      "group": "Support and cargo",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Supported glass load",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "support",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.4,
+              0.04,
+              0.4
+            ],
+            "position_m": [
+              0,
+              0.3,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.36,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-weak-glass",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "glass load / 1 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1,
+            "holds_shear_n": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "broken_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.5,
+            "max": -0.1,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-strong-glass",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "glass load / 1000 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1000,
+            "holds_shear_n": 1000
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "restart-glass",
+      "group": "Persistent state",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Restart a moving glass body",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              2,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "elapsed_s",
+            "min": 0.1999999,
+            "max": 0.20000010000000001
+          },
+          {
+            "metric": "position_y_m",
+            "min": 1.79,
+            "max": 1.82,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "support-oak",
+      "group": "Support and cargo",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Supported oak load",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "support",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.4,
+              0.04,
+              0.4
+            ],
+            "position_m": [
+              0,
+              0.3,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.36,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-weak-oak",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "oak load / 1 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1,
+            "holds_shear_n": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "broken_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.5,
+            "max": -0.1,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-strong-oak",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "oak load / 1000 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1000,
+            "holds_shear_n": 1000
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "restart-oak",
+      "group": "Persistent state",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Restart a moving oak body",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              2,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "elapsed_s",
+            "min": 0.1999999,
+            "max": 0.20000010000000001
+          },
+          {
+            "metric": "position_y_m",
+            "min": 1.79,
+            "max": 1.82,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "support-iron",
+      "group": "Support and cargo",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Supported iron load",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "support",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.4,
+              0.04,
+              0.4
+            ],
+            "position_m": [
+              0,
+              0.3,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.36,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-weak-iron",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "iron load / 1 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1,
+            "holds_shear_n": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "broken_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.5,
+            "max": -0.1,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "connection-strong-iron",
+      "group": "Load-rated connections",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "iron load / 1000 N fixing",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              1.04,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              0.96,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "fix",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              1,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "holds_tension_n": 1000,
+            "holds_shear_n": 1000
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.005,
+            "max": 0.005,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "restart-iron",
+      "group": "Persistent state",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "Restart a moving iron body",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.08,
+              0.08,
+              0.08
+            ],
+            "position_m": [
+              0,
+              2,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "checkpoints",
+            "min": 1,
+            "max": 1
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "elapsed_s",
+            "min": 0.1999999,
+            "max": 0.20000010000000001
+          },
+          {
+            "metric": "position_y_m",
+            "min": 1.79,
+            "max": 1.82,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bounded-lift-oak",
+      "group": "Bounded handling",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "20 N grip lifting oak",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.12,
+              0.12,
+              0.12
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "wield",
+            "name": "load",
+            "grip": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "op": "move",
+            "to": [
+              0,
+              1.2,
+              0
+            ]
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "release"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "max_grip_force_n",
+            "min": 1,
+            "max": 20.00001
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": 0.02,
+            "max": 0.3,
+            "body": "load"
+          }
+        ],
+        "actuator": {
+          "strength_n": 20,
+          "torque_n_m": 1,
+          "mass_kg": 1
+        }
+      }
+    },
+    {
+      "id": "bounded-lift-iron",
+      "group": "Bounded handling",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "20 N grip lifting iron",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.12,
+              0.12,
+              0.12
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "wield",
+            "name": "load",
+            "grip": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "op": "move",
+            "to": [
+              0,
+              1.2,
+              0
+            ]
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          },
+          {
+            "op": "release"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "max_grip_force_n",
+            "min": 1,
+            "max": 20.00001
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.5,
+            "max": -0.1,
+            "body": "load"
+          }
+        ],
+        "actuator": {
+          "strength_n": 20,
+          "torque_n_m": 1,
+          "mass_kg": 1
+        }
+      }
+    },
+    {
+      "id": "hinge-glass",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "hinge / glass",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              -0.04
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.24,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0.12,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "hinge",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              -0.02
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "lower_deg": -90,
+            "upper_deg": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.3
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.55,
+            "max": 0.69,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "slide-glass",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "slide / glass",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "slide",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "lower_m": -0.1,
+            "upper_m": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.105,
+            "max": -0.095,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "spring-glass",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "spring / glass",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "spring",
+            "a": "mount",
+            "b": "load",
+            "at_a": [
+              0,
+              0.8,
+              0
+            ],
+            "at_b": [
+              0,
+              0.72,
+              0
+            ],
+            "rest_m": 0.08,
+            "stiffness_n_m": 1000,
+            "damping_n_s_m": 10
+          },
+          {
+            "op": "advance",
+            "duration_s": 1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.008,
+            "max": 0,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "hinge-oak",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "hinge / oak",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              -0.04
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.24,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0.12,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "hinge",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              -0.02
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "lower_deg": -90,
+            "upper_deg": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.3
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.55,
+            "max": 0.69,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "slide-oak",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "slide / oak",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "slide",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "lower_m": -0.1,
+            "upper_m": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.105,
+            "max": -0.095,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "spring-oak",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "spring / oak",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "spring",
+            "a": "mount",
+            "b": "load",
+            "at_a": [
+              0,
+              0.8,
+              0
+            ],
+            "at_b": [
+              0,
+              0.72,
+              0
+            ],
+            "rest_m": 0.08,
+            "stiffness_n_m": 1000,
+            "damping_n_s_m": 10
+          },
+          {
+            "op": "advance",
+            "duration_s": 1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.008,
+            "max": 0,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "hinge-iron",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "hinge / iron",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              -0.04
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.24,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0.12,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "hinge",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              -0.02
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "lower_deg": -90,
+            "upper_deg": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.3
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.55,
+            "max": 0.69,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "slide-iron",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "slide / iron",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "slide",
+            "a": "mount",
+            "b": "load",
+            "at": [
+              0,
+              0.7,
+              0
+            ],
+            "axis": [
+              0,
+              1,
+              0
+            ],
+            "lower_m": -0.1,
+            "upper_m": 0
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.25
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.105,
+            "max": -0.095,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "spring-iron",
+      "group": "Mechanical constraints",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "spring / iron",
+        "cell_m": 0.02,
+        "bodies": [
+          {
+            "name": "mount",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.82,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.04,
+              0.04,
+              0.04
+            ],
+            "position_m": [
+              0,
+              0.7,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "spring",
+            "a": "mount",
+            "b": "load",
+            "at_a": [
+              0,
+              0.8,
+              0
+            ],
+            "at_b": [
+              0,
+              0.72,
+              0
+            ],
+            "rest_m": 0.08,
+            "stiffness_n_m": 1000,
+            "damping_n_s_m": 10
+          },
+          {
+            "op": "advance",
+            "duration_s": 1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.008,
+            "max": 0,
+            "body": "load"
+          },
+          {
+            "metric": "speed_m_s",
+            "min": 0,
+            "max": 0.03,
+            "body": "load"
+          },
+          {
+            "metric": "active_joints",
+            "min": 1,
+            "max": 1
+          }
+        ]
+      }
+    }
+  ]
+}

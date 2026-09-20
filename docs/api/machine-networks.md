@@ -2,12 +2,14 @@
 
 Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
 
-September 19, 2026. Native ABI **25**, world MCP **1.5.0**, platform MCP **1.6.0**.
+September 19, 2026. Native ABI **25**, world MCP **1.5.0**, platform MCP **1.7.0**.
 This reference covers the executable functions and the boundaries of the fifteen
 requested machine capabilities. It does not turn planned solvers into callable
 appliances. Model laws and measured numerical errors are in
 [machine-circuits.md](../machine-circuits.md); remaining implementation is tracked
 in [machine-network-roadmap.md](../machine-network-roadmap.md).
+
+Editable native physics experiments and regression QA: [recipe/API contract](../physics-trials.md).
 
 ## Surfaces and ownership
 

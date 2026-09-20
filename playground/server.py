@@ -31,6 +31,9 @@ from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA
 import builder
 import fracture_lab
 import material_qa
+import mechanics_qa
+import physics_trials
+import physics_trial_planner
 import live_session
 import live_inprocess
 import world_chat
@@ -1114,6 +1117,13 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
+            if path=="/api/mechanics-qa": return self.send(mechanics_qa.catalog(app.engine_path))
+            if path=="/api/mechanics-qa/runs": return self.send(mechanics_qa.manager(app).list_runs())
+            match=re.fullmatch(r"/api/mechanics-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|request))?)?",path)
+            if match:
+                qa=mechanics_qa.manager(app)
+                if not match[2]: return self.send(qa.status(match[1]))
+                return self.send(qa.case(match[1],match[2],playback=match[3]=="playback",request=match[3]=="request"))
             if path=="/api/material-qa": return self.send(material_qa.catalog(app.engine_path))
             if path=="/api/material-qa/runs": return self.send(material_qa.manager(app).list_runs())
             match=re.fullmatch(r"/api/material-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|native))?)?",path)
@@ -1144,7 +1154,7 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+            allowed={"/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
                 "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
@@ -1228,6 +1238,17 @@ class Handler(BaseHTTPRequestHandler):
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
+            if path=="/api/mechanics-qa/plan":
+                return self.send(physics_trial_planner.propose(self.server.app,body))
+            if path=="/api/mechanics-qa/validate":
+                physics_trials.obj(body, {"document"}, {"document"}, "validate")
+                document,_=physics_trials.validate(body["document"])
+                return self.send({"valid":True,"document":document})
+            if path=="/api/mechanics-qa/run":
+                return self.send(mechanics_qa.manager(self.server.app).start(body),202)
+            if path=="/api/mechanics-qa/cancel":
+                physics_trials.obj(body, {"run_id"}, {"run_id"}, "cancel")
+                return self.send(mechanics_qa.manager(self.server.app).cancel(body["run_id"]))
             if path=="/api/material-qa/run":
                 return self.send(material_qa.manager(self.server.app).start(body),202)
             if path=="/api/material-qa/cancel":
@@ -2811,6 +2832,7 @@ def main():
         try: keep_world(app,"the server stopped")
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
         if hasattr(app,"material_qa"): app.material_qa.shutdown()
+        if hasattr(app,"mechanics_qa"): app.mechanics_qa.shutdown()
         app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
 
 if __name__=="__main__": main()

@@ -480,6 +480,25 @@ function create(container, hooks = {}) {
     });
     triangleLines(d.supports);
     frames = d.frames || [];
+    if (hooks.frameAllPoses) {
+      // Frame the entire recorded trajectory, including a falling load.
+      // Conservative local radii also cover rotation; this changes the camera
+      // only, never the recorded poses or the live-world solver.
+      const radii = new Map(bodies.map(b => {
+        b.mesh.geometry.computeBoundingSphere();
+        const sphere = b.mesh.geometry.boundingSphere;
+        return [b.id, sphere.radius + sphere.center.length()];
+      }));
+      fitBounds = new THREE.Box3();
+      for (const f of frames) for (const p of f.poses || []) {
+        const r = radii.get(p.id);
+        if (r === undefined || !p.position_m) continue;
+        const center = new THREE.Vector3(...p.position_m);
+        fitBounds.expandByPoint(center.clone().addScalar(-r));
+        fitBounds.expandByPoint(center.clone().addScalar(r));
+      }
+      if (fitBounds.isEmpty()) fitBounds = null;
+    }
   }
   function internalLines(ps, es, offset, material) {
     const pairs = [];

@@ -1,5 +1,27 @@
 # Banjo roadmap and acceptance gates
 
+**Generic mechanics lab, September 19:** [Experiment/API contract](physics-trials.md)
+and [30-item implementation backlog](physics-gameplay-backlog.md). This first
+increment composes existing native bodies, contact, rated fixings, hinges,
+sliders, springs, bounded grips and whole-world checkpoints. All 23 comparative
+native cases pass. Browser and platform MCP 1.7.0 run the same declarations;
+the lab assistant edits validated recipes without changing fixed QA fixtures.
+A real assistant edit from 20 N to 5 N made an oak lift fall 0.18003 m and
+correctly fail its unchanged check. The local /mechanics-qa page records and
+replays native results. The building world's 20 objects survived server
+restart with zero measured pose/velocity difference.
+
+Verification: 13 recipe/HTTP/native-MCP tests, 12 material-QA tests, 34 playground
+tests, API documentation parity and the 275-source registration guard pass.
+CI requires both the native protocol test and all 23 mechanics cases alongside
+the existing 96 material-impact cases. Shared report I/O now retries bounded
+Windows sharing conflicts and rereads a completed worker's final status.
+No constitutive law changed; the 96-case native impact matrix was not rerun.
+Construction is externally supplied lab geometry, not resource-funded manufacture;
+mass checks cover dynamic bodies and do not prove whole-world energy closure.
+This is seven reusable mechanic groups, not completion of the 30 player features.
+Next: material-funded shaping/assembly, moving cargo/lifting and machine energy loops.
+
 **Material QA range, September 19:** [Range, API, baseline and refinement boundary](material-qa.md). The /qa viewer and platform MCP 1.6.0 run isolated native impacts over eight catalog materials, three thicknesses and four speeds. All 96 local cases passed numerical/recording checks (60 intact, 11 cracked connected, 25 fragmented); results and known signed-loss warnings are retained. CI now runs the full matrix on every push/PR and keeps recordings. This is regression evidence, not calibration. True per-brick lazy detail allocation remains planned; current LiveWorld motion is rigid but fine arrays are allocated eagerly.
 
 

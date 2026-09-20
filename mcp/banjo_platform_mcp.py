@@ -29,7 +29,7 @@ if str(ROOT / "mcp") not in sys.path:
     sys.path.insert(0, str(ROOT / "mcp"))
 
 import banjo_mcp as core  # noqa: E402
-from mcp import workshop_mcp_tools, material_qa_tools  # noqa: E402
+from mcp import workshop_mcp_tools, material_qa_tools, physics_trial_tools  # noqa: E402
 
 
 def _model_error(handler: Callable[[dict[str, Any]], dict[str, Any]]):
@@ -46,14 +46,14 @@ def _model_error(handler: Callable[[dict[str, Any]], dict[str, Any]]):
 
 # banjo_mcp.handle reads these globals from the imported core module, so
 # extending them in place makes tools/list and tools/call one protocol surface.
-for module in (workshop_mcp_tools, material_qa_tools):
+for module in (workshop_mcp_tools, material_qa_tools, physics_trial_tools):
     existing = {tool["name"] for tool in core.TOOLS}
     core.TOOLS = list(core.TOOLS) + [tool for tool in module.TOOLS
                                    if tool["name"] not in existing]
     for name, handler in module.HANDLERS.items():
         core.HANDLERS[name] = _model_error(handler)
 
-core.SERVER = {"name": "banjo-platform", "version": "1.6.0"}
+core.SERVER = {"name": "banjo-platform", "version": "1.7.0"}
 _CORE_HANDLE = core.handle
 
 
@@ -70,7 +70,9 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
                   "inspect ProductGraph/PhysicsContract with workshop_inspect, and use workshop_test "
                   "for isolated evidence. Workshop materialization is a preview and does not mutate a "
                   "live world. Use the ordinary world tools only when the intent is to change or run "
-                  "persistent physical reality."
+                  "persistent physical reality. For editable mechanics experiments use physics_trial_catalog, "
+                  "physics_trial_validate and physics_trial_run: bounded native operations, isolated from the live room. "
+                  "Never replace a physical outcome with scripted motion or silently relax a regression check."
             )
     return reply
 

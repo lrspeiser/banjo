@@ -26,7 +26,7 @@ import banjo_mcp    # noqa: E402
 # which intentionally extends this module's TOOLS/HANDLERS in place.
 WORLD_TOOLS = {tool["name"] for tool in banjo_mcp.TOOLS}
 
-from mcp import workshop_mcp_tools, workshop_platform, material_qa_tools  # noqa: E402
+from mcp import workshop_mcp_tools, workshop_platform, material_qa_tools, physics_trial_tools  # noqa: E402
 import banjo_platform_mcp  # noqa: E402
 
 DOCS = ROOT / "docs" / "api"
@@ -95,10 +95,22 @@ class TheDocsNameEverything(unittest.TestCase):
         unified = {tool["name"] for tool in banjo_platform_mcp.TOOLS}
         qa = {tool["name"] for tool in material_qa_tools.TOOLS}
         self.assertFalse(qa & (WORLD_TOOLS | workshop))
-        self.assertEqual(WORLD_TOOLS | workshop | qa, unified)
+        trials = {tool["name"] for tool in physics_trial_tools.TOOLS}
+        self.assertFalse(trials & (WORLD_TOOLS | workshop | qa))
+        self.assertEqual(WORLD_TOOLS | workshop | qa | trials, unified)
+        trial_doc = (ROOT / "docs/physics-trials.md").read_text(encoding="utf-8")
+        self.assertFalse([name for name in trials if not named_in(trial_doc, name)])
         doc = (ROOT / "docs/material-qa.md").read_text(encoding="utf-8")
         self.assertFalse([name for name in qa if not named_in(doc, name)])
         self.assertEqual(unified, set(banjo_platform_mcp.HANDLERS))
+
+
+    def test_physics_trial_operations_fields_and_measurements_are_documented(self):
+        import physics_trials
+        doc=(ROOT/"docs/physics-trials.md").read_text(encoding="utf-8")
+        names=set(physics_trials.COMMANDS)|physics_trials.BODY_METRICS|physics_trials.GLOBAL_METRICS
+        for fields,_ in physics_trials.COMMANDS.values():names.update(fields)
+        self.assertFalse([name for name in sorted(names) if not named_in(doc,name)])
 
     def test_every_c_function_is_in_the_c_api_doc(self):
         doc = (DOCS / "c-api.md").read_text(encoding="utf-8")

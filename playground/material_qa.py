@@ -114,17 +114,33 @@ def binary(engine_path):
     return p.with_name("banjo_fast_lattice_run" + (".exe" if p.suffix == ".exe" else ""))
 
 
+def _file_access(operation):
+    # Windows readers can briefly deny rename/delete sharing during an atomic
+    # report replacement. Retry only this transient sharing failure, bounded.
+    for attempt in range(20):
+        try:
+            return operation()
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(.01)
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
-    tmp.replace(path)
+    _file_access(lambda: tmp.replace(path))
 
 
 def read_json(path):
-    if path.stat().st_size > MAX_BYTES:
+    def read():
+        with path.open("rb") as source:
+            return source.read(MAX_BYTES + 1)
+    payload = _file_access(read)
+    if len(payload) > MAX_BYTES:
         raise ValueError("QA artifact exceeds 64 MiB")
-    return json.loads(path.read_text(encoding="utf-8"),
+    return json.loads(payload.decode("utf-8"),
                       parse_constant=lambda s: (_ for _ in ()).throw(ValueError("Nonfinite JSON: " + s)))
 
 
@@ -387,8 +403,14 @@ class Manager:
             report = read_json(path)
             if report.get("status") == "running" and not (
                     run_id == self.run_id and self.thread and self.thread.is_alive()):
-                report["status"] = "unattached"
-                report["control_note"] = "This application does not own the runner; it may still be running elsewhere."
+                # A worker can finish between reading its report and checking
+                # the thread. Read its final atomic write before declaring it
+                # unowned; do not expose a false interrupted result to clients.
+                if run_id == self.run_id:
+                    report = read_json(path)
+                if report.get("status") == "running":
+                    report["status"] = "unattached"
+                    report["control_note"] = "This application does not own the runner; it may still be running elsewhere."
             return report
         if run_id == self.run_id and self.pending:
             return dict(self.pending)

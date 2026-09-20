@@ -172,6 +172,23 @@ jobs:
             BANJO_BROWSER_TESTS=required python3 tests/workshop_browser_tests.py -v
           python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
 
+      - name: Test generic physics trial contracts
+        run: BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_TRIAL_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/physics_trials_tests.py -v
+
+      - name: Run the mechanics regression suite against the built engine
+        run: >-
+          python3 scripts/mechanics_qa.py
+          --engine build/ci/banjo_live_world_run
+          --out build/ci/mechanics-qa
+
+      - name: Keep mechanics recipes, results and recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: banjo-mechanics-qa-${{ github.sha }}
+          path: build/ci/mechanics-qa/
+          if-no-files-found: warn
+
       - name: Record and compare the complete material impact range
         run: >-
           python3 scripts/material_qa.py
