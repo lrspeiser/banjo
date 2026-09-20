@@ -108,7 +108,7 @@ class TheDocsNameEverything(unittest.TestCase):
     def test_physics_trial_operations_fields_and_measurements_are_documented(self):
         import physics_trials
         doc=(ROOT/"docs/physics-trials.md").read_text(encoding="utf-8")
-        names=set(physics_trials.COMMANDS)|physics_trials.BODY_METRICS|physics_trials.GLOBAL_METRICS
+        names=set(physics_trials.COMMANDS)|physics_trials.BODY_METRICS|physics_trials.GLOBAL_METRICS|set(physics_trials.JOINT_METRICS)
         for fields,_ in physics_trials.COMMANDS.values():names.update(fields)
         self.assertFalse([name for name in sorted(names) if not named_in(doc,name)])
 

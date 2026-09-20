@@ -131,10 +131,11 @@
     {
       "id": 10,
       "name": "Use ropes and lifting machines",
-      "remaining": "Existing native rope/pulley/drum foundations; add shared primitive recipes for load, slack, overload and supported power",
+      "remaining": "Load-rated mount reactions, state-preserving installation into existing worlds and broader lifting workflows",
       "status": "partial",
       "priority": 16,
-      "workstream": "Cargo, lifting and powered machines"
+      "workstream": "Cargo, lifting and powered machines",
+      "evidence": "Fresh main world includes a finite-battery native hoist tested for lift, discharge and braked hold; shared QA adds 21 glass/oak/iron rope and ideal-pulley cases."
     },
     {
       "id": 9,

@@ -1774,6 +1774,2097 @@
           }
         ]
       }
+    },
+    {
+      "id": "rope-load-glass",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope load \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 98.10000000000001
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.99,
+            "max": 1.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 23.298750000000002,
+            "max": 25.751250000000002,
+            "joint": "rope"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-slack-glass",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope slack \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 98.10000000000001,
+            "length_m": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.055,
+            "max": -0.045,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 0,
+            "max": 1e-07,
+            "joint": "rope"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-overload-glass",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope overload \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 12.262500000000001
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.23,
+            "max": -0.15,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-release-glass",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope release \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 98.10000000000001
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "sample",
+            "label": "supported"
+          },
+          {
+            "op": "unhinge",
+            "joint": "rope"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 1,
+            "max": 1,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 23.298750000000002,
+            "max": 25.751250000000002,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.065,
+            "max": -0.04,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-balanced-glass",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley balanced \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.001,
+            "max": 0.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 11.649375000000001,
+            "max": 12.875625000000001,
+            "joint": "tackle"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-heavy-glass",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley heavy \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": 0.04,
+            "max": 0.09,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-light-glass",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley light \u00b7 glass",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.05,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "glass",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.1,
+            "max": -0.03,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-load-oak",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope load \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 27.468000000000004
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.99,
+            "max": 1.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 6.523650000000001,
+            "max": 7.210350000000001,
+            "joint": "rope"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-slack-oak",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope slack \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 27.468000000000004,
+            "length_m": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.055,
+            "max": -0.045,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 0,
+            "max": 1e-07,
+            "joint": "rope"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-overload-oak",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope overload \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 3.4335000000000004
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.23,
+            "max": -0.15,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-release-oak",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope release \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 27.468000000000004
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "sample",
+            "label": "supported"
+          },
+          {
+            "op": "unhinge",
+            "joint": "rope"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 1,
+            "max": 1,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 6.523650000000001,
+            "max": 7.210350000000001,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.065,
+            "max": -0.04,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-balanced-oak",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley balanced \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.001,
+            "max": 0.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 3.2618250000000004,
+            "max": 3.6051750000000005,
+            "joint": "tackle"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-heavy-oak",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley heavy \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": 0.04,
+            "max": 0.09,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-light-oak",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley light \u00b7 oak",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.05,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "oak",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.1,
+            "max": -0.03,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-load-iron",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope load \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 308.8188
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.5
+          }
+        ],
+        "checks": [
+          {
+            "metric": "position_y_m",
+            "min": 0.99,
+            "max": 1.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 73.344465,
+            "max": 81.064935,
+            "joint": "rope"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-slack-iron",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope slack \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 308.8188,
+            "length_m": 1
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.055,
+            "max": -0.045,
+            "body": "load"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 0,
+            "max": 1e-07,
+            "joint": "rope"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-overload-iron",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope overload \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 38.60235
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "checkpoint"
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.23,
+            "max": -0.15,
+            "body": "load"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "rope-release-iron",
+      "group": "Ropes",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "rope release \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "anchor",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1.5,
+              0
+            ],
+            "anchored": true
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "tie",
+            "id": "rope",
+            "a": "anchor",
+            "b": "load",
+            "at_a": [
+              0,
+              1.5,
+              0
+            ],
+            "at_b": [
+              0,
+              1,
+              0
+            ],
+            "breaks_at_n": 308.8188
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.2
+          },
+          {
+            "op": "sample",
+            "label": "supported"
+          },
+          {
+            "op": "unhinge",
+            "joint": "rope"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.1
+          }
+        ],
+        "checks": [
+          {
+            "metric": "joint_attached",
+            "min": 1,
+            "max": 1,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 73.344465,
+            "max": 81.064935,
+            "joint": "rope",
+            "sample": "supported"
+          },
+          {
+            "metric": "joint_attached",
+            "min": 0,
+            "max": 0,
+            "joint": "rope"
+          },
+          {
+            "metric": "displacement_y_m",
+            "min": -0.065,
+            "max": -0.04,
+            "body": "load"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-balanced-iron",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley balanced \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.001,
+            "max": 0.001,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          },
+          {
+            "metric": "joint_tension_n",
+            "min": 36.6722325,
+            "max": 40.5324675,
+            "joint": "tackle"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-heavy-iron",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley heavy \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": 0.04,
+            "max": 0.09,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
+    },
+    {
+      "id": "pulley-light-iron",
+      "group": "Ideal pulleys",
+      "document": {
+        "schema": "banjo.physics-trial.v1",
+        "title": "pulley light \u00b7 iron",
+        "cell_m": 0.05,
+        "bodies": [
+          {
+            "name": "counter",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.05,
+              0.05,
+              0.1
+            ],
+            "position_m": [
+              -0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          },
+          {
+            "name": "load",
+            "shape": "box",
+            "material": "iron",
+            "size_m": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "position_m": [
+              0.3,
+              1,
+              0
+            ],
+            "anchored": false
+          }
+        ],
+        "steps": [
+          {
+            "op": "reeve",
+            "id": "tackle",
+            "a": "counter",
+            "b": "load",
+            "at_a": [
+              -0.3,
+              1,
+              0
+            ],
+            "at_b": [
+              0.3,
+              1,
+              0
+            ],
+            "over_a": [
+              -0.3,
+              1.8,
+              0
+            ],
+            "over_b": [
+              0.3,
+              1.8,
+              0
+            ],
+            "ratio": 2
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          },
+          {
+            "op": "checkpoint"
+          },
+          {
+            "op": "advance",
+            "duration_s": 0.125
+          }
+        ],
+        "checks": [
+          {
+            "metric": "displacement_y_m",
+            "min": -0.1,
+            "max": -0.03,
+            "body": "load"
+          },
+          {
+            "metric": "joint_span_m",
+            "min": 2.399,
+            "max": 2.401,
+            "joint": "tackle"
+          },
+          {
+            "metric": "joint_ratio",
+            "min": 2,
+            "max": 2,
+            "joint": "tackle"
+          },
+          {
+            "metric": "checkpoint_error",
+            "min": 0,
+            "max": 1e-07
+          }
+        ]
+      }
     }
   ]
 }

@@ -30,12 +30,22 @@ COMMANDS = {
     "hinge": ({"a", "b", "at", "axis", "lower_deg", "upper_deg", "friction_n_m"}, {"a", "b", "at", "axis"}),
     "slide": ({"a", "b", "at", "axis", "lower_m", "upper_m", "friction_n"}, {"a", "b", "at"}),
     "spring": ({"a", "b", "at_a", "at_b", "rest_m", "stiffness_n_m", "damping_n_s_m"}, {"a", "b", "at_a", "at_b"}),
+    "tie": ({"a", "b", "at_a", "at_b", "length_m", "breaks_at_n"}, {"a", "b", "at_a", "at_b"}),
+    "reeve": ({"a", "b", "at_a", "at_b", "over_a", "over_b", "length_m", "ratio"}, {"a", "b", "at_a", "at_b", "over_a", "over_b"}),
+    "unhinge": ({"joint"}, {"joint"}),
+    "sample": ({"label"}, {"label"}),
     "wield": ({"name", "grip"}, {"name"}),
     "move": ({"to"}, {"to"}),
     "release": (set(), set()),
     "advance": ({"duration_s"}, {"duration_s"}),
     "checkpoint": (set(), set()),
 }
+CONNECTIONS = {"fix", "hinge", "slide", "spring", "tie", "reeve"}
+for _op in CONNECTIONS:
+    COMMANDS[_op] = (COMMANDS[_op][0] | {"id"}, COMMANDS[_op][1])
+JOINT_METRICS = {"joint_attached":"attached", "joint_tension_n":"tension_n",
+                 "joint_span_m":"metres", "joint_length_m":"length_m",
+                 "joint_ratio":"ratio", "joint_force_n":"force_n", "joint_stored_j":"stored_j"}
 BODY_METRICS = {"mass_kg", "speed_m_s", "translational_kinetic_j"} | {
     prefix + axis + "_m" for prefix in ("position_", "displacement_") for axis in "xyz"}
 GLOBAL_METRICS = {"elapsed_s", "dynamic_mass_residual_kg", "active_joints", "broken_joints",
@@ -104,6 +114,11 @@ def validate(value):
     steps = d["steps"]
     if not isinstance(steps, list) or not 1 <= len(steps) <= 48: raise ValueError("Use 1..48 steps")
     elapsed = 0; checkpoints = 0; wielded = False
+    aliases = {}; samples = {}
+    def identifier(v):
+        if not isinstance(v,str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,47}",v):
+            raise ValueError("Connection IDs and sample labels need 1..48 letters/digits/_/-")
+        return v
     # Reuse the public operation validator before starting any native process.
     probe = live_session.Live()
     probe.session = SimpleNamespace(id="validation", send=lambda **kw: {"ok": True})
@@ -113,18 +128,28 @@ def validate(value):
         obj(step, allowed | {"op"}, required | {"op"}, op)
         for key in ("a", "b", "name"):
             if key in step and (not isinstance(step[key], str) or step[key] not in names): raise ValueError("Unknown body: " + str(step[key]))
-        for key in ("at", "at_a", "at_b", "grip", "to", "axis"):
+        for key in ("at", "at_a", "at_b", "over_a", "over_b", "grip", "to", "axis"):
             if key in step: vector(step[key], key)
-        for key in allowed - {"a", "b", "name", "at", "at_a", "at_b", "grip", "to", "axis"}:
+        for key in allowed - {"a", "b", "name", "at", "at_a", "at_b", "over_a", "over_b", "grip", "to", "axis", "id", "joint", "label"}:
             if key in step: number(step[key], -1e9, 1e9, key)
-        if op in {"fix", "hinge", "slide", "spring"}:
+        if op in CONNECTIONS:
             if elapsed: raise ValueError("Connections are initial construction, before advancing time")
             if step["a"] == step["b"]: raise ValueError("Connect two distinct bodies")
+            if "id" in step:
+                ident=identifier(step["id"])
+                if ident in aliases: raise ValueError("Duplicate connection ID")
+                aliases[ident]=op
+        if op == "unhinge" and identifier(step["joint"]) not in aliases:
+            raise ValueError("Release needs an earlier named connection")
         if op == "advance":
             duration = number(step["duration_s"], DT, 5, "duration_s")
             if abs(duration / DT - round(duration / DT)) > 1e-6:
                 raise ValueError("duration_s must be a multiple of 1/240 second")
             elapsed += duration
+        elif op == "sample":
+            label=identifier(step["label"])
+            if label in samples or len(samples)>=16: raise ValueError("Use at most 16 unique samples")
+            samples[label]=set(aliases)
         elif op == "checkpoint":
             checkpoints += 1
             if checkpoints > 2 or wielded: raise ValueError("At most two checkpoints; release the grip first")
@@ -132,22 +157,39 @@ def validate(value):
             if op == "wield": wielded = True
             if op == "move" and not wielded: raise ValueError("move needs a bounded wield grip first")
             if op == "release": wielded = False
-            probe.act({"session": "validation", **step})
+            native_command={k:v for k,v in step.items() if k!="id"}
+            if op == "unhinge": native_command["joint"]=1
+            probe.act({"session": "validation", **native_command})
     if not DT <= elapsed <= 5: raise ValueError("Total simulation time must be 1/240..5 seconds")
     checks = d["checks"]
     if not isinstance(checks, list) or not 1 <= len(checks) <= 32: raise ValueError("Use 1..32 measured checks")
     for check in checks:
-        obj(check, {"metric", "body", "min", "max"}, {"metric", "min", "max"}, "check")
+        obj(check, {"metric", "body", "joint", "sample", "min", "max"}, {"metric", "min", "max"}, "check")
+        if "sample" in check and identifier(check["sample"]) not in samples:
+            raise ValueError("Check needs an existing sample")
         metric = check["metric"]
         if not isinstance(metric, str): raise ValueError("metric must be a string")
         if metric in BODY_METRICS:
+            if "joint" in check: raise ValueError("Body metric cannot name a joint")
             if not isinstance(check.get("body"), str) or check.get("body") not in names: raise ValueError("Body measurement needs an existing body")
-        elif metric not in GLOBAL_METRICS or "body" in check:
+        elif metric in JOINT_METRICS:
+            if "body" in check or identifier(check.get("joint")) not in aliases:
+                raise ValueError("Joint metric needs a named connection")
+            if "sample" in check and check["joint"] not in samples[check["sample"]]:
+                raise ValueError("Connection does not exist at the requested sample")
+            kind=aliases[check["joint"]]
+            supported={"joint_attached":CONNECTIONS,"joint_tension_n":{"fix","tie","reeve"},
+                "joint_span_m":{"spring","slide","tie","reeve"},"joint_length_m":{"tie","reeve"},
+                "joint_ratio":{"reeve"},"joint_force_n":{"spring"},"joint_stored_j":{"spring"}}
+            if kind not in supported[metric]:raise ValueError("Metric is not available on this connection type")
+        elif metric not in GLOBAL_METRICS or "body" in check or "joint" in check:
             raise ValueError("Unknown/global measurement with invalid body")
         lo = number(check["min"], -1e12, 1e12, "min")
         number(check["max"], lo, 1e12, "max")
     spec = fracture_lab.validate({"algorithm": "lattice", "cell_m": cell, "bodies": native,
-                                  "plasticity": "off", "duration_s": elapsed})
+                                  # This authoring cost field has a .2 s minimum;
+                                  # actual native time is driven only by advance.
+                                  "plasticity": "off", "duration_s": max(.2,elapsed)})
     return d, spec
 
 class TrialSession(live_session.Session):
@@ -196,7 +238,7 @@ def run(engine, directory, document, *, cancel=None):
     artifacts.write_json(directory/"request.json", d)
     started = time.monotonic(); deadline = started + 45
     cancel = cancel or threading.Event()
-    frames = []; events = []; geometry = []
+    frames = []; events = []; geometry = []; aliases = {}; samples = {}; released = set(); guides = []
     maximum_force = 0; checkpoint_error = 0; checkpoints = 0
     live = live_session.Live()
     def open_session(snapshot=None):
@@ -226,10 +268,34 @@ def run(engine, directory, document, *, cancel=None):
         maximum_force = max(maximum_force, math.sqrt(sum(v*v for v in force)))
         frame = {"time_s": state["t"], "poses": [{"id": b["name"], "position_m": b["position_m"],
                  "orientation_wxyz": b["orientation_wxyz"]} for b in state["bodies"]]}
+        # Connection guides follow actual poses. They are not rope contact
+        # geometry, sag reconstruction, or a second simulation.
+        def attached_point(name,point):
+            b=_body_map(state)[name];initial=_body_map(first)[name]
+            v=[point[k]-initial["position_m"][k] for k in range(3)]
+            w,x,y,z=b["orientation_wxyz"];q=[x,y,z]
+            cross=lambda a,b:[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+            t=[2*c for c in cross(q,v)];u=cross(q,t)
+            return [b["position_m"][k]+v[k]+w*t[k]+u[k] for k in range(3)]
+        connections=[];joints={j["id"]:j for j in state.get("joints",[])}
+        for ident,c in guides:
+            a=attached_point(c["a"],c["at_a"]);b=attached_point(c["b"],c["at_b"])
+            points=[a,c["over_a"],c["over_b"],b] if c["op"]=="reeve" else [a,b]
+            j=joints.get(ident,{})
+            for p1,p2 in zip(points,points[1:]):
+                connections.append({"a_m":p1,"b_m":p2,"live":bool(j.get("attached")),"joint_id":ident})
+        frame["connections"]=connections
         if frames and abs(frames[-1]["time_s"]-frame["time_s"]) < 1e-10: frames[-1] = frame
         else: frames.append(frame)
     result = {"schema": SCHEMA, "title": d["title"], "status": "failed",
               "request_hash": artifacts.digest(d), "limitations": LIMITATIONS}
+    def observation():
+        state=deepcopy(live.session.state)
+        joints=act({"op":"joints"}).get("joints",[])
+        measured={"elapsed_s":state["t"]-first["t"],"dynamic_mass_residual_kg":_mass(state)-_mass(first),
+                  "max_grip_force_n":maximum_force,"checkpoint_error":checkpoint_error,"checkpoints":checkpoints,
+                  "active_joints":sum(j["attached"] for j in joints),"broken_joints":sum(not j["attached"] for j in joints)}
+        return {"bodies":state["bodies"],"joints":joints,"measured":measured,"released_joint_ids":sorted(released)}
     try:
         session = open_session()
         first = deepcopy(session.state)
@@ -250,6 +316,8 @@ def run(engine, directory, document, *, cancel=None):
                     if abs(live.session.state["t"] - before_t - DT*n) > 1e-7:
                         raise ValueError("Native time did not advance by the requested step")
                     capture(); remaining -= n
+            elif op == "sample":
+                samples[command["label"]]=observation()
             elif op == "checkpoint":
                 before = deepcopy(live.session.state)
                 before_joints = act({"op": "joints"})["joints"]
@@ -260,7 +328,7 @@ def run(engine, directory, document, *, cancel=None):
                 session = open_session(saved)
                 restored_tier = session.state.get("restored", {}).get("tier")
                 after_joints = act({"op": "joints"})["joints"]
-                keys = ("id", "kind", "a", "b", "attached", "holds_tension_n", "holds_shear_n", "parted_because", "parted_capacity_n")
+                keys = ("id", "kind", "a", "b", "attached", "holds_tension_n", "holds_shear_n", "parted_because", "parted_capacity_n", "length_m", "ratio", "breaks_at_n", "over_a", "over_b")
                 if [{k:j.get(k) for k in keys} for j in before_joints] != [{k:j.get(k) for k in keys} for j in after_joints]:
                     raise ValueError("Checkpoint changed connections or failure history")
                 if restored_tier != "whole":
@@ -276,8 +344,14 @@ def run(engine, directory, document, *, cancel=None):
                 checkpoints += 1
                 capture()
             else:
-                reply = act(command)
+                native_command={k:v for k,v in command.items() if k!="id"}
+                if op == "unhinge":native_command["joint"]=aliases[command["joint"]]
+                reply = act(native_command)
+                if op in CONNECTIONS and "id" in command:aliases[command["id"]]=reply["joint"]
+                if op in ("tie","reeve"):guides.append((reply["joint"],command))
+                if op == "unhinge":released.add(native_command["joint"])
                 events.append({"step": index, "command": command, "reply": reply})
+                capture()
         final = deepcopy(live.session.state)
         joints = act({"op": "joints"}).get("joints", [])
         start_bodies = _body_map(first); end_bodies = _body_map(final)
@@ -293,8 +367,9 @@ def run(engine, directory, document, *, cancel=None):
         checked = []
         for c in d["checks"]:
             metric = c["metric"]
+            observed=samples[c["sample"]] if "sample" in c else {"bodies":final["bodies"],"joints":joints,"measured":measured,"released_joint_ids":released}
             if "body" in c:
-                b = end_bodies[c["body"]]; initial = start_bodies[c["body"]]
+                b = _body_map(observed)[c["body"]]; initial = start_bodies[c["body"]]
                 speed2 = sum(v*v for v in b["velocity_m_s"])
                 if metric == "mass_kg": value = b["mass_kg"]
                 elif metric == "speed_m_s": value = math.sqrt(speed2)
@@ -302,10 +377,16 @@ def run(engine, directory, document, *, cancel=None):
                 else:
                     axis = "xyz".index(metric.split("_")[1]); value = b["position_m"][axis]
                     if metric.startswith("displacement_"): value -= initial["position_m"][axis]
-            else: value = measured[metric]
+            elif "joint" in c:
+                j=next((j for j in observed["joints"] if j["id"]==aliases[c["joint"]]),None)
+                if j is None and metric=="joint_attached" and aliases[c["joint"]] in observed["released_joint_ids"]:
+                    value=0.
+                elif j is None or JOINT_METRICS[metric] not in j:raise ValueError("Requested joint observation is unavailable")
+                else:value=float(j[JOINT_METRICS[metric]])
+            else: value = observed["measured"][metric]
             checked.append({**c, "value": value, "passed": c["min"] <= value <= c["max"]})
         result.update(status="passed" if all(c["passed"] for c in checked) else "failed",
-                      checks=checked, measured=measured, final_bodies=final["bodies"], joints=joints)
+                      checks=checked, measured=measured, final_bodies=final["bodies"], joints=joints, samples=samples, connection_ids=aliases)
     except Exception as exc:
         result.update(status="cancelled" if cancel.is_set() else "failed", error=str(exc))
     finally:
@@ -321,6 +402,7 @@ def run(engine, directory, document, *, cancel=None):
 def catalog():
     return {"schema": SCHEMA, "operations": {name: {"fields": sorted(fields), "required": sorted(required)}
             for name, (fields, required) in COMMANDS.items()}, "body_metrics": sorted(BODY_METRICS),
+            "joint_metrics": sorted(JOINT_METRICS),
             "global_metrics": sorted(GLOBAL_METRICS), "limits": {"bodies": 16, "cells": MAX_CELLS,
             "steps": 48, "simulated_s": 5, "dt_s": DT, "wall_s": 45},
             "limitations": LIMITATIONS}
