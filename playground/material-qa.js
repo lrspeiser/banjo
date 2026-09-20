@@ -48,9 +48,12 @@ async function runs(preferred) {
   if (!data.runs.length) option($("runs"), "", "No saved runs");
   for (const r of data.runs) {
     const date = r.started_unix_s ? new Date(r.started_unix_s * 1000).toLocaleString() : r.id.slice(0, 8);
-    option($("runs"), r.id, date + " · " + r.status);
+    option($("runs"), r.id, date + " · " + r.completed + "/" + r.total + " · " + r.status);
   }
-  runId = preferred || runId || data.runs[0]?.id || "";
+  // Open the newest full matrix first, so a later one-case check does not
+  // hide the rest of the material range. Explicit user selections still win.
+  const complete = data.runs.find(r => r.total === catalog.cases.length);
+  runId = preferred || runId || complete?.id || data.runs[0]?.id || "";
   $("runs").value = runId;
 }
 async function refresh() {
@@ -62,7 +65,7 @@ async function refresh() {
     if (requestedRun !== runId) return;
     report = nextReport;
     const runOption = [...$("runs").options].find(o => o.value === runId);
-    if (runOption) runOption.textContent = runOption.textContent.replace(/ · [^·]*$/, " · " + report.status);
+    if (runOption) runOption.textContent = runOption.textContent.replace(/ · \d+\/\d+ · [^·]*$/, " · " + report.completed + "/" + report.total + " · " + report.status);
     const changed = report.results?.filter(r => r.status === "review_required").length || 0;
     const failed = report.results?.filter(r => ["failed", "error"].includes(r.status)).length || 0;
     $("progress").textContent = report.completed + "/" + report.total + " · " + report.status.replaceAll("_", " ")

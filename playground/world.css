@@ -342,3 +342,6 @@ kbd {
 #expedition button:disabled { opacity: .45; }
 
 #talk[hidden], #details[hidden] { display: none; }
+
+/* Navigation to the Workshop and recorded material range. */
+#panel .workshop-entry { color: var(--ink); border-color: var(--edge); }

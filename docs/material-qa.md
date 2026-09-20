@@ -1,10 +1,34 @@
 # Material impact range and refinement boundary
 
-The material QA area is at **/qa**, linked from the Physics lab. It records
+The material QA area is at **/qa**, linked from the Physics lab, World and Workshop. It records
 controlled native impacts. Select material, thickness and speed, orbit the
 specimen, slow the crack frames, step frame by frame and inspect measurements.
 It uses the detailed lattice solver in isolated processes without opening or
 resetting the live world. No scripted fragments; game laws and limits unchanged.
+
+## Publishing to a local sim
+
+Use the same server for Workshop, World and the material range. Open `/qa`
+from its navigation. The viewer opens the newest full matrix by
+default; the run picker includes case counts and retains later partial runs. A newer
+full run remains the default even when it fails, so regressions stay visible.
+
+Build `banjo_platform_cli`, `banjo_live_world_run` and
+`banjo_fast_lattice_run` together. Pass the platform executable with
+`--engine`; the QA runner must be beside it. The server discovers evidence
+under `<runs>/material-qa/<run-id>/`. Copy complete run directories there to
+publish existing recordings; copying does not re-run or re-date the evidence.
+Use the original `--rooms` and `--runs` directories when updating a local
+server so saved worlds and the Workshop library remain available. Do not
+overwrite existing evidence or room files with a demonstration.
+
+The local September 19 publication uses port 8793, with all 96 baseline
+recordings and selected repeat runs. This is a local UI/deployment checkpoint;
+the model boundaries and qualification limits below still apply. The published
+server passed a fresh browser-triggered glass impact against the baseline;
+playback, World/Workshop navigation and the saved building room were checked.
+The source checkpoint passed 12 QA tests, nine API/documentation checks and
+the source-registration guard. Existing saved data paths were retained.
 
 ## One intact brick, detail when needed
 
