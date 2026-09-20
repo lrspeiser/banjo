@@ -100,6 +100,9 @@ class RoomStore:
                 raise ValueError("Fabrication and native state must be saved at the same time")
             record["fabrication"] = fabrication
             record["fabrication_required"] = True
+        if isinstance(world,dict):
+            from mcp.fabrication import validate_ground_stock
+            validate_ground_stock(fabrication or {},world)
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -148,6 +151,9 @@ class RoomStore:
             if not isinstance(record.get("world"),dict) or abs(record["world"]["t_s"]-room.fabrication_record["time_s"]) > 1e-7:
                 raise ValueError("Fabrication save requires its matching native world")
         room.gameplay_record = record.get("gameplay")
+        if isinstance(record.get("world"),dict):
+            from mcp.fabrication import validate_ground_stock
+            validate_ground_stock(room.fabrication_record or {},record["world"])
         if scene == "expedition" and (not isinstance(room.gameplay_record, dict)
                                       or not isinstance(record.get("world"), dict)):
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")

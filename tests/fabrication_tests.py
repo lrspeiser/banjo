@@ -185,6 +185,56 @@ class NativeFabrication(unittest.TestCase):
     def begin(self,material="oak",ident="job-native-0001"):
         return self.call("start",candidate=candidate(material),stock_kg=10,
             revision=self.room.fabrication_record["revision"],request_id=ident)
+
+    def excavate(self):
+        self.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,
+            "cell_m":.25,"soil_m":.2,"sand_m":.02}}
+        self.live.open(self.app,{"spec":self.room.spec})
+        self.live.session.send(op="dig",**{"from":[0,0],"to":[0,0],"width_m":.5,"depth_m":.1})
+
+    def test_store_ground_commits_both_accounts_and_retries_after_restart(self):
+        self.excavate();before=workshop_install._snapshot(self.live)
+        carried=before["ground"]["carried"]
+        request={**self.context(),"sand_m3":carried["sand_m3"],"soil_m3":carried["soil_m3"],
+            "revision":self.room.fabrication_record["revision"],"request_id":"store-ground-0001"}
+        original=deepcopy(self.room.fabrication_record);old=self.live.session
+        with mock.patch.object(self.app.store,"save",side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):room_api.request(self.app,"store_ground",request)
+        self.assertIs(old,self.live.session)
+        self.assertEqual(before,workshop_install._snapshot(self.live))
+        self.assertEqual(original,self.room.fabrication_record)
+        result=room_api.request(self.app,"store_ground",request)
+        self.assertFalse(result["replayed"]);self.assertTrue(old._closed)
+        self.assertTrue(room_api.request(self.app,"store_ground",request)["replayed"])
+        state=self.room.fabrication_record
+        self.assertEqual(state["stock_kg"],original["stock_kg"])
+        self.assertEqual(state["energy_j"],original["energy_j"])
+        self.assertEqual(len(state["raw_lots"]),1)
+        saved=self.app.store.load("fabrication")
+        self.assertEqual(saved.fabrication_record,state)
+        self.assertEqual(saved.world_record,workshop_install._snapshot(self.live))
+        self.assertEqual(saved.world_record["ground"]["carried"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
+        self.live.open(self.app,{"spec":saved.spec,"snapshot":saved.world_record})
+        self.room.fabrication_record=deepcopy(saved.fabrication_record)
+        self.assertTrue(room_api.request(self.app,"store_ground",request)["replayed"])
+        with self.assertRaisesRegex(ValueError,"different"):
+            room_api.request(self.app,"store_ground",{**request,"sand_m3":0})
+        with self.assertRaisesRegex(ValueError,"Insufficient"):
+            self.call("store_ground",sand_m3=.001,soil_m3=0,revision=state["revision"],request_id="store-ground-0002")
+
+    def test_raw_stock_save_rejects_missing_or_changed_source_and_destination(self):
+        self.excavate();s=workshop_install._snapshot(self.live)
+        self.call("store_ground",sand_m3=s["ground"]["carried"]["sand_m3"],soil_m3=0,
+            revision=self.room.fabrication_record["revision"],request_id="store-ground-0001")
+        path=self.app.store.path_of("fabrication");original=json.loads(path.read_text(encoding="utf-8"))
+        for target in ("raw_lots","source","mass"):
+            bad=deepcopy(original)
+            if target=="raw_lots":bad["fabrication"].pop("raw_lots")
+            elif target=="source":bad["world"]["ground"]["exported"]["sand_m3"]=0
+            else:bad["fabrication"]["raw_lots"]["store-ground-0001"]["contents"][0]["mass_kg"]*=2
+            path.write_text(json.dumps(bad),encoding="utf-8")
+            with self.assertRaises(ValueError):self.app.store.load("fabrication")
+        path.write_text(json.dumps(original),encoding="utf-8")
     def test_recovered_stock_save_failure_restart_and_native_state(self):
         self.begin();self.step(2)
         before=deepcopy(self.room.fabrication_record);native=workshop_install._snapshot(self.live)
@@ -286,6 +336,28 @@ class NativeHTTP(WorkbenchTestCase):
         app=self.start();app.live=live_session.Live();app.engine_path=ENGINE
         self.addCleanup(app.live.shutdown)
         return app
+
+    def test_mcp_stores_main_world_ground_and_replays_original_session(self):
+        app=self.native_server();opened=self.post(app,"/api/world/open",{"scene":"world"})
+        ctx={"scene":"world","session":opened["session"]}
+        self.post(app,"/api/world/fabrication/configure",{**ctx,"settings":settings(),"request_id":"raw-config-0001"})
+        self.post(app,"/api/live/act",{"session":ctx["session"],"op":"dig","from":[13,-7],"to":[13,-7],"width_m":.5,"depth_m":.05})
+        source=self.post(app,"/api/world/fabrication/state",ctx)
+        carried=source["carried_ground"]
+        req={**ctx,"sand_m3":carried["sand_m3"],"soil_m3":carried["soil_m3"],
+            "revision":source["state"]["revision"],"request_id":"raw-store-0001"}
+        import fabrication_mcp_tools as tools
+        from circuit_api import validate
+        schema=next(t["inputSchema"] for t in tools.TOOLS if t["name"]=="fabrication_store_ground")
+        validate(req,schema,"arguments")
+        with mock.patch.dict(os.environ,{"BANJO_PLAYGROUND_URL":f"http://127.0.0.1:{app.port}"}):
+            first=tools.call("fabrication_store_ground",req)
+            self.assertNotEqual(first["session"],ctx["session"])
+            self.assertTrue(tools.call("fabrication_store_ground",req)["replayed"])
+        saved=app.store.load("world")
+        self.assertEqual(len(saved.fabrication_record["raw_lots"]),1)
+        self.assertEqual(saved.world_record,workshop_install._snapshot(app.live))
+        self.assertTrue(saved.world_upgrades)
 
     def test_main_world_funded_outputs_preserve_terrain_water_and_stock(self):
         app=self.native_server()

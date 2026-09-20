@@ -102,3 +102,9 @@ against the running player world before a destination can be committed. The
 currently deployed local world remains on the previous runtime.
 
 Verification: 27 native installation cases pass; the strengthened mixed-material case then passes independently. It digs through 0.02 m of sand into soil on a 0.25 m grid, withdraws half of each substance, reopens the snapshot, rejects invalid requests without changing state, and withdraws the remaining halves. Native densities are 1600 kg/m3 for both declared bulk materials; substances remain separate. Existing bodies and non-ground snapshot fields stay unchanged. Seven corrupt-ground cases include an export exceeding excavation. The source-registration guard remains 275/275.
+
+## Durable raw receiving deployed (September 20)
+
+The receiving transaction described above is now implemented and deployed on local port 8793. `POST /api/world/fabrication/store_ground` and MCP `fabrication_store_ground` stage the native withdrawal, validate both accounts, and save source snapshot, raw lots and retry receipt together before replacing the live session. The reply returns the new session; an identical request ID is replayable using its original session after a restart. Failed saves leave the original live source untouched.
+
+Raw lots retain substance, mass, volume, granular form and explicitly unmodeled thermal state. Sand remains sand and soil remains soil; neither enters the finished glass/oak/iron stock. Crafted-object pickup remains separate and retains the object. No proximity, container capacity, handling energy or raw-processing law is claimed. See the [fabrication contract](fabrication.md#stored-excavated-materials), [before screenshot](evidence/raw-material-before.png) and [after screenshot](evidence/raw-material-after.png).

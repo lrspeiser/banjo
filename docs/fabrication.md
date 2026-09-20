@@ -97,13 +97,14 @@ that current `scene` and `session`. Unknown fields refuse.
 | `pause` | `fabrication_pause` | `job_id`, `revision`, `request_id`. Keeps the intermediate workpiece. |
 | `resume` | `fabrication_resume` | `job_id`, `revision`, `request_id`. Continues retained work. |
 | `recover` | `fabrication_recover` | `material`, `mass_kg` (0.000001..10000), `revision`, `request_id`. Moves available cold offcuts into same-material stock, with no work/energy refund. |
+| `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3` (each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.6.0, platform MCP 1.8.0; native ABI remains 25.
+inventory. World MCP is 1.11.0, platform MCP 1.14.0; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -264,3 +265,33 @@ join offcut geometry, convert mined sand/soil, or provide a calibrated recycling
 process. Those require their own physical operations and material states.
 World MCP 1.10.0 and platform MCP 1.13.0 expose `fabrication_recover`; native ABI
 25 and the v1 save layout are unchanged.
+
+
+## Stored excavated materials
+
+`state` additionally returns `carried_ground` with native sand/soil m3 and kg.
+The Raw materials panel can transfer the current carried quantities into saved
+`state.raw_lots`. Each lot is keyed by the request ID and retains the native
+bulk-material packet: substance, volume, mass, source, granular form and explicit
+unmodeled thermal state. Sand is not glass, soil is not concrete, and neither
+can be spent by the existing finished-stock shaping process. There is no physical
+container, proximity check, handling work or heat transport model in this
+storage account yet. Crafted objects are not eligible sources.
+
+The server opens an isolated whole snapshot, checks all existing state, debits
+only that staged source, accepts its packet and checks exported volumes against
+all received ground lots. It saves the complete source, stock and receipt in
+one room file before swapping sessions. Failed saves retain the original process
+and inventory. Matching retries return the previous result even with the old
+source session; changed arguments refuse. Use the returned session for later
+commands. Browser retries survive reconnect, including when no carried material
+remains because the first request succeeded but its reply was lost.
+
+Room save and load both require native cumulative ground exports to match the
+stored lots (volume tolerance 1e-10 m3 absolute / 1e-12 relative); declared bulk
+mass is checked against native 1600 kg/m3 sand and soil density. New snapshots
+require the ground-state-v2 runtime. Older runtimes refuse before withdrawing.
+The finished-stock and energy ledger remains unchanged by raw storage. Stored
+lots survive fabrication operations and reopening without becoming initial
+stock or being supplied twice. The material-processing and container goals
+remain open.

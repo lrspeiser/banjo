@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-20",
+  "runtime_source": "b5bad2d",
+  "url": "http://127.0.0.1:8793/fabrication?scene=world",
+  "action": "Store carried sand and soil (actual browser click)",
+  "preservation_checks": {
+    "spec": true,
+    "inventory": true,
+    "workshop_installs": true,
+    "world_upgrades": true,
+    "native_bodies": true,
+    "existing_fabrication_fields": true
+  },
+  "raw_lots": {
+    "bac2603c-4778-41c9-9475-7db10acc5600": {
+      "contents": [
+        {
+          "mass_kg": 1.2140662045486472,
+          "substance": "sand",
+          "volume_m3": 0.0007587913778429045
+        },
+        {
+          "mass_kg": 0.541410871348802,
+          "substance": "soil",
+          "volume_m3": 0.0003383817945930012
+        }
+      ],
+      "form": "granular",
+      "schema": "banjo.bulk-material.v1",
+      "source": "excavated_ground",
+      "thermal_state": "unmodeled"
+    }
+  },
+  "ground_carried": {
+    "rock_m3": 0.0,
+    "sand_m3": 0.0,
+    "soil_m3": 0.0
+  },
+  "ground_exported": {
+    "rock_m3": 0.0,
+    "sand_m3": 0.0007587913778429045,
+    "soil_m3": 0.0003383817945930012
+  },
+  "screenshots": [
+    "raw-material-before.png",
+    "raw-material-after.png"
+  ],
+  "tests": {
+    "fabrication": 21,
+    "room_store": 25,
+    "api_docs": 11,
+    "physics_trials_run": 14,
+    "physics_trials_skipped": 1,
+    "source_registration": 275
+  },
+  "limitations": [
+    "Raw storage is not processing or chemical separation",
+    "Thermal state unmodeled",
+    "No physical container or proximity law",
+    "Not full engine qualification"
+  ]
+}

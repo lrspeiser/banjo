@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.10.0**; platform server: **1.13.0**, requiring native ABI **25**.
+Current world server version: **1.11.0**; platform server: **1.14.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -74,6 +74,7 @@ broke.
 | `fabrication_pause` | retain an interrupted workpiece and its spent work; no refund. |
 | `fabrication_resume` | continue retained work without refilling supply or clearing heat. |
 | `fabrication_recover` | Return measured same-material cold offcuts to stock without restoring spent energy. Requires material, mass_kg, revision and request_id. |
+| `fabrication_store_ground` | Save carried sand/soil as unprocessed raw lots. Requires sand_m3, soil_m3, revision and request_id; returns the replacement session. Both inventories and retry receipt commit together. |
 | `fabrication_wait` | advance native physics and fabrication 1–10 seconds, then save both; inspect state after an uncertain wait. |
 | `fabrication_preview` | native clearance and state-carry preview for a finished funded part. |
 | `fabrication_commit` | atomic material transfer and native publication; retries cannot install twice. |
@@ -1039,4 +1040,4 @@ Workshop installation and startup additions use the same [active thermal carry c
 
 Ground state in saved worlds: [native ground snapshot and carry contract](../terrain-and-water.md#live-ground-state-snapshots-september-20). Existing save/open and installation operations use it with the updated native runtime; operation signatures are unchanged. Corrupt ground-bearing restores refuse rather than replay terrain. Legacy saves cannot recover missing pending state. Deployed on local port 8793 from source ebded33; see [deployment evidence](../evidence/ground-state-deployment.json).
 
-Internal source work: [excavated bulk transfer](../material-collection-contract.md#excavated-bulk-transfer-primitive-source-work-september-20) adds native `ground_withdraw` and ground-state v2 export accounting. It is not exposed through HTTP/MCP yet: the receiving-store durable transaction must land first. Existing crafted-object pickup keeps its object representation. The deployed local runtime is unchanged by this source checkpoint.
+Excavated raw materials are now exposed through the atomic HTTP `store_ground` and MCP `fabrication_store_ground` transaction. See the [receiving contract](../material-collection-contract.md#durable-raw-receiving-deployed-september-20). Local port 8793 runs the ground-state v2 runtime with durable receiving storage; crafted-object pickup remains separate.

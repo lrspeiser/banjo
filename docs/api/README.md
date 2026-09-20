@@ -16,7 +16,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.7.0**; platform MCP is **1.10.0**.
+Current native ABI: **25**. World MCP is **1.11.0**; platform MCP is **1.14.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.
@@ -387,4 +387,4 @@ Thermal state in saved worlds: [native snapshot persistence and legacy limits](.
 
 Ground state in saved worlds: [native ground snapshot and carry contract](../terrain-and-water.md#live-ground-state-snapshots-september-20). Existing save/open and installation operations use it with the updated native runtime; operation signatures are unchanged. Corrupt ground-bearing restores refuse rather than replay terrain. Legacy saves cannot recover missing pending state. Deployed on local port 8793 from source ebded33; see [deployment evidence](../evidence/ground-state-deployment.json).
 
-Internal source work: [excavated bulk transfer](../material-collection-contract.md#excavated-bulk-transfer-primitive-source-work-september-20) adds native `ground_withdraw` and ground-state v2 export accounting. It is not exposed through HTTP/MCP yet: the receiving-store durable transaction must land first. Existing crafted-object pickup keeps its object representation. The deployed local runtime is unchanged by this source checkpoint.
+Excavated raw materials are now exposed through the atomic HTTP `store_ground` and MCP `fabrication_store_ground` transaction. See the [receiving contract](../material-collection-contract.md#durable-raw-receiving-deployed-september-20). Local port 8793 runs the ground-state v2 runtime with durable receiving storage; crafted-object pickup remains separate.

@@ -98,6 +98,11 @@ def audit(state):
 def validate_state(state):
     if not isinstance(state, dict) or state.get("schema") != SCHEMA:
         raise ValueError("Unsupported fabrication save")
+    lots=state.get("raw_lots",{})
+    if not isinstance(lots,dict) or len(lots)>4096: raise ValueError("Invalid raw material lots")
+    for ident,packet in lots.items():
+        token(ident,"lot_id");bulk_packet(packet)
+        if ident not in state["receipts"]: raise ValueError("Raw material lot has no receipt")
     if config(state["config"]) != state["config"]: raise ValueError("Invalid saved configuration")
     for key in ("time_s", "energy_j", "station_heat_j", "ambient_j", "spent_j"):
         number(state[key], key, 0, 1e12)
@@ -130,6 +135,60 @@ def validate_state(state):
     if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
         raise ValueError("Fabrication save fails its material or energy ledger")
     return state
+
+
+def bulk_packet(packet):
+    """Validate a source-produced material packet, never an object recipe."""
+    obj(packet,{"schema","source","form","thermal_state","contents"},
+        {"schema","source","form","thermal_state","contents"})
+    if packet["schema"]!="banjo.bulk-material.v1" or packet["form"]!="granular" or packet["thermal_state"]!="unmodeled":
+        raise ValueError("Unsupported bulk material state")
+    if not isinstance(packet["source"],str) or not 1<=len(packet["source"])<=128:
+        raise ValueError("Bulk material needs source provenance")
+    contents=packet["contents"]
+    if not isinstance(contents,list) or not 1<=len(contents)<=32: raise ValueError("Invalid bulk contents")
+    seen=set()
+    for item in contents:
+        obj(item,{"substance","volume_m3","mass_kg"},{"substance","volume_m3","mass_kg"})
+        substance=item["substance"]
+        if not isinstance(substance,str) or not 1<=len(substance)<=80 or substance in seen:
+            raise ValueError("Invalid or duplicate bulk substance")
+        seen.add(substance)
+        number(item["volume_m3"],"volume_m3",1e-12,1e6)
+        number(item["mass_kg"],"mass_kg",1e-12,1e9)
+    return packet
+
+
+def receive_bulk(state,body,packet):
+    """Trusted adapter only: the debit and this candidate must commit together."""
+    if check_request(state,body): return deepcopy(state),True
+    bulk_packet(packet)
+    out=deepcopy(state)
+    out.setdefault("raw_lots",{})[body["request_id"]]=deepcopy(packet)
+    out["receipts"][body["request_id"]]=digest(body)
+    out["revision"]+=1
+    validate_state(out)
+    return out,False
+
+
+def validate_ground_stock(state,world):
+    """The receiving account must match the native source's cumulative debit."""
+    received={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
+    for packet in state.get("raw_lots",{}).values():
+        if packet["source"]!="excavated_ground": continue
+        for item in packet["contents"]:
+            key=item["substance"]+"_m3"
+            if key not in ("sand_m3","soil_m3"): raise ValueError("Unsupported excavated substance")
+            # These are the declared native bulk densities, not solid presets.
+            if not math.isclose(item["mass_kg"],item["volume_m3"]*1600,rel_tol=1e-12,abs_tol=1e-10):
+                raise ValueError("Raw material mass does not match native volume")
+            received[key]+=item["volume_m3"]
+    exported=(world.get("ground") or {}).get("exported",{})
+    for key,total in received.items():
+        source=number(exported.get(key,0),"exported volume",0,1e12)
+        if not math.isclose(total,source,rel_tol=1e-12,abs_tol=1e-10):
+            raise ValueError("Raw stock does not match native ground exports")
+    return received
 
 def advance(state, time_s):
     """Exact constant-power thermal segments, driven only by accepted native time.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from types import SimpleNamespace
 import threading
+import logging
 from mcp import fabrication as model, engine_materials, workshop_components, workshop_visual, workshop_rigid, workshop_matter_metrics
 import workshop_install as install
 import workshop_sparse_trial as sparse
@@ -16,6 +17,7 @@ COMMAND_FIELDS = {
     "pause": {"job_id", "request_id", "revision"},
     "resume": {"job_id", "request_id", "revision"},
     "recover": {"material", "mass_kg", "request_id", "revision"},
+    "store_ground": {"sand_m3", "soil_m3", "request_id", "revision"},
 }
 
 def active(app):
@@ -96,6 +98,7 @@ def request(app, operation, body):
     if operation not in COMMAND_FIELDS: raise ValueError("Unknown fabrication operation")
     fields = COMMAND_FIELDS[operation]
     model.obj(body, COMMON|fields, COMMON|fields)
+    if operation=="store_ground": return store_ground(app,body)
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:
@@ -105,7 +108,10 @@ def request(app, operation, body):
             model.validate_state(state)
             model.advance(state, old.state["t"])
         if operation == "state":
+            carried=(old.send(op="environment").get("environment",{}).get("ground",{}).get("carried",{})
+                     if old.spec.get("terrain") else {})
             return {"scene": room.scene, "session": old.id, "cell_m": old.spec["cell_m"], "configured": state is not None,
+                    "carried_ground":carried,
                     "state": model.report(state) if state is not None else None}
         if operation == "configure":
             model.token(body["request_id"])
@@ -135,6 +141,48 @@ def request(app, operation, body):
         saved = install._snapshot(live)
         _persist(app, room, saved, state)
         return {"state": model.report(state), "replayed": replayed}
+
+
+def store_ground(app,body):
+    """Stage the source debit; save source, receiving lots and receipt together."""
+    with install._world(app) as (room,live,old),LOCK:
+        if body["scene"]!=room.scene: raise ValueError("The source room changed")
+        state=deepcopy(_state(room));model.advance(state,old.state["t"])
+        action={k:v for k,v in body.items() if k not in COMMON};action["op"]="store_ground"
+        if model.check_request(state,action):
+            return {"state":model.report(state),"session":old.id,"replayed":True}
+        install._source(room,old,body)
+        quantities={k:model.number(body[k],k,0,10000) for k in ("sand_m3","soil_m3")}
+        if sum(quantities.values())<=0: raise ValueError("Choose a positive amount of carried ground")
+        before=install._snapshot(live)
+        ground=before.get("ground") or {}
+        if ground.get("schema")!="banjo.ground-state.v2": raise ValueError("Native runtime needs accounted bulk transfers")
+        model.validate_ground_stock(state,before)
+        for key,amount in quantities.items():
+            if amount>ground["carried"][key]: raise ValueError("Insufficient carried ground")
+        staged=install.live_session.Live()
+        try:
+            opened=staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path),
+                {"spec":deepcopy(room.spec),"snapshot":before})
+            if opened.get("restored",{}).get("tier")!="whole": raise ValueError("Native world did not restore whole")
+            install._preserved(before,install._snapshot(staged),set())
+            reply=staged.session.send(op="ground_withdraw",**quantities)
+            saved=install._snapshot(staged)
+            expected=deepcopy(before)
+            for key,amount in quantities.items():
+                expected["ground"]["carried"][key]-=amount
+                expected["ground"]["exported"][key]+=amount
+            install._preserved(expected,saved,set())
+            state,_=model.receive_bulk(state,action,reply["material_packet"])
+            model.validate_ground_stock(state,saved)
+            _persist(app,room,saved,state)
+            live.session=staged.session;staged.session=None
+            live.session.on_reply=getattr(app,"on_live_reply",None)
+            install._preview_cache(app).clear()
+            try:old.close()
+            except Exception:logging.getLogger("banjo").exception("Retired material source did not close")
+            return {"state":model.report(state),"session":live.session.id,"replayed":False}
+        finally:staged.shutdown()
 
 def preview(app, body):
     model.obj(body, COMMON|{"job_id","position_m"}, COMMON|{"job_id","position_m"})

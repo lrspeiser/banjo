@@ -10,6 +10,7 @@ for(const link of document.querySelectorAll("[data-return-world]"))link.href="/w
 if(roomName==="world"){$("place-x").value=13;$("place-z").value=-7;}
 
 let token, session="", state=null, preview=null, busy=false, viewer=null, cellSize=.04;
+let carriedGround={};
 let pending={};
 try{pending=JSON.parse(sessionStorage.getItem(pendingKey)||"{}");if(!pending||Array.isArray(pending)||typeof pending!=="object")pending={};}catch{pending={};}
 const fmt=(n,d=3)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
@@ -23,10 +24,12 @@ async function command(op,body={},retry=false){
  if(retry){payload=pending[key]||{...body,request_id:crypto.randomUUID()};pending[key]=payload;sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
  try{const answer=await api("/api/world/fabrication/"+op,{...context(),...payload});
  if(retry){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
+ if(answer.carried_ground){carriedGround=answer.carried_ground;$("carried-ground").textContent="Carrying "+fmt(carriedGround.sand_kg||0)+" kg sand and "+fmt(carriedGround.soil_kg||0)+" kg soil.";}
  if(answer.cell_m)cellSize=answer.cell_m;if(answer.session)session=answer.session;if(answer.state)render(answer.state);if(answer.native)draw(answer.native);return answer;
  }catch(e){if(retry&&e.definitive){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}throw e;}
 }
 function controls(){
+ $("store-ground").disabled=busy||!session||!state||(!pending.store_ground&&!(carriedGround.sand_m3>0)&&!(carriedGround.soil_m3>0));
  for(const id of ["refresh","configure","quote","start","wait-one","wait-ten","preview","commit"])$(id).disabled=busy||!session;
  $("connect").disabled=busy;
  $("configure").disabled||=!!state;
@@ -39,6 +42,9 @@ function render(s){
  state=s;$("setup").open=!state;$("setup-note").textContent="Initial stock and energy are fixed. Workpieces, heat and remaining supply survive leaving the room.";
  $("meters").textContent="World "+fmt(s.time_s)+" s · Supply "+fmt(s.energy_j)+" J · Station "+fmt(s.temperature_k-273.15,2)+" °C";
  $("stocks").replaceChildren();
+ $("raw-lots").replaceChildren();
+ const raw={};for(const lot of Object.values(s.raw_lots||{}))for(const item of lot.contents)raw[item.substance]=(raw[item.substance]||0)+item.mass_kg;
+ for(const [substance,mass] of Object.entries(raw)){const p=document.createElement("p");p.textContent=fmt(mass)+" kg "+substance+" stored, unprocessed";$("raw-lots").append(p);}
  for(const material of Object.keys(s.stock_kg)){const tr=document.createElement("tr");for(const text of [material,fmt(s.stock_kg[material])+" kg",fmt(s.waste_kg[material]||0)+" kg",fmt(s.transferred_kg[material]||0)+" kg"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}const recover=document.createElement("td");
  if((s.waste_kg[material]||0)>0){const b=document.createElement("button");b.textContent="Recover "+material+" offcuts";b.onclick=()=>run(async()=>{preview=null;await command("recover",{material,mass_kg:state.waste_kg[material],revision:state.revision},true);},"Offcuts returned to stock. Spent work and energy are retained.");recover.append(b);}tr.append(recover);$("stocks").append(tr);}
  const selected=$("finished").value;$("finished").replaceChildren();$("jobs").replaceChildren();
@@ -74,6 +80,7 @@ $("design").onclick=design;$("material").onchange=design;design();
 $("connect").onclick=()=>run(async()=>{const n=await api("/api/world/open",{scene:roomName});if(n.scene!==roomName)throw Error("The requested room was not opened; no manufacturing changes were made.");session=n.session;preview=null;draw(n);const r=await command("state");if(!r.configured){state=null;controls();}},roomLabel+" connected. This page advances time only when requested; another open world view may also advance it.");
 $("refresh").onclick=()=>run(async()=>{preview=null;await command("state");draw(await api("/api/live/act",{session,op:"poses"}));},"Current state read.");
 $("configure").onclick=()=>run(()=>command("configure",{settings:JSON.parse($("settings").value)},true),"Initial resources declared.");
+$("store-ground").onclick=()=>run(async()=>{preview=null;await command("store_ground",{sand_m3:carriedGround.sand_m3||0,soil_m3:carriedGround.soil_m3||0,revision:state.revision},true);await command("state");draw(await api("/api/live/act",{session,op:"poses"}));},"Raw material and the source world saved together.");
 const recipe=()=>({candidate:JSON.parse($("candidate").value),stock_kg:Number($("stock").value)});
 $("quote").onclick=()=>run(async()=>{const r=await command("quote",recipe());const q=r.quote;$("quote-result").textContent=fmt(q.product_kg)+" kg part + "+fmt(q.offcut_kg)+" kg offcuts\n"+fmt(q.required_j)+" J work; at least "+fmt(q.minimum_duration_s)+" s\n"+(r.affordable?"Stock available.":"Insufficient stock.");},"Quote checked without spending stock.");
 $("start").onclick=()=>run(async()=>{preview=null;await command("start",{...recipe(),revision:state.revision},true);},"Stock reserved. Advance world time to do work.");
