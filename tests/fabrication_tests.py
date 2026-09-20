@@ -224,6 +224,52 @@ class NativeHTTP(WorkbenchTestCase):
         self.addCleanup(app.live.shutdown)
         return app
 
+    def test_main_world_process_preserves_receipts_and_cannot_reset(self):
+        app=self.native_server()
+        opened=self.post(app,"/api/world/open",{"scene":"world"})
+        ctx={"scene":"world","session":opened["session"]}
+        receipts=deepcopy(app.room.world_upgrades)
+        self.assertTrue(receipts, "main-world startup receipts are required for this regression")
+        import fabrication_mcp_tools as tools
+        from circuit_api import validate
+        with mock.patch.dict(os.environ,{"BANJO_PLAYGROUND_URL":f"http://127.0.0.1:{app.port}"}):
+            def call(op,**args):
+                args={**ctx,**args}
+                schema=next(t["inputSchema"] for t in tools.TOOLS if t["name"]=="fabrication_"+op)
+                validate(args,schema,"arguments")
+                return tools.call("fabrication_"+op,args)
+            call("configure",settings=settings(),request_id="main-config-0001")
+            self.assertEqual(app.store.load("world").world_upgrades,receipts)
+            call("start",candidate=candidate(),stock_kg=10,revision=0,request_id="main-job-0001")
+            call("wait",seconds=1)
+            state=call("state")["state"]
+            call("pause",job_id="main-job-0001",revision=state["revision"],request_id="main-pause-0001")
+            before=deepcopy(app.room.fabrication_record)
+            native=workshop_install._snapshot(app.live)
+            again=self.post(app,"/api/world/open",{"scene":"world","again":True})
+            self.assertEqual(again["restored"]["tier"],"whole")
+            self.assertEqual(app.room.fabrication_record,before)
+            self.assertEqual(workshop_install._snapshot(app.live)["t_s"],native["t_s"])
+            self.assertEqual(app.store.load("world").world_upgrades,receipts)
+            with self.assertRaises(ValueError):
+                tools._post("/api/world/open",{"scene":"world","fresh":True})
+            # Remove the cached room to exercise disk-backed reset protection.
+            with self.assertRaisesRegex(ValueError,"material history"):
+                room_store.room_for(app,"world",None,True)
+            self.assertEqual(app.store.load("world").fabrication_record,before)
+            ctx["session"]=app.live.session.id
+            with self.assertRaisesRegex(ValueError,"already supplied"):
+                call("configure",settings=settings(),request_id="main-config-0002")
+            self.assertEqual(app.room.fabrication_record,before)
+            durable=json.loads(app.store.path_of("world").read_text())
+            with mock.patch.object(app.live,"open",side_effect=ValueError("native restore refused")),                     mock.patch.object(app.store,"set_aside_world") as discarded:
+                with self.assertRaisesRegex(ValueError,"native restore refused"):
+                    tools._post("/api/world/open",{"scene":"world","again":True})
+                discarded.assert_not_called()
+            after_failed=json.loads(app.store.path_of("world").read_text())
+            durable.pop("saved_unix_s"); after_failed.pop("saved_unix_s")
+            self.assertEqual(after_failed,durable)
+
     def test_http_mcp_restart_and_room_switch_keep_both_halves(self):
         app=self.native_server()
         import fabrication_mcp_tools as tools

@@ -18,7 +18,11 @@ COMMAND_FIELDS = {
 }
 
 def active(app):
-    return getattr(app, "live_holder", None) == "world" and getattr(getattr(app,"room",None),"scene",None) == "fabrication"
+    room = getattr(app, "room", None)
+    return getattr(app, "live_holder", None) == "world" and (
+        getattr(room, "scene", None) == "fabrication" or
+        getattr(room, "fabrication_required", False) or
+        isinstance(getattr(room, "fabrication_record", None), dict))
 
 def sync(app, answer=None):
     if getattr(app, "live_holder", None) != "world": return
@@ -79,7 +83,8 @@ def _persist(app, room, saved, state):
         inventory_record=install._inventory(room), world_record=saved,
         workshop_installs=deepcopy(getattr(room,"workshop_installs",[])),
         gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
-        fabrication_record=state)
+        fabrication_record=state,
+        world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
     if not getattr(app, "store", None) or not app.store.save(record):
         raise ValueError("Fabrication requires a complete durable room save")
     room.fabrication_record = state
@@ -91,8 +96,9 @@ def request(app, operation, body):
     fields = COMMAND_FIELDS[operation]
     model.obj(body, COMMON|fields, COMMON|fields)
     with install._world(app) as (room, live, old), LOCK:
-        install._source(room, old, body); install._supported(room, old)
-        if room.scene != "fabrication": raise ValueError("Open the persistent fabrication room first")
+        install._source(room, old, body)
+        if room.scene not in install.world_room.SCENES:
+            raise ValueError("Fabrication requires a persistently saved room")
         state = deepcopy(getattr(room, "fabrication_record", None))
         if state is not None:
             model.validate_state(state)
@@ -155,7 +161,7 @@ def wait(app, body):
         raise ValueError("seconds must be an integer in 1..10")
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
-        if room.scene != "fabrication": raise ValueError("Open the fabrication room")
+        if room.scene not in install.world_room.SCENES: raise ValueError("Open a persistently saved room")
         _state(room)
         for _ in range(body["seconds"]*2):
             before_t = old.state["t"]

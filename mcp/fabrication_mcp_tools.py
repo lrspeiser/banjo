@@ -3,7 +3,7 @@ from __future__ import annotations
 from circuit_api import obj, NAME, validate
 from expedition_mcp_tools import _post
 
-COMMON = {"session": NAME, "scene": {"type":"string","enum":["fabrication"]}}
+COMMON = {"session": NAME, "scene": {"type":"string","description":"Current persistent room name returned by world_open_saved or fabrication_open."}}
 TOKEN = {"type":"string","minLength":8,"maxLength":80}
 REVISION = {"type":"integer","minimum":0}
 JSON_OBJECT = {"type":"object"}
@@ -35,7 +35,7 @@ DESCRIPTIONS = {
     "start": "Reserve stock and start a bounded process using a trusted compiled quote. revision prevents concurrent spending; request_id makes retries safe.",
     "pause": "Interrupt a job while keeping its actual reserved workpiece, work and heat; no refund.",
     "resume": "Continue a paused workpiece from its retained work. Needs a free station; spent energy is not restored.",
-    "preview": "Check native placement and state carry for a finished funded workpiece. position_m is [x,z]. Preview never installs.",
+    "preview": "Check native placement and state carry for a finished funded workpiece in a supported flat-floor room. Terrain placement is not yet supported. position_m is [x,z]. Preview never installs.",
     "commit": "Atomically transfer the finished workpiece into the native world, persist both ledgers and world, then acknowledge. Retry the same request_id after an uncertain result.",
     "wait": "Advance native physics and fabrication together for 1..10 seconds and save both. This is an elapsed-time action: after connection loss read state before repeating.",
 }

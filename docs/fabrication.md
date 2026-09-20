@@ -77,9 +77,10 @@ world's heat or fracture energy. Local closure is not whole-world qualification.
 ## HTTP and MCP
 
 Every POST uses the existing same-origin `X-Banjo-Token` from `GET /api/status`.
-Open with `POST /api/world/open {"scene":"fabrication"}`; keep the returned
-`session`. All routes below begin `/api/world/fabrication/` and require
-`scene:"fabrication"` and the current `session`. Unknown fields refuse.
+Open with `POST /api/world/open {"scene":"fabrication"}` for the dedicated room,
+or use an existing persistent room such as `world`; keep the returned `scene`
+and `session`. All routes below begin `/api/world/fabrication/` and require
+that current `scene` and `session`. Unknown fields refuse.
 
 | Route suffix | MCP tool | Additional required fields / result |
 |---|---|---|
@@ -179,3 +180,32 @@ start, failed-save, stale-preview, changed-use, HTTP and actual MCP protocol tes
 cover adverse cases. Native mass tolerance is 1e-7 kg; measured ledger residuals
 are below 2e-12 J and 1e-9 kg in this fixture. These are integration and accounting
 checks, not calibrated manufacture or fresh full-engine qualification.
+
+
+## Main-world process integration (source checkpoint)
+
+Finite-stock configuration, quoting, work, pause/resume and persistence now use
+the current persistent room, including the main world. MCP world 1.8.0 and
+platform 1.11.0 accept that room's `scene` and `session` for the existing process
+operations; `fabrication_open` still opens the dedicated fabrication room.
+
+This is an intermediate integration: terrain placement and articulated products
+remain unsupported, and the main-world station UI and recovered-stock connection
+are still to be built. No resources are automatically seeded. Configuration is
+an explicit one-time authoring action with a finite isolated supply, not harvested
+material or native-battery generation. The running user's world has not been
+configured or changed for this test.
+
+A configured room retains its native clock, physical state and fabrication
+ledger together. `again` reopens retained state; `fresh` is refused for funded
+rooms in memory or on disk. Failed restores cannot fall back to a fresh world.
+Process saves preserve world-upgrade receipts so equipment cannot be supplied
+again due to manufacturing activity. Funded rooms retain the existing restricted
+authoring-operation policy while main-world physical interaction integration is
+unfinished.
+
+A real native HTTP/MCP regression configures an isolated main world, reserves
+stock, spends one second of work, pauses, reopens, verifies unchanged work and
+startup receipts, and rejects reset/refill attempts. The 14 fabrication tests
+also retain comparative glass/oak/iron native outputs and actual stdio tool
+discovery in both servers. This does not complete capability 3 or 16.

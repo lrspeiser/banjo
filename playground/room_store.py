@@ -209,6 +209,13 @@ def keep(app: Any, room: Any) -> None:
         log.warning("rooms: could not keep %s: %s", getattr(room, "scene", "?"), problem)
 
 
+def funded(room: Any) -> bool:
+    """Physical resource history requires an exact restore in any saved room."""
+    return (getattr(room, "scene", None) in ("expedition", "fabrication")
+            or getattr(room, "fabrication_required", False)
+            or isinstance(getattr(room, "fabrication_record", None), dict))
+
+
 def room_for(app: Any, scene: str, have: Any, fresh: bool) -> tuple[Any, bool]:
     """The room to open for `scene`, and whether it came off the disk.
 
@@ -216,6 +223,12 @@ def room_for(app: Any, scene: str, have: Any, fresh: bool) -> tuple[Any, bool]:
     one this server already holds, then the one kept on disk, then the room as
     first made."""
     if fresh:
+        prior = have
+        store = getattr(app, "store", None)
+        if prior is None and store is not None:
+            prior = store.load(scene)
+        if funded(prior) or scene in ("expedition", "fabrication"):
+            raise ValueError("This room is persistent; fresh would erase its material history")
         return world_room.Room(scene), False
     if have is not None:
         return have, False

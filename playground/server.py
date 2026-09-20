@@ -1385,19 +1385,20 @@ class Handler(BaseHTTPRequestHandler):
                     if rejoined is not None: return self.send(rejoined)
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
                 rooms[scene]=app.room=room
+                funded_room = room_store.funded(room)
                 # The running world as this server last saved it (keep_world),
                 # for a room read back from disk or revisited in this process:
                 # open it as it stood. Explicit again/fresh still restart an
                 # authoring room. Only use a world saved from its current spec:
                 # chat's changes are a new spec, and a world saved before them is
                 # not the room they made.
-                carry_kept = kept or scene in ("expedition","fabrication") or not (body.get("again") or body.get("fresh"))
+                carry_kept = kept or funded_room or not (body.get("again") or body.get("fresh"))
                 world=getattr(room,"world_record",None) if carry_kept else None
                 if not carry_kept: room.world_record=None
                 if world is not None and world.get("spec_digest")!=live_session.spec_digest(room.spec):
                     log.info("rooms: the world kept with %s was saved from another spec; the room opens from its spec",
                              scene)
-                    if scene in ("expedition","fabrication"):
+                    if funded_room:
                         raise ValueError("Funded room spec changed; refusing to reset its clock or inventories")
                     room.world_record=world=None
                 world_problem=None
@@ -1405,7 +1406,7 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         opened=app.live.open(app,{"spec":room.spec,**({"snapshot":world} if world else {})})
                     except Exception as failed:
-                        if world is None or scene in ("expedition","fabrication"): raise
+                        if world is None or funded_room: raise
                         # A saved world the engine would not open at all: set
                         # aside, never deleted, and the room opens from its spec.
                         world_problem=str(failed)[:300]
@@ -1413,13 +1414,14 @@ class Handler(BaseHTTPRequestHandler):
                         world=None
                         opened=app.live.open(app,{"spec":room.spec})
                 except Exception as problem:
-                    if not kept or scene in ("expedition","fabrication"): raise
+                    if not kept or funded_room: raise
                     # A kept room that no longer opens -- kept by an older build,
                     # say -- is set aside, never deleted, and the room opens as
                     # it was first made.
                     app.store.set_aside(scene,str(problem)[:300])
                     room,kept=world_room.Room(scene),False
                     rooms[scene]=app.room=room
+                    funded_room = room_store.funded(room)
                     opened=app.live.open(app,{"spec":room.spec})
                     opened["kept_problem"]=(f"the room kept from before would not open "
                                             f"({str(problem)[:200]}); it was set aside and the "
@@ -1427,12 +1429,12 @@ class Handler(BaseHTTPRequestHandler):
                 # Opened, but not as it stood: the engine said why (its
                 # `restored`). Set aside with that, and said.
                 restored=opened.get("restored") if world is not None else None
-                if scene in ("expedition","fabrication") and world is not None and (
+                if funded_room and world is not None and (
                         not isinstance(restored, dict) or restored.get("tier") != "whole"):
                     raise ValueError("A complete native restore is required for this funded room")
                 if isinstance(restored,dict) and restored.get("tier")!="whole":
-                    if scene == "expedition":
-                        raise ValueError("A complete native restore is required for an expedition")
+                    if funded_room:
+                        raise ValueError("A complete native restore is required for this funded room")
                     world_problem=str(restored.get("why") or "the engine could not put it back")[:300]
                     app.store.set_aside_world(room,world_problem)
                 if world_problem:
