@@ -14,10 +14,58 @@ sys.path[:0]=[str(ROOT),str(ROOT/'playground')]
 import inventory,live_session,room_store,world_room,workshop_install as install
 import workshop_sparse_trial as sparse
 import workshop_bench_core
+import workshop_articulation
+from mcp import workshop_components
 ENGINE=Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_LIVE_ENGINE') else None
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),'BANJO_LIVE_ENGINE is required')
 class NativeInstallation(unittest.TestCase):
+    def test_compiled_bearing_moves_under_gravity_without_fusing_parts(self):
+        import sys
+        sys.path.insert(0,str(ROOT/'tests'))
+        from workshop_install_tests import articulated_candidate
+        measurements=[]
+        for material in ('glass','oak','iron'):
+            design,overrides=workshop_components.design_from_spec(articulated_candidate(material))
+            compiled=workshop_articulation.compile_design(design,overrides,root='bearing-trial')
+            support=compiled['component_to_body']['support'];arm=compiled['component_to_body']['arm']
+            for body in compiled['bodies']:
+                body['anchored']=body['join']==support
+            spec={'algorithm':'lattice','cell_m':.04,'duration_s':1.,'bodies':compiled['bodies'],
+                  'joints':compiled['joints'],'interfaces':compiled['interfaces']}
+            self.open(spec)
+            before=self.snap()
+            self.assertEqual(len(before['bodies']),2)
+            for group in compiled['groups']:
+                sparse.verify_engine_matter(before,group['matter'],group['root_body'])
+            start={b['name']:b for b in self.live.session.state['bodies']}
+            self.live.session.send(op='step',dt=1/240,n=24)
+            state=self.live.session.send(op='poses')
+            end={b['name']:b for b in state['bodies']}
+            self.assertEqual(start[support]['position_m'],end[support]['position_m'])
+            self.assertLess(end[arm]['position_m'][1],start[arm]['position_m'][1]-.001)
+            self.assertNotEqual(end[arm]['orientation_wxyz'],start[arm]['orientation_wxyz'])
+            import math
+            pivot=[v/1000 for v in compiled['joints'][0]['at_mm']]
+            self.assertAlmostEqual(math.dist(start[arm]['position_m'],pivot),
+                                   math.dist(end[arm]['position_m'],pivot),delta=.0005)
+            moving=next(g for g in compiled['groups'] if g['root_body']==arm)
+            self.assertAlmostEqual(end[arm]['mass_kg'],moving['mass_kg'],delta=moving['mass_kg']*1e-6)
+            self.assertEqual(len(self.snap()['joints']),1)
+            measurements.append({'material':material,'mass_kg':end[arm]['mass_kg'],
+                                 'drop_m':start[arm]['position_m'][1]-end[arm]['position_m'][1]})
+            # Removing the connection changes the motion: the arm now falls
+            # rather than tracing the bearing's circle.
+            self.open({**spec,'joints':[]})
+            self.live.session.send(op='step',dt=1/240,n=24)
+            free=next(b for b in self.live.session.send(op='poses')['bodies'] if b['name']==arm)
+            self.assertLess(free['position_m'][1],end[arm]['position_m'][1]-.01)
+            measurements[-1]['unconnected_drop_m']=start[arm]['position_m'][1]-free['position_m'][1]
+            measurements[-1]['pivot_radius_error_m']=abs(math.dist(start[arm]['position_m'],pivot)-math.dist(end[arm]['position_m'],pivot))
+        self.assertLess(max(r['drop_m'] for r in measurements)-min(r['drop_m'] for r in measurements),.001)
+        self.native_evidence=measurements
+        print('compiled bearing:',json.dumps(measurements))
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name);self.live=live_session.Live();self.addCleanup(self.live.shutdown)

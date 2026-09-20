@@ -14,6 +14,63 @@ from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT),str(ROOT/'playground')]
 import room_store, world_room, world_access, workshop_install as install
+import workshop_articulation
+from mcp import workshop_components
+
+def articulated_candidate(material="oak"):
+    def part(name, size, center):
+        return {"name":name,"role":"panel","family":"panel","shape":"box",
+                "size_m":size,"center_m":center,"rotation_deg":[0,0,0],"material":material}
+    return {"kind":"custom","component_overrides":{"@construction":{
+        "added":[part("support",[.08,.08,.08],[0,1,0]),part("arm",[.08,.08,.4],[.08,1,.16])],
+        "joints_authored":True,"joints":[{"id":"pivot","kind":"bearing","method":"bearing","a":"support","b":"arm"}]}}}
+
+class ArticulationCompiler(unittest.TestCase):
+    def compile(self, candidate, root="test"):
+        design, overrides=workshop_components.design_from_spec(candidate)
+        return workshop_articulation.compile_design(design,overrides,root=root)
+
+    def test_bearing_keeps_separate_exact_material_groups(self):
+        from mcp import engine_materials
+        for material in ("glass","oak","iron"):
+            candidate=articulated_candidate(material)
+            out=self.compile(candidate)
+            self.assertEqual(len(out["groups"]),2)
+            self.assertNotEqual(out["component_to_body"]["arm"],out["component_to_body"]["support"])
+            self.assertAlmostEqual(out["mass_kg"],48*.04**3*engine_materials.density(material))
+            self.assertEqual(out["joints"][0]["axis"],[1.,0.,0.])
+            self.assertEqual(out["physics_hash"],self.compile(candidate,"another")['physics_hash'])
+
+    def test_open_and_unconnected_parts_are_refused(self):
+        candidate=articulated_candidate()
+        candidate['component_overrides']['@construction']['added'][1]['center_m'][0]=.4
+        with self.assertRaisesRegex(ValueError,"open"):self.compile(candidate)
+        candidate=articulated_candidate();parts=candidate['component_overrides']['@construction']['added']
+        extra=dict(parts[0],name='loose',center_m=[2,1,0]);parts.append(extra)
+        with self.assertRaisesRegex(ValueError,"connected"):self.compile(candidate)
+
+    def test_overlapping_shaft_requires_actual_clearance(self):
+        candidate=articulated_candidate();parts=candidate['component_overrides']['@construction']['added']
+        parts[0].update(size_m=[.16,.16,.16])
+        parts[1].update(shape='cylinder',size_m=[.08,.24,.08],center_m=[0,1,0])
+        with self.assertRaisesRegex(ValueError,"overlap"):self.compile(candidate)
+
+    def test_fixed_path_cannot_silently_lock_a_bearing(self):
+        candidate=articulated_candidate();construction=candidate['component_overrides']['@construction']
+        construction['added'].append(dict(construction['added'][0],name='bridge',size_m=[.16,.08,.08],center_m=[.04,.92,0]))
+        construction['joints'] += [dict(id='fixed-'+name,kind='fixed',method='bonded',a=name,b='bridge') for name in ('arm','support')]
+        with self.assertRaisesRegex(ValueError,"locked"):self.compile(candidate)
+
+    def test_fixed_members_share_one_body_but_keep_component_labels(self):
+        candidate=articulated_candidate();construction=candidate['component_overrides']['@construction']
+        construction['added'].append(dict(construction['added'][0],name='foot',center_m=[0,.92,0]))
+        construction['joints'].append(dict(id='mount',kind='fixed',method='bonded',a='support',b='foot'))
+        out=self.compile(candidate)
+        self.assertEqual(len(out['groups']),2)
+        self.assertEqual(out['component_to_body']['support'],out['component_to_body']['foot'])
+        self.assertEqual({b['part'] for b in out['bodies']},{'test/support','test/foot','test/arm'})
+        self.assertEqual(next(j for j in out['source_joints'] if j['id']=='mount')['method'],'bonded')
+        self.assertEqual(out['interfaces'],[])  # proposed reductions remain inactive
 
 class InstallationBoundary(unittest.TestCase):
     def test_inventory_fabrication_cannot_be_silently_free(self):

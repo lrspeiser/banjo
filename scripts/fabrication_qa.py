@@ -24,6 +24,8 @@ def main():
     os.environ["BANJO_LIVE_ENGINE"]=str(engine)
     sys.path[:0]=[str(ROOT),str(ROOT/"tests"),str(ROOT/"playground")]
     import fabrication_tests
+    from workshop_install_tests import ArticulationCompiler
+    from workshop_install_engine_tests import NativeInstallation
     from material_qa import write_json
     started=time.time()
     cases=[]
@@ -38,6 +40,8 @@ def main():
         def addSkip(self,test,reason):
             super().addSkip(test,reason);cases.append({"id":test.id(),"status":"skipped","reason":reason})
     suite=unittest.defaultTestLoader.loadTestsFromModule(fabrication_tests)
+    suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(ArticulationCompiler))
+    suite.addTest(NativeInstallation("test_compiled_bearing_moves_under_gravity_without_fusing_parts"))
     result=unittest.TextTestRunner(verbosity=2,resultclass=Result).run(suite)
     head=subprocess.run(["git","rev-parse","HEAD"],cwd=ROOT,capture_output=True,text=True).stdout.strip()
     dirty=subprocess.run(["git","status","--porcelain"],cwd=ROOT,capture_output=True,text=True).stdout.strip()
