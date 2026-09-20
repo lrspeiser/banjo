@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.12.2**; platform server: **1.15.2**, requiring native ABI **25**.
+Current world server version: **1.13.0**; platform server: **1.16.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -1044,3 +1044,7 @@ Ground state in saved worlds: [native ground snapshot and carry contract](../ter
 Excavated raw materials are now exposed through the atomic HTTP `store_ground` and MCP `fabrication_store_ground` transaction. See the [receiving contract](../material-collection-contract.md#durable-raw-receiving-deployed-september-20). Local port 8793 runs the ground-state v3 runtime with durable receiving and retrieval storage; crafted-object pickup remains separate.
 
 Stored raw lots can be retrieved with `fabrication_retrieve_ground` / HTTP `retrieve_ground`; see [return contract](../material-collection-contract.md#raw-retrieval-and-return-to-terrain-september-20). This checks remaining lot quantities and native carrying capacity and returns a replacement session.
+
+### Stored-item thermal observations
+
+World pose/step replies now include `heat.stored`: entries with `name`, `t_k`, `core_k` (kelvin, rounded to 0.1 K) and `boundary: "insulated-nonreacting"`. These include ambient-temperature stored items and are separate from the capped `heat.bodies` render list, so parked items do not produce world-space glow or flames. The main-world BAG panel reads these measurements as surface/core Celsius. Missing readings are not inferred from the authored material. The full `thermo` report retains unrounded `temperature_k`, `core_temperature_k` and `set_aside` for measurements. These are observations, not additional heat sources or physical sensors.

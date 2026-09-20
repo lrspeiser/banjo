@@ -1850,7 +1850,9 @@ function showInventory() {
     ...(world.profiles || []).map((p) => ({ what: p.object,
       keys: `${keyOf("interact")} take it up · hold ${keyOf("primary")} to draw · let go to shoot` })),
   ];
-  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses]);
+  const storedHeat = new Map((heat.last?.stored || []).map(b => [b.name, b]));
+  const temperatures = slots.map(thing => thing ? storedHeat.get(thing.name) : null);
+  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses, temperatures]);
   if (said === inventorySaid) return;
   inventorySaid = said;
   showHotbar(slots, hand);
@@ -1882,6 +1884,18 @@ function showInventory() {
     key.textContent = i < SLOT_KEYS ? String(i + 1) : "";
     li.append(key, document.createTextNode(bagName(thing)),
               button("Hold", "equip", thing.id), button("Hold to place", "drop", thing.id));
+    const measured = storedHeat.get(thing.name);
+    if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
+      const condition = document.createElement("small");
+      condition.className = "much";
+      condition.textContent = `Surface ${(measured.t_k - 273.15).toFixed(1)} °C · core ${(measured.core_k - 273.15).toFixed(1)} °C · insulated storage`;
+      li.append(condition);
+    } else {
+      const condition = document.createElement("small");
+      condition.className = "much";
+      condition.textContent = "Temperature not tracked";
+      li.append(condition);
+    }
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "none",
          textContent: `nothing yet: ${keyOf("stow")} puts what you hold, or look at, in it` })]));

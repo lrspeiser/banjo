@@ -1,0 +1,19 @@
+{
+  "base_revision": "6742792",
+  "deployment_preservation": {
+    "spec": true,
+    "inventory": true,
+    "workshop_installs": true,
+    "world_upgrades": true,
+    "fabrication": true,
+    "native_state": true
+  },
+  "stored_readings": [],
+  "tests": {
+    "native_inventory": 12,
+    "api_docs": 11,
+    "protocol_passed": 13,
+    "protocol_skipped": 1
+  },
+  "boundary": "Temperature observation only; storage remains insulated and nonreacting. Existing stored oak has no thermal lump and displays Temperature not tracked. Heated three-material observations verified in isolated native tests."
+}

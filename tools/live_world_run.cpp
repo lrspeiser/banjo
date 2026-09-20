@@ -990,10 +990,17 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                std::abs(b.temperature_k - ambient) + (b.reacting ? 1.0e4 : 0.0);
     });
     nlohmann::json bodies = nlohmann::json::array();
+    nlohmann::json stored = nlohmann::json::array();
     for (const banjo::thermo::BodyHeat &b : all) {
-        if (bodies.size() >= 48) break;
-        // A thing set aside is not drawn, and neither is its heat.
-        if (b.parked) continue;
+        // Stored items remain observable even when cold, and are never drawn
+        // as world-space glow/flames. Do not let the visible-body cap hide them.
+        if (b.parked) {
+            stored.push_back({{"name", b.body}, {"t_k", round(b.temperature_k, 0.1)},
+                              {"core_k", round(b.core_temperature_k, 0.1)},
+                              {"boundary", "insulated-nonreacting"}});
+            continue;
+        }
+        if (bodies.size() >= 48) continue;
         if (!b.reacting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
         bodies.push_back({{"name", b.body},
                           {"t_k", round(b.temperature_k, 0.1)},
@@ -1025,6 +1032,7 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
     return {{"t", network.timeS()},
             {"ambient_k", ambient},
             {"bodies", std::move(bodies)},
+            {"stored", std::move(stored)},
             {"regions", std::move(regions)},
             {"ledger", {{"stored_j", round(l.storedJ(), 1.0)},
                         {"residual_j", l.residualJ()},

@@ -432,12 +432,25 @@ class StoredMaterialState(unittest.TestCase):
                     self.assertEqual(opened["restored"]["tier"],"whole")
                     shown=inventory_room.after_open(app,opened)
                     self.assertEqual(shown["stowed"][0]["name"],"crafted part")
+                    summary=live.act({"session":sid,"op":"poses"})["heat"]
+                    stored_reading=next(b for b in summary["stored"] if b["name"]=="crafted part")
+                    self.assertEqual(stored_reading["boundary"],"insulated-nonreacting")
+                    self.assertGreater(stored_reading["t_k"],293.15)
+                    self.assertGreater(stored_reading["core_k"],293.15)
+                    self.assertNotIn("crafted part",[b["name"] for b in summary["bodies"]])
                     restored,why=live.snapshot();self.assertIsNotNone(restored,why)
                     self.assertEqual(heat(restored),expected)
                     self.assertEqual(restored["material_geometry"],stored["material_geometry"])
                     # Insulated storage retains energy/material, while any
                     # surface/core gradient continues to equilibrate.
                     live.act({"session":sid,"op":"step","dt":1/240,"n":120})
+                    summary=live.act({"session":sid,"op":"poses"})["heat"]
+                    reading=next(b for b in summary["stored"] if b["name"]=="crafted part")
+                    full=live.act({"session":sid,"op":"thermo"})["thermo"]
+                    exact=next(b for b in full["bodies"] if b["name"]=="crafted part")
+                    self.assertTrue(exact["set_aside"])
+                    self.assertAlmostEqual(reading["t_k"],exact["temperature_k"],delta=.050001)
+                    self.assertAlmostEqual(reading["core_k"],exact["core_temperature_k"],delta=.050001)
                     parked,_=live.snapshot()
                     aheat,bheat=heat(before,False),heat(parked,False)
                     ea=sum(aheat[z]["internal_energy_j"] for z in ("surface","core"))
@@ -451,6 +464,8 @@ class StoredMaterialState(unittest.TestCase):
                     dropped=inventory_room.request(app,{"request":"return-material-0001",
                         "revision":shown["record"]["revision"],"op":"drop","item":"crafted part","person":PERSON})
                     self.assertTrue(dropped["ok"],dropped)
+                    summary=live.act({"session":sid,"op":"poses"})["heat"]
+                    self.assertNotIn("crafted part",[b["name"] for b in summary["stored"]])
                     returned,why=live.snapshot();self.assertIsNotNone(returned,why)
                     returned_heat=heat(returned,False)
                     expected_heat=expected_parked
