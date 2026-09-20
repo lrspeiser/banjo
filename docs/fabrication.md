@@ -1,0 +1,181 @@
+# Finite-stock fabrication
+
+This checkpoint adds a generic lumped process and an atomic transfer into the
+native world. It advances gameplay items 2, 3, 16 and 27. It does not complete
+those broad capabilities or claim physical drilling, general assembly, casting,
+repair, machining calibration or automated production.
+
+Open `/fabrication`, connect to its persistent room, explicitly declare initial
+resources, quote a Workshop candidate, start it, advance world time, and preview
+and place the finished workpiece. `/world?scene=fabrication&hold=1` opens the same
+native parts for primary Use, carrying and contact. The ordinary yard is a
+separate room. The [30-item priority list](physics-gameplay-backlog.md) and
+`GET /api/gameplay/capabilities` retain incomplete acceptance gates.
+
+## Operating law and boundary
+
+The process owns finite, initially cold material stocks, one work position, a
+finite isolated energy supply, a heat capacity and a prescribed ambient boundary.
+It is not attached to a native circuit and cannot claim the same battery twice.
+The process parameters are declared engineering inputs, not calibrated machining
+properties. Nothing chooses a law from a product name.
+
+A quote compiles the candidate's full Workshop Matter cell set. Product mass is
+occupied cell count × cell volume × engine catalog density. Input stock must
+cover that mass; completed offcuts retain the difference. Only supported,
+connected, single-material monolithic lattice products are admitted. The
+candidate must declare `parameters.primary_use`. Construction labels,
+interaction points and the use program travel through the existing installer.
+
+Required useful work is `stock_kg * work_j_kg`. Supplied energy is converted to
+useful process work with `efficiency`; **all** supplied energy eventually heats
+the station or crosses its ambient boundary. Useful work is a progress measure,
+not another energy store. Output remains at the cold-stock reference temperature
+293.15 K. No warm feedstock, chip thermal distribution or native room heat coupling
+is claimed by this model.
+
+For station heat H above ambient, heat capacity C and cooling conductance G:
+`dH/dt = P - G*H/C`. Each constant-power segment is integrated analytically.
+Supply exhaustion, work completion and the temperature ceiling split segments.
+At the ceiling, admitted power cannot exceed cooling power. An insulated hot
+station stalls. Native call batching does not alter the process law.
+
+Only accepted native elapsed time advances work and cooling. Wall-clock absence
+does nothing. The native runner uses 1/240 s steps in bounded half-second batches.
+A native refinement/time-admission stop refuses completion of the requested wait.
+
+## Transactions and persistence
+
+Start reserves the whole workpiece immediately. Pause retains that material,
+completed work, heat and spent energy. Resume continues from it. There is no
+refund or reset operation. Only one job runs at once; another may occupy the
+station while a paused workpiece is retained. At completion, offcuts enter a
+separate material account and the finished product remains uninstalled.
+
+Quote and preview do not spend stock. Preview verifies exact native geometry,
+clearance and state carry. Commit repeats those checks, verifies the funded
+candidate including its primary-use declaration, marks its mass as transferred
+out, and writes the native world and process record in one atomic room save.
+Only then does it replace the live process. A failed installation save leaves
+the old native world and finished workpiece intact.
+
+`revision` prevents concurrent starts from spending the same observed stock.
+`request_id` makes configure/start/pause/resume/commit retry-safe; reuse it
+unchanged after an uncertain response. Start/pause/resume retain all receipts
+(up to 4096, then refuse); jobs are limited to 128 and never forgotten. Installation
+receipts use the existing 64-receipt window, but an installed job permanently
+prevents a second transfer after that window. A retry with changed fields refuses.
+Wait is an elapsed-time action, not retry-safe: read state after a connection
+failure before deciding whether to wait again.
+
+The dedicated room refuses free authoring, fresh resets, incompatible saved
+specifications and partial native restores. Scene switching and restart retain
+both halves. Native installed material may subsequently move or fail under the
+engine's existing laws; the process ledger records the transfer, not the later
+world's heat or fracture energy. Local closure is not whole-world qualification.
+
+## HTTP and MCP
+
+Every POST uses the existing same-origin `X-Banjo-Token` from `GET /api/status`.
+Open with `POST /api/world/open {"scene":"fabrication"}`; keep the returned
+`session`. All routes below begin `/api/world/fabrication/` and require
+`scene:"fabrication"` and the current `session`. Unknown fields refuse.
+
+| Route suffix | MCP tool | Additional required fields / result |
+|---|---|---|
+| — | `fabrication_open` | No arguments. Opens/rejoins the same browser room without supplying resources. |
+| `state` | `fabrication_state` | None. Returns `configured`, `cell_m`, process state and audit without advancing time. |
+| `configure` | `fabrication_configure` | `settings`, `request_id`. Explicit one-time initial resources and law. |
+| `quote` | `fabrication_quote` | `candidate`, `stock_kg`. Exact material mass, offcuts, required work, minimum duration, available stock, affordable flag. |
+| `start` | `fabrication_start` | `candidate`, `stock_kg`, `revision`, `request_id`. Trusted compilation and reservation; request ID is the job ID. |
+| `pause` | `fabrication_pause` | `job_id`, `revision`, `request_id`. Keeps the intermediate workpiece. |
+| `resume` | `fabrication_resume` | `job_id`, `revision`, `request_id`. Continues retained work. |
+| `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
+| `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
+| `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
+
+Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
+(loopback HTTP only, default port 8765). They do not create a second material
+inventory. World MCP is 1.6.0, platform MCP 1.8.0; native ABI remains 25.
+Python callers use `playground/fabrication_room.py` for the same validated room
+operations. `mcp/fabrication.py` owns the pure operating model. No new native C
+API is advertised for this host-side process.
+
+### Settings
+
+| Field | Units / bounds / default |
+|---|---|
+| `mode` | Required `"authoring"`; labels the initial resource boundary. |
+| `stock_kg` | Required map of catalog material to .001..10000 kg; duplicate aliases refuse. |
+| `energy_j` | Required 0..1e9 J initial isolated supply. |
+| `power_w` | Required .001..1e6 W maximum input. |
+| `work_j_kg` | Required .001..1e9 J/kg useful shaping work. |
+| `efficiency` | .001..1, default 1. |
+| `heat_capacity_j_k` | 1..1e9 J/K, default 10000. |
+| `cooling_w_k` | 0..1e6 W/K to 293.15 K ambient, default 0. |
+| `max_temperature_k` | 293.16..2000 K, default 473.15. |
+
+A candidate uses the existing Workshop `kind`, `parameters` and
+`component_overrides` document, including a valid `primary_use`. At present,
+the native installer accepts only its existing fixed structural roles. Positions
+are within ±100 m. The native scene and 16000-cell admission limits still apply.
+Preview expiry and stale native/world/inventory guards remain unchanged.
+
+### Readouts and audits
+
+The state includes `time_s`, `revision`, `config`, available `stock_kg`,
+`waste_kg`, `transferred_kg`, remaining `energy_j`, `spent_j`,
+`station_heat_j`, `ambient_j`, `temperature_k` and `jobs`.
+Each job retains its candidate, material, stock/product quantities,
+`matter_physics_hash`, `cell_m`, `cells`, `required_j`, `work_j`,
+`supplied_j`, `fraction`, `status` and operating `condition`.
+States are running, paused, ready or installed. Exhausted supply and a thermal
+limit explain stalled progress rather than manufacturing an output.
+
+The audit reports per-material `material_residual_kg`, `energy_residual_j`
+and `work_residual_j`. The closed quantities are:
+initial material = available + unfinished/finished workpieces + offcuts +
+transferred outputs; initial supply = remaining supply + station heat +
+ambient heat; spent supply = sum of job supplied energy.
+
+## Regression lane
+
+Run `python scripts/fabrication_qa.py --engine <banjo_live_world_run> --out <folder>`.
+Set `BANJO_LIBRARY` to the matching native shared library. The output folder must
+not already exist. Reports include source revision, dirty-worktree status and
+native executable/library hashes, plus each check and comparative measurements.
+The native engine and shared library are required in CI. This suite runs whenever
+physics CI runs, alongside the 23 mechanics and 96 material-impact fixtures.
+
+The `/fabrication` page also offers a fixed-suite QA runner, recorded reports
+and cancellation. It launches isolated native processes and temporary rooms;
+the player's live world and resources are not used by the tests. One run per
+server, 120-second deadline, owned child processes reaped on cancellation.
+
+| HTTP | MCP tool | Arguments / result |
+| --- | --- | --- |
+| POST `/api/fabrication-qa/run` | `fabrication_qa_run` | Empty object. Returns 202 with `id` and starting status. |
+| POST `/api/fabrication-qa/status` | `fabrication_qa_status` | Optional `run_id`; report if given, recent runs if omitted. |
+| POST `/api/fabrication-qa/cancel` | `fabrication_qa_cancel` | Required `run_id`; cancels only the active owned run. |
+| GET `/api/fabrication-qa/runs` | — | Recent recorded runs. |
+| GET `/api/fabrication-qa/runs/{run_id}` | — | Full test report including measurements and errors. |
+
+These endpoints require no world session. POST requests require the same
+loopback token as other sim mutations. Run IDs are 32 lowercase hexadecimal
+characters; no user-provided script or arbitrary command is accepted. Reports
+are replaced atomically. Missing either half of a funded room save is refused,
+including removal of the fabrication ledger when `fabrication_required` is set.
+Normal room switching also saves and restores the room being left, including
+authoring rooms such as the building yard. Explicit `again`/`fresh` still restart
+authoring rooms; those reset requests remain forbidden for funded rooms.
+
+The fixed comparative native case makes identical 160 × 80 × 80 mm parts at a
+40 mm cell size: glass 2.56 kg, oak .7168 kg, iron 8.05888 kg. Each starts from
+10 kg stock, requires 1000 J useful work and uses a 500 W supply. It pauses
+halfway, restarts the native process and room, resumes, installs once, retries
+the installation, and checks exact prior-world state and output mass. General
+model, supply-empty, thermal-limit, call-batching, insufficient-stock, concurrent
+start, failed-save, stale-preview, changed-use, HTTP and actual MCP protocol tests
+cover adverse cases. Native mass tolerance is 1e-7 kg; measured ledger residuals
+are below 2e-12 J and 1e-9 kg in this fixture. These are integration and accounting
+checks, not calibrated manufacture or fresh full-engine qualification.

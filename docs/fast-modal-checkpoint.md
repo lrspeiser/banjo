@@ -2,7 +2,7 @@
 
 Tested code: branch `agent/fast-modal` in worktree `C:/Users/henry/dev/banjo-agents/fast-modal`, based on `f7c4dc3` with `agent/playground-rebuild` (`641e658`) merged. September 7, 2026, America/Los_Angeles. Not pushed, not on main. Windows 11 Pro build 26200, MSVC 19.44, VS 2022 x64 Release, `-DBANJO_BUILD_LAB=OFF`, Intel Core Ultra 9 285K (24 cores). Serial unless a thread count is stated; other agents' jobs shared the machine, so wall times carry a few percent of noise and are quoted with the conditions they were taken under.
 
-Predecessors: the [implicit-lane fracture checkpoint](implicit-fracture-checkpoint.md) (the reference this lane is compared against), the [realtime envelope](../../envelope/docs/realtime-envelope-checkpoint.md) that put 1x realtime at 365 nodes for the implicit lane, and the owner's goal in [goal-realtime-fracture](goal-realtime-fracture.md).
+Predecessors: the [implicit-lane fracture checkpoint](implicit-fracture-checkpoint.md) (the reference this lane is compared against), the [realtime envelope](realtime-envelope-checkpoint.md) that put 1x realtime at 365 nodes for the implicit lane, and the owner's goal in [goal-realtime-fracture](goal-realtime-fracture.md).
 
 ## Headline
 

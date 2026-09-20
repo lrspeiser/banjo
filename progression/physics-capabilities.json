@@ -1,0 +1,253 @@
+{
+  "schema": "banjo.physics-capabilities.v1",
+  "completion_rule": "Complete requires the player workflow, adverse cases, native regression, persistent state, browser controls and matching API/MCP documentation. A foundation is partial.",
+  "next_workstream": "Material-funded construction",
+  "items": [
+    {
+      "id": 23,
+      "name": "Measure and experiment",
+      "remaining": "First increment: editable experiments, native playback and numerical checks; more sensor types remain",
+      "status": "partial",
+      "priority": 1,
+      "workstream": "Shared completion gates"
+    },
+    {
+      "id": 24,
+      "name": "Diagnose failures",
+      "remaining": "Native connection failure reasons and measured comparisons now visible; full energy/material causal tracing remains",
+      "status": "partial",
+      "priority": 2,
+      "workstream": "Shared completion gates"
+    },
+    {
+      "id": 25,
+      "name": "Save and reuse designs",
+      "remaining": "Preserve construction and operating state separately; parameter changes must revalidate limits and compatibility",
+      "status": "partial",
+      "priority": 3,
+      "workstream": "Shared completion gates"
+    },
+    {
+      "id": 26,
+      "name": "Ask the LLM to build/change",
+      "remaining": "First increment: validated recipe editing over generic primitives; arbitrary product compilation remains",
+      "status": "partial",
+      "priority": 4,
+      "workstream": "Shared completion gates"
+    },
+    {
+      "id": 27,
+      "name": "Leave and return",
+      "remaining": "First QA checks moving bodies and broken/attached fixing persistence; coupled heat, contents and damage need expanded gates",
+      "status": "partial",
+      "priority": 5,
+      "workstream": "Shared completion gates",
+      "evidence": "Native bodies plus fabrication stock, supply, heat, workpieces and receipts restart together; broader fluid states remain."
+    },
+    {
+      "id": 29,
+      "name": "Run a creative lab",
+      "remaining": "No remaining gate for the bounded creative lab; additional physical capabilities retain their own gates.",
+      "status": "complete",
+      "priority": 6,
+      "workstream": "Shared completion gates",
+      "acceptance": "Isolated native experiments now available; distinguish externally supplied initial conditions from physical manufacture",
+      "evidence": "Isolated native recipes, editable initial conditions, bounded force inputs, persistent reports/playback, adverse checks and fixed QA are exposed in the browser and platform MCP. Fabrication explicitly distinguishes seeded resources from charged work and native outputs. See docs/physics-trials.md and docs/fabrication.md."
+    },
+    {
+      "id": 1,
+      "name": "Mine and excavate",
+      "remaining": "Terrain/material removal; removed volume becomes collected material and debris with matching mass",
+      "status": "partial",
+      "priority": 7,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 2,
+      "name": "Cut, drill and shape",
+      "remaining": "Geometry transformation with removed stock, work and tool wear; no free mass on undo",
+      "status": "partial",
+      "priority": 8,
+      "workstream": "Material-funded construction",
+      "evidence": "Finite-stock lumped shaping and exact native output; contact cutting, drilling and wear remain."
+    },
+    {
+      "id": 3,
+      "name": "Build from parts",
+      "remaining": "Assembly declarations and inventory debit; sandbox bodies exist, physical construction remains",
+      "status": "partial",
+      "priority": 9,
+      "workstream": "Material-funded construction",
+      "evidence": "Paid native monolithic outputs with durable stock transfer; funded articulated assembly remains."
+    },
+    {
+      "id": 4,
+      "name": "Join and separate",
+      "remaining": "Rated connections; first QA now checks strong/weak fixing failure and restart; paid joining and general disassembly remain",
+      "status": "partial",
+      "priority": 10,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 5,
+      "name": "Support loads",
+      "remaining": "Contact and structural connections; first QA checks raised supports; beam bending, buckling and larger buildings remain",
+      "status": "partial",
+      "priority": 11,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 6,
+      "name": "Pick up, carry and push",
+      "remaining": "Force-limited interaction; first QA compares equal-volume wood/iron under the same force; player carrying policies remain",
+      "status": "partial",
+      "priority": 12,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 7,
+      "name": "Use tools",
+      "remaining": "Bounded primary-use programs already exist; expand native contact/work/wear oracles for cutting, striking and prying",
+      "status": "partial",
+      "priority": 13,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 20,
+      "name": "Dismantle and salvage",
+      "remaining": "Recover actual retained materials and connections; account for unrecoverable waste",
+      "status": "partial",
+      "priority": 14,
+      "workstream": "Material-funded construction"
+    },
+    {
+      "id": 8,
+      "name": "Store and move cargo",
+      "remaining": "Container interaction points and contact; support checks now exist; moving cargo, payload limits and spills remain",
+      "status": "partial",
+      "priority": 15,
+      "workstream": "Cargo, lifting and powered machines"
+    },
+    {
+      "id": 10,
+      "name": "Use ropes and lifting machines",
+      "remaining": "Existing native rope/pulley/drum foundations; add shared primitive recipes for load, slack, overload and supported power",
+      "status": "partial",
+      "priority": 16,
+      "workstream": "Cargo, lifting and powered machines"
+    },
+    {
+      "id": 9,
+      "name": "Build vehicles",
+      "remaining": "Wheels, axles, suspension, drivetrain and ground reaction; add loaded hill, braking and traction cases",
+      "status": "partial",
+      "priority": 17,
+      "workstream": "Cargo, lifting and powered machines"
+    },
+    {
+      "id": 15,
+      "name": "Generate, store and distribute power",
+      "remaining": "Existing circuits/stores/motors; expand network recipes and generation/charging with loss destinations",
+      "status": "partial",
+      "priority": 18,
+      "workstream": "Cargo, lifting and powered machines"
+    },
+    {
+      "id": 17,
+      "name": "Sense and control",
+      "remaining": "Reusable physical measurements and bounded actuator commands; add thermostat/pressure/load control loops",
+      "status": "partial",
+      "priority": 19,
+      "workstream": "Cargo, lifting and powered machines"
+    },
+    {
+      "id": 11,
+      "name": "Divert water",
+      "remaining": "Existing terrain/shallow-water coupling; test dams, channels, displaced water and downstream changes",
+      "status": "partial",
+      "priority": 20,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 12,
+      "name": "Fill, pour and contain fluids",
+      "remaining": "Material-containing vessels and flow networks; conserve mass/composition/enthalpy through spills and phase changes",
+      "status": "partial",
+      "priority": 21,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 13,
+      "name": "Light fires and cook",
+      "remaining": "Existing heat/finite reactions; connect arbitrary fuel inventories and heat paths; test extinction and depleted fuel",
+      "status": "partial",
+      "priority": 22,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 14,
+      "name": "Build shelter and insulation",
+      "remaining": "Thermal networks, enclosure boundaries and weather ingress; finite-room heat balance remains",
+      "status": "partial",
+      "priority": 23,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 18,
+      "name": "Forge, cast and process",
+      "remaining": "Work/heat/material-state transformations; finite inventories and real intermediate states",
+      "status": "partial",
+      "priority": 24,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 16,
+      "name": "Automate production",
+      "remaining": "Bounded material transformations retaining work in progress; generic machine manufacture remains",
+      "status": "partial",
+      "priority": 25,
+      "workstream": "Thermofluid and production loops",
+      "evidence": "One bounded work position retains intermediate material and work; connected automated production remains."
+    },
+    {
+      "id": 19,
+      "name": "Repair and maintain",
+      "remaining": "Resource/work/time changes to physical state; no resetting temperature, damage or pressure on edit",
+      "status": "partial",
+      "priority": 26,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 21,
+      "name": "Survive surroundings",
+      "remaining": "Explicit temperature, exposure and hazard models; avoid hidden damage unrelated to measured conditions",
+      "status": "partial",
+      "priority": 27,
+      "workstream": "Thermofluid and production loops"
+    },
+    {
+      "id": 22,
+      "name": "Grow and harvest",
+      "remaining": "Bounded biomass/water/nutrient/light model if selected; not implemented by these trials",
+      "status": "planned",
+      "priority": 28,
+      "workstream": "Ecology, cooperation and world scale"
+    },
+    {
+      "id": 28,
+      "name": "Cooperate in one world",
+      "remaining": "Authoritative ordered actions, ownership and shared budgets; multiplayer synchronization remains",
+      "status": "planned",
+      "priority": 29,
+      "workstream": "Ecology, cooperation and world scale"
+    },
+    {
+      "id": 30,
+      "name": "Build at world scale",
+      "remaining": "Active-region budgets, sleeping, state-preserving refinement and catch-up; true lazy per-brick detail remains planned",
+      "status": "planned",
+      "priority": 30,
+      "workstream": "Ecology, cooperation and world scale"
+    }
+  ]
+}

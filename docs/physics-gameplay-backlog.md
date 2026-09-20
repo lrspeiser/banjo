@@ -5,6 +5,31 @@ features. The first delivered increment is the shared
 [experiment contract and regression lane](physics-trials.md). Build new
 features from physical primitives and preserve one authoritative world state.
 
+## Priority and completion policy
+
+The [machine-readable checklist](../progression/physics-capabilities.json) retains
+all 30 original IDs and acceptance boundaries. The local mechanics lab publishes
+the same list at `GET /api/gameplay/capabilities`.
+
+| Priority | Connected work | Original item IDs |
+|---|---|---|
+| Continuous gates | Measurements, diagnosis, designs, LLM authoring, persistence, creative lab | 23, 24, 25, 26, 27, 29 |
+| 1 | Material-funded construction and salvage | 1, 2, 3, 4, 5, 6, 7, 20 |
+| 2 | Cargo, lifting, vehicles, electrical power and control | 8, 10, 9, 15, 17 |
+| 3 | Water, vessels, fire, shelter, processing, production, repair and exposure | 11, 12, 13, 14, 18, 16, 19, 21 |
+| 4 | Growth, cooperation and large-world operation | 22, 28, 30 |
+
+A capability is complete only when its player workflow and adverse cases work
+through the same API/MCP/native path, survive persistence, and are visible in
+the browser and fixed QA. Existing isolated demonstrations remain partial. The bounded creative lab (#29) now meets its
+stated gate: isolated native experiments and an explicit supplied-resource/manufacture
+boundary. The current count is 1 complete, 26 partial and 3 planned.
+
+The first new connected implementation is [finite-stock fabrication](fabrication.md):
+stock reservation, power/time-limited work, a retained interrupted workpiece,
+offcuts, station heat, and atomic native placement. It advances items 2, 3, 16
+and 27; it does not finish contact cutting, general assembly or automated production.
+
 ## Rules for every increment
 
 A product declares geometry, materials, connections, stored state, interaction
@@ -52,7 +77,7 @@ its own checks never replaces a fixed regression.
 | 26. Ask the LLM to build/change | First increment: validated recipe editing over generic primitives; arbitrary product compilation remains |
 | 27. Leave and return | First QA checks moving bodies and broken/attached fixing persistence; coupled heat, contents and damage need expanded gates |
 | 28. Cooperate in one world | Authoritative ordered actions, ownership and shared budgets; multiplayer synchronization remains |
-| 29. Run a creative lab | Isolated native experiments now available; distinguish externally supplied initial conditions from physical manufacture |
+| 29. Run a creative lab | Complete for bounded native experiments: isolated recipes and retained playback, fixed adverse QA, API/MCP, and an explicit initial-resource/physical-manufacture distinction. Additional solvers remain separate backlog items. |
 | 30. Build at world scale | Active-region budgets, sleeping, state-preserving refinement and catch-up; true lazy per-brick detail remains planned |
 
 ## Next connected increments

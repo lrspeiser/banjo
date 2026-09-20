@@ -112,6 +112,16 @@ class TheDocsNameEverything(unittest.TestCase):
         for fields,_ in physics_trials.COMMANDS.values():names.update(fields)
         self.assertFalse([name for name in sorted(names) if not named_in(doc,name)])
 
+    def test_fabrication_tools_settings_and_routes_are_documented(self):
+        import fabrication_mcp_tools
+        import fabrication_room
+        doc=(ROOT/"docs/fabrication.md").read_text(encoding="utf-8")
+        names={t["name"] for t in fabrication_mcp_tools.TOOLS}
+        names.update(fabrication_mcp_tools.SETTINGS["properties"])
+        names.update(fabrication_room.COMMAND_FIELDS)
+        for fields in fabrication_room.COMMAND_FIELDS.values():names.update(fields)
+        self.assertFalse([name for name in sorted(names) if not named_in(doc,name)])
+
     def test_every_c_function_is_in_the_c_api_doc(self):
         doc = (DOCS / "c-api.md").read_text(encoding="utf-8")
         missing = [name for name in declared() if not named_in(doc, name)]

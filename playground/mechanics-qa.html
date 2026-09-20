@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Banjo · Mechanics lab</title><link rel="stylesheet" href="/material-qa.css"><link rel="stylesheet" href="/mechanics-qa.css"></head>
-<body><header><a class="brand" href="/qa">BANJO <span>/ MECHANICS LAB</span></a><nav><a href="/qa">Material impacts</a><a href="/world">World</a><a href="/world?workshop=1">Workshop</a></nav></header>
+<body><header><a class="brand" href="/qa">BANJO <span>/ MECHANICS LAB</span></a><nav><a href="/fabrication">Fabrication</a><a href="/qa">Material impacts</a><a href="/world">World</a><a href="/world?workshop=1">Workshop</a></nav></header>
 <main><div class="intro"><div><p class="eyebrow">EDIT · RUN · MEASURE</p><h1>Build the experiment.</h1><p>Change the construction or the applied effort. The engine decides what moves, holds, or fails.</p></div></div>
 <section class="toolbar" aria-label="Experiment controls">
 <label>Example<select id="example"></select></label><button id="run-all">Run regression suite</button>
@@ -18,4 +18,4 @@
 <div class="transport"><button id="play" disabled>Play</button><input id="frame" type="range" min="0" max="0" value="0" aria-label="Recorded frame" disabled><span id="clock"></span><label>Speed<select id="speed"><option value=".25">¼×</option><option value="1" selected>1×</option></select></label></div>
 <p id="outcome" role="status"></p><table><thead><tr><th>Measurement</th><th>Actual</th><th>Allowed</th><th>Check</th></tr></thead><tbody id="checks"></tbody></table>
 <pre id="failures"></pre><details><summary>Evidence and model limits</summary><pre id="evidence"></pre></details></section>
-</div></main><script type="module" src="/mechanics-qa.js"></script></body></html>
+</div><section class="capabilities"><h2>The 30-capability program</h2><p id="capability-count"></p><p>Shared completion gates run throughout. Material-funded construction is the first new operating loop.</p><details><summary>Priorities, evidence and remaining acceptance gates</summary><table><thead><tr><th>Workstream</th><th>Capability</th><th>Status</th><th>Remaining gate</th></tr></thead><tbody id="capabilities"></tbody></table></details></section></main><script type="module" src="/mechanics-qa.js"></script></body></html>

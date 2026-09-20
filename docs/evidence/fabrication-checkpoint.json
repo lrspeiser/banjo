@@ -1,0 +1,133 @@
+{
+  "schema": "banjo.fabrication-qa.v1",
+  "status": "passed",
+  "id": "697f96d2eaed4e8c89bd01068a5dd8cf",
+  "started_unix_s": 1789885401.8482,
+  "finished_unix_s": 1789885404.3006482,
+  "total": 13,
+  "completed": 13,
+  "tests_run": 13,
+  "results": [
+    {
+      "id": "fabrication_tests.NativeFabrication.test_changed_use_or_stale_preview_cannot_consume_a_workpiece",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_failed_start_and_install_saves_leave_stock_native_world_and_output",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_funded_save_refuses_either_missing_half_or_changed_clock",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_glass_oak_iron_work_restart_native_mass_and_duplicate_install",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 2.56,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "energy_residual_j": 1.8189894035458565e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "oak",
+          "mass_kg": 0.7168,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "energy_residual_j": 1.8189894035458565e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "iron",
+          "mass_kg": 8.05888,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "energy_residual_j": 4.547473508864641e-13,
+            "work_residual_j": 4.547473508864641e-13,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_actual_platform_and_legacy_protocol_publish_fabrication_tools",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_http_mcp_restart_and_room_switch_keep_both_halves",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_exact_catalog_geometry_and_material_work_accounting",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_native_batch_size_does_not_change_work_or_heat",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_pausing_retains_workpiece_and_resume_does_not_refund",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_retry_stale_revision_and_shared_stock",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_strict_inputs_and_no_clock_rewind_or_save_refill",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_supply_and_temperature_limits_do_not_invent_finished_parts",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_transfer_is_exact_and_single_use",
+      "status": "passed"
+    }
+  ],
+  "source_revision": "d30b70dd52729b3e947424825e878e90e1723e28",
+  "engine_sha256": "341ce24e5f2efd655418f705863934783893dc8e64f0194f6986e0f5151fcfe9",
+  "source_dirty": true,
+  "library_sha256": "d95ca4c56e83f2308cd004781379e92b61cc8160d6d909934e194764419fa86a",
+  "boundary": "Native/host integration and declared process accounting; no calibrated machining or whole-world qualification.",
+  "checkpoint_note": "Measured against the outgoing fabrication changes on d30b70d. Native binaries unchanged from the placement QA build. Source changes were uncommitted during measurement.",
+  "browser": {
+    "url": "http://127.0.0.1:8793/fabrication",
+    "verified": [
+      "configured resources once",
+      "native glass/oak/iron installed",
+      "paused workpiece retains 250 of 1000 J",
+      "QA 13/13 passed",
+      "native geometry visible",
+      "no console errors"
+    ]
+  },
+  "yard_restart": {
+    "bodies": 20,
+    "time_s": 3563.1583333025196,
+    "maximum_pose_velocity_difference": 0
+  }
+}

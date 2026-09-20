@@ -52,7 +52,7 @@ import constructions  # noqa: E402
 import machine_mcp_tools  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER = {"name": "banjo", "version": "1.5.0"}
+SERVER = {"name": "banjo", "version": "1.6.0"}
 
 # How many worlds may be open at once. Each is a physics engine with its scene
 # resident in it, and nothing here is a long-lived service.
@@ -8117,6 +8117,8 @@ HANDLERS = {name: _saying_what_was_withdrawn(handler) for name, handler in HANDL
 machine_mcp_tools.register(sys.modules[__name__])
 import expedition_mcp_tools
 expedition_mcp_tools.register(sys.modules[__name__])
+import fabrication_mcp_tools
+fabrication_mcp_tools.register(sys.modules[__name__])
 
 
 # ---------------------------------------------------------------------------

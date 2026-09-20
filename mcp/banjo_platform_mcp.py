@@ -53,7 +53,7 @@ for module in (workshop_mcp_tools, material_qa_tools, physics_trial_tools):
     for name, handler in module.HANDLERS.items():
         core.HANDLERS[name] = _model_error(handler)
 
-core.SERVER = {"name": "banjo-platform", "version": "1.7.0"}
+core.SERVER = {"name": "banjo-platform", "version": "1.8.0"}
 _CORE_HANDLE = core.handle
 
 

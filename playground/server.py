@@ -43,6 +43,9 @@ import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import inventory_room
 import gameplay_room
+import fabrication_room
+import fabrication_qa
+import gameplay_capabilities
 import tool_use
 import placement
 import access_gate
@@ -1117,6 +1120,10 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
+            if path=="/api/gameplay/capabilities": return self.send(gameplay_capabilities.catalog())
+            if path=="/api/fabrication-qa/runs": return self.send(fabrication_qa.manager(app).list_runs())
+            fabrication_match=re.fullmatch(r"/api/fabrication-qa/runs/([0-9a-f]{32})",path)
+            if fabrication_match: return self.send(fabrication_qa.manager(app).status(fabrication_match[1]))
             if path=="/api/mechanics-qa": return self.send(mechanics_qa.catalog(app.engine_path))
             if path=="/api/mechanics-qa/runs": return self.send(mechanics_qa.manager(app).list_runs())
             match=re.fullmatch(r"/api/mechanics-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|request))?)?",path)
@@ -1154,7 +1161,7 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+            allowed={"/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
                 "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
@@ -1199,12 +1206,30 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
     def _dispatch_POST(self,path,body):
-        world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith("/api/world/workshop/")
+        world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
         with (world_access.gate(self.server.app).enter() if world_call else nullcontext()), \
              (gameplay_room.LOCK if world_call and (gameplay_room.active(self.server.app)
+                 or fabrication_room.active(self.server.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
+            if fabrication_room.active(self.server.app):
+                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/inventory", "/api/world/inventory/shown"}
+                if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
+                    raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
+                if not isinstance(body, dict): raise ValueError("Expected a JSON object")
+                if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check"}:
+                    raise ValueError("This authoring operation is not allowed in the funded room")
+            if path.startswith("/api/world/fabrication/"):
+                operation = path.rsplit("/",1)[-1]
+                try:
+                    if operation == "preview": answer = fabrication_room.preview(self.server.app,body)
+                    elif operation == "commit": answer = fabrication_room.commit(self.server.app,body)
+                    elif operation == "wait": answer = fabrication_room.wait(self.server.app,body)
+                    else: answer = fabrication_room.request(self.server.app,operation,body)
+                except OSError as exc:
+                    return self.send({"error":"Fabrication save was not acknowledged. Read state before retrying: "+str(exc)},503)
+                return self.send(answer)
             if gameplay_room.active(self.server.app):
                 if world_call and not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
@@ -1240,6 +1265,15 @@ class Handler(BaseHTTPRequestHandler):
             # or drop height is watchable as soon as the lane returns.
             if path=="/api/mechanics-qa/plan":
                 return self.send(physics_trial_planner.propose(self.server.app,body))
+            if path=="/api/fabrication-qa/run":
+                return self.send(fabrication_qa.manager(self.server.app).start(body),202)
+            if path=="/api/fabrication-qa/status":
+                physics_trials.obj(body,{"run_id"},set(),"status")
+                manager=fabrication_qa.manager(self.server.app)
+                return self.send(manager.status(body["run_id"]) if "run_id" in body else manager.list_runs())
+            if path=="/api/fabrication-qa/cancel":
+                physics_trials.obj(body,{"run_id"},{"run_id"},"cancel")
+                return self.send(fabrication_qa.manager(self.server.app).cancel(body["run_id"]))
             if path=="/api/mechanics-qa/validate":
                 physics_trials.obj(body, {"document"}, {"document"}, "validate")
                 document,_=physics_trials.validate(body["document"])
@@ -1292,7 +1326,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Nothing is kept, and the room already open is left alone,
                 # unless the new world actually opens.
                 if "qa" in body:
-                    if gameplay_room.active(app) and not keep_world(app, "opening QA room"):
+                    if (gameplay_room.active(app) or fabrication_room.active(app)) and not keep_world(app, "opening QA room"):
                         raise ValueError("Save the expedition before opening the QA room")
                     qa=body["qa"]
                     qa_path(qa)   # anything that is not exactly an id stops here
@@ -1310,13 +1344,15 @@ class Handler(BaseHTTPRequestHandler):
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
                     return self.send(opened)
-                if gameplay_room.active(app):
-                    if not keep_world(app, "leaving or reopening expedition"):
-                        raise ValueError("Save the expedition before leaving it")
+                switching_room = (getattr(app, "live_holder", None) == "world" and
+                    app.live.session is not None and getattr(getattr(app,"room",None),"scene",None) != str(body.get("scene","world")))
+                if gameplay_room.active(app) or fabrication_room.active(app) or switching_room:
+                    if not keep_world(app, "leaving a room or reopening a funded room"):
+                        raise ValueError("The current room could not be saved; finish its pending physics before leaving")
                 scene=str(body.get("scene","world"))
-                if scene == "expedition":
+                if scene in ("expedition", "fabrication"):
                     if body.get("fresh"):
-                        raise ValueError("The expedition is persistent; fresh would erase its material history")
+                        raise ValueError("This room is persistent; fresh would erase its material history")
                     body.pop("again", None)
                 if scene not in world_room.SCENES: scene="world"
                 # Kept on disk as well (room_store): a room this server has not
@@ -1337,26 +1373,26 @@ class Handler(BaseHTTPRequestHandler):
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
                 rooms[scene]=app.room=room
                 # The running world as this server last saved it (keep_world),
-                # for a room read back from disk after a restart: the room opens
-                # into it, as it stood. Only on the first open after a restart --
-                # a room this server holds opens again from what it is held as --
-                # and only a world saved from the spec the room has now: the
+                # for a room read back from disk or revisited in this process:
+                # open it as it stood. Explicit again/fresh still restart an
+                # authoring room. Only use a world saved from its current spec:
                 # chat's changes are a new spec, and a world saved before them is
                 # not the room they made.
-                world=getattr(room,"world_record",None) if kept or scene == "expedition" else None
-                if not kept and scene != "expedition": room.world_record=None
+                carry_kept = kept or scene in ("expedition","fabrication") or not (body.get("again") or body.get("fresh"))
+                world=getattr(room,"world_record",None) if carry_kept else None
+                if not carry_kept: room.world_record=None
                 if world is not None and world.get("spec_digest")!=live_session.spec_digest(room.spec):
                     log.info("rooms: the world kept with %s was saved from another spec; the room opens from its spec",
                              scene)
-                    if scene == "expedition":
-                        raise ValueError("Expedition spec changed; refusing to reset its clock or inventories")
+                    if scene in ("expedition","fabrication"):
+                        raise ValueError("Funded room spec changed; refusing to reset its clock or inventories")
                     room.world_record=world=None
                 world_problem=None
                 try:
                     try:
                         opened=app.live.open(app,{"spec":room.spec,**({"snapshot":world} if world else {})})
                     except Exception as failed:
-                        if world is None or scene == "expedition": raise
+                        if world is None or scene in ("expedition","fabrication"): raise
                         # A saved world the engine would not open at all: set
                         # aside, never deleted, and the room opens from its spec.
                         world_problem=str(failed)[:300]
@@ -1364,7 +1400,7 @@ class Handler(BaseHTTPRequestHandler):
                         world=None
                         opened=app.live.open(app,{"spec":room.spec})
                 except Exception as problem:
-                    if not kept or scene == "expedition": raise
+                    if not kept or scene in ("expedition","fabrication"): raise
                     # A kept room that no longer opens -- kept by an older build,
                     # say -- is set aside, never deleted, and the room opens as
                     # it was first made.
@@ -1378,9 +1414,9 @@ class Handler(BaseHTTPRequestHandler):
                 # Opened, but not as it stood: the engine said why (its
                 # `restored`). Set aside with that, and said.
                 restored=opened.get("restored") if world is not None else None
-                if scene == "expedition" and world is not None and (
+                if scene in ("expedition","fabrication") and world is not None and (
                         not isinstance(restored, dict) or restored.get("tier") != "whole"):
-                    raise ValueError("A complete native restore is required for an expedition")
+                    raise ValueError("A complete native restore is required for this funded room")
                 if isinstance(restored,dict) and restored.get("tier")!="whole":
                     if scene == "expedition":
                         raise ValueError("A complete native restore is required for an expedition")
@@ -1403,8 +1439,8 @@ class Handler(BaseHTTPRequestHandler):
                 # from its spec, which a restart must not trade for an older one.
                 gameplay_room.opened(app, opened)
                 saved_now = keep_world(app,"the room opened")
-                if gameplay_room.active(app) and not saved_now:
-                    raise ValueError("The new expedition could not be saved")
+                if (gameplay_room.active(app) or fabrication_room.active(app)) and not saved_now:
+                    raise ValueError("The funded room could not be saved")
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
                 opened["kept"]=kept
@@ -1544,7 +1580,7 @@ class Handler(BaseHTTPRequestHandler):
                 _this_pages_room(self.server.app,body)
                 return self.send(inventory_room.shown(self.server.app))
             if path=="/api/live/open":
-                if gameplay_room.active(self.server.app) and not keep_world(self.server.app, "opening laboratory"):
+                if (gameplay_room.active(self.server.app) or fabrication_room.active(self.server.app)) and not keep_world(self.server.app, "opening laboratory"):
                     raise ValueError("Save the expedition before opening the laboratory")
                 opened=self.server.app.live.open(self.server.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
@@ -1556,6 +1592,7 @@ class Handler(BaseHTTPRequestHandler):
                 seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
                 answer=self.server.app.live.act(body)
                 gameplay_room.sync(self.server.app, answer)
+                fabrication_room.sync(self.server.app, answer)
                 remember_ground(self.server.app,body,answer)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.server.app,answer)
                 self.send(with_notebook(self.server.app,answer,seen))
@@ -2167,8 +2204,9 @@ def keep_world(app,why=""):
             log.info("rooms: the running world was not saved (%s): %s; the last one saved is kept",why,refused)
             return False
         gameplay_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
+        fabrication_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         room.world_record=saved
-        if gameplay_room.active(app):
+        if gameplay_room.active(app) or fabrication_room.active(app):
             store = getattr(app, "store", None)
             if store is None or not store.save(room):
                 return False
@@ -2833,6 +2871,7 @@ def main():
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
         if hasattr(app,"material_qa"): app.material_qa.shutdown()
         if hasattr(app,"mechanics_qa"): app.mechanics_qa.shutdown()
+        if hasattr(app,"fabrication_qa"): app.fabrication_qa.shutdown()
         app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
 
 if __name__=="__main__": main()

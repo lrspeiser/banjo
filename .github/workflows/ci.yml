@@ -175,6 +175,19 @@ jobs:
       - name: Test generic physics trial contracts
         run: BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_TRIAL_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/physics_trials_tests.py -v
 
+      - name: Qualify finite-stock fabrication against the native engine
+        run: |
+          BANJO_LIBRARY=$PWD/build/ci/libbanjo.so python3 scripts/fabrication_qa.py --engine build/ci/banjo_live_world_run --out build/ci/fabrication-qa
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so python3 tests/fabrication_qa_tests.py -v
+
+      - name: Keep fabrication transaction and conservation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: banjo-fabrication-qa-${{ github.sha }}
+          path: build/ci/fabrication-qa/
+          if-no-files-found: warn
+
       - name: Run the mechanics regression suite against the built engine
         run: >-
           python3 scripts/mechanics_qa.py

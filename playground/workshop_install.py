@@ -367,7 +367,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
             del cache[next(iter(cache))]
         cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
-                        "spec": spec, "matter": matter, "root": root, "shift": shift}
+                        "spec": spec, "matter": matter, "root": root, "shift": shift,
+                        "candidate_hash": _hash(body["candidate"])}
         return answer
 
 
@@ -421,19 +422,23 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
                     "spec": spec, "matter": artifact, "root": root, "shift": None}
     return answer
 
-def commit(app: Any, body: Any) -> dict[str, Any]:
+def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, Any]:
     body = _object(body, {"session", "scene", "preview_id", "request_id"})
     token = _token(body.get("preview_id"), "preview_id")
     request = _token(body.get("request_id"), "request_id")
-    with _world(app) as (room, live, old):
+    import fabrication_room
+    from mcp import fabrication
+    with _world(app) as (room, live, old), fabrication_room.LOCK:
+        if room.scene == "fabrication" and funding_job is None:
+            raise ValueError("This room only accepts finished, material-funded workpieces")
         if body.get("scene") != room.scene:
             raise ValueError("The source room changed")
         receipts = getattr(room, "workshop_installs", [])
         for receipt in receipts:
             if receipt.get("request_id") == request:
-                if receipt.get("preview_id") != token:
+                if receipt.get("preview_id") != token or receipt.get("fabrication_job_id") != funding_job:
                     raise ValueError("This request_id was already used for a different installation")
-                return {**deepcopy(receipt), "replayed": True}
+                return {**deepcopy(receipt), "session": old.id, "replayed": True}
         _source(room, old, body); _supported(room, old)
         plan = _preview_cache(app).get(token)
         if plan is None:
@@ -443,14 +448,28 @@ def commit(app: Any, body: Any) -> dict[str, Any]:
         before = _snapshot(live)
         if plan["source_hash"] != _hash([before,room.spec,_inventory(room)]):
             raise ValueError("The world or inventory changed after preview. Preview again; nothing was installed")
+        fabrication_state = deepcopy(getattr(room, "fabrication_record", None))
+        if fabrication_state is not None:
+            fabrication.advance(fabrication_state, before["t_s"])
+        if funding_job is not None:
+            if fabrication_state is None: raise ValueError("No funded material record")
+            job = fabrication_state["jobs"].get(funding_job)
+            if job is None or _hash(job["candidate"]) != plan.get("candidate_hash"):
+                raise ValueError("Preview does not match the funded design and core-use program")
+            fabrication_state = fabrication.transfer(fabrication_state, funding_job, plan["answer"], request)
         staged, saved = _stage(app, live, old, plan["spec"], before, plan["matter"], plan["root"], plan["shift"])
         try:
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
                        "session": staged.session.id, "source_session": old.id, "replayed": False}
             receipt.pop("expires_in_s", None)
+            if funding_job is not None:
+                receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,
+                               limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
             kept = deepcopy(receipts[-(MAX_RECEIPTS-1):]) + [deepcopy(receipt)]
             record = SimpleNamespace(scene=room.scene, spec=plan["spec"], chat=deepcopy(room.chat),
-                                     inventory_record=_inventory(room), world_record=saved, workshop_installs=kept)
+                                     inventory_record=_inventory(room), world_record=saved, workshop_installs=kept,
+                                     gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
+                                     fabrication_record=fabrication_state)
             # The only fallible persistent write occurs BEFORE the live swap.
             # A failed atomic save leaves the original process and room intact.
             if not app.store.save(record):
@@ -461,6 +480,7 @@ def commit(app: Any, body: Any) -> dict[str, Any]:
         room.spec = plan["spec"]
         room.world_record = saved
         room.workshop_installs = kept
+        room.fabrication_record = fabrication_state
         live.session = staged.session
         staged.session = None
         live.session.on_reply = getattr(app, "on_live_reply", None)

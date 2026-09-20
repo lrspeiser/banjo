@@ -989,6 +989,7 @@ def world() -> dict[str, Any]:
 
 
 SCENES = {
+    "fabrication": yard,
     "expedition": valley,
     "world": world,
     "tests-gates": _saved_room("tests-gates"),

@@ -179,3 +179,7 @@ Twelve existing material-QA and 34 playground tests also pass. The protocol test
 requires BANJO_TRIAL_ENGINE and BANJO_LIBRARY; CI supplies both, so it cannot
 silently skip native coverage. Shared artifacts tolerate transient Windows
 file-sharing conflicts for at most 190 ms and retain genuine I/O errors.
+
+## Gameplay completion status
+
+Platform MCP `physics_gameplay_status` and HTTP `GET /api/gameplay/capabilities` return the same 30-ID priority checklist, completion counts, partial evidence and remaining acceptance gates. They do not run physics or mark a capability complete from a narrow demonstration. [Finite-stock fabrication](fabrication.md) has its own native transaction/accounting QA lane.

@@ -54,6 +54,11 @@ import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's 
 # Everything the MCP offers reaches the chat except these, each for a reason
 # that is about the ROOM rather than about the tool.
 NOT_FOR_THE_ROOM = {
+    **{name: "uses the persistent funded room through its HTTP transaction, not the chat authoring copy"
+       for name in ("fabrication_open","fabrication_state","fabrication_configure","fabrication_quote",
+                    "fabrication_start","fabrication_pause","fabrication_resume","fabrication_preview",
+                    "fabrication_commit","fabrication_wait","fabrication_qa_run",
+                    "fabrication_qa_status","fabrication_qa_cancel")},
     "expedition_wait": "advances the live game, not the chat authoring copy",
     "expedition_open": "opens the live personal game, not the chat authoring copy",
     "expedition_state": "requires the live expedition session",

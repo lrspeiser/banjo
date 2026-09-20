@@ -87,6 +87,18 @@ class RoomStore:
         gameplay = getattr(room, "gameplay_record", None)
         if isinstance(gameplay, dict):
             record["gameplay"] = gameplay
+        fabrication = getattr(room, "fabrication_record", None)
+        funded = (getattr(room, "fabrication_required", False) or
+                  any(r.get("mode") == "fabrication" for r in (receipts or []) if isinstance(r, dict)))
+        if funded and not isinstance(fabrication, dict):
+            raise ValueError("Funded room requires its fabrication ledger; refusing a reset")
+        if isinstance(fabrication, dict):
+            from mcp.fabrication import validate_state
+            validate_state(fabrication)
+            if not isinstance(world, dict) or abs(world["t_s"]-fabrication["time_s"]) > 1e-7:
+                raise ValueError("Fabrication and native state must be saved at the same time")
+            record["fabrication"] = fabrication
+            record["fabrication_required"] = True
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -113,14 +125,24 @@ class RoomStore:
                         or not isinstance(record.get("chat", []), list)):
                     raise ValueError("it is not a kept room")
             except (OSError, ValueError) as problem:
-                if scene == "expedition":
-                    raise ValueError("Expedition save is unreadable; refusing a reset") from problem
+                if scene in ("expedition", "fabrication"):
+                    raise ValueError(f"{scene.capitalize()} save is unreadable; refusing a reset") from problem
                 self._set_aside(path, str(problem))
                 return None
         room = world_room.Room(scene)
         room.spec = record["spec"]
         room.chat = [turn for turn in record.get("chat", []) if isinstance(turn, dict)]
         room.kept_since = record.get("saved_unix_s")
+        room.fabrication_record = record.get("fabrication")
+        room.fabrication_required = record.get("fabrication_required", False) or any(
+            r.get("mode") == "fabrication" for r in record.get("workshop_installs", []) if isinstance(r, dict))
+        if room.fabrication_required and not isinstance(room.fabrication_record, dict):
+            raise ValueError("Funded save requires its fabrication ledger; refusing a reset")
+        if room.fabrication_record is not None:
+            from mcp.fabrication import validate_state
+            validate_state(room.fabrication_record)
+            if not isinstance(record.get("world"),dict) or abs(record["world"]["t_s"]-room.fabrication_record["time_s"]) > 1e-7:
+                raise ValueError("Fabrication save requires its matching native world")
         room.gameplay_record = record.get("gameplay")
         if scene == "expedition" and (not isinstance(room.gameplay_record, dict)
                                       or not isinstance(record.get("world"), dict)):
@@ -135,6 +157,8 @@ class RoomStore:
         """A saved world the engine would not put back whole: written out beside
         the room, with why -- never deleted -- and the room kept without it."""
         world = getattr(room, "world_record", None)
+        if getattr(room, "fabrication_record", None) is not None:
+            raise ValueError("Cannot discard the native half of a funded fabrication room")
         room.world_record = None
         scene = getattr(room, "scene", None)
         if not isinstance(world, dict) or scene not in world_room.SCENES:

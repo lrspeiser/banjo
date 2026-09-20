@@ -69,3 +69,12 @@ $("ask").onsubmit=async event=>{
  $("validation").textContent=answer.explanation+(answer.document?" Recipe validated; run it to measure the result.":"");
  }catch(e){$("validation").textContent=e.message;}finally{button.disabled=false;}
 };
+
+try {
+ const c=await api("/api/gameplay/capabilities");
+ $("capability-count").textContent=c.counts.complete+"/30 complete · "+c.counts.partial+" partial · "+c.counts.planned+" planned";
+ for(const item of c.items){const tr=document.createElement("tr");
+ for(const text of [item.workstream,item.id+". "+item.name,item.status,item.remaining+(item.evidence?" Evidence: "+item.evidence:"")]){
+ const td=document.createElement("td");td.textContent=text;tr.append(td);}
+ $("capabilities").append(tr);}
+}catch(e){$("capability-count").textContent=e.message;}
