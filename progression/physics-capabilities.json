@@ -42,7 +42,7 @@
       "status": "partial",
       "priority": 5,
       "workstream": "Shared completion gates",
-      "evidence": "Native bodies plus fabrication stock, supply, heat, workpieces and receipts restart together; broader fluid states remain."
+      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains."
     },
     {
       "id": 29,
@@ -131,11 +131,11 @@
     {
       "id": 10,
       "name": "Use ropes and lifting machines",
-      "remaining": "Load-rated mount reactions, state-preserving installation into existing worlds and broader lifting workflows",
+      "remaining": "Load-rated mount reactions and broader lifting workflows; active heater/gas carry remains unsupported",
       "status": "partial",
       "priority": 16,
       "workstream": "Cargo, lifting and powered machines",
-      "evidence": "Fresh main world includes a finite-battery native hoist tested for lift, discharge and braked hold; shared QA adds 21 glass/oak/iron rope and ideal-pulley cases."
+      "evidence": "Fresh main worlds have a finite-battery hoist; saved worlds receive one-time state-checked additions when supported. 21 comparative rope/pulley cases and native lift/discharge/brake tests pass."
     },
     {
       "id": 9,

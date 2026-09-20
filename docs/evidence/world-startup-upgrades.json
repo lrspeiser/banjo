@@ -1,0 +1,856 @@
+{
+  "date": "2026-09-20",
+  "source_base": "d21edfd",
+  "source_scope": "saved-world upgrade checkpoint; native taut-rope restoration, generic authoring transaction, API/MCP and browser controls",
+  "native_executable_sha256": "0f7538a9018a25f03b22004dd829f4628d0d5f2c27b46943b35cb6b935e0bceb",
+  "mechanics": {
+    "status": "passed",
+    "total": 44
+  },
+  "materials": {
+    "status": "passed",
+    "total": 96,
+    "baseline_checked": true,
+    "provenance": {
+      "source_commit": "d21edfd8689ffa85f92e800d5ec9785c67e0423c",
+      "source_dirty": true,
+      "engine_sha256": "cc3a1be51148e6a24142c996105857d3268d492a28c8e9512c58b980961465aa",
+      "platform": "nt",
+      "engine_name": "banjo_fast_lattice_run.exe",
+      "note": "Source checkout and executable hash recorded separately; no inferred build revision."
+    },
+    "cases": [
+      {
+        "id": "glass-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "glass-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "oak-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "oak-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "oak-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "oak-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "oak-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "iron-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "concrete-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ceramic-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": []
+      },
+      {
+        "id": "ice-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "ice-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "aluminum-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-20mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-20mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-20mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-20mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-40mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-40mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-40mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-40mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-80mm-1mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-80mm-4mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-80mm-12mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      },
+      {
+        "id": "rubber-80mm-30mps",
+        "status": "passed",
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ]
+      }
+    ]
+  },
+  "tests": {
+    "native_upgrades": 7,
+    "machine_room": 25,
+    "physics_trials": 14,
+    "fabrication": 13,
+    "installation_boundary": 12,
+    "native_installation": 18,
+    "room_store": 25,
+    "api_docs": 11,
+    "chat_parity": 17,
+    "native_rope_suite": "passed including taut whole restore/carry",
+    "native_room_carry_suite": "8 passed"
+  },
+  "local_saved_rooms": [
+    {
+      "scene": "fabrication",
+      "restored": "whole",
+      "bodies_before": 4,
+      "bodies_after": 4,
+      "changed_bodies": [],
+      "time_equal": true,
+      "fabrication_equal": true
+    },
+    {
+      "scene": "yard",
+      "restored": "whole",
+      "bodies_before": 20,
+      "bodies_after": 20,
+      "changed_bodies": [],
+      "time_equal": true,
+      "fabrication_equal": true
+    }
+  ],
+  "published_runs": {
+    "mechanics-qa": {
+      "id": "3b6ed6bc1a8d4c389922a14a1d7f67f5",
+      "total": 44,
+      "status": "passed",
+      "source": "build\\start-world-upgrades\\mechanics"
+    },
+    "material-qa": {
+      "id": "f9571e86f2df43b19dcffbc8b52925eb",
+      "total": 96,
+      "status": "passed",
+      "source": "build\\start-world-upgrades\\materials"
+    }
+  },
+  "browser": {
+    "url": "http://127.0.0.1:8793/world",
+    "actions": [
+      "Room tab",
+      "Control hoist",
+      "On",
+      "Raise",
+      "Stop and hold",
+      "Reload"
+    ],
+    "observed_rounded": {
+      "battery_remaining_j": 4020,
+      "drawn_j": 984,
+      "work_j": 380,
+      "heat_j": 604,
+      "rope_out_m": 0.3,
+      "tension_n": 316
+    },
+    "after_reload": "same depleted battery and held load",
+    "console_errors": []
+  },
+  "mcp_protocol": {
+    "banjo": "1.7.0",
+    "banjo-platform": "1.10.0",
+    "world_open_saved": "already_applied from both real stdio servers"
+  },
+  "limits": [
+    "Not all 30 capabilities complete",
+    "Active heater and gas carry unsupported",
+    "Existing complete-restore thermal limitations remain",
+    "No full contact-cache continuation",
+    "No load-rated hoist mount qualification",
+    "Material regression is not calibration"
+  ]
+}

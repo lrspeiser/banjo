@@ -1,7 +1,7 @@
 # Editable physics experiments and regression QA
 
 September 19, 2026. Implemented first increment on base `f005056`.
-Platform MCP **1.9.0**; legacy world MCP **1.6.0**; native ABI **25**.
+Platform MCP **1.10.0**; legacy world MCP **1.7.0**; native ABI **25**.
 This adds reusable experiment orchestration around existing native laws.
 It does not change those laws or enable proposed joint-strength factors.
 

@@ -198,7 +198,7 @@ def _joint_readouts_match(before: list, after: list) -> bool:
     return True
 
 
-def _preserved(before: dict[str, Any], after: dict[str, Any], root: str) -> None:
+def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str]) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
     Exact body and part equality also establishes unchanged node/bond index
@@ -206,9 +206,10 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str) -> None
     is compared, not ignored. New heat lumps may be appended by the compiler;
     every original lump and the rest of the heat network must remain identical.
     """
+    added = {root} if isinstance(root, str) else root
     current = {b["name"]: b for b in after["bodies"]}
     prior = {b["name"]: b for b in before["bodies"]}
-    if len(current) != len(after["bodies"]) or set(current) != set(prior) | {root}:
+    if len(current) != len(after["bodies"]) or set(current) != set(prior) | added:
         raise ValueError("Staging did not preserve the exact existing body set")
     for name, body in prior.items():
         if body != current[name]:
@@ -224,7 +225,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str) -> None
         if key not in exceptions and before.get(key) != after.get(key):
             raise ValueError(f"Staging changed existing {key}; installation refused")
     bnext, anext = before.get("next", {}), after.get("next", {})
-    if set(bnext) != set(anext) or any(anext[k] != v+(1 if k=="body" else 0) for k,v in bnext.items()):
+    if set(bnext) != set(anext) or any(anext[k] != v+(len(added) if k=="body" else 0) for k,v in bnext.items()):
         raise ValueError("Staging changed unrelated native identifiers")
     bh, ah = before.get("heat"), after.get("heat")
     if bh is not None:
@@ -469,7 +470,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             record = SimpleNamespace(scene=room.scene, spec=plan["spec"], chat=deepcopy(room.chat),
                                      inventory_record=_inventory(room), world_record=saved, workshop_installs=kept,
                                      gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
-                                     fabrication_record=fabrication_state)
+                                     fabrication_record=fabrication_state,
+                                     world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
             # The only fallible persistent write occurs BEFORE the live swap.
             # A failed atomic save leaves the original process and room intact.
             if not app.store.save(record):

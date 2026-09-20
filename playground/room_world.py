@@ -54,6 +54,7 @@ import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's 
 # Everything the MCP offers reaches the chat except these, each for a reason
 # that is about the ROOM rather than about the tool.
 NOT_FOR_THE_ROOM = {
+    "world_open_saved": "opens the browser's authoritative saved world; the chat already operates on an authoring copy of that world",
     **{name: "uses the persistent funded room through its HTTP transaction, not the chat authoring copy"
        for name in ("fabrication_open","fabrication_state","fabrication_configure","fabrication_quote",
                     "fabrication_start","fabrication_pause","fabrication_resume","fabrication_preview",

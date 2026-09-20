@@ -1810,7 +1810,7 @@ unsigned JoltWorld::addLink(const LinkDescription &d) {
     // pulls. A distance constraint with min == max is a rigid rod, which is
     // what this same class is used for elsewhere in this file, and a rod
     // pushes.
-    settings.mMinDistance = 0.0f;
+    settings.mMinDistance = d.taut_at_restore ? static_cast<float>(d.length_m) : 0.0f;
     settings.mMaxDistance = static_cast<float>(d.length_m);
 
     auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(

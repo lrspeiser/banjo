@@ -18,17 +18,22 @@ class WorldAccess:
         self.condition = threading.Condition()
         self.readers = 0
         self.writer = False
+        self.writer_thread = None
         self.waiting = 0
 
     @contextmanager
     def enter(self, *, exclusive: bool = False) -> Iterator[None]:
         with self.condition:
-            if exclusive:
+            nested = self.writer_thread == threading.get_ident()
+            if nested:
+                pass
+            elif exclusive:
                 self.waiting += 1
                 try:
                     if not self.condition.wait_for(lambda: not self.writer and not self.readers, timeout=5):
                         raise ValueError("The world is busy; retry installation once the current operation finishes")
                     self.writer = True
+                    self.writer_thread = threading.get_ident()
                 finally:
                     self.waiting -= 1
                     self.condition.notify_all()
@@ -39,8 +44,11 @@ class WorldAccess:
             yield
         finally:
             with self.condition:
-                if exclusive:
+                if nested:
+                    pass
+                elif exclusive:
                     self.writer = False
+                    self.writer_thread = None
                 else:
                     self.readers -= 1
                 self.condition.notify_all()

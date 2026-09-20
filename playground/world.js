@@ -1101,7 +1101,7 @@ const machineRows = new Map();   // key -> { li, what, much }
 
 function drawMachines(block) {
   const rows = [];
-  const row = (key, what, much) => {
+  const row = (key, what, much, control = null) => {
     let r = machineRows.get(key);
     if (!r) {
       const li = document.createElement("li");
@@ -1115,6 +1115,18 @@ function drawMachines(block) {
     }
     if (r.what.textContent !== what) r.what.textContent = what;
     if (r.much.textContent !== much) r.much.textContent = much;
+    if (control) {
+      r.control = control;
+      if (!r.button) {
+        r.button = document.createElement("button");
+        r.button.type = "button";
+        r.button.className = "quiet";
+        r.button.textContent = "Controls";
+        r.button.addEventListener("click", () => openMachinePanel(r.control));
+        r.li.append(r.button);
+      }
+      r.button.setAttribute("aria-label", `Control ${control.name}`);
+    }
     rows.push(r.li);
   };
   const joules = (j) => (Math.abs(j) >= 1000 ? `${(j / 1000).toFixed(2)} kJ` : `${Math.round(j)} J`);
@@ -1125,7 +1137,7 @@ function drawMachines(block) {
   }
   for (const c of (block && block.controls) || []) {
     row(`control ${c.id}`, `${c.name}: its controller`,
-        `${c.power ? `on, told to ${commandedWords(c)}` : "off"}${c.condition ? ` · ${c.condition}` : ""}`);
+        `${c.power ? `on, told to ${commandedWords(c)}` : "off"}${c.condition ? ` · ${c.condition}` : ""}`, c);
   }
   for (const m of (block && block.motors) || []) {
     const turns = m.on && m.on.length === 2 ? m.on[1] : `pin ${m.joint}`;
@@ -5988,6 +6000,12 @@ async function open({ again = false } = {}) {
     if (data.restored && data.restored.tier === "whole" && (data.restored.not_kept || []).length)
       say("world", `Not kept yet: ${data.restored.not_kept.join("; ")}.`);
     if (data.kept_problem) say("bad", data.kept_problem);
+    for (const upgrade of data.world_upgrades || []) {
+      if (upgrade.status === "pending")
+        say("world", `${upgrade.title} is waiting: ${upgrade.reason}`);
+      else if (upgrade.help)
+        say("world", upgrade.help);
+    }
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")

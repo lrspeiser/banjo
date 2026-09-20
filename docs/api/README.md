@@ -14,7 +14,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.6.0**; platform MCP is **1.9.0**.
+Current native ABI: **25**. World MCP is **1.7.0**; platform MCP is **1.10.0**.
 
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.
@@ -378,3 +378,5 @@ The wood model is a declared simplified model with demonstration parameters;
 | `src/` | the engine. You do not need to read it to use this. |
 
 [Finite-stock fabrication](../fabrication.md): persistent processes, exact native output, HTTP/MCP contracts and fixed regression.
+
+Saved browser worlds: [startup additions and world_open_saved](../world-startup-upgrades.md).

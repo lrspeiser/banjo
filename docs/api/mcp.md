@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.6.0**; platform server: **1.9.0**, requiring native ABI **25**.
+Current world server version: **1.7.0**; platform server: **1.10.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -66,6 +66,7 @@ broke.
 | `circuit` | attach a bounded shared DC/thermal network to an existing store and all its motors; returns a positive circuit handle. Full nested declaration is published in `tools/list`. |
 | `install_circuit` | compile a ProductGraph and bind a named operating circuit to existing stores and motors by component identity; no geometry creation or state reset. |
 | `fabrication_open` | open/rejoin the persistent funded room; no automatic stock creation. |
+| `world_open_saved` | open/rejoin a saved browser room (scene defaults to world); return native session, machine state and one-time startup upgrade receipts or pending reasons. Uses BANJO_PLAYGROUND_URL. |
 | `fabrication_state` | read stock, workpieces, supply, heat and conservation residuals. |
 | `fabrication_configure` | explicitly author finite initial stock, energy and process parameters once. |
 | `fabrication_quote` | compile exact Workshop matter and quote material, offcuts, work and time without spending. |

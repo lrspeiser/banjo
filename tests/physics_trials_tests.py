@@ -198,7 +198,7 @@ class NativeProtocol(unittest.TestCase):
                 watchdog=threading.Timer(30,client.process.kill);watchdog.start()
                 try:
                     hello=client.send("initialize",{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qa","version":"1"}})
-                    self.assertEqual(hello["result"]["serverInfo"]["version"],"1.9.0")
+                    self.assertEqual(hello["result"]["serverInfo"]["version"],"1.10.0")
                     offered=client.send("tools/list")["result"]["tools"]
                     names=[t["name"] for t in offered]
                     self.assertEqual(len(names),len(set(names)))

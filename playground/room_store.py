@@ -69,6 +69,7 @@ class RoomStore:
             return False
         record = {"format": FORMAT, "scene": room.scene, "saved_unix_s": round(time.time(), 3),
                   "spec": room.spec, "chat": room.chat}
+        record["world_upgrades"] = getattr(room, "world_upgrades", {})
         # What the person has: the record itself once it is in use
         # (inventory_room.inventory_of), else what was kept and not yet used.
         kept = getattr(room, "inventory", None)
@@ -131,6 +132,9 @@ class RoomStore:
                 return None
         room = world_room.Room(scene)
         room.spec = record["spec"]
+        room.world_upgrades = record.get("world_upgrades", {})
+        if not isinstance(room.world_upgrades, dict):
+            raise ValueError("Invalid world upgrade receipts; refusing to repeat initial supplies")
         room.chat = [turn for turn in record.get("chat", []) if isinstance(turn, dict)]
         room.kept_since = record.get("saved_unix_s")
         room.fabrication_record = record.get("fabrication")

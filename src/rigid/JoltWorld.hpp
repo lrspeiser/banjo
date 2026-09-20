@@ -466,6 +466,9 @@ public:
         // How far apart they may get. Below this the link does nothing at all.
         double length_m{0.1};
         double breaking_tension_n{0.0};
+        // Restore the solver's last taut/slack setting without taking a step.
+        // Ordinary newly tied ropes start slack; step recomputes this setting.
+        bool taut_at_restore{false};
     };
     [[nodiscard]] unsigned addLink(const LinkDescription &description);
 

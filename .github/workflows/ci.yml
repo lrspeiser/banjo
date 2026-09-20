@@ -154,6 +154,7 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
             python3 tests/machine_room_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_upgrades_tests.py -v
           BANJO_PLATFORM_ENGINE=$PWD/build/ci/banjo_platform_cli BANJO_RIGID_TESTS=required \
             python3 tests/workshop_rigid_engine_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \

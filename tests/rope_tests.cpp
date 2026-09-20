@@ -31,6 +31,7 @@
 //    hand pulling on it adds exactly the hand's strength.
 
 #include "fastlattice/LiveWorld.hpp"
+#include <nlohmann/json.hpp>
 
 #include <cmath>
 #include <iostream>
@@ -438,6 +439,30 @@ void tensionIsAForce() {
     }
 }
 
+void tautSettingSurvivesRestore() {
+    const auto request = gantry();
+    auto world = LiveWorld::open(request);
+    const auto id = world->tie("beam", "weight", {0, 4, 0}, {0, 3, 0});
+    require(id != 0, "could not tie snapshot rope");
+    for (int i = 0; i < 120; ++i) tick(*world);
+    std::string why;
+    const auto saved = world->snapshot(why);
+    require(!saved.empty(), "could not snapshot taut rope: " + why);
+    const auto before = nlohmann::json::parse(saved);
+    require(before["joints"][0]["held"]["lower"].get<double>() > 0,
+            "test rope did not reach its taut solver setting");
+    for (bool carry : {false, true}) {
+        auto back = carry ? LiveWorld::open(request, saved, LiveWorld::carryAll(saved))
+                          : LiveWorld::open(request, saved);
+        const auto after = nlohmann::json::parse(back->snapshot(why));
+        require(after["joints"][0]["held"] == before["joints"][0]["held"],
+                "restore changed the saved rope setting without advancing time");
+        for (int i = 0; i < 120; ++i) tick(*back);
+        require(std::abs(named(back->poses(), "weight").position_m.y - 3.0) < .01,
+                "restored rope did not continue supporting its load");
+    }
+}
+
 void aRopeRefusesWhatItCannotTie() {
     const auto world = LiveWorld::open(gantry(1000.0));
     require(world->tie("beam", "nothing at all", Vec3{}, Vec3{}) == 0,
@@ -472,6 +497,8 @@ int main() {
         std::cout << "[PASS] a rope is measured between its tie points\n";
         tensionIsAForce();
         std::cout << "[PASS] tension is a force\n";
+        tautSettingSurvivesRestore();
+        std::cout << "[PASS] taut rope setting survives whole restore and carry\n";
         std::cout << "\nall rope tests passed\n";
         return 0;
     } catch (const std::exception &error) {

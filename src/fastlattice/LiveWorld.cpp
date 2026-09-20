@@ -3357,6 +3357,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 rope.point_b_world_m = point_b;
                 rope.length_m = joint.upper;
                 rope.breaking_tension_n = joint.breaks_at_n;
+                rope.taut_at_restore = numberFrom(held.at("lower")) > 0.0;
                 joint.rigid = impl.world->addLink(rope);
                 break;
             }

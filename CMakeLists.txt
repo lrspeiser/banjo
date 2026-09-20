@@ -1155,7 +1155,7 @@ if(BANJO_BUILD_TESTS)
             # Ropes and chains: a link that pulls and does not push, made of
             # ordinary bodies tied to each other rather than a rope object.
             add_executable(banjo_rope_tests tests/rope_tests.cpp)
-            target_link_libraries(banjo_rope_tests PRIVATE banjo_fastlattice_scene)
+            target_link_libraries(banjo_rope_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_rope_tests)
             add_test(NAME banjo_rope_tests COMMAND banjo_rope_tests)
 

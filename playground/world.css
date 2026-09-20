@@ -231,6 +231,13 @@ kbd {
   box-shadow: 0 10px 30px rgb(0 0 0 / .45);
 }
 #machine-panel[hidden] { display: none; }
+@media (max-width: 700px) {
+  #machine-panel {
+    width: min(310px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
+  }
+}
 .mp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .mp-kind { margin: 0; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
 #mp-name { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.25; text-wrap: balance; }

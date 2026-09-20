@@ -51,6 +51,7 @@ import placement
 import access_gate
 import workshop_api
 import workshop_install
+import world_upgrades
 import world_access
 import scene_chat
 import network_admission
@@ -1209,7 +1210,7 @@ class Handler(BaseHTTPRequestHandler):
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.server.app).enter() if world_call else nullcontext()), \
+        with (world_access.gate(self.server.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
              (gameplay_room.LOCK if world_call and (gameplay_room.active(self.server.app)
                  or fabrication_room.active(self.server.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
@@ -1434,6 +1435,7 @@ class Handler(BaseHTTPRequestHandler):
                 # bag's things are set aside again (inventory_room.after_open).
                 opened["inventory"]=inventory_room.after_open(app,opened)
                 if body.get("fresh"): room_store.keep(app,room)
+                opened=world_upgrades.apply(app,opened)
                 # Saved now, so what a restart gives back is this world from
                 # here on -- the one just opened again, or the one just opened
                 # from its spec, which a restart must not trade for an older one.
@@ -2250,6 +2252,7 @@ def _rejoin(app,scene):
     rejoin=getattr(app.live,"rejoin",None)
     opened=rejoin(app) if rejoin is not None else None
     if opened is None: return None
+    opened=world_upgrades.apply(app,opened)
     gameplay_room.opened(app, opened)
     opened["inventory"]=inventory_room.shown(app)
     opened["scene"]=room.scene
