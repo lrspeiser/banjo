@@ -38,11 +38,11 @@
     {
       "id": 27,
       "name": "Leave and return",
-      "remaining": "First QA checks moving bodies and broken/attached fixing persistence; coupled heat, contents and damage need expanded gates",
+      "remaining": "Deliver and broaden complete thermal restart support; active thermal scene edits, legacy migration and broader fluid/contents persistence remain.",
       "status": "partial",
       "priority": 5,
       "workstream": "Shared completion gates",
-      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains."
+      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains. New native identical-scene snapshots retain thermal clocks, gas, heaters, piston boundaries and ledger; comparative restart and continuation tests are in room_carry_tests."
     },
     {
       "id": 29,

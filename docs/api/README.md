@@ -382,3 +382,5 @@ The wood model is a declared simplified model with demonstration parameters;
 [Finite-stock fabrication](../fabrication.md): persistent processes, exact native output, HTTP/MCP contracts and fixed regression.
 
 Saved browser worlds: [startup additions and world_open_saved](../world-startup-upgrades.md).
+
+Thermal state in saved worlds: [native snapshot persistence and legacy limits](../thermal-world-persistence.md). Existing world_open_saved uses this behavior when the server runs the updated native build.

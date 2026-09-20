@@ -744,6 +744,90 @@ void theSameSceneStillComesBackWhole() {
     theHoistWindsOn(*back, p.motor, p.rope);
 }
 
+
+// No mechanical movement in this comparison: any drift is lost thermal state,
+// not the documented loss of the rigid solver's contact warm start.
+void completeThermalStateSurvivesRestart() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        SceneBody b;
+        b.name = materialPresetName(material);
+        b.shape = BodyShape::Box; b.material = material; b.anchored = true;
+        b.dimensions_m = {0.08, 0.08, 0.08};
+        b.center_m = {static_cast<double>(r.bodies.size()), 1.0, 0.0};
+        r.bodies.push_back(b);
+    }
+    r.thermo_scene_json = R"({"bodies":[
+        {"name":"glass","temperature_k":500},{"name":"oak","temperature_k":650},
+        {"name":"iron","temperature_k":500}],
+        "thermo":{"gas_regions":[{"name":"tank","contents":{"argon":1},"volume_m3":0.1,
+        "temperature_k":400,"pressure_pa":150000,"vent_area_m2":0.00001}],
+        "heaters":[{"target":"tank","power_w":100,"seconds":0.8}]}})";
+    auto world = LiveWorld::open(r);
+    require(world->heat("iron", 200, 0.6) != 0, "dynamic heater was refused");
+    stepAnswering(*world, 48);
+    std::string why;
+    const auto saved = world->snapshot(why);
+    require(!saved.empty(), "thermal snapshot was refused: " + why);
+    auto back = LiveWorld::open(r, saved);
+    require(back->restored().tier == "whole", "thermal restart is not whole");
+    const auto before = nlohmann::json::parse(saved);
+    const auto after = nlohmann::json::parse(back->snapshot(why));
+    require(before.at("heat") == after.at("heat"), "thermal state changed on restart");
+    require(world->thermo()->ledger().heater_in_j > 0, "heaters did no work before restart");
+    stepAnswering(*world, 240);
+    stepAnswering(*back, 240);
+    const auto continued = nlohmann::json::parse(world->snapshot(why));
+    const auto restarted = nlohmann::json::parse(back->snapshot(why));
+    require(continued.at("heat") == restarted.at("heat"), "thermal continuation differs after restart");
+    const auto &ledger = back->thermo()->ledger();
+    require(std::abs(ledger.residualJ()) < 1e-7, "thermal energy ledger failed after restart");
+    require(std::abs(ledger.massResidualKg()) < 1e-12, "thermal mass ledger failed after restart");
+    require(back->thermo()->state().time_s > 1.1, "thermal clock restarted");
+    auto malformed = before;
+    malformed["heat"]["network"]["contacts"].push_back({{"a", 999999}, {"b", 0},
+        {"area_m2", 1}, {"conductance_w_k", 1}});
+    const auto refused = LiveWorld::open(r, malformed.dump());
+    require(refused->restored().tier != "whole", "invalid thermal indices were accepted");
+    auto legacy = before;
+    legacy["heat"].erase("network");
+    const auto old = LiveWorld::open(r, legacy.dump());
+    require(old->restored().tier == "whole", "legacy snapshot is no longer readable");
+    std::cout << "    glass/oak/iron, finite vented gas, timed/dynamic heaters and ledger resume exactly\n";
+}
+
+
+void pressureWorkSurvivesRestart() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    SceneBody base;
+    base.name = "base"; base.shape = BodyShape::Box; base.material = MaterialPreset::Iron;
+    base.dimensions_m = {0.16, 0.04, 0.16}; base.center_m = {0, 0.02, 0}; base.anchored = true;
+    SceneBody piston = base;
+    piston.name = "piston"; piston.center_m = {0, 0.5, 0}; piston.anchored = false;
+    r.bodies = {base, piston};
+    r.thermo_scene_json = R"({"thermo":{"gas_regions":[{"name":"gas","contents":{"argon":1},
+        "piston":"piston","height_m":0.4,"balance":true}],
+        "heaters":[{"target":"gas","power_w":100,"seconds":1}]}})";
+    auto world = LiveWorld::open(r);
+    require(world->slide("base", "piston", {0, 0.5, 0}, {0, 1, 0}, -0.2, 0.6, 0) > 0, "piston slide failed");
+    stepAnswering(*world, 120);
+    std::string why;
+    const auto saved = world->snapshot(why);
+    auto back = LiveWorld::open(r, saved);
+    require(back->restored().tier == "whole", "heated piston did not restore whole");
+    const auto before = nlohmann::json::parse(saved);
+    const auto after = nlohmann::json::parse(back->snapshot(why));
+    require(before.at("heat") == after.at("heat"), "piston pressure/work history changed on restart");
+    require(back->thermo()->ledger().work_to_bodies_j > 0, "gas did no mechanical work");
+    stepAnswering(*back, 120);
+    const auto &ledger = back->thermo()->ledger();
+    require(std::abs(ledger.residualJ()) < 1e-7, "restarted piston thermal ledger does not close");
+    require(ledger.work_to_bodies_j > 0, "restarted piston lost its work account");
+    std::cout << "    pressure, piston boundary and work ledger survive and continue\n";
+}
+
 } // namespace
 
 int main() {
@@ -767,6 +851,8 @@ int main() {
         {"a cut comes back cut, its severed bonds and its edge under their new numbers",
          aCutComesBackCutUnderItsNewNumbers},
         {"the same scene still comes back whole", theSameSceneStillComesBackWhole},
+        {"complete thermal state survives restart", completeThermalStateSurvivesRestart},
+        {"pressure work survives restart", pressureWorkSurvivesRestart},
     };
     int failed = 0;
     for (const auto &[what, check] : checks) {

@@ -1031,3 +1031,5 @@ reject, an exception escaping as a crash instead of an answer.
 The four expedition tools forward to the running local playground, not the MCP authoring copy. See [the gameplay contract](../gameplay.md) for all action fields, units, limits, examples, save ownership, and the declared dryer model.
 
 The [fabrication contract](../fabrication.md) documents every setting, field, state, boundary and native QA gate for these tools.
+
+Thermal state in saved worlds: [native snapshot persistence and legacy limits](../thermal-world-persistence.md). Existing world_open_saved uses this behavior when the server runs the updated native build.

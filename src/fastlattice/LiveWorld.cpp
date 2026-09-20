@@ -2413,6 +2413,209 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     return l;
 }
 
+// Versioned complete thermal state for reopening the identical world.
+// Doubles use the same lossless representation as mechanical snapshots.
+nlohmann::json savedHeaterDeclaration(const thermo::HeaterDeclaration &v) {
+    return {{"target", v.target},
+            {"label", v.label},
+            {"power_w", savedNumber(v.power_w)},
+            {"start_s", savedNumber(v.start_s)},
+            {"seconds", savedNumber(v.seconds)}};
+}
+thermo::HeaterDeclaration readHeaterDeclaration(const nlohmann::json &j) {
+    thermo::HeaterDeclaration v;
+    v.target = j.at("target").get<std::string>();
+    v.label = j.at("label").get<std::string>();
+    v.power_w = numberFrom(j.at("power_w"));
+    v.start_s = numberFrom(j.at("start_s"));
+    v.seconds = numberFrom(j.at("seconds"));
+    return v;
+}
+nlohmann::json savedPistonBoundary(const thermo::PistonBoundary &v) {
+    return {{"body", v.body},
+            {"container", v.container},
+            {"axis", savedVec(v.axis)},
+            {"base_m", savedVec(v.base_m)},
+            {"pushed_force_n", savedVec(v.pushed_force_n)},
+            {"area_m2", savedNumber(v.area_m2)},
+            {"stroke_m", savedNumber(v.stroke_m)},
+            {"base_volume_m3", savedNumber(v.base_volume_m3)},
+            {"minimum_volume_m3", savedNumber(v.minimum_volume_m3)},
+            {"pushed_pressure_pa", savedNumber(v.pushed_pressure_pa)},
+            {"work_to_bodies_j", savedNumber(v.work_to_bodies_j)},
+            {"work_to_atmosphere_j", savedNumber(v.work_to_atmosphere_j)}};
+}
+thermo::PistonBoundary readPistonBoundary(const nlohmann::json &j) {
+    thermo::PistonBoundary v;
+    v.body = j.at("body").get<std::string>();
+    v.container = j.at("container").get<std::string>();
+    v.axis = vecFrom(j.at("axis"));
+    v.base_m = vecFrom(j.at("base_m"));
+    v.pushed_force_n = vecFrom(j.at("pushed_force_n"));
+    v.area_m2 = numberFrom(j.at("area_m2"));
+    v.stroke_m = numberFrom(j.at("stroke_m"));
+    v.base_volume_m3 = numberFrom(j.at("base_volume_m3"));
+    v.minimum_volume_m3 = numberFrom(j.at("minimum_volume_m3"));
+    v.pushed_pressure_pa = numberFrom(j.at("pushed_pressure_pa"));
+    v.work_to_bodies_j = numberFrom(j.at("work_to_bodies_j"));
+    v.work_to_atmosphere_j = numberFrom(j.at("work_to_atmosphere_j"));
+    return v;
+}
+nlohmann::json savedContact(const thermo::Contact &v) {
+    return {{"a", v.a},
+            {"b", v.b},
+            {"area_m2", savedNumber(v.area_m2)},
+            {"conductance_w_k", savedNumber(v.conductance_w_k)}};
+}
+thermo::Contact readContact(const nlohmann::json &j) {
+    thermo::Contact v;
+    v.a = j.at("a").get<std::size_t>();
+    v.b = j.at("b").get<std::size_t>();
+    v.area_m2 = numberFrom(j.at("area_m2"));
+    v.conductance_w_k = numberFrom(j.at("conductance_w_k"));
+    return v;
+}
+nlohmann::json savedSight(const thermo::Sight &v) {
+    return {{"a", v.a},
+            {"b", v.b},
+            {"exchange_area_m2", savedNumber(v.exchange_area_m2)},
+            {"emissivity", savedNumber(v.emissivity)}};
+}
+thermo::Sight readSight(const nlohmann::json &j) {
+    thermo::Sight v;
+    v.a = j.at("a").get<std::size_t>();
+    v.b = j.at("b").get<std::size_t>();
+    v.exchange_area_m2 = numberFrom(j.at("exchange_area_m2"));
+    v.emissivity = numberFrom(j.at("emissivity"));
+    return v;
+}
+nlohmann::json savedLedger(const thermo::Ledger &v) {
+    return {{"reference_j", savedNumber(v.reference_j)},
+            {"sensible_j", savedNumber(v.sensible_j)},
+            {"mass_kg", savedNumber(v.mass_kg)},
+            {"initial_j", savedNumber(v.initial_j)},
+            {"initial_mass_kg", savedNumber(v.initial_mass_kg)},
+            {"heater_in_j", savedNumber(v.heater_in_j)},
+            {"heat_to_surroundings_j", savedNumber(v.heat_to_surroundings_j)},
+            {"matter_in_j", savedNumber(v.matter_in_j)},
+            {"matter_in_kg", savedNumber(v.matter_in_kg)},
+            {"matter_out_j", savedNumber(v.matter_out_j)},
+            {"matter_out_kg", savedNumber(v.matter_out_kg)},
+            {"joined_j", savedNumber(v.joined_j)},
+            {"joined_kg", savedNumber(v.joined_kg)},
+            {"left_j", savedNumber(v.left_j)},
+            {"left_kg", savedNumber(v.left_kg)},
+            {"work_to_bodies_j", savedNumber(v.work_to_bodies_j)},
+            {"work_to_atmosphere_j", savedNumber(v.work_to_atmosphere_j)},
+            {"mechanical_in_j", savedNumber(v.mechanical_in_j)},
+            {"numerical_j", savedNumber(v.numerical_j)},
+            {"out_of_range_steps", v.out_of_range_steps}};
+}
+thermo::Ledger readLedger(const nlohmann::json &j) {
+    thermo::Ledger v;
+    v.reference_j = numberFrom(j.at("reference_j"));
+    v.sensible_j = numberFrom(j.at("sensible_j"));
+    v.mass_kg = numberFrom(j.at("mass_kg"));
+    v.initial_j = numberFrom(j.at("initial_j"));
+    v.initial_mass_kg = numberFrom(j.at("initial_mass_kg"));
+    v.heater_in_j = numberFrom(j.at("heater_in_j"));
+    v.heat_to_surroundings_j = numberFrom(j.at("heat_to_surroundings_j"));
+    v.matter_in_j = numberFrom(j.at("matter_in_j"));
+    v.matter_in_kg = numberFrom(j.at("matter_in_kg"));
+    v.matter_out_j = numberFrom(j.at("matter_out_j"));
+    v.matter_out_kg = numberFrom(j.at("matter_out_kg"));
+    v.joined_j = numberFrom(j.at("joined_j"));
+    v.joined_kg = numberFrom(j.at("joined_kg"));
+    v.left_j = numberFrom(j.at("left_j"));
+    v.left_kg = numberFrom(j.at("left_kg"));
+    v.work_to_bodies_j = numberFrom(j.at("work_to_bodies_j"));
+    v.work_to_atmosphere_j = numberFrom(j.at("work_to_atmosphere_j"));
+    v.mechanical_in_j = numberFrom(j.at("mechanical_in_j"));
+    v.numerical_j = numberFrom(j.at("numerical_j"));
+    v.out_of_range_steps = j.at("out_of_range_steps").get<unsigned long long>();
+    return v;
+}
+
+nlohmann::json savedThermoState(const thermo::ThermoState &v) {
+    nlohmann::json j = {{"schema", "banjo.thermal-state.v1"},
+        {"time_s", savedNumber(v.time_s)}, {"next_heater", v.next_heater}, {"opened", v.opened},
+        {"ledger", savedLedger(v.ledger)}, {"sky_fraction", packedArray(v.sky_fraction)},
+        {"floor_conductance_w_k", packedArray(v.floor_conductance_w_k)}};
+    for (const char *key : {"regions", "heaters", "contacts", "sights"}) j[key] = nlohmann::json::array();
+    for (const auto &r : v.regions) {
+        nlohmann::json region = {{"name", r.name}, {"gas", savedParcel(r.gas)},
+            {"volume_m3", savedNumber(r.volume_m3)}, {"wall_conductance_w_k", savedNumber(r.wall_conductance_w_k)},
+            {"vent_area_m2", savedNumber(r.vent_area_m2)}, {"vent_open", r.vent_open},
+            {"heater_w", savedNumber(r.heater_w)}, {"wall_loss_w", savedNumber(r.wall_loss_w)},
+            {"vent_flow_kg_s", savedNumber(r.vent_flow_kg_s)}};
+        if (r.piston) region["piston"] = savedPistonBoundary(*r.piston);
+        j["regions"].push_back(std::move(region));
+    }
+    for (const auto &h : v.heaters) j["heaters"].push_back({{"id", h.id}, {"what", savedHeaterDeclaration(h.what)}});
+    for (const auto &c : v.contacts) j["contacts"].push_back(savedContact(c));
+    for (const auto &c : v.sights) j["sights"].push_back(savedSight(c));
+    return j;
+}
+
+thermo::ThermoState readThermoState(const nlohmann::json &heat, std::size_t substances) {
+    const auto &j = heat.at("network");
+    if (j.at("schema") != "banjo.thermal-state.v1" || heat.at("substances").get<std::size_t>() != substances)
+        throw std::invalid_argument("incompatible saved thermal network");
+    thermo::ThermoState v;
+    v.time_s = numberFrom(j.at("time_s"));
+    v.next_heater = j.at("next_heater").get<unsigned>();
+    v.opened = j.at("opened").get<bool>();
+    v.ledger = readLedger(j.at("ledger"));
+    v.sky_fraction = unpackedArray<double>(j, "sky_fraction");
+    v.floor_conductance_w_k = unpackedArray<double>(j, "floor_conductance_w_k");
+    std::set<std::string> regions, bodies;
+    for (const auto &r : j.at("regions")) {
+        thermo::GasRegion region;
+        region.name = r.at("name").get<std::string>();
+        region.gas = parcelFrom(r.at("gas"));
+        if (!regions.insert(region.name).second || region.gas.kg.size() != substances)
+            throw std::invalid_argument("invalid saved gas region");
+        region.volume_m3 = numberFrom(r.at("volume_m3"));
+        region.wall_conductance_w_k = numberFrom(r.at("wall_conductance_w_k"));
+        region.vent_area_m2 = numberFrom(r.at("vent_area_m2"));
+        region.vent_open = r.at("vent_open").get<bool>();
+        region.heater_w = numberFrom(r.at("heater_w"));
+        region.wall_loss_w = numberFrom(r.at("wall_loss_w"));
+        region.vent_flow_kg_s = numberFrom(r.at("vent_flow_kg_s"));
+        if (r.contains("piston")) region.piston = readPistonBoundary(r.at("piston"));
+        v.regions.push_back(std::move(region));
+    }
+    for (const auto &l : heat.at("lumps")) {
+        const auto environment = l.value("environment", std::string{});
+        if (!environment.empty() && !regions.count(environment))
+            throw std::invalid_argument("saved thermal body has no gas region");
+        auto lump = lumpFrom(l, v, substances);
+        if (!bodies.insert(lump.body).second) throw std::invalid_argument("duplicate saved thermal body");
+        v.lumps.push_back(std::move(lump));
+    }
+    std::set<unsigned> ids;
+    for (const auto &h : j.at("heaters")) {
+        thermo::Heater heater{h.at("id").get<unsigned>(), readHeaterDeclaration(h.at("what"))};
+        if (!ids.insert(heater.id).second || heater.id >= v.next_heater ||
+            (!bodies.count(heater.what.target) && !regions.count(heater.what.target)))
+            throw std::invalid_argument("invalid saved heater reference");
+        v.heaters.push_back(std::move(heater));
+    }
+    for (const auto &c : j.at("contacts")) {
+        auto value = readContact(c);
+        if (value.a >= v.lumps.size() || value.b >= v.lumps.size()) throw std::invalid_argument("invalid saved heat contact");
+        v.contacts.push_back(value);
+    }
+    for (const auto &c : j.at("sights")) {
+        auto value = readSight(c);
+        if (value.a >= v.lumps.size() || value.b >= v.lumps.size()) throw std::invalid_argument("invalid saved heat sight");
+        v.sights.push_back(value);
+    }
+    if (v.sky_fraction.size() != v.lumps.size() || v.floor_conductance_w_k.size() != v.lumps.size())
+        throw std::invalid_argument("invalid saved thermal boundary arrays");
+    return v;
+}
+
 }  // namespace
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -3035,7 +3238,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // network refuses refuses the scene, with the network's own words, rather
     // than opening a world that quietly lacks the fire it was asked for. A world
     // opened again from a saved one declares only what is about something still
-    // there, and from the start: heat is not yet part of a saved world.
+    // there. Versioned saved network state replaces these initial values below.
     if (!r.thermo_scene_json.empty()) {
         thermo::Declarations declared = thermo::readSceneDeclarations(r.thermo_scene_json);
         if (saved != nullptr) keepWhatIsThere(declared, impl.index_of);
@@ -3102,6 +3305,37 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 network.refresh(live->thermoShapes(), setup.ground_y);
             }
         }
+    }
+    // An append-only edit with every thermal lump unchanged can retain the
+    // complete quiescent network too. Recompute geometric paths for the new
+    // scene; the host's strict staging check detects any changed heat boundary.
+    // General edits involving gas or scheduled heat still use the declared
+    // changed-scene policy and are not admitted by atomic installation.
+    if (carrying && plan.exact && saved->doc.contains("heat") &&
+        saved->doc.at("heat").contains("network") && impl.thermo) {
+        const auto &heat = saved->doc.at("heat");
+        const auto &networkDoc = heat.at("network");
+        const auto &current = impl.thermo->state();
+        if (carried_heat == heat.at("lumps").size() && current.lumps.size() == carried_heat &&
+            current.regions.empty() && current.heaters.empty() &&
+            networkDoc.at("regions").empty() && networkDoc.at("heaters").empty()) {
+            impl.thermo->restore(readThermoState(heat, impl.thermo->model().size()));
+            impl.thermo->refresh(live->thermoShapes(), setup.ground_y);
+        }
+    }
+    // Identical-scene restores retain all thermal state, including the network
+    // clock, finite gas contents, heater schedules and accumulated ledger.
+    // Older snapshots remain readable through the existing legacy path.
+    if (saved && !carrying && saved->doc.contains("heat") && saved->doc.at("heat").contains("network")) {
+        auto &network = live->ensureThermo();
+        auto state = readThermoState(saved->doc.at("heat"), network.model().size());
+        for (const auto &lump : state.lumps)
+            if (!impl.index_of.count(lump.body)) throw std::invalid_argument("saved thermal body is absent");
+        for (const auto &region : state.regions)
+            if (region.piston && (!impl.index_of.count(region.piston->body) ||
+                (!region.piston->container.empty() && !impl.index_of.count(region.piston->container))))
+                throw std::invalid_argument("saved gas piston or container is absent");
+        network.restore(state);
     }
     if (saved == nullptr) return live;
     if (carrying && !plan.exact) {
@@ -11903,7 +12137,7 @@ bool LiveWorld::parked(const std::string &name) const { return impl_->parked.cou
 // ===========================================================================
 
 std::vector<std::string> LiveWorld::notKept() {
-    return {"heat, char and fuel: each thing still there is heated as its room declares it, from the start",
+    return {"legacy snapshots without a thermal network restart heater and gas histories from the scene",
             "anything under way: a world is saved only between breaks, strokes of the hand, cuts and a point's "
             "time in the ground, so the last one saved before any of those is what comes back",
             "the solver's memory of its contacts: a thing that was moving carries on from where it was, but "
@@ -12254,12 +12488,13 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
     // What the thermal network holds for each body, for a world carried into
     // this scene once it has changed: the heat of each thing that comes back
-    // comes back with it. A world opened whole does not read it yet (notKept).
+    // comes back with it. Identical-scene restores also retain the complete network.
     if (I.thermo) {
         const thermo::ThermoState &state = I.thermo->state();
         nlohmann::json lumps = nlohmann::json::array();
         for (const thermo::Lump &lump : state.lumps) lumps.push_back(savedLump(lump, state));
-        if (!lumps.empty()) doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)}};
+        doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)},
+                       {"network", savedThermoState(state)}};
     }
     // A snapshot's old descriptive not_kept list is not enough for a caller
     // that promises an atomic changed-scene carry: a heater scheduled but not
