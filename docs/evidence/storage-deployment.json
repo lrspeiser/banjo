@@ -1,0 +1,46 @@
+{
+  "schema": "banjo.storage-deployment.v1",
+  "source_revision": "017cae3",
+  "part": "workshop-75401f9f96714b6c",
+  "mass_kg": 0.7168,
+  "restored_tier": "whole",
+  "operations": [
+    "take_up",
+    "stow",
+    "reopen",
+    "equip",
+    "stow",
+    "browser Hold",
+    "browser Stow"
+  ],
+  "final_location": "bag slot 1",
+  "verified_native_fields": [
+    "anchored",
+    "body_id",
+    "color_rgba",
+    "dent_at_m",
+    "dent_m",
+    "dimensions_m",
+    "fragment",
+    "friction",
+    "from",
+    "material",
+    "name",
+    "nodes_b64",
+    "offsets_b64",
+    "restitution",
+    "revision",
+    "rolling_resistance",
+    "shape"
+  ],
+  "material_geometry_retained": true,
+  "construction_and_primary_use_retained": true,
+  "fabrication_record_retained": true,
+  "startup_receipts_retained": true,
+  "native_times_s": [
+    743.4333333358967,
+    743.4333333358967
+  ],
+  "browser_errors": [],
+  "boundary": "Pose, velocity and awake status change with storage/placement. Single-piece custody preservation, not articulated storage, physical bag heat transfer or whole-world energy closure."
+}
