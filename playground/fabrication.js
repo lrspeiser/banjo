@@ -38,14 +38,26 @@ function controls(){
  $("preview").disabled||=!$("finished").value;
  $("commit").disabled||=!preview;
  for(const b of document.querySelectorAll("#jobs button, #stocks button"))b.disabled=busy;
+ for(const b of document.querySelectorAll("#raw-lots button"))b.disabled=busy||!session||(pending.retrieve_ground?pending.retrieve_ground.lot_id!==b.dataset.lotId:b.dataset.empty==="true");
 }
 function render(s){
  state=s;$("setup").open=!state;$("setup-note").textContent="Initial stock and energy are fixed. Workpieces, heat and remaining supply survive leaving the room.";
  $("meters").textContent="World "+fmt(s.time_s)+" s · Supply "+fmt(s.energy_j)+" J · Station "+fmt(s.temperature_k-273.15,2)+" °C";
  $("stocks").replaceChildren();
  $("raw-lots").replaceChildren();
- const raw={};for(const lot of Object.values(s.raw_lots||{}))for(const item of lot.contents)raw[item.substance]=(raw[item.substance]||0)+item.mass_kg;
- for(const [substance,mass] of Object.entries(raw)){const p=document.createElement("p");p.textContent=fmt(mass)+" kg "+substance+" stored, unprocessed";$("raw-lots").append(p);}
+ for(const [lotId,contents] of Object.entries(s.raw_inventory||{})){
+ const card=document.createElement("article");card.className="workpiece";
+ const total=contents.reduce((sum,item)=>sum+item.mass_kg,0);
+ const detail=document.createElement("p");detail.textContent=contents.map(item=>fmt(item.mass_kg)+" kg "+item.substance).join(" and ")+" stored, unprocessed";
+ const label=document.createElement("label");label.textContent="Amount to retrieve (kg)";
+ const amount=document.createElement("input");amount.type="number";amount.min="0.001";amount.max=String(total);amount.step="any";amount.value=String(total);label.append(amount);
+ const button=document.createElement("button");button.textContent="Retrieve raw material";
+ button.dataset.lotId=lotId;button.dataset.empty=String(total<=0);
+ button.onclick=()=>run(async()=>{const kg=Number(amount.value);if(!pending.retrieve_ground&&(!Number.isFinite(kg)||kg<=0||kg>total))throw Error("Choose a positive amount no greater than this lot.");
+ const fraction=kg===total?1:kg/total;const quantities={sand_m3:0,soil_m3:0};for(const item of contents)quantities[item.substance+"_m3"]=item.volume_m3*fraction;
+ preview=null;await command("retrieve_ground",{lot_id:lotId,...quantities,revision:state.revision},true);await command("state");draw(await api("/api/live/act",{session,op:"poses"}));},"Material is carried again. Return to the world to deposit it.");
+ card.append(detail,label,button);$("raw-lots").append(card);
+ }
  for(const material of Object.keys(s.stock_kg)){const tr=document.createElement("tr");for(const text of [material,fmt(s.stock_kg[material])+" kg",fmt(s.waste_kg[material]||0)+" kg",fmt(s.transferred_kg[material]||0)+" kg"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}const recover=document.createElement("td");
  if((s.waste_kg[material]||0)>0){const b=document.createElement("button");b.textContent="Recover "+material+" offcuts";b.onclick=()=>run(async()=>{preview=null;await command("recover",{material,mass_kg:state.waste_kg[material],revision:state.revision},true);},"Offcuts returned to stock. Spent work and energy are retained.");recover.append(b);}tr.append(recover);$("stocks").append(tr);}
  const selected=$("finished").value;$("finished").replaceChildren();$("jobs").replaceChildren();

@@ -97,6 +97,7 @@ that current `scene` and `session`. Unknown fields refuse.
 | `pause` | `fabrication_pause` | `job_id`, `revision`, `request_id`. Keeps the intermediate workpiece. |
 | `resume` | `fabrication_resume` | `job_id`, `revision`, `request_id`. Continues retained work. |
 | `recover` | `fabrication_recover` | `material`, `mass_kg` (0.000001..10000), `revision`, `request_id`. Moves available cold offcuts into same-material stock, with no work/energy refund. |
+| `retrieve_ground` | `fabrication_retrieve_ground` | `lot_id`, `sand_m3`, `soil_m3`, `revision`, `request_id`. Positive total bounded by `raw_inventory` and native carrying capacity. Saves the return receipt and native credit together; returns replacement `session`, `state`, `replayed`. |
 | `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3` (each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
@@ -104,7 +105,7 @@ that current `scene` and `session`. Unknown fields refuse.
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.11.0, platform MCP 1.14.0; native ABI remains 25.
+inventory. World MCP is 1.12.0, platform MCP 1.15.0; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -300,4 +301,12 @@ remain open.
 
 `POST /api/world/fabrication/state` and MCP `fabrication_state` additionally return `ground_audit`, computed from the current native environment report and receiving lots without advancing time or changing receipts. `status` is `matched`, `mismatch`, or `unavailable` (no terrain). Each sand/soil row reports excavated, deposited, carried, exported and stored volumes in m3, stored kg, transfer residual m3, density residual kg and native terrain residual m3.
 
-`net_external_or_untracked_m3 = deposited + carried + exported - excavated`. Values within `1e-10 + 1e-12 * max(excavated, deposited, carried, exported)` m3 are labeled balanced; positive values are `external_input_or_error`, negative values `unaccounted_destination`. This is a diagnostic, not a fabricated import history: authored terrain heaps can supply outside material. Transfer closure compares native exports with stored volumes and mass against the declared native bulk density (1600 kg/m3), with mass tolerance `1e-10 + 1e-12 * stored_kg`. Matching transfers alone do not certify the terrain, rock-body, energy or thermal boundaries. The browser exposes the report under **Excavated material balance**.
+`net_external_or_untracked_m3 = deposited + carried + exported - returned - excavated`. Values within `1e-10 + 1e-12 * max(excavated, deposited, carried, exported)` m3 are labeled balanced; positive values are `external_input_or_error`, negative values `unaccounted_destination`. This is a diagnostic, not a fabricated import history: authored terrain heaps can supply outside material. Transfer closure compares native exports with stored volumes and mass against the declared native bulk density (1600 kg/m3), with mass tolerance `1e-10 + 1e-12 * stored_kg`. Matching transfers alone do not certify the terrain, rock-body, energy or thermal boundaries. The browser exposes the report under **Excavated material balance**.
+
+### Retrieving excavated material
+
+Ground-state v3 retains cumulative `exported` and `returned` quantities separately. It reads v1/v2 snapshots with zero returns. Returns cannot exceed exports, create negative quantities, or exceed native carrying capacity. Native internal `ground_return` must only be used inside a durable adapter transaction; it does not accept client-provided material identities.
+
+Fabrication retains immutable original `raw_lots` plus `raw_returns` keyed by request ID (source `lot_id` and a substance-preserving packet). `raw_inventory` in each reported state gives remaining contents per lot. Empty lots remain as provenance, not available stock. Saves compare original lots against cumulative exports and return receipts against cumulative native returns. The API returns a replacement session; use it for subsequent calls. An identical request ID is replayable with its original session, including after restart. Changed requests and overdraw refuse; a failed save leaves the running world and original lot unchanged.
+
+The browser accepts a mass to retrieve from each lot; mixed lots are retrieved in their remaining proportions. API/MCP callers may select sand and soil independently. Retrieved material can use the existing native carried-material deposit action. No object is consumed and no material conversion, thermal transport, physical container or handling-work model is added.

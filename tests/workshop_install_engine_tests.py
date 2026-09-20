@@ -177,14 +177,70 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual(empty["exported"],have)
         with self.assertRaises(live_session.LiveError):resumed.session.send(op="ground_withdraw",**moved)
 
+    def test_returned_ground_is_bounded_persistent_and_depositable(self):
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,
+            "cell_m":.25,"sand_m":.02,"soil_m":.2}}
+        self.open()
+        self.live.session.send(op="dig",**{"from":[0,0],"to":[0,0],"width_m":.5,"depth_m":.1})
+        before=self.snap();have={k:before["ground"]["carried"][k] for k in ("sand_m3","soil_m3")}
+        self.live.session.send(op="ground_withdraw",**have)
+        self.live.session.send(op="carry_limit",kg=0)
+        empty=self.snap()
+        with self.assertRaisesRegex(live_session.LiveError,"capacity"):
+            self.live.session.send(op="ground_return",**have)
+        self.assertEqual(empty,self.snap())
+        self.live.session.send(op="carry_limit",kg=80)
+        for bad in ({"sand_m3":-1,"soil_m3":0},{"sand_m3":0,"soil_m3":0},{"sand_m3":1,"soil_m3":0}):
+            checkpoint=self.snap()
+            with self.assertRaises(live_session.LiveError):self.live.session.send(op="ground_return",**bad)
+            self.assertEqual(checkpoint,self.snap())
+        self.live.session.send(op="ground_return",**have)
+        returned=self.snap()
+        self.assertEqual(returned["ground"]["carried"],before["ground"]["carried"])
+        self.assertEqual(returned["ground"]["returned"],returned["ground"]["exported"])
+        for key in before:
+            if key!="ground":self.assertEqual(before[key],returned[key],key)
+        with self.assertRaises(live_session.LiveError):self.live.session.send(op="ground_return",**have)
+        resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+        resumed.open(self.app,{"spec":self.room.spec,"snapshot":returned})
+        self.assertEqual(returned["ground"],install._snapshot(resumed)["ground"])
+        resumed.session.send(op="deposit",at=[1,1],radius_m=.5,from_carried=True,**have)
+        final=install._snapshot(resumed)["ground"]
+        self.assertEqual(final["carried"],{"rock_m3":0.,"soil_m3":0.,"sand_m3":0.})
+        for key,amount in have.items():self.assertAlmostEqual(final["ledger"]["deposited"][key],amount)
+        for change in (None,{"sand_m3":1.,"soil_m3":0.,"rock_m3":0.},
+                       {"sand_m3":-1.,"soil_m3":0.,"rock_m3":0.}):
+            bad=deepcopy(returned)
+            if change is None:bad["ground"].pop("returned")
+            else:bad["ground"]["returned"]=change
+            rejected=live_session.Live()
+            try:
+                with self.assertRaises(live_session.LiveError):rejected.open(self.app,{"spec":self.room.spec,"snapshot":bad})
+            finally:rejected.shutdown()
+
+    def test_ground_v2_exports_migrate_without_losing_transfer_history(self):
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,
+            "cell_m":.25,"sand_m":.02,"soil_m":.2}}
+        self.open()
+        self.live.session.send(op="dig",**{"from":[0,0],"to":[0,0],"width_m":.5,"depth_m":.1})
+        have=self.snap()["ground"]["carried"]
+        self.live.session.send(op="ground_withdraw",sand_m3=have["sand_m3"],soil_m3=have["soil_m3"])
+        original=self.snap();legacy=deepcopy(original)
+        legacy["ground"]["schema"]="banjo.ground-state.v2";legacy["ground"].pop("returned")
+        resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+        resumed.open(self.app,{"spec":self.room.spec,"snapshot":legacy})
+        self.assertEqual(original["ground"],install._snapshot(resumed)["ground"])
+
     def test_ground_v1_save_migrates_with_zero_exports(self):
         self.room=world_room.Room("world");self.app.room=self.room;self.open()
         saved=self.snap();saved["ground"]["schema"]="banjo.ground-state.v1"
-        saved["ground"].pop("exported")
+        saved["ground"].pop("exported");saved["ground"].pop("returned")
         resumed=live_session.Live();self.addCleanup(resumed.shutdown)
         resumed.open(self.app,{"spec":self.room.spec,"snapshot":saved})
         migrated=install._snapshot(resumed)["ground"]
-        self.assertEqual(migrated["schema"],"banjo.ground-state.v2")
+        self.assertEqual(migrated["schema"],"banjo.ground-state.v3")
         self.assertEqual(migrated["exported"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
         for key in saved["ground"]:
             if key!="schema":self.assertEqual(saved["ground"][key],migrated[key],key)

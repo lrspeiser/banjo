@@ -103,6 +103,7 @@ def validate_state(state):
     for ident,packet in lots.items():
         token(ident,"lot_id");bulk_packet(packet)
         if ident not in state["receipts"]: raise ValueError("Raw material lot has no receipt")
+    raw_inventory(state)  # Validate return receipts and remaining quantities.
     if config(state["config"]) != state["config"]: raise ValueError("Invalid saved configuration")
     for key in ("time_s", "energy_j", "station_heat_j", "ambient_j", "spent_j"):
         number(state[key], key, 0, 1e12)
@@ -171,6 +172,58 @@ def receive_bulk(state,body,packet):
     return out,False
 
 
+def raw_inventory(state):
+    """Retain original receipts; derive the unspent contents of every raw lot."""
+    remaining = {ident: {item["substance"]: deepcopy(item) for item in packet["contents"]}
+                 for ident, packet in state.get("raw_lots", {}).items()}
+    returns=state.get("raw_returns", {})
+    if not isinstance(returns,dict) or len(returns)>4096: raise ValueError("Invalid raw material returns")
+    for ident,record in returns.items():
+        token(ident);obj(record,{"lot_id","packet"},{"lot_id","packet"})
+        if ident not in state["receipts"]: raise ValueError("Raw return has no receipt")
+        lot=record["lot_id"];token(lot,"lot_id")
+        if lot not in remaining: raise ValueError("Raw return has no source lot")
+        packet=bulk_packet(record["packet"])
+        if packet["source"]!="excavated_ground" or state["raw_lots"][lot]["source"]!="excavated_ground":
+            raise ValueError("Only excavated ground can return to carrying")
+        for item in packet["contents"]:
+            have=remaining[lot].get(item["substance"])
+            if have is None or item["volume_m3"]>have["volume_m3"] or item["mass_kg"]>have["mass_kg"]:
+                raise ValueError("Raw return exceeds source lot")
+            if not math.isclose(item["mass_kg"],item["volume_m3"]*1600,rel_tol=1e-12,abs_tol=1e-10):
+                raise ValueError("Raw return mass does not match native volume")
+            have["volume_m3"]-=item["volume_m3"];have["mass_kg"]-=item["mass_kg"]
+    return {ident:list(contents.values()) for ident,contents in remaining.items()}
+
+
+def return_bulk(state,body):
+    """Trusted transaction candidate; the native receipt must commit with it."""
+    if check_request(state,body): return deepcopy(state),True
+    lot=token(body["lot_id"],"lot_id")
+    remaining=raw_inventory(state)
+    if lot not in remaining or state["raw_lots"][lot]["source"]!="excavated_ground":
+        raise ValueError("Choose an excavated raw lot")
+    amounts={k:number(body[k],k,0,10000) for k in ("sand_m3","soil_m3")}
+    if sum(amounts.values())<=0: raise ValueError("Choose a positive quantity to retrieve")
+    available={v["substance"]:v for v in remaining[lot]}
+    contents=[]
+    for substance in ("sand","soil"):
+        volume=amounts[substance+"_m3"]
+        if volume>available.get(substance,{}).get("volume_m3",0): raise ValueError("Insufficient raw material in lot")
+        if volume:
+            # Full returns use the exact remainder, avoiding a rounding crumb.
+            have=available[substance]
+            mass=have["mass_kg"] if volume==have["volume_m3"] else volume*1600
+            contents.append({"substance":substance,"volume_m3":volume,"mass_kg":mass})
+    out=deepcopy(state)
+    out.setdefault("raw_returns",{})[body["request_id"]]={"lot_id":lot,"packet":{
+        "schema":"banjo.bulk-material.v1","source":"excavated_ground","form":"granular",
+        "thermal_state":"unmodeled","contents":contents}}
+    out["receipts"][body["request_id"]]=digest(body);out["revision"]+=1
+    validate_state(out)
+    return out,False
+
+
 def validate_ground_stock(state,world):
     """The receiving account must match the native source's cumulative debit."""
     received={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
@@ -183,6 +236,15 @@ def validate_ground_stock(state,world):
             if not math.isclose(item["mass_kg"],item["volume_m3"]*1600,rel_tol=1e-12,abs_tol=1e-10):
                 raise ValueError("Raw material mass does not match native volume")
             received[key]+=item["volume_m3"]
+    returned={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
+    raw_inventory(state)
+    for record in state.get("raw_returns",{}).values():
+        for item in record["packet"]["contents"]:
+            returned[item["substance"]+"_m3"]+=item["volume_m3"]
+    native_returns=(world.get("ground") or {}).get("returned",{})
+    for key,total in returned.items():
+        if not math.isclose(total,number(native_returns.get(key,0),"returned volume",0,1e12),rel_tol=1e-12,abs_tol=1e-10):
+            raise ValueError("Raw returns do not match native ground receipts")
     exported=(world.get("ground") or {}).get("exported",{})
     for key,total in received.items():
         source=number(exported.get(key,0),"exported volume",0,1e12)
@@ -207,6 +269,10 @@ def ground_audit(state, ground):
             if item["substance"] not in received: raise ValueError("Unsupported excavated substance")
             amounts = received[item["substance"]]
             amounts[0] += item["volume_m3"]; amounts[1] += item["mass_kg"]
+    for record in (state or {}).get("raw_returns",{}).values():
+        for item in record["packet"]["contents"]:
+            amounts=received[item["substance"]]
+            amounts[0]-=item["volume_m3"];amounts[1]-=item["mass_kg"]
     rows = {}
     for substance, (volume, mass) in received.items():
         key = substance + "_m3"
@@ -217,17 +283,18 @@ def ground_audit(state, ground):
         deposited = quantity(ledger["deposited"])
         carried = quantity(ground["carried"])
         exported = quantity(ground.get("exported", {"sand_m3": 0., "soil_m3": 0.}))
-        transfer_residual = exported - volume
+        returned = quantity(ground.get("returned", {"sand_m3":0.,"soil_m3":0.}))
+        transfer_residual = exported - returned - volume
         density_residual = mass - volume * 1600.
         terrain_residual = ground["residual"][key]
         number(abs(terrain_residual), "terrain residual", 0, 1e12)
         # Positive means net outside input is needed to explain these accounts;
         # negative means excavated material has no recorded destination.
-        external = deposited + carried + exported - dug
+        external = deposited + carried + exported - returned - dug
         tolerance = 1e-10 + 1e-12 * max(dug, deposited, carried, exported)
         closed = abs(transfer_residual) <= tolerance and abs(density_residual) <= 1e-10 + 1e-12*mass
         rows[substance] = {"excavated_m3": dug, "deposited_m3": deposited,
-            "carried_m3": carried, "exported_m3": exported,
+            "carried_m3": carried, "exported_m3": exported, "returned_m3": returned,
             "stored_m3": volume, "stored_kg": mass,
             "transfer_residual_m3": transfer_residual,
             "density_residual_kg": density_residual,
@@ -363,6 +430,7 @@ def transfer(state, job_id, preview, request_id):
 def report(state):
     validate_state(state)
     out = deepcopy(state); out.pop("receipts")
+    out["raw_inventory"] = raw_inventory(state)
     out["temperature_k"] = temperature(state)
     out["audit"] = audit(state); out["limitations"] = LIMITATIONS
     for job in out["jobs"].values():

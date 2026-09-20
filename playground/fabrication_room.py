@@ -17,6 +17,7 @@ COMMAND_FIELDS = {
     "pause": {"job_id", "request_id", "revision"},
     "resume": {"job_id", "request_id", "revision"},
     "recover": {"material", "mass_kg", "request_id", "revision"},
+    "retrieve_ground": {"lot_id", "sand_m3", "soil_m3", "request_id", "revision"},
     "store_ground": {"sand_m3", "soil_m3", "request_id", "revision"},
 }
 
@@ -98,7 +99,7 @@ def request(app, operation, body):
     if operation not in COMMAND_FIELDS: raise ValueError("Unknown fabrication operation")
     fields = COMMAND_FIELDS[operation]
     model.obj(body, COMMON|fields, COMMON|fields)
-    if operation=="store_ground": return store_ground(app,body)
+    if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:
@@ -144,12 +145,12 @@ def request(app, operation, body):
         return {"state": model.report(state), "replayed": replayed}
 
 
-def store_ground(app,body):
+def transfer_ground(app,body,operation):
     """Stage the source debit; save source, receiving lots and receipt together."""
     with install._world(app) as (room,live,old),LOCK:
         if body["scene"]!=room.scene: raise ValueError("The source room changed")
         state=deepcopy(_state(room));model.advance(state,old.state["t"])
-        action={k:v for k,v in body.items() if k not in COMMON};action["op"]="store_ground"
+        action={k:v for k,v in body.items() if k not in COMMON};action["op"]=operation
         if model.check_request(state,action):
             return {"state":model.report(state),"session":old.id,"replayed":True}
         install._source(room,old,body)
@@ -157,24 +158,29 @@ def store_ground(app,body):
         if sum(quantities.values())<=0: raise ValueError("Choose a positive amount of carried ground")
         before=install._snapshot(live)
         ground=before.get("ground") or {}
-        if ground.get("schema")!="banjo.ground-state.v2": raise ValueError("Native runtime needs accounted bulk transfers")
+        if ground.get("schema") not in ("banjo.ground-state.v2","banjo.ground-state.v3"): raise ValueError("Native runtime needs accounted bulk transfers")
+        retrieving=operation=="retrieve_ground"
+        if retrieving and ground["schema"]!="banjo.ground-state.v3": raise ValueError("Native runtime needs accounted returns")
         model.validate_ground_stock(state,before)
-        for key,amount in quantities.items():
-            if amount>ground["carried"][key]: raise ValueError("Insufficient carried ground")
+        if retrieving:
+            state,_=model.return_bulk(state,action)
+        else:
+            for key,amount in quantities.items():
+                if amount>ground["carried"][key]: raise ValueError("Insufficient carried ground")
         staged=install.live_session.Live()
         try:
             opened=staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path),
                 {"spec":deepcopy(room.spec),"snapshot":before})
             if opened.get("restored",{}).get("tier")!="whole": raise ValueError("Native world did not restore whole")
             install._preserved(before,install._snapshot(staged),set())
-            reply=staged.session.send(op="ground_withdraw",**quantities)
+            reply=staged.session.send(op="ground_return" if retrieving else "ground_withdraw",**quantities)
             saved=install._snapshot(staged)
             expected=deepcopy(before)
             for key,amount in quantities.items():
-                expected["ground"]["carried"][key]-=amount
-                expected["ground"]["exported"][key]+=amount
+                expected["ground"]["carried"][key]+=amount if retrieving else -amount
+                expected["ground"]["returned" if retrieving else "exported"][key]+=amount
             install._preserved(expected,saved,set())
-            state,_=model.receive_bulk(state,action,reply["material_packet"])
+            if not retrieving: state,_=model.receive_bulk(state,action,reply["material_packet"])
             model.validate_ground_stock(state,saved)
             _persist(app,room,saved,state)
             live.session=staged.session;staged.session=None

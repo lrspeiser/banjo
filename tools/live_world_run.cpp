@@ -2057,6 +2057,9 @@ int main(int argc, char **argv) {
                                                       command.value("depth_m", 0.5)));
                     // What came out is carried, and the reply says how much is.
                     reply["carried"] = carriedJson(*world->environment());
+                } else if (op == "ground_return") {
+                    world->returnGround(command.at("sand_m3").get<double>(),command.at("soil_m3").get<double>());
+                    reply["carried"] = carriedJson(*world->environment());
                 } else if (op == "ground_withdraw") {
                     reply["material_packet"] = nlohmann::json::parse(world->withdrawGround(
                         command.at("sand_m3").get<double>(),command.at("soil_m3").get<double>()));

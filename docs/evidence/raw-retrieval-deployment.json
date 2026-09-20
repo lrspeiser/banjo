@@ -1,0 +1,61 @@
+{
+  "date": "2026-09-20",
+  "base_revision": "78c3b07",
+  "action": "Browser retrieves 0.5 kg from the existing main-world lot",
+  "retrieved_kg": 0.49999999999999994,
+  "preservation_checks": {
+    "spec": true,
+    "inventory": true,
+    "workshop_installs": true,
+    "world_upgrades": true,
+    "original_fabrication_fields": true,
+    "native_preservation": true
+  },
+  "saved_reopen_preserved": true,
+  "ground_audit": {
+    "status": "matched",
+    "substances": {
+      "sand": {
+        "excavated_m3": 0.4727587913778429,
+        "deposited_m3": 0.472,
+        "carried_m3": 0.00021612112976610333,
+        "exported_m3": 0.0007587913778429045,
+        "returned_m3": 0.00021612112976610333,
+        "stored_m3": 0.0005426702480768012,
+        "stored_kg": 0.8682723969228818,
+        "transfer_residual_m3": 0.0,
+        "density_residual_kg": 0.0,
+        "terrain_residual_m3": -1.4210854715202004e-14,
+        "net_external_or_untracked_m3": 0.0,
+        "transfer_closed": true,
+        "collection_status": "balanced"
+      },
+      "soil": {
+        "excavated_m3": 2.901338381794593,
+        "deposited_m3": 2.901,
+        "carried_m3": 9.637887023389665e-05,
+        "exported_m3": 0.0003383817945930012,
+        "returned_m3": 9.637887023389665e-05,
+        "stored_m3": 0.00024200292435910456,
+        "stored_kg": 0.38720467897456734,
+        "transfer_residual_m3": 0.0,
+        "density_residual_kg": 5.551115123125783e-17,
+        "terrain_residual_m3": 3.410605131648481e-13,
+        "net_external_or_untracked_m3": 0.0,
+        "transfer_closed": true,
+        "collection_status": "balanced"
+      }
+    },
+    "boundary": "Native excavated sand/soil, carried material, deposits and receiving raw lots; rock bodies, energy and thermal transport excluded",
+    "qualification": "Matching exports and receipts is not whole-world conservation. Authored deposits lack independent import history; net external or untracked volume remains visible."
+  },
+  "screenshots": [
+    "raw-retrieval-before.png",
+    "raw-retrieval-after.png"
+  ],
+  "limitations": [
+    "Unmodeled raw-material thermal state",
+    "No physical storage container or handling work law",
+    "Ground carrying limit does not establish a combined bag and equipment limit"
+  ]
+}

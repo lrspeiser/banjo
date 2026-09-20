@@ -249,6 +249,74 @@ class NativeFabrication(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Insufficient"):
             self.call("store_ground",sand_m3=.001,soil_m3=0,revision=state["revision"],request_id="store-ground-0002")
 
+    def test_retrieval_is_atomic_partial_restartable_and_can_be_deposited(self):
+        self.excavate();native=workshop_install._snapshot(self.live)
+        have={k:native["ground"]["carried"][k] for k in ("sand_m3","soil_m3")}
+        self.call("store_ground",**have,revision=self.room.fabrication_record["revision"],request_id="stored-return-0001")
+        req={**self.context(),"lot_id":"stored-return-0001",**{k:v/2 for k,v in have.items()},
+             "revision":self.room.fabrication_record["revision"],"request_id":"retrieve-0001"}
+        before=workshop_install._snapshot(self.live);state=deepcopy(self.room.fabrication_record);old=self.live.session
+        with mock.patch.object(self.app.store,"save",side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):room_api.request(self.app,"retrieve_ground",req)
+        self.assertIs(old,self.live.session);self.assertEqual(before,workshop_install._snapshot(self.live))
+        self.assertEqual(state,self.room.fabrication_record)
+        result=room_api.request(self.app,"retrieve_ground",req)
+        self.assertFalse(result["replayed"])
+        self.assertTrue(room_api.request(self.app,"retrieve_ground",req)["replayed"])
+        saved=self.app.store.load("fabrication")
+        self.live.open(self.app,{"spec":saved.spec,"snapshot":saved.world_record});self.room=self.app.room=saved
+        self.assertTrue(room_api.request(self.app,"retrieve_ground",req)["replayed"])
+        with self.assertRaisesRegex(ValueError,"different"):
+            room_api.request(self.app,"retrieve_ground",{**req,"soil_m3":0})
+        remaining=model.raw_inventory(self.room.fabrication_record)["stored-return-0001"]
+        amounts={item["substance"]+"_m3":item["volume_m3"] for item in remaining}
+        self.call("retrieve_ground",lot_id="stored-return-0001",**amounts,
+                  revision=self.room.fabrication_record["revision"],request_id="retrieve-0002")
+        out=self.call("state")
+        self.assertEqual(out["ground_audit"]["status"],"matched")
+        for substance in ("sand","soil"):
+            row=out["ground_audit"]["substances"][substance]
+            self.assertAlmostEqual(row["carried_m3"],have[substance+"_m3"])
+            self.assertAlmostEqual(row["stored_m3"],0)
+            self.assertEqual(row["collection_status"],"balanced")
+        with self.assertRaisesRegex(ValueError,"Insufficient"):
+            self.call("retrieve_ground",lot_id="stored-return-0001",sand_m3=.001,soil_m3=0,
+                revision=self.room.fabrication_record["revision"],request_id="retrieve-0003")
+        # A second storage cycle has cumulative exports greater than excavation;
+        # prior returns are subtracted, so the same matter is never duplicated.
+        self.call("store_ground",**have,revision=self.room.fabrication_record["revision"],request_id="stored-return-0002")
+        self.call("retrieve_ground",lot_id="stored-return-0002",**have,
+            revision=self.room.fabrication_record["revision"],request_id="retrieve-cycle-0002")
+        self.live.act({"session":self.live.session.id,"op":"deposit","at":[1,1],"radius_m":.5,**have})
+        out=self.call("state")
+        for row in out["ground_audit"]["substances"].values():
+            self.assertEqual(row["carried_m3"],0)
+            self.assertEqual(row["collection_status"],"balanced")
+        for key in ("stock_kg","energy_j","jobs","spent_j"):
+            self.assertEqual(state[key],self.room.fabrication_record[key])
+
+    def test_retrieval_capacity_and_corrupt_receipts_are_refused(self):
+        self.excavate();source=workshop_install._snapshot(self.live)
+        have={k:source["ground"]["carried"][k] for k in ("sand_m3","soil_m3")}
+        self.call("store_ground",**have,revision=self.room.fabrication_record["revision"],request_id="capacity-lot-0001")
+        self.live.act({"session":self.live.session.id,"op":"dig","from":[1,1],"to":[1,1],"width_m":2,"depth_m":.2})
+        before=workshop_install._snapshot(self.live);record=deepcopy(self.room.fabrication_record)
+        with self.assertRaisesRegex(live_session.LiveError,"capacity"):
+            self.call("retrieve_ground",lot_id="capacity-lot-0001",**have,
+                revision=record["revision"],request_id="capacity-return-0001")
+        self.assertEqual(before,workshop_install._snapshot(self.live));self.assertEqual(record,self.room.fabrication_record)
+        # A forged return on either side must fail the durable cross-check.
+        good=deepcopy(record)
+        request={"op":"retrieve_ground","lot_id":"capacity-lot-0001",**have,
+            "revision":good["revision"],"request_id":"model-return-0001"}
+        returned,_=model.return_bulk(good,request)
+        with self.assertRaisesRegex(ValueError,"native ground receipts"):
+            model.validate_ground_stock(returned,before)
+        bad=deepcopy(returned);bad["raw_returns"]["model-return-0001"]["packet"]["contents"][0]["volume_m3"]*=2
+        with self.assertRaises(ValueError):model.validate_state(bad)
+        bad=deepcopy(returned);bad["raw_returns"]["model-return-0001"]["lot_id"]="missing-lot-0001"
+        with self.assertRaises(ValueError):model.validate_state(bad)
+
     def test_raw_stock_save_rejects_missing_or_changed_source_and_destination(self):
         self.excavate();s=workshop_install._snapshot(self.live)
         self.call("store_ground",sand_m3=s["ground"]["carried"]["sand_m3"],soil_m3=0,
@@ -398,6 +466,20 @@ class NativeHTTP(WorkbenchTestCase):
         self.assertEqual(len(saved.fabrication_record["raw_lots"]),1)
         self.assertEqual(saved.world_record,workshop_install._snapshot(app.live))
         self.assertTrue(saved.world_upgrades)
+        retrieve={"scene":"world","session":first["session"],"lot_id":"raw-store-0001",
+            "sand_m3":req["sand_m3"],"soil_m3":req["soil_m3"],
+            "revision":measured["state"]["revision"],"request_id":"mcp-retrieve-0001"}
+        schema=next(t["inputSchema"] for t in tools.TOOLS if t["name"]=="fabrication_retrieve_ground")
+        validate(retrieve,schema,"arguments")
+        with mock.patch.dict(os.environ,{"BANJO_PLAYGROUND_URL":f"http://127.0.0.1:{app.port}"}):
+            taken=tools.call("fabrication_retrieve_ground",retrieve)
+            self.assertTrue(tools.call("fabrication_retrieve_ground",retrieve)["replayed"])
+            measured=tools.call("fabrication_state",{"scene":"world","session":taken["session"]})
+        self.assertEqual(measured["ground_audit"]["status"],"matched")
+        for substance in ("sand","soil"):
+            row=measured["ground_audit"]["substances"][substance]
+            self.assertEqual(row["stored_m3"],0)
+            self.assertAlmostEqual(row["carried_m3"],req[substance+"_m3"])
 
     def test_main_world_funded_outputs_preserve_terrain_water_and_stock(self):
         app=self.native_server()
