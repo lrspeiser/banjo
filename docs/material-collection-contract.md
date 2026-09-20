@@ -48,3 +48,22 @@ items before/after pickup, storage, restart and placement; retain compound joint
 energy, temperature and contents; test generated objects versus loose deposits;
 and verify harvest/salvage accounting, failed saves, retries and shared spending.
 The browser and LLM API must expose the same explicit operation and result type.
+
+## Stored-state regression, September 20
+
+The native inventory suite now compares glass, oak and iron boxes heated from
+900 K for 10 s (1/240 s native steps), then stored, saved, reopened, held in
+storage for 0.5 s and returned. It compares retained heat parcels, fuel/history,
+material reference geometry and native body fields. Placement changes pose and
+the exposed area from five to six faces; zero instantaneous thermal rates while
+parked are expected, rather than erased stored energy. No calibrated damage or
+general compound-storage claim follows from these cases.
+
+A refused stow previously released the native hand before the storage preflight,
+leaving the inventory claiming the dropped object. The room now lets native park
+perform its preflight before release and updates saved facing only after success.
+A refusal regression retains the actual hand and complete inventory record.
+All 11 native inventory-room tests pass. These cases already run in CI through
+`tests/inventory_room_tests.py`. Frozen thermal evolution in the bag remains an
+explicit limitation; physical container heat exchange and articulated storage
+are still required.

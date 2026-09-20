@@ -219,18 +219,14 @@ def request(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("the room is not open")
         sid = session.id
         holding = ((session.state or {}).get("hand") or {}).get("holding") or ""
-        # In the engine's hand: the record says the hand the engine has holds
-        # it, or the engine's last word says so. The record is asked first: the
-        # engine's last word can be a step old, and a thing the page has let go
-        # of already is let go of again for nothing.
-        in_hand = plan["from"] == record.dominant or holding == name
         if plan["to"] == "stowed":
-            if in_hand:
-                app.live.act({"session": sid, "op": "release"})
             now = _body(app, name)
+            # Native park checks all constraints before releasing the hand.
+            # Releasing here first would leave a refused stow saying "held"
+            # in the inventory while the actual object had already been dropped.
+            app.live.act({"session": sid, "op": "park", "name": name})
             if now and now.get("orientation_wxyz"):
                 record.facing[item] = [float(v) for v in now["orientation_wxyz"]]
-            app.live.act({"session": sid, "op": "park", "name": name})
             return {"set_aside": name}
         if plan["from"] == "world" and plan["to"] in inventory.HANDS:
             # Taken up: the engine's hand grips it where it lies.

@@ -10,6 +10,8 @@ skips without it.
 from __future__ import annotations
 
 import math
+from copy import deepcopy
+from unittest import mock
 import os
 import sys
 import tempfile
@@ -178,6 +180,21 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
     def test_a_change_without_its_own_id_is_refused(self):
         with self.assertRaises(ValueError):
             inventory_room.request(self.app, {"revision": 0, "op": "take", "item": "ball", "person": PERSON})
+
+    def test_refused_stow_preserves_native_hand_and_inventory_facing(self):
+        took=self.ask("take-before-refusal",0,"take_up")
+        self.assertTrue(took["ok"],took)
+        before=deepcopy(inventory_room.inventory_of(self.app).record())
+        native=self.live.act
+        def refuse_park(body):
+            if body.get("op")=="park":
+                raise ValueError("Native storage preflight refused")
+            return native(body)
+        with mock.patch.object(self.live,"act",side_effect=refuse_park):
+            answer=self.ask("refused-stow",before["revision"],"stow")
+        self.assertFalse(answer["ok"])
+        self.assertEqual(inventory_room.inventory_of(self.app).record(),before)
+        self.assertEqual(self.held(),"ball")
 
 
 class AReloadRejoinsTheRunningWorld(unittest.TestCase):
@@ -353,6 +370,72 @@ class ARestartOpensTheRoomAsItStood(unittest.TestCase):
             self.assertEqual(piece.get("cells_local_m"), before[name].get("cells_local_m"),
                              f"{name} came back with other cells than it had")
             self.assertEqual(piece["position_m"], before[name]["position_m"], f"{name} moved")
+
+
+class StoredMaterialState(unittest.TestCase):
+    """Storage moves a native instance; it must not recreate its authored state."""
+
+    @unittest.skipUnless(ENGINE.is_file(), "Native inventory regression requires BANJO_BUILD_DIR")
+    def test_heated_material_state_survives_storage_restart_and_return(self):
+        for material in ("glass", "oak", "iron"):
+            with self.subTest(material=material), tempfile.TemporaryDirectory() as folder:
+                room_spec=spec()
+                room_spec["bodies"][1].update(name="crafted part",shape="box",material=material,
+                    size_mm=[120,120,120],center_mm=[0,100,0],temperature_k=900)
+                live=live_session.Live()
+                app=types.SimpleNamespace(engine_path=ENGINE,runs_path=Path(folder),live=live,
+                    room=types.SimpleNamespace(spec=room_spec))
+                try:
+                    sid=live.open(app,{"spec":room_spec})["session"]
+                    for _ in range(20):
+                        live.act({"session":sid,"op":"step","dt":1/240,"n":120})
+                    before,why=live.snapshot();self.assertIsNotNone(before,why)
+                    def heat(saved, rates=True):
+                        lump=deepcopy(next(x for x in saved["heat"]["lumps"] if x["body"]=="crafted part"))
+                        lump.pop("parked",None)
+                        if not rates:
+                            for key in ("fuel_use_kg_s","gained_w","lost_w","heat_release_w","heater_w"):
+                                lump.pop(key,None)
+                        return lump
+                    expected=heat(before)
+                    took=inventory_room.request(app,{"request":"store-material-0001","revision":0,
+                        "op":"take","item":"crafted part","person":PERSON})
+                    self.assertTrue(took["ok"],took)
+                    stored,why=live.snapshot();self.assertIsNotNone(stored,why)
+                    self.assertEqual(heat(stored),expected)
+                    self.assertEqual(stored["material_geometry"],before["material_geometry"])
+                    record=inventory_room.inventory_of(app).record()
+                    live.shutdown()
+                    app.room=types.SimpleNamespace(spec=room_spec,inventory_record=record)
+                    opened=live.open(app,{"spec":room_spec,"snapshot":stored});sid=opened["session"]
+                    self.assertEqual(opened["restored"]["tier"],"whole")
+                    shown=inventory_room.after_open(app,opened)
+                    self.assertEqual(shown["stowed"][0]["name"],"crafted part")
+                    restored,why=live.snapshot();self.assertIsNotNone(restored,why)
+                    self.assertEqual(heat(restored),expected)
+                    self.assertEqual(restored["material_geometry"],stored["material_geometry"])
+                    # Current bag semantics suspend the stored parcel. This is
+                    # preservation coverage, not a claim of physical bag cooling.
+                    live.act({"session":sid,"op":"step","dt":1/240,"n":120})
+                    parked,_=live.snapshot();self.assertEqual(heat(parked,False),heat(before,False))
+                    dropped=inventory_room.request(app,{"request":"return-material-0001",
+                        "revision":shown["record"]["revision"],"op":"drop","item":"crafted part","person":PERSON})
+                    self.assertTrue(dropped["ok"],dropped)
+                    returned,why=live.snapshot();self.assertIsNotNone(returned,why)
+                    returned_heat=heat(returned,False)
+                    expected_heat=heat(before,False)
+                    # The part was on the floor and is now in free space:
+                    # exposed area is a derived boundary, not stored material.
+                    self.assertAlmostEqual(returned_heat.pop("exposed_area_m2"),6*.12**2)
+                    self.assertAlmostEqual(expected_heat.pop("exposed_area_m2"),5*.12**2)
+                    self.assertEqual(returned_heat,expected_heat)
+                    self.assertEqual(returned["material_geometry"],stored["material_geometry"])
+                    a=next(b for b in stored["bodies"] if b["name"]=="crafted part")
+                    b=next(b for b in returned["bodies"] if b["name"]=="crafted part")
+                    for field in set(a)-{"pose","parked"}:
+                        self.assertEqual(a[field],b[field],field)
+                finally:
+                    live.shutdown()
 
 
 if __name__ == "__main__":
