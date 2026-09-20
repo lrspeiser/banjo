@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.13.1**; platform server: **1.16.1**, requiring native ABI **25**.
+Current world server version: **1.14.0**; platform server: **1.17.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -1051,4 +1051,4 @@ World pose/step replies now include `heat.stored`: entries with `name`, `t_k`, `
 
 Funded `fabrication_commit` receipts also include `thermal_transfer`: `body`, `temperature_k`, `mass_kg`, `internal_energy_j`, `replaced_j`, `replaced_kg`, and `source: "fabrication-cold-output"`. These are generated and verified on the staged native world, not client-supplied inputs. The source process supplies cold output at 293.15 K. `replaced_*` records any temporary new-body parcel displaced during staging; existing objects cannot be initialized through this path. Retried installs return the original receipt. See [thermal transfer boundary](../fabrication.md#cold-output-thermal-transfer-september-20).
 
-The existing fabrication QA functions also exercise the [articulation compiler](../workshop-articulation.md) and its native three-material bearing case (33 fixed cases, including multi-body staging and whole-snapshot restart). Result rows retain measurements for constrained/free motion and nine assembly thermal-handoff experiments, with per-body mass/energy transfer receipts. This is QA coverage; `fabrication_commit` still does not accept articulated products and there is no public articulation-install tool yet.
+The existing fabrication functions now accept supported single-material fixed/bearing assemblies through the same quote/start/preview/commit sequence. Authored `parameters.primary_use_component` selects the operated part; `interaction_point_components` maps every point ID to its owning component. Preview/commit return `root_bodies`, `component_to_body` and `source_joints`; funded commit adds `thermal_transfers` (one receipt per body). Existing single-body receipts retain `thermal_transfer`. No new tool name or native ABI is needed. See the [assembly installation contract](../workshop-articulation.md#funded-assembly-installation-september-20). The fixed QA suite now has 35 cases, including funded assembly rollback, use/point routing and restart for glass/oak/iron. Bearing strength, whole-assembly bag storage and mixed-material funding remain unsupported.

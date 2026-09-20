@@ -28,8 +28,8 @@ properties. Nothing chooses a law from a product name.
 A quote compiles the candidate's full Workshop Matter cell set. Product mass is
 occupied cell count × cell volume × engine catalog density. Input stock must
 cover that mass; completed offcuts retain the difference. Only supported,
-connected, single-material monolithic lattice products are admitted. The
-candidate must declare `parameters.primary_use`. Construction labels,
+connected, single-material lattice products are admitted, including authored fixed/bearing assemblies whose fixed groups compile separately. The
+candidate must declare `parameters.primary_use`. Assemblies additionally name `primary_use_component` and map every interaction point ID to its owning component in `interaction_point_components`. Construction labels,
 interaction points and the use program travel through the existing installer.
 
 Required useful work is `stock_kg * work_j_kg`. Supplied energy is converted to
@@ -125,7 +125,7 @@ API is advertised for this host-side process.
 
 A candidate uses the existing Workshop `kind`, `parameters` and
 `component_overrides` document, including a valid `primary_use`. At present,
-the native installer accepts only its existing fixed structural roles. Positions
+monolithic products use the existing fixed structural roles; articulated products use the [fixed/bearing assembly compiler](workshop-articulation.md#funded-assembly-installation-september-20). Positions
 are within ±100 m. The native scene and 16000-cell admission limits still apply.
 Preview expiry and stale native/world/inventory guards remain unchanged.
 

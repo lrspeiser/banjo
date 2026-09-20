@@ -523,6 +523,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if models == {"rigid"}:
             return _preview_rigid(app, room, live, old, design, overrides, pos)
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
+        if workshop_articulation.has_bearings(design):
+            return _preview_articulated(app, room, live, old, design, overrides, pos, body["candidate"])
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])
@@ -606,6 +608,54 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "candidate_hash": _hash(body["candidate"])}
         return answer
 
+
+
+def _preview_articulated(app, room, live, old, design, overrides, pos, candidate):
+    h = float(old.spec["cell_m"])
+    prefix = "workshop-" + uuid.uuid4().hex[:16]
+    artifact = workshop_articulation.compile_design(design, overrides, cell_m=h, root=prefix)
+    actions, points = workshop_articulation.installed_interactions(design, artifact)
+    cells = set().union(*(sparse._grid_set(g["matter"]) for g in artifact["groups"]))
+    horizontal = (round(pos[0]/h), 0, round(pos[1]/h))
+    translated = {tuple(g[a]+horizontal[a] for a in range(3)) for g in cells}
+    floor = _terrain_floor(old, _bounds(translated, h))
+    shift = (horizontal[0], math.ceil(floor/h)-min(g[1] for g in cells), horizontal[2])
+    placed = {tuple(g[a]+shift[a] for a in range(3)) for g in cells}
+    saved = _snapshot(live)
+    _clearance(saved, placed, h)
+    for body in artifact["bodies"]:
+        body["center_mm"] = [body["center_mm"][a]+shift[a]*h*1000 for a in range(3)]
+    for joint in artifact["joints"]:
+        joint["at_mm"] = [joint["at_mm"][a]+shift[a]*h*1000 for a in range(3)]
+    spec = deepcopy(room.spec)
+    for field, extra in (("bodies", artifact["bodies"]), ("joints", artifact["joints"]),
+                         ("interfaces", artifact["interfaces"]), ("actions", actions), ("interaction_points", points)):
+        spec[field] = (spec.get(field) or []) + extra
+    fracture_lab.validate(spec)
+    roots = {g["root_body"] for g in artifact["groups"]}
+    staged, _ = _stage(app, live, old, spec, saved, artifact, roots, shift)
+    staged.session.close()
+    token = uuid.uuid4().hex
+    root = artifact["component_to_body"][design.parameters["primary_use_component"]]
+    answer = {"schema":SCHEMA, "status":"preview", "preview_id":token,
+              "scene":room.scene, "session":old.id, "mode":"authoring", "root_body":root,
+              "root_bodies":sorted(roots), "component_to_body":artifact["component_to_body"],
+              "source_joints":artifact["source_joints"], "design_id":design.design_id,
+              "matter_physics_hash":artifact["physics_hash"], "cell_size_m":h,
+              "cells":len(cells), "mass_kg":artifact["mass_kg"],
+              "material_mass_kg":artifact["material_mass_kg"], "requested_position_m":pos,
+              "placement_grid":list(shift), "applied_translation_m":[s*h for s in shift],
+              "bounds_m":_bounds(placed,h), "engine_grid_verified":True,
+              "existing_state_preserved":True, "resources_charged":False,
+              "strength_certified":False, "expires_in_s":PREVIEW_TTL_S,
+              "limits":"Articulated lattice assembly with ideal hinges; bearing strength and wear are uncalibrated. No manufactured ground anchors or whole-assembly bag storage."}
+    cache = _preview_cache(app)
+    while len(cache)>=MAX_PREVIEWS: del cache[next(iter(cache))]
+    cache[token] = {"expires":time.monotonic()+PREVIEW_TTL_S, "answer":deepcopy(answer),
+                    "source_hash":_hash([saved,room.spec,_inventory(room)]),
+                    "spec":spec, "matter":artifact, "root":roots, "shift":shift,
+                    "candidate_hash":_hash(candidate)}
+    return answer
 
 
 def _preview_rigid(app, room, live, old, design, overrides, pos):
@@ -744,12 +794,17 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         try:
             thermal_transfer = None
             if funding_job is not None:
-                thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)
-                _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer)
+                if plan["matter"].get("schema") == workshop_articulation.SCHEMA:
+                    outputs = {g["root_body"]:g["mass_kg"] for g in plan["matter"]["groups"]}
+                    thermal_transfer, saved = _admit_fabricated_outputs(staged, saved, outputs, fabrication.AMBIENT_K)
+                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer, added_joints=plan["matter"]["joints"])
+                else:
+                    thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)
+                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer)
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
                        "session": staged.session.id, "source_session": old.id, "replayed": False}
             if thermal_transfer is not None:
-                receipt["thermal_transfer"] = thermal_transfer
+                receipt["thermal_transfers" if isinstance(thermal_transfer,list) else "thermal_transfer"] = thermal_transfer
             receipt.pop("expires_in_s", None)
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,

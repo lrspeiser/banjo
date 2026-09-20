@@ -7,6 +7,7 @@ import logging
 from mcp import fabrication as model, engine_materials, workshop_components, workshop_visual, workshop_rigid, workshop_matter_metrics
 import workshop_install as install
 import workshop_sparse_trial as sparse
+import workshop_articulation as articulation
 
 LOCK = threading.RLock()
 COMMON = {"session", "scene"}
@@ -54,7 +55,8 @@ def compile_quote(candidate, stock_kg, cell_m, state):
     """Cost the exact occupied matter, not the template's approximate BOM."""
     design, overrides = workshop_components.design_from_spec(candidate)
     workshop_rigid.require_lattice(design, "Fabrication")
-    if any(p.role not in install._FIXED_ROLES for p in design.parts):
+    articulated = articulation.has_bearings(design)
+    if not articulated and any(p.role not in install._FIXED_ROLES for p in design.parts):
         raise ValueError("This process supports fixed monolithic solids only")
     # An operating product must carry a deliberate core function.
     from mcp import core_use
@@ -65,7 +67,7 @@ def compile_quote(candidate, stock_kg, cell_m, state):
     cells = sparse._grid_set(matter)
     if not cells or len(cells) > install.MAX_CELLS: raise ValueError("Product exceeds the native cell budget")
     measured = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
-    if not measured["measured"]["geometry_coherent"]:
+    if not articulated and not measured["measured"]["geometry_coherent"]:
         raise ValueError("Product has disconnected or missing components")
     materials = {engine_materials.canonical(c["material"]) for c in matter["cells"]}
     if len(materials) != 1: raise ValueError("Mixed-material fabrication needs explicit interfaces")
@@ -73,6 +75,13 @@ def compile_quote(candidate, stock_kg, cell_m, state):
     mass = len(cells)*cell_m**3*engine_materials.density(material)
     if abs(mass-measured["measured"]["mass_kg"]) > 1e-8:
         raise ValueError("Compiled material mass does not close")
+    physics_hash = matter["physics_hash"]
+    if articulated:
+        artifact = articulation.compile_design(design, overrides, cell_m=cell_m)
+        articulation.installed_interactions(design, artifact)
+        if abs(artifact["mass_kg"]-mass) > 1e-8:
+            raise ValueError("Assembly material mass does not close")
+        physics_hash = artifact["physics_hash"]
     stock = model.number(stock_kg, "stock_kg", mass, 10000)
     required = stock*state["config"]["work_j_kg"]
     model.number(required, "required_j", .000001, 1e12)
@@ -80,7 +89,7 @@ def compile_quote(candidate, stock_kg, cell_m, state):
             "product_kg": mass, "offcut_kg": stock-mass, "required_j": required,
             "minimum_duration_s": required/(state["config"]["power_w"]*state["config"]["efficiency"]),
             "supply_required_j": required/state["config"]["efficiency"],
-            "cell_m": cell_m, "cells": len(cells), "matter_physics_hash": matter["physics_hash"]}
+            "cell_m": cell_m, "cells": len(cells), "matter_physics_hash": physics_hash}
 
 def _persist(app, room, saved, state):
     record = SimpleNamespace(scene=room.scene, spec=room.spec, chat=deepcopy(room.chat),

@@ -198,6 +198,51 @@ class ProcessModel(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),"BANJO_LIVE_ENGINE is required; CI supplies it")
 class NativeFabrication(unittest.TestCase):
+    def test_funded_assembly_keeps_groups_heat_use_and_atomic_restart(self):
+        from workshop_install_tests import articulated_candidate
+        measurements=[]
+        for i,material in enumerate(('glass','oak','iron')):
+            product=articulated_candidate(material)
+            product['parameters']={'primary_use':{'label':'Push arm','steps':[{'do':'push_forward'}]},
+                'primary_use_component':'arm','interaction_point_components':{'grip':'arm','use':'arm'},
+                'interaction_points':[{'id':kind,'kind':kind,'position_m':[.08,1,.16]} for kind in ('grip','use')]}
+            job_id='assembly-job-'+material
+            self.call('quote',candidate=product,stock_kg=25)
+            self.call('start',candidate=product,stock_kg=25,revision=self.room.fabrication_record['revision'],request_id=job_id)
+            self.step(6)
+            before=workshop_install._snapshot(self.live); funds=deepcopy(self.room.fabrication_record)
+            preview=room_api.preview(self.app,{**self.context(),'job_id':job_id,'position_m':[i*2,0]})
+            self.assertEqual(len(preview['root_bodies']),2)
+            request={**self.context(),'job_id':job_id,'preview_id':preview['preview_id'],'request_id':'assembly-install-'+material}
+            with mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):room_api.commit(self.app,request)
+            self.assertEqual(workshop_install._snapshot(self.live),before)
+            self.assertEqual(self.room.fabrication_record,funds)
+            receipt=room_api.commit(self.app,request)
+            self.assertEqual(len(receipt['thermal_transfers']),2)
+            self.assertEqual(self.room.fabrication_record['stock_kg'],funds['stock_kg'])
+            mapping=receipt['component_to_body']; roots=set(receipt['root_bodies'])
+            action=next(a for a in self.room.spec['actions'] if a['body']==mapping['arm'])
+            self.assertEqual(action['label'],'Push arm')
+            self.assertEqual(action['steps'][0]['do'],'push_forward')
+            for record in self.room.spec['interaction_points']:
+                if record['body']==mapping['arm']:
+                    self.assertTrue(all(abs(v)<1e-8 for p in record['points'] for v in p['position_m']))
+            saved=self.app.store.load('fabrication')
+            self.assertEqual(saved.world_record,workshop_install._snapshot(self.live))
+            self.assertEqual(saved.workshop_installs[-1],json.loads(json.dumps(receipt)))
+            self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+            self.room=self.app.room=saved
+            self.assertEqual(self.live.session.state['restored']['tier'],'whole')
+            self.assertTrue(room_api.commit(self.app,{**request,**self.context()})['replayed'])
+            thermo=self.live.session.send(op='thermo')['thermo']
+            for body in thermo['bodies']:
+                if body['name'] in roots:self.assertAlmostEqual(body['temperature_k'],293.15,places=8)
+            self.assertEqual(self.room.fabrication_record['jobs'][job_id]['root_bodies'],sorted(roots))
+            measurements.append({'material':material,'roots':sorted(roots),'mass_kg':receipt['mass_kg'],
+                'thermal_outputs':len(receipt['thermal_transfers']),'restart':'whole','rollback_verified':True})
+        self.native_evidence=measurements
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name);self.live=live_session.Live();self.addCleanup(self.live.shutdown)

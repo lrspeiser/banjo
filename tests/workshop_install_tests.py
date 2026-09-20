@@ -26,6 +26,21 @@ def articulated_candidate(material="oak"):
         "joints_authored":True,"joints":[{"id":"pivot","kind":"bearing","method":"bearing","a":"support","b":"arm"}]}}}
 
 class ArticulationCompiler(unittest.TestCase):
+    def test_interaction_binding_requires_known_components_and_complete_points(self):
+        candidate=articulated_candidate()
+        candidate['parameters']={'primary_use':{'label':'Push arm','steps':[{'do':'push_forward'}]},
+            'primary_use_component':'arm','interaction_point_components':{'grip':'arm','use':'arm'}}
+        design,overrides=workshop_components.design_from_spec(candidate)
+        artifact=workshop_articulation.compile_design(design,overrides)
+        actions,points=workshop_articulation.installed_interactions(design,artifact)
+        self.assertEqual(next(a for a in actions if a['label']=='Push arm')['body'],artifact['component_to_body']['arm'])
+        for change in ({'primary_use_component':'missing'},{'primary_use_component':None},
+                       {'interaction_point_components':{'grip':'arm'}},
+                       {'interaction_point_components':{'grip':'missing','use':'arm'}}):
+            design.parameters.update(change)
+            with self.assertRaises(ValueError):workshop_articulation.installed_interactions(design,artifact)
+            design,_=workshop_components.design_from_spec(candidate)
+
     def compile(self, candidate, root="test"):
         design, overrides=workshop_components.design_from_spec(candidate)
         return workshop_articulation.compile_design(design,overrides,root=root)

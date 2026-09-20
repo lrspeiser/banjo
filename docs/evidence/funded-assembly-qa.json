@@ -1,0 +1,543 @@
+{
+  "schema": "banjo.fabrication-qa.v1",
+  "status": "passed",
+  "id": "13765a334fd84360b3df35885522fba3",
+  "started_unix_s": 1789925285.435978,
+  "finished_unix_s": 1789925303.3508217,
+  "total": 35,
+  "completed": 35,
+  "tests_run": 35,
+  "results": [
+    {
+      "id": "fabrication_tests.NativeFabrication.test_changed_use_or_stale_preview_cannot_consume_a_workpiece",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_cold_output_does_not_inherit_hot_room_temperature",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_failed_start_and_install_saves_leave_stock_native_world_and_output",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_funded_assembly_keeps_groups_heat_use_and_atomic_restart",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "roots": [
+            "workshop-7fc74da014d2497b-g0",
+            "workshop-7fc74da014d2497b-g1"
+          ],
+          "mass_kg": 7.6800000000000015,
+          "thermal_outputs": 2,
+          "restart": "whole",
+          "rollback_verified": true
+        },
+        {
+          "material": "oak",
+          "roots": [
+            "workshop-6aa8f2e064b24a5d-g0",
+            "workshop-6aa8f2e064b24a5d-g1"
+          ],
+          "mass_kg": 2.1504000000000003,
+          "thermal_outputs": 2,
+          "restart": "whole",
+          "rollback_verified": true
+        },
+        {
+          "material": "iron",
+          "roots": [
+            "workshop-0f1a5f7625a84535-g0",
+            "workshop-0f1a5f7625a84535-g1"
+          ],
+          "mass_kg": 24.176640000000006,
+          "thermal_outputs": 2,
+          "restart": "whole",
+          "rollback_verified": true
+        }
+      ]
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_funded_save_refuses_either_missing_half_or_changed_clock",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_glass_oak_iron_work_restart_native_mass_and_duplicate_install",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 2.56,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "glass": 0.0,
+              "oak": 0.0,
+              "iron": 0.0
+            },
+            "energy_residual_j": 1.8189894035458565E-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "oak",
+          "mass_kg": 0.7168,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "glass": 0.0,
+              "oak": 0.0,
+              "iron": 0.0
+            },
+            "energy_residual_j": 1.8189894035458565E-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "iron",
+          "mass_kg": 8.05888,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "glass": 0.0,
+              "oak": 0.0,
+              "iron": 0.0
+            },
+            "energy_residual_j": 4.547473508864641E-13,
+            "work_residual_j": 4.547473508864641E-13,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_preexisting_new_output_parcel_is_an_accounted_replacement",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_raw_stock_save_rejects_missing_or_changed_source_and_destination",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_recovered_stock_save_failure_restart_and_native_state",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_retrieval_capacity_and_corrupt_receipts_are_refused",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_retrieval_is_atomic_partial_restartable_and_can_be_deposited",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_store_ground_commits_both_accounts_and_retries_after_restart",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_actual_platform_and_legacy_protocol_publish_fabrication_tools",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_http_mcp_restart_and_room_switch_keep_both_halves",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_main_world_funded_outputs_preserve_terrain_water_and_stock",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_main_world_process_preserves_receipts_and_cannot_reset",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.NativeHTTP.test_mcp_stores_main_world_ground_and_replays_original_session",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_exact_catalog_geometry_and_material_work_accounting",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_ground_audit_distinguishes_transfer_and_external_material",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_native_batch_size_does_not_change_work_or_heat",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_pausing_retains_workpiece_and_resume_does_not_refund",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_recovery_conserves_material_and_does_not_refund_work",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_recovery_rejects_invalid_amounts_and_changed_retries",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_retry_stale_revision_and_shared_stock",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_strict_inputs_and_no_clock_rewind_or_save_refill",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_supply_and_temperature_limits_do_not_invent_finished_parts",
+      "status": "passed"
+    },
+    {
+      "id": "fabrication_tests.ProcessModel.test_transfer_is_exact_and_single_use",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_bearing_keeps_separate_exact_material_groups",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_fixed_members_share_one_body_but_keep_component_labels",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_fixed_path_cannot_silently_lock_a_bearing",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_interaction_binding_requires_known_components_and_complete_points",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_open_and_unconnected_parts_are_refused",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_tests.ArticulationCompiler.test_overlapping_shaft_requires_actual_clearance",
+      "status": "passed"
+    },
+    {
+      "id": "workshop_install_engine_tests.NativeInstallation.test_compiled_bearing_moves_under_gravity_without_fusing_parts",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 6.4,
+          "drop_m": 0.032769999999999966,
+          "unconnected_drop_m": 0.051059999999999994,
+          "pivot_radius_error_m": 3.484808132189765E-05
+        },
+        {
+          "material": "oak",
+          "mass_kg": 1.792,
+          "drop_m": 0.032769999999999966,
+          "unconnected_drop_m": 0.051059999999999994,
+          "pivot_radius_error_m": 3.484808132189765E-05
+        },
+        {
+          "material": "iron",
+          "mass_kg": 20.1472,
+          "drop_m": 0.03276000000000001,
+          "unconnected_drop_m": 0.051059999999999994,
+          "pivot_radius_error_m": 3.286181911485442E-05
+        }
+      ]
+    },
+    {
+      "id": "workshop_install_engine_tests.NativeInstallation.test_articulated_staging_preserves_old_motion_heat_and_constraints",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "preactivated": false,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 6.4,
+              "internal_energy_j": 1575974.4,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 1.2800000000000002,
+              "internal_energy_j": 315194.88,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "glass",
+          "preactivated": true,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 6.4,
+              "internal_energy_j": 1575974.4,
+              "replaced_j": 1575974.4,
+              "replaced_kg": 6.4,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 1.2800000000000002,
+              "internal_energy_j": 315194.88,
+              "replaced_j": 315194.88,
+              "replaced_kg": 1.2800000000000002,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "glass",
+          "preactivated": false,
+          "output_temperature_k": 330.0,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 330.0,
+              "mass_kg": 6.4,
+              "internal_energy_j": 1774080.0,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 330.0,
+              "mass_kg": 1.2800000000000002,
+              "internal_energy_j": 354816.00000000006,
+              "replaced_j": 315194.88,
+              "replaced_kg": 1.2800000000000002,
+              "source": "fabrication-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "oak",
+          "preactivated": false,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 1.7920001367187606,
+              "internal_energy_j": 28807189.16951581,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 0.35840000000000005,
+              "internal_energy_j": 5761437.39434034,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "oak",
+          "preactivated": true,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 1.7920001367187606,
+              "internal_energy_j": 28807189.16951581,
+              "replaced_j": 28807189.16951581,
+              "replaced_kg": 1.7920001367187606,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 0.35840000000000005,
+              "internal_energy_j": 5761437.39434034,
+              "replaced_j": 5761437.39434034,
+              "replaced_kg": 0.35840000000000005,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "oak",
+          "preactivated": false,
+          "output_temperature_k": 330.0,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 330.0,
+              "mass_kg": 1.7920001367187606,
+              "internal_energy_j": 28923054.540275637,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 330.0,
+              "mass_kg": 0.35840000000000005,
+              "internal_energy_j": 5784610.46672434,
+              "replaced_j": 5761437.39434034,
+              "replaced_kg": 0.35840000000000005,
+              "source": "fabrication-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96723
+        },
+        {
+          "material": "iron",
+          "preactivated": false,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 20.147198929787656,
+              "internal_energy_j": 2651861.9634539955,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 4.029440000000001,
+              "internal_energy_j": 530372.420864,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96724
+        },
+        {
+          "material": "iron",
+          "preactivated": true,
+          "output_temperature_k": 293.15,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 293.15,
+              "mass_kg": 20.147198929787656,
+              "internal_energy_j": 2651861.9634539955,
+              "replaced_j": 2651861.9634539955,
+              "replaced_kg": 20.147198929787656,
+              "source": "fabrication-cold-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 293.15,
+              "mass_kg": 4.029440000000001,
+              "internal_energy_j": 530372.420864,
+              "replaced_j": 530372.420864,
+              "replaced_kg": 4.029440000000001,
+              "source": "fabrication-cold-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96724
+        },
+        {
+          "material": "iron",
+          "preactivated": false,
+          "output_temperature_k": 330.0,
+          "old_bodies_preserved": 2,
+          "added_bodies": 2,
+          "old_joints_preserved": 1,
+          "added_joints": 1,
+          "whole_restart": true,
+          "thermal_transfers": [
+            {
+              "body": "new-g0",
+              "temperature_k": 330.0,
+              "mass_kg": 20.147198929787656,
+              "internal_energy_j": 2985210.465426637,
+              "replaced_j": 0.0,
+              "replaced_kg": 0.0,
+              "source": "fabrication-output"
+            },
+            {
+              "body": "new-g1",
+              "temperature_k": 330.0,
+              "mass_kg": 4.029440000000001,
+              "internal_energy_j": 597042.1248000001,
+              "replaced_j": 530372.420864,
+              "replaced_kg": 4.029440000000001,
+              "source": "fabrication-output"
+            }
+          ],
+          "new_arm_y_m_after_0_1_s": 0.96724
+        }
+      ]
+    }
+  ],
+  "source_revision": "cda1bc1ed949ba4cc228bdfc56bc0dedc64444ea",
+  "engine_sha256": "dc315608937c0ba7bc57983de030a23e315fabb11ae945af26b28e100631f194",
+  "source_dirty": true,
+  "library_sha256": "bab7c6dfcbc043552b6bd5093436528973045ed39dbbaea7a436e787266a78d6",
+  "boundary": "Native/host integration and declared process accounting; no calibrated machining or whole-world qualification."
+}

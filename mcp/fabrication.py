@@ -422,6 +422,8 @@ def transfer(state, job_id, preview, request_id):
     if job["matter_physics_hash"] != preview["matter_physics_hash"] or abs(job["product_kg"]-preview["mass_kg"]) > 1e-8:
         raise ValueError("Installed matter differs from the funded workpiece")
     job.update(status="installed", root_body=preview["root_body"], install_request_id=request_id)
+    if "root_bodies" in preview:
+        job.update(root_bodies=deepcopy(preview["root_bodies"]), component_to_body=deepcopy(preview["component_to_body"]))
     m = job["material"]; out["transferred_kg"][m] = out["transferred_kg"].get(m,0.)+job["product_kg"]
     out["revision"] += 1
     validate_state(out)

@@ -982,7 +982,19 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     supplied = dict(parameters or {})
     points = supplied.pop("interaction_points", None)
     use = supplied.pop("primary_use", None)
+    use_component = supplied.pop("primary_use_component", None)
+    point_components = supplied.pop("interaction_point_components", None)
     values = spec.checked(supplied)
+    if use_component is not None:
+        if not isinstance(use_component, str) or not use_component or len(use_component)>120:
+            raise ValueError("primary_use_component must name a component")
+        values["primary_use_component"] = use_component
+    if point_components is not None:
+        if (not isinstance(point_components, dict) or len(point_components)>32
+                or any(not isinstance(k,str) or not isinstance(v,str) or not k or not v
+                       or len(k)>60 or len(v)>120 for k,v in point_components.items())):
+            raise ValueError("interaction_point_components must map point IDs to component names")
+        values["interaction_point_components"] = dict(point_components)
     if use is not None:
         values["primary_use"] = core_use.checked_program(use)
     if points is not None:

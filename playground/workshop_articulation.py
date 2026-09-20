@@ -6,6 +6,7 @@ ideal hinge law; load rating, friction and manufacturing remain separate gates.
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -16,6 +17,40 @@ import workshop_sparse_trial as sparse
 from mcp import engine_materials, joint_efficiency, workshop_construction, workshop_rigid, workshop_visual
 
 SCHEMA = "banjo.workshop-articulation.v1"
+
+
+def has_bearings(design):
+    return any(j["kind"] == "bearing" for j in workshop_construction.joints(design))
+
+
+def installed_interactions(design, artifact):
+    """Resolve authored affordances onto independently moving native bodies."""
+    from mcp import core_use, interaction_points
+    mapping = artifact["component_to_body"]
+    selected = design.parameters.get("primary_use_component")
+    if not isinstance(selected, str) or selected not in mapping:
+        raise ValueError("An assembly needs primary_use_component naming its operated component")
+    points = interaction_points.for_design(design)
+    bindings = design.parameters.get("interaction_point_components")
+    if (not isinstance(bindings, dict) or set(bindings) != {p["id"] for p in points}
+            or any(not isinstance(v, str) or v not in mapping for v in bindings.values())):
+        raise ValueError("Bind every assembly interaction point to a known component in interaction_point_components")
+    actions, records = [], []
+    for group in artifact["groups"]:
+        root = group["root_body"]
+        actions.append(core_use.installed(design, root) if root == mapping[selected]
+                       else dict(deepcopy(core_use.DEFAULT), body=root, primary=True))
+        cells = sparse._grid_set(group["matter"])
+        h = group["matter"]["cell_size_m"]
+        com = [sum((g[a]+.5)*h for g in cells)/len(cells) for a in range(3)]
+        local = []
+        for point in points:
+            if mapping[bindings[point["id"]]] != root: continue
+            point = deepcopy(point)
+            point["position_m"] = [point["position_m"][a]-com[a] for a in range(3)]
+            local.append(point)
+        records.append({"body":root, "points":interaction_points.checked(local)})
+    return actions, records
 
 
 def compile_design(design, overrides=None, *, cell_m=.04, root="assembly"):
@@ -133,4 +168,4 @@ def compile_design(design, overrides=None, *, cell_m=.04, root="assembly"):
             "mass_kg":sum(material_mass.values()),
             "physics_hash":hashlib.sha256(json.dumps(physical,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest(),
             "limitations":["Ideal native hinges: no bearing strength, wear or friction calibration.",
-                           "Compiler only; funded installation and portable use-program routing are not connected yet."]}
+                           "Funded installation supports single-material assemblies with explicitly bound use and interaction points; whole-assembly bag storage is unsupported."]}

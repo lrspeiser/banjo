@@ -42,7 +42,7 @@ DESCRIPTIONS = {
     "retrieve_ground": "Atomically retrieve remaining sand/soil from one saved raw lot into native carrying, subject to the carrying limit. Read lot_id and remaining contents from fabrication_state raw_inventory. Returns a replacement session. Identical request_id retries do not spend twice. No conversion or thermal model is implied.",
     "store_ground": "Atomically move measured carried sand and soil into saved raw lots. Read carried_ground with fabrication_state. Native debit, lots and retry receipt save together. Returns the replacement session; use it for later calls. Raw substances remain unprocessed with unmodeled thermal state, not glass or solid stock. No object is consumed.",
     "preview": "Check native placement and state carry for a finished funded workpiece on native ground. Terrain and material accounts must carry unchanged; unsettled-ground edits can refuse. position_m is [x,z]. Preview never installs.",
-    "commit": "Atomically transfer the finished workpiece into the native world, persist both ledgers and world, then acknowledge. Retry the same request_id after an uncertain result.",
+    "commit": "Atomically transfer the finished workpiece into the native world, persist both ledgers and world, then acknowledge. Supports single-material fixed/bearing assemblies with primary_use_component and interaction_point_components bindings. Assemblies return root_bodies, component_to_body, source_joints and per-body thermal_transfers. Retry the same request_id after an uncertain result.",
     "wait": "Advance native physics and fabrication together for 1..10 seconds and save both. This is an elapsed-time action: after connection loss read state before repeating.",
 }
 TOOLS = [{"name":"fabrication_open","description":
