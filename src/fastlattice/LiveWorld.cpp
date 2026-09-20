@@ -3323,6 +3323,36 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             impl.thermo->refresh(live->thermoShapes(), setup.ground_y);
         }
     }
+    // Legacy saves already contain body parcels and damage history. Import
+    // those rather than cooling/refuelling the bodies. Missing network history
+    // cannot be inferred: gas retains its legacy policy, heaters are suspended and
+    // the ledger starts at the imported state, an explicit migration boundary.
+    if (saved && !carrying && saved->doc.contains("heat") && !saved->doc.at("heat").contains("network")) {
+        const auto &heat = saved->doc.at("heat");
+        auto &network = live->ensureThermo();
+        const auto substances = network.model().size();
+        if (heat.at("substances").get<std::size_t>() != substances)
+            throw std::invalid_argument("incompatible legacy thermal substances");
+        auto state = network.state();
+        state.lumps.clear();
+        std::set<std::string> names;
+        for (const auto &record : heat.at("lumps")) {
+            auto lump = lumpFrom(record, state, substances);
+            if (!impl.index_of.count(lump.body) || !names.insert(lump.body).second)
+                throw std::invalid_argument("invalid legacy thermal body");
+            const auto region = record.value("environment", std::string{});
+            if (!region.empty() && lump.environment < 0)
+                throw std::invalid_argument("legacy thermal environment is absent");
+            state.lumps.push_back(std::move(lump));
+        }
+        state.ledger = {};
+        state.opened = false;
+        // No saved schedule means no authority to replay heater work. The
+        // user can issue a new heater command after this explicit migration.
+        state.heaters.clear();
+        network.restore(state);
+        network.refresh(live->thermoShapes(), setup.ground_y);
+    }
     // Identical-scene restores retain all thermal state, including the network
     // clock, finite gas contents, heater schedules and accumulated ledger.
     // Older snapshots remain readable through the existing legacy path.
@@ -12137,7 +12167,7 @@ bool LiveWorld::parked(const std::string &name) const { return impl_->parked.cou
 // ===========================================================================
 
 std::vector<std::string> LiveWorld::notKept() {
-    return {"legacy snapshots without a thermal network restart heater and gas histories from the scene",
+    return {"legacy snapshots recover body heat; missing heaters are suspended and gas history restarts from the scene",
             "anything under way: a world is saved only between breaks, strokes of the hand, cuts and a point's "
             "time in the ground, so the last one saved before any of those is what comes back",
             "the solver's memory of its contacts: a thing that was moving carries on from where it was, but "

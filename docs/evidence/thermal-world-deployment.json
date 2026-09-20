@@ -1,0 +1,62 @@
+{
+  "schema": "banjo.thermal-deployment-evidence.v1",
+  "date": "2026-09-20",
+  "base_commit": "f3bd8e6",
+  "native_sha256": "bd9d06bdd1d13f4a103ebe7041a23f2dfca4b6afecf6ea4206fe28794f81a3af",
+  "migration": {
+    "world": {
+      "tier": "whole",
+      "time_s": 343.7916666664362,
+      "bodies": 54,
+      "changed_fields": [],
+      "thermal_lump_changes": {},
+      "thermal_lumps": 53
+    },
+    "yard": {
+      "tier": "whole",
+      "time_s": 3563.1583333025196,
+      "bodies": 20,
+      "changed_fields": [],
+      "thermal_lump_changes": {},
+      "thermal_lumps": 0
+    },
+    "fabrication": {
+      "tier": "whole",
+      "time_s": 15.999999999999412,
+      "bodies": 4,
+      "changed_fields": [],
+      "thermal_lump_changes": {},
+      "thermal_lumps": 0
+    }
+  },
+  "live_roundtrip": {
+    "scene": "world",
+    "tier": "whole",
+    "time_s": 363.1208333330853,
+    "bodies": 54,
+    "thermal_lumps": 53,
+    "network_exact": true,
+    "other_snapshot_fields_exact": true,
+    "stores_exact": true,
+    "receipts_exact": true
+  },
+  "browser": {
+    "url": "http://127.0.0.1:8793/world",
+    "state": "Live",
+    "objects": 54,
+    "hoist_energy_spent_j_rounded": 984,
+    "hoist_charge_kj_rounded": 4.02,
+    "console_errors": []
+  },
+  "tests": {
+    "native_room_carry": 10,
+    "startup_upgrades": 7,
+    "native_workshop_installation": 18
+  },
+  "limits": [
+    "Legacy thermal clocks and historical ledger were absent; migration begins a new ledger boundary.",
+    "Legacy heaters without schedules are suspended; legacy gas state still comes from the scene.",
+    "Active thermal scene edits and broader fluids remain unfinished.",
+    "Mechanical solver contact warm starts are not persisted."
+  ]
+}

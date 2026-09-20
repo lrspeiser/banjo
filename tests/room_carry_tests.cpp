@@ -794,6 +794,19 @@ void completeThermalStateSurvivesRestart() {
     legacy["heat"].erase("network");
     const auto old = LiveWorld::open(r, legacy.dump());
     require(old->restored().tier == "whole", "legacy snapshot is no longer readable");
+    const auto migrated = nlohmann::json::parse(old->snapshot(why));
+    for (const auto &lump : legacy.at("heat").at("lumps")) {
+        const auto &lumps = migrated.at("heat").at("lumps");
+        auto found = std::find_if(lumps.begin(), lumps.end(), [&](const auto &l) { return l.at("body") == lump.at("body"); });
+        require(found != lumps.end(), "legacy heat body lost");
+        for (const auto *key : {"surface", "core", "initial_kg_b64", "peak_surface_k", "peak_core_k", "parked"})
+            require(found->at(key) == lump.at(key), std::string("legacy thermal history changed: ") + key);
+    }
+    require(old->thermo()->state().heaters.empty(), "legacy heater work would replay without a saved schedule");
+    require(std::abs(old->thermo()->ledger().residualJ()) < 1e-7, "legacy import ledger boundary does not close");
+    stepAnswering(*old, 24);
+    require(std::abs(old->thermo()->ledger().residualJ()) < 1e-7, "legacy migrated thermal continuation failed");
+
     std::cout << "    glass/oak/iron, finite vented gas, timed/dynamic heaters and ledger resume exactly\n";
 }
 

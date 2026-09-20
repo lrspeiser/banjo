@@ -38,11 +38,11 @@
     {
       "id": 27,
       "name": "Leave and return",
-      "remaining": "Deliver and broaden complete thermal restart support; active thermal scene edits, legacy migration and broader fluid/contents persistence remain.",
+      "remaining": "Active thermal scene edits, unrecoverable legacy gas/history and broader fluid/contents persistence remain.",
       "status": "partial",
       "priority": 5,
       "workstream": "Shared completion gates",
-      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains. New native identical-scene snapshots retain thermal clocks, gas, heaters, piston boundaries and ledger; comparative restart and continuation tests are in room_carry_tests."
+      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains. New native identical-scene snapshots retain thermal clocks, gas, heaters, piston boundaries and ledger; comparative restart and continuation tests are in room_carry_tests. Deployed on port 8793; actual 54-body main world and 53 thermal lumps migrated unchanged, followed by exact complete thermal save/reopen."
     },
     {
       "id": 29,
