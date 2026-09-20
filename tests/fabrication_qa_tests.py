@@ -40,7 +40,7 @@ class IsolatedRunner(WorkbenchTestCase):
         self.assertTrue(all(r["status"]=="passed" for r in report["results"]))
         self.assertTrue(any(r.get("measurements") for r in report["results"]))
         self.assertTrue(any('test_compiled_bearing_moves_under_gravity' in r['id'] and len(r.get('measurements',[]))==3 for r in report['results']))
-        self.assertTrue(any('test_articulated_staging_preserves_old_motion' in r['id'] and len(r.get('measurements',[]))==3 for r in report['results']))
+        self.assertTrue(any('test_articulated_staging_preserves_old_motion' in r['id'] and len(r.get('measurements',[]))==9 and all(len(m['thermal_transfers'])==2 for m in r['measurements']) for r in report['results']))
         self.assertEqual(len(report["engine_sha256"]),64)
         self.assertEqual(len(report["library_sha256"]),64)
         self.assertIs(app.live.session,old)

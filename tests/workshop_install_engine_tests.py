@@ -2,6 +2,7 @@
 from __future__ import annotations
 from copy import deepcopy
 import json
+import itertools
 import os
 from pathlib import Path
 import sys
@@ -24,7 +25,7 @@ class NativeInstallation(unittest.TestCase):
         sys.path.insert(0,str(ROOT/'tests'))
         from workshop_install_tests import articulated_candidate
         evidence=[]
-        for material in ('glass','oak','iron'):
+        for material, (preactivated, output_k) in itertools.product(('glass','oak','iron'), ((False,293.15),(True,293.15),(False,330.))):
             design,overrides=workshop_components.design_from_spec(articulated_candidate(material))
             old=workshop_articulation.compile_design(design,overrides,root='old')
             for body in old['bodies']:
@@ -58,6 +59,29 @@ class NativeInstallation(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'identifiers'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
                 corrupt=deepcopy(saved);corrupt['joints'][-1]['held']['upper']=0.
                 with self.assertRaisesRegex(ValueError,'solver limits'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                outputs={g['root_body']:g['mass_kg'] for g in added['groups']}
+                if preactivated:
+                    staged.session.send(op='declare',json={'contents':[{'body':root,'temperature_k':293.15} for root in sorted(roots)]})
+                    saved=install._snapshot(staged)
+                transfers,saved=install._admit_fabricated_outputs(staged,saved,outputs,output_k)
+                install._preserved(before,saved,roots,added_joints=added['joints'],thermal_transfer=transfers)
+                self.assertEqual(len(transfers),2)
+                if output_k==293.15:
+                    self.assertTrue(all((t['replaced_kg']>0)==preactivated for t in transfers))
+                else:
+                    self.assertGreater(transfers[1]['replaced_kg'],0)
+                self.assertAlmostEqual(sum(t['mass_kg'] for t in transfers),sum(outputs.values()),delta=sum(outputs.values())*1e-6)
+                with self.assertRaisesRegex(ValueError,'explicit transfer'):
+                    install._preserved(before,saved,roots,added_joints=added['joints'],thermal_transfer=transfers[:1])
+                with self.assertRaisesRegex(ValueError,'Duplicate'):
+                    install._preserved(before,saved,roots,added_joints=added['joints'],thermal_transfer=transfers+transfers[:1])
+                corrupt_transfers=deepcopy(transfers);corrupt_transfers[0]['replaced_j']+=1.
+                with self.assertRaisesRegex(ValueError,'ledger'):
+                    install._preserved(before,saved,roots,added_joints=added['joints'],thermal_transfer=corrupt_transfers)
+                for field in ('mass_kg','internal_energy_j'):
+                    corrupt_transfers=deepcopy(transfers);corrupt_transfers[0][field]+=1.
+                    with self.assertRaisesRegex(ValueError,'receipt'):
+                        install._preserved(before,saved,roots,added_joints=added['joints'],thermal_transfer=corrupt_transfers)
                 staged.open(self.app,{'spec':spec,'snapshot':saved})
                 reopened=install._snapshot(staged)
                 self.assertEqual(staged.session.state['restored']['tier'],'whole')
@@ -67,8 +91,9 @@ class NativeInstallation(unittest.TestCase):
                 arm=next(b for b in final['bodies'] if b['name']==added['component_to_body']['arm'])
                 self.assertLess(arm['position_m'][1],.999)
                 self.assertEqual(len(install._snapshot(staged)['joints']),2)
-                evidence.append({'material':material,'old_bodies_preserved':2,'added_bodies':2,
+                evidence.append({'material':material,'preactivated':preactivated,'output_temperature_k':output_k,'old_bodies_preserved':2,'added_bodies':2,
                                  'old_joints_preserved':1,'added_joints':1,'whole_restart':True,
+                                 'thermal_transfers':transfers,
                                  'new_arm_y_m_after_0_1_s':arm['position_m'][1]})
             finally:staged.shutdown()
         self.native_evidence=evidence

@@ -246,6 +246,14 @@ def _joint_readouts_match(before: list, after: list) -> bool:
 
 
 
+def _transfers(value):
+    transfers = [] if value is None else value if isinstance(value, list) else [value]
+    names = [t["body"] for t in transfers]
+    if len(names) != len(set(names)):
+        raise ValueError("Duplicate thermal output transfer")
+    return transfers
+
+
 def _thermal_preserved(before, after, body_names, thermal_transfer=None):
     """Keep stored state exact; account separately for new network membership.
 
@@ -311,10 +319,12 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
             if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
                    for k, v in path.items() if k not in ("a", "b")):
                 raise ValueError("Invalid derived thermal coefficient")
+    transfers = _transfers(thermal_transfer)
+    transferred = {t["body"] for t in transfers}
     energy, mass = [], []
     for name in set(new)-set(old):
         lump = new[name]
-        if lump.get("declared") and name != (thermal_transfer or {}).get("body"):
+        if lump.get("declared") and name not in transferred:
             raise ValueError("New declared thermal inventory needs an explicit transfer")
         for zone in ("surface", "core"):
             parcel = lump[zone]
@@ -327,15 +337,21 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
             mass.extend(kg)
             energy.append(value)
     deltas = {"joined_j": math.fsum(energy), "joined_kg": math.fsum(mass)}
-    if thermal_transfer:
-        if thermal_transfer["body"] in old or thermal_transfer["body"] not in new:
+    for transfer in transfers:
+        if transfer["body"] in old or transfer["body"] not in new:
             raise ValueError("Thermal output must belong to the newly installed body")
+        lump = new[transfer["body"]]
+        actual_mass = math.fsum(v for zone in ("surface", "core") for v in vector(lump[zone]["kg_b64"]))
+        actual_energy = math.fsum(lump[zone]["internal_energy_j"] for zone in ("surface", "core"))
+        for field, actual in (("mass_kg", actual_mass), ("internal_energy_j", actual_energy)):
+            if transfer.get(field) != actual:
+                raise ValueError("Thermal transfer receipt differs from native output")
         for suffix in ("j", "kg"):
-            replaced = thermal_transfer["replaced_" + suffix]
+            replaced = transfer["replaced_" + suffix]
             if not math.isfinite(replaced) or (suffix == "kg" and replaced < 0):
                 raise ValueError("Invalid replaced thermal inventory")
             deltas["joined_" + suffix] += replaced
-            deltas["left_" + suffix] = replaced
+            deltas["left_" + suffix] = deltas.get("left_" + suffix, 0.) + replaced
     for key in set(bn["ledger"]) | set(an["ledger"]):
         value = bn["ledger"].get(key)
         if bn["opened"] and key in deltas:
@@ -344,7 +360,7 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
             # their count and double precision; existing history stays exact.
             tolerance = max(1e-9, 8*(len(energy)+1)*max(math.ulp(value), math.ulp(expected)))
             if not math.isclose(an["ledger"].get(key, math.nan), expected, rel_tol=0, abs_tol=tolerance):
-                raise ValueError("New thermal inventory does not close its ledger")
+                raise ValueError(f"New thermal inventory does not close its ledger: {key}, expected {expected}, got {an['ledger'].get(key)}")
         elif an["ledger"].get(key) != value:
             raise ValueError("Staging changed existing thermal ledger history")
 
@@ -407,7 +423,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     stored thermal histories remain exact and new network membership is accounted.
     """
     added = {root} if isinstance(root, str) else root
-    if thermal_transfer and thermal_transfer["body"] not in added:
+    if any(t["body"] not in added for t in _transfers(thermal_transfer)):
         raise ValueError("Thermal transfer may only initialize the new output")
     current = {b["name"]: b for b in after["bodies"]}
     prior = {b["name"]: b for b in before["bodies"]}
@@ -642,34 +658,51 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
     return answer
 
 def _admit_fabricated_heat(staged, before, root, expected_mass, temperature):
+    transfers, saved = _admit_fabricated_outputs(staged, before, {root: expected_mass}, temperature)
+    return transfers[0], saved
+
+
+def _admit_fabricated_outputs(staged, before, outputs, temperature):
     """Transfer the process's cold output into its native material parcel.
 
     Called only on the private staged world, after exact mechanical admission.
     Any implicit ambient parcel belongs to this new body alone; replacing it is
     an explicit leave/join crossing, never a reset of previously installed heat.
     """
-    prior = next((l for l in (before.get("heat") or {}).get("lumps", []) if l["body"] == root), None)
+    names = {b["name"] for b in before["bodies"]}
+    if not outputs or not set(outputs) <= names:
+        raise ValueError("Thermal outputs must identify staged bodies")
+    if any(type(m) not in (int, float) or not math.isfinite(m) or m <= 0 for m in outputs.values()):
+        raise ValueError("Thermal outputs need positive finite material masses")
+    if type(temperature) not in (int, float) or not math.isfinite(temperature) or temperature <= 0:
+        raise ValueError("Thermal output temperature must be positive and finite")
     def totals(lump):
         if lump is None: return 0., 0.
         parcels = [lump[zone] for zone in ("surface", "core")]
         energy = math.fsum(p["internal_energy_j"] for p in parcels)
         mass = math.fsum(v[0] for p in parcels for v in struct.iter_unpack("<d", base64.b64decode(p["kg_b64"], validate=True)))
         return energy, mass
-    replaced_j, replaced_kg = totals(prior)
-    staged.session.send(op="declare", json={"contents":[{"body":root,"temperature_k":temperature}]})
-    saved = _snapshot(staged)
-    lump = next(l for l in saved["heat"]["lumps"] if l["body"] == root)
-    energy, mass = totals(lump)
-    report = staged.session.send(op="thermo")["thermo"]
-    observed = next(b for b in report["bodies"] if b["name"] == root)
-    if not math.isclose(mass, expected_mass, rel_tol=1e-6, abs_tol=1e-9):
-        raise ValueError("Native output thermal mass differs from funded material")
-    if any(abs(observed[k]-temperature) > 1e-8 for k in ("temperature_k","core_temperature_k")):
-        raise ValueError("Native output temperature differs from the process output")
-    transfer = {"body":root,"temperature_k":temperature,"mass_kg":mass,"internal_energy_j":energy,
+    transfers = []
+    saved = before
+    for root, expected_mass in outputs.items():
+        # Declaring one body can activate an ambient parcel on a neighbour.
+        # Observe that parcel before replacing it in the next declaration.
+        prior = {l["body"]: l for l in (saved.get("heat") or {}).get("lumps", [])}
+        replaced_j, replaced_kg = totals(prior.get(root))
+        staged.session.send(op="declare", json={"contents":[{"body":root,"temperature_k":temperature}]})
+        saved = _snapshot(staged)
+        lumps = {l["body"]: l for l in saved["heat"]["lumps"]}
+        report = staged.session.send(op="thermo")["thermo"]
+        observed = {b["name"]: b for b in report["bodies"]}
+        energy, mass = totals(lumps[root])
+        if not math.isclose(mass, expected_mass, rel_tol=1e-6, abs_tol=1e-9):
+            raise ValueError("Native output thermal mass differs from funded material")
+        if any(abs(observed[root][k]-temperature) > 1e-8 for k in ("temperature_k","core_temperature_k")):
+            raise ValueError("Native output temperature differs from the process output")
+        transfers.append({"body":root,"temperature_k":temperature,"mass_kg":mass,"internal_energy_j":energy,
                 "replaced_j":replaced_j,"replaced_kg":replaced_kg,
-                "source":"fabrication-cold-output"}
-    return transfer, saved
+                "source":"fabrication-cold-output" if temperature == 293.15 else "fabrication-output"})
+    return transfers, saved
 
 
 def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, Any]:
