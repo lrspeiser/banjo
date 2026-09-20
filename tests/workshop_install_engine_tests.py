@@ -289,6 +289,31 @@ class NativeInstallation(unittest.TestCase):
         self.assertGreater(after["heat"]["network"]["ledger"]["heater_in_j"],
                            before["heat"]["network"]["ledger"]["heater_in_j"])
 
+    def test_new_parts_join_hot_network_with_accounted_energy_and_mass(self):
+        for material in ("glass","oak","iron"):
+            with self.subTest(material=material):
+                spec=world_room.yard()
+                next(b for b in spec["bodies"] if b["name"]=="marker stone")["temperature_k"]=900
+                self.open(spec)
+                self.live.session.send(op="step",dt=1/120,n=12)
+                before=self.snap()
+                p=self.preview(material=material);self.do_commit(p,request="thermal-"+material)
+                after=self.snap()
+                install._preserved(before,after,p["root_body"])
+                self.assertIn(p["root_body"],[l["body"] for l in after["heat"]["lumps"]])
+                self.assertNotEqual(before["heat"]["network"]["ledger"]["joined_kg"],
+                                    after["heat"]["network"]["ledger"]["joined_kg"])
+                for field in ("heater_in_j","joined_j"):
+                    bad=deepcopy(after);bad["heat"]["network"]["ledger"][field]+=1
+                    with self.assertRaises(ValueError):
+                        install._preserved(before,bad,p["root_body"])
+                bad=deepcopy(after)
+                old_name=before["heat"]["lumps"][0]["body"]
+                next(l for l in bad["heat"]["lumps"] if l["body"]==old_name)["surface"]["internal_energy_j"]+=1
+                with self.assertRaises(ValueError):
+                    install._preserved(before,bad,p["root_body"])
+                self.live.session.send(op="step",dt=1/120,n=12)
+
     def test_old_native_thermal_capability_is_still_refused(self):
         self.live.session.send(op="heat",target="marker stone",power_w=100,seconds=1)
         snapshot=self.live.snapshot()[0]

@@ -200,13 +200,108 @@ def _joint_readouts_match(before: list, after: list) -> bool:
     return True
 
 
+
+def _thermal_preserved(before, after, body_names):
+    """Keep stored state exact; account separately for new network membership.
+
+    Paths and exposed area are geometry-derived, not stored energy. New cold
+    parcels entering the heat network cross its boundary even if their rigid
+    bodies already existed outside that network.
+    """
+    if not isinstance(after, dict):
+        raise ValueError("Staging lost thermal state")
+    old = {l["body"]: l for l in before.get("lumps", [])}
+    new = {l["body"]: l for l in after.get("lumps", [])}
+    if len(new) != len(after.get("lumps", [])) or not set(new) <= body_names:
+        raise ValueError("Staging created invalid thermal ownership")
+    complete = ((before.get("network") or {}).get("schema") == "banjo.thermal-state.v1"
+                and (after.get("network") or {}).get("schema") == "banjo.thermal-state.v1")
+    for name, lump in old.items():
+        if name not in new:
+            raise ValueError("Staging lost an existing heat lump")
+        a, b = deepcopy(lump), deepcopy(new[name])
+        if complete:
+            # Contact changes the area open to ambient air without changing
+            # matter, stored energy, temperature history or damage.
+            a.pop("exposed_area_m2", None)
+            b.pop("exposed_area_m2", None)
+        if a != b:
+            raise ValueError("Staging changed an existing heat lump")
+    for key in set(before) | set(after):
+        if key not in ("lumps", "network") and before.get(key) != after.get(key):
+            raise ValueError(f"Staging changed thermal {key}")
+    if not complete:
+        if before.get("network") != after.get("network"):
+            raise ValueError("Staging changed thermal network")
+        return
+
+    bn, an = before["network"], after["network"]
+    derived = {"contacts", "sights", "sky_fraction", "floor_conductance_w_k"}
+    for key in set(bn) | set(an):
+        if key not in derived | {"ledger"} and bn.get(key) != an.get(key):
+            raise ValueError(f"Staging changed thermal network {key}")
+
+    def vector(encoded):
+        raw = base64.b64decode(encoded, validate=True)
+        if len(raw) % 8:
+            raise ValueError("Invalid thermal numeric array")
+        values = [v[0] for v in struct.iter_unpack("<d", raw)]
+        if any(not math.isfinite(v) or v < 0 for v in values):
+            raise ValueError("Invalid thermal mass or boundary coefficient")
+        return values
+
+    count = len(new)
+    for lump in new.values():
+        area = lump.get("exposed_area_m2")
+        if not isinstance(area, (int, float)) or not math.isfinite(area) or not 0 <= area <= lump["area_m2"]:
+            raise ValueError("Invalid exposed thermal surface")
+    for field in ("sky_fraction", "floor_conductance_w_k"):
+        values = vector(an[field])
+        if len(values) != count or (field == "sky_fraction" and any(v > 1 for v in values)):
+            raise ValueError("Invalid derived thermal boundary")
+    for field in ("contacts", "sights"):
+        for path in an[field]:
+            if any(type(path.get(k)) is not int or not 0 <= path[k] < count for k in ("a", "b")):
+                raise ValueError("Invalid derived thermal path")
+            if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
+                   for k, v in path.items() if k not in ("a", "b")):
+                raise ValueError("Invalid derived thermal coefficient")
+    energy, mass = [], []
+    for name in set(new)-set(old):
+        lump = new[name]
+        if lump.get("declared"):
+            raise ValueError("New declared thermal inventory needs an explicit transfer")
+        for zone in ("surface", "core"):
+            parcel = lump[zone]
+            kg = vector(parcel["kg_b64"])
+            if len(kg) != before["substances"]:
+                raise ValueError("New thermal parcel has incompatible substances")
+            value = parcel["internal_energy_j"]
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError("New thermal parcel has invalid energy")
+            mass.extend(kg)
+            energy.append(value)
+    deltas = {"joined_j": math.fsum(energy), "joined_kg": math.fsum(mass)}
+    for key in set(bn["ledger"]) | set(an["ledger"]):
+        value = bn["ledger"].get(key)
+        if bn["opened"] and key in deltas:
+            expected = value + deltas[key]
+            # Only summing newly admitted parcels allows rounding, bounded by
+            # their count and double precision; existing history stays exact.
+            tolerance = max(1e-9, 8*(len(energy)+1)*max(math.ulp(value), math.ulp(expected)))
+            if not math.isclose(an["ledger"].get(key, math.nan), expected, rel_tol=0, abs_tol=tolerance):
+                raise ValueError("New thermal inventory does not close its ledger")
+        elif an["ledger"].get(key) != value:
+            raise ValueError("Staging changed existing thermal ledger history")
+
+
 def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str]) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
     Exact body and part equality also establishes unchanged node/bond index
     ranges before comparing damage/plastic arrays. Unknown future global state
     is compared, not ignored. New heat lumps may be appended by the compiler;
-    every original lump and the rest of the heat network must remain identical.
+    stored thermal histories remain exact and new network membership is accounted.
     """
     added = {root} if isinstance(root, str) else root
     current = {b["name"]: b for b in after["bodies"]}
@@ -231,16 +326,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         raise ValueError("Staging changed unrelated native identifiers")
     bh, ah = before.get("heat"), after.get("heat")
     if bh is not None:
-        if not isinstance(ah, dict):
-            raise ValueError("Staging lost thermal state")
-        for key, value in bh.items():
-            if key == "lumps":
-                # Native heat lump dictionaries retain body ownership. Do not
-                # assume their ordering is stable when new matter is appended.
-                if any(lump not in ah.get("lumps", []) for lump in value):
-                    raise ValueError("Staging changed an existing heat lump")
-            elif ah.get(key) != value:
-                raise ValueError(f"Staging changed thermal {key}")
+        _thermal_preserved(bh, ah, set(current))
 
 
 def _stage(app, live, old, spec, snapshot, matter, root, shift):

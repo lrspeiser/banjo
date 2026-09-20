@@ -41,7 +41,8 @@ Every existing serialized body, topology, damage/plastic field, joint,
 battery, motor, controller and water state must survive unchanged. The comparison
 also checks unknown future global fields. Only documented new components and
 their identifier increments may appear. Existing thermal lumps and the complete
-serialized network are compared; see [thermal carry](thermal-world-persistence.md).
+serialized network are compared. Derived heat paths can change only with accounted
+cold thermal admission; see [thermal carry](thermal-world-persistence.md).
 
 Changed-scene carry explicitly supplies the snapshot's water state to the new
 scene, preserving flow, volume, time and ledger values. Placement checks use
@@ -59,8 +60,9 @@ not preserve Jolt's full contact/warm-start cache or promise bitwise continuatio
 Pending fracture/cutting work, incompatible cell resolution, name conflicts and
 overlapping player builds can leave additions pending. Engines with complete
 thermal carry can retain active heaters and gas when their declarations, bodies,
-supports and existing heat paths are unchanged. Older engines still refuse them.
-An addition that changes the thermal network fails the strict staged comparison.
+supports remain compatible. Older engines still refuse them. New cold material
+may join the thermal network through derived heat paths only when its mass and
+energy are accounted; stored history stays exact.
 The [thermal contract](thermal-world-persistence.md) documents legacy migration,
 capability checks and the active-carry deployment status.
 

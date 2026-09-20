@@ -783,6 +783,45 @@ void completeThermalStateSurvivesRestart() {
     require(carried->restored().tier == "carried", "active thermal network did not carry");
     require(nlohmann::json::parse(carried->snapshot(why)).at("heat") == before.at("heat"),
             "active gas/heaters changed when a distant part was added");
+
+    auto contacting = r;
+    for (const auto &source : r.bodies) {
+        auto sink = source; sink.name += " cold addition"; sink.center_m.x += 0.08;
+        contacting.bodies.push_back(sink);
+    }
+    auto coupled = LiveWorld::open(contacting, saved, LiveWorld::carryAll(saved));
+    require(coupled->restored().tier == "carried", "contacting thermal additions did not carry");
+    const auto coupledDoc = nlohmann::json::parse(coupled->snapshot(why));
+    for (const auto &lump : before.at("heat").at("lumps")) {
+        const auto &lumps = coupledDoc.at("heat").at("lumps");
+        auto at = std::find_if(lumps.begin(), lumps.end(), [&](const auto &l) { return l.at("body") == lump.at("body"); });
+        require(at != lumps.end(), "existing thermal body vanished during contact edit");
+        auto expected = lump, actual = *at;
+        expected.erase("exposed_area_m2"); actual.erase("exposed_area_m2");
+        require(actual == expected, "contact edit changed stored thermal history");
+    }
+    double admitted_j = 0, admitted_kg = 0;
+    unsigned added = 0;
+    for (const auto &lump : coupled->thermo()->state().lumps)
+        if (lump.body.find("cold addition") != std::string::npos) {
+            admitted_j += lump.surface.internal_energy_j + lump.core.internal_energy_j;
+            admitted_kg += thermo::massKg(lump.surface) + thermo::massKg(lump.core);
+            ++added;
+        }
+    require(added == 3, "not all glass/oak/iron additions joined the thermal network");
+    const auto ledger_before = world->thermo()->ledger();
+    auto ledger_after = coupled->thermo()->ledger();
+    require(std::abs(ledger_after.joined_j - ledger_before.joined_j - admitted_j) < 1e-7,
+            "new thermal material energy is not accounted");
+    require(std::abs(ledger_after.joined_kg - ledger_before.joined_kg - admitted_kg) < 1e-12,
+            "new thermal material mass is not accounted");
+    stepAnswering(*coupled, 24);
+    for (const auto &body : coupled->thermo()->bodies())
+        if (body.body.find("cold addition") != std::string::npos)
+            require(body.temperature_k > 293.15, "contacting addition did not receive heat");
+    ledger_after = coupled->thermo()->ledger();
+    require(std::abs(ledger_after.residualJ()) < 1e-7, "contact edit thermal energy does not close");
+    require(std::abs(ledger_after.massResidualKg()) < 1e-12, "contact edit thermal mass does not close");
     auto incompatible = edited;
     auto declarations = nlohmann::json::parse(incompatible.thermo_scene_json);
     declarations["thermo"]["gas_regions"][0]["pressure_pa"] = 180000;

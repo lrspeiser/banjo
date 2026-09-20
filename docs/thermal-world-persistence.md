@@ -33,13 +33,23 @@ restores the operating network, including active heaters and gas, then refreshes
 geometry. Changing a pressure or heater declaration cannot silently reuse the
 previous network under this rule.
 
-Atomic installation compares the complete result with the old state. An unrelated
-part can be added while a heater or gas chamber operates. Additions that create
-new thermal lumps or alter existing heat paths still fail this exact preservation
-gate; admitting those requires accounting for the new thermal boundary. Older
-engines without the capability and declaration stamp still refuse active thermal
-installation. Old snapshots without the stamp retain the previous quiescent-only
-carry rule.
+Atomic installation keeps existing parcels, temperature history, gas, heaters,
+clock and all prior ledger history exact. Geometry-derived contacts, radiation
+paths, ambient view fractions and exposed area can change when a new part is
+placed nearby. Undeclared cold bodies activated by these paths join the thermal
+network at their existing ambient state; their parcel mass and internal energy
+must match the added joined_kg and joined_j ledger crossings. This expands the
+thermal accounting boundary, not the world's physical material inventory.
+Authoring remains externally supplied construction; funded manufacture has its
+separate material account.
+
+Only the sums of newly admitted parcel energy/mass allow floating-point rounding,
+bounded by the parcel count and double precision. Altering old energy, heater
+work, fuel, damage history or other ledger crossings still fails staging.
+Explicitly declared new hot inventories require a separate transfer and are not
+admitted by this rule. Older engines without the capability and declaration stamp
+still refuse active thermal installation. Old snapshots without the stamp retain
+the previous quiescent-only carry rule.
 
 Malformed network schemas, substance counts, references and path indices do not
 qualify for a whole restore. Existing world-open fallback reporting applies;
@@ -61,8 +71,9 @@ mechanical trajectories after restart are not claimed. These are persistence
 regressions of the existing thermal laws, not new material calibration or
 qualification of pipes, pouring, boiling, or every thermodynamic cycle.
 
-The full 30-capability objective remains open. Next: state-preserving edits of
-active thermal machines and broader fluid/contents persistence. The updated
+The full 30-capability objective remains open. Next: persistence of reference
+geometry for thermally receded bodies, funded articulated assembly, and broader
+fluid/contents persistence. The updated
 engine is deployed to the main-world server on port 8793. [Deployment evidence](evidence/thermal-world-deployment.json)
 records migration of the actual saves and an exact live save/reopen comparison.
 
@@ -77,9 +88,31 @@ pressure/work state. Twenty native installation tests include timed heaters,
 live gas and refusal of older capability reports. Seven startup-upgrade tests
 and twelve installation-boundary tests pass. No constitutive law changed.
 
-This active-carry build is verified in build/circuits/thermal-carry. Deployment
-to the main server remains pending; the previous restart/migration build remains
-live on port 8793. New heat paths, material-funded articulated assembly and the
-remaining 30-capability requirements are still open.
+The active-carry work is now included in the thermal-paths build deployed on
+port 8793. [Current evidence](evidence/thermal-paths.json) records native additions,
+API tests, comparative heat transfer and checks of the actual saved worlds.
+Material-funded articulated assembly and the remaining capability gates are open.
 
-The actual HTTP/MCP startup-upgrade test also carries an active heater and compares its thermal state exactly. All 44 mechanics cases pass; the fixed 96-case material matrix is running in build/thermal-carry-qa/materials and must be inspected before publishing this checkpoint.
+The actual HTTP/MCP startup-upgrade test also carries an active heater and compares its thermal state exactly. All 44 mechanics cases pass on the final heat-path build. The 96-case material matrix passed against the fixed baseline on the preceding active-carry build; it does not qualify thermal geometry continuation.
+
+
+## Geometry-reference limitation
+
+Thermal parcels and the network are serialized, but the host's MatterRecord
+reference dimensions and applied recession depth are not yet in disk snapshots.
+A reference reconstructed from already-receded geometry can apply past recession
+again on subsequent stepping. Immediate snapshot equality does not establish
+correct geometric continuation. This is the next persistence defect to address;
+do not interpret these tests as complete fire-damage or whole-world persistence
+qualification.
+
+## Heat-path verification
+
+Ten native carry cases now also test cold glass/oak/iron additions in contact
+with hot bodies: existing stored state remains exact, each new part receives
+heat after stepping, and the enlarged thermal boundary closes to 1e-7 J and
+1e-12 kg. Twenty-one atomic native installation tests include nearby radiative
+admission and deliberate corruptions of old energy, heater history and admitted
+energy. Seven startup and twelve boundary tests pass. The live server runs this
+build, with saved 54-body main, 20-body yard and four-body fabrication probes
+preserving all compared physical fields.

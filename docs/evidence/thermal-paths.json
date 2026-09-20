@@ -1,0 +1,89 @@
+{
+  "schema": "banjo.thermal-paths-evidence.v1",
+  "date": "2026-09-20",
+  "active_carry_commit": "060867e",
+  "material_matrix_scope": "96 cases on the active-carry build before the later heat-path admission change; no constitutive law changed.",
+  "mechanics_scope": "44 cases rerun on the final heat-path build",
+  "native_sha256": "f097c38a71baa71fb4ff1b046da369737952f84a36b47da33caaa2c7233450f1",
+  "material_runner_sha256": "954d6bbeebd454af94d4e3b323522bcd9acdb2a3c71e88ad43e9be3d575a805a",
+  "tests": {
+    "native_room_carry": 10,
+    "native_installation": 21,
+    "startup_upgrade": 7,
+    "installation_boundary": 12
+  },
+  "native_comparison": {
+    "materials": [
+      "glass",
+      "oak",
+      "iron"
+    ],
+    "added_parts_receive_heat": true,
+    "existing_parcels_and_history_exact": true,
+    "energy_residual_bound_j": 1e-07,
+    "mass_residual_bound_kg": 1e-12
+  },
+  "deployment": {
+    "url": "http://127.0.0.1:8793/world",
+    "engine_directory": "build/circuits/thermal-paths",
+    "browser_errors": [],
+    "objects": 54,
+    "battery_spent_j_rounded": 984
+  },
+  "saved_world_probes": {
+    "world": {
+      "bodies": 54,
+      "time_s": 411.066666666375,
+      "all_prior_physical_fields_preserved": true,
+      "thermal_network_preserved": true,
+      "metadata_changes": [
+        "thermal_network_version",
+        "heat.scene_settings",
+        "not_kept wording"
+      ]
+    },
+    "yard": {
+      "bodies": 20,
+      "time_s": 3563.1583333025196,
+      "all_prior_physical_fields_preserved": true,
+      "thermal_network_preserved": true,
+      "metadata_changes": [
+        "thermal_network_version",
+        "heat.scene_settings",
+        "not_kept wording"
+      ]
+    },
+    "fabrication": {
+      "bodies": 4,
+      "time_s": 15.999999999999412,
+      "all_prior_physical_fields_preserved": true,
+      "thermal_network_preserved": true,
+      "metadata_changes": [
+        "thermal_network_version",
+        "heat.scene_settings",
+        "not_kept wording"
+      ]
+    }
+  },
+  "published_qa": {
+    "mechanics": {
+      "id": "1f232aeb8aba4ed5a9fc77dffdfb9f43",
+      "total": 44,
+      "status": "passed",
+      "source": "build\\thermal-paths-qa\\mechanics"
+    },
+    "materials": {
+      "id": "7888c4a9cb7948ef860b74c3ebe3cf3b",
+      "total": 96,
+      "status": "passed",
+      "source": "build\\thermal-carry-qa\\materials"
+    }
+  },
+  "limits": [
+    "Only cold undeclared additions are admitted; new explicitly hot inventories require an explicit transfer.",
+    "Ledger admission comparison allows only double-summation rounding for joined_j and joined_kg; old history remains exact.",
+    "Whole coupled-world conservation is not established by these local ledger checks.",
+    "Thermally receded geometry reference records are not yet serialized and need continuation coverage.",
+    "Funded articulated construction and the remaining 30-capability gates remain unfinished."
+  ]
+}

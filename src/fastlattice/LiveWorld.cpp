@@ -3338,8 +3338,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             const auto container = piston.at("container").get<std::string>();
             supports = supports && plan.carries(body) && (container.empty() || plan.carries(container));
         }
-        if (compatible && supports && carried_heat == heat.at("lumps").size() &&
-            current.lumps.size() == carried_heat) {
+        std::set<std::string> prior_thermal_bodies;
+        for (const auto &lump : heat.at("lumps")) prior_thermal_bodies.insert(lump.at("body").get<std::string>());
+        // Fresh, undeclared cold lumps are admitted by refresh and counted as
+        // crossings into the thermal network. A newly declared hot inventory
+        // needs a separate explicit transfer and is not imported by this rule.
+        const bool cold_additions = std::all_of(current.lumps.begin(), current.lumps.end(),
+            [&](const thermo::Lump &lump) { return prior_thermal_bodies.count(lump.body) || !lump.declared; });
+        if (compatible && supports && cold_additions && carried_heat == heat.at("lumps").size()) {
             impl.thermo->restore(readThermoState(heat, impl.thermo->model().size()));
             impl.thermo->refresh(live->thermoShapes(), setup.ground_y);
             carried_thermal_network = true;
