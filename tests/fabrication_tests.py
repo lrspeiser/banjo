@@ -34,6 +34,52 @@ def start(state,material="oak",stock=10):
     return model.mutate(state,body,quote=q)[0],body
 
 class ProcessModel(unittest.TestCase):
+    def test_recovery_conserves_material_and_does_not_refund_work(self):
+        for material in ("glass", "oak", "iron"):
+            with self.subTest(material=material):
+                s,job=start(model.new(settings(stock_kg={material:10}),0),material)
+                request={"op":"recover","material":material,"mass_kg":1,
+                         "revision":s["revision"],"request_id":"recover-0001"}
+                with self.assertRaisesRegex(ValueError,"Insufficient offcuts"):
+                    model.mutate(s,request)
+                model.advance(s,2)
+                before=deepcopy(s); amount=s["waste_kg"][material]
+                request["mass_kg"]=amount
+                out,replayed=model.mutate(s,request)
+                self.assertFalse(replayed);self.assertEqual(s,before)
+                self.assertEqual(out["waste_kg"][material],0)
+                self.assertEqual(out["stock_kg"][material],amount)
+                for key in ("energy_j","station_heat_j","spent_j","ambient_j","jobs","time_s"):
+                    self.assertEqual(out[key],before[key])
+                replay,flag=model.mutate(json.loads(json.dumps(out)),request)
+                self.assertTrue(flag);self.assertEqual(replay,out)
+                with self.assertRaisesRegex(ValueError,"revision"):
+                    model.mutate(out,{**request,"request_id":"recover-0002"})
+                with self.assertRaisesRegex(ValueError,"Insufficient offcuts"):
+                    model.mutate(out,{**request,"request_id":"recover-0002","revision":out["revision"]})
+                # Recovered stock can fund new work, but cannot bypass its cost.
+                smaller=candidate(material)
+                part=smaller["component_overrides"]["@construction"]["added"][0]
+                part.update(size_m=[.04,.04,.04],center_m=[.02,.02,.02])
+                q=room_api.compile_quote(smaller,amount,.04,out)
+                out,_=model.mutate(out,{"op":"start","request_id":"reused-stock-0001","revision":out["revision"]},quote=q)
+                self.assertEqual(out["stock_kg"][material],0)
+                self.assertEqual(out["jobs"]["reused-stock-0001"]["work_j"],0)
+                model.advance(out,4)
+                self.assertAlmostEqual(out["spent_j"],1000+amount*100)
+                self.close(out)
+
+    def test_recovery_rejects_invalid_amounts_and_changed_retries(self):
+        s,_=start(model.new(settings(),0));model.advance(s,2);before=deepcopy(s)
+        req={"op":"recover","material":"oak","mass_kg":1,"revision":s["revision"],"request_id":"recover-0001"}
+        for bad in (0,-1,True,math.nan,math.inf,10001,10):
+            with self.assertRaises(ValueError):model.mutate(s,{**req,"mass_kg":bad})
+        with self.assertRaises(ValueError):model.mutate(s,{**req,"material":"unknown"})
+        self.assertEqual(s,before)
+        out,_=model.mutate(s,req)
+        with self.assertRaisesRegex(ValueError,"different"):
+            model.mutate(out,{**req,"mass_kg":2})
+
     def close(self,state):
         a=model.audit(state)
         for v in a["material_residual_kg"].values():self.assertAlmostEqual(v,0,places=9)
@@ -139,6 +185,23 @@ class NativeFabrication(unittest.TestCase):
     def begin(self,material="oak",ident="job-native-0001"):
         return self.call("start",candidate=candidate(material),stock_kg=10,
             revision=self.room.fabrication_record["revision"],request_id=ident)
+    def test_recovered_stock_save_failure_restart_and_native_state(self):
+        self.begin();self.step(2)
+        before=deepcopy(self.room.fabrication_record);native=workshop_install._snapshot(self.live)
+        request={"material":"oak","mass_kg":before["waste_kg"]["oak"],
+                 "revision":before["revision"],"request_id":"recover-native-0001"}
+        with mock.patch.object(self.app.store,"save",side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):self.call("recover",**request)
+        self.assertEqual(self.room.fabrication_record,before)
+        self.assertEqual(workshop_install._snapshot(self.live),native)
+        answer=self.call("recover",**request)
+        self.assertEqual(answer["state"]["waste_kg"]["oak"],0)
+        loaded=self.app.store.load("fabrication")
+        self.assertEqual(loaded.world_record,native)
+        self.live.open(self.app,{"spec":loaded.spec,"snapshot":loaded.world_record})
+        self.room=self.app.room=loaded
+        self.assertTrue(self.call("recover",**request)["replayed"])
+        self.assertEqual(self.room.fabrication_record["stock_kg"]["oak"],30-before["jobs"]["job-native-0001"]["product_kg"])
     def test_glass_oak_iron_work_restart_native_mass_and_duplicate_install(self):
         measured=[]
         for i,material in enumerate(("glass","oak","iron")):
@@ -252,6 +315,18 @@ class NativeHTTP(WorkbenchTestCase):
             native=next(b for b in app.live.session.state["bodies"] if b["name"]==result["root_body"])
             expected=app.room.fabrication_record["jobs"][job]["product_kg"]
             self.assertAlmostEqual(native["mass_kg"],expected,places=7)
+            import fabrication_mcp_tools as tools
+            from circuit_api import validate
+            request={**ctx,"material":material,"mass_kg":(10-expected)/2,
+                     "revision":app.room.fabrication_record["revision"],"request_id":"recover-main-"+material}
+            schema=next(t["inputSchema"] for t in tools.TOOLS if t["name"]=="fabrication_recover")
+            validate(request,schema,"arguments")
+            with mock.patch.dict(os.environ,{"BANJO_PLAYGROUND_URL":f"http://127.0.0.1:{app.port}"}):
+                recovered=tools.call("fabrication_recover",request)
+                self.assertTrue(tools.call("fabrication_recover",request)["replayed"])
+            self.assertAlmostEqual(recovered["state"]["stock_kg"][material],20+request["mass_kg"])
+            self.assertAlmostEqual(recovered["state"]["waste_kg"][material],request["mass_kg"])
+            self.assertEqual(workshop_install._snapshot(app.live),after)
         saved=app.store.load("world")
         self.assertEqual(saved.fabrication_record,app.room.fabrication_record)
         self.assertEqual(saved.world_record,workshop_install._snapshot(app.live))

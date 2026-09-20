@@ -1,5 +1,9 @@
 # Inventory and two hands: the design of increment 1
 
+See the [material collection contract](material-collection-contract.md) for the
+owner's requirement to preserve collected object state and distinguish it from
+raw stock and explicit salvage.
+
 Draft, 2026-09-14. This is how the owner's spec (docs/inventory-and-hands.md) is
 built, starting from what the code does today. The engine half is still open:
 whether a body can be taken out of a running world and back, and a second

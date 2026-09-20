@@ -33,13 +33,14 @@ function controls(){
  for(const id of ["quote","start","wait-one","wait-ten"])$(id).disabled||=!state;
  $("preview").disabled||=!$("finished").value;
  $("commit").disabled||=!preview;
- for(const b of $("jobs").querySelectorAll("button"))b.disabled=busy;
+ for(const b of document.querySelectorAll("#jobs button, #stocks button"))b.disabled=busy;
 }
 function render(s){
  state=s;$("setup").open=!state;$("setup-note").textContent="Initial stock and energy are fixed. Workpieces, heat and remaining supply survive leaving the room.";
  $("meters").textContent="World "+fmt(s.time_s)+" s · Supply "+fmt(s.energy_j)+" J · Station "+fmt(s.temperature_k-273.15,2)+" °C";
  $("stocks").replaceChildren();
- for(const material of Object.keys(s.stock_kg)){const tr=document.createElement("tr");for(const text of [material,fmt(s.stock_kg[material])+" kg",fmt(s.waste_kg[material]||0)+" kg",fmt(s.transferred_kg[material]||0)+" kg"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}$("stocks").append(tr);}
+ for(const material of Object.keys(s.stock_kg)){const tr=document.createElement("tr");for(const text of [material,fmt(s.stock_kg[material])+" kg",fmt(s.waste_kg[material]||0)+" kg",fmt(s.transferred_kg[material]||0)+" kg"]){const td=document.createElement("td");td.textContent=text;tr.append(td);}const recover=document.createElement("td");
+ if((s.waste_kg[material]||0)>0){const b=document.createElement("button");b.textContent="Recover "+material+" offcuts";b.onclick=()=>run(async()=>{preview=null;await command("recover",{material,mass_kg:state.waste_kg[material],revision:state.revision},true);},"Offcuts returned to stock. Spent work and energy are retained.");recover.append(b);}tr.append(recover);$("stocks").append(tr);}
  const selected=$("finished").value;$("finished").replaceChildren();$("jobs").replaceChildren();
  for(const [id,j] of Object.entries(s.jobs)){
  const card=document.createElement("article");card.className="workpiece";const title=document.createElement("strong");title.textContent=j.material+" · "+j.condition;

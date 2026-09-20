@@ -206,6 +206,19 @@ def mutate(state, body, *, quote=None):
             raise ValueError("Insufficient stock; no material was reserved")
         out["stock_kg"][material] = max(0.,out["stock_kg"][material]-stock)
         out["jobs"][body["request_id"]] = {**deepcopy(quote), "status": "running", "work_j": 0., "supplied_j": 0.}
+    elif op == "recover":
+        material = body.get("material")
+        if not isinstance(material, str) or not engine_materials.known(material):
+            raise ValueError("Unknown recovery material")
+        material = engine_materials.canonical(material)
+        mass = number(body.get("mass_kg"), "mass_kg", .000001, 10000)
+        available = out["waste_kg"].get(material, 0.)
+        if mass > available:
+            raise ValueError("Insufficient offcuts; recovery cannot consume workpieces or installed parts")
+        # Both bins contain the same cold material under this lumped process
+        # law. Moving it between bins is not another manufacture or energy input.
+        out["waste_kg"][material] = available - mass
+        out["stock_kg"][material] = out["stock_kg"].get(material, 0.) + mass
     elif op in ("pause", "resume"):
         job = out["jobs"].get(token(body.get("job_id"),"job_id"))
         if job is None: raise ValueError("Unknown workpiece")

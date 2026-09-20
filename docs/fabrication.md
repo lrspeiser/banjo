@@ -96,6 +96,7 @@ that current `scene` and `session`. Unknown fields refuse.
 | `start` | `fabrication_start` | `candidate`, `stock_kg`, `revision`, `request_id`. Trusted compilation and reservation; request ID is the job ID. |
 | `pause` | `fabrication_pause` | `job_id`, `revision`, `request_id`. Keeps the intermediate workpiece. |
 | `resume` | `fabrication_resume` | `job_id`, `revision`, `request_id`. Continues retained work. |
+| `recover` | `fabrication_recover` | `material`, `mass_kg` (0.000001..10000), `revision`, `request_id`. Moves available cold offcuts into same-material stock, with no work/energy refund. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
@@ -245,3 +246,21 @@ persistence remains required. Precise rigid products still refuse terrain.
 Connected articulation, recovered-stock input and the main-world manufacturing
 UI remain unfinished. These operations are documented by world MCP 1.9.0 and
 platform MCP 1.12.0; no native ABI change was needed.
+
+## Reusing retained offcuts
+
+The operating-state table offers **Recover [material] offcuts** for material
+already retained by a completed process. This moves the measured quantity from
+`waste_kg` to `stock_kg` under the same durable transaction and receipt rules as
+other fabrication mutations. A partial transfer is available through the API.
+The original job, native objects, spent energy, station heat and clock are
+unchanged by the transfer itself. New manufacture still consumes work and supply.
+A stale revision, changed retry, unavailable quantity or failed durable save
+cannot duplicate the material. Receipts survive reopening.
+
+This is bin handling within the declared cold, homogeneous lumped-stock model.
+It does not remove an installed part, undo damage, recover contaminated debris,
+join offcut geometry, convert mined sand/soil, or provide a calibrated recycling
+process. Those require their own physical operations and material states.
+World MCP 1.10.0 and platform MCP 1.13.0 expose `fabrication_recover`; native ABI
+25 and the v1 save layout are unchanged.

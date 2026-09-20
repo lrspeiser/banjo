@@ -15,6 +15,7 @@ COMMAND_FIELDS = {
     "start": {"candidate", "stock_kg", "request_id", "revision"},
     "pause": {"job_id", "request_id", "revision"},
     "resume": {"job_id", "request_id", "revision"},
+    "recover": {"material", "mass_kg", "request_id", "revision"},
 }
 
 def active(app):

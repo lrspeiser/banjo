@@ -1,0 +1,48 @@
+{
+  "schema": "banjo.offcut-recovery-evidence.v1",
+  "native_world_exactly_retained": false,
+  "before": {
+    "stock_kg": {
+      "oak": 40.0,
+      "glass": 50.0,
+      "iron": 50.0
+    },
+    "waste_kg": {
+      "oak": 9.2832
+    },
+    "energy_j": 48999.999999999985,
+    "station_heat_j": 977.6556666807104,
+    "spent_j": 1000.0,
+    "time_s": 743.4333333358967
+  },
+  "after": {
+    "stock_kg": {
+      "oak": 49.2832,
+      "glass": 50.0,
+      "iron": 50.0
+    },
+    "waste_kg": {
+      "oak": 0.0
+    },
+    "energy_j": 48999.999999999985,
+    "station_heat_j": 977.6556666807104,
+    "spent_j": 1000.0,
+    "time_s": 743.4333333358967
+  },
+  "native_qa_tests": 18,
+  "api_documentation_tests": 11,
+  "boundary": "Cold homogeneous offcut bin transfer only; no object salvage, mined-stock transfer or full-engine qualification.",
+  "native_world_preservation_check": "passed with existing four-float32-ULP hinge readout allowance; other compared native state exact",
+  "restart_readout_differences": [
+    {
+      "path": "joints/11/held/at",
+      "before": -0.003920952323824167,
+      "after": -0.00392095185816288
+    },
+    {
+      "path": "joints/26/held/at",
+      "before": -0.5733904242515564,
+      "after": -0.5733903646469116
+    }
+  ]
+}

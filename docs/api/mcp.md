@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.9.0**; platform server: **1.12.0**, requiring native ABI **25**.
+Current world server version: **1.10.0**; platform server: **1.13.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -73,6 +73,7 @@ broke.
 | `fabrication_start` | reserve stock and begin bounded work; revision and request_id protect shared resources. |
 | `fabrication_pause` | retain an interrupted workpiece and its spent work; no refund. |
 | `fabrication_resume` | continue retained work without refilling supply or clearing heat. |
+| `fabrication_recover` | Return measured same-material cold offcuts to stock without restoring spent energy. Requires material, mass_kg, revision and request_id. |
 | `fabrication_wait` | advance native physics and fabrication 1–10 seconds, then save both; inspect state after an uncertain wait. |
 | `fabrication_preview` | native clearance and state-carry preview for a finished funded part. |
 | `fabrication_commit` | atomic material transfer and native publication; retries cannot install twice. |
