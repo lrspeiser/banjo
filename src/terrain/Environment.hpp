@@ -167,6 +167,10 @@ public:
     // edits carries the same. A heap a scene declares beyond it is declared
     // ground and leaves nothing owed; a cut leaves as a body, not carried.
     [[nodiscard]] const Volumes &carried() const { return carried_; }
+    // Transfer already excavated bulk material out of the carried account.
+    // A host must durably accept the returned packet with the saved world in
+    // one transaction. This does not turn sand into glass or consume an object.
+    [[nodiscard]] std::string withdrawCarried(double sand_m3, double soil_m3);
     // What that weighs, and how much of it a person can carry. Carried ground
     // had no weight and no end: six presses of Dig here put 435 kg of sand and
     // soil on the person in the owner's room, who walked off with it. With a
@@ -257,6 +261,7 @@ private:
     std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
     Volumes carried_{};
+    Volumes exported_{};
     double carry_limit_kg_{std::numeric_limits<double>::infinity()};
     std::unique_ptr<water::RiverNetwork> network_;
     std::vector<Link> links_;

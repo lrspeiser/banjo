@@ -126,7 +126,8 @@ class NativeInstallation(unittest.TestCase):
         self.room=world_room.Room("world");self.app.room=self.room
         self.open();saved=self.snap()
         for key,value in (("time_s",None),("frontier",[0,0]),("frontier",[.5]),
-                          ("commits",-1),("colliders",[]),("sand","invalid")):
+                          ("commits",-1),("colliders",[]),("sand","invalid"),
+                          ("exported",{"rock_m3":0,"sand_m3":1,"soil_m3":0})):
             with self.subTest(key=key,value=value):
                 bad=deepcopy(saved)
                 if value is None:del bad["ground"][key]
@@ -137,6 +138,56 @@ class NativeInstallation(unittest.TestCase):
                         resumed.open(self.app,{"spec":self.room.spec,"snapshot":bad})
                 finally:resumed.shutdown()
                 self.assertEqual(saved,self.snap())
+
+    def test_ground_withdrawal_preserves_raw_substances_and_accounts_each_transfer(self):
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.room.spec["terrain"]={"generate":{"kind":"flat","nx":64,"nz":64,
+            "cell_m":.25,"sand_m":.02,"soil_m":.2}}
+        self.open()
+        self.live.session.send(op="dig",**{"from":[0,0],"to":[0,0],"width_m":.5,"depth_m":.1})
+        before=self.snap();have=before["ground"]["carried"]
+        self.assertGreater(have["sand_m3"],0)
+        self.assertGreater(have["soil_m3"],0)
+        moved={k:have[k]/2 for k in ("sand_m3","soil_m3")}
+        answer=self.live.session.send(op="ground_withdraw",**moved)
+        packet=answer["material_packet"]
+        self.assertEqual(packet["schema"],"banjo.bulk-material.v1")
+        self.assertEqual(packet["form"],"granular")
+        self.assertEqual(packet["thermal_state"],"unmodeled")
+        for content in packet["contents"]:
+            substance=content["substance"]
+            self.assertIn(substance,("sand","soil"))
+            self.assertEqual(content["volume_m3"],moved[substance+"_m3"])
+            self.assertEqual(content["mass_kg"],content["volume_m3"]*1600)
+        after=self.snap()
+        for key in before:
+            if key!="ground":self.assertEqual(before[key],after[key],key)
+        for key,value in moved.items():
+            self.assertEqual(after["ground"]["carried"][key]+after["ground"]["exported"][key],have[key])
+        resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+        resumed.open(self.app,{"spec":self.room.spec,"snapshot":after})
+        self.assertEqual(after["ground"],install._snapshot(resumed)["ground"])
+        for invalid in ({"sand_m3":-1,"soil_m3":0},{"sand_m3":0,"soil_m3":0},
+                        {"sand_m3":have["sand_m3"]+1,"soil_m3":0}):
+            with self.assertRaises(live_session.LiveError):resumed.session.send(op="ground_withdraw",**invalid)
+            self.assertEqual(after,install._snapshot(resumed))
+        resumed.session.send(op="ground_withdraw",**moved)
+        empty=install._snapshot(resumed)["ground"]
+        self.assertEqual(empty["carried"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
+        self.assertEqual(empty["exported"],have)
+        with self.assertRaises(live_session.LiveError):resumed.session.send(op="ground_withdraw",**moved)
+
+    def test_ground_v1_save_migrates_with_zero_exports(self):
+        self.room=world_room.Room("world");self.app.room=self.room;self.open()
+        saved=self.snap();saved["ground"]["schema"]="banjo.ground-state.v1"
+        saved["ground"].pop("exported")
+        resumed=live_session.Live();self.addCleanup(resumed.shutdown)
+        resumed.open(self.app,{"spec":self.room.spec,"snapshot":saved})
+        migrated=install._snapshot(resumed)["ground"]
+        self.assertEqual(migrated["schema"],"banjo.ground-state.v2")
+        self.assertEqual(migrated["exported"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
+        for key in saved["ground"]:
+            if key!="schema":self.assertEqual(saved["ground"][key],migrated[key],key)
 
     def test_precise_rigid_terrain_remains_explicitly_refused(self):
         from fabrication_tests import candidate

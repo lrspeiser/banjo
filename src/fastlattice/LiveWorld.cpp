@@ -9704,6 +9704,10 @@ terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, doub
     return requireEnvironment(impl_->environment).deposit(*impl_->world, x, z, radius_m, sand_m3, soil_m3);
 }
 
+std::string LiveWorld::withdrawGround(double sand_m3, double soil_m3) {
+    return requireEnvironment(impl_->environment).withdrawCarried(sand_m3,soil_m3);
+}
+
 std::optional<terrain::CutBlock> LiveWorld::cutBlock(double x, double z, int cells_x, int cells_z,
                                                      double height_m, std::string *why) {
     terrain::Environment &environment = requireEnvironment(impl_->environment);

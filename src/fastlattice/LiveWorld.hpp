@@ -1447,6 +1447,7 @@ public:
     void setCarryLimitKg(double kg);
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
+    [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3);
     // Cut a block out of bare rock, `height_m` tall (rounded to whole cells).
     // The ground loses it now; the host adds it as a body in the scene it
     // opens next -- a body cannot join a running world -- and until then the

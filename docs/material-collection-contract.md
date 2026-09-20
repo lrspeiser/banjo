@@ -67,3 +67,38 @@ All 11 native inventory-room tests pass. These cases already run in CI through
 `tests/inventory_room_tests.py`. Frozen thermal evolution in the bag remains an
 explicit limitation; physical container heat exchange and articulated storage
 are still required.
+
+
+## Excavated bulk transfer primitive (source work, September 20)
+
+The native line protocol adds the internal operation
+`{"op":"ground_withdraw","sand_m3":0.001,"soil_m3":0}`.
+Both volume fields are required, finite and nonnegative; their sum must be
+positive and neither may exceed the corresponding carried inventory. A refused
+withdrawal changes nothing. A successful withdrawal reduces the carried account
+and increases cumulative exported volume; it does not dig again, change bodies,
+advance time or convert either substance into an engine solid preset.
+
+The response includes `material_packet` with schema `banjo.bulk-material.v1`,
+source `excavated_ground`, form `granular`, thermal_state `unmodeled`, and contents
+entries containing substance, volume_m3 and mass_kg. Mass uses the native terrain
+bulk densities. Sand and soil remain distinct substances. No object ID is a
+source for this primitive. It cannot recover a crafted object or its recipe.
+The thermal marker is deliberately not a 293.15 K default: terrain currently
+has no transported temperature/enthalpy state. A later thermal process must
+account for that missing model rather than silently claiming energy closure.
+
+Ground snapshots become `banjo.ground-state.v2`, adding `exported` volumes.
+Version 1 reads with zero exports. Version 2 requires the field and refuses
+nonfinite/negative export totals or exported-plus-carried quantities exceeding
+excavation. Exported rock is unsupported; existing rock cuts remain bodies.
+
+This is an internal source-side transfer primitive, not yet a user-facing
+stock deposit. A receiving store, idempotency receipt, source/destination audit,
+and native-snapshot-plus-store durable transaction are still required before
+HTTP/MCP/browser exposure. Calling it twice means two withdrawals; transport
+retries must be handled by that transaction layer. It must not be used directly
+against the running player world before a destination can be committed. The
+currently deployed local world remains on the previous runtime.
+
+Verification: 27 native installation cases pass; the strengthened mixed-material case then passes independently. It digs through 0.02 m of sand into soil on a 0.25 m grid, withdraws half of each substance, reopens the snapshot, rejects invalid requests without changing state, and withdraws the remaining halves. Native densities are 1600 kg/m3 for both declared bulk materials; substances remain separate. Existing bodies and non-ground snapshot fields stay unchanged. Seven corrupt-ground cases include an export exceeding excavation. The source-registration guard remains 275/275.

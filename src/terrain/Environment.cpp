@@ -628,7 +628,7 @@ std::string Environment::groundStateJson() const {
     Json colliders=Json::array();
     for (int k=0;k<static_cast<int>(stats_.chunks);++k)
         colliders.push_back(packed(collider_heights_.empty()?chunkHeights(k):collider_heights_[static_cast<std::size_t>(k)]));
-    return Json{{"schema","banjo.ground-state.v1"},
+    return Json{{"schema","banjo.ground-state.v2"},{"exported",volumesJson(exported_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
         {"rock",packed(s.rock)},{"soil",packed(s.soil)},{"sand",packed(s.sand)},
         {"loose",packed(s.loose)},{"moisture",packed(s.moisture)},{"floor",s.floor},
@@ -646,13 +646,14 @@ std::string Environment::groundStateJson() const {
 void Environment::restoreGroundState(const std::string &text) {
     if (attached_) throw std::invalid_argument("ground state must be restored before attachment");
     const Json d=Json::parse(text);
-    const std::initializer_list<const char *> keys={"schema","grid","rock","soil","sand","loose","moisture",
+    const std::initializer_list<const char *> keys={"schema","exported","grid","rock","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
         "carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
         "pending_chunks","pending_wake","colliders"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
-    for (const char *key:keys) if (!d.contains(key)) throw std::invalid_argument(std::string("missing ground state ")+key);
+    for (const char *key:keys) if (!d.contains(key) && !(std::string(key)=="exported" && d.value("schema","")=="banjo.ground-state.v1"))
+        throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
             v.get<std::uint64_t>()>maximum) throw std::invalid_argument("invalid ground state integer");
@@ -667,7 +668,8 @@ void Environment::restoreGroundState(const std::string &text) {
                 throw std::invalid_argument("duplicate ground index");
         }
     };
-    if (d.at("schema")!="banjo.ground-state.v1") throw std::invalid_argument("unsupported ground state");
+    if (d.at("schema")!="banjo.ground-state.v1" && d.at("schema")!="banjo.ground-state.v2")
+        throw std::invalid_argument("unsupported ground state");
     auto s=terrain_->state(); const auto &g=d.at("grid");
     if (!g.is_array() || g.size()!=5 || !g[0].is_number_integer() || !g[1].is_number_integer())
         throw std::invalid_argument("invalid ground grid");
@@ -696,6 +698,12 @@ void Environment::restoreGroundState(const std::string &text) {
     s.checked_total=static_cast<std::size_t>(integer(d.at("checked_total"),std::numeric_limits<std::size_t>::max()));
     s.frontier_peak=static_cast<std::size_t>(integer(d.at("frontier_peak"),s.grid.cells()));
     const auto carried=volumes(d.at("carried"));
+    const auto exported=d.contains("exported")?volumes(d.at("exported")):Volumes{};
+    for (double v:{exported.rock_m3,exported.soil_m3,exported.sand_m3})
+        if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid exported ground");
+    if (exported.rock_m3!=0 || exported.soil_m3+carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
+        exported.sand_m3+carried.sand_m3>s.ledger.dug.sand_m3+1e-9)
+        throw std::invalid_argument("exported and carried ground exceed excavation");
     for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
     const double limit=d.at("carry_limit_kg").is_null()?std::numeric_limits<double>::infinity():
@@ -726,7 +734,7 @@ void Environment::restoreGroundState(const std::string &text) {
         colliders.push_back(std::move(heights));
     }
     const auto commits=integer(d.at("commits"),std::numeric_limits<std::uint64_t>::max());
-    terrain_=std::move(candidate);carried_=carried;carry_limit_kg_=limit;
+    terrain_=std::move(candidate);carried_=carried;exported_=exported;carry_limit_kg_=limit;
     time_s_=time;ground_behind_s_=ground;water_behind_s_=water;since_rebuild_s_=since;commits_=commits;
     pending_chunks_=chunks;pending_wake_=wake;collider_heights_=std::move(colliders);
     for (std::size_t c=0;c<s.grid.cells();++c) water_->setTerrain(c,terrain_->height(c));
@@ -1016,6 +1024,24 @@ void Environment::putBack(double sand_m3, double soil_m3) {
     carried_.soil_m3 = std::max(0.0, carried_.soil_m3 - soil_m3);
 }
 
+std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
+    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
+        sand_m3+soil_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3)
+        throw std::invalid_argument("transfer needs positive finite quantities already carried");
+    // Allocate/serialize before mutation. The source has no thermal state, so
+    // do not invent a cold temperature or pretend transported heat is known.
+    Json contents=Json::array();
+    if (sand_m3>0) contents.push_back({{"substance","sand"},{"volume_m3",sand_m3},
+        {"mass_kg",sand_m3*sandMaterial().density_kg_m3}});
+    if (soil_m3>0) contents.push_back({{"substance","soil"},{"volume_m3",soil_m3},
+        {"mass_kg",soil_m3*soilMaterial().density_kg_m3}});
+    const std::string packet=Json{{"schema","banjo.bulk-material.v1"},{"source","excavated_ground"},
+        {"form","granular"},{"thermal_state","unmodeled"},{"contents",contents}}.dump();
+    carried_.sand_m3-=sand_m3;carried_.soil_m3-=soil_m3;
+    exported_.sand_m3+=sand_m3;exported_.soil_m3+=soil_m3;
+    return packet;
+}
+
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,
                             double width_m, double depth_m) {
     EditEffect effect;
@@ -1173,6 +1199,7 @@ std::string Environment::reportJson(bool full) const {
                                 {"cut", volumesJson(gl.cut)}, {"deposited", volumesJson(gl.deposited)},
                                 {"slumped_m3", gl.slumped_m3}, {"loosened_m3", gl.loosened_m3}}},
                     {"carried", carriedJson(carried_)},
+                    {"exported", carriedJson(exported_)},
                     {"residual", volumesJson(residual)},
                     {"unsettled_columns", terrain_->unsettled()},
                     {"bare_rock", bare}}},
