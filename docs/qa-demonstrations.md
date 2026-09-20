@@ -14,7 +14,9 @@ Cases are fixed in advance, not chosen from the current outcome.
 
 The measured hard-strike cases fragment glass, oak and concrete; iron remains
 connected without broken bonds. The gentle glass/oak/iron cases remain intact.
-All seven match the existing baseline. Surviving a strike remains a useful
+All seven match the existing baseline. The complete 96-case matrix also passes
+the unchanged baseline and alignment checks: all eight materials, three
+thicknesses and four speeds. Maximum horizontal offset is zero. Surviving a strike remains a useful
 answer and is described explicitly, rather than looking like an unrun test.
 
 The fixture is measured from native opening-frame geometry: ball center must
@@ -102,6 +104,12 @@ input/path rejection, cancellation and rigid cell transforms. Material tests
 cover off-center starts, overlapping/gapped starts, absent striker and unchanged
 baseline identity. Browser checks cover running, selecting, playback, contact
 jump and explicit unsupported display with no observed console errors.
+
+After integration with the concurrent starting-world update, 79 Python tests
+pass (6 tool QA, 14 material QA, 14 physics trials, 11 API documentation and
+34 playground tests). JavaScript syntax checks pass and all 275 native source
+files are registered. The native evidence is Windows-only; CI runs are not
+claimed by these local checks.
 
 ## Remaining product gates
 

@@ -109,7 +109,9 @@ async function show(id) {
     : "Run this selection to record its physical response.";
   if (!result?.metrics) { if (viewer) viewer.dispose(); viewer = null; $("stage").replaceChildren(); return; }
   const m = result.metrics;
-  $("response").textContent = m.components > 1
+  $("response").textContent = !(m.contact_events > 0)
+    ? "No contact was recorded. This run does not establish whether the specimen survives a strike."
+    : m.components > 1
     ? `The specimen separated into ${m.components} pieces; ${number(m.largest_mass_fraction * 100, 1)}% of its mass remains in the largest piece.`
     : m.broken_bonds > 0
       ? `${m.broken_bonds} bonds broke, but the specimen remains one connected piece.`

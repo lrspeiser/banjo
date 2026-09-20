@@ -771,5 +771,104 @@
         }
       }
     ]
+  },
+  "full_material_matrix": {
+    "status": "passed",
+    "total": 96,
+    "completed": 96,
+    "baseline_checked": true,
+    "fixture_hash": "27488d034e6b930d3e4c6b3967fe53335a1f8be601d829136f38355c0f6e9b3c",
+    "provenance": {
+      "source_commit": "11e7d8419e03d7d477f5b6da2b36fc0f88f3ddf3",
+      "source_dirty": true,
+      "engine_sha256": "7e2cba351d973fefc8e6edd35fce0974d8705f93ee08a05cf1c3dc045d26206f",
+      "platform": "nt",
+      "engine_name": "banjo_fast_lattice_run.exe",
+      "note": "Source checkout and executable hash recorded separately; no inferred build revision."
+    },
+    "report_sha256": "ec9dec44c7dcee3c9111dcdc15bdfbfc0dcd940456a899c670180a7130d3cb65",
+    "maximum_horizontal_offset_m": 0.0,
+    "maximum_gap_error_m": 2.6020852139652106e-17,
+    "per_material": {
+      "aluminum": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 9,
+          "cracked": 3
+        }
+      },
+      "ceramic": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 12
+        }
+      },
+      "concrete": {
+        "passed": 12,
+        "outcomes": {
+          "fragmented": 10,
+          "intact": 2
+        }
+      },
+      "glass": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 6,
+          "fragmented": 4,
+          "cracked": 2
+        }
+      },
+      "ice": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 4,
+          "fragmented": 7,
+          "cracked": 1
+        }
+      },
+      "iron": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 9,
+          "cracked": 3
+        }
+      },
+      "oak": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 6,
+          "fragmented": 4,
+          "cracked": 2
+        }
+      },
+      "rubber": {
+        "passed": 12,
+        "outcomes": {
+          "intact": 12
+        }
+      }
+    },
+    "note": "Existing baseline unchanged. Signed striker-loss warnings are retained in the raw reports; passing regression is not full-pipeline energy closure."
+  },
+  "host_verification": {
+    "source_after_merge": "1fbd585",
+    "environment": "Windows",
+    "tests": {
+      "tool_qa": 6,
+      "material_qa": 14,
+      "physics_trials": 14,
+      "api_docs": 11,
+      "playground": 34
+    },
+    "source_registration": {
+      "registered": 275,
+      "total": 275
+    },
+    "javascript_syntax": [
+      "material-qa.js",
+      "tool-qa.js",
+      "scene.js"
+    ],
+    "browser": "Chrome: native runs, automatic playback, Start/Contact, material first response, explicit unsupported results. No observed console warnings/errors."
   }
 }
