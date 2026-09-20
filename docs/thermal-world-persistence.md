@@ -140,3 +140,37 @@ rejection of changed recession, missing records and unknown body references.
 This does not qualify legacy saves: their missing reference history remains the
 next migration task. The running main world has not been restarted onto this
 new build. No full-engine or constitutive-law qualification is claimed.
+
+
+### Legacy primitive migration and local deployment
+
+The deployed engine now migrates an older burned box or sphere by inferring an
+effective reference whose remaining shape equals the saved collision dimensions.
+It solves the same uniform recession volume relation in reverse:
+`V(saved box + 2d) = V(saved box) / (1 - consumed fraction)`.
+It retains stored fuel, internal energy, current dimensions and revision, records
+the resulting applied depth, and rebuilds thermal strength caches. No time is
+advanced by migration. The record retains `reference_inferred: true`; the initial
+restore report states that original geometry history is unavailable.
+
+This inference is an approximation to missing history, not a recovery of the
+original authored shape or any prior erroneous shrinkage. Original geometry
+cannot be inferred this way for arbitrary fragments/compound shapes; those
+legacy records remain explicitly unqualified. Fully consumed matter retains its
+ordinary removal path.
+
+The native regression removes reference records from a genuinely burned scene,
+checks unchanged bodies and thermal state on migration, rejects an immediate
+second recession, and verifies exact continuation after the next restart.
+The actual saved main world required inference for its two logs. All prior
+physical fields survived migration; none of the 54 main-world, 20 yard or four
+fabrication bodies changed dimensions on the first tick. A subsequent live
+main-world save/reopen preserved the entire new geometry and thermal network.
+The browser retained 4.02 kJ in the hoist battery, 984 J spent, both logs at
+114 x 114 x 474 mm, 1.21 kg collected sand and 541 g soil.
+
+Verification: 11 native carry cases, 21 native installation cases, seven startup
+cases, 13 installation-boundary cases, 11 API documentation cases and source
+registration (275/275). No new API/MCP operation is needed; the existing saved
+world operation transports the versioned state. This is persistence validation,
+not fresh full-engine or material-law qualification.

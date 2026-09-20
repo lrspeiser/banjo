@@ -968,6 +968,28 @@ void burnedGeometrySurvivesRestart() {
         require(found != actual.at("bodies").end() && *found == body,
                 "installation reapplied recession on continuation");
     }
+    auto legacy = continued;
+    legacy.erase("material_geometry");
+    auto migrated = LiveWorld::open(r, legacy.dump());
+    require(migrated->restored().tier == "whole", "legacy burned world did not reopen");
+    const auto migration = nlohmann::json::parse(migrated->snapshot(why));
+    require(migration.at("bodies") == legacy.at("bodies"), "migration repaired or recut old geometry");
+    require(migration.at("heat") == legacy.at("heat"), "migration changed existing energy or fuel");
+    require(migration.at("material_geometry").at("records").at("oak").at("reference_inferred") == true,
+            "legacy inference was not recorded");
+    require(std::any_of(migrated->restored().not_kept.begin(), migrated->restored().not_kept.end(),
+        [](const auto &note) { return note.find("reference inferred") != std::string::npos; }),
+        "legacy missing history was not disclosed");
+    const double migratedWidth = oakWidth(*migrated);
+    stepAnswering(*migrated, 1);
+    require(oakWidth(*migrated) == migratedWidth, "migration burned the old recession twice");
+    auto migratedBack = LiveWorld::open(r, migrated->snapshot(why));
+    stepAnswering(*migrated, 8); stepAnswering(*migratedBack, 8);
+    const auto ma = nlohmann::json::parse(migrated->snapshot(why));
+    const auto mb = nlohmann::json::parse(migratedBack->snapshot(why));
+    require(ma.at("bodies") == mb.at("bodies") && ma.at("heat") == mb.at("heat") &&
+            ma.at("material_geometry") == mb.at("material_geometry"),
+            "migrated state changed on subsequent restart");
     std::cout << "    burned oak retains its reference box across repeated restarts; glass/iron controls agree\n";
 }
 

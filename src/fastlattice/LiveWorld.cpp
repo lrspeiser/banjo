@@ -525,6 +525,7 @@ struct LiveWorld::MatterRecord {
     // Whether the admission bound is the heated one, to put the cold one back
     // when the body recovers.
     bool limits_heated{};
+    bool reference_inferred{};  // Legacy primitive migration; original history was not saved.
 };
 
 // What heat has done to the cells a lattice run is about to be given.
@@ -3260,6 +3261,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             m.bond_tension_mean = numberFrom(entry.at("bond_tension_mean"));
             m.bond_stiffness_mean = numberFrom(entry.at("bond_stiffness_mean"));
             m.seen_consumed_m = numberFrom(entry.at("seen_consumed_m"));
+            m.reference_inferred = entry.value("reference_inferred", false);
             m.round = entry.at("round").get<bool>();
             m.revision = entry.at("revision").get<unsigned>();
             m.cells_burned = entry.at("cells_burned").get<std::size_t>();
@@ -3440,6 +3442,54 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 throw std::invalid_argument("saved gas piston or container is absent");
         network.restore(state);
     }
+    // Older saves retained the collision shape and reacted inventories, but
+    // not their reference frame. For surviving primitives infer a reference
+    // whose remaining volume is exactly the saved shape at today's consumed
+    // fraction. Do not regrow geometry or reset fuel to pretend history exists.
+    std::vector<std::string> geometry_notes;
+    if (saved && !saved->doc.contains("material_geometry") && impl.thermo) {
+        for (std::size_t i = 0; i < impl.described.size(); ++i) {
+            const auto &pose = impl.described[i];
+            if (carrying && !plan.carries(pose.name)) continue;
+            if (carrying) {
+                const auto part = plan.part_of_body.at(pose.name);
+                if (plan.saved[part].heat != impl.part_prints[plan.saved[part].now].heat) continue;
+            }
+            const auto matter = impl.thermo->matter(pose.name);
+            if (!matter || !thermo::lawFor(pose.material) || !(matter->consumed_fraction > 0)) continue;
+            if (pose.shape != "box" && pose.shape != "sphere") {
+                geometry_notes.push_back(pose.name + ": legacy nonprimitive thermal reference history is unavailable");
+                continue;
+            }
+            const double retained = 1.0 - matter->consumed_fraction;
+            const Vec3 now = pose.dimensions_m;
+            if (!(retained > 0 && now.x > 0 && now.y > 0 && now.z > 0)) continue;
+            // V(now + 2d) = V(now)/(1-consumed). Ratios avoid dividing by a
+            // tiny volume. The largest dimension provides a bounded bracket.
+            double low = 0;
+            double high = 0.5 * std::max({now.x, now.y, now.z}) * (std::cbrt(1.0 / retained) - 1.0);
+            for (int k = 0; k < 80; ++k) {
+                const double depth = 0.5 * (low + high);
+                const double ratio = (now.x / (now.x + 2 * depth)) *
+                    (now.y / (now.y + 2 * depth)) * (now.z / (now.z + 2 * depth));
+                if (ratio > retained) low = depth;
+                else high = depth;
+            }
+            auto &record = live->recordOf(i);
+            const double depth = 0.5 * (low + high);
+            record.box_m = now + Vec3{2 * depth, 2 * depth, 2 * depth};
+            record.applied_m = thermo::recessionDepthM(record.box_m, matter->consumed_fraction);
+            record.revision = pose.revision;
+            record.reference_inferred = true;
+            const auto field = live->fieldOf(i);
+            if (field) {
+                record.remaining_volume_m3 = thermo::remainingVolumeM3(*field);
+                record.seen_consumed_m = -1;
+                live->refreshHeatedBonds(i, *field);
+            }
+            geometry_notes.push_back(pose.name + ": legacy thermal reference inferred from saved shape and consumed fraction; original geometry history is unavailable");
+        }
+    }
     if (saved == nullptr) return live;
     if (carrying && !plan.exact) {
         // Nothing can be carried exactly -- the saved world does not say what
@@ -3471,6 +3521,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     said.not_kept = carrying ? notCarried() : notKept();
     if (carrying && carried_thermal_network && !said.not_kept.empty()) said.not_kept.erase(said.not_kept.begin());
     if (!water_note.empty()) said.not_kept.push_back(water_note);
+    said.not_kept.insert(said.not_kept.end(), geometry_notes.begin(), geometry_notes.end());
     // What comes back of what the host declared: all of it, for a world opened
     // whole; carried into a changed scene, what the host still declares the
     // same way (LiveCarry), on things that came back as they were saved.
@@ -12604,6 +12655,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         entry["bond_tension_mean"] = savedNumber(m.bond_tension_mean);
         entry["bond_stiffness_mean"] = savedNumber(m.bond_stiffness_mean);
         entry["seen_consumed_m"] = savedNumber(m.seen_consumed_m);
+        entry["reference_inferred"] = m.reference_inferred;
         entry["round"] = m.round;
         entry["revision"] = m.revision;
         entry["cells_burned"] = m.cells_burned;

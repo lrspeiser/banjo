@@ -38,11 +38,11 @@
     {
       "id": 27,
       "name": "Leave and return",
-      "remaining": "Persist reference geometry/applied recession for thermally damaged bodies; broader fluid/contents persistence remains. Old missing gas/history is unrecoverable.",
+      "remaining": "Broader fluid/contents persistence and legacy nonprimitive thermal reference history remain incomplete; old missing gas/history is unrecoverable.",
       "status": "partial",
       "priority": 5,
       "workstream": "Shared completion gates",
-      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains. New native identical-scene snapshots retain thermal clocks, gas, heaters, piston boundaries and ledger; comparative restart and continuation tests are in room_carry_tests. Deployed on port 8793; actual 54-body main world and 53 thermal lumps migrated unchanged, followed by exact complete thermal save/reopen. Active heater/gas carry and changed-declaration invalidation pass native and atomic installation tests. Active thermal carry and accounted cold additions are deployed on port 8793; charred-geometry continuation is not yet qualified."
+      "evidence": "Startup additions retain running bodies, connections, machine state and water under strict staged comparison, with durable no-refill receipts. Complete heater/gas and broader fluid persistence remains. New native identical-scene snapshots retain thermal clocks, gas, heaters, piston boundaries and ledger; comparative restart and continuation tests are in room_carry_tests. Deployed on port 8793; actual 54-body main world and 53 thermal lumps migrated unchanged, followed by exact complete thermal save/reopen. Active heater/gas carry and changed-declaration invalidation pass native and atomic installation tests. Active thermal carry and accounted cold additions are deployed on port 8793; charred-geometry continuation is not yet qualified. Reference geometry/applied recession and strength caches now persist. Legacy primitive inference preserves current shape/fuel/energy, with explicit missing-history marker. Deployed on port 8793 and verified against the saved main/yard/fabrication worlds and an actual main-world restart."
     },
     {
       "id": 29,

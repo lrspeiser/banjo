@@ -1,0 +1,96 @@
+{
+  "schema": "banjo.geometry-migration-evidence.v1",
+  "source_base": "0b3e06a",
+  "deployed_url": "http://127.0.0.1:8793/world",
+  "scope": "primitive reference geometry persistence and legacy migration; not full engine qualification",
+  "tests": {
+    "native_room_carry": 11,
+    "native_installation": 21,
+    "startup_upgrades": 7,
+    "installation_boundary": 13,
+    "api_docs": 11,
+    "registered_sources": 275
+  },
+  "saved_world_probes": {
+    "world": {
+      "body_count": 54,
+      "existing_state_preserved": true,
+      "dimension_changes_first_tick": [],
+      "inferred_references": [
+        "log 1",
+        "log 2"
+      ],
+      "notes": [
+        "log 1: legacy thermal reference inferred from saved shape and consumed fraction; original geometry history is unavailable",
+        "log 2: legacy thermal reference inferred from saved shape and consumed fraction; original geometry history is unavailable"
+      ]
+    },
+    "yard": {
+      "body_count": 20,
+      "existing_state_preserved": true,
+      "dimension_changes_first_tick": [],
+      "inferred_references": [],
+      "notes": []
+    },
+    "fabrication": {
+      "body_count": 4,
+      "existing_state_preserved": true,
+      "dimension_changes_first_tick": [],
+      "inferred_references": [],
+      "notes": []
+    }
+  },
+  "live_restart": {
+    "live_restart_preserved": true,
+    "body_count": 54,
+    "exact_fields": [
+      "blades",
+      "bodies",
+      "carry_readiness",
+      "circuits",
+      "controls",
+      "dead_bonds_b64",
+      "energy_stores",
+      "fingerprint",
+      "foresee_horizon_s",
+      "format",
+      "hand",
+      "heat",
+      "kerfs",
+      "last_dt_s",
+      "lattice",
+      "material_geometry",
+      "motors",
+      "next",
+      "next_control",
+      "next_energy_store",
+      "next_motor",
+      "not_kept",
+      "parts",
+      "plastic",
+      "spec_digest",
+      "steps",
+      "t_s",
+      "tool_points",
+      "water"
+    ],
+    "joint_comparison": "existing float32 readout tolerance"
+  },
+  "browser": {
+    "live": true,
+    "console_errors": [],
+    "hoist_remaining_kj": 4.02,
+    "hoist_spent_j": 984,
+    "sand_kg": 1.21,
+    "soil_kg": 0.541
+  },
+  "limitations": [
+    "Legacy inference preserves current shape but cannot recover original geometry history.",
+    "Legacy nonprimitive thermal reference remains unqualified.",
+    "No fresh full-engine or impact qualification."
+  ],
+  "source_sha256": {
+    "src\\fastlattice\\LiveWorld.cpp": "a522a3cec359483dfab5b3e85e7bbb78766bb30a067835930fae11d36d002bbc",
+    "tests\\room_carry_tests.cpp": "8ee73bf530a3f465343b7eb21b04faf813e112be03065df50f4d948132ee5913"
+  }
+}
