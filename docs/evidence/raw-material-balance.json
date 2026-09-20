@@ -1,0 +1,35 @@
+{
+  "status": "matched",
+  "substances": {
+    "sand": {
+      "excavated_m3": 0.4727587913778429,
+      "deposited_m3": 0.472,
+      "carried_m3": 0.0,
+      "exported_m3": 0.0007587913778429045,
+      "stored_m3": 0.0007587913778429045,
+      "stored_kg": 1.2140662045486472,
+      "transfer_residual_m3": 0.0,
+      "density_residual_kg": 0.0,
+      "terrain_residual_m3": -1.4210854715202004e-14,
+      "net_external_or_untracked_m3": 0.0,
+      "transfer_closed": true,
+      "collection_status": "balanced"
+    },
+    "soil": {
+      "excavated_m3": 2.901338381794593,
+      "deposited_m3": 2.901,
+      "carried_m3": 0.0,
+      "exported_m3": 0.0003383817945930012,
+      "stored_m3": 0.0003383817945930012,
+      "stored_kg": 0.541410871348802,
+      "transfer_residual_m3": 0.0,
+      "density_residual_kg": 0.0,
+      "terrain_residual_m3": 3.410605131648481e-13,
+      "net_external_or_untracked_m3": 0.0,
+      "transfer_closed": true,
+      "collection_status": "balanced"
+    }
+  },
+  "boundary": "Native excavated sand/soil, carried material, deposits and receiving raw lots; rock bodies, energy and thermal transport excluded",
+  "qualification": "Matching exports and receipts is not whole-world conservation. Authored deposits lack independent import history; net external or untracked volume remains visible."
+}

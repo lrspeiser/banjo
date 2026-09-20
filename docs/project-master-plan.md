@@ -317,3 +317,5 @@ The product requirements and architecture come from the project owner's Banjo co
 ### Raw material receiving checkpoint — September 20
 
 Carried sand/soil now transfer atomically into persistent, substance-preserving raw lots through browser, HTTP and MCP. Crafted pickup remains a separate identity-preserving operation. See [measured deployment evidence](evidence/raw-material-deployment.json) and [collection contract](material-collection-contract.md#durable-raw-receiving-deployed-september-20). Raw processing, thermal transport and physical cargo containers remain open; the 30-capability count is unchanged.
+
+The raw-receiving checkpoint now exposes independent transfer and excavation diagnostics in browser/HTTP/MCP. See [current measured report](evidence/raw-material-balance.json); external authoring inputs remain explicitly unqualified.

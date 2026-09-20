@@ -34,6 +34,33 @@ def start(state,material="oak",stock=10):
     return model.mutate(state,body,quote=q)[0],body
 
 class ProcessModel(unittest.TestCase):
+    def test_ground_audit_distinguishes_transfer_and_external_material(self):
+        zero={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
+        ground={"ledger":{"dug":{**zero,"sand_m3":.03},
+            "deposited":{**zero,"sand_m3":.01}},
+            "carried":{**zero,"sand_m3":.01},"exported":{**zero,"sand_m3":.01},"residual":zero}
+        state={"raw_lots":{"lot":{"schema":"banjo.bulk-material.v1","source":"excavated_ground",
+            "form":"granular","thermal_state":"unmodeled",
+            "contents":[{"substance":"sand","volume_m3":.01,"mass_kg":16.}]}}}
+        before=deepcopy([state,ground])
+        a=model.ground_audit(state,ground)
+        self.assertEqual(a["status"],"matched")
+        self.assertEqual(a["substances"]["sand"]["collection_status"],"balanced")
+        self.assertEqual([state,ground],before)
+        # An authored heap cannot be presented as a proven closed budget.
+        ground["ledger"]["deposited"]["sand_m3"]+=.005
+        a=model.ground_audit(state,ground)
+        self.assertEqual(a["status"],"matched")
+        self.assertEqual(a["substances"]["sand"]["collection_status"],"external_input_or_error")
+        self.assertAlmostEqual(a["substances"]["sand"]["net_external_or_untracked_m3"],.005)
+        ground["ledger"]["deposited"]["sand_m3"]=0
+        self.assertEqual(model.ground_audit(state,ground)["substances"]["sand"]["collection_status"],"unaccounted_destination")
+        missing=deepcopy(state);missing["raw_lots"]={}
+        self.assertEqual(model.ground_audit(missing,ground)["status"],"mismatch")
+        wrong=deepcopy(state);wrong["raw_lots"]["lot"]["contents"][0]["mass_kg"]=17
+        self.assertEqual(model.ground_audit(wrong,ground)["status"],"mismatch")
+        self.assertEqual(model.ground_audit(state,{})["status"],"unavailable")
+
     def test_recovery_conserves_material_and_does_not_refund_work(self):
         for material in ("glass", "oak", "iron"):
             with self.subTest(material=material):
@@ -344,6 +371,9 @@ class NativeHTTP(WorkbenchTestCase):
         self.post(app,"/api/live/act",{"session":ctx["session"],"op":"dig","from":[13,-7],"to":[13,-7],"width_m":.5,"depth_m":.05})
         source=self.post(app,"/api/world/fabrication/state",ctx)
         carried=source["carried_ground"]
+        self.assertEqual(source["ground_audit"]["status"],"matched")
+        for row in source["ground_audit"]["substances"].values():
+            self.assertEqual(row["collection_status"],"balanced")
         req={**ctx,"sand_m3":carried["sand_m3"],"soil_m3":carried["soil_m3"],
             "revision":source["state"]["revision"],"request_id":"raw-store-0001"}
         import fabrication_mcp_tools as tools
@@ -354,6 +384,16 @@ class NativeHTTP(WorkbenchTestCase):
             first=tools.call("fabrication_store_ground",req)
             self.assertNotEqual(first["session"],ctx["session"])
             self.assertTrue(tools.call("fabrication_store_ground",req)["replayed"])
+        with mock.patch.dict(os.environ,{"BANJO_PLAYGROUND_URL":f"http://127.0.0.1:{app.port}"}):
+            measured=tools.call("fabrication_state",{**ctx,"session":first["session"]})
+        audit=measured["ground_audit"]
+        self.assertEqual(audit["status"],"matched")
+        for substance in ("sand","soil"):
+            row=audit["substances"][substance]
+            self.assertEqual(row["carried_m3"],0)
+            self.assertAlmostEqual(row["stored_kg"],carried[substance+"_kg"])
+            self.assertAlmostEqual(row["transfer_residual_m3"],0)
+            self.assertEqual(row["collection_status"],"balanced")
         saved=app.store.load("world")
         self.assertEqual(len(saved.fabrication_record["raw_lots"]),1)
         self.assertEqual(saved.world_record,workshop_install._snapshot(app.live))

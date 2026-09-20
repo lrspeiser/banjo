@@ -295,3 +295,9 @@ The finished-stock and energy ledger remains unchanged by raw storage. Stored
 lots survive fabrication operations and reopening without becoming initial
 stock or being supplied twice. The material-processing and container goals
 remain open.
+
+### Excavated material diagnostics
+
+`POST /api/world/fabrication/state` and MCP `fabrication_state` additionally return `ground_audit`, computed from the current native environment report and receiving lots without advancing time or changing receipts. `status` is `matched`, `mismatch`, or `unavailable` (no terrain). Each sand/soil row reports excavated, deposited, carried, exported and stored volumes in m3, stored kg, transfer residual m3, density residual kg and native terrain residual m3.
+
+`net_external_or_untracked_m3 = deposited + carried + exported - excavated`. Values within `1e-10 + 1e-12 * max(excavated, deposited, carried, exported)` m3 are labeled balanced; positive values are `external_input_or_error`, negative values `unaccounted_destination`. This is a diagnostic, not a fabricated import history: authored terrain heaps can supply outside material. Transfer closure compares native exports with stored volumes and mass against the declared native bulk density (1600 kg/m3), with mass tolerance `1e-10 + 1e-12 * stored_kg`. Matching transfers alone do not certify the terrain, rock-body, energy or thermal boundaries. The browser exposes the report under **Excavated material balance**.

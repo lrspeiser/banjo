@@ -190,6 +190,58 @@ def validate_ground_stock(state,world):
             raise ValueError("Raw stock does not match native ground exports")
     return received
 
+def ground_audit(state, ground):
+    """Read-only cross-boundary diagnostics from the current native report.
+
+    Authored terrain deposits may include outside material. Without a separate
+    import history their net contribution cannot be certified as conservation.
+    """
+    if not ground:
+        return {"status": "unavailable", "substances": {},
+                "boundary": "No live terrain report is available"}
+    received = {"sand": [0., 0.], "soil": [0., 0.]}
+    for packet in (state or {}).get("raw_lots", {}).values():
+        bulk_packet(packet)
+        if packet["source"] != "excavated_ground": continue
+        for item in packet["contents"]:
+            if item["substance"] not in received: raise ValueError("Unsupported excavated substance")
+            amounts = received[item["substance"]]
+            amounts[0] += item["volume_m3"]; amounts[1] += item["mass_kg"]
+    rows = {}
+    for substance, (volume, mass) in received.items():
+        key = substance + "_m3"
+        def quantity(account):
+            return number(account[key], key, 0, 1e12)
+        ledger = ground["ledger"]
+        dug = quantity(ledger["dug"])
+        deposited = quantity(ledger["deposited"])
+        carried = quantity(ground["carried"])
+        exported = quantity(ground.get("exported", {"sand_m3": 0., "soil_m3": 0.}))
+        transfer_residual = exported - volume
+        density_residual = mass - volume * 1600.
+        terrain_residual = ground["residual"][key]
+        number(abs(terrain_residual), "terrain residual", 0, 1e12)
+        # Positive means net outside input is needed to explain these accounts;
+        # negative means excavated material has no recorded destination.
+        external = deposited + carried + exported - dug
+        tolerance = 1e-10 + 1e-12 * max(dug, deposited, carried, exported)
+        closed = abs(transfer_residual) <= tolerance and abs(density_residual) <= 1e-10 + 1e-12*mass
+        rows[substance] = {"excavated_m3": dug, "deposited_m3": deposited,
+            "carried_m3": carried, "exported_m3": exported,
+            "stored_m3": volume, "stored_kg": mass,
+            "transfer_residual_m3": transfer_residual,
+            "density_residual_kg": density_residual,
+            "terrain_residual_m3": terrain_residual,
+            "net_external_or_untracked_m3": external,
+            "transfer_closed": closed,
+            "collection_status": "balanced" if abs(external) <= tolerance else
+                "external_input_or_error" if external > 0 else "unaccounted_destination"}
+    return {"status": "matched" if all(r["transfer_closed"] for r in rows.values()) else "mismatch",
+        "substances": rows,
+        "boundary": "Native excavated sand/soil, carried material, deposits and receiving raw lots; rock bodies, energy and thermal transport excluded",
+        "qualification": "Matching exports and receipts is not whole-world conservation. Authored deposits lack independent import history; net external or untracked volume remains visible."}
+
+
 def advance(state, time_s):
     """Exact constant-power thermal segments, driven only by accepted native time.
 

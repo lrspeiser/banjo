@@ -24,6 +24,7 @@ async function command(op,body={},retry=false){
  if(retry){payload=pending[key]||{...body,request_id:crypto.randomUUID()};pending[key]=payload;sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
  try{const answer=await api("/api/world/fabrication/"+op,{...context(),...payload});
  if(retry){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}
+ if(answer.ground_audit){const a=answer.ground_audit;$("ground-audit").textContent=JSON.stringify(a,null,2);$("ground-balance").textContent=a.status==="unavailable"?"No terrain balance available.":a.status!=="matched"?"Material transfer mismatch: inspect the balance.":Object.values(a.substances).some(r=>r.collection_status!=="balanced")?"Stored transfers match; excavation has outside or untracked material. Inspect the balance.":"Sand and soil transfers match their native source accounts.";}
  if(answer.carried_ground){carriedGround=answer.carried_ground;$("carried-ground").textContent="Carrying "+fmt(carriedGround.sand_kg||0)+" kg sand and "+fmt(carriedGround.soil_kg||0)+" kg soil.";}
  if(answer.cell_m)cellSize=answer.cell_m;if(answer.session)session=answer.session;if(answer.state)render(answer.state);if(answer.native)draw(answer.native);return answer;
  }catch(e){if(retry&&e.definitive){delete pending[key];sessionStorage.setItem(pendingKey,JSON.stringify(pending));}throw e;}

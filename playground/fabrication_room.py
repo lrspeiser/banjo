@@ -108,10 +108,11 @@ def request(app, operation, body):
             model.validate_state(state)
             model.advance(state, old.state["t"])
         if operation == "state":
-            carried=(old.send(op="environment").get("environment",{}).get("ground",{}).get("carried",{})
-                     if old.spec.get("terrain") else {})
+            ground=(old.send(op="environment").get("environment",{}).get("ground",{})
+                    if old.spec.get("terrain") else {})
+            carried=ground.get("carried",{})
             return {"scene": room.scene, "session": old.id, "cell_m": old.spec["cell_m"], "configured": state is not None,
-                    "carried_ground":carried,
+                    "carried_ground":carried, "ground_audit":model.ground_audit(state,ground),
                     "state": model.report(state) if state is not None else None}
         if operation == "configure":
             model.token(body["request_id"])
