@@ -20,6 +20,60 @@ ENGINE=Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),'BANJO_LIVE_ENGINE is required')
 class NativeInstallation(unittest.TestCase):
+    def test_articulated_staging_preserves_old_motion_heat_and_constraints(self):
+        sys.path.insert(0,str(ROOT/'tests'))
+        from workshop_install_tests import articulated_candidate
+        evidence=[]
+        for material in ('glass','oak','iron'):
+            design,overrides=workshop_components.design_from_spec(articulated_candidate(material))
+            old=workshop_articulation.compile_design(design,overrides,root='old')
+            for body in old['bodies']:
+                body['center_mm'][0]-=3000
+                body['anchored']=body['join']==old['component_to_body']['support']
+                body['temperature_k']=350.
+            for joint in old['joints']:joint['at_mm'][0]-=3000
+            self.open({'algorithm':'lattice','cell_m':.04,'duration_s':1.,'bodies':old['bodies'],'joints':old['joints']})
+            self.live.session.send(op='step',dt=1/240,n=24)
+            before=self.snap()
+            added=workshop_articulation.compile_design(design,overrides,root='new')
+            for body in added['bodies']:
+                body['anchored']=body['join']==added['component_to_body']['support']
+            spec=deepcopy(self.room.spec)
+            spec['bodies']+=added['bodies'];spec['joints']+=added['joints']
+            roots={g['root_body'] for g in added['groups']}
+            staged,saved=install._stage(self.app,self.live,self.live.session,spec,before,added,roots,[0,0,0])
+            try:
+                self.assertEqual(self.snap(),before)
+                install._preserved(before,saved,roots,added_joints=added['joints'])
+                self.assertEqual(len(saved['bodies']),4)
+                self.assertEqual(len(saved['joints']),2)
+                for field,value in [('axis_local_a',[0,1,0]),('a','old-g0'),('lower',0),('attached',False),('friction',1)]:
+                    corrupt=deepcopy(saved);corrupt['joints'][-1][field]=value
+                    with self.assertRaises(ValueError):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                corrupt=deepcopy(saved);corrupt['joints'][-1]['point_local_a'][0]+=.01
+                with self.assertRaisesRegex(ValueError,'attachment point'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                corrupt=deepcopy(saved);corrupt['joints'][0]['friction']=1
+                with self.assertRaisesRegex(ValueError,'existing joints'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                corrupt=deepcopy(saved);corrupt['next']['joint']+=1
+                with self.assertRaisesRegex(ValueError,'identifiers'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                corrupt=deepcopy(saved);corrupt['joints'][-1]['held']['upper']=0.
+                with self.assertRaisesRegex(ValueError,'solver limits'):install._preserved(before,corrupt,roots,added_joints=added['joints'])
+                staged.open(self.app,{'spec':spec,'snapshot':saved})
+                reopened=install._snapshot(staged)
+                self.assertEqual(staged.session.state['restored']['tier'],'whole')
+                install._preserved(saved,reopened,set())
+                staged.session.send(op='step',dt=1/240,n=24)
+                final=staged.session.send(op='poses')
+                arm=next(b for b in final['bodies'] if b['name']==added['component_to_body']['arm'])
+                self.assertLess(arm['position_m'][1],.999)
+                self.assertEqual(len(install._snapshot(staged)['joints']),2)
+                evidence.append({'material':material,'old_bodies_preserved':2,'added_bodies':2,
+                                 'old_joints_preserved':1,'added_joints':1,'whole_restart':True,
+                                 'new_arm_y_m_after_0_1_s':arm['position_m'][1]})
+            finally:staged.shutdown()
+        self.native_evidence=evidence
+        print('articulated staging:',json.dumps(evidence))
+
     def test_compiled_bearing_moves_under_gravity_without_fusing_parts(self):
         import sys
         sys.path.insert(0,str(ROOT/'tests'))

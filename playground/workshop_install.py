@@ -29,6 +29,7 @@ import world_access
 import world_room
 import precise_rigid
 import workshop_sparse_trial as sparse
+import workshop_articulation
 from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_visual,
                  workshop_matter_metrics, workshop_rigid)
 
@@ -348,7 +349,56 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
             raise ValueError("Staging changed existing thermal ledger history")
 
 
-def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *, thermal_transfer=None) -> None:
+def _appended_joints(before, after, added, definitions):
+    """Verify old constraint history and the declared new-body hinge frames."""
+    old, current = before.get("joints", []), after.get("joints", [])
+    if len(current) != len(old)+len(definitions) or not _joint_readouts_match(old, current[:len(old)]):
+        raise ValueError("Staging changed existing joints or added unexpected constraints")
+    bodies = {b["name"]:b for b in after["bodies"]}
+
+    def rotate(q, v):
+        w,x,y,z=q
+        t=[2*(y*v[2]-z*v[1]),2*(z*v[0]-x*v[2]),2*(x*v[1]-y*v[0])]
+        return [v[0]+w*t[0]+y*t[2]-z*t[1],v[1]+w*t[1]+z*t[0]-x*t[2],v[2]+w*t[2]+x*t[1]-y*t[0]]
+
+    def near(a,b):
+        return len(a)==len(b) and all(type(x) in (int,float) and math.isfinite(x) and abs(x-y)<=1e-7 for x,y in zip(a,b))
+
+    for i,(joint,definition) in enumerate(zip(current[len(old):],definitions)):
+        a,b=definition["a"],definition["b"]
+        if definition.get("kind")!="hinge" or a not in added or b not in added or a==b:
+            raise ValueError("New assembly constraints must be hinges between its new bodies")
+        if (joint.get("id")!=before["next"]["joint"]+i or joint.get("kind")!="hinge"
+                or joint.get("a")!=a or joint.get("b")!=b or joint.get("attached") is not True):
+            raise ValueError("Staging changed an added hinge's identity or endpoints")
+        point=[v/1000 for v in definition["at_mm"]]
+        for end,name in (("a",a),("b",b)):
+            pose=bodies[name]["pose"]
+            offset=rotate(pose["q_wxyz"],joint["point_local_"+end])
+            if not near([pose["com_m"][k]+offset[k] for k in range(3)],point):
+                raise ValueError("Staging changed an added hinge's attachment point")
+        axis=definition["axis"];length=math.sqrt(sum(v*v for v in axis))
+        if not near(rotate(bodies[a]["pose"]["q_wxyz"],joint["axis_local_a"]),[v/length for v in axis]):
+            raise ValueError("Staging changed an added hinge's axis")
+        expected={"lower":math.radians(definition.get("lower_deg",-180)),
+                  "upper":math.radians(definition.get("upper_deg",180)),
+                  "friction":definition.get("friction_n_m",0)}
+        if any(not math.isclose(joint.get(k,math.nan),v,rel_tol=0,abs_tol=1e-12) for k,v in expected.items()):
+            raise ValueError("Staging changed an added hinge's limits or friction")
+        held=joint.get("held") or {}
+        if any(not math.isclose(held.get(k,math.nan),v,rel_tol=0,abs_tol=1e-6)
+               for k,v in (("lower",expected["lower"]),("upper",expected["upper"]),("at",0.))):
+            raise ValueError("Staging changed an added hinge's native solver limits or initial angle")
+        if joint.get("member_end")!=-1 or joint.get("declared_kept") or joint.get("parted_because"):
+            raise ValueError("Staging added undeclared hinge material or failure state")
+        for key in ("breaks_at_n","comes_off_n","holds_shear_n","holds_tension_n","stiffness_n_m",
+                    "damping_n_s_m","rated_breaks_at_n","rated_shear_n","rated_tension_n",
+                    "declared_breaks_at_n","declared_shear_n","declared_tension_n","declared_stiffness_n_m"):
+            if joint.get(key)!=0:
+                raise ValueError("Staging added an undeclared hinge capacity")
+
+
+def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *, thermal_transfer=None, added_joints=()) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
     Exact body and part equality also establishes unchanged node/bond index
@@ -371,8 +421,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
     exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints", "material_geometry"}
-    if not _joint_readouts_match(before.get("joints", []), after.get("joints", [])):
-        raise ValueError("Staging changed existing joints; installation refused")
+    _appended_joints(before, after, added, added_joints)
     for key in set(before) | set(after):
         if key not in exceptions and before.get(key) != after.get(key):
             raise ValueError(f"Staging changed existing {key}; installation refused")
@@ -388,7 +437,8 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         if any(ar.get(name) != state for name, state in br.items()) or set(ar) - set(br) - added:
             raise ValueError("Staging changed existing material geometry")
     bnext, anext = before.get("next", {}), after.get("next", {})
-    if set(bnext) != set(anext) or any(anext[k] != v+(len(added) if k=="body" else 0) for k,v in bnext.items()):
+    increments={"body":len(added),"joint":len(added_joints)}
+    if set(bnext) != set(anext) or any(anext[k] != v+increments.get(k,0) for k,v in bnext.items()):
         raise ValueError("Staging changed unrelated native identifiers")
     bh, ah = before.get("heat"), after.get("heat")
     if bh is not None:
@@ -412,10 +462,16 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
         saved = _snapshot(staging)
         if _terrain_state(staging.session) != terrain_before:
             raise ValueError("Staging changed terrain or carried excavated material")
-        _preserved(snapshot, saved, root)
-        if matter.get("schema") == workshop_rigid.SCHEMA:
+        if matter.get("schema") == workshop_articulation.SCHEMA:
+            roots={group["root_body"] for group in matter["groups"]}
+            _preserved(snapshot, saved, roots, added_joints=matter["joints"])
+            for group in matter["groups"]:
+                sparse.verify_engine_matter(saved, group["matter"], group["root_body"], placement_grid=shift)
+        elif matter.get("schema") == workshop_rigid.SCHEMA:
+            _preserved(snapshot, saved, root)
             precise_rigid.verify(saved, matter, root)
         else:
+            _preserved(snapshot, saved, root)
             sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
         return staging, saved
     except BaseException:

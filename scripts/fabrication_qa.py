@@ -42,6 +42,7 @@ def main():
     suite=unittest.defaultTestLoader.loadTestsFromModule(fabrication_tests)
     suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(ArticulationCompiler))
     suite.addTest(NativeInstallation("test_compiled_bearing_moves_under_gravity_without_fusing_parts"))
+    suite.addTest(NativeInstallation("test_articulated_staging_preserves_old_motion_heat_and_constraints"))
     result=unittest.TextTestRunner(verbosity=2,resultclass=Result).run(suite)
     head=subprocess.run(["git","rev-parse","HEAD"],cwd=ROOT,capture_output=True,text=True).stdout.strip()
     dirty=subprocess.run(["git","status","--porcelain"],cwd=ROOT,capture_output=True,text=True).stdout.strip()
