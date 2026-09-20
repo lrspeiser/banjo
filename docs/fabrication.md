@@ -36,8 +36,7 @@ Required useful work is `stock_kg * work_j_kg`. Supplied energy is converted to
 useful process work with `efficiency`; **all** supplied energy eventually heats
 the station or crosses its ambient boundary. Useful work is a progress measure,
 not another energy store. Output remains at the cold-stock reference temperature
-293.15 K. No warm feedstock, chip thermal distribution or native room heat coupling
-is claimed by this model.
+293.15 K. Native output thermal state is admitted atomically at installation; station heat remains isolated. No warm feedstock or chip thermal distribution is claimed by this model.
 
 For station heat H above ambient, heat capacity C and cooling conductance G:
 `dH/dt = P - G*H/C`. Each constant-power segment is integrated analytically.
@@ -105,7 +104,7 @@ that current `scene` and `session`. Unknown fields refuse.
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.13.0, platform MCP 1.16.0; native ABI remains 25.
+inventory. World MCP is 1.13.1, platform MCP 1.16.1; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -264,7 +263,7 @@ This is bin handling within the declared cold, homogeneous lumped-stock model.
 It does not remove an installed part, undo damage, recover contaminated debris,
 join offcut geometry, convert mined sand/soil, or provide a calibrated recycling
 process. Those require their own physical operations and material states.
-World MCP 1.10.0 and platform MCP 1.13.0 expose `fabrication_recover`; native ABI
+World MCP 1.10.0 and platform MCP 1.13.1 expose `fabrication_recover`; native ABI
 25 and the v1 save layout are unchanged.
 
 
@@ -318,3 +317,11 @@ In native terrain worlds, the configured carrying limit now covers excavated san
 `carried_ground` and native environment/terrain reports add `objects_kg`, `total_kg`, `available_kg` and `over_limit_kg`. Existing `sand_kg`, `soil_kg` and `limit_kg` remain. The browser's load meter and movement modifier include objects once. The native mass can differ slightly from the geometry report because the rigid solver stores mass in float32; the comparison test permits 1e-6 kg between those representations, while quantity-transfer checks remain unchanged.
 
 This is an admission budget, not a new player-body or cargo-support solver. Existing overweight saves are retained and reported rather than deleting objects. Terrain-free laboratory scenes retain their prior unbounded storage policy. Fatigue, anatomical carrying, articulated cargo and bag thermal evolution remain incomplete.
+
+### Cold-output thermal transfer (September 20)
+
+Funded installation now initializes the new body's native material parcel at the process's existing cold-stock reference, 293.15 K. The staging world records the parcel's material mass and internal energy; `thermal_transfer` in the durable installation receipt records these values and the replaced temporary parcel (if one was admitted during geometry staging). That temporary parcel leaves the native thermal ledger before the process output enters. Existing body parcels and prior ledger history remain protected by the installation verifier. Admission uses a relative mass tolerance of 1e-6 (plus 1e-9 kg absolute) for native rigid-body precision and an absolute temperature tolerance of 1e-8 K. Failure to declare, verify or save discards the staged world and leaves the finished workpiece available.
+
+The energy value includes the thermochemical model's reference energy of the already-funded material. It is not free electrical work and does not refill a supply. The fabrication work ledger remains the existing stock/workpieces/station/supply boundary; this receipt is not proof of whole-world energy closure. Glass, oak and iron tests cover immediate storage, exact thermal restart, a 330 K room, and a separately preactivated output parcel. Browser QA runs those tests. Existing already-installed untracked objects are not retroactively cooled or assigned invented history.
+
+The main-world demonstration consumed 0.1792 kg oak and 17.92 J of finite supply, installed the output and left it in bag slot 2. Its thermal reading survives reopening. BAG shows approximate whole-degree Celsius, avoiding apparent surface/core differences caused solely by converting the wire's rounded Kelvin values. [Measured deployment](evidence/fabricated-heat-deployment.json), [before](evidence/fabricated-heat-before.png), [after](evidence/fabricated-heat-after.png).

@@ -245,7 +245,7 @@ def _joint_readouts_match(before: list, after: list) -> bool:
 
 
 
-def _thermal_preserved(before, after, body_names):
+def _thermal_preserved(before, after, body_names, thermal_transfer=None):
     """Keep stored state exact; account separately for new network membership.
 
     Paths and exposed area are geometry-derived, not stored energy. New cold
@@ -313,7 +313,7 @@ def _thermal_preserved(before, after, body_names):
     energy, mass = [], []
     for name in set(new)-set(old):
         lump = new[name]
-        if lump.get("declared"):
+        if lump.get("declared") and name != (thermal_transfer or {}).get("body"):
             raise ValueError("New declared thermal inventory needs an explicit transfer")
         for zone in ("surface", "core"):
             parcel = lump[zone]
@@ -326,6 +326,15 @@ def _thermal_preserved(before, after, body_names):
             mass.extend(kg)
             energy.append(value)
     deltas = {"joined_j": math.fsum(energy), "joined_kg": math.fsum(mass)}
+    if thermal_transfer:
+        if thermal_transfer["body"] in old or thermal_transfer["body"] not in new:
+            raise ValueError("Thermal output must belong to the newly installed body")
+        for suffix in ("j", "kg"):
+            replaced = thermal_transfer["replaced_" + suffix]
+            if not math.isfinite(replaced) or (suffix == "kg" and replaced < 0):
+                raise ValueError("Invalid replaced thermal inventory")
+            deltas["joined_" + suffix] += replaced
+            deltas["left_" + suffix] = replaced
     for key in set(bn["ledger"]) | set(an["ledger"]):
         value = bn["ledger"].get(key)
         if bn["opened"] and key in deltas:
@@ -339,7 +348,7 @@ def _thermal_preserved(before, after, body_names):
             raise ValueError("Staging changed existing thermal ledger history")
 
 
-def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str]) -> None:
+def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *, thermal_transfer=None) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
     Exact body and part equality also establishes unchanged node/bond index
@@ -348,6 +357,8 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     stored thermal histories remain exact and new network membership is accounted.
     """
     added = {root} if isinstance(root, str) else root
+    if thermal_transfer and thermal_transfer["body"] not in added:
+        raise ValueError("Thermal transfer may only initialize the new output")
     current = {b["name"]: b for b in after["bodies"]}
     prior = {b["name"]: b for b in before["bodies"]}
     if len(current) != len(after["bodies"]) or set(current) != set(prior) | added:
@@ -381,7 +392,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         raise ValueError("Staging changed unrelated native identifiers")
     bh, ah = before.get("heat"), after.get("heat")
     if bh is not None:
-        _thermal_preserved(bh, ah, set(current))
+        _thermal_preserved(bh, ah, set(current), thermal_transfer)
 
 
 def _stage(app, live, old, spec, snapshot, matter, root, shift):
@@ -574,6 +585,37 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
                     "spec": spec, "matter": artifact, "root": root, "shift": None}
     return answer
 
+def _admit_fabricated_heat(staged, before, root, expected_mass, temperature):
+    """Transfer the process's cold output into its native material parcel.
+
+    Called only on the private staged world, after exact mechanical admission.
+    Any implicit ambient parcel belongs to this new body alone; replacing it is
+    an explicit leave/join crossing, never a reset of previously installed heat.
+    """
+    prior = next((l for l in (before.get("heat") or {}).get("lumps", []) if l["body"] == root), None)
+    def totals(lump):
+        if lump is None: return 0., 0.
+        parcels = [lump[zone] for zone in ("surface", "core")]
+        energy = math.fsum(p["internal_energy_j"] for p in parcels)
+        mass = math.fsum(v[0] for p in parcels for v in struct.iter_unpack("<d", base64.b64decode(p["kg_b64"], validate=True)))
+        return energy, mass
+    replaced_j, replaced_kg = totals(prior)
+    staged.session.send(op="declare", json={"contents":[{"body":root,"temperature_k":temperature}]})
+    saved = _snapshot(staged)
+    lump = next(l for l in saved["heat"]["lumps"] if l["body"] == root)
+    energy, mass = totals(lump)
+    report = staged.session.send(op="thermo")["thermo"]
+    observed = next(b for b in report["bodies"] if b["name"] == root)
+    if not math.isclose(mass, expected_mass, rel_tol=1e-6, abs_tol=1e-9):
+        raise ValueError("Native output thermal mass differs from funded material")
+    if any(abs(observed[k]-temperature) > 1e-8 for k in ("temperature_k","core_temperature_k")):
+        raise ValueError("Native output temperature differs from the process output")
+    transfer = {"body":root,"temperature_k":temperature,"mass_kg":mass,"internal_energy_j":energy,
+                "replaced_j":replaced_j,"replaced_kg":replaced_kg,
+                "source":"fabrication-cold-output"}
+    return transfer, saved
+
+
 def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, Any]:
     body = _object(body, {"session", "scene", "preview_id", "request_id"})
     token = _token(body.get("preview_id"), "preview_id")
@@ -611,8 +653,14 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             fabrication_state = fabrication.transfer(fabrication_state, funding_job, plan["answer"], request)
         staged, saved = _stage(app, live, old, plan["spec"], before, plan["matter"], plan["root"], plan["shift"])
         try:
+            thermal_transfer = None
+            if funding_job is not None:
+                thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)
+                _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer)
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
                        "session": staged.session.id, "source_session": old.id, "replayed": False}
+            if thermal_transfer is not None:
+                receipt["thermal_transfer"] = thermal_transfer
             receipt.pop("expires_in_s", None)
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,

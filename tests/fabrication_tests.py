@@ -366,7 +366,12 @@ class NativeFabrication(unittest.TestCase):
             result=room_api.commit(self.app,req)
             self.assertTrue(result["resources_charged"])
             self.assertTrue(room_api.commit(self.app,req)["replayed"])
-            workshop_install._preserved(original,workshop_install._snapshot(self.live),result["root_body"])
+            workshop_install._preserved(original,workshop_install._snapshot(self.live),result["root_body"],thermal_transfer=result["thermal_transfer"])
+            self.assertEqual(result["thermal_transfer"]["temperature_k"],293.15)
+            report=self.live.session.send(op="thermo")["thermo"]
+            heat=next(b for b in report["bodies"] if b["name"]==result["root_body"])
+            self.assertAlmostEqual(heat["temperature_k"],293.15,places=8)
+            self.assertAlmostEqual(heat["mass_kg"],result["thermal_transfer"]["mass_kg"],places=9)
             body=next(b for b in self.live.session.state["bodies"] if b["name"]==result["root_body"])
             expected=self.room.fabrication_record["jobs"][ident]["product_kg"]
             self.assertAlmostEqual(body["mass_kg"],expected,places=7)
@@ -374,10 +379,50 @@ class NativeFabrication(unittest.TestCase):
             loaded=self.app.store.load("fabrication")
             self.assertEqual(loaded.fabrication_record,self.room.fabrication_record)
             self.assertEqual(loaded.world_record,workshop_install._snapshot(self.live))
+            self.live.session.send(op="park",name=result["root_body"])
+            parked=workshop_install._snapshot(self.live)
+            parcel=deepcopy(next(l for l in parked["heat"]["lumps"] if l["body"]==result["root_body"]))
+            self.live.open(self.app,{"spec":self.room.spec,"snapshot":parked})
+            self.assertEqual(self.live.session.state["restored"]["tier"],"whole")
+            restored=workshop_install._snapshot(self.live)
+            self.assertEqual(next(l for l in restored["heat"]["lumps"] if l["body"]==result["root_body"]),parcel)
+            reading=next(b for b in self.live.session.send(op="poses")["heat"]["stored"] if b["name"]==result["root_body"])
+            self.assertAlmostEqual(reading["t_k"],293.15,delta=.050001)
+            self.live.session.send(op="unpark",name=result["root_body"],at=body["position_m"],q=body["orientation_wxyz"])
             measured.append({"material":material,"mass_kg":body["mass_kg"],"cells":p["cells"],
                              "audit":model.audit(self.room.fabrication_record)})
         self.native_evidence=measured
         print("native fabrication:",json.dumps(measured))
+
+    def test_cold_output_does_not_inherit_hot_room_temperature(self):
+        self.room.spec["thermo"]={"ambient":{"temperature_k":330.}}
+        self.room.spec["bodies"][0]["temperature_k"]=400.
+        self.live.open(self.app,{"spec":self.room.spec})
+        for i,material in enumerate(("glass","oak","iron")):
+            ident="hot-room-"+material
+            self.begin(material,ident);self.step(2)
+            p=room_api.preview(self.app,{**self.context(),"job_id":ident,"position_m":[i*.5,0]})
+            result=room_api.commit(self.app,{**self.context(),"job_id":ident,"preview_id":p["preview_id"],"request_id":"hot-install-"+material})
+            transfer=result["thermal_transfer"]
+            self.assertGreaterEqual(transfer["replaced_kg"],0)
+            report=self.live.session.send(op="thermo")["thermo"]
+            item=next(b for b in report["bodies"] if b["name"]==result["root_body"])
+            self.assertAlmostEqual(item["temperature_k"],293.15,places=8)
+            self.assertEqual(report["ambient"]["temperature_k"],330.)
+
+    def test_preexisting_new_output_parcel_is_an_accounted_replacement(self):
+        self.begin();self.step(2)
+        p=room_api.preview(self.app,{**self.context(),"job_id":"job-native-0001","position_m":[0,0]})
+        stage=workshop_install._stage
+        def preactivate(*args):
+            staged,saved=stage(*args)
+            staged.session.send(op="declare",json={"contents":[{"body":args[6],"temperature_k":330.}]})
+            return staged,workshop_install._snapshot(staged)
+        with mock.patch.object(workshop_install,"_stage",side_effect=preactivate):
+            result=room_api.commit(self.app,{**self.context(),"job_id":"job-native-0001","preview_id":p["preview_id"],"request_id":"preactivated-0001"})
+        self.assertGreater(result["thermal_transfer"]["replaced_kg"],0)
+        self.assertGreater(result["thermal_transfer"]["replaced_j"],result["thermal_transfer"]["internal_energy_j"])
+        self.assertEqual(result["thermal_transfer"]["temperature_k"],293.15)
 
     def test_failed_start_and_install_saves_leave_stock_native_world_and_output(self):
         before=deepcopy(self.room.fabrication_record);native=workshop_install._snapshot(self.live)
@@ -502,7 +547,9 @@ class NativeHTTP(WorkbenchTestCase):
             result=call("commit",job_id=job,preview_id=p["preview_id"],request_id="terrain-install-"+material)
             ctx["session"]=result["session"]
             after=workshop_install._snapshot(app.live)
-            workshop_install._preserved(before,after,result["root_body"])
+            with self.assertRaisesRegex(ValueError,"explicit transfer"):
+                workshop_install._preserved(before,after,result["root_body"])
+            workshop_install._preserved(before,after,result["root_body"],thermal_transfer=result["thermal_transfer"])
             self.assertEqual(workshop_install._terrain_state(app.live.session),terrain)
             self.assertTrue(result["resources_charged"])
             self.assertEqual(app.room.fabrication_record["jobs"][job]["status"],"installed")

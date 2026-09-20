@@ -130,3 +130,5 @@ The same two-node conductance/capacity law used in the world runs while parked. 
 ### Stored temperature visibility (September 20)
 
 The BAG panel uses native `heat.stored` observations, with surface/core temperatures in Celsius. The wire format is documented in [MCP/API observations](api/mcp.md#stored-item-thermal-observations). Items without a thermal lump explicitly show “Temperature not tracked”; the existing manufactured oak part is one such case. No ambient-temperature value is invented and no state is changed to obtain a reading. Initial thermal admission for newly manufactured cold objects is still incomplete. Heated glass/oak/iron regressions cover actual readouts after restart and continued internal conduction, and the readout disappears from storage after return to the world.
+
+Newly funded outputs now have an explicit [cold-output thermal handoff](fabrication.md#cold-output-thermal-transfer-september-20). Immediate storage therefore retains their native parcel and temperatures, including across restart. Earlier untracked items keep their missing-history status; this does not infer a historical thermal state for them.

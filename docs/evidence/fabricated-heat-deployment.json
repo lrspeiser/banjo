@@ -1,0 +1,37 @@
+{
+  "base_revision": "f4ea2ce",
+  "deployment_preservation_before_demo": {
+    "spec": true,
+    "inventory": true,
+    "fabrication": true,
+    "world_upgrades": true,
+    "workshop_installs": true,
+    "native_state": true
+  },
+  "fabrication_job": "thermal-output-demo-20260920",
+  "root_body": "workshop-9bb3c7f25464413f",
+  "thermal_transfer": {
+    "body": "workshop-9bb3c7f25464413f",
+    "temperature_k": 293.15,
+    "mass_kg": 0.17919998687500097,
+    "internal_energy_j": 2880718.486180046,
+    "replaced_j": 0.0,
+    "replaced_kg": 0.0,
+    "source": "fabrication-cold-output"
+  },
+  "stored_reading": {
+    "boundary": "insulated-nonreacting",
+    "core_k": 293.2,
+    "name": "workshop-9bb3c7f25464413f",
+    "t_k": 293.1
+  },
+  "stock_used_kg": 0.17920000000000003,
+  "supply_spent_j": 17.919999999998254,
+  "restored_reading_equal": true,
+  "native_tests": 26,
+  "native_install_tests": 30,
+  "qa_runner_tests": 2,
+  "api_docs_tests": 11,
+  "protocol_passed": 13,
+  "protocol_skipped": 1
+}

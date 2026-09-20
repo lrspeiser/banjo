@@ -1888,7 +1888,7 @@ function showInventory() {
     if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
       const condition = document.createElement("small");
       condition.className = "much";
-      condition.textContent = `Surface ${(measured.t_k - 273.15).toFixed(1)} °C · core ${(measured.core_k - 273.15).toFixed(1)} °C · insulated storage`;
+      condition.textContent = `Surface ~${Math.round(measured.t_k - 273.15)} °C · core ~${Math.round(measured.core_k - 273.15)} °C · insulated storage`;
       li.append(condition);
     } else {
       const condition = document.createElement("small");

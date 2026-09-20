@@ -48,7 +48,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.13.0**; platform server: **1.16.0**, requiring native ABI **25**.
+Current world server version: **1.13.1**; platform server: **1.16.1**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -1048,3 +1048,5 @@ Stored raw lots can be retrieved with `fabrication_retrieve_ground` / HTTP `retr
 ### Stored-item thermal observations
 
 World pose/step replies now include `heat.stored`: entries with `name`, `t_k`, `core_k` (kelvin, rounded to 0.1 K) and `boundary: "insulated-nonreacting"`. These include ambient-temperature stored items and are separate from the capped `heat.bodies` render list, so parked items do not produce world-space glow or flames. The main-world BAG panel reads these measurements as surface/core Celsius. Missing readings are not inferred from the authored material. The full `thermo` report retains unrounded `temperature_k`, `core_temperature_k` and `set_aside` for measurements. These are observations, not additional heat sources or physical sensors.
+
+Funded `fabrication_commit` receipts also include `thermal_transfer`: `body`, `temperature_k`, `mass_kg`, `internal_energy_j`, `replaced_j`, `replaced_kg`, and `source: "fabrication-cold-output"`. These are generated and verified on the staged native world, not client-supplied inputs. The source process supplies cold output at 293.15 K. `replaced_*` records any temporary new-body parcel displaced during staging; existing objects cannot be initialized through this path. Retried installs return the original receipt. See [thermal transfer boundary](../fabrication.md#cold-output-thermal-transfer-september-20).
