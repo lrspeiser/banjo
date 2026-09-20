@@ -1,5 +1,9 @@
 # Material impact range and refinement boundary
 
+Start with the gentle/hard [demonstration sets](qa-demonstrations.md), or follow
+**Use a pick** to recorded tool use. New material runs verify centered opening
+geometry; playback now frames the full trajectory and describes the outcome.
+
 The material QA area is at **/qa**, linked from the Physics lab, World and Workshop. It records
 controlled native impacts. Select material, thickness and speed, orbit the
 specimen, slow the crack frames, step frame by frame and inspect measurements.
@@ -10,8 +14,8 @@ resetting the live world. No scripted fragments; game laws and limits unchanged.
 
 Use the same server for Workshop, World and the material range. Open `/qa`
 from its navigation. The viewer opens the newest full matrix by
-default; the run picker includes case counts and retains later partial runs. A newer
-full run remains the default even when it fails, so regressions stay visible.
+default among completed matrices; the run picker includes case counts and retains later partial runs. A newer
+completed full run remains the default even when it fails, so regressions stay visible.
 
 Build `banjo_platform_cli`, `banjo_live_world_run` and
 `banjo_fast_lattice_run` together. Pass the platform executable with

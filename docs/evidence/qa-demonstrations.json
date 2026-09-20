@@ -1,0 +1,775 @@
+{
+  "date": "2026-09-20",
+  "source_base": "11e7d84",
+  "environment": "Windows, existing Release native binaries; executable hashes recorded separately from host source",
+  "tool_trials": {
+    "schema": "banjo.tool-qa.v1",
+    "provenance": {
+      "source_commit": "11e7d8419e03d7d477f5b6da2b36fc0f88f3ddf3",
+      "source_dirty": true,
+      "engine_sha256": "813a0dcd6d535eec7595c07af82daa2ec7f57541794ccaf032cba6cb25f1c5b3",
+      "platform": "nt",
+      "engine_name": "banjo_live_world_run.exe",
+      "note": "Source checkout and executable hash recorded separately; no inferred build revision."
+    },
+    "suite_hash": "9a5f08c7fc98d2a49af2713a73b973aba6428c7cecb5f12edf2f0cfa353af23f",
+    "status": "unsupported",
+    "completed": 6,
+    "results": [
+      {
+        "id": "pick-oak-soil",
+        "material": "oak",
+        "ground": "soil",
+        "title": "Oak pick into soil",
+        "schema": "banjo.tool-qa.v1",
+        "status": "passed",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "2c585630b6ed8dfcf9b1ea2a586b8103e46cd3e5f248ade89eff5ee01c11e56a",
+        "meetings": [
+          {
+            "at_m": [
+              0.31879,
+              0.4,
+              0.02
+            ],
+            "at_s": 0.97083,
+            "breakout_work_j": 0.12905,
+            "closing_speed_m_s": 4.66288,
+            "depth_m": 0.06574,
+            "ground": "soil",
+            "impulse_n_s": 30.09323,
+            "kind": "broke out",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 58.91328,
+            "peak_force_n": 128.05664,
+            "penetration_work_j": 4.92096,
+            "point": 1,
+            "resistance_n": 127.78197,
+            "sideways_m": 0.00807,
+            "supported": true,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "",
+            "work_j": 5.05002
+          }
+        ],
+        "measured": {
+          "depth_m": 0.06574,
+          "work_j": 5.05002,
+          "closing_speed_m_s": 4.66288,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 1.2096,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 777.2273815975542,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Point entered soil",
+        "wall_s": 0.24372369999764487
+      },
+      {
+        "id": "pick-glass-soil",
+        "material": "glass",
+        "ground": "soil",
+        "title": "Glass pick into soil",
+        "schema": "banjo.tool-qa.v1",
+        "status": "passed",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "85b38601960b59ac76c5fdf162c9f0ead5992cf80901afbba966ab45463b938f",
+        "meetings": [
+          {
+            "at_m": [
+              0.31889,
+              0.4,
+              0.02
+            ],
+            "at_s": 1.00417,
+            "breakout_work_j": 1.13755,
+            "closing_speed_m_s": 4.62715,
+            "depth_m": 0.1231,
+            "ground": "soil",
+            "impulse_n_s": 102.26991,
+            "kind": "broke out",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 197.29963,
+            "peak_force_n": 164.32869,
+            "penetration_work_j": 13.96222,
+            "point": 1,
+            "resistance_n": 164.5868,
+            "sideways_m": 0.02752,
+            "supported": true,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "",
+            "work_j": 15.09977
+          }
+        ],
+        "measured": {
+          "depth_m": 0.1231,
+          "work_j": 15.09977,
+          "closing_speed_m_s": 4.62715,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 4.32,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 767.013059711915,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Point entered soil",
+        "wall_s": 0.2193668000109028
+      },
+      {
+        "id": "pick-iron-soil",
+        "material": "iron",
+        "ground": "soil",
+        "title": "Iron pick into soil",
+        "schema": "banjo.tool-qa.v1",
+        "status": "passed",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "ae04194596bfe2ede0ab283cf21dc0df9598d6a58960c3005758e2fac8c6fddc",
+        "meetings": [
+          {
+            "at_m": [
+              0.32879,
+              0.4,
+              0.02
+            ],
+            "at_s": 1.08333,
+            "breakout_work_j": 22.68896,
+            "closing_speed_m_s": 6.84463,
+            "depth_m": 0.1934,
+            "ground": "soil",
+            "impulse_n_s": 121.65674,
+            "kind": "broke out",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 518.30136,
+            "peak_force_n": 190.70612,
+            "penetration_work_j": 25.37572,
+            "point": 1,
+            "resistance_n": 197.0747,
+            "sideways_m": 0.14663,
+            "supported": true,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "",
+            "work_j": 48.06469
+          }
+        ],
+        "measured": {
+          "depth_m": 0.1934,
+          "work_j": 48.06469,
+          "closing_speed_m_s": 6.84463,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 13.59936,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 785.7880114168823,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Point entered soil",
+        "wall_s": 0.24231160001363605
+      },
+      {
+        "id": "pick-oak-rock",
+        "material": "oak",
+        "ground": "rock",
+        "title": "Oak pick into rock",
+        "schema": "banjo.tool-qa.v1",
+        "status": "passed",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "f047e3d42e5b72968adbcdc971f4b4bf2e48fc363a712a81b457a4baba2fc035",
+        "meetings": [
+          {
+            "at_m": [
+              0.374,
+              0.0,
+              0.02
+            ],
+            "at_s": 0.95833,
+            "breakout_work_j": 0.0,
+            "closing_speed_m_s": 4.65944,
+            "depth_m": 0.0,
+            "ground": "rock",
+            "impulse_n_s": 0.0,
+            "kind": "stopped",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 0.0,
+            "peak_force_n": 0.0,
+            "penetration_work_j": 0.0,
+            "point": 1,
+            "resistance_n": 0.0,
+            "sideways_m": 0.0,
+            "supported": true,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "rock, as hard as the engine's stone (100 MPa): a point of oak (35 MPa) cannot press into it, so the rock stops it and nothing comes loose",
+            "work_j": 0.0
+          }
+        ],
+        "measured": {
+          "depth_m": 0.0,
+          "work_j": 0.0,
+          "closing_speed_m_s": 4.65944,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 1.2096,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 777.2273815975542,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Point stopped at rock",
+        "wall_s": 0.24706290001631714
+      },
+      {
+        "id": "pick-glass-rock",
+        "material": "glass",
+        "ground": "rock",
+        "title": "Glass pick into rock",
+        "schema": "banjo.tool-qa.v1",
+        "status": "unsupported",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "3f70f4e596e9be603ca57c1b042164a153214870428f9b5a26aeacffaccb51b2",
+        "meetings": [
+          {
+            "at_m": [
+              0.33874,
+              0.0,
+              0.01939
+            ],
+            "at_s": 1.0125,
+            "breakout_work_j": 0.0,
+            "closing_speed_m_s": 0.56081,
+            "depth_m": 0.0,
+            "ground": "rock",
+            "impulse_n_s": 0.0,
+            "kind": "not supported",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 0.0,
+            "peak_force_n": 0.0,
+            "penetration_work_j": 0.0,
+            "point": 1,
+            "resistance_n": 0.0,
+            "sideways_m": 0.0,
+            "supported": false,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "not supported yet: glass (5500 MPa) is harder than the rock (100 MPa), but breaking rock out of the ground under a point has no law here",
+            "work_j": 0.0
+          }
+        ],
+        "measured": {
+          "depth_m": 0.0,
+          "work_j": 0.0,
+          "closing_speed_m_s": 0.56081,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 4.32,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 767.013059711915,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Unsupported rock excavation",
+        "wall_s": 0.2499396000057459
+      },
+      {
+        "id": "pick-iron-rock",
+        "material": "iron",
+        "ground": "rock",
+        "title": "Iron pick into rock",
+        "schema": "banjo.tool-qa.v1",
+        "status": "unsupported",
+        "limitations": [
+          "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
+          "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
+          "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+          "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
+          "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim."
+        ],
+        "request_hash": "4f378c6125c7f1a69f2e597d7aa641273e389f63810ff8aaa2d050f84bf3b3ad",
+        "meetings": [
+          {
+            "at_m": [
+              0.34052,
+              0.0,
+              0.01949
+            ],
+            "at_s": 1.11667,
+            "breakout_work_j": 0.0,
+            "closing_speed_m_s": 0.85723,
+            "depth_m": 0.0,
+            "ground": "rock",
+            "impulse_n_s": 0.0,
+            "kind": "not supported",
+            "loosened": {
+              "sand_m3": 0.0,
+              "soil_m3": 0.0
+            },
+            "loosened_kg": 0.0,
+            "model": "ground-work-v1",
+            "open": true,
+            "passive_n": 0.0,
+            "peak_force_n": 0.0,
+            "penetration_work_j": 0.0,
+            "point": 1,
+            "resistance_n": 0.0,
+            "sideways_m": 0.0,
+            "supported": false,
+            "tool": "pick",
+            "tool_dent_mm": 0.0,
+            "tool_whole": true,
+            "why": "not supported yet: iron (1500 MPa) is harder than the rock (100 MPa), but breaking rock out of the ground under a point has no law here",
+            "work_j": 0.0
+          }
+        ],
+        "measured": {
+          "depth_m": 0.0,
+          "work_j": 0.0,
+          "closing_speed_m_s": 0.85723,
+          "tool_whole": true,
+          "tool_dent_mm": 0.0,
+          "tool_mass_kg": 13.59936,
+          "mass_residual_kg": 0.0,
+          "max_hand_force_n": 642.3204824822645,
+          "elapsed_s": 4.500000000000065,
+          "loosened_kg": 0.0
+        },
+        "outcome": "Unsupported rock excavation",
+        "wall_s": 0.246108399995137
+      }
+    ]
+  },
+  "material_demonstrations": {
+    "schema": "banjo.material-qa.v1",
+    "provenance": {
+      "source_commit": "11e7d8419e03d7d477f5b6da2b36fc0f88f3ddf3",
+      "source_dirty": true,
+      "engine_sha256": "7e2cba351d973fefc8e6edd35fce0974d8705f93ee08a05cf1c3dc045d26206f",
+      "platform": "nt",
+      "engine_name": "banjo_fast_lattice_run.exe",
+      "note": "Source checkout and executable hash recorded separately; no inferred build revision."
+    },
+    "fixture_hash": "27488d034e6b930d3e4c6b3967fe53335a1f8be601d829136f38355c0f6e9b3c",
+    "status": "passed",
+    "completed": 7,
+    "results": [
+      {
+        "id": "glass-20mm-4mps",
+        "material": "glass",
+        "thickness_mm": 20,
+        "speed_m_s": 4,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 1.4927189000009093,
+        "metrics": {
+          "outcome": "intact",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 7.938841860374448e-07,
+          "tile_mass_kg": 0.7200000000000012,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 2.1098098503468097,
+          "broken_bonds": 0,
+          "broken_fraction": 0.0,
+          "components": 1,
+          "largest_mass_fraction": 0.9999999999999923,
+          "removed_energy_j": 0.0,
+          "impulse_n_s": 1.555234424610556,
+          "contact_events": 937,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.1574764214213051e-05,
+          "lattice_simulated_s": 0.005817583315282396,
+          "lattice_exit_reason": 5,
+          "simulated_s": 0.35581758331528235,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -1.4127392239696293,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "oak-20mm-4mps",
+        "material": "oak",
+        "thickness_mm": 20,
+        "speed_m_s": 4,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [],
+        "wall_s": 1.058017600007588,
+        "metrics": {
+          "outcome": "intact",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 1.0145993123917848e-06,
+          "tile_mass_kg": 0.20160000000000033,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 2.1098098503468097,
+          "broken_bonds": 0,
+          "broken_fraction": 0.0,
+          "components": 1,
+          "largest_mass_fraction": 1.0000000000000042,
+          "removed_energy_j": 0.0,
+          "impulse_n_s": 1.9651054213610923,
+          "contact_events": 1143,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.3524465180023842e-05,
+          "lattice_simulated_s": 0.005001974610091499,
+          "lattice_exit_reason": 5,
+          "simulated_s": 0.3550019746100915,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": 0.5050866733088928,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "iron-20mm-4mps",
+        "material": "iron",
+        "thickness_mm": 20,
+        "speed_m_s": 4,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 1.375218400004087,
+        "metrics": {
+          "outcome": "intact",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 8.113015490634077e-07,
+          "tile_mass_kg": 2.2665600000000037,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 2.1098098503468097,
+          "broken_bonds": 0,
+          "broken_fraction": 0.0,
+          "components": 1,
+          "largest_mass_fraction": 1.0000000000000024,
+          "removed_energy_j": 0.0,
+          "impulse_n_s": 1.3082767434194196,
+          "contact_events": 383,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.0385184684838511e-05,
+          "lattice_simulated_s": 0.005000862748426845,
+          "lattice_exit_reason": 5,
+          "simulated_s": 0.35500086274842685,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -1.6430092149410316,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "glass-20mm-12mps",
+        "material": "glass",
+        "thickness_mm": 20,
+        "speed_m_s": 12,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 1.1580915999948047,
+        "metrics": {
+          "outcome": "fragmented",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 7.938841860374448e-07,
+          "tile_mass_kg": 0.7200000000000012,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 18.988288653121288,
+          "broken_bonds": 1113,
+          "broken_fraction": 0.42031722054380666,
+          "components": 48,
+          "largest_mass_fraction": 0.44444444444444403,
+          "removed_energy_j": 6.461534408016467,
+          "impulse_n_s": 2.5086086146601367,
+          "contact_events": 2576,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.799207177451828e-05,
+          "lattice_simulated_s": 0.0050006764878498654,
+          "lattice_exit_reason": 4,
+          "simulated_s": 0.35500067648784983,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -16.939300018465996,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "oak-20mm-12mps",
+        "material": "oak",
+        "thickness_mm": 20,
+        "speed_m_s": 12,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 1.0536735999921802,
+        "metrics": {
+          "outcome": "fragmented",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 1.0145993123917848e-06,
+          "tile_mass_kg": 0.20160000000000033,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 18.988288653121288,
+          "broken_bonds": 207,
+          "broken_fraction": 0.07817220543806647,
+          "components": 6,
+          "largest_mass_fraction": 0.9722222222222262,
+          "removed_energy_j": 3.5639978040262252,
+          "impulse_n_s": 4.054477215124154,
+          "contact_events": 2630,
+          "peak_force_n": null,
+          "maximum_penetration_m": 3.024095364843188e-05,
+          "lattice_simulated_s": 0.005000960010779107,
+          "lattice_exit_reason": 4,
+          "simulated_s": 0.3550009600107791,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -12.282259640096559,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "iron-20mm-12mps",
+        "material": "iron",
+        "thickness_mm": 20,
+        "speed_m_s": 12,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 1.2660725000023376,
+        "metrics": {
+          "outcome": "intact",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 8.113015490634077e-07,
+          "tile_mass_kg": 2.2665600000000037,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 18.988288653121288,
+          "broken_bonds": 0,
+          "broken_fraction": 0.0,
+          "components": 1,
+          "largest_mass_fraction": 1.0000000000000024,
+          "removed_energy_j": 0.0,
+          "impulse_n_s": 4.118454760196243,
+          "contact_events": 305,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.4263647575622068e-05,
+          "lattice_simulated_s": 0.005000862748426845,
+          "lattice_exit_reason": 5,
+          "simulated_s": 0.35500086274842685,
+          "frame_count": 30,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -14.547929715951334,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      },
+      {
+        "id": "concrete-20mm-12mps",
+        "material": "concrete",
+        "thickness_mm": 20,
+        "speed_m_s": 12,
+        "status": "passed",
+        "issues": [],
+        "changes": [],
+        "warnings": [
+          "Signed striker-loss diagnostic is negative; not a closed energy audit."
+        ],
+        "wall_s": 0.8551481999747921,
+        "metrics": {
+          "outcome": "fragmented",
+          "cells": 288,
+          "bonds": 2648,
+          "dt_s": 1.1881770515720092e-06,
+          "tile_mass_kg": 0.6912000000000011,
+          "ball_mass_kg": 0.2637262312933512,
+          "initial_kinetic_j": 18.988288653121288,
+          "broken_bonds": 2211,
+          "broken_fraction": 0.8349697885196374,
+          "components": 101,
+          "largest_mass_fraction": 0.4652777777777785,
+          "removed_energy_j": 0.4239368743397009,
+          "impulse_n_s": 1.1664689456108168,
+          "contact_events": 1891,
+          "peak_force_n": null,
+          "maximum_penetration_m": 1.3404061870041922e-05,
+          "lattice_simulated_s": 0.007517596205296102,
+          "lattice_exit_reason": 4,
+          "simulated_s": 0.3575175962052961,
+          "frame_count": 31,
+          "came_to_rest": false,
+          "signed_striker_loss_j": -8.521107733319507,
+          "alignment": {
+            "valid": true,
+            "offset_xz_m": [
+              0.0,
+              0.0
+            ],
+            "initial_gap_m": 0.0020000000000000018,
+            "specimen_size_m": [
+              0.12,
+              0.020000000000000018,
+              0.12
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

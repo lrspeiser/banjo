@@ -2,17 +2,19 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Banjo · Material range</title><link rel="stylesheet" href="/material-qa.css"></head>
 <body>
-<header><a class="brand" href="/">BANJO <span>/ MATERIAL RANGE</span></a><nav><a href="/mechanics-qa">Mechanics lab</a><a href="/">Physics lab</a><a href="/world">World</a><a href="/world?workshop=1">Workshop</a></nav></header>
+<header><a class="brand" href="/">BANJO <span>/ MATERIAL RANGE</span></a><nav><a href="/tool-qa">Use a pick</a><a href="/mechanics-qa">Mechanics lab</a><a href="/">Physics lab</a><a href="/world">World</a><a href="/world?workshop=1">Workshop</a></nav></header>
 <main>
 <div class="intro"><div><p class="eyebrow">PHYSICS REGRESSION / 01</p><h1>Watch matter respond.</h1><p>Eight materials. Three thicknesses. Four impacts. The same fixture, every time.</p></div>
 <div class="fixture">120 × 120 mm specimen<br>40 mm iron striker · two support ledges<br>10 mm cells · recorded native simulation</div></div>
 <section class="toolbar" aria-label="Run controls">
+<label>Demonstration<select id="demonstration"><option value="hard">Hard strike</option><option value="gentle">Gentle strike</option><option value="all">Full material range</option></select></label>
 <label>Recorded run<select id="runs"><option value="">No saved runs</option></select></label>
-<button id="run-all" class="primary" disabled>Run all 96 impacts</button>
-<button id="run-filtered" disabled>Run filtered cases</button>
+<button id="run-filtered" class="primary" disabled>Run demonstration</button>
+<button id="run-all" disabled>Run all 96 impacts</button>
 <button id="cancel" disabled>Cancel run</button>
 <p id="progress" role="status">Loading range…</p>
 </section>
+<p id="demo-about" class="demo-about"></p>
 <div class="workspace">
 <section class="specimens">
 <div class="filters">
@@ -25,15 +27,19 @@
 </section>
 <section class="inspection" aria-label="Recorded impact viewer">
 <div class="viewer-title"><h2 id="case-title">Select a recorded impact</h2><span id="verdict"></span></div>
+<p id="response" class="response" role="status"></p>
 <div id="stage"><p>Native recordings appear here when a case finishes.</p></div>
 <div class="transport">
 <button id="play" disabled>Play</button><button id="back" disabled aria-label="Previous frame">←</button>
 <input type="range" id="frame" min="0" max="0" value="0" aria-label="Recorded frame" disabled>
 <button id="next" disabled aria-label="Next frame">→</button>
+<button id="impact" disabled>First response</button>
+<label>Playback <select id="playback-speed"><option value="1">1×</option><option value="0.25" selected>¼×</option><option value="0.05">1/20×</option></select></label>
 <label><input type="checkbox" id="slow" checked> Hold crack frames</label>
 <label><input type="checkbox" id="damage"> Show bond damage</label>
 <span id="clock">0.0000 s</span>
 </div>
+<p id="alignment" class="key"></p>
 <div id="metrics" class="metrics"></div>
 <div id="notes" role="status"></div>
 <div class="downloads"><a id="report-link" hidden>Native report</a><a id="recording-link" hidden>Recording JSON</a></div>

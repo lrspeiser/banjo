@@ -31,6 +31,7 @@ from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA
 import builder
 import fracture_lab
 import material_qa
+import tool_qa
 import mechanics_qa
 import physics_trials
 import physics_trial_planner
@@ -1131,6 +1132,12 @@ class Handler(BaseHTTPRequestHandler):
                 qa=mechanics_qa.manager(app)
                 if not match[2]: return self.send(qa.status(match[1]))
                 return self.send(qa.case(match[1],match[2],playback=match[3]=="playback",request=match[3]=="request"))
+            if path=="/api/tool-qa": return self.send(tool_qa.catalog(app.engine_path))
+            if path=="/api/tool-qa/runs": return self.send(tool_qa.manager(app).list_runs())
+            match=re.fullmatch(r"/api/tool-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|request))?)?",path)
+            if match:
+                qa=tool_qa.manager(app)
+                return self.send(qa.case(match[1],match[2],match[3]) if match[2] else qa.status(match[1]))
             if path=="/api/material-qa": return self.send(material_qa.catalog(app.engine_path))
             if path=="/api/material-qa/runs": return self.send(material_qa.manager(app).list_runs())
             match=re.fullmatch(r"/api/material-qa/runs/([0-9a-f]{32})(?:/([a-z0-9-]+)(?:/(playback|native))?)?",path)
@@ -1161,7 +1168,7 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+            allowed={"/tool-qa":"tool-qa.html","/tool-qa.js":"tool-qa.js","/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
                 "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
@@ -1263,6 +1270,11 @@ class Handler(BaseHTTPRequestHandler):
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
+            if path=="/api/tool-qa/run":
+                return self.send(tool_qa.manager(self.server.app).start(body),202)
+            if path=="/api/tool-qa/cancel":
+                if not isinstance(body,dict) or set(body)!={"run_id"}: raise ValueError("Use run_id")
+                return self.send(tool_qa.manager(self.server.app).cancel(body["run_id"]))
             if path=="/api/mechanics-qa/plan":
                 return self.send(physics_trial_planner.propose(self.server.app,body))
             if path=="/api/fabrication-qa/run":
@@ -2869,6 +2881,7 @@ def main():
         # The room as it stands now, for the server that starts next.
         try: keep_world(app,"the server stopped")
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
+        if hasattr(app,"tool_qa"): app.tool_qa.shutdown()
         if hasattr(app,"material_qa"): app.material_qa.shutdown()
         if hasattr(app,"mechanics_qa"): app.mechanics_qa.shutdown()
         if hasattr(app,"fabrication_qa"): app.fabrication_qa.shutdown()

@@ -1,5 +1,7 @@
 # The Banjo API
 
+Recorded pick use, outcome boundaries and HTTP endpoints: [QA demonstrations](../qa-demonstrations.md).
+
 Editable native experiments and six platform MCP tools: [Mechanics lab](../physics-trials.md).
 
 The recorded material impact range, HTTP endpoints and five platform MCP tools are documented in [Material QA](../material-qa.md).

@@ -27,14 +27,36 @@ def fixture():
         "handoff": {"components": 1, "largest_piece_mass_kg": .72},
         "rigid": {"came_to_rest": False},
     }
-    poses = [{"id": "cell:" + str(i), "position_m": [0, .1, 0],
+    poses = [{"id": "cell:" + str(i), "position_m": [(i%12-5.5)*.01, .085+(i//144)*.01, ((i//12)%12-5.5)*.01],
               "orientation_wxyz": [1, 0, 0, 0]} for i in range(288)]
+    poses.append({"id": "ball", "position_m": [0,.122,0], "orientation_wxyz": [1,0,0,0]})
     recording = {"schema": "banjo.playback.v1", "status": "complete",
+                 "bodies": [{"id": "cell:"+str(i), "dimensions_m": [.01]*3} for i in range(288)]
+                           + [{"id": "ball", "dimensions_m": [.04]*3}],
                  "frames": [{"time_s": 0, "poses": poses}, {"time_s": .351, "poses": deepcopy(poses)}],
                  "report": native}
     return native, recording
 
 class Contracts(unittest.TestCase):
+    def test_alignment_rejects_side_strike_overlap_and_missing_striker(self):
+        for offset, gap in ((.05, 0), (0, -.01), (0, .04)):
+            n,r = fixture()
+            r["frames"][0]["poses"][-1]["position_m"][0] += offset
+            r["frames"][0]["poses"][-1]["position_m"][1] += gap
+            self.assertTrue(any("centered" in s for s in qa.check_run(n,r,qa.cases()[0])))
+        n,r = fixture()
+        r["frames"][0]["poses"].pop()
+        self.assertFalse(qa.alignment(r)["valid"])
+        self.assertFalse(qa.alignment({"frames": []})["valid"])
+
+    def test_demonstrations_retain_matched_material_controls_without_rebaselining(self):
+        c = qa.catalog()
+        for demo in c["demonstrations"]:
+            rows = qa.select(demo["case_ids"])
+            self.assertTrue({"glass","oak","iron"}.issubset({r["material"] for r in rows}))
+            self.assertEqual(len({(r["thickness_mm"],r["speed_m_s"]) for r in rows}),1)
+        self.assertEqual(c["fixture_hash"],qa.read_json(qa.BASELINE)["fixture_hash"])
+
     def test_all_materials_thicknesses_speeds_and_resolved_layers(self):
         rows = qa.select()
         self.assertEqual(len(rows), 96)
@@ -73,7 +95,7 @@ class Contracts(unittest.TestCase):
         case = qa.cases()[0]
         self.assertEqual(qa.check_run(*fixture(), case), [])
         for mutate, expected in (
-            (lambda n, r: r["frames"][-1]["poses"].pop(), "cell identity"),
+            (lambda n, r: r["frames"][-1]["poses"].pop(0), "cell identity"),
             (lambda n, r: r["frames"][-1]["poses"].append(r["frames"][-1]["poses"][0]), "cell identity"),
             (lambda n, r: n.update(dt_s=float("nan")), "nonfinite"),
             (lambda n, r: n["lattice"]["contact"].update(impulse_contacts=0), "never contacted"),

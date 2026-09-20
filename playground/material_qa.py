@@ -101,6 +101,14 @@ def manifest():
 def catalog(engine_path=None):
     data = manifest()
     data["fixture_hash"] = digest(data)
+    # A watchable entry point into the unchanged regression matrix. Never pick
+    # examples by whether the current run happens to look dramatic.
+    data["demonstrations"] = [
+        {"id": "gentle", "title": "Gentle strike", "about": "Compare survival under the same 4 m/s strike.",
+         "case_ids": [f"{m}-20mm-4mps" for m in ("glass", "oak", "iron")]},
+        {"id": "hard", "title": "Hard strike", "about": "Compare cracking, separation and survival at 12 m/s.",
+         "case_ids": [f"{m}-20mm-12mps" for m in ("glass", "oak", "iron", "concrete")]},
+    ]
     exe = binary(engine_path)
     data["engine_available"] = bool(exe and exe.is_file())
     data["baseline_available"] = BASELINE.is_file()
@@ -170,6 +178,24 @@ def command(exe, case, directory):
     return argv
 
 
+def alignment(recording):
+    """Measure the authored fixture in the actual native opening frame."""
+    geometry = {b["id"]: b for b in recording.get("bodies", [])}
+    poses = (recording.get("frames") or [{}])[0].get("poses", [])
+    ball = next((p for p in poses if p["id"] == "ball"), None)
+    cells = [p for p in poses if p["id"].startswith("cell:")]
+    if not ball or not cells or any(p["id"] not in geometry for p in [ball, *cells]):
+        return {"valid": False, "why": "Opening frame lacks striker or specimen geometry"}
+    lo = [min(p["position_m"][k] - geometry[p["id"]]["dimensions_m"][k]/2 for p in cells) for k in range(3)]
+    hi = [max(p["position_m"][k] + geometry[p["id"]]["dimensions_m"][k]/2 for p in cells) for k in range(3)]
+    offset = [ball["position_m"][k] - (lo[k]+hi[k])/2 for k in (0, 2)]
+    gap = ball["position_m"][1] - geometry["ball"]["dimensions_m"][1]/2 - hi[1]
+    centered = max(abs(v) for v in offset) <= 1e-8
+    return {"valid": centered and abs(gap-.002) <= 1e-8,
+            "offset_xz_m": offset, "initial_gap_m": gap,
+            "specimen_size_m": [b-a for a,b in zip(lo, hi)]}
+
+
 def metrics(report, recording):
     lattice, handoff = report["lattice"], report["handoff"]
     contact = lattice["contact"]
@@ -193,6 +219,7 @@ def metrics(report, recording):
         "frame_count": len(recording["frames"]),
         "came_to_rest": report["rigid"]["came_to_rest"],
         "signed_striker_loss_j": lattice["dissipated_kinetic_energy_j"]["striker_contact"],
+        "alignment": alignment(recording),
     }
 
 
@@ -212,6 +239,8 @@ def check_run(report, recording, case):
     if recording.get("schema") != "banjo.playback.v1" or recording.get("status") != "complete":
         problems.append("native recording incomplete")
     m = metrics(report, recording)
+    if not m["alignment"]["valid"]:
+        problems.append("striker fixture is not centered 2 mm above the specimen")
     expected = 12 * 12 * (case["thickness_mm"] // 10)
     if m["cells"] != expected:
         problems.append("native cell count differs from the fixture")
