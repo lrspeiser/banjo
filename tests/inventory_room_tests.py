@@ -227,10 +227,15 @@ def mace_spec():
                         "size_mm": [2000, 40, 2000], "center_mm": [0, 20, 0], "anchored": True},
                        {"id": "b-mace000001", "name": "mace", "shape": "box", "material": "oak",
                         "size_mm": [600, 40, 40], "center_mm": [0, 60, 0]},
-                       {"id": "b-mace000002", "name": "mace head", "shape": "sphere", "material": "iron",
-                        "size_mm": [120, 120, 120], "center_mm": [560, 100, 0]}],
+                       {"id": "b-mace000002", "name": "mace head", "shape": "box", "material": "iron",
+                        "size_mm": [80, 80, 80], "center_mm": [540, 80, 0]}],
             "joints": [{"kind": "link", "a": "mace", "b": "mace head",
-                        "at_mm": [300, 60, 0], "to_mm": [500, 100, 0], "length_mm": 205}]}
+                        "at_mm": [300, 60, 0], "to_mm": [500, 80, 0], "length_mm": 205}]}
+
+
+# The chain, and from where it is tied on the head to the head's middle, and a
+# cell's slack: past this the chain has let go.
+CHAIN_WHOLE_M = 0.205 + 0.04 + 0.03
 
 
 class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
@@ -311,13 +316,13 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
         now = self.bodies()
         self.assertGreater(now["mace head"]["position_m"][1], 0.4,
                            f"lifted by its handle, the head stayed down: {now['mace head']['position_m']}")
-        self.assertLess(longest, 0.205 + 0.06 + 0.03, "the chain stretched: it came apart")
+        self.assertLess(longest, CHAIN_WHOLE_M, "the chain stretched: it came apart")
 
         top = [grip[0], grip[1] + 0.9, grip[2]]
         ended, fastest, longest = self.stroke([top, [top[0] - 1.0, top[1], top[2]]], 3.0)
         self.assertIn(ended, ("reached", "blocked"))
         self.assertGreater(fastest, 1.5, "swung, the head did not swing")
-        self.assertLess(longest, 0.205 + 0.06 + 0.03, "swung, the chain stretched: it came apart")
+        self.assertLess(longest, CHAIN_WHOLE_M, "swung, the chain stretched: it came apart")
 
         down = self.ask("d1", 1, "drop", "mace")
         self.assertTrue(down["ok"], down)
@@ -326,7 +331,7 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
         landed = self.bodies()
         self.assertLess(landed["mace head"]["position_m"][1], 0.2, landed["mace head"])
         self.assertLess(landed["mace"]["position_m"][1], 0.2, landed["mace"])
-        self.assertLess(self.chain(landed), 0.205 + 0.06 + 0.03, "let go, it landed in pieces")
+        self.assertLess(self.chain(landed), CHAIN_WHOLE_M, "let go, it landed in pieces")
 
     def test_taken_up_by_its_head_it_is_the_same_thing_and_the_bag_says_why_not(self):
         took = self.ask("u1", 0, "take_up", "mace head")
@@ -348,7 +353,7 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
     def test_what_it_weighs_is_all_of_it(self):
         both = inventory_room.whole_kg(self.app, inventory_room.item_holding(self.app, "mace"))
         handle = self.bodies()["mace"]["mass_kg"]
-        self.assertGreater(both, handle + 5.0, "the head's iron was not counted")
+        self.assertGreater(both, handle + 3.0, "the head's iron was not counted")
         # A lift the handle alone is under and the whole mace is over.
         with mock.patch.object(inventory_room.room_world.banjo_mcp, "HAND_LIFTS_KG", handle + 1.0):
             heavy = self.ask("u1", 0, "take_up", "mace")

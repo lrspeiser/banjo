@@ -2284,7 +2284,7 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
             along = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]
             tie = [handle["position_m"][k] + 0.3 * along[k] for k in range(3)]
             return math.dist(tie, head["position_m"])
-        whole = 0.2 + 0.06 + 0.03          # the chain, the head's radius, and a cell's slack
+        whole = 0.2 + 0.04 + 0.03          # the chain, to the head's middle, and a cell's slack
         try:
             time.sleep(1.5)            # settled on the ground it was built just over
             at = body("mace")["position_m"]

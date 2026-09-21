@@ -182,6 +182,12 @@ def resolve(app, body):
                            "facing": [round(v, 6) for v in q],
                            "dimensions_m": p.get("dimensions_m"), "shape": p.get("shape", "box")}
                           for p, at, q, _, _ in answers])
+        # Whether it would fall over on a slope is the engine's reading of ONE
+        # body (LiveWorld::placement): of the gripped part alone -- a chair's
+        # flat seat, never tall -- it would say nothing true of the chair, so
+        # the whole shape's answer does not carry it.
+        out.pop("tipping_used", None)
+        out.pop("may_fall_over", None)
         if touching:
             what = touching[0].get("name", "something")
             out.update(fits=False, why=(f"the {what} is too uneven there" if what in ("ground", "floor")

@@ -101,7 +101,7 @@
     620.0,
     -5600.0
    ],
-   "id": "b-1310a5897c",
+   "id": "b-5560895dfd",
    "material": "oak",
    "name": "mace",
    "shape": "box",
@@ -119,18 +119,18 @@
   {
    "anchored": false,
    "center_mm": [
-    13560.0,
-    660.0,
+    13540.0,
+    640.0,
     -5600.0
    ],
-   "id": "b-92ab87e9ad",
+   "id": "b-6dc4506363",
    "material": "iron",
    "name": "mace head",
-   "shape": "sphere",
+   "shape": "box",
    "size_mm": [
-    120.0,
-    120.0,
-    120.0
+    80.0,
+    80.0,
+    80.0
    ],
    "velocity_m_s": [
     0.0,
@@ -145,7 +145,7 @@
     1420.0,
     -3400.0
    ],
-   "id": "b-21ed9a6f5e",
+   "id": "b-336237b9ff",
    "material": "oak",
    "name": "oak table top",
    "shape": "box",
@@ -167,7 +167,7 @@
     1040.0,
     -3660.0
    ],
-   "id": "b-5dd293b751",
+   "id": "b-3d5b5706f9",
    "material": "oak",
    "name": "table leg 1",
    "shape": "box",
@@ -189,7 +189,7 @@
     1040.0,
     -3660.0
    ],
-   "id": "b-b89722d3f5",
+   "id": "b-1cd47686d5",
    "material": "oak",
    "name": "table leg 2",
    "shape": "box",
@@ -211,7 +211,7 @@
     1040.0,
     -3140.0
    ],
-   "id": "b-209c78e4ac",
+   "id": "b-ccdcefba97",
    "material": "oak",
    "name": "table leg 3",
    "shape": "box",
@@ -233,7 +233,7 @@
     1040.0,
     -3140.0
    ],
-   "id": "b-f8dc6052c9",
+   "id": "b-354d29a653",
    "material": "oak",
    "name": "table leg 4",
    "shape": "box",
@@ -255,7 +255,7 @@
     1140.0,
     -2840.0
    ],
-   "id": "b-e5f67b4b1b",
+   "id": "b-1ed634a128",
    "material": "oak",
    "name": "oak chair seat",
    "shape": "box",
@@ -277,7 +277,7 @@
     900.0,
     -3020.0
    ],
-   "id": "b-74f6b00fea",
+   "id": "b-993641b4fd",
    "material": "oak",
    "name": "chair leg 1",
    "shape": "box",
@@ -299,7 +299,7 @@
     900.0,
     -3020.0
    ],
-   "id": "b-9b6f54f504",
+   "id": "b-afcb9bafac",
    "material": "oak",
    "name": "chair leg 2",
    "shape": "box",
@@ -321,7 +321,7 @@
     900.0,
     -2660.0
    ],
-   "id": "b-c2be428955",
+   "id": "b-52b6434b02",
    "material": "oak",
    "name": "chair leg 3",
    "shape": "box",
@@ -343,7 +343,7 @@
     900.0,
     -2660.0
    ],
-   "id": "b-945e630991",
+   "id": "b-ad9a8f76cb",
    "material": "oak",
    "name": "chair leg 4",
    "shape": "box",
@@ -365,7 +365,7 @@
     1380.0,
     -2660.0
    ],
-   "id": "b-681b9639fa",
+   "id": "b-4db40775da",
    "material": "oak",
    "name": "chair back",
    "shape": "box",
@@ -776,7 +776,7 @@
    "length_mm": 200.0,
    "to_mm": [
     13500.0,
-    660.0,
+    640.0,
     -5600.0
    ]
   },

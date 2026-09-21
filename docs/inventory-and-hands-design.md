@@ -136,9 +136,11 @@ swinging a mace."
   says, and the others come with it on the joints they already have. Those stay
   joints: the engine hauls the rest through them, so a mace's head swings on its
   chain as you carry and swing it, and a wheel still turns. Measured with an oak
-  handle and a 6 kg iron head: lifted by the handle, swung, the head went
-  3.7 m/s and the chain never stretched; let go, it landed still tied
-  (tests/inventory_room_tests.py `AThingOfSeveralPartsIsTakenUpWhole`).
+  handle and a 4 kg iron head: lifted by the handle, swung, the head went
+  3.5 m/s and the chain never stretched; let go, it landed still tied
+  (tests/inventory_room_tests.py `AThingOfSeveralPartsIsTakenUpWhole`). The head
+  is a block, not a ball: an iron ball at the end of a chain rolls on and on
+  when put down, and was never still enough to let go of.
 - **What it weighs is all of it**, for the lift and for "what you are carrying".
 - **The bag refuses it, in words**: "its parts are joined, and the bag only holds
   things of one piece". The engine sets aside one body joined to nothing.

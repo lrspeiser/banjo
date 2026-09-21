@@ -4140,19 +4140,23 @@ RECIPES: dict[str, dict[str, Any]] = {
     # the inventory (inventory.items_of), taken up whole by whichever part is
     # pointed at. The tie has no breaking load: carried or swung, it holds.
     "mace": {
-        "title": "a mace: an iron ball on a short chain from an oak handle, lying on the ground",
+        "title": "a mace: an iron head on a short chain from an oak handle, lying on the ground",
         # Measured on the valley's terrace, 40 mm cells: a 0.67 kg handle and a
-        # 6.0 kg head (tests/inventory_room_tests.py, tests/world_room_tests.py).
+        # 4.0 kg head; swung, the head went 2.2 m/s (tests/world_room_tests.py
+        # TheWorldsThingsTakenUpWhole).
         "tried": "taken up by its handle all of it came, the head hanging on its chain; swung, "
                  "the head went over 2 m/s and the chain held; put down, it lay whole",
         "parts": [
             {"name": "mace", "shape": "box", "material": "oak",
              "size_m": [0.6, 0.04, 0.04], "position_m": (0.0, 0.02, 0.0)},
-            {"name": "mace head", "shape": "sphere", "material": "iron",
-             "size_m": [0.12, 0.12, 0.12], "position_m": (0.56, 0.06, 0.0)}],
+            # A block, not a ball: a mace's head is flanged, and an iron ball
+            # put down rolls on and on at the end of its chain -- never still
+            # enough to let go of, and dragging the handle after it when it was.
+            {"name": "mace head", "shape": "box", "material": "iron",
+             "size_m": [0.08, 0.08, 0.08], "position_m": (0.54, 0.04, 0.0)}],
         "joints": [
             ("tie", {"a": "mace", "b": "mace head", "at_a_m": (0.3, 0.02, 0.0),
-                     "at_b_m": (0.5, 0.06, 0.0), "length_m": 0.2})],
+                     "at_b_m": (0.5, 0.04, 0.0), "length_m": 0.2})],
         "actions": {"mace": [
             {"label": "Swing it", "primary": True, "steps": [
                 {"do": "strike", "distance_m": 0.6, "speed_m_s": 4.0}]}]},
