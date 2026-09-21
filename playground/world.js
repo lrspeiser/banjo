@@ -1501,6 +1501,9 @@ function drawJoints(pins) {
     // limb, for the same reason and in a different colour.
     if (pin.kind === "link" || pin.kind === "pulley" ||
         pin.kind === "elastic" || pin.kind === "drum") continue;
+    // Away in the bag with the thing it is in: nothing of it is in the room
+    // for a pin to be drawn on, and it is not a pin that came off.
+    if (pin.away) continue;
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
     const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
@@ -1773,10 +1776,13 @@ async function changeInventory(op, item, options, again = false) {
   }
   const room = answer.room || {};
   if (room.set_aside) {
-    // Out of the world: not in the hand, and not drawn from now on.
-    if (world.held && world.held.name === room.set_aside) forgetHold();
-    const entry = world.bodies.get(room.set_aside);
-    if (entry) { forget(entry.mesh); world.bodies.delete(room.set_aside); }
+    // Out of the world, all of it -- a cart and both its wheelsets: not in the
+    // hand, and not drawn from now on.
+    for (const part of room.parts || [room.set_aside]) {
+      if (world.held && world.held.name === part) forgetHold();
+      const entry = world.bodies.get(part);
+      if (entry) { forget(entry.mesh); world.bodies.delete(part); }
+    }
   }
   if (room.let_go && world.held && world.held.name === room.let_go) forgetHold();
   if (room.brought_back) {
@@ -1784,6 +1790,10 @@ async function changeInventory(op, item, options, again = false) {
     draw(await act("poses"));
     if (room.held) adoptGrip(room.brought_back);
   }
+  // Its pins went with it and came back with it. The engine says so once, on
+  // the reply the room's own call got (the bag's, not this page's), so they
+  // are asked for: a pin left drawn where the cart stood is a pin to nothing.
+  if (room.set_aside || room.brought_back) await refreshJoints();
   if (room.taken_up) adoptGrip(room.taken_up, options.point);
   remember(answer.did.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase()));
   if (!options.quiet) lastAction(answer.did);

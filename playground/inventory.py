@@ -49,15 +49,15 @@ def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
     - bodies: every part, which is what a hand carries when it takes the thing
       up by any one of them;
     - installed: whether any part is anchored, directly or through its joints;
-    - one_piece: whether the engine holds it as one body joined to nothing,
-      which is what can be set aside as it is. An exact rigid part never is:
-      the engine does not set those aside (LiveWorld park).
+    - one_piece: whether it is one body joined to nothing. Not what the bag
+      asks: a thing of parts on joints goes in the bag whole, the engine
+      setting aside every part joined to the one it is given and saying why
+      when it cannot (LiveWorld park).
     """
     bodies = [b for b in (spec.get("bodies") or []) if isinstance(b, dict) and b.get("name")]
     # Exact rigid parts are the room's things as much as cell bodies are, and
     # are joined to each other the same way (a cart's wheels on their bearings).
     exact = [b for b in (spec.get("precise_rigid_bodies") or []) if isinstance(b, dict) and b.get("name")]
-    exact_names = {str(b["name"]) for b in exact}
     bodies = bodies + exact
     parent = {str(b["name"]): str(b["name"]) for b in bodies}
 
@@ -92,19 +92,12 @@ def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
         pieces = {str(b.get("join") or "") or str(b["name"]) for b in members}
         items.append({"id": ids[0] if ids else names[0], "name": names[0], "bodies": names,
                       "installed": any(bool(b.get("anchored")) for b in members),
-                      "one_piece": len(pieces) == 1 and not (set(names) & (jointed | exact_names))})
+                      "one_piece": len(pieces) == 1 and not (set(names) & jointed)})
     return items
 
 
 def said_name(name: str) -> str:
     return name[:1].upper() + name[1:]
-
-
-def not_for_the_bag(thing: dict[str, Any]) -> str:
-    """Why a thing that can be carried cannot be stowed yet, in words."""
-    if len(thing["bodies"]) > 1:
-        return "its parts are joined, and the bag only holds things of one piece"
-    return "the bag cannot hold a thing like it yet"
 
 
 class Inventory:
@@ -258,12 +251,8 @@ class Inventory:
             if free:
                 return {"ok": True, "op": op, "item": item, "name": name, "from": "world",
                         "to": free, "did": f"Took up {name} in your {free} hand."}
-            if not thing["one_piece"]:
-                why = (f"your hands are full, and {name} cannot go in the bag: {not_for_the_bag(thing)}"
-                       if op == "take_up" else
-                       f"{said_name(name)} cannot go in the bag: {not_for_the_bag(thing)}. "
-                       f"Take it up in your hand instead")
-                return {"ok": False, "why": why}
+            # Into the bag, all of it: a thing of parts on joints goes whole,
+            # and the room says why when it cannot (LiveWorld park).
             full = " -- your hands are full" if op == "take_up" else ""
             return {"ok": True, "op": op, "item": item, "name": name, "from": "world",
                     "to": "stowed", "did": f"{said_name(name)} added to inventory{full}."}
@@ -282,9 +271,6 @@ class Inventory:
         if op == "stow":
             if here not in HANDS:
                 return {"ok": False, "why": f"{said_name(name)} is not in your hand"}
-            if not thing["one_piece"]:
-                return {"ok": False, "why": f"{said_name(name)} cannot go in the bag: "
-                                            f"{not_for_the_bag(thing)}. Put it down instead"}
             return {"ok": True, "op": op, "item": item, "name": name, "from": here,
                     "to": "stowed", "did": f"Stowed {name}."}
         if op == "drop":

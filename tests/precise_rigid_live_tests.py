@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'playground')]
-import fracture_lab, inventory, live_session, precise_rigid, rigid_assembly, room_store, world_room, workshop_install as install
+import fracture_lab, inventory, inventory_room, live_session, precise_rigid, rigid_assembly, room_store, world_room, workshop_install as install
 from mcp import core_use, interaction_points, workshop_components, workshop_rigid
 ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_LIVE_ENGINE') else None
 
@@ -105,7 +105,6 @@ class PreciseAdmission(unittest.TestCase):
         self.assertEqual([.02]*3,doc['precise_rigid_bodies'][0]['parts'][0]['dimensions_m'])
 
 
-@unittest.skipUnless(ENGINE and ENGINE.is_file(), 'BANJO_LIVE_ENGINE is required')
 class RigidAssembly(unittest.TestCase):
     """A Workshop design as exact rigid bodies on pins (rigid_assembly): the
     cart, the product it was built for."""
@@ -212,6 +211,7 @@ class RigidAssembly(unittest.TestCase):
             self.assertEqual(int(fracture_lab.MATERIAL_COLORS[material], 16), body['color_rgba'])
 
 
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), 'BANJO_LIVE_ENGINE is required')
 class NativePreciseInstallation(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -331,13 +331,28 @@ class NativePreciseInstallation(unittest.TestCase):
         self.live.open(self.app,{'spec':self.room.spec,'snapshot':current})
         self.assertEqual(current,self.snap())
 
-    def test_unsupported_failure_heat_and_inventory_operations_are_explicit(self):
+    def test_unsupported_failure_and_heat_operations_are_explicit(self):
         p=self.preview();self.commit(p);before=self.snap()
-        for op,kwargs in [('fracture',{'name':p['root_body']}),('park',{'name':p['root_body']}),
+        for op,kwargs in [('fracture',{'name':p['root_body']}),
                           ('heat',{'target':p['root_body'],'power_w':100,'seconds':1})]:
             with self.subTest(op=op),self.assertRaisesRegex(live_session.LiveError,'precise-rigid|precise rigid'):
                 self.live.session.send(op=op,**kwargs)
             self.assertEqual(before,self.snap())
+
+    def test_an_exact_body_goes_in_the_bag_and_comes_back_where_it_is_put(self):
+        # Set aside as a cell body is: out of the room, saved as set aside with
+        # the mass the engine measured, and back at rest where it is put.
+        p=self.preview();self.commit(p);root=p['root_body']
+        was=next(b for b in self.live.session.send(op='poses')['bodies'] if b['name']==root)
+        self.live.session.send(op='park',name=root)
+        self.assertNotIn(root,{b['name'] for b in self.live.session.send(op='poses')['bodies']})
+        saved=next(b for b in self.snap()['bodies'] if b['name']==root)
+        self.assertIn('parked',saved)
+        self.assertAlmostEqual(artifact('oak')['mass_kg'],saved['precise_mass_kg'],delta=1e-6)
+        at=[was['position_m'][0]+1.0,was['position_m'][1]+.01,was['position_m'][2]]
+        self.live.session.send(op='unpark',name=root,at=at,q=was['orientation_wxyz'])
+        back=next(b for b in self.live.session.send(op='poses')['bodies'] if b['name']==root)
+        for k in range(3):self.assertAlmostEqual(at[k],back['position_m'][k],delta=1e-6)
 
     def test_native_geometry_validator_independently_rejects_bad_raw_scenes(self):
         spec=world_room.yard();spec['precise_rigid_bodies']=[box()]
@@ -426,6 +441,65 @@ class NativePreciseInstallation(unittest.TestCase):
             self.assertAlmostEqual(went, .16 * abs(angle), delta=.01 * went)
         w, x, y, z = poses1['cart']['orientation_wxyz']
         self.assertGreater(1 - 2 * (x * x + z * z), math.cos(math.radians(3)))   # still standing
+
+    def test_the_compiled_cart_goes_in_the_bag_whole_and_comes_back_whole(self):
+        # The owner's product rule, through the person's own bag: taken up by a
+        # wheelset, the whole cart is in the hand; put in the bag, all three of
+        # its bodies go, their pins in them; kept there through a restart; and
+        # out into the hand and put down, it is one cart on its pins.
+        design, over = cart_design()
+        placed = rigid_assembly.placed(rigid_assembly.compile_design(design, over, root='cart'), [0.0, 0.002, -1.2])
+        spec = world_room.yard(); spec['precise_rigid_bodies'] = rigid_assembly.scene_bodies(placed)
+        spec['joints'] = rigid_assembly.scene_joints(placed)
+        self.room.spec = spec; self.live.open(self.app, {'spec': spec})
+        self.live.session.send(op='step', dt=1/240, n=240)
+        person = {'standing_m': [0.0, 0.0, 0.6], 'facing': [0.0, 0.0, -1.0], 'eyes_m': [0.0, 1.62, 0.6]}
+        cart = ('cart', 'cart-1', 'cart-2')
+
+        def ask(request, op, item):
+            return inventory_room.request(self.app, {'request': request, 'revision': None, 'op': op,
+                                                     'item': item, 'person': person})
+
+        def here():
+            return {b['name']: b for b in self.live.session.send(op='poses')['bodies']}
+
+        def pins():
+            return [j for j in self.live.session.send(op='joints')['joints'] if j['kind'] == 'hinge']
+
+        def standing_against_the_chassis(bodies):
+            # Each wheelset's distance from the chassis: what its pin keeps.
+            return [math.dist(bodies['cart']['position_m'], bodies[n]['position_m']) for n in cart[1:]]
+        built = standing_against_the_chassis(here())
+        whole = inventory_room.whole_kg(self.app, inventory_room.item_holding(self.app, 'cart'))
+        self.assertAlmostEqual(21.144 + 2 * 10.954, whole, delta=0.01)
+        took = ask('t1', 'take_up', 'cart-1')
+        self.assertTrue(took['ok'], took)
+        self.assertEqual(('cart', 'cart-1'), (took['room']['taken_up'], took['room']['by']))
+        stowed = ask('s1', 'stow', 'cart-1')
+        self.assertTrue(stowed['ok'], stowed)
+        self.assertFalse(set(cart) & set(here()), 'part of the cart stayed in the room when it went in the bag')
+        self.assertTrue(all(j['attached'] and j.get('away') for j in pins()), pins())
+        # A restart with it in the bag: the room opens with it still there.
+        saved = self.snap()
+        self.live.shutdown()
+        opened = self.live.open(self.app, {'spec': spec, 'snapshot': saved})
+        self.assertEqual('whole', opened['restored']['tier'])
+        inventory_room.after_open(self.app, opened)
+        self.assertFalse(set(cart) & set(here()), 'reopened, the bagged cart was back in the room')
+        self.assertEqual([inventory_room.item_holding(self.app, 'cart')['id']],
+                         inventory_room.inventory_of(self.app).record()['stowed'][:1])
+        # Out into the hand, and put down: one cart on its pins.
+        out = ask('e1', 'equip', 'cart')
+        self.assertTrue(out['ok'], out)
+        self.assertTrue(set(cart) <= set(here()), 'out of the bag, part of the cart was not')
+        self.assertTrue(all(j['attached'] and not j.get('away') for j in pins()), pins())
+        down = ask('d1', 'drop', 'cart')
+        self.assertTrue(down['ok'], down)
+        self.live.session.send(op='step', dt=1/240, n=480)
+        landed = here()
+        for was, now in zip(built, standing_against_the_chassis(landed)):
+            self.assertAlmostEqual(was, now, delta=0.005)
+        self.assertTrue(all(j['attached'] for j in pins()), pins())
 
     def test_live_native_mass_and_inertia_agree_with_independent_initial_energy(self):
         # At t=0 there is no contact/solver work. An independent analytic oracle

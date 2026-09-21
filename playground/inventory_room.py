@@ -164,7 +164,7 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
     room's things the engine holds and the record has in no hand is let go, and
     a thing the saved world had set aside but the record has out in the world is
     brought back where it was put away. A thing the room no longer has, or that
-    cannot be set aside now (the chat joined it to something), leaves the record
+    cannot be set aside now (the chat fixed it to the room), leaves the record
     -- the record says only what is true of the room. Returns what the page
     shows."""
     record = inventory_of(app)
@@ -200,7 +200,7 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
         present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
         for item in [i for i in record.stowed if i]:
             thing = items.get(item)
-            if thing is None or thing["installed"] or not thing["one_piece"]:
+            if thing is None or thing["installed"]:
                 record.forget(item)
                 changed = True
                 continue
@@ -213,7 +213,10 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
                 record.forget(item)
                 changed = True
         if whole:
-            in_bag = {items[i]["name"] for i in record.stowed if i and i in items}
+            # Every part of what is in the bag: a thing of parts on joints was
+            # set aside whole, and asking for one of its parts back would bring
+            # all of it out of the bag.
+            in_bag = {name for i in record.stowed if i and i in items for name in items[i]["bodies"]}
             for away in restored.get("parked") or []:
                 name = away.get("name") if isinstance(away, dict) else None
                 if not name or name in in_bag:
@@ -283,7 +286,9 @@ def request(app: Any, body: Any) -> dict[str, Any]:
             app.live.act({"session": sid, "op": "park", "name": name})
             if now and now.get("orientation_wxyz"):
                 record.facing[item] = [float(v) for v in now["orientation_wxyz"]]
-            return {"set_aside": name}
+            # Every part went: a thing of parts on joints is set aside whole
+            # (LiveWorld::park), and the page stops drawing all of it.
+            return {"set_aside": name, "parts": list(thing["bodies"]) if thing else [name]}
         if plan["from"] == "world" and plan["to"] in inventory.HANDS:
             # Taken up: the engine's hand grips it where it lies -- by the part
             # pointed at, the rest of it coming on its own joints.

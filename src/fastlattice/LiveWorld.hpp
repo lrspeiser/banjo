@@ -367,6 +367,10 @@ struct LiveJoint {
     // vanishing from the list -- a host that drew a gate wants to know the gate
     // came off its hinges.
     bool attached{true};
+    // Away in the bag with the thing it is in (LiveWorld::park): still in it,
+    // and attached, with nothing standing in for it until the thing is back.
+    // `at` is what it read as it went, and what it is made again with.
+    bool away{};
 
     // ---- heat and strength (docs/thermal-mechanics.md) ----------------------
     //

@@ -58,13 +58,13 @@ class TheRoomsThingsAsAPersonCountsThem(unittest.TestCase):
         stool = item_named(items, "stool leg")
         self.assertEqual(sorted(stool["bodies"]), ["stool leg", "stool seat"])
         self.assertFalse(stool["installed"])
-        self.assertFalse(stool["one_piece"], "a stool of joined parts cannot be set aside as one body yet")
+        self.assertFalse(stool["one_piece"], "a stool of joined parts is not one body")
         self.assertEqual(len(items), 4)
 
-    def test_exact_rigid_parts_on_joints_are_one_thing_that_the_bag_cannot_hold(self):
+    def test_exact_rigid_parts_on_joints_are_one_thing(self):
         # A cart as exact rigid parts on its bearings (precise_rigid_bodies):
-        # one thing, the way a stool's joined legs are, and never one piece the
-        # engine could set aside.
+        # one thing, the way a stool's joined legs are; and an exact body on
+        # its own is one piece, as a cell body is.
         room = {"bodies": [body("yard floor", "b-floor00001", anchored=True)],
                 "precise_rigid_bodies": [{"name": "cart"}, {"name": "cart wheels 1"},
                                          {"name": "cart wheels 2"}],
@@ -75,7 +75,7 @@ class TheRoomsThingsAsAPersonCountsThem(unittest.TestCase):
         self.assertFalse(cart["installed"])
         self.assertFalse(cart["one_piece"])
         alone = item_named(inventory.items_of({"precise_rigid_bodies": [{"name": "crate"}]}), "crate")
-        self.assertFalse(alone["one_piece"], "the engine does not set an exact rigid body aside")
+        self.assertTrue(alone["one_piece"], "an exact body on its own is not one piece")
 
 
 class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
@@ -115,15 +115,11 @@ class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
         self.assertIn("breaking", answer["why"])
         self.assertEqual((self.inv.where("b-cup0000001"), self.inv.revision), ("world", 0))
 
-    def test_installed_or_joined_things_are_not_taken(self):
+    def test_installed_things_are_not_taken(self):
         gate = self.inv.request("r1", None, "take", item_named(self.items, "oak gate")["id"],
                                 self.items, self.act)
         self.assertFalse(gate["ok"])
         self.assertIn("fixed in place", gate["why"])
-        stool = self.inv.request("r2", None, "take", item_named(self.items, "stool seat")["id"],
-                                 self.items, self.act)
-        self.assertFalse(stool["ok"])
-        self.assertIn("joined", stool["why"])
         self.assertEqual(self.done, [])
 
     def test_a_thing_of_joined_parts_is_taken_up_whole_into_a_hand(self):
@@ -136,26 +132,32 @@ class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
         self.assertEqual(self.inv.where(stool), "right")
         self.assertEqual(self.done, [("take_up", stool, "right")])
 
-    def test_a_thing_of_joined_parts_is_never_put_in_the_bag_and_says_why(self):
+    def test_a_thing_of_joined_parts_goes_in_the_bag_whole(self):
+        # The owner's product rule: a thing of parts on joints is one thing, and
+        # goes in the bag as one -- the room sets aside every part joined to the
+        # one it is given (LiveWorld park), and says why when it cannot.
         stool = item_named(self.items, "stool seat")["id"]
         taken = self.inv.request("r1", None, "take", stool, self.items, self.act)
-        self.assertFalse(taken["ok"])
-        self.assertIn("cannot go in the bag", taken["why"])
-        self.assertIn("Take it up in your hand instead", taken["why"])
-        # Both hands full: not into the bag instead, as a thing of one piece is.
+        self.assertTrue(taken["ok"], taken)
+        self.assertEqual((taken["to"], taken["did"]), ("stowed", "Stool seat added to inventory."))
+        self.assertEqual(self.inv.where(stool), "stowed")
+        # Out into a hand, and back in from it.
+        held = self.inv.request("r2", None, "equip", stool, self.items, self.act, hand="right")
+        self.assertTrue(held["ok"], held)
+        stowed = self.inv.request("r3", None, "stow", stool, self.items, self.act)
+        self.assertTrue(stowed["ok"], stowed)
+        self.assertEqual(self.inv.where(stool), "stowed")
+        # Taken up with both hands full, it goes in the bag, as a thing of one
+        # piece does.
+        self.inv.request("r4", None, "drop", stool, self.items, self.act)
         self.inv.hands = {"right": "b-other000001", "left": "b-other000002"}
-        full = self.inv.request("r2", None, "take_up", stool, self.items, self.act)
-        self.assertFalse(full["ok"])
-        self.assertIn("your hands are full", full["why"])
-        self.assertEqual(self.inv.where(stool), "world")
-        # Held, it is not stowed either -- and the hand keeps it.
-        self.inv.hands = {"right": None, "left": None}
-        self.inv.request("r3", None, "take_up", stool, self.items, self.act)
-        stowed = self.inv.request("r4", None, "stow", stool, self.items, self.act)
-        self.assertFalse(stowed["ok"])
-        self.assertIn("Put it down instead", stowed["why"])
-        self.assertEqual(self.inv.where(stool), "right")
-        self.assertEqual(self.done, [("take_up", stool, "right")])
+        full = self.inv.request("r5", None, "take_up", stool, self.items, self.act)
+        self.assertTrue(full["ok"], full)
+        self.assertEqual(full["to"], "stowed")
+        self.assertIn("your hands are full", full["did"])
+        self.assertEqual(self.done, [("take", stool, "stowed"), ("equip", stool, "right"),
+                                     ("stow", stool, "stowed"), ("drop", stool, "world"),
+                                     ("take_up", stool, "stowed")])
 
     def test_what_it_weighs_is_the_whole_things(self):
         # The room gives the whole thing's weight (inventory_room.whole_kg);

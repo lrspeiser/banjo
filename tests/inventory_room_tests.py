@@ -244,7 +244,8 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
     if part of the product, like swinging a mace". Taken up by either part, the
     hand grips that part and the rest comes on its chain -- which stays a chain:
     lifted, the head hangs; swung, it swings; let go, all of it lands, still
-    tied. It weighs what all of it weighs, and it does not go in the bag."""
+    tied. It weighs what all of it weighs, and it goes in the bag whole, its
+    chain with it, and comes back out the same."""
 
     @classmethod
     def setUpClass(cls):
@@ -333,22 +334,38 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
         self.assertLess(landed["mace"]["position_m"][1], 0.2, landed["mace"])
         self.assertLess(self.chain(landed), CHAIN_WHOLE_M, "let go, it landed in pieces")
 
-    def test_taken_up_by_its_head_it_is_the_same_thing_and_the_bag_says_why_not(self):
+    def test_taken_up_by_its_head_it_is_the_same_thing_and_goes_in_the_bag_whole(self):
         took = self.ask("u1", 0, "take_up", "mace head")
         self.assertTrue(took["ok"], took)
         self.assertEqual((took["room"]["taken_up"], took["room"]["by"]), ("mace", "mace head"))
         self.assertEqual(inventory_room.inventory_of(self.app).hands["right"], "b-mace000001",
                          "taken up by its head, the record holds something other than the mace")
         self.assertEqual(self.held(), "mace head")
-        before = deepcopy(inventory_room.inventory_of(self.app).record())
+        # Into the bag from the hand: all of it goes, its chain with it.
         stowed = self.ask("s1", 1, "stow", "mace head")
-        self.assertFalse(stowed["ok"])
-        self.assertIn("cannot go in the bag", stowed["why"])
-        self.assertEqual(inventory_room.inventory_of(self.app).record(), before)
-        self.assertEqual(self.held(), "mace head", "refused the bag, it was dropped all the same")
-        down = self.ask("d1", 1, "drop", "mace")
+        self.assertTrue(stowed["ok"], stowed)
+        self.assertEqual(inventory_room.inventory_of(self.app).record()["stowed"][0], "b-mace000001")
+        self.assertEqual(self.held(), "", "put in the bag, the hand still holds its head")
+        self.steps(10)
+        here = self.bodies()
+        self.assertNotIn("mace", here, "the handle stayed in the room when the mace went in the bag")
+        self.assertNotIn("mace head", here, "the head stayed in the room when the mace went in the bag")
+        away = self.live.act({"session": self.session, "op": "joints"})["joints"]
+        self.assertTrue(away and all(j["attached"] and j.get("away") for j in away),
+                        f"in the bag, its chain reads as come off: {away}")
+        # Out into the hand: all of it, the chain whole.
+        out = self.ask("e1", 2, "equip", "mace")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.held(), "mace")
+        self.steps(20)
+        back = self.bodies()
+        self.assertLess(self.chain(back), CHAIN_WHOLE_M, "out of the bag, its chain had come apart")
+        self.assertFalse(any(j.get("away") for j in self.live.act({"session": self.session, "op": "joints"})["joints"]))
+        down = self.ask("d1", 3, "drop", "mace")
         self.assertTrue(down["ok"], down)
-        self.assertEqual(self.held(), "", "put down by its name, the hand kept its head")
+        self.assertEqual(self.held(), "", "put down by its name, the hand kept it")
+        self.steps(40)
+        self.assertLess(self.chain(self.bodies()), CHAIN_WHOLE_M, "put down, it landed in pieces")
 
     def test_what_it_weighs_is_all_of_it(self):
         both = inventory_room.whole_kg(self.app, inventory_room.item_holding(self.app, "mace"))

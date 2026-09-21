@@ -1777,6 +1777,33 @@ struct LiveWorld::Impl {
     [[nodiscard]] bool inWorld(std::size_t slot) const {
         return slot < body_of.size() && world->contains(body_of[slot]);
     }
+    // Everything held to a slot by a joint still attached, that slot first:
+    // the whole of a thing of parts on pins -- a cart and its two wheelsets --
+    // by whichever part it is taken. What goes into the bag with it and comes
+    // back out with it (LiveWorld::park, unpark).
+    [[nodiscard]] std::vector<std::size_t> jointedWith(std::size_t slot) const {
+        std::vector<std::size_t> out{slot};
+        for (std::size_t k = 0; k < out.size(); ++k) {
+            const std::string &name = described[out[k]].name;
+            for (const SceneJoint &joint : joints) {
+                if (!joint.attached || (joint.a != name && joint.b != name)) continue;
+                const auto other = index_of.find(joint.a == name ? joint.b : joint.a);
+                if (other != index_of.end() && std::find(out.begin(), out.end(), other->second) == out.end())
+                    out.push_back(other->second);
+            }
+        }
+        return out;
+    }
+    // A joint away in the bag with the thing it is in: still attached, with
+    // nothing standing in for it until the thing is back.
+    [[nodiscard]] bool setAside(const SceneJoint &joint) const {
+        if (!joint.attached) return false;
+        for (const std::string *end : {&joint.a, &joint.b}) {
+            const auto at = index_of.find(*end);
+            if (at != index_of.end() && isParked(at->second)) return true;
+        }
+        return false;
+    }
     [[nodiscard]] double carriedObjectsKg(bool include_hand = true) const {
         // Use native mass, including saved parked mass. Construction recipes
         // would silently restore material removed by damage or burning.
@@ -3214,10 +3241,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.next_body_id = std::max(impl.next_body_id, id + 1);
         RigidSnapshot pose = body.initial;
         bool awake = true;
+        bool away = false;
+        double away_kg = 0.0;
         if (previous) {
             if (previous->value("shape", std::string{}) != "compound" ||
                 previous->value("anchored", false) || previous->value("fragment", false) ||
-                previous->contains("parked") || !previous->at("nodes_b64").get<std::string>().empty() ||
+                !previous->at("nodes_b64").get<std::string>().empty() ||
                 !previous->at("offsets_b64").get<std::string>().empty() ||
                 previous->value("revision", 0U) != 0 || numberFrom(previous->at("dent_m")) != 0.0)
                 throw std::invalid_argument("invalid or unsupported saved precise-rigid state");
@@ -3232,8 +3261,16 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 || previous->at("material").get<std::string>() != materialPresetName(body.material) ||
                 previous->at("color_rgba").get<std::uint32_t>() != body.color_rgba)
                 throw std::invalid_argument("saved precise-rigid descriptor does not match its source");
-            pose = rigidFrom(previous->at("pose"));
-            awake = previous->at("awake").get<bool>();
+            // Set aside in the bag (park): made where it was put away, and set
+            // aside again before anything steps, as a cell body is (below).
+            away = previous->contains("parked");
+            pose = rigidFrom(away ? previous->at("parked").at("pose") : previous->at("pose"));
+            if (away) {
+                pose.linear_velocity_m_s = {};
+                pose.angular_velocity_rad_s = {};
+                away_kg = numberFrom(previous->at("parked").at("mass_kg"));
+            }
+            awake = !away && previous->at("awake").get<bool>();
         }
         impl.world->addCompound({.body_id=id, .parts=body.parts,
             .material=makeReferenceMaterial(body.material), .state=pose,
@@ -3245,6 +3282,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 numberFrom(previous->at("rolling_resistance")) != surface.rolling_resistance)
                 throw std::invalid_argument("saved precise-rigid surface differs from its material model");
             Placement at; at.name=name; at.id=id; at.pose=pose; at.awake=awake;
+            at.parked=away; at.parked_mass_kg=away_kg;
             placements.push_back(at);
         }
         LiveBodyPose d;
@@ -5078,7 +5116,11 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         said.lower = joint.lower;
         said.upper = joint.upper;
         said.friction = joint.friction;
-        said.attached = joint.attached && joint.rigid != 0;
+        // Away with the thing it is in, it is still in it: attached, reading
+        // what it read as it went, and made again when the thing is back.
+        said.away = impl_->setAside(joint);
+        said.attached = joint.attached && (joint.rigid != 0 || said.away);
+        if (said.away) said.at = joint.at_when_hung;
         if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) {
             const JoltWorld::JointReport now = impl_->world->jointState(joint.rigid);
             said.at = now.at;
@@ -5467,6 +5509,10 @@ void LiveWorld::rehangJoints() {
         if (!joint.attached) continue;
         if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) continue;
         joint.rigid = 0;
+        // Away in the bag with the thing it is in (park): kept as it is, and
+        // made again when the thing is back (unpark). Hung now, it would find
+        // neither end in the world and come off.
+        if (impl_->setAside(joint)) continue;
 
         // Find each end again. By name if the name is still there -- which it is
         // whenever a body came through whole -- and otherwise by following the
@@ -12463,11 +12509,6 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     Impl &I = *impl_;
     why.clear();
     const auto found = I.index_of.find(name);
-    // An exact body is not set aside yet: restoring one that was is refused
-    // (openFrom). Everything else in the room goes in the bag as before --
-    // one exact body in a room no longer takes the bag away from the rest.
-    if (found != I.index_of.end() && I.isPrecise(found->second))
-        throw std::invalid_argument("park: a precise-rigid body cannot be set aside yet");
     if (found == I.index_of.end()) {
         why = "there is nothing called that in the scene";
         return false;
@@ -12477,143 +12518,182 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
         why = "it is already set aside";
         return false;
     }
-    if (I.described[which].anchored) {
-        why = "it is fixed in place: it is part of the room, not a thing to carry";
-        return false;
-    }
-    if (!I.inWorld(which)) {
-        why = "it is not in the world";
-        return false;
-    }
-    // Joined to something. A joint is kept between two names and made again
-    // against whatever carries them, so a record naming a thing that is away --
-    // one still holding, or one kept after it parted so it can be reported --
-    // would be a joint to nothing.
-    for (const Impl::SceneJoint &joint : I.joints) {
-        if (joint.a != name && joint.b != name) continue;
-        const std::string &other = joint.a == name ? joint.b : joint.a;
-        const std::string word = jointWord(joint.kind);
-        why = joint.attached ? "it is joined to the " + other + " by a " + word + ": set aside, the " + word +
-                                   " would be holding nothing"
-                             : "the " + word + " that joined it to the " + other +
-                                   " has parted but is still on record: take the " + word + " away first";
-        return false;
-    }
-    // Breaking. A fracture being worked out holds this slot, and will destroy
-    // its island and put pieces where it was: set aside from under that, a thing
+    // What is joined to it goes with it. A thing of parts on pins -- a cart and
+    // its two wheelsets, a mace and its head on a link -- goes in the bag as the
+    // one thing it is, its pins still in it, and comes out the same (unpark). A
+    // pin is kept between two names, and one whose thing is away is left as it
+    // is rather than made again against nothing (rehangJoints) until the thing
+    // is back. Exact bodies go as cell bodies do.
+    const std::vector<std::size_t> group = I.jointedWith(which);
+    const auto inGroup = [&](const std::string &part) {
+        const auto at = I.index_of.find(part);
+        return at != I.index_of.end() && std::find(group.begin(), group.end(), at->second) != group.end();
+    };
+    std::set<unsigned> own_pins;
+    for (const Impl::SceneJoint &joint : I.joints)
+        if (joint.attached && joint.rigid != 0 && inGroup(joint.a)) own_pins.insert(joint.rigid);
+    // Breaking. A fracture being worked out holds a slot, and will destroy its
+    // island and put pieces where it was: set aside from under that, a thing
     // would come back out of the bag and lie on the floor in pieces as well. The
     // same things collect and reviseMatter keep their hands off.
-    const auto holds = [which](const Pending &job) {
-        return job.which == which || job.anvil == which ||
-               std::find(job.island_bodies.begin(), job.island_bodies.end(), which) != job.island_bodies.end();
+    const auto holds = [](const Pending &job, std::size_t k) {
+        return job.which == k || job.anvil == k ||
+               std::find(job.island_bodies.begin(), job.island_bodies.end(), k) != job.island_bodies.end();
     };
-    bool breaking = I.pending && holds(*I.pending);
-    for (const auto &job : I.queued) breaking = breaking || holds(*job);
-    breaking = breaking ||
-               std::find(I.held_for_fracture.begin(), I.held_for_fracture.end(), which) != I.held_for_fracture.end();
-    if (breaking) {
-        why = "it is breaking: what it breaks into is still being worked out";
-        return false;
-    }
-    if (I.split_later.count(name) != 0) {
-        why = "it has been cut through and is about to come apart";
-        return false;
-    }
-    // Being cut, or cutting. An edge in matter is held there by a kerf between
-    // the two, and one still lying in a kerf's mouth keeps their ordinary contact
-    // suspended until it is clear: set aside, either is half a cut with nothing
-    // to finish it.
     const auto bladeBody = [&I](unsigned id) {
         for (const Impl::Blade &blade : I.blades)
             if (blade.id == id) return blade.body;
         return std::string();
     };
-    for (const Impl::Engagement &e : I.engaged) {
-        if (e.target == name) {
-            why = "it is being cut: the " + bladeBody(e.blade) + "'s edge is in it";
-            return false;
+    // Why one part of it cannot go now, in words about that part; nothing when
+    // it can.
+    const auto refusal = [&](std::size_t k) -> std::string {
+        const std::string &own = I.described[k].name;
+        if (I.isParked(k)) return "it is already set aside";
+        if (I.described[k].anchored) return "it is fixed in place: it is part of the room, not a thing to carry";
+        if (!I.inWorld(k)) return "it is not in the world";
+        for (const Impl::SceneJoint &joint : I.joints) {
+            if (joint.a != own && joint.b != own) continue;
+            const std::string &other = joint.a == own ? joint.b : joint.a;
+            const std::string word = jointWord(joint.kind);
+            // Parted, but still on record between two names: with one of them
+            // away, it would be a joint to nothing.
+            if (!joint.attached)
+                return "the " + word + " that joined it to the " + other +
+                       " has parted but is still on record: take the " + word + " away first";
+            // What is not in the thing to be carried with it: a pulley's rope
+            // runs over points fixed in the room, a drum's is wound so far, and
+            // a motor keeps its command, its brake and its store with its pin.
+            if (joint.kind == JoltWorld::JointKind::Pulley)
+                return "its pulley runs over points fixed in the room: set aside, its rope would run over nothing";
+            if (joint.kind == JoltWorld::JointKind::Drum)
+                return "the rope on its drum is wound so far, and the bag cannot keep that yet";
+            for (const Impl::Motor &motor : I.motors)
+                if (motor.said.joint == joint.id)
+                    return "a motor drives its " + word + ", and the bag cannot keep a motor and what controls it yet";
         }
-        if (bladeBody(e.blade) == name) {
-            why = "its edge is in the " + e.target + ": draw it out of the cut first";
-            return false;
+        bool breaking = I.pending && holds(*I.pending, k);
+        for (const auto &job : I.queued) breaking = breaking || holds(*job, k);
+        breaking = breaking ||
+                   std::find(I.held_for_fracture.begin(), I.held_for_fracture.end(), k) != I.held_for_fracture.end();
+        if (breaking) return "it is breaking: what it breaks into is still being worked out";
+        if (I.split_later.count(own) != 0) return "it has been cut through and is about to come apart";
+        // Being cut, or cutting. An edge in matter is held there by a kerf
+        // between the two, and one still lying in a kerf's mouth keeps their
+        // ordinary contact suspended until it is clear: set aside, either is
+        // half a cut with nothing to finish it.
+        for (const Impl::Engagement &e : I.engaged) {
+            if (e.target == own) return "it is being cut: the " + bladeBody(e.blade) + "'s edge is in it";
+            if (bladeBody(e.blade) == own) return "its edge is in the " + e.target + ": draw it out of the cut first";
         }
-    }
-    for (const auto &[blade, target] : I.exempt) {
-        if (target == name) {
-            why = "an edge is still in a cut in it: draw the " + bladeBody(blade) + " clear first";
-            return false;
+        for (const auto &[blade, target] : I.exempt) {
+            if (target == own) return "an edge is still in a cut in it: draw the " + bladeBody(blade) + " clear first";
+            if (bladeBody(blade) == own)
+                return "its edge is still in the cut it made in the " + target + ": draw it clear first";
         }
-        if (bladeBody(blade) == name) {
-            why = "its edge is still in the cut it made in the " + target + ": draw it clear first";
-            return false;
-        }
-    }
-    // A tool whose point is in the ground: the ground's bite holds it there.
-    if (I.tools.inGround(name)) {
-        why = "its point is in the ground: pull it out first";
+        // A tool whose point is in the ground: the ground's bite holds it there.
+        if (I.tools.inGround(own)) return "its point is in the ground: pull it out first";
+        // A gas that pushes on it, or that it holds in: set aside, the gas would
+        // push on nothing, or have nothing round it.
+        if (I.thermo)
+            for (const thermo::GasRegion &region : I.thermo->state().regions) {
+                if (!region.piston) continue;
+                if (region.piston->body == own)
+                    return "the " + region.name + " pushes on it: set aside, the gas would push on nothing";
+                if (region.piston->container == own)
+                    return "it holds the " + region.name + " in: set aside, the gas would have nothing round it";
+            }
+        // And anything else the rigid world holds it by that none of that
+        // names: its own pins are the only holds it may go with.
+        for (const unsigned hold : I.world->jointsOn(I.body_of[k]))
+            if (own_pins.count(hold) == 0) return "something in the world is holding it";
+        return {};
+    };
+    for (const std::size_t k : group) {
+        const std::string reason = refusal(k);
+        if (reason.empty()) continue;
+        why = k == which ? reason : "the " + I.described[k].name + " joined to it cannot go with it: " + reason;
         return false;
     }
-    // A gas that pushes on it, or that it holds in: set aside, the gas would
-    // push on nothing, or have nothing round it.
-    if (I.thermo)
-        for (const thermo::GasRegion &region : I.thermo->state().regions) {
-            if (!region.piston) continue;
-            if (region.piston->body == name) {
-                why = "the " + region.name + " pushes on it: set aside, the gas would push on nothing";
-                return false;
-            }
-            if (region.piston->container == name) {
-                why = "it holds the " + region.name + " in: set aside, the gas would have nothing round it";
-                return false;
-            }
-        }
-    // And anything else the rigid world holds it by that none of that names.
-    const MatterBodyId id = I.body_of[which];
-    if (!I.world->jointsOn(id).empty()) {
-        why = "something in the world is holding it";
-        return false;
+    double kg = 0.0;
+    bool in_hand = false;
+    for (const std::size_t k : group) {
+        kg += I.world->mechanicalState(I.body_of[k]).mass_kg;
+        in_hand = in_hand || I.holding == k;
     }
-
-    if (I.environment && I.holding!=which &&
-        I.carriedObjectsKg()+I.world->mechanicalState(id).mass_kg+I.environment->carriedKg()>
-            I.environment->carryLimitKg()) {
-        why="carrying capacity includes held items, stored items and excavated ground";
+    if (I.environment && !in_hand &&
+        I.carriedObjectsKg() + kg + I.environment->carriedKg() > I.environment->carryLimitKg()) {
+        why = "carrying capacity includes held items, stored items and excavated ground";
         return false;
     }
 
     // Nothing has been touched until here. In the hand: let go first, as
     // letting go always is -- a stroke on it ends, cancelled.
-    if (I.holding == which) release();
-    // A run started early for a collision it was going to be in is not wanted
-    // now: binned, as a guess always is. Only one that holds it -- binning waits
-    // for the worker, and a guess about something else is still worth having.
-    if (I.guessing && holds(*I.guessing)) dropGuess("guess-wasted");
-    // Its points leave whatever ground they were resting on.
-    if (!I.tools.empty()) I.tools.setAside(toolHost(), name);
-    // Its edges are in nothing.
-    for (Impl::Blade &blade : I.blades)
-        if (blade.body == name) blade.cutting.clear();
-    const Impl::ParkedRecord record{I.world->snapshot(id), I.world->mechanicalState(id).mass_kg};
-    std::string refused;
-    if (!I.world->park(id, refused)) {
-        why = refused;
+    if (in_hand) release();
+    for (const std::size_t k : group) {
+        const std::string &own = I.described[k].name;
+        // A run started early for a collision it was going to be in is not
+        // wanted now: binned, as a guess always is. Only one that holds it --
+        // binning waits for the worker, and a guess about something else is
+        // still worth having.
+        if (I.guessing && holds(*I.guessing, k)) dropGuess("guess-wasted");
+        // Its points leave whatever ground they were resting on.
+        if (!I.tools.empty()) I.tools.setAside(toolHost(), own);
+        // Its edges are in nothing.
+        for (Impl::Blade &blade : I.blades)
+            if (blade.body == own) blade.cutting.clear();
+    }
+    // Its pins come out of the rigid world with it, as they stand: each is made
+    // again when it is back, turned as far as it had turned.
+    I.rememberJointAngles(*I.world);
+    for (Impl::SceneJoint &joint : I.joints) {
+        if (!joint.attached || joint.rigid == 0 || !inGroup(joint.a)) continue;
+        if (I.world->hasJoint(joint.rigid)) I.world->removeJoint(joint.rigid);
+        joint.rigid = 0;
+    }
+    std::vector<std::pair<std::size_t, Impl::ParkedRecord>> away;
+    for (const std::size_t k : group) {
+        const MatterBodyId id = I.body_of[k];
+        away.push_back({k, Impl::ParkedRecord{I.world->snapshot(id), I.world->mechanicalState(id).mass_kg}});
+    }
+    for (std::size_t n = 0; n < away.size(); ++n) {
+        const std::size_t k = away[n].first;
+        const std::string &own = I.described[k].name;
+        std::string refused;
+        if (I.world->park(I.body_of[k], refused)) {
+            I.parked.emplace(own, away[n].second);
+            // What it holds -- its heat, what it is made of, its fuel -- stays
+            // with it exactly: time stands still for it while it is away
+            // (ThermoWorld::park), and it is still the network's, on its ledger.
+            if (I.thermo && I.thermo->holds(own)) I.thermo->park(own);
+            continue;
+        }
+        // Something the checks above do not see holds this part: what already
+        // went comes back where it was, and its pins are made again.
+        for (std::size_t m = 0; m < n; ++m) {
+            const std::size_t back = away[m].first;
+            std::string ignored;
+            (void)I.world->unpark(I.body_of[back], away[m].second.pose, ignored);
+            I.parked.erase(I.described[back].name);
+            if (I.thermo && I.thermo->holds(I.described[back].name)) I.thermo->unpark(I.described[back].name);
+        }
+        rehangJoints();
+        why = k == which ? refused : "the " + own + " joined to it cannot go with it: " + refused;
         return false;
     }
-    I.parked.emplace(name, record);
-    // What it holds -- its heat, what it is made of, its fuel -- stays with it
-    // exactly: time stands still for it while it is away (ThermoWorld::park),
-    // and it is still the network's, on its ledger.
-    if (I.thermo) I.thermo->park(name);
     // What rested on it falls, and what it rested on carries it no more. Jolt
     // wakes nothing when a body is taken out from under a sleeping one (see
     // applyPending), and the load survey is asked again on the next step.
-    const double reach = 0.5 * length(I.described[which].dimensions_m) + 0.05;
-    for (std::size_t j = 0; j < I.described.size(); ++j) {
-        if (j == which || I.described[j].anchored || !I.inWorld(j)) continue;
-        const Vec3 there = I.world->snapshot(I.body_of[j]).center_of_mass_world_m;
-        if (length(there - record.pose.center_of_mass_world_m) <= reach + 0.5 * length(I.described[j].dimensions_m))
-            I.world->wake(I.body_of[j]);
+    for (const auto &[k, record] : away) {
+        const double reach = 0.5 * length(I.described[k].dimensions_m) + 0.05;
+        for (std::size_t j = 0; j < I.described.size(); ++j) {
+            if (j == k || I.described[j].anchored || !I.inWorld(j)) continue;
+            const Vec3 there = I.world->snapshot(I.body_of[j]).center_of_mass_world_m;
+            if (length(there - record.pose.center_of_mass_world_m) <= reach + 0.5 * length(I.described[j].dimensions_m))
+                I.world->wake(I.body_of[j]);
+        }
     }
+    I.settleJointedContacts();
     I.survey_due = true;
     return true;
 }
@@ -12651,17 +12731,50 @@ bool LiveWorld::unpark(const std::string &name, const Vec3 &at_world_m, const Qu
     RigidSnapshot pose{};
     pose.center_of_mass_world_m = at_world_m;
     pose.orientation_world = compose(facing, conjugateOf(I.shapeTurn(which)));
-    pose.linear_velocity_m_s = {};
-    pose.angular_velocity_rad_s = {};
-    if (!I.world->unpark(I.body_of[which], pose, why)) return false;
-    I.parked.erase(name);
+    // And everything that went into the bag with it on its pins, each part
+    // where it stood against this one when they were put away.
+    const std::vector<std::size_t> group = I.jointedWith(which);
+    for (const std::size_t k : group)
+        if (!I.isParked(k)) {
+            why = "the " + I.described[k].name + " joined to it is in the world already, not set aside with it";
+            return false;
+        }
+    const RigidSnapshot was = I.parked.at(name).pose;
+    const Quat undo = conjugateOf(was.orientation_world);
+    std::vector<std::pair<std::size_t, RigidSnapshot>> poses;
+    for (const std::size_t k : group) {
+        const RigidSnapshot &then = I.parked.at(I.described[k].name).pose;
+        RigidSnapshot now{};
+        now.center_of_mass_world_m =
+            pose.center_of_mass_world_m +
+            pose.orientation_world.rotate(undo.rotate(then.center_of_mass_world_m - was.center_of_mass_world_m));
+        now.orientation_world = compose(pose.orientation_world, compose(undo, then.orientation_world));
+        poses.push_back({k, now});
+    }
+    for (std::size_t n = 0; n < poses.size(); ++n) {
+        if (I.world->unpark(I.body_of[poses[n].first], poses[n].second, why)) continue;
+        // Nothing comes out unless all of it can: what already did goes back.
+        for (std::size_t m = 0; m < n; ++m) {
+            std::string ignored;
+            (void)I.world->park(I.body_of[poses[m].first], ignored);
+        }
+        return false;
+    }
+    for (const auto &[k, now] : poses) {
+        const std::string &own = I.described[k].name;
+        I.parked.erase(own);
+        if (I.thermo && I.thermo->holds(own)) I.thermo->unpark(own);
+    }
     // Coupled again from where it is now, holding what it held as it was put
     // away; and told what it weighs, if that changed while it could not be told.
     if (I.thermo) {
-        I.thermo->unpark(name);
         I.thermo->refresh(thermoShapes(), I.setup->ground_y);
         I.mirrorMasses();
     }
+    // Its pins, made again where they are in its parts and turned as far as
+    // they had turned (rehangJoints); a pin between exact parts keeps the two
+    // from meeting each other (settleJointedContacts, at its end).
+    if (group.size() > 1) rehangJoints();
     I.survey_due = true;
     return true;
 }
@@ -12772,7 +12885,11 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         if (const auto precise = I.precise_bodies.find(d.name); precise != I.precise_bodies.end()) {
             b["mechanical_model"] = "precise-rigid-v1";
             b["precise_rigid_definition"] = nlohmann::json::parse(precise->second.definition_json);
-            b["precise_mass_kg"] = savedNumber(I.world->mechanicalState(id).mass_kg);
+            // Away in the bag, it is not in the rigid world to be asked: what
+            // it weighed as it was put away is its mass.
+            const auto away = I.parked.find(d.name);
+            b["precise_mass_kg"] = savedNumber(away != I.parked.end() ? away->second.mass_kg
+                                                                     : I.world->mechanicalState(id).mass_kg);
             b["from"] = d.name;
         }
         // Which authored thing its cells came from, by name: a piece of a tool

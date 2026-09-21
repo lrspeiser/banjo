@@ -435,11 +435,12 @@ void tick(LiveWorld &world) {
     for (const std::string &name : world.breakable()) world.declineBreak(name);
 }
 
-void aRigidCartRollsOnItsBearings(const std::string &body, const std::string &axle) {
+// The cart in a room of its own. A room of exact bodies still has its
+// scenery: a marker stone, well away.
+TileImpactRequest cartRoom(const std::string &body, const std::string &axle) {
     TileImpactRequest request;
     request.cell_size_m = 0.05;
     request.backend = BackendKind::CpuParallel;
-    // A room of exact bodies still has its scenery: a marker stone, well away.
     SceneBody stone;
     stone.name = "marker";
     stone.shape = BodyShape::Box;
@@ -449,10 +450,20 @@ void aRigidCartRollsOnItsBearings(const std::string &body, const std::string &ax
     stone.anchored = true;
     request.bodies = {stone};
     request.precise_rigid_scene_json = cartScene(body, axle);
-    const auto world = LiveWorld::open(request);
-    const unsigned front = world->hinge("chassis", "front wheels", {0.0, 0.16, -0.32}, {1.0, 0.0, 0.0}, -180.0, 180.0, 0.0);
-    const unsigned back = world->hinge("chassis", "back wheels", {0.0, 0.16, 0.32}, {1.0, 0.0, 0.0}, -180.0, 180.0, 0.0);
-    require(front != 0 && back != 0, body + " cart: the wheelsets could not be pinned to the chassis");
+    return request;
+}
+
+// Each wheelset on a free pin through its axle.
+std::pair<unsigned, unsigned> pinWheels(LiveWorld &world, const std::string &what) {
+    const unsigned front = world.hinge("chassis", "front wheels", {0.0, 0.16, -0.32}, {1.0, 0.0, 0.0}, -180.0, 180.0, 0.0);
+    const unsigned back = world.hinge("chassis", "back wheels", {0.0, 0.16, 0.32}, {1.0, 0.0, 0.0}, -180.0, 180.0, 0.0);
+    require(front != 0 && back != 0, what + ": the wheelsets could not be pinned to the chassis");
+    return {front, back};
+}
+
+void aRigidCartRollsOnItsBearings(const std::string &body, const std::string &axle) {
+    const auto world = LiveWorld::open(cartRoom(body, axle));
+    const auto [front, back] = pinWheels(*world, body + " cart");
     const double built_y = posed(world->poses(), "chassis").position_m.y;
 
     for (int i = 0; i < 240; ++i) tick(*world);          // one second to take up rolling
@@ -487,6 +498,122 @@ void aRigidCartRollsOnItsBearings(const std::string &body, const std::string &ax
         require(joint.attached, body + " cart: a pin let go");
 }
 
+// b and then a, as quaternions: the turn a b.
+Quat product(const Quat &a, const Quat &b) {
+    return Quat{a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z, a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
+
+// Where a part stands against the chassis, in the chassis's own frame: what
+// has to be the same after the bag as before it.
+struct Against {
+    Vec3 at;
+    Quat turn;
+};
+Against against(const std::vector<LiveBodyPose> &poses, const std::string &part) {
+    const LiveBodyPose &c = posed(poses, "chassis"), &p = posed(poses, part);
+    const Quat back{c.orientation_wxyz[0], -c.orientation_wxyz[1], -c.orientation_wxyz[2], -c.orientation_wxyz[3]};
+    const Quat turn{p.orientation_wxyz[0], p.orientation_wxyz[1], p.orientation_wxyz[2], p.orientation_wxyz[3]};
+    return {back.rotate(p.position_m - c.position_m), product(back, turn)};
+}
+
+// Jolt keeps a body's turn in single precision, so a part half a metre from
+// the chassis is put back to within a few tenths of a micrometre: that, and
+// not the double's last digit, is what "where it stood" can mean here.
+constexpr double kPutBackM = 1e-6;
+
+bool sameTurn(const Quat &a, const Quat &b) {
+    return std::abs(a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z) > 1.0 - 1e-12;
+}
+
+// A cart goes in the bag as the one thing it is: taken by a wheelset, all of it
+// goes, its pins with it -- in it, not come off -- and it comes back all of it,
+// each part where it stood against the others, turned as it is asked, on its
+// pins. And the same through a saved world.
+void aRigidCartGoesInTheBagWholeAndComesBackWhole() {
+    const TileImpactRequest request = cartRoom("oak", "iron");
+    auto world = LiveWorld::open(request);
+    pinWheels(*world, "bag");
+    for (int i = 0; i < 60; ++i) tick(*world);
+    const auto before = world->poses();
+    std::string why;
+    require(world->park("front wheels", why), "bag: the cart would not go in the bag: " + why);
+    for (const LiveBodyPose &pose : world->poses())
+        require(pose.name != "chassis" && pose.name != "front wheels" && pose.name != "back wheels",
+                "bag: the " + pose.name + " is still in the world after the cart went in the bag");
+    for (const char *name : {"chassis", "front wheels", "back wheels"})
+        require(world->parked(name), std::string("bag: the ") + name + " is not set aside");
+    require(world->joints().size() == 2, "bag: the cart's pins went missing");
+    for (const LiveJoint &joint : world->joints())
+        require(joint.attached && joint.away, "bag: a pin of the bagged cart reads as come off, not away in it");
+    for (int i = 0; i < 60; ++i) tick(*world);          // the room carries on without it
+    for (const LiveJoint &joint : world->joints())
+        require(joint.attached && joint.away, "bag: a pin came off the cart while it was in the bag");
+
+    // Out again by its chassis, a metre off and turned a quarter.
+    const double h = std::sqrt(0.5);
+    const Vec3 out{1.0, 0.8, -1.0};
+    require(world->unpark("chassis", out, Quat{h, 0.0, h, 0.0}, why), "bag: the cart would not come out: " + why);
+    const auto after = world->poses();
+    require(length(posed(after, "chassis").position_m - out) < 1e-9, "bag: the chassis did not come out where asked");
+    for (const char *name : {"front wheels", "back wheels"}) {
+        const Against was = against(before, name), is = against(after, name);
+        const double off = length(was.at - is.at);
+        std::cout << "  the " << name << " came back " << off * 1e9 << " nm from where it stood against the chassis\n";
+        require(off < kPutBackM,
+                std::string("bag: the ") + name + " did not come back where it stood against the chassis");
+        require(sameTurn(was.turn, is.turn), std::string("bag: the ") + name + " came back turned against the chassis");
+    }
+    for (const LiveJoint &joint : world->joints())
+        require(joint.attached && !joint.away, "bag: a pin did not come back in the cart");
+    for (int i = 0; i < 480; ++i) tick(*world);         // down onto the floor, and still on its pins
+    const auto landed = world->poses();
+    for (const char *name : {"front wheels", "back wheels"})
+        require(length(against(before, name).at - against(landed, name).at) < 0.005,
+                std::string("bag: the ") + name + " left its pin once the cart was out of the bag");
+    const double lean = std::acos(std::min(1.0, 1.0 - 2.0 * (std::pow(posed(landed, "chassis").orientation_wxyz[1], 2) +
+                                                            std::pow(posed(landed, "chassis").orientation_wxyz[3], 2))));
+    require(lean < 0.05, "bag: the cart did not land on its wheels");
+
+    // Through a saved world: in the bag as it is saved, in the bag as it opens,
+    // and out of it whole.
+    require(world->park("chassis", why), "bag: the cart would not go in the bag again: " + why);
+    const std::string saved = world->snapshot(why);
+    require(!saved.empty(), "bag: a world with the cart in the bag could not be saved: " + why);
+    const auto again = LiveWorld::open(request, saved);
+    require(again->restored().tier == "whole", "bag: the saved world did not open whole: " + again->restored().why);
+    for (const char *name : {"chassis", "front wheels", "back wheels"})
+        require(again->parked(name), std::string("bag: the saved world opened with the ") + name + " out of the bag");
+    for (const LiveJoint &joint : again->joints())
+        require(joint.attached && joint.away, "bag: the saved world opened with a pin of the bagged cart come off");
+    require(again->unpark("back wheels", {-1.0, 0.8, 1.0}, Quat{1.0, 0.0, 0.0, 0.0}, why),
+            "bag: the cart would not come out of the saved world's bag: " + why);
+    const auto reopened = again->poses();
+    for (const char *name : {"front wheels", "back wheels"})
+        require(length(against(landed, name).at - against(reopened, name).at) < kPutBackM,
+                std::string("bag: the ") + name + " came out of the saved world's bag somewhere else on the cart");
+    for (const LiveJoint &joint : again->joints())
+        require(joint.attached && !joint.away, "bag: a pin did not come back out of the saved world's bag");
+    std::cout << "  the cart went in the bag whole and came back whole, and the same through a saved world\n";
+}
+
+// Tied to the room's own stone, it is not the person's to put away: refused, in
+// words that say what holds it, and nothing of it moves.
+void aCartTiedToTheRoomStaysOutOfTheBag() {
+    const auto world = LiveWorld::open(cartRoom("oak", "oak"));
+    pinWheels(*world, "tied cart");
+    require(world->tie("chassis", "marker", {0.0, 0.38, 0.5}, {3.0, 0.1, 3.0}) != 0, "tied cart: the rope would not tie");
+    std::string why;
+    require(!world->park("back wheels", why), "tied cart: it went in the bag although it is tied to the room");
+    require(why.find("the marker joined to it cannot go with it") != std::string::npos &&
+                why.find("fixed in place") != std::string::npos,
+            "tied cart: refused in the wrong words: " + why);
+    for (const char *name : {"chassis", "front wheels", "back wheels"})
+        require(!world->parked(name), std::string("tied cart: the ") + name + " was set aside all the same");
+    for (const LiveJoint &joint : world->joints())
+        require(joint.attached && !joint.away, "tied cart: a pin came out of the cart");
+}
+
 } // namespace
 
 int main() {
@@ -502,6 +629,8 @@ int main() {
         aPartMeetsThingsAsItsOwnMaterial();
         for (const char *material : {"glass", "oak", "iron"}) aRigidCartRollsOnItsBearings(material, material);
         aRigidCartRollsOnItsBearings("oak", "iron");        // as the Workshop builds it
+        aRigidCartGoesInTheBagWholeAndComesBackWhole();
+        aCartTiedToTheRoomStaysOutOfTheBag();
     } catch (const std::exception &error) {
         std::cout << "[FAIL] unexpected: " << error.what() << std::endl;
         return 1;

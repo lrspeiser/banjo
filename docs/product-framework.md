@@ -339,21 +339,63 @@ bonds, so a weak joint does not show up there. Precise-rigid bodies have no
 bonds to weaken. Mixed materials are still refused upstream. And a product in
 the world is still many bodies rather than one item, which is the next step.
 
+## Built: the cart as exact bodies on pins, one thing in the bag
+
+Item 1 below, as far as its done line (2026-09-21). `playground/rigid_assembly.py`
+compiles a Workshop design to the world's exact bodies. Its fixed joints make its
+rigid groups (the cart: a chassis and two wheelsets); each group is one
+precise-rigid compound of the design's own boxes and cylinders, turned as drawn,
+each part its own material, so an iron axle runs through oak wheels; its bearings
+become one free native hinge per pair of groups. The engine counts a shared space
+once, as the part listed first, and centres each body on its centre of mass: a
+wheelset is 10.954 kg, the iron axle and two oak wheels by hand less the 30 mm of
+axle inside each wheel.
+
+- **It rolls when pushed.** Pushed as the Explorer pushes it (J), the cart went
+  0.404 m, its wheels turning 145 degrees: 0.405 m at 160 mm. Started at 1 m/s on
+  the yard's floor it goes 0.8384 m in a second while its wheels turn 5.2401 rad
+  (x 0.16 m = 0.8384 m): it rolls, it does not slide. On a slope gentler than
+  atan(c) its wheels' rolling resistance holds it where it is left.
+- **It goes in the bag as one thing.** `LiveWorld::park` sets aside everything
+  joined to the part it is given, and its pins with it: still in it, reported
+  attached and away, never come off. `unpark` brings all of it back, each part
+  where it stood against the one named (to 15 nm, since Jolt keeps a turn in
+  single precision), its pins made again as far as they had turned. A saved world
+  keeps it in the bag, pins and all. The bag takes any thing that is not fixed to
+  the room; the engine refuses, in words, one tied to the room, a pulley (its
+  sheaves are the room's), a drum rope, and a motor on its pins (the bag cannot
+  keep a motor's state yet). The mace goes in the same way, its head on its chain.
+- **A person can do it.** On the room page: look at the cart and press Q, and
+  all of it leaves the room for bag slot 1 (43 of 80 kg); Hold brings it back
+  into the hand exactly as it was; E puts it down where the preview shows, on
+  its pins. Holding it, the engine still counts only the 21 kg chassis against
+  the carry budget (the bag's reply adds the rest, `inventory_room._carried`).
+- **The room runs at realtime.** The Explore valley with the cart in it opens at
+  47x realtime.
+- **It can be watched.** Both pages draw an exact body as its parts, its wheels
+  round and each part in its material's colour.
+
+Where it stands is the owner's to say: 635900c took the valley's cells cart out
+"until they can be built whole"; the valley builder can stand the exact cart
+again (`stand_rigid`), turned to roll across its slope and set on the highest
+ground under every part.
+
+Tests: `tests/precise_rigid_parts_tests.cpp` (the cart on its bearings in glass,
+oak, iron and oak with iron axles; into the bag and out whole, and through a
+saved world; refused when tied to the room), `tests/precise_rigid_live_tests.py`
+(the compiled cart's bodies, pins, points and refusals; it rolls as far as its
+wheels turn; through the person's bag with `inventory_room`, a restart included),
+`tests/inventory_room_tests.py` (the mace into the bag and out, its chain whole).
+
 ## Not built, in the order it should be
 
-1. **The product in the world as few bodies and real joints, handled as one
-   item.** The contract's runtime bodies (the cart's three) as precise-rigid
-   compounds, its bearings as native hinges, its breakable joints as native
-   fixings rated by `engine_fixing`. It needs: the one guard that refuses every
-   joint in a room with a precise body (`LiveWorld::requireLatticeRoom`, 13
-   call sites; the joint functions themselves already find precise bodies);
-   parts that are not axis-aligned boxes (`addCompound` already takes spheres,
-   and `RotatedTranslatedShape` is in use for other things); part names and the
-   design id kept on the body so it reopens in the Workshop; and the inventory
-   taking a jointed product as one thing (`playground/inventory.py` refuses
-   anything jointed today, and a precise body is not an inventory item at all).
-   Done when a built cart placed in the yard rolls when pushed, is picked up
-   and put in the bag as one thing, and the room runs at realtime.
+1. **What is left of the product as few bodies.** Its breakable joints as
+   native fixings rated by `engine_fixing`: a fixed group is one compound
+   today, so a joint inside it cannot part (item 3). The design id on the body,
+   so a product reopens in the Workshop by what it is rather than by its name.
+   And where a person meets its pins: looking at the cart, the room page offers
+   the hinge verbs a gate needs ("Turn it all the way"), which on a cart tip it
+   over its axle.
 2. **The engine checking what the bench checks.** Read a fixing's rotational
    impulse for a bending capacity; give a hinge a radial capacity. With
    glass/oak/iron tests, as `fixing_tests.cpp` has for tension and shear. Then

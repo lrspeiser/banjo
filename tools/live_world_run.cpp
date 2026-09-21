@@ -447,6 +447,9 @@ nlohmann::json jointsOf(const LiveWorld &world) {
                             {"at", vec(joint.point_world_m)},
                             {"axis", vec(joint.axis_world)},
                             {"attached", joint.attached}};
+        // Away in the bag with the thing it is in (LiveWorld::park): still in
+        // it, and made again when the thing is back.
+        if (joint.away) said["away"] = true;
         if (joint.kind == "elastic") {
             // The declared linear model, and what it currently holds.
             said["metres"] = tidy(joint.at);
@@ -2237,7 +2240,10 @@ int main(int argc, char **argv) {
                         shape += std::to_string(pin.value("id", 0u)) + "/" +
                                  pin.value("a", std::string{}) + "/" +
                                  pin.value("b", std::string{}) + "/" +
-                                 (pin.value("attached", false) ? "1" : "0") + ";";
+                                 (pin.value("attached", false) ? "1" : "0") +
+                                 // Or one gone into the bag with its thing,
+                                 // or back out: the host stops drawing it.
+                                 (pin.value("away", false) ? "a" : "") + ";";
                     if (shape != last_joints || geometry) {
                         last_joints = shape;
                         reply["joints"] = std::move(pins);

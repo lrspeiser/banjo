@@ -1238,7 +1238,7 @@ async function intoTheBag() {
       op: "stow", item: going, person: whereIAm(),
     });
     tookNote(said);
-    // A refusal looks like one: a thing of joined parts cannot go in the bag.
+    // A refusal looks like one: a thing tied to the room cannot go in the bag.
     say(said.why || `The ${going} is in your bag.`, { refused: said.ok === false });
   } catch (trouble) {
     say(String(trouble.message).slice(0, 110), { refused: true });
