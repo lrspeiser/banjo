@@ -281,11 +281,15 @@ function draw(state) {
 // --------------------------------------------------------------------------
 
 const EYE = 1.62;
-const person = { x: 0, z: -9, yaw: 0, pitch: -0.06, fly: 0, came: null };
+// `back` pulls the camera away along its own line of sight. It is a zoom out,
+// not an orbit: the eye stays where the person is, so the ray through the
+// sight is the SAME line however far back the camera sits and aiming does not
+// change as you zoom.
+const person = { x: 0, z: -9, yaw: 0, pitch: -0.06, fly: 0, back: 0, came: null };
 const pressed = new Set();
 
 addEventListener("keydown", (e) => {
-  if (e.code === "KeyR" && person.came) Object.assign(person, person.came, { came: person.came });
+  if (e.code === "KeyR" && person.came) Object.assign(person, person.came, { came: person.came, back: 0 });
   pressed.add(e.code);
   if (e.code.startsWith("Arrow")) $("hint")?.remove();
   if (e.code === "KeyE") takeOrPutDown();
@@ -328,6 +332,17 @@ $("view").addEventListener("dblclick", () => {
   // Dragging works everywhere, so a refusal here costs nothing.
   try { $("view").requestPointerLock()?.catch?.(() => {}); } catch { /* drag instead */ }
 });
+// The wheel pulls back and pushes in. Standing in your own eyes you cannot see
+// where a thing you are carrying would land -- the ground a metre in front of
+// your feet is below the bottom of the screen -- so you need to be able to
+// step back from yourself and look.
+addEventListener("wheel", (e) => {
+  if (e.target !== $("view")) return;      // let the side panel scroll
+  e.preventDefault();
+  person.back = Math.max(0, Math.min(8, person.back + e.deltaY * 0.0022));
+  $("hint")?.remove();
+}, { passive: false });
+
 addEventListener("mousemove", (e) => {
   const locked = document.pointerLockElement === $("view");
   if (!locked && !dragging) return;
@@ -365,8 +380,19 @@ function walk(dt) {
     person.x = Math.min(g.x0 + (g.nx - 1) * g.cell, Math.max(g.x0, person.x));
     person.z = Math.min(g.z0 + (g.nz - 1) * g.cell, Math.max(g.z0, person.z));
   }
-  camera.position.set(person.x, groundAt(person.x, person.z) + EYE + person.fly, person.z);
   camera.rotation.set(person.pitch, person.yaw, 0, "YXZ");
+  const eyeY = groundAt(person.x, person.z) + EYE + person.fly;
+  if (person.back < 0.01) {
+    camera.position.set(person.x, eyeY, person.z);
+  } else {
+    // Straight back along the line of sight, and never into the hill behind
+    // you: a camera under the ground sees the inside of it and nothing else.
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion)
+      .multiplyScalar(person.back);
+    const at = new THREE.Vector3(person.x + back.x, eyeY + back.y, person.z + back.z);
+    at.y = Math.max(at.y, groundAt(at.x, at.z) + 0.35);
+    camera.position.copy(at);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -841,6 +867,7 @@ function standWhereTheThingsAre() {
   person.x = best.x;
   person.z = best.z;
   person.fly = 0;
+  person.back = 0;
   // Face the middle of them. Forward is (-sin yaw, ., -cos yaw).
   person.yaw = Math.atan2(-(middle[0] - person.x), -(middle[2] - person.z));
   const drop = groundAt(person.x, person.z) + EYE - middle[1];
@@ -900,7 +927,8 @@ async function tick() {
         if (world.shown.length > was + 1) sweepUp(false);
         const spent = (performance.now() - began) / 1000;
         world.pace = spent > 0 ? (n * dt) / spent : 0;
-        $("pace").textContent = `${world.pace.toFixed(1)}× realtime`;
+        $("pace").textContent = `${world.pace.toFixed(1)}× realtime`
+          + (person.back > 0.05 ? ` · ${person.back.toFixed(1)} m back` : "");
         $("pace").classList.toggle("slow", world.pace < 1.1);
       } catch (trouble) {
         $("pace").textContent = String(trouble.message).slice(0, 60);
