@@ -23,6 +23,8 @@ from json import dumps
 from math import acos, atan2, cos, degrees, hypot, isfinite, radians, sin, sqrt, tan
 from typing import Any, Callable, Iterable
 
+from mcp import engine_materials
+
 
 WORKSHOP_SCHEMA = "banjo.workshop.v1"
 
@@ -30,16 +32,24 @@ WORKSHOP_SCHEMA = "banjo.workshop.v1"
 # mass.  A density is NOT a constitutive model: nothing here claims how these
 # materials break, bend or conduct.  Those come from the engine's own catalogue
 # when a candidate reaches a scratch trial (docs/workshop-next.md stage 6).
+#
+# A material the engine has a preset for weighs what the engine's catalogue
+# says (mcp/engine_materials.py, which the parity test pins to
+# MaterialCatalog.cpp).  This table used to keep its own oak (750) and rubber
+# (1200) until something called engine_materials.synchronize_workshop_model(),
+# so one oak table weighed 102.0 kg or 95.2 kg depending on which modules the
+# process happened to import first.  pine and steel have no engine preset; they
+# stay for old saved designs and are display-only.
 DENSITY_KG_M3 = {
-    "oak": 750.0,
+    "oak": engine_materials.density("oak"),
     "pine": 500.0,
-    "iron": 7870.0,
+    "iron": engine_materials.density("iron"),
     "steel": 7850.0,
-    "aluminium": 2700.0,
-    "glass": 2500.0,
-    "concrete": 2400.0,
-    "rubber": 1200.0,
-    "alumina ceramic": 3900.0,
+    "aluminium": engine_materials.density("aluminium"),
+    "glass": engine_materials.density("glass"),
+    "concrete": engine_materials.density("concrete"),
+    "rubber": engine_materials.density("rubber"),
+    "alumina ceramic": engine_materials.density("alumina ceramic"),
 }
 
 _ON_THE_FLOOR_M = 0.002  # a part this close to the lowest point is standing on it
