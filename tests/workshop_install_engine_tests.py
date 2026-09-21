@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT),str(ROOT/'playground')]
-import inventory,live_session,room_store,world_room,workshop_install as install
+import inventory,live_session,precise_rigid,room_store,world_room,workshop_install as install
 import workshop_sparse_trial as sparse
 import workshop_bench_core
 import workshop_articulation
@@ -415,7 +415,7 @@ class NativeInstallation(unittest.TestCase):
         for key in saved["ground"]:
             if key!="schema":self.assertEqual(saved["ground"][key],migrated[key],key)
 
-    def test_precise_rigid_terrain_remains_explicitly_refused(self):
+    def test_precise_rigid_is_seated_on_the_terrain_under_it(self):
         from fabrication_tests import candidate
         self.room=world_room.Room("world");self.app.room=self.room
         self.room.spec={"algorithm":"lattice","cell_m":.04,
@@ -428,9 +428,21 @@ class NativeInstallation(unittest.TestCase):
         before=self.snap()
         request={"scene":"world","session":self.live.session.id,"mode":"authoring",
                  "candidate":product,"position_m":[13,-7]}
-        with self.assertRaisesRegex(ValueError,"do not yet support terrain"):
-            install.preview(self.app,request)
+        # Exact bodies now stand on terrain. Placed on a hillside, the
+        # prototype starts on the ground under its whole footprint -- never
+        # inside it -- and is still on it, not in it, once it has settled.
+        p=install.preview(self.app,request)
         self.assertEqual(before,self.snap())
+        install.commit(self.app,{"scene":"world","session":p["session"],"preview_id":p["preview_id"],
+                                 "request_id":"terrain-rigid-1"})
+        built=next(b for b in self.room.spec["precise_rigid_bodies"] if b["name"]==p["root_body"])
+        lo,hi=precise_rigid.bounds(built["parts"],built["position_m"],built["orientation_wxyz"])
+        floor=install._terrain_floor(self.live.session,(lo,hi))
+        self.assertAlmostEqual(floor+.002,lo[1],delta=1e-9)
+        self.live.session.send(op="step",dt=1/240,n=240)
+        body=next(b for b in self.live.session.send(op="poses")["bodies"] if b["name"]==p["root_body"])
+        settled=precise_rigid.bounds(body["rigid_parts_local"],body["position_m"],body["orientation_wxyz"])
+        self.assertGreater(settled[0][1],floor-.02,"the prototype sank into the hillside")
 
     def test_programmed_use_survives_native_install_restart_and_runs(self):
         import server

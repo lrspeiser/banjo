@@ -665,6 +665,15 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
         raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not declare support")
     root = "workshop-" + uuid.uuid4().hex[:16]
     body, translation = precise_rigid.placement(artifact, root, pos)
+    # On ground that is not a plane, on the ground under it: the highest vertex
+    # anywhere under its footprint, and the same 2 mm clear -- the owner's rule
+    # that nothing starts below the ground. A flat floor answers 0 and leaves
+    # it where placement put it.
+    if room.spec.get("terrain"):
+        lo, _ = seated = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+        lift = _terrain_floor(old, seated) + .002 - lo[1]
+        body["position_m"][1] += lift
+        translation[1] += lift
     spec = deepcopy(room.spec)
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + [body]
     from mcp import core_use

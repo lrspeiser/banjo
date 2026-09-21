@@ -569,8 +569,21 @@ struct LiveWorld::Impl {
     std::map<std::string, PreciseRigidBody> precise_bodies;
     void requireLatticeRoom(const char *operation) const {
         if (!precise_bodies.empty())
-            throw std::invalid_argument(std::string(operation) + ": precise-rigid rooms currently support motion, picking and carrying only; internal failure, thermal mechanics, attachments and fabrication are unavailable");
+            throw std::invalid_argument(std::string(operation) + ": precise-rigid rooms currently support motion, picking, carrying and joints only; internal failure, thermal mechanics, blades and fabrication are unavailable");
     }
+    // An exact compound rather than a body made of cells.
+    [[nodiscard]] bool isPrecise(std::size_t body) const {
+        return body < described.size() && !described[body].mechanical_model.empty();
+    }
+    // Two exact bodies on a pin, a groove or a weld are held by that joint, not
+    // by their surfaces: a bearing's axle runs through its mount by design, and
+    // welded parts meet face to face. So while the joint stands the pair's
+    // contacts are the joint's, and Jolt leaves them alone. Pairs joined by a
+    // rope, a spring, a pulley or a drum still collide, as the things they are,
+    // and so does anything made of cells, which keeps the clearance it was
+    // built with (workshop_articulation demands it).
+    std::set<std::pair<MatterBodyId, MatterBodyId>> held_by_joints;
+    void settleJointedContacts();
     std::vector<LiveBodyPose> described;   // one per rigid fragment, static parts
     std::vector<MatterBodyId> body_of;     // parallel to described
     // What each body is made of, kept because breaking one means rebuilding its
@@ -1528,6 +1541,11 @@ struct LiveWorld::Impl {
     [[nodiscard]] double spanOf(const SceneJoint &joint) const { return length(loadDirection(joint)); }
     // The material a body was built from, as the scene defined it.
     [[nodiscard]] const MaterialDefinition &definitionOf(std::size_t body) const {
+        // An exact body is made of what it says, not of the scene's tile.
+        if (isPrecise(body)) {
+            const auto found = precise_bodies.find(described[body].name);
+            if (found != precise_bodies.end()) return found->second.made_of;
+        }
         if (setup->multi_body && body < nodes_of.size() && !nodes_of[body].empty() &&
             nodes_of[body].front() < setup->part_of_node.size()) {
             const std::uint32_t part = setup->part_of_node[nodes_of[body].front()];
@@ -2638,6 +2656,29 @@ thermo::ThermoState readThermoState(const nlohmann::json &heat, std::size_t subs
 
 }  // namespace
 
+void LiveWorld::Impl::settleJointedContacts() {
+    std::set<std::pair<MatterBodyId, MatterBodyId>> now;
+    for (const SceneJoint &joint : joints) {
+        if (!joint.attached || joint.rigid == 0) continue;
+        if (joint.kind != JoltWorld::JointKind::Hinge && joint.kind != JoltWorld::JointKind::Slider &&
+            joint.kind != JoltWorld::JointKind::Fixing)
+            continue;
+        const auto a = index_of.find(joint.a), b = index_of.find(joint.b);
+        if (a == index_of.end() || b == index_of.end()) continue;
+        if (!isPrecise(a->second) || !isPrecise(b->second)) continue;
+        if (!inWorld(a->second) || !inWorld(b->second)) continue;
+        const auto pair = std::minmax(body_of[a->second], body_of[b->second]);
+        now.insert({pair.first, pair.second});
+    }
+    for (const auto &pair : held_by_joints)
+        if (!now.count(pair) && world->contains(pair.first) && world->contains(pair.second))
+            world->setPairContactOwner(pair.first, pair.second, PairContactOwner::Jolt);
+    for (const auto &pair : now)
+        if (!held_by_joints.count(pair))
+            world->setPairContactOwner(pair.first, pair.second, PairContactOwner::External);
+    held_by_joints = std::move(now);
+}
+
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
 LiveWorld::~LiveWorld() = default;
 
@@ -2657,18 +2698,22 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     for (auto &body : readPreciseRigidScene(request.precise_rigid_scene_json))
         impl.precise_bodies.emplace(body.name, std::move(body));
     if (!impl.precise_bodies.empty()) {
-        // First live admission boundary: anchored scenery plus explicit rigid
-        // bodies. A deformable contact partner needs an authoritative coupled
-        // failure solve; silently omitting it is not an approximation we make.
-        if (request.bodies.empty() || !request.thermo_scene_json.empty() ||
-            !request.environment_scene_json.empty() || request.loose_cells)
-            throw std::invalid_argument("precise-rigid rooms require anchored flat-floor scenery without thermal or terrain declarations");
+        // Exact bodies share the room with everything made of cells, and with
+        // its ground and water. A breakable body they strike is judged against
+        // their real material; a break that would need them INSIDE the lattice
+        // run is declined and said so (judgeStep), never run without them. What
+        // they cannot share yet is heat -- the thermal model has no exact bodies
+        // -- and loose cells.
+        if (request.bodies.empty() || !request.thermo_scene_json.empty() || request.loose_cells)
+            throw std::invalid_argument("precise-rigid rooms need at least one lattice body and no thermal or loose-cell declarations");
         for (const SceneBody &body : request.bodies)
-            if (!body.anchored || impl.precise_bodies.count(body.name) ||
+            if (impl.precise_bodies.count(body.name) ||
                 (!body.join.empty() && impl.precise_bodies.count(body.join)))
-                throw std::invalid_argument("precise rigid bodies cannot yet share a room with dynamic lattice bodies or duplicate names");
+                throw std::invalid_argument("a precise rigid body cannot share its name with a lattice body");
+        // Joints are kept: they hold bodies, not cells, and are rebuilt from the
+        // save like any others. What works on cells is not.
         if (saved) {
-            for (const char *key : {"joints", "blades", "tool_points", "motors", "controls"})
+            for (const char *key : {"blades", "tool_points", "motors", "controls"})
                 if (saved->doc.contains(key) && !saved->doc[key].empty())
                     throw std::invalid_argument("precise-rigid carry cannot preserve an unsupported attached mechanism");
         }
@@ -2756,11 +2801,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         for (const auto &b : saved->doc.at("bodies")) {
             if (!saved_names.insert(b.at("name").get<std::string>()).second)
                 throw std::invalid_argument("duplicate saved body name");
-            if (b.value("mechanical_model", std::string{}) != "precise-rigid-v1") {
-                if (!impl.precise_bodies.empty() && !b.value("anchored", false))
-                    throw std::invalid_argument("precise-rigid carry cannot omit a saved dynamic lattice body");
-                continue;
-            }
+            if (b.value("mechanical_model", std::string{}) != "precise-rigid-v1") continue;
             const auto name = b.at("name").get<std::string>();
             const auto found = impl.precise_bodies.find(name);
             if (!precise_names.insert(name).second || found == impl.precise_bodies.end() ||
@@ -3209,9 +3250,27 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         LiveBodyPose d;
         d.name=name; d.material=materialPresetName(body.material); d.shape="compound";
         d.mechanical_model="precise-rigid-v1"; d.dimensions_m=body.dimensions_m; d.color_rgba=body.color_rgba;
-        for (const auto &part : body.parts) d.rigid_boxes_local.push_back({part.center_local_m, part.geometry.dimensions_m});
+        for (std::size_t k = 0; k < body.parts.size(); ++k) {
+            const RigidCompoundPart &part = body.parts[k];
+            LiveBodyPose::PrecisePart drawn;
+            drawn.shape = part.geometry.kind == PrimitiveKind::Cylinder ? "cylinder" : "box";
+            drawn.center_local_m = part.center_local_m;
+            drawn.dimensions_m = part.geometry.dimensions_m;
+            drawn.rotation_wxyz = {part.rotation_local.w, part.rotation_local.x,
+                                   part.rotation_local.y, part.rotation_local.z};
+            drawn.material = materialPresetName(body.part_materials[k]);
+            drawn.name = body.part_names[k];
+            d.rigid_parts_local.push_back(std::move(drawn));
+        }
         impl.described.push_back(std::move(d)); impl.body_of.push_back(id); impl.nodes_of.emplace_back();
-        impl.limits_of.emplace_back(); impl.impedance_of.push_back(0); impl.density_of.push_back(makeReferenceMaterial(body.material).density_kg_m3);
+        // What a breakable body it strikes is struck BY: its own material's
+        // impedance, as for anything else. Zero here used to mean "the struck
+        // body's own" (Refracture.cpp), so an iron cart meeting a glass pane
+        // would have been judged as glass meeting glass. Its density is its
+        // mean, parts of two materials and all.
+        impl.limits_of.emplace_back();
+        impl.impedance_of.push_back(acousticImpedance(body.made_of.density_kg_m3, body.made_of.young_modulus_pa));
+        impl.density_of.push_back(body.mass_kg / body.volume_m3);
         impl.tensile_of.push_back(0); impl.compressive_of.push_back(0);
     }
 
@@ -4100,11 +4159,22 @@ bool LiveWorld::judgeStep() {
             impact.dent_speed_m_s = admission.yield_speed_m_s;
             impact.would_break = admission.admitted();
             impact.would_dent = admission.yields;
+            // An exact rigid striker cannot go into the lattice run that would
+            // answer this: the run has room for a static floor and one ball,
+            // not a compound (LatticePhysics.hpp). Run without it, the answer
+            // would be "held" for a reason that is not the physics; run with
+            // it, the striker would be rebuilt from cells it does not have. So
+            // the blow is judged against its real material, and when it would
+            // need the run it is declined -- said, not hidden -- and the
+            // contact stays Jolt's.
+            const bool rigid_striker = both && other != struck && impl_->isPrecise(other);
+            if (rigid_striker && admission.worthRunning())
+                impact.declined = "struck by an exact rigid body, which the lattice run cannot hold yet";
             // Either one needs the lattice, and only the lattice can say which
             // of them actually happens. A trigger that asked about breaking
             // alone never ran below the breaking bar, which is exactly where a
             // dent lives.
-            if (admission.worthRunning()) {
+            if (admission.worthRunning() && !rigid_striker) {
                 breaking_now.insert(impact.struck);
                 // Remember what hit it, for the island a fracture would build.
                 // The hardest contact wins: a body resting on the floor and
@@ -4551,6 +4621,9 @@ void LiveWorld::partOverloadedLinks() {
                 impl_->world->wake(impl_->body_of[found->second]);
         }
     }
+    // A weld that let go between two exact bodies leaves them to meet as
+    // their surfaces again.
+    impl_->settleJointedContacts();
 }
 
 double LiveWorld::time_s() const { return impl_->time_s; }
@@ -4640,7 +4713,6 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
                           double lower_deg, double upper_deg,
                           double friction_torque_n_m) {
-    impl_->requireLatticeRoom("hinge");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4696,13 +4768,13 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
     impl_->world->wake(impl_->body_of[first->second]);
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
+    impl_->settleJointedContacts();
     return impl_->joints.back().id;
 }
 
 unsigned LiveWorld::slide(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
                           double lower_m, double upper_m, double friction_n) {
-    impl_->requireLatticeRoom("slide");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4748,13 +4820,13 @@ unsigned LiveWorld::slide(const std::string &a, const std::string &b,
     impl_->world->wake(impl_->body_of[first->second]);
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
+    impl_->settleJointedContacts();
     return impl_->joints.back().id;
 }
 
 unsigned LiveWorld::tie(const std::string &a, const std::string &b,
                         const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                         double length_m, double breaking_tension_n) {
-    impl_->requireLatticeRoom("tie");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4812,7 +4884,6 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
 unsigned LiveWorld::spring(const std::string &a, const std::string &b,
                            const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                            double rest_m, double stiffness_n_m, double damping_n_s_m) {
-    impl_->requireLatticeRoom("spring");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4868,7 +4939,6 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                         const Vec3 &point_world_m, const Vec3 &axis_world,
                         double holds_tension_n, double holds_shear_n,
                         double comes_off_n) {
-    impl_->requireLatticeRoom("fix");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -4918,6 +4988,7 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
     impl_->world->wake(impl_->body_of[first->second]);
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
+    impl_->settleJointedContacts();
     return impl_->joints.back().id;
 }
 
@@ -4925,7 +4996,6 @@ unsigned LiveWorld::reeve(const std::string &a, const std::string &b,
                           const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                           const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,
                           double ratio, double length_m) {
-    impl_->requireLatticeRoom("reeve");
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -5262,7 +5332,6 @@ double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) 
 unsigned LiveWorld::drum(const std::string &drum, const std::string &load, const Vec3 &centre_world_m,
                          const Vec3 &axis_world, double radius_m, const Vec3 &load_point_world_m, int winds,
                          double length_m, double out_m) {
-    impl_->requireLatticeRoom("drum");
     const auto first = impl_->index_of.find(drum);
     const auto second = impl_->index_of.find(load);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -5337,6 +5406,8 @@ void LiveWorld::unhinge(unsigned joint) {
                 impl_->world->wake(impl_->body_of[found->second]);
         }
         impl_->joints.erase(impl_->joints.begin() + static_cast<std::ptrdiff_t>(i));
+        // Two exact bodies no longer held meet as their surfaces again.
+        impl_->settleJointedContacts();
         return;
     }
 }
@@ -5541,8 +5612,14 @@ void LiveWorld::rehangJoints() {
                 pin.b = impl_->body_of[side[1]];
                 pin.point_world_m = point;
                 pin.axis_world = along;
-                pin.lower_rad = joint.lower - got;
-                pin.upper_rad = joint.upper - got;
+                // A pin free all the way round -- a wheel's -- has no travel
+                // left to measure: it turns on as it did. Shifting its limits
+                // by how far it had turned asked for more than a full turn,
+                // which a hinge cannot be made with, and the wheel came off.
+                constexpr double kFullTurn = 3.14159265358979323846 - 1e-9;
+                const bool free_turning = joint.lower <= -kFullTurn && joint.upper >= kFullTurn;
+                pin.lower_rad = free_turning ? joint.lower : joint.lower - got;
+                pin.upper_rad = free_turning ? joint.upper : joint.upper - got;
                 pin.friction_torque_n_m = joint.friction;
                 joint.rigid = impl_->world->addHinge(pin);
             }
@@ -5550,6 +5627,7 @@ void LiveWorld::rehangJoints() {
             joint.attached = false;
         }
     }
+    impl_->settleJointedContacts();
 }
 
 bool LiveWorld::grab(const std::string &name) {
@@ -5854,7 +5932,6 @@ void LiveWorld::surveyLoads() {
     impl_->overloaded.clear();
     impl_->bearing_on.clear();
     impl_->sustained_by.clear();
-    if (!impl_->precise_bodies.empty()) return; // no internal strength calculation in this model
     const std::size_t count = impl_->described.size();
     if (count == 0) return;
 
@@ -5867,6 +5944,11 @@ void LiveWorld::surveyLoads() {
     std::vector<bool> present(count, false);
     for (std::size_t i = 0; i < count; ++i) {
         if (!impl_->inWorld(i)) continue;
+        // An exact body has no internal strength here to survey, and the box
+        // this reads about a centre of mass is not where a compound is. It is
+        // left out -- which also means a breakable thing it rests on does not
+        // yet feel its weight here.
+        if (impl_->isPrecise(i)) continue;
         present[i] = true;
         middle[i] = impl_->world->snapshot(impl_->body_of[i]).center_of_mass_world_m;
         half[i] = 0.5 * impl_->described[i].dimensions_m;
@@ -6637,7 +6719,6 @@ void LiveWorld::foreseeCollisions(double horizon_s) {
 // Cheap, but not free: a ray is 0.02 ms and there can be a hundred bodies. So
 // it is asked at a stride, and only of things actually going somewhere.
 void LiveWorld::foresee() {
-    if (!impl_->precise_bodies.empty()) return;
     if (!(impl_->foresee_horizon_s > 0.0)) return;
     constexpr std::uint64_t kStride = 8;   // ~30 times a second at a live rate
     if (impl_->steps_taken % kStride != 0) return;
@@ -6647,6 +6728,9 @@ void LiveWorld::foresee() {
         const LiveBodyPose &body = impl_->described[i];
         // Nor anything set aside (park): it is not going anywhere.
         if (body.anchored || i == impl_->holding || !impl_->inWorld(i)) continue;
+        // An exact body cannot go into the run a warning would start
+        // (prepared), whichever end of the blow it is.
+        if (impl_->isPrecise(i)) continue;
         const RigidSnapshot now = impl_->world->snapshot(impl_->body_of[i]);
         const double speed = length(now.linear_velocity_m_s);
         // Below this nothing can be admitted anywhere in the catalogue, so
@@ -6762,7 +6846,6 @@ void LiveWorld::foresee() {
 // instead of dropping it the arrival speed will not match and it is refused.
 // Being wrong costs a worker thread.
 void LiveWorld::guessWhatIsHeld(std::set<std::string> &still_coming) {
-    if (!impl_->precise_bodies.empty()) return;
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     if (impl_->pending || !impl_->queued.empty()) return;
     const std::size_t held = impl_->holding;
@@ -6783,6 +6866,7 @@ void LiveWorld::guessWhatIsHeld(std::set<std::string> &still_coming) {
         if (impl_->body_of[k] == below.body_id) { struck = k; break; }
     if (struck == static_cast<std::size_t>(-1) || struck == held) return;
     if (impl_->described[struck].anchored) return;
+    if (impl_->isPrecise(struck) || impl_->isPrecise(held)) return;
 
     constexpr double kGravity = 9.80665;
     const double arrival = std::sqrt(2.0 * kGravity * std::max(0.0, below.distance_m));
@@ -6872,7 +6956,6 @@ double LiveWorld::sceneLatticeStep_s() const { return impl_->setup ? impl_->setu
 std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                                                         double window_s,
                                                         const Foresight *guess) {
-    impl_->requireLatticeRoom("prepared");
     auto held = std::make_unique<Pending>();
     Pending &job = *held;
     job.name = name;
@@ -6894,6 +6977,8 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     impl_->last_outcome = LiveOutcome::Held;
     if (impl_->described[which].anchored) { job.settled = true; job.answer = 1; return held; }
     if (impl_->holding == which) { job.settled = true; job.answer = 1; return held; }   // it is in a hand, not in a collision
+    // An exact body has no cells to break: it holds, as it was built to.
+    if (impl_->isPrecise(which)) { job.settled = true; job.answer = 1; return held; }
     const TileImpactSetup &setup = *impl_->setup;
     // Whatever struck it goes into the island too. A body on its own, entered
     // after the contact, is a free-flying object with a uniform velocity and no
@@ -6950,8 +7035,12 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         // is let go, and its state is overridden to the moment it lands, so it
         // belongs in the island exactly like anything else that is falling.
         const bool in_a_hand = with == impl_->holding && !(guess && guess->striker == with);
+        // Nor does an exact body go in: an island is cells, and it would be
+        // rebuilt from cells it does not have -- deleted, in fact. The step
+        // declines a blow that would need one (judgeStep); a body merely
+        // resting on one runs alone, as against the floor.
         if (with != static_cast<std::size_t>(-1) && with < impl_->described.size() &&
-            !in_a_hand) {
+            !in_a_hand && !impl_->isPrecise(with)) {
             if (impl_->described[with].anchored) anvil = with;
             else island_bodies.push_back(with);
         }
@@ -8059,6 +8148,11 @@ std::size_t LiveWorld::applyPending() {
 
 
 bool LiveWorld::beginFracture(const std::string &name, double window_s) {
+    {
+        const auto found = impl_->index_of.find(name);
+        if (found != impl_->index_of.end() && impl_->isPrecise(found->second))
+            throw std::invalid_argument("fracture: a precise-rigid body has no internal failure to run");
+    }
     // One at a time, and a second one waits for the first.
     //
     // Dropping it instead is not an option: the step that turned it up was
@@ -8155,6 +8249,11 @@ std::size_t LiveWorld::finishFracture() {
 // The whole thing at once, which is what a caller that does not mind waiting
 // wants. Identical to what this always did.
 std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
+    {
+        const auto found = impl_->index_of.find(name);
+        if (found != impl_->index_of.end() && impl_->isPrecise(found->second))
+            throw std::invalid_argument("fracture: a precise-rigid body has no internal failure to run");
+    }
     // A run may already be going for this very impact, started on the way down.
     // Take it if it fits, and if it does not, wait for it and bin it -- because
     // starting a second lattice run beside it is two at once, which nothing
@@ -8805,6 +8904,13 @@ bool LiveWorld::setJointMember(unsigned joint, const std::string &member) {
         // A pin, a slide and an ideal pulley have no strength here to lose.
         if (!fixing && !link && !elastic) return false;
         if (!member.empty() && member != j.a && member != j.b) return false;
+        // A member is rated from its own cells' section. An exact body has no
+        // cells, and a rating read off the box round it would be invented; its
+        // joint holds what was declared.
+        if (!member.empty()) {
+            const auto found = impl_->index_of.find(member);
+            if (found != impl_->index_of.end() && impl_->isPrecise(found->second)) return false;
+        }
         if (!j.declared_kept) {
             j.declared_tension_n = j.holds_tension_n;
             j.declared_shear_n = j.holds_shear_n;
@@ -12354,10 +12460,14 @@ const char *jointWord(JoltWorld::JointKind kind) {
 } // namespace
 
 bool LiveWorld::park(const std::string &name, std::string &why) {
-    impl_->requireLatticeRoom("park");
     Impl &I = *impl_;
     why.clear();
     const auto found = I.index_of.find(name);
+    // An exact body is not set aside yet: restoring one that was is refused
+    // (openFrom). Everything else in the room goes in the bag as before --
+    // one exact body in a room no longer takes the bag away from the rest.
+    if (found != I.index_of.end() && I.isPrecise(found->second))
+        throw std::invalid_argument("park: a precise-rigid body cannot be set aside yet");
     if (found == I.index_of.end()) {
         why = "there is nothing called that in the scene";
         return false;

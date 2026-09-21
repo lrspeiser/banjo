@@ -4,6 +4,7 @@
 #include "terrain/Environment.hpp"
 #include "thermo/ThermoWorld.hpp"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -29,8 +30,16 @@ struct LiveBodyPose {
     std::string shape{"hull"};
     // Empty for legacy lattice bodies; explicit no-internal-failure model otherwise.
     std::string mechanical_model;
-    struct PreciseBox { Vec3 center_local_m, dimensions_m; };
-    std::vector<PreciseBox> rigid_boxes_local;
+    // One part of an exact compound, about its centre of mass: a box, or a
+    // cylinder along its own y sized {diameter, length, diameter}, turned by
+    // rotation_wxyz, of its own material, and named if the Workshop named it.
+    struct PrecisePart {
+        std::string shape{"box"};
+        Vec3 center_local_m, dimensions_m;
+        std::array<double, 4> rotation_wxyz{1.0, 0.0, 0.0, 0.0};
+        std::string material, name;
+    };
+    std::vector<PrecisePart> rigid_parts_local;
     // What it measures NOW. For a box or a sphere that has burned, the part of
     // it not burned away: what collides and what is drawn. The box its matter
     // is measured against stays in LiveMaterialState::reference_m.
@@ -265,6 +274,10 @@ struct LiveImpact {
     double energy_j{};
     bool would_break{};
     bool would_dent{};
+    // Why a blow that would need the lattice run was not run -- empty when
+    // it was, or did not need to be. An exact rigid striker is the one case:
+    // the run has room for a floor and a ball, not a compound.
+    std::string declined;
 };
 
 // A pin two named things turn about, as the scene sees it.

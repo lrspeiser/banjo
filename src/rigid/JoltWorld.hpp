@@ -49,7 +49,18 @@ struct RigidBoxDescription {
     bool fixed{};
 };
 
-struct RigidCompoundPart { RigidPrimitive geometry; Vec3 center_local_m; };
+struct RigidCompoundPart {
+    RigidPrimitive geometry;
+    Vec3 center_local_m;
+    // Turned in the body's own frame. A cylinder's axis is its local +y, so a
+    // wheel on an axle along x is a cylinder turned a quarter turn about z.
+    Quat rotation_local{};
+    // What this part is made of, when it is not the body's own material: an
+    // iron axle in an oak wheelset. It decides how the part meets things --
+    // friction and restitution; its mass is already in the body's mass and
+    // inertia, which the caller measures.
+    std::optional<MaterialDefinition> material;
+};
 struct RigidCompoundDescription {
     MatterBodyId body_id{};
     std::vector<RigidCompoundPart> parts;
@@ -327,6 +338,11 @@ public:
     void addBox(const RigidBoxDescription &description);
     // Bounded compound collision proxy with independent matter-derived inertia.
     void addCompound(const RigidCompoundDescription &description);
+    // Whether two parts of one compound, placed in its own frame, meet:
+    // overlapping, touching, or apart by no more than tolerance_m. Asked of
+    // Jolt's own shapes, so a turned cylinder beside a turned box is judged by
+    // the same geometry that will collide, not by boxes drawn round them.
+    [[nodiscard]] static bool partsWithin(const RigidCompoundPart &a,const RigidCompoundPart &b,double tolerance_m);
     void addConvex(const RigidConvexDescription &description);
     // Physical central springs solved in Jolt's contact/constraint iterations.
     // Topology/history and constitutive work remain owned by the caller.

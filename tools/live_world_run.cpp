@@ -830,13 +830,22 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!pose.mechanical_model.empty()) {
             body["mechanical_model"] = pose.mechanical_model;
             body["internal_failure_supported"] = false;
-            // Bounded to 256 boxes per room. Send exact geometry on every
-            // emitted compound record so partial/full clients cannot lose it.
-            nlohmann::json boxes = nlohmann::json::array();
-            for (const auto &box : pose.rigid_boxes_local)
-                boxes.push_back({{"center_local_m", {box.center_local_m.x, box.center_local_m.y, box.center_local_m.z}},
-                                 {"dimensions_m", {box.dimensions_m.x, box.dimensions_m.y, box.dimensions_m.z}}});
-            body["rigid_boxes_local"] = std::move(boxes);
+            // Bounded to 256 parts per room. Send exact geometry on every
+            // emitted compound record so partial/full clients cannot lose it:
+            // each part about the centre of mass, box or cylinder (along its
+            // own y, sized diameter/length/diameter), turned, of its material.
+            nlohmann::json parts = nlohmann::json::array();
+            for (const auto &part : pose.rigid_parts_local) {
+                nlohmann::json entry = {
+                    {"shape", part.shape},
+                    {"center_local_m", {part.center_local_m.x, part.center_local_m.y, part.center_local_m.z}},
+                    {"dimensions_m", {part.dimensions_m.x, part.dimensions_m.y, part.dimensions_m.z}},
+                    {"rotation_wxyz", {part.rotation_wxyz[0], part.rotation_wxyz[1], part.rotation_wxyz[2], part.rotation_wxyz[3]}},
+                    {"material", part.material}};
+                if (!part.name.empty()) entry["name"] = part.name;
+                parts.push_back(std::move(entry));
+            }
+            body["rigid_parts_local"] = std::move(parts);
         }
         if (!pose.cells_local_m.empty() && (with_geometry || reshaped(pose))) {
             nlohmann::json cells = nlohmann::json::array();
@@ -919,14 +928,17 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     for (auto it = cells_sent_at.begin(); it != cells_sent_at.end();)
         it = present.count(it->first) ? std::next(it) : cells_sent_at.erase(it);
     nlohmann::json impacts = nlohmann::json::array();
-    for (const LiveImpact &impact : world.impacts())
-        impacts.push_back({{"struck", impact.struck}, {"by", impact.by},
-                           {"closing_speed_m_s", impact.closing_speed_m_s},
-                           {"threshold_speed_m_s", impact.threshold_speed_m_s},
-                           {"dent_speed_m_s", impact.dent_speed_m_s},
-                           {"energy_j", impact.energy_j},
-                           {"would_break", impact.would_break},
-                           {"would_dent", impact.would_dent}});
+    for (const LiveImpact &impact : world.impacts()) {
+        nlohmann::json said = {{"struck", impact.struck}, {"by", impact.by},
+                               {"closing_speed_m_s", impact.closing_speed_m_s},
+                               {"threshold_speed_m_s", impact.threshold_speed_m_s},
+                               {"dent_speed_m_s", impact.dent_speed_m_s},
+                               {"energy_j", impact.energy_j},
+                               {"would_break", impact.would_break},
+                               {"would_dent", impact.would_dent}};
+        if (!impact.declined.empty()) said["declined"] = impact.declined;
+        impacts.push_back(std::move(said));
+    }
     nlohmann::json state = {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,

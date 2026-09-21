@@ -1931,7 +1931,10 @@ def validate(spec: Any) -> dict[str, Any]:
         if "precise_rigid_bodies" in result:
             import precise_rigid
             result["precise_rigid_bodies"] = precise_rigid.normalise(result["precise_rigid_bodies"], result)
-        result["joints"] = normalise_joints(result["joints"], result["bodies"])
+        # A joint may hang on an exact rigid body as well as on one made of
+        # cells: a cart is three exact bodies on pins.
+        result["joints"] = normalise_joints(result["joints"],
+                                            result["bodies"] + result.get("precise_rigid_bodies", []))
         # The joints declared between the parts of a joined object, which the
         # engine applies to its bonds when it builds them. A room without any
         # carries none, so its document is the word it always was.

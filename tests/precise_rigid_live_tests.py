@@ -49,10 +49,18 @@ class PreciseAdmission(unittest.TestCase):
                 lo,hi=precise_rigid.bounds(out['parts'],out['position_m'],out['orientation_wxyz'])
                 self.assertAlmostEqual(.002,lo[1]);self.assertAlmostEqual(.762,hi[1])
 
-    def test_dynamic_lattice_and_advanced_physics_are_refused_not_downgraded(self):
+    def test_rooms_with_ground_water_joints_and_loose_bodies_are_admitted(self):
+        # Exact bodies share a room with everything made of cells, its terrain,
+        # its water and its joints -- a cart in the Explore valley.
         spec=world_room.yard();spec['bodies'][0]['anchored']=False
-        with self.assertRaisesRegex(ValueError,'anchored scenery'):precise_rigid.normalise([box()],spec)
-        for key in ('terrain','thermo','joints','machines','water','actions'):
+        self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
+        for key,value in (('terrain',{'generate':'valley'}),('water',{'discharge_m3_s':.35}),
+                          ('joints',[{'kind':'hinge','a':'box','b':'other','at_mm':[0,0,0]}])):
+            spec=world_room.yard();spec[key]=value
+            with self.subTest(key=key):self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
+
+    def test_heat_machines_tools_and_rich_actions_are_refused_not_downgraded(self):
+        for key in ('thermo','machines','blades','tool_points','interactions','actions'):
             spec=world_room.yard();spec[key]=[{}]
             with self.subTest(key=key), self.assertRaises(ValueError):precise_rigid.normalise([box()],spec)
 
@@ -62,16 +70,27 @@ class PreciseAdmission(unittest.TestCase):
             cases.append({**box(),**change})
         for d in ([0,1,1],[float('nan'),1,1],[.0001,.02,.02]):
             b=box();b['parts'][0]['dimensions_m']=d;cases.append(b)
-        b=box();b['parts'][0]['center_local_m']=[.1,0,0];cases.append(b)
-        b=box();b['parts']*=2;cases.append(b)
+        for change in ({'shape':'sphere'}, {'rotation_wxyz':[1,0,0,.1]}, {'material':'rubber'}, {'name':''}):
+            b=box();b['parts'][0].update(change);cases.append(b)
+        b=box();b['parts'][0].update(shape='cylinder',dimensions_m=[.3,.06,.2]);cases.append(b)
         for b in cases:
             with self.subTest(body=b),self.assertRaises(ValueError):precise_rigid.normalise([b],world_room.yard())
         with self.assertRaises(ValueError):precise_rigid.normalise([box(),box()],world_room.yard())
 
-    def test_budget_and_disconnected_components_are_refused(self):
+    def test_budget_is_refused_and_round_turned_parts_are_kept_as_given(self):
         with self.assertRaises(ValueError):precise_rigid.normalise([box(str(i)) for i in range(33)],world_room.yard())
-        b=box();b['parts']=[{'dimensions_m':[.02]*3,'center_local_m':[x,0,0]} for x in (-.1,.1)]
-        with self.assertRaisesRegex(ValueError,'face connected'):precise_rigid.normalise([b],world_room.yard())
+        # Overlaps, the centre of mass and whether the parts meet are the
+        # engine's to settle (NativePreciseInstallation below): what this keeps
+        # is what was drawn -- a turned cylinder of its own material.
+        b=box('wheelset',material='oak')
+        b['parts']=[{'shape':'cylinder','material':'iron','dimensions_m':[.03,.76,.03],'center_local_m':[0,0,0],
+                     'rotation_wxyz':[math.sqrt(.5),0,0,math.sqrt(.5)],'name':'axle'},
+                    {'shape':'cylinder','dimensions_m':[.32,.06,.32],'center_local_m':[.38,0,0],
+                     'rotation_wxyz':[math.sqrt(.5),0,0,math.sqrt(.5)]}]
+        out=precise_rigid.normalise([b],world_room.yard())[0]
+        self.assertEqual(b['parts'],out['parts'])
+        lo,hi=precise_rigid.bounds(out['parts'],[0,1,0],[1,0,0,0])
+        self.assertAlmostEqual(.41,hi[0]);self.assertAlmostEqual(1.16,hi[1])
 
     def test_validation_and_scene_document_preserve_precise_geometry(self):
         spec=world_room.yard();spec['precise_rigid_bodies']=[box()]
@@ -112,8 +131,9 @@ class NativePreciseInstallation(unittest.TestCase):
             self.assertEqual(record,self.room.inventory.record());self.assertTrue(old._closed)
             state=self.live.session.send(op='poses')
             body=next(b for b in state['bodies'] if b['name']==p['root_body'])
-            self.assertEqual('precise-rigid-v1',body['mechanical_model']);self.assertEqual(5,len(body['rigid_boxes_local']))
-            self.assertEqual(.005,body['rigid_boxes_local'][0]['dimensions_m'][1]);self.assertFalse(body['internal_failure_supported'])
+            self.assertEqual('precise-rigid-v1',body['mechanical_model']);self.assertEqual(5,len(body['rigid_parts_local']))
+            self.assertEqual(.005,body['rigid_parts_local'][0]['dimensions_m'][1]);self.assertFalse(body['internal_failure_supported'])
+            self.assertEqual({'box'},{part['shape'] for part in body['rigid_parts_local']})
             self.assertTrue(result['native_precise_geometry_verified']);self.assertFalse(result['strength_certified'])
 
     def test_motion_and_persistent_restart_keep_source_pose_and_unique_receipt(self):
@@ -160,15 +180,16 @@ class NativePreciseInstallation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'changed after preview'):self.commit(p2,'rigid-install-2')
         self.assertEqual(before,self.snap())
 
-    def test_dynamic_lattice_and_old_binary_are_refused_before_installation(self):
+    def test_old_binary_is_refused_and_a_loose_body_no_longer_blocks_installation(self):
         original=self.snap()
         old=deepcopy(original);old['carry_readiness'].pop('precise_rigid_version')
         with patch.object(install,'_snapshot',return_value=old),self.assertRaisesRegex(ValueError,'Rebuild'):self.preview()
         self.assertEqual(original,self.snap())
-        spec=world_room.yard();spec['bodies'].append({'name':'dynamic','shape':'box','material':'oak','size_mm':[80]*3,'center_mm':[0,100,0]})
-        self.room.spec=spec;self.live.open(self.app,{'spec':spec});before=self.snap()
-        with self.assertRaisesRegex(ValueError,'anchored scenery'):self.preview()
-        self.assertEqual(before,self.snap())
+        spec=world_room.yard();spec['bodies'].append({'name':'dynamic','shape':'box','material':'oak','size_mm':[80]*3,'center_mm':[0,40,0]})
+        self.room.spec=spec;self.live.open(self.app,{'spec':spec})
+        self.live.session.send(op='step',dt=1/240,n=48);before=self.snap()
+        p=self.preview();self.assertEqual(before,self.snap())
+        self.commit(p);install._preserved(before,self.snap(),p['root_body'])
 
     def test_native_picking_sees_the_thin_top_and_the_open_space_between_legs(self):
         p=self.preview();self.commit(p)
@@ -210,18 +231,47 @@ class NativePreciseInstallation(unittest.TestCase):
     def test_native_geometry_validator_independently_rejects_bad_raw_scenes(self):
         spec=world_room.yard();spec['precise_rigid_bodies']=[box()]
         doc=fracture_lab.scene_document(fracture_lab.validate(spec))
-        for index,change in enumerate(('tiny','overlap','unknown','off-com','disconnected','bad-quaternion')):
+        for index,change in enumerate(('tiny','unknown','disconnected','bad-quaternion','oval','part-quaternion')):
             bad=deepcopy(doc);b=bad['precise_rigid_bodies'][0]
             if change=='tiny':b['parts'][0]['dimensions_m'][0]=.0001
-            if change=='overlap':b['parts']*=2
             if change=='unknown':b['mass_kg']=1
-            if change=='off-com':b['parts'][0]['center_local_m'][0]=.1
             if change=='disconnected':b['parts']=[{'dimensions_m':[.02]*3,'center_local_m':[x,0,0]} for x in (-.1,.1)]
             if change=='bad-quaternion':b['orientation_wxyz']=[0,0,0,0]
+            if change=='oval':b['parts'][0].update(shape='cylinder',dimensions_m=[.03,.02,.02])
+            if change=='part-quaternion':b['parts'][0]['rotation_wxyz']=[1,0,0,.5]
             path=Path(self.tmp.name)/f'bad-{index}.json';path.write_text(json.dumps(bad))
             result=subprocess.run([str(ENGINE),'--scene',str(path),'--cell','.04'],input='',text=True,capture_output=True,timeout=10)
             self.assertNotEqual(0,result.returncode,(change,result.stdout))
             self.assertIn('precise',result.stderr.lower()+result.stdout.lower())
+
+    def test_overlapping_and_off_centre_parts_are_one_body_about_its_centre_of_mass(self):
+        # Two 20 mm iron cubes overlapping by half, given about the first one's
+        # middle: one 30 mm body, standing at its own centre of mass.
+        b=box('pair',(0,1,0));b['parts']=[{'dimensions_m':[.02]*3,'center_local_m':[0,0,0]},
+                                           {'dimensions_m':[.02]*3,'center_local_m':[.01,0,0]}]
+        spec=world_room.yard();spec['precise_rigid_bodies']=[b];self.room.spec=spec
+        self.live.open(self.app,{'spec':spec})
+        saved=next(x for x in self.snap()['bodies'] if x['name']=='pair')
+        self.assertAlmostEqual(7870*.03*.02*.02,saved['precise_mass_kg'],delta=1e-9)
+        self.assertAlmostEqual(.005,saved['pose']['com_m'][0],delta=1e-9)
+        body=next(x for x in self.live.session.send(op='poses')['bodies'] if x['name']=='pair')
+        self.assertAlmostEqual(-.005,body['rigid_parts_local'][0]['center_local_m'][0],delta=1e-9)
+
+    def test_exact_bodies_turn_on_a_pin_without_jamming_on_each_other(self):
+        # An iron axle through an oak block's foot, on a pin along the axle: the
+        # pin holds them, and the overlap it runs through is not a jam.
+        block={'name':'block','material':'oak','position_m':[0,.5,0],
+               'parts':[{'dimensions_m':[.1,.2,.1],'center_local_m':[0,0,0]}]}
+        wheel={'name':'wheel','material':'oak','position_m':[0,.4,0],'spin_rad_s':[3,0,0],
+               'parts':[{'shape':'cylinder','material':'iron','dimensions_m':[.03,.3,.03],'center_local_m':[0,0,0],
+                         'rotation_wxyz':[math.sqrt(.5),0,0,math.sqrt(.5)]},
+                        {'shape':'cylinder','dimensions_m':[.2,.04,.2],'center_local_m':[.12,0,0],
+                         'rotation_wxyz':[math.sqrt(.5),0,0,math.sqrt(.5)]}]}
+        spec=world_room.yard();spec['precise_rigid_bodies']=[block,wheel]
+        spec['joints']=[{'kind':'hinge','a':'block','b':'wheel','at_mm':[0,400,0],'axis':[1,0,0]}]
+        self.room.spec=spec;self.live.open(self.app,{'spec':spec})
+        pins=[j for j in self.live.session.send(op='joints')['joints'] if j['kind']=='hinge']
+        self.assertEqual(1,len(pins));self.assertTrue(pins[0]['attached'])
 
     def test_live_native_mass_and_inertia_agree_with_independent_initial_energy(self):
         # At t=0 there is no contact/solver work. An independent analytic oracle

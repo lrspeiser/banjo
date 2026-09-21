@@ -41,6 +41,8 @@
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/CollisionDispatch.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
@@ -184,7 +186,39 @@ struct BodyContactState {
     bool is_sphere{};
     double mass_kg{};
     std::optional<MaterialDefinition> activation_material;
+    // One per part of a compound whose parts are not all the body's material --
+    // an iron axle in an oak wheelset -- in the order of its parts. Empty when
+    // the whole body meets things as `contact`. Each part's leaf shape carries
+    // its index + 1 as Jolt user data, which is how a contact finds it.
+    std::vector<CompiledContactMaterial> part_contacts;
+    // A compound's round parts: each cylinder, which rolls about its own axis
+    // where it touches something (resistWheels). An axle is one too; it rolls
+    // only if it is what touches.
+    struct Wheel {
+        JPH::uint64 part{};          // its leaf shape's user data: part index + 1
+        Vec3 axis_local{0.0, 1.0, 0.0};
+        double radius_m{};
+        double own_rolling{};        // its own material's share of the coefficient
+    };
+    std::vector<Wheel> wheels;
 };
+
+// Which of a body's round parts a contact touched, or -1.
+int wheelOf(const BodyContactState &state, const JPH::Body &body, const JPH::SubShapeID &part) {
+    if (state.wheels.empty()) return -1;
+    const JPH::uint64 index = body.GetShape()->GetSubShapeUserData(part);
+    for (std::size_t k = 0; k < state.wheels.size(); ++k)
+        if (state.wheels[k].part == index) return static_cast<int>(k);
+    return -1;
+}
+
+// How the part of `body` that a contact touched meets things.
+const CompiledContactMaterial &contactOfPart(const BodyContactState &state, const JPH::Body &body,
+                                             const JPH::SubShapeID &part) {
+    if (state.part_contacts.empty()) return state.contact;
+    const JPH::uint64 index = body.GetShape()->GetSubShapeUserData(part);
+    return index >= 1 && index <= state.part_contacts.size() ? state.part_contacts[index - 1] : state.contact;
+}
 
 // ---- rolling resistance: what is carried from one step to the next ----------
 
@@ -210,6 +244,7 @@ struct RollingContact {
     Vec3 sphere_at_m{};                   // the ball's centre when the step ended
     double normal_force_n{};              // over the step it was found in
     bool from_solver{};
+    int wheel{-1};                        // which round part, for a body with wheels; -1 for a ball
 };
 
 // Jolt keeps, for warm starting, the total normal impulse its solver applied
@@ -345,6 +380,41 @@ float sweepRadius(const JPH::Vec3 &half_extent_m) {
     return std::min(kSweepRadiusM, 0.1F * half_extent_m.ReduceMin());
 }
 
+JPH::Quat toJoltRotation(const Quat &q) {
+    return JPH::Quat(float(q.x), float(q.y), float(q.z), float(q.w)).Normalized();
+}
+
+// The Jolt shape of one part of a compound, in the part's own frame.
+//
+// A cylinder is Jolt's own, whose axis is its local y like ours. Its sweep
+// radius is given explicitly, as a box's is: Jolt's default is 50 mm, which
+// would round a 30 mm axle into something else entirely. The radius lies
+// inside the shape ("the total cylinder will not grow"), so the part still
+// fills exactly the size it was given.
+JPH::Ref<JPH::Shape> compoundPartShape(const RigidCompoundPart &p) {
+    const Quat q = p.rotation_local;
+    if (!std::isfinite(q.w + q.x + q.y + q.z) || std::abs(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z - 1) > 1e-6)
+        throw std::invalid_argument("compound part rotation must be a unit quaternion");
+    const Vec3 v = p.geometry.dimensions_m;
+    const bool sized = std::isfinite(lengthSquared(v)) && std::min({v.x, v.y, v.z}) > 0;
+    switch (p.geometry.kind) {
+    case PrimitiveKind::Sphere:
+        if (!std::isfinite(p.geometry.radius_m) || p.geometry.radius_m <= 0)
+            throw std::invalid_argument("invalid compound sphere");
+        return new JPH::SphereShape(float(p.geometry.radius_m));
+    case PrimitiveKind::Box:
+        if (!sized) throw std::invalid_argument("invalid compound box");
+        return new JPH::BoxShape(toJolt(v / 2), sweepRadius(toJolt(v / 2)));
+    case PrimitiveKind::Cylinder: {
+        if (!sized || std::abs(v.x - v.z) > 1e-9 * std::max(1.0, v.x))
+            throw std::invalid_argument("a compound cylinder is sized {diameter, length, diameter}");
+        const float half = float(v.y / 2), radius = float(v.x / 2);
+        return new JPH::CylinderShape(half, radius, std::min(kSweepRadiusM, 0.1F * std::min(half, radius)));
+    }
+    }
+    throw std::invalid_argument("unknown compound part kind");
+}
+
 // A tool's point in the ground, as the contact listener sees it: its region
 // and -- for a tool that collides as its cells (setCollisionCells) -- exactly
 // which of its cells are point, by the sub-shape ids Jolt names them with. By
@@ -470,7 +540,8 @@ private:
             static_cast<double>(tangent_velocity.Length());
 
         const CombinedContactMaterial combined = combineContactMaterials(
-            state1->second.contact, state2->second.contact);
+            contactOfPart(state1->second, body1, manifold.mSubShapeID1),
+            contactOfPart(state2->second, body2, manifold.mSubShapeID2));
         const double applied_friction = tangential_speed < 0.05
                                             ? combined.static_friction
                                             : combined.dynamic_friction;
@@ -509,8 +580,12 @@ private:
         // A round body's contacts are kept for its rolling resistance: which
         // manifold, which way its normal points and where it is. The solver's
         // impulse through each is read once the step is over.
-        const bool round1 = state1->second.is_sphere && body1.IsDynamic();
-        const bool round2 = state2->second.is_sphere && body2.IsDynamic();
+        // A wheel -- a compound's round part -- is kept the same way, by
+        // which part touched.
+        const int wheel1 = body1.IsDynamic() ? wheelOf(state1->second, body1, manifold.mSubShapeID1) : -1;
+        const int wheel2 = body2.IsDynamic() ? wheelOf(state2->second, body2, manifold.mSubShapeID2) : -1;
+        const bool round1 = (state1->second.is_sphere && body1.IsDynamic()) || wheel1 >= 0;
+        const bool round2 = (state2->second.is_sphere && body2.IsDynamic()) || wheel2 >= 0;
         if (round1 || round2) {
             const JPH::SubShapeIDPair key(body1.GetID(), manifold.mSubShapeID1,
                                           body2.GetID(), manifold.mSubShapeID2);
@@ -518,8 +593,14 @@ private:
             const Vec3 normal = normalized(fromJoltVector(manifold.mWorldSpaceNormal));
             const Vec3 point = fromJoltPosition(contact_point);
             std::scoped_lock lock(rolling_mutex_);
-            if (round1) rolling_.push_back({key, body1.GetID(), body2.GetID(), id1, id2, -normal, point});
-            if (round2) rolling_.push_back({key, body2.GetID(), body1.GetID(), id2, id1, normal, point});
+            if (round1) {
+                rolling_.push_back({key, body1.GetID(), body2.GetID(), id1, id2, -normal, point});
+                rolling_.back().wheel = wheel1;
+            }
+            if (round2) {
+                rolling_.push_back({key, body2.GetID(), body1.GetID(), id2, id1, normal, point});
+                rolling_.back().wheel = wheel2;
+            }
         }
 
         if (id1 == kInvalidMatterBodyId || id2 == kInvalidMatterBodyId) {
@@ -750,10 +831,11 @@ public:
         for (std::size_t first = 0; first < order.size();) {
             std::size_t last = first + 1;
             while (last < order.size() && order[last]->sphere == order[first]->sphere) ++last;
-            resistBall(std::vector<const RollingContact *>(
-                           order.begin() + static_cast<std::ptrdiff_t>(first),
-                           order.begin() + static_cast<std::ptrdiff_t>(last)),
-                       dt, pushes, rolling_balls, not_at_rest);
+            const std::vector<const RollingContact *> group(
+                order.begin() + static_cast<std::ptrdiff_t>(first),
+                order.begin() + static_cast<std::ptrdiff_t>(last));
+            if (group.front()->wheel >= 0) resistWheels(group, dt, pushes, rolling_balls, not_at_rest);
+            else resistBall(group, dt, pushes, rolling_balls, not_at_rest);
             first = last;
         }
         JPH::BodyInterface &bodies = physics_->GetBodyInterface();
@@ -838,6 +920,7 @@ public:
 
     struct BallState {
         Vec3 x{}, v{}, w{}, force{}, torque{};
+        Quat q{};
         double mass{};
         Mat3 inverse_inertia{}, inertia{};
     };
@@ -851,6 +934,9 @@ public:
         const float inverse_mass = body.GetMotionProperties()->GetInverseMass();
         if (!(inverse_mass > 0.0F)) return false;
         out.x = fromJoltPosition(body.GetCenterOfMassPosition());
+        const JPH::Quat turned = body.GetRotation();
+        out.q = {static_cast<double>(turned.GetW()), static_cast<double>(turned.GetX()),
+                 static_cast<double>(turned.GetY()), static_cast<double>(turned.GetZ())};
         out.v = fromJoltVector(body.GetLinearVelocity());
         out.w = fromJoltVector(body.GetAngularVelocity());
         out.force = fromJoltVector(body.GetAccumulatedForce());
@@ -1030,6 +1116,83 @@ public:
         }
         double taken = work;
         for (const double moving_work : work_moving) taken += moving_work;
+        rolling_loss_j_ += taken;
+        rolling_loss_of_[lead.sphere] += taken;
+    }
+
+    // One body's round parts -- a wheelset's two wheels -- and what each
+    // touched in the last step.
+    //
+    // A wheel turns on its axle, not every way as a ball does, so its couple
+    // acts about its own axis only: at most c N r, against how it turns on
+    // what it touches, and never turning it the other way. c is its own
+    // material's share and the surface's, as for a ball.
+    //
+    // What it takes to stop it is not the wheel's own spin alone. A wheel
+    // carries its share of a load -- N/g of mass on the level -- and stopping
+    // the wheel stops that rolling too: so "enough to stop it" is its own
+    // inertia about the axle plus that mass at its radius, times how fast it
+    // turns. Capped at the wheel's spin alone, a light wheel under a heavy cart
+    // could never slow it by more than its own few grams; capped this way the
+    // couple holds a cart on a slope gentler than atan(c) and lets it roll off
+    // a steeper one -- which is what c means.
+    void resistWheels(const std::vector<const RollingContact *> &contacts, double dt,
+                      std::vector<std::pair<JPH::BodyID, Vec3>> &pushes,
+                      std::vector<JPH::BodyID> &rolling_bodies, std::vector<JPH::BodyID> &not_at_rest) {
+        const RollingContact &lead = *contacts.front();
+        const auto state = contact_states_.find(lead.sphere);
+        if (state == contact_states_.end() || state->second.wheels.empty()) return;
+        BallState body;
+        if (!readBall(lead.sphere_body, body)) return;
+        rolling_bodies.push_back(lead.sphere_body);
+        if (!cache_readable_) before_step_[lead.sphere] = {body.v, body.force, body.mass};
+        // Moved by the host since the step ended: it is not where it touched.
+        if (length(body.x - lead.sphere_at_m) > kRollingMovedM) return;
+        const double g = length(gravity_m_s2_);
+        Vec3 impulse{};
+        bool rolling = false;
+        double taken = 0.0;
+        for (const RollingContact *each : contacts) {
+            const RollingContact &contact = *each;
+            if (contact.wheel < 0 || static_cast<std::size_t>(contact.wheel) >= state->second.wheels.size()) continue;
+            const BodyContactState::Wheel &wheel = state->second.wheels[static_cast<std::size_t>(contact.wheel)];
+            const TouchedState touched = readTouched(contact.other_body);
+            JoltWorld::RollingContactReport said;
+            said.sphere = contact.sphere;
+            said.other = contact.other;
+            said.normal_world = contact.normal;
+            said.point_world_m = contact.point_world_m;
+            said.normal_force_n = contact.normal_force_n;
+            said.from_solver = contact.from_solver;
+            const double c = std::clamp(wheel.own_rolling + surfaceRolling(contact), 0.0, 1.0);
+            said.coefficient = c;
+            said.limit_n_m = c * contact.normal_force_n * wheel.radius_m;
+            if (touched.found && contact.normal_force_n > 0.0) {
+                const Vec3 axis = normalized(body.q.rotate(wheel.axis_local), Vec3{0.0, 1.0, 0.0});
+                const double spin = dot(body.w - (touched.moving ? touched.w : Vec3{}), axis);
+                const double carried = dot(axis, body.inertia * axis) +
+                                       (g > 0.0 ? contact.normal_force_n / g : 0.0) * wheel.radius_m * wheel.radius_m;
+                const double most = said.limit_n_m * dt;
+                const double stop = carried * std::abs(spin);
+                const double applied = std::min(most, stop);
+                if (applied > 0.0) {
+                    const Vec3 against = (spin > 0.0 ? -applied : applied) * axis;
+                    impulse += against;
+                    if (touched.dynamic) pushes.emplace_back(contact.other_body, -1.0 * against);
+                    said.applied_n_m = applied / dt;
+                    // Its work against the turning it resisted, at the mean
+                    // rate over the step.
+                    const double after = carried > 0.0 ? std::max(0.0, std::abs(spin) - applied / carried) : 0.0;
+                    said.loss_j = applied * 0.5 * (std::abs(spin) + after);
+                    taken += said.loss_j;
+                }
+                said.held = stop <= most;
+                rolling = rolling || !said.held;
+            }
+            rolling_report_.push_back(said);
+        }
+        if (lengthSquared(impulse) > 0.0) pushes.emplace_back(lead.sphere_body, impulse);
+        if (rolling) not_at_rest.push_back(lead.sphere_body);
         rolling_loss_j_ += taken;
         rolling_loss_of_[lead.sphere] += taken;
     }
@@ -1427,16 +1590,33 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
     for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)
         if(!std::isfinite(d.inertia_local_kg_m2.m[i][j])||std::abs(d.inertia_local_kg_m2.m[i][j]-d.inertia_local_kg_m2.m[j][i])>1e-10)
             throw std::invalid_argument("compound inertia must be finite and symmetric");
-    for(const auto &p:d.parts){if(!finite(p.center_local_m))throw std::invalid_argument("invalid compound point");
-        JPH::RefConst<JPH::Shape> shape;
-        if(p.geometry.kind==PrimitiveKind::Sphere){if(!std::isfinite(p.geometry.radius_m)||p.geometry.radius_m<=0)throw std::invalid_argument("invalid compound sphere");shape=new JPH::SphereShape(float(p.geometry.radius_m));}
-        else {auto v=p.geometry.dimensions_m;if(!finite(v)||std::min({v.x,v.y,v.z})<=0)throw std::invalid_argument("invalid compound box");shape=new JPH::BoxShape(toJolt(v/2),sweepRadius(toJolt(v/2)));}
-        compound.AddShape(toJolt(p.center_local_m),JPH::Quat::sIdentity(),shape.GetPtr());
+    bool mixed=false;
+    for(std::size_t index=0;index<d.parts.size();++index){const auto &p=d.parts[index];
+        if(!finite(p.center_local_m))throw std::invalid_argument("invalid compound point");
+        JPH::Ref<JPH::Shape> shape=compoundPartShape(p);
+        // Which part this is, for a contact to find: its index + 1, zero being
+        // "no part" in Jolt's own default.
+        shape->SetUserData(JPH::uint64(index+1));
+        compound.AddShape(toJolt(p.center_local_m),toJoltRotation(p.rotation_local),shape.GetPtr());
+        mixed=mixed||p.material.has_value();
     }
     auto built=compound.Create();if(built.HasError())throw std::invalid_argument(built.GetError().c_str());
     JPH::RefConst<JPH::Shape> inner=built.Get();
+    // The body's origin is its centre of mass as the caller measured it from
+    // each part's own material. Jolt's shape would put it at the middle of the
+    // parts' volume, as if every part were the same stuff; this moves Jolt's
+    // mark to the caller's without moving any geometry.
     JPH::RefConst<JPH::Shape> centered=new JPH::OffsetCenterOfMassShape(inner.GetPtr(),-inner->GetCenterOfMass());
     const auto contact=compileContactMaterial(d.material);
+    std::vector<CompiledContactMaterial> part_contacts;
+    if(mixed)for(const auto &p:d.parts)part_contacts.push_back(p.material?compileContactMaterial(*p.material):contact);
+    std::vector<BodyContactState::Wheel> wheels;
+    for(std::size_t index=0;index<d.parts.size();++index){const auto &p=d.parts[index];
+        if(p.geometry.kind!=PrimitiveKind::Cylinder)continue;
+        const auto own=p.material?compileContactMaterial(*p.material):contact;
+        wheels.push_back({JPH::uint64(index+1),normalized(p.rotation_local.rotate({0.0,1.0,0.0}),Vec3{0.0,1.0,0.0}),
+                          p.geometry.dimensions_m.x/2,own.rolling_resistance});
+    }
     JPH::BodyCreationSettings settings(centered.GetPtr(),toJoltPosition(d.state.center_of_mass_world_m),
         JPH::Quat(float(q.x),float(q.y),float(q.z),float(q.w)),JPH::EMotionType::Dynamic,Layers::kMoving);
     settings.mUserData=d.body_id;settings.mLinearDamping=0;settings.mAngularDamping=0;settings.mApplyGyroscopicForce=true;
@@ -1454,8 +1634,25 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
         {JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(),id);if(!lock.Succeeded())throw std::runtime_error("compound inertia lock failed");
             lock.GetBody().GetMotionProperties()->SetInverseInertia(JPH::Vec3::sReplicate(1.0e6F)/diagonal,rotation.GetQuaternion());}
         bodies.SetLinearAndAngularVelocity(id,toJolt(d.state.linear_velocity_m_s),toJolt(d.state.angular_velocity_rad_s));
-        impl_->bodies_.emplace(d.body_id,id);impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{}});
+        impl_->bodies_.emplace(d.body_id,id);
+        impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{},std::move(part_contacts),std::move(wheels)});
     }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
+}
+
+bool JoltWorld::partsWithin(const RigidCompoundPart &a,const RigidCompoundPart &b,double tolerance_m){
+    if(!std::isfinite(tolerance_m)||tolerance_m<0||tolerance_m>0.1)throw std::invalid_argument("part tolerance must be 0..100 mm");
+    ensureJoltRuntime();
+    const JPH::Ref<JPH::Shape> one=compoundPartShape(a),two=compoundPartShape(b);
+    JPH::CollideShapeSettings settings;
+    settings.mMaxSeparationDistance=float(tolerance_m);
+    settings.mActiveEdgeMode=JPH::EActiveEdgeMode::CollideWithAll;
+    settings.mBackFaceMode=JPH::EBackFaceMode::CollideWithBackFaces;
+    JPH::AnyHitCollisionCollector<JPH::CollideShapeCollector> hit;
+    JPH::CollisionDispatch::sCollideShapeVsShape(one.GetPtr(),two.GetPtr(),JPH::Vec3::sReplicate(1.0F),JPH::Vec3::sReplicate(1.0F),
+        JPH::Mat44::sRotationTranslation(toJoltRotation(a.rotation_local),toJolt(a.center_local_m)),
+        JPH::Mat44::sRotationTranslation(toJoltRotation(b.rotation_local),toJolt(b.center_local_m)),
+        JPH::SubShapeIDCreator(),JPH::SubShapeIDCreator(),settings,hit);
+    return hit.HadHit();
 }
 
 void JoltWorld::setSurfaceImpactObservations(bool enabled){

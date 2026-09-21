@@ -1116,6 +1116,15 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_scene_joint_tests)
             add_test(NAME banjo_scene_joint_tests COMMAND banjo_scene_joint_tests)
 
+            # Exact rigid parts that are not axis-aligned boxes of one
+            # material: cylinders and turned parts, a part of its own
+            # material, overlaps counted once -- a cart's wheelset, with
+            # glass/oak/iron oracles for mass, inertia and rolling.
+            add_executable(banjo_precise_rigid_parts_tests tests/precise_rigid_parts_tests.cpp)
+            target_link_libraries(banjo_precise_rigid_parts_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_precise_rigid_parts_tests)
+            add_test(NAME banjo_precise_rigid_parts_tests COMMAND banjo_precise_rigid_parts_tests)
+
             # Where a thing would go set down, and whether it fits: the
             # engine's half of placing a thing (docs/inventory-and-hands.md,
             # section 5), which the page's see-through copy asks.

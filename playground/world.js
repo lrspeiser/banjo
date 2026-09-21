@@ -830,27 +830,64 @@ function pressDent(geometry, body) {
     geometry.computeVertexNormals();
 }
 
-const placing = new THREE.Object3D();
+// A round part is drawn with this many sides: enough that a wheel reads as a
+// wheel when you stand beside it, few enough for a room of carts.
+const PRECISE_SIDES = 28;
+
+// An exact body's parts as one geometry, each where and as it is: a box, or a
+// cylinder along its own y sized {diameter, length, diameter}, turned by its
+// own rotation. Where the parts are of more than one material each part is
+// coloured as its own -- an iron axle through oak wheels shows as that.
+function preciseGeometry(parts, fallbackMaterial, mixed) {
+  const positions = [], normals = [], colors = [];
+  const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion();
+  const at = new THREE.Vector3(), size = new THREE.Vector3();
+  for (const part of parts) {
+    if (![part.center_local_m, part.dimensions_m].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)) || part.dimensions_m.some(v => v <= 0))
+      throw new Error("Invalid precise rigid collision geometry.");
+    const round = part.shape === "cylinder";
+    if (!round && part.shape !== "box") throw new Error("Unknown precise rigid part shape.");
+    const q = Array.isArray(part.rotation_wxyz) && part.rotation_wxyz.length === 4 ? part.rotation_wxyz : [1, 0, 0, 0];
+    if (!q.every(Number.isFinite)) throw new Error("Invalid precise rigid part rotation.");
+    const shape = (round ? new THREE.CylinderGeometry(0.5, 0.5, 1, PRECISE_SIDES)
+                         : new THREE.BoxGeometry(1, 1, 1)).toNonIndexed();
+    turn.set(q[1], q[2], q[3], q[0]).normalize();
+    matrix.compose(at.fromArray(part.center_local_m), turn, size.fromArray(part.dimensions_m));
+    shape.applyMatrix4(matrix);
+    for (const v of shape.attributes.position.array) positions.push(v);
+    for (const v of shape.attributes.normal.array) normals.push(v);
+    if (mixed) {
+      const c = look(part.material || fallbackMaterial).color;
+      for (let k = 0; k < shape.attributes.position.count; k++) colors.push(c.r, c.g, c.b);
+    }
+    shape.dispose();
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  if (mixed) geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
 
 function buildMesh(body) {
   if (body.mechanical_model === "precise-rigid-v1") {
-    const boxes = body.rigid_boxes_local;
-    if (!Array.isArray(boxes) || !boxes.length || boxes.length > 64)
+    const parts = body.rigid_parts_local;
+    if (!Array.isArray(parts) || !parts.length || parts.length > 64)
       throw new Error("Precise rigid geometry is missing; refusing to draw a substitute bounding box.");
-    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), look(body.material), boxes.length);
-    for (let i = 0; i < boxes.length; i++) {
-      const box = boxes[i];
-      if (![box.center_local_m, box.dimensions_m].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)) || box.dimensions_m.some(v => v <= 0))
-        throw new Error("Invalid precise rigid collision geometry.");
-      placing.position.fromArray(box.center_local_m);
-      placing.quaternion.identity();
-      placing.scale.fromArray(box.dimensions_m);
-      placing.updateMatrix(); mesh.setMatrixAt(i, placing.matrix);
+    const mixed = new Set(parts.map(part => part.material || body.material)).size > 1;
+    let material = look(body.material);
+    if (mixed) {
+      // Its own, so colouring its parts touches no other body of that stuff.
+      material = material.clone();
+      material.vertexColors = true;
+      material.color.set(0xffffff);
     }
-    placing.scale.set(1, 1, 1); placing.quaternion.identity();
-    mesh.instanceMatrix.needsUpdate = true;
+    const mesh = new THREE.Mesh(preciseGeometry(parts, body.material, mixed), material);
     mesh.userData.mechanicalModel = body.mechanical_model;
-    mesh.userData.collisionBoxes = boxes.length;
+    mesh.userData.collisionParts = parts.length;
+    mesh.userData.ownMaterial = mixed;
     return mesh;
   }
 
@@ -891,6 +928,8 @@ function buildMesh(body) {
 function forget(mesh) {
   scene.remove(mesh);
   if (mesh.geometry && mesh.geometry !== cellGeometry) mesh.geometry.dispose();
+  // A body of mixed materials had one of its own; the shared ones stay.
+  if (mesh.userData && mesh.userData.ownMaterial && mesh.material) mesh.material.dispose();
 }
 
 function place(mesh, body) {

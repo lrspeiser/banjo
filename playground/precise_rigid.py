@@ -1,8 +1,13 @@
 """Live precise-rigid scene admission. No lattice resampling or failure verdict.
 
-The initial live lane admits explicit rigid compounds alongside anchored scenery.
-Dynamic lattice coupling, thermal mechanics, joints, and fabrication are refused
-rather than weakened when a precise rigid body is present.
+Exact rigid compounds -- boxes and cylinders, each turned as drawn and of its own
+material if need be -- share a room with everything made of cells, with its
+terrain and water, and with joints: a cart is three of them turning on pins.
+What they cannot do yet is break inside, take heat, carry blades or tool points,
+or drive a machine; those are refused rather than weakened. The engine is the
+authority on their geometry: it counts overlapping parts once, re-centres each
+body on its material's centre of mass, and asks Jolt's own shapes whether every
+part meets another (src/fastlattice/PreciseRigidScene.cpp).
 """
 from __future__ import annotations
 from copy import deepcopy
@@ -13,8 +18,11 @@ from mcp import core_use
 MODEL = "precise-rigid-v1"
 MAX_BODIES = 32
 MAX_SHAPES = 256
-LIMITS = ("Precise rigid authoring: no internal deformation, fracture, heat, attachments or inventory-funded fabrication. "
-          "Currently requires flat-floor anchored scenery; dynamic lattice contact coupling is unavailable.")
+LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat, blades, tool points or inventory-funded fabrication. "
+          "A breakable body they strike is judged against their material, and a break that would need them inside "
+          "the lattice run is declined and reported rather than run.")
+SHAPES = ("box", "cylinder")
+MATERIALS = ("glass", "oak", "iron", "concrete")
 
 
 def _vector(value: Any, limit: float, label: str) -> list[float]:
@@ -29,9 +37,9 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError(f"precise_rigid_bodies must be a list of at most {MAX_BODIES} bodies")
     if not value:
         return []
-    if not spec.get("bodies") or any(not b.get("anchored") for b in spec["bodies"]):
-        raise ValueError("Precise rigid bodies currently require anchored scenery, not dynamic lattice bodies; use an empty yard")
-    for key in ("terrain", "water", "thermo", "joints", "machines", "blades", "tool_points", "interactions"):
+    if not spec.get("bodies"):
+        raise ValueError("Precise rigid bodies need a room with at least one lattice body in it; use a yard")
+    for key in ("thermo", "machines", "blades", "tool_points", "interactions"):
         if spec.get(key):
             raise ValueError(f"Precise rigid rooms do not yet support {key}; nothing was installed")
     # Saved core gestures use the existing rigid hand/contact path. Rich
@@ -74,51 +82,78 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         b["color_rgba"] = color
         parts = raw.get("parts")
         if not isinstance(parts, list) or not 1 <= len(parts) <= 64:
-            raise ValueError("Each precise compound needs 1..64 boxes")
+            raise ValueError("Each precise compound needs 1..64 parts")
         total += len(parts)
         if total > MAX_SHAPES:
-            raise ValueError(f"Precise rigid room exceeds {MAX_SHAPES} collision boxes")
-        b["parts"] = []
-        for part in parts:
-            if not isinstance(part, dict) or set(part) != {"dimensions_m", "center_local_m"}:
-                raise ValueError("Precise boxes require exactly dimensions_m and center_local_m")
-            d = _vector(part["dimensions_m"], 6, "dimensions_m")
-            if min(d) < .001:
-                raise ValueError("Precise box dimensions must be 1..6000 mm")
-            b["parts"].append({"dimensions_m": d, "center_local_m": _vector(part["center_local_m"], 6, "center_local_m")})
-        volumes = [math.prod(p["dimensions_m"]) for p in b["parts"]]
-        com = [sum(v*p["center_local_m"][a] for v, p in zip(volumes,b["parts"]))/sum(volumes) for a in range(3)]
-        if math.sqrt(sum(v*v for v in com)) > 1e-9:
-            raise ValueError("Precise boxes must use their material-derived centre of mass as the local origin")
-        neighbors = [set() for _ in parts]
-        for i, p in enumerate(b["parts"]):
-            for k, other in enumerate(b["parts"][:i]):
-                overlap = [(p["dimensions_m"][a]+other["dimensions_m"][a])/2-abs(p["center_local_m"][a]-other["center_local_m"][a]) for a in range(3)]
-                if all(v > 1e-10 for v in overlap):
-                    raise ValueError("Precise compound boxes overlap; an exact solid union is required")
-                if all(v >= -1e-10 for v in overlap) and sum(v > 1e-10 for v in overlap) >= 2:
-                    neighbors[i].add(k); neighbors[k].add(i)
-        seen, queue = {0}, [0]
-        for i in queue:
-            for other in neighbors[i]-seen:
-                seen.add(other); queue.append(other)
-        if len(seen) != len(parts):
-            raise ValueError("Precise rigid members must be face connected; separate parts need joints")
+            raise ValueError(f"Precise rigid room exceeds {MAX_SHAPES} collision parts")
+        b["parts"] = [_part(part) for part in parts]
+        # Overlaps, the centre of mass and whether every part meets another are
+        # the engine's to settle: it counts a shared space once, as the part
+        # listed first, re-centres the body on its material, and asks Jolt's own
+        # shapes -- a turned cylinder is not a box this module could test.
         out.append(b)
     return out
 
 
-def bounds(parts: list[dict[str, Any]], position: list[float], q: list[float]):
-    """Conservative world AABB of actual rotated boxes, not a COM-centred hull."""
+def _part(part: Any) -> dict[str, Any]:
+    allowed = {"shape", "dimensions_m", "center_local_m", "rotation_wxyz", "material", "name"}
+    if not isinstance(part, dict) or set(part) - allowed or not {"dimensions_m", "center_local_m"} <= set(part):
+        raise ValueError("Precise parts need dimensions_m and center_local_m, and may give shape, rotation_wxyz, material and name")
+    shape = part.get("shape", "box")
+    if shape not in SHAPES:
+        raise ValueError("Precise part shape must be box or cylinder")
+    d = _vector(part["dimensions_m"], 6, "dimensions_m")
+    if min(d) < .001:
+        raise ValueError("Precise part dimensions must be 1..6000 mm")
+    if shape == "cylinder" and abs(d[0]-d[2]) > 1e-9*max(1.0, d[0]):
+        raise ValueError("A precise cylinder is sized [diameter, length, diameter] about its own y axis")
+    out = {"dimensions_m": d, "center_local_m": _vector(part["center_local_m"], 6, "center_local_m")}
+    if shape != "box":
+        out["shape"] = shape
+    if "rotation_wxyz" in part:
+        q = part["rotation_wxyz"]
+        if (not isinstance(q, list) or len(q) != 4 or
+                any(type(v) not in (float, int) or not math.isfinite(v) or abs(v) > 1 for v in q) or
+                abs(sum(v*v for v in q)-1) > 1e-9):
+            raise ValueError("A precise part's rotation must be a normalized w,x,y,z quaternion")
+        out["rotation_wxyz"] = [float(v) for v in q]
+    if "material" in part:
+        if part["material"] not in MATERIALS:
+            raise ValueError("Unsupported precise rigid material")
+        out["material"] = part["material"]
+    if "name" in part:
+        name = part["name"]
+        if (not isinstance(name, str) or not name or len(name.encode()) > 80 or
+                any(ord(c) < 32 or ord(c) == 127 for c in name)):
+            raise ValueError("Precise part names are 1..80 bytes with no control characters")
+        out["name"] = name
+    return out
+
+
+def _turn(q: list[float]):
     w, x, y, z = q
-    r = ((1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)),
-         (2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)),
-         (2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)))
+    return ((1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)),
+            (2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)),
+            (2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)))
+
+
+def bounds(parts: list[dict[str, Any]], position: list[float], q: list[float]):
+    """World AABB of the actual turned parts, not a COM-centred hull: a box's
+    corners, and a cylinder's two end discs, each part turned by its own
+    rotation and then the body's."""
+    body = _turn(q)
     lo, hi = [math.inf]*3, [-math.inf]*3
     for p in parts:
+        own = _turn(p.get("rotation_wxyz", [1, 0, 0, 0]))
+        r = [[sum(body[a][k]*own[k][c] for k in range(3)) for c in range(3)] for a in range(3)]
+        d = p["dimensions_m"]
         for a in range(3):
-            center = position[a] + sum(r[a][k]*p["center_local_m"][k] for k in range(3))
-            extent = sum(abs(r[a][k])*p["dimensions_m"][k]/2 for k in range(3))
+            center = position[a] + sum(body[a][k]*p["center_local_m"][k] for k in range(3))
+            if p.get("shape") == "cylinder":
+                along = min(1.0, abs(r[a][1]))
+                extent = d[1]/2*along + d[0]/2*math.sqrt(max(0.0, 1-along*along))
+            else:
+                extent = sum(abs(r[a][k])*d[k]/2 for k in range(3))
             lo[a] = min(lo[a], center-extent); hi[a] = max(hi[a], center+extent)
     if not all(math.isfinite(v) for v in lo+hi):
         raise ValueError("Invalid precise rigid collision bounds")
