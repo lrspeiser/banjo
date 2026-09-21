@@ -1,7 +1,12 @@
-"""Contextual placement: one read-only resolver for previews and authored Use."""
+"""Contextual placement: one read-only resolver for previews and authored Use.
+
+What is placed is the part the hand grips. A thing of several parts comes with
+it on its own joints (inventory.items_of): its other parts are never taken for
+somewhere to put it or for the ground under it, and its weight is all of it."""
 from __future__ import annotations
 import math
 import interaction_points
+import inventory
 import world_chat
 
 REACH_M = 3.0
@@ -20,6 +25,59 @@ def yaw_of(body):
     return math.degrees(math.atan2(-z, x))
 
 
+def mul(a, b):
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw*bw-ax*bx-ay*by-az*bz, aw*bx+ax*bw+ay*bz-az*by,
+            aw*by-ax*bz+ay*bw+az*bx, aw*bz+ax*by-ay*bx+az*bw]
+
+
+def conj(q):
+    return [q[0], -q[1], -q[2], -q[3]]
+
+
+def _reach(body, q, axis):
+    """How far a part reaches from its middle along a world axis (0 x, 1 y,
+    2 z), turned by q."""
+    dims = body.get("dimensions_m") or [0.0, 0.0, 0.0]
+    if body.get("shape") == "sphere":
+        return dims[0] / 2
+    return sum(abs(rotate(q, [1 if j == k else 0 for j in range(3)])[axis])*dims[k]/2 for k in range(3))
+
+
+# What holds a part IN PLACE on the one the hand grips: fixed to it, on a pin
+# through it, or in a groove in it. Those go down with it as one shape -- a
+# chair's legs under its seat, a cart's wheels under its bed. What only hangs
+# from it -- on a rope, a chain, a spring -- swings free and settles by itself:
+# a mace's head is not part of where the mace is set down.
+HELD_IN_PLACE = ("fixing", "hinge", "slider")
+
+
+def own_parts(app, name):
+    """Every part of the thing a body is part of (inventory.items_of): the part
+    the hand grips, and whatever comes with it."""
+    thing = next((i for i in inventory.items_of(app.room.spec) if name in i["bodies"]), None)
+    return set(thing["bodies"]) if thing else {name}
+
+
+def carried_shape(app, name):
+    """The parts that go down with the gripped one, as they stand now: the
+    gripped part first, then what is fixed, pinned or slid to it."""
+    joints = [j for j in app.room.spec.get("joints") or []
+              if isinstance(j, dict) and j.get("kind", "hinge") in HELD_IN_PLACE]
+    names, todo = [name], [name]
+    while todo:
+        part = todo.pop()
+        for j in joints:
+            for a, b in ((j.get("a"), j.get("b")), (j.get("b"), j.get("a"))):
+                if a == part and b and b not in names:
+                    names.append(b)
+                    todo.append(b)
+    bodies = {b["name"]: b for b in (app.live.session.state or {}).get("bodies", [])}
+    return [bodies[n] for n in names
+            if n in bodies and not bodies[n].get("anchored") and bodies[n].get("position_m")]
+
+
 def resolve(app, body):
     if not isinstance(body, dict):
         raise ValueError("placement needs an object request")
@@ -36,6 +94,12 @@ def resolve(app, body):
     mover = bodies.get(name)
     if mover is None or mover.get("anchored") or mover.get("parked"):
         raise ValueError("placement needs a movable object in the world")
+    # Every part of the thing in the hand -- the gripped one and what hangs on
+    # it -- and what all of them weigh.
+    own = own_parts(app, name)
+    parts = [b for b in (session.state or {}).get("bodies", []) if b.get("name") in own]
+    whole_kg = sum(float(b.get("mass_kg") or 0.0) for b in parts) or mover.get("mass_kg", math.inf)
+    shape = carried_shape(app, name) if len(own) > 1 else [mover]
     yaw = body.get("yaw_deg", yaw_of(mover))
     if type(yaw) not in (int, float) or not math.isfinite(yaw):
         raise ValueError("placement yaw_deg must be finite")
@@ -62,10 +126,80 @@ def resolve(app, body):
     def reachable(on):
         d = [on[k]-feet[k] for k in range(3)]
         return math.dist(on, eyes) <= REACH_M and d[0]*facing[0]+d[2]*facing[2] >= 0.1
+    def engine_check(part, on, onto, angle):
+        got = act("place_check", name=part, on=on, onto=onto, yaw_deg=angle)
+        # Its own other parts are not in its way: they go down with it, or hang
+        # from it -- a mace's head lying where its handle goes is its head.
+        if any(t.get("name") in own for t in got.get("touching") or []):
+            got["touching"] = [t for t in got["touching"] if t.get("name") not in own]
+            if not got["touching"] and got.get("rests_on"):
+                # What the engine would have said with nothing in the way.
+                got["fits"] = True
+                got["why"] = ("it fits, but little of it is on the " + got["rests_on"] + ": it may tip off"
+                              if got.get("supported_corners", 0) < 3 else
+                              "it fits here, on the " + got["rests_on"])
+        return got
+
+    def whole_shape(first, on, onto):
+        """The engine answers for one body (LiveWorld::placement). A thing of
+        several parts held in place on each other goes down as ONE shape: turned
+        as the gripped part would be, its footprint's middle over the point, its
+        LOWEST part on the surface -- a chair's legs, not its seat, on the ground
+        -- and every part asked about where it would then be."""
+        g = shape[0]
+        turn = mul(first["facing"], conj(g.get("orientation_wxyz", [1, 0, 0, 0])))
+        placed = []
+        for p in shape:
+            q = mul(turn, p.get("orientation_wxyz", [1, 0, 0, 0]))
+            off = rotate(turn, [p["position_m"][k]-g["position_m"][k] for k in range(3)])
+            placed.append((p, off, q))
+        lowest = min(off[1]-_reach(p, q, 1) for p, off, q in placed)
+        mid = [(min(off[k]-_reach(p, q, k) for p, off, q in placed) +
+                max(off[k]+_reach(p, q, k) for p, off, q in placed)) / 2 for k in (0, 2)]
+        centre = [on[0]-mid[0], on[1]-lowest+.002, on[2]-mid[1]]
+        for _ in range(2):
+            answers, lift = [], 0.0
+            for p, off, q in placed:
+                at = [centre[k]+off[k] for k in range(3)]
+                down = _reach(p, q, 1)
+                got = engine_check(p["name"], [at[0], at[1]-down, at[2]], onto, yaw_of({"orientation_wxyz": q}))
+                if got.get("why") == "that is too steep to set it on":
+                    return dict(first, fits=False, why=got["why"])
+                # How far the engine had to lift this part clear of what it is on.
+                lift = max(lift, (got.get("at_m") or at)[1]-at[1]-.002)
+                answers.append((p, at, q, off[1]-down-lowest, got))
+            if lift <= .003:
+                break
+            centre[1] += lift    # uneven ground: the whole shape, lifted as one
+        touching = [t for *_, got in answers for t in got.get("touching") or []]
+        feet = [got for *_, height, got in answers if height < .01]
+        resting = [got for got in feet if got.get("rests_on")]
+        corners = len(resting) if len(feet) >= 3 else sum(got.get("supported_corners", 0) for got in feet)
+        rests_on = resting[0]["rests_on"] if resting else ""
+        out = dict(first, at_m=[round(v, 5) for v in centre], rests_on=rests_on,
+                   supported_corners=min(4, corners), touching=touching,
+                   parts=[{"name": p["name"], "at_m": [round(v, 5) for v in at],
+                           "facing": [round(v, 6) for v in q],
+                           "dimensions_m": p.get("dimensions_m"), "shape": p.get("shape", "box")}
+                          for p, at, q, _, _ in answers])
+        if touching:
+            what = touching[0].get("name", "something")
+            out.update(fits=False, why=(f"the {what} is too uneven there" if what in ("ground", "floor")
+                                        else f"it would go into the {what}"))
+        elif not resting:
+            out.update(fits=False, why="there is nothing under it to rest on")
+        elif corners < 3:
+            out.update(fits=True, why=f"it fits, but little of it is on the {rests_on}: it may tip off")
+        else:
+            out.update(fits=True, why=f"it fits here, on the {rests_on}")
+        return out
+
     def check(on, onto, angle, key, label):
         if not reachable(on):
             return {"fits": False, "why": "that destination is out of reach"}
-        result = act("place_check", name=name, on=on, onto=onto, yaw_deg=angle)
+        result = engine_check(name, on, onto, angle)
+        if len(shape) > 1 and result.get("facing"):
+            result = whole_shape(result, on, onto)
         if key != "ground" and result.get("supported_corners", 0) < 3:
             result.update(fits=False, why="the receiving area no longer supports the item")
         result.update(on=on, onto=onto, yaw_deg=angle,
@@ -77,7 +211,8 @@ def resolve(app, body):
     candidates = []
     for record in app.room.spec.get("interaction_points", []):
         other = bodies.get(record["body"])
-        if other is None or other["name"] == name or other.get("parked"):
+        # Not onto itself: a thing's own parts are not somewhere to put it.
+        if other is None or other["name"] in own or other.get("parked"):
             continue
         q = other.get("orientation_wxyz", [1,0,0,0])
         if rotate(q, [0,1,0])[1] < math.cos(math.radians(15)):
@@ -102,7 +237,7 @@ def resolve(app, body):
                     dims[1], abs(math.sin(angle))*dims[0]+abs(math.cos(angle))*dims[2]]
             if any(need[k] > size[k]+1e-6 for k in range(3)):
                 continue
-            if mover.get("mass_kg", math.inf) > point.get("max_mass_kg", math.inf):
+            if whole_kg > point.get("max_mass_kg", math.inf):
                 continue
             candidates.append((0 if aimed else 1, horizontal, other["name"], point["id"],
                                on, yaw_of(other)+point.get("yaw_deg", 0), point["label"]))
@@ -137,10 +272,13 @@ def resolve(app, body):
     # not an invented receptacle or permission to place on its bounding box.
     hit = act("pick", **{"from": [front[0], eyes[1], front[2]], "dir": [0,-1,0], "max_m": REACH_M})
     # Start below the held object's actual lower extent when it intercepts
-    # this ray; never skip an unrelated obstacle.
-    if hit.get("hit") and hit.get("name") == name:
-        lower = mover["position_m"][1] - sum(abs(rotate(mover.get("orientation_wxyz",[1,0,0,0]),
-                    [1 if j == k else 0 for j in range(3)])[1])*mover["dimensions_m"][k]/2 for k in range(3))
+    # this ray -- all of it: the ray can meet a mace's head hanging below the
+    # handle in the hand -- and never skip an unrelated obstacle.
+    if hit.get("hit") and hit.get("name") in own:
+        def bottom(b):
+            return b["position_m"][1] - sum(abs(rotate(b.get("orientation_wxyz",[1,0,0,0]),
+                [1 if j == k else 0 for j in range(3)])[1])*b["dimensions_m"][k]/2 for k in range(3))
+        lower = min(bottom(b) for b in parts if b.get("dimensions_m")) if parts else bottom(mover)
         hit = act("pick", **{"from": [front[0], lower-.01, front[2]], "dir": [0,-1,0], "max_m": REACH_M})
     if (not hit.get("hit") or (hit.get("name") in bodies and
             (not bodies[hit["name"]].get("anchored") or hit["point_m"][1] > feet[1]+.25))):
@@ -200,7 +338,15 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     dims = current().get("dimensions_m") or [1.0, 1.0, 1.0]
     tips = math.atan2(min(dims[0], dims[2]) / 2, max(dims[1] / 2, 1e-3))
     half_turn = min(.075, tips / 6)
-    until = time.monotonic()+2.0
+    # What hangs from it has to have settled too. A mace's head still swinging
+    # on its chain when the handle was let go dragged the handle after it:
+    # measured in the Explorer (tests/explore_visual_qa.py), a handle set down
+    # exactly on the preview was pulled 0.47 m off it. So the hand keeps it on
+    # the spot while the rest comes to rest -- for a while: a part that will not
+    # settle by then is let go with it rather than the put-down refused.
+    rest = own_parts(app, name) - {name}
+    settle_until = time.monotonic() + (2.5 if rest else 0.0)
+    until = time.monotonic()+(3.0 if rest else 2.0)
     was = None
     while time.monotonic() < until:
         b = current()
@@ -214,6 +360,11 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
             abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004)
         was = q
         if math.dist(b["position_m"], end) <= .05 and aligned and still:
+            swinging = [p for p in session.state.get("bodies", []) if p.get("name") in rest and
+                        math.hypot(*(p.get("velocity_m_s") or [0.0, 0.0, 0.0])) >= .1]
+            if swinging and time.monotonic() < settle_until:
+                time.sleep(.03)
+                continue
             now = resolve(app, {**request, "expected": plan["target"]})
             if not now.get("fits"):
                 return "", now["why"]

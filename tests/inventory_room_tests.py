@@ -218,6 +218,145 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
         self.assertEqual(self.held(),"ball")
 
 
+def mace_spec():
+    """A mace whose iron head hangs on a short chain from its oak handle, as
+    banjo_mcp.RECIPES["mace"] lays it out on a room's 40 mm cells, lying on a
+    floor."""
+    return {"algorithm": "lattice", "cell_m": 0.04, "duration_s": 1.0,
+            "bodies": [{"id": "b-floor00001", "name": "floor", "shape": "box", "material": "oak",
+                        "size_mm": [2000, 40, 2000], "center_mm": [0, 20, 0], "anchored": True},
+                       {"id": "b-mace000001", "name": "mace", "shape": "box", "material": "oak",
+                        "size_mm": [600, 40, 40], "center_mm": [0, 60, 0]},
+                       {"id": "b-mace000002", "name": "mace head", "shape": "sphere", "material": "iron",
+                        "size_mm": [120, 120, 120], "center_mm": [560, 100, 0]}],
+            "joints": [{"kind": "link", "a": "mace", "b": "mace head",
+                        "at_mm": [300, 60, 0], "to_mm": [500, 100, 0], "length_mm": 205}]}
+
+
+class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
+    """The owner, 2026-09-21: "when a user picks up something it can be for the
+    entire product so that it doesn't break, but needs to still allow movement
+    if part of the product, like swinging a mace". Taken up by either part, the
+    hand grips that part and the rest comes on its chain -- which stays a chain:
+    lifted, the head hangs; swung, it swings; let go, all of it lands, still
+    tied. It weighs what all of it weighs, and it does not go in the bag."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():
+            raise unittest.SkipTest(f"{ENGINE} is not built")
+        cls._temp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def setUp(self):
+        self.live = live_session.Live()
+        self.addCleanup(self.live.shutdown)
+        self.app = types.SimpleNamespace(engine_path=ENGINE, runs_path=Path(self._temp.name),
+                                         live=self.live, room=types.SimpleNamespace(spec=mace_spec()))
+        self.session = self.live.open(self.app, {"spec": self.app.room.spec})["session"]
+        self.steps(20)
+
+    def steps(self, n):
+        for _ in range(n):
+            self.live.act({"session": self.session, "op": "step", "dt": 1 / 120.0, "n": 12})
+
+    def bodies(self):
+        return {b["name"]: b for b in self.live.act({"session": self.session, "op": "poses"})["bodies"]}
+
+    def held(self):
+        return self.live.act({"session": self.session, "op": "poses"}).get("held")
+
+    def ask(self, request, revision, op, item, **more):
+        return inventory_room.request(self.app, dict({"request": request, "revision": revision, "op": op,
+                                                      "item": item, "person": PERSON}, **more))
+
+    def chain(self, bodies):
+        """From where the chain is tied on the handle to the middle of the head."""
+        handle, head = bodies["mace"], bodies["mace head"]
+        w, x, y, z = handle["orientation_wxyz"]
+        along = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]   # its own x
+        tie = [handle["position_m"][k] + 0.3 * along[k] for k in range(3)]
+        return math.dist(tie, head["position_m"])
+
+    def stroke(self, path, speed):
+        """The hand along a path, the room stepped until the stroke ends. How it
+        ended, and the fastest the head went meanwhile."""
+        self.live.act({"session": self.session, "op": "stroke", "path": path, "speed_m_s": speed,
+                       "accel_m_s2": 6.0, "lead_m": 0.05, "let_go": False, "give_up_s": 6.0})
+        fastest, longest = 0.0, 0.0
+        for _ in range(400):
+            got = self.live.act({"session": self.session, "op": "step", "dt": 1 / 120.0, "n": 4})
+            now = {b["name"]: b for b in got["bodies"]}
+            fastest = max(fastest, math.hypot(*(now["mace head"].get("velocity_m_s") or [0, 0, 0])))
+            longest = max(longest, self.chain(now))
+            hand = got.get("hand") or {}
+            if not hand.get("stroking") and hand.get("stroke_ended"):
+                return hand["stroke_ended"], fastest, longest
+        return "ran out of steps", fastest, longest
+
+    def test_taken_up_by_its_handle_all_of_it_comes_and_the_head_still_swings(self):
+        took = self.ask("u1", 0, "take_up", "mace")
+        self.assertTrue(took["ok"], took)
+        self.assertEqual((took["to"], took["room"]["taken_up"]), ("right", "mace"))
+        self.assertNotIn("by", took["room"], "taken up by its handle, the hand holds the handle")
+        self.assertEqual(took["shown"]["hands"]["right"]["parts"], ["mace", "mace head"])
+        self.assertEqual(self.held(), "mace")
+
+        grip = took["room"]["grip_m"]
+        ended, _, longest = self.stroke([grip, [grip[0], grip[1] + 0.9, grip[2]]], 0.8)
+        self.assertEqual(ended, "reached")
+        now = self.bodies()
+        self.assertGreater(now["mace head"]["position_m"][1], 0.4,
+                           f"lifted by its handle, the head stayed down: {now['mace head']['position_m']}")
+        self.assertLess(longest, 0.205 + 0.06 + 0.03, "the chain stretched: it came apart")
+
+        top = [grip[0], grip[1] + 0.9, grip[2]]
+        ended, fastest, longest = self.stroke([top, [top[0] - 1.0, top[1], top[2]]], 3.0)
+        self.assertIn(ended, ("reached", "blocked"))
+        self.assertGreater(fastest, 1.5, "swung, the head did not swing")
+        self.assertLess(longest, 0.205 + 0.06 + 0.03, "swung, the chain stretched: it came apart")
+
+        down = self.ask("d1", 1, "drop", "mace")
+        self.assertTrue(down["ok"], down)
+        self.assertEqual(self.held(), "")
+        self.steps(40)
+        landed = self.bodies()
+        self.assertLess(landed["mace head"]["position_m"][1], 0.2, landed["mace head"])
+        self.assertLess(landed["mace"]["position_m"][1], 0.2, landed["mace"])
+        self.assertLess(self.chain(landed), 0.205 + 0.06 + 0.03, "let go, it landed in pieces")
+
+    def test_taken_up_by_its_head_it_is_the_same_thing_and_the_bag_says_why_not(self):
+        took = self.ask("u1", 0, "take_up", "mace head")
+        self.assertTrue(took["ok"], took)
+        self.assertEqual((took["room"]["taken_up"], took["room"]["by"]), ("mace", "mace head"))
+        self.assertEqual(inventory_room.inventory_of(self.app).hands["right"], "b-mace000001",
+                         "taken up by its head, the record holds something other than the mace")
+        self.assertEqual(self.held(), "mace head")
+        before = deepcopy(inventory_room.inventory_of(self.app).record())
+        stowed = self.ask("s1", 1, "stow", "mace head")
+        self.assertFalse(stowed["ok"])
+        self.assertIn("cannot go in the bag", stowed["why"])
+        self.assertEqual(inventory_room.inventory_of(self.app).record(), before)
+        self.assertEqual(self.held(), "mace head", "refused the bag, it was dropped all the same")
+        down = self.ask("d1", 1, "drop", "mace")
+        self.assertTrue(down["ok"], down)
+        self.assertEqual(self.held(), "", "put down by its name, the hand kept its head")
+
+    def test_what_it_weighs_is_all_of_it(self):
+        both = inventory_room.whole_kg(self.app, inventory_room.item_holding(self.app, "mace"))
+        handle = self.bodies()["mace"]["mass_kg"]
+        self.assertGreater(both, handle + 5.0, "the head's iron was not counted")
+        # A lift the handle alone is under and the whole mace is over.
+        with mock.patch.object(inventory_room.room_world.banjo_mcp, "HAND_LIFTS_KG", handle + 1.0):
+            heavy = self.ask("u1", 0, "take_up", "mace")
+        self.assertFalse(heavy["ok"])
+        self.assertIn(f"weighs {both:.0f} kg", heavy["why"])
+        self.assertEqual(self.held(), "")
+
+
 class AReloadRejoinsTheRunningWorld(unittest.TestCase):
     """What a page gets when it opens the room that is already running here
     (live_session.Live.rejoin, which server.py uses for a reload): the world as

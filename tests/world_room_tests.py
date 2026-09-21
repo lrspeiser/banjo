@@ -2215,6 +2215,124 @@ class TheWorldsHandThingsByRecipe(unittest.TestCase):
             runner.join(timeout=3)
 
 
+class TheWorldsThingsTakenUpWhole(unittest.TestCase):
+    """The owner, 2026-09-21: "when a user picks up something it can be for the
+    entire product so that it doesn't break, but needs to still allow movement
+    if part of the product, like swinging a mace". The mace by recipe on the
+    world's east terrace, worked through the server as the Explorer works it:
+    taken up (inventory_room.request), carried up the way the page leads the
+    hand, swung (its primary use), and put down (server.put_it_down) -- all of
+    it each time, its head still on its chain."""
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_the_mace_is_taken_up_whole_swung_and_put_down_in_one_piece(self):
+        import threading
+        import time
+        import inventory_room
+        import server
+        world_id = room_world.open_room(world_room.valley())   # the world's ground, bare
+        try:
+            built = room_world.call(world_id, "build_recipe", {"recipe": "mace", "at_m": [13.0, -5.6]})
+            self.assertNotIn("error", built, built)
+            self.assertEqual(built["parts"], ["mace", "mace head"])
+            self.assertEqual([j["tool"] for j in built["joints"]], ["tie"])
+            self.assertEqual(built["actions_offered"], {"mace": ["Swing it"]})
+            y0 = built["ground_y_m"]
+            spec = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        app.room = world_room.Room("world")
+        app.room.spec = spec
+        live.open(app, {"spec": spec})
+        running = threading.Event()
+        running.set()
+        fastest = []
+
+        def keep_running():            # the page's part: the room runs while the hand works
+            while running.is_set():
+                try:
+                    got = live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+                except Exception:
+                    return
+                # `moved` answers with what moved: the head at rest is not in it.
+                head = next((b for b in got.get("bodies") or [] if b["name"] == "mace head"), None)
+                if head is not None:
+                    fastest.append(math.hypot(*(head.get("velocity_m_s") or [0, 0, 0])))
+                time.sleep(0.005)
+        runner = threading.Thread(target=keep_running, daemon=True)
+        runner.start()
+
+        def body(name):
+            return next(b for b in live.session.state["bodies"] if b["name"] == name)
+
+        def chain():
+            """From where the chain is tied on the handle to the middle of the head."""
+            handle, head = body("mace"), body("mace head")
+            w, x, y, z = handle["orientation_wxyz"]
+            along = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]
+            tie = [handle["position_m"][k] + 0.3 * along[k] for k in range(3)]
+            return math.dist(tie, head["position_m"])
+        whole = 0.2 + 0.06 + 0.03          # the chain, the head's radius, and a cell's slack
+        try:
+            time.sleep(1.5)            # settled on the ground it was built just over
+            at = body("mace")["position_m"]
+            person = {"standing_m": [at[0], y0, at[2] + 1.0], "facing": [0.0, 0.0, -1.0],
+                      "eyes_m": [at[0], y0 + 1.62, at[2] + 1.0], "look_direction": [0.0, -0.35, -0.94],
+                      "looking_at": "mace"}
+            took = inventory_room.request(app, {"request": "u1", "revision": 0, "op": "take_up",
+                                                "item": "mace", "person": person})
+            self.assertTrue(took["ok"], took)
+            self.assertEqual(took["shown"]["hands"]["right"]["parts"], ["mace", "mace head"])
+            # What the person is said to carry is all of it, not the handle alone.
+            both = body("mace")["mass_kg"] + body("mace head")["mass_kg"]
+            self.assertAlmostEqual(took["shown"]["carried"]["objects_kg"], both, delta=0.05)
+            time.sleep(0.3)
+            # Up to the lower right of the view, as explore.js leads the hand.
+            grip = (live.session.state.get("hand") or {}).get("grip_m") or at
+            carry = [at[0] + 0.25, y0 + 1.05, at[2] + 0.45]
+            self.assertEqual(server._stroke_along(app, [grip, [grip[0], carry[1], grip[2]], carry], 1.5),
+                             "reached")
+            time.sleep(1.0)
+            self.assertGreater(body("mace head")["position_m"][1], y0 + 0.5,
+                               "carried by its handle, the head was left on the ground")
+            self.assertLess(chain(), whole, "carried, it came apart")
+
+            fastest.clear()
+            person["look_direction"] = [0.0, -0.1, -0.99]
+            swung = server.run_action(app, {"object": "mace", "primary": True, "person": person})
+            self.assertNotIn("refused", swung, swung)
+            self.assertEqual(swung.get("action"), "Swing it")
+            self.assertGreater(max(fastest), 1.5, "swung, the head did not swing on its chain")
+            self.assertLess(chain(), whole, "swung, it came apart")
+
+            time.sleep(0.5)
+            person["aim_m"] = [at[0], y0, at[2] - 0.3]
+            person["look_direction"] = [0.0, -0.6, -0.8]
+            down = server.put_it_down(app, {"object": "mace", "person": person})
+            self.assertTrue(down["ok"], down)
+            time.sleep(2.0)
+            self.assertEqual((live.session.state.get("hand") or {}).get("holding") or "", "")
+            self.assertEqual(inventory_room.inventory_of(app).hands, {"right": None, "left": None})
+            for part in ("mace", "mace head"):
+                self.assertLess(body(part)["position_m"][1], y0 + 0.2, f"{part} was not put down")
+            self.assertLess(chain(), whole, "put down, it lay in pieces")
+        finally:
+            running.clear()
+            runner.join(timeout=3)
+
+
 class TheWorldsThingsOnJoints(unittest.TestCase):
     """The MCP's recipes for things on joints (banjo_mcp.RECIPES), built by
     build_recipe on the world's own west terrace, as the chat builds them, and

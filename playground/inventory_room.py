@@ -14,6 +14,11 @@ than into a hand that cannot hold it yet. Two hands come with the bow, increment
 A thing comes out of the bag where the person can see it: held in front of them,
 or put down there -- at rest, facing as it did when it went in. A thing taken up
 from the world is gripped where it lies, or where the page says its handle is.
+
+A thing of several parts is taken up whole: the hand grips the part the person
+pointed at, and the others come with it on the joints they already have -- which
+stay joints, so a mace's head swings on its chain as it is carried. What it
+weighs, for the lift, is every part's.
 """
 from __future__ import annotations
 
@@ -53,6 +58,48 @@ def _body(app: Any, name: str | None) -> dict[str, Any] | None:
     return next((b for b in _state(app).get("bodies") or [] if b.get("name") == name), None)
 
 
+def whole_kg(app: Any, thing: dict[str, Any] | None) -> float | None:
+    """What all of a thing weighs, as the running room has it: every body wearing
+    the name of any of its parts. None when none of it is in the world (in the
+    bag, or not a thing of the room's)."""
+    if thing is None:
+        return None
+    parts = set(thing["bodies"])
+    masses = [float(b["mass_kg"]) for b in _state(app).get("bodies") or []
+              if b.get("name") in parts and b.get("mass_kg") is not None]
+    return sum(masses) if masses else None
+
+
+def item_holding(app: Any, part: str | None) -> dict[str, Any] | None:
+    """The room's item a body is part of, or None."""
+    if not part:
+        return None
+    return next((i for i in inventory.items_of(app.room.spec) if part in i["bodies"]), None)
+
+
+def _carried(app: Any) -> Any:
+    """What the person carries, as the engine counts it -- with ALL of a thing of
+    several parts in the hand, not only the part the hand grips. The engine
+    counts the one body its hand holds (LiveWorld carriedObjectsKg), so a mace
+    held by its handle read "1 of 80 kg" beside a hand saying 6.72 kg. Its own
+    budget at the moment of taking hold counts that one body too; that is the
+    engine's, and not changed here."""
+    state = _state(app)
+    carried = state.get("carried")
+    held = str((state.get("hand") or {}).get("holding") or "")
+    thing = item_holding(app, held) if held else None
+    if not isinstance(carried, dict) or thing is None or len(thing["bodies"]) < 2:
+        return carried
+    whole = whole_kg(app, thing)
+    gripped = sum(float(b["mass_kg"]) for b in state.get("bodies") or []
+                  if b.get("name") == held and b.get("mass_kg") is not None)
+    if whole is None:
+        return carried
+    rest = max(0.0, whole - gripped)
+    return dict(carried, **{key: float(carried[key]) + rest for key in ("objects_kg", "total_kg")
+                            if isinstance(carried.get(key), (int, float))})
+
+
 def _grip(asked: Any, now: dict[str, Any]) -> list[float]:
     """Where the hand takes hold of a thing it takes up: where the page says --
     a tool by its handle -- or, said nowhere, its middle where it is now."""
@@ -90,9 +137,14 @@ def shown(app: Any) -> dict[str, Any]:
             out["shape"] = str(first.get("shape") or "box")
         if slot is not None:
             out["slot"] = slot
+        # A thing of several parts says which, so the page counts every one of
+        # them as held -- the hand grips one, and the part it grips need not be
+        # the one the thing is named after.
+        if thing and len(thing["bodies"]) > 1:
+            out["parts"] = list(thing["bodies"])
         return out
 
-    return {"record": record, "carried": _state(app).get("carried"),
+    return {"record": record, "carried": _carried(app),
             "hands": {hand: named(item, record["home"].get(item)) for hand, item in record["hands"].items()},
             "stowed": [named(item) for item in record["stowed"]],
             # The hand the engine has: the only one that holds anything yet.
@@ -209,8 +261,12 @@ def request(app: Any, body: Any) -> dict[str, Any]:
         next((i for i in items if asked in i["bodies"]), None)
     item = thing["id"] if thing else asked
     name = thing["name"] if thing else None
-    live = _body(app, name)
-    kg = float(live["mass_kg"]) if live and live.get("mass_kg") is not None else None
+    # The part the hand takes hold of: the one the person pointed at -- the page
+    # asks by the name of the part under its sight -- or, asked for by id, the
+    # thing's first part. For a thing that is one body the two are the same.
+    part = asked if thing and asked in thing["bodies"] else name
+    # What it weighs is all of it: every part comes up with the one gripped.
+    kg = whole_kg(app, thing)
     person = world_chat.where_the_person_is(body.get("person"))
 
     def act(plan: dict[str, Any]) -> dict[str, Any]:
@@ -229,13 +285,17 @@ def request(app: Any, body: Any) -> dict[str, Any]:
                 record.facing[item] = [float(v) for v in now["orientation_wxyz"]]
             return {"set_aside": name}
         if plan["from"] == "world" and plan["to"] in inventory.HANDS:
-            # Taken up: the engine's hand grips it where it lies.
-            now = _body(app, name)
+            # Taken up: the engine's hand grips it where it lies -- by the part
+            # pointed at, the rest of it coming on its own joints.
+            now = _body(app, part)
             if now is None or not now.get("position_m"):
-                raise ValueError(f"{inventory.said_name(name or asked)} is not in the room to take up")
+                raise ValueError(f"{inventory.said_name(part or asked)} is not in the room to take up")
             grip = _grip(body.get("grip"), now)
-            app.live.act({"session": sid, "op": "wield", "name": name, "grip": grip})
-            return {"taken_up": name, "held": True, "grip_m": grip}
+            app.live.act({"session": sid, "op": "wield", "name": part, "grip": grip})
+            said = {"taken_up": name, "held": True, "grip_m": grip}
+            if part != name:
+                said["by"] = part
+            return said
         if plan["from"] == "stowed":
             if person is None or not person.get("eyes_m"):
                 raise ValueError("the page did not say where you are")
@@ -249,7 +309,9 @@ def request(app: Any, body: Any) -> dict[str, Any]:
                 app.live.act({"session": sid, "op": "wield", "name": name, "grip": at})
             return {"brought_back": name, "at_m": at, "held": into_hand}
         if plan["from"] in inventory.HANDS and plan["to"] == "world":
-            if holding == name:
+            # Whichever of its parts the hand has: a mace taken up by its head
+            # is let go of just the same.
+            if holding and holding in (thing["bodies"] if thing else [name]):
                 app.live.act({"session": sid, "op": "release"})
             return {"let_go": name}
         raise ValueError("that is not something the room can do yet")

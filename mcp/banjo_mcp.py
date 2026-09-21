@@ -4132,6 +4132,33 @@ RECIPES: dict[str, dict[str, Any]] = {
                  "distance_m": 0.3}]}]},
         "use": "taken hold of, it swings on its rope",
     },
+    # A mace whose head hangs on a short chain: the owner's own example of a
+    # thing taken up WHOLE whose part still moves (2026-09-21: "picks up ... the
+    # entire product so that it doesn't break, but needs to still allow movement
+    # if part of the product, like swinging a mace"). Two bodies and a tie, not
+    # one piece -- the chain is what lets the head swing -- so it is ONE thing to
+    # the inventory (inventory.items_of), taken up whole by whichever part is
+    # pointed at. The tie has no breaking load: carried or swung, it holds.
+    "mace": {
+        "title": "a mace: an iron ball on a short chain from an oak handle, lying on the ground",
+        # Measured on the valley's terrace, 40 mm cells: a 0.67 kg handle and a
+        # 6.0 kg head (tests/inventory_room_tests.py, tests/world_room_tests.py).
+        "tried": "taken up by its handle all of it came, the head hanging on its chain; swung, "
+                 "the head went over 2 m/s and the chain held; put down, it lay whole",
+        "parts": [
+            {"name": "mace", "shape": "box", "material": "oak",
+             "size_m": [0.6, 0.04, 0.04], "position_m": (0.0, 0.02, 0.0)},
+            {"name": "mace head", "shape": "sphere", "material": "iron",
+             "size_m": [0.12, 0.12, 0.12], "position_m": (0.56, 0.06, 0.0)}],
+        "joints": [
+            ("tie", {"a": "mace", "b": "mace head", "at_a_m": (0.3, 0.02, 0.0),
+                     "at_b_m": (0.5, 0.06, 0.0), "length_m": 0.2})],
+        "actions": {"mace": [
+            {"label": "Swing it", "primary": True, "steps": [
+                {"do": "strike", "distance_m": 0.6, "speed_m_s": 4.0}]}]},
+        "use": "taken up by either part, all of it comes, the head swinging on its chain; "
+               "the left mouse swings it at what is in front",
+    },
     # The courtyard's own bow, number for number (the room's guide carries it
     # too): tried there, drawn 0.44 m by 214 N it held 42 J.
     "bow": {

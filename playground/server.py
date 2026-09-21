@@ -1870,13 +1870,36 @@ def _reach(body,direction):
     return sum(abs(sum(turn[r][i]*direction[r] for r in range(3)))*dims[i]/2.0 for i in range(3))
 
 
+def _whole_reach(app,mover,direction):
+    """How far the WHOLE of what the hand moves reaches from the middle of the
+    part it grips, along a direction: _reach for a thing of one body; for a
+    thing of several parts (inventory.items_of), out to whichever part reaches
+    furthest -- down to a mace's head hanging on its chain, so that carried
+    "clear of the ground" is all of it clear, and not the handle alone with the
+    head dragged along the ground."""
+    own=_reach(mover,direction)
+    thing=inventory_room.item_holding(app,mover.get("name"))
+    if thing is None or len(thing["bodies"])<2: return own
+    parts=set(thing["bodies"])
+    centre=[float(v) for v in mover.get("position_m") or [0.0,0.0,0.0]]
+    reach=own
+    for body in (app.live.session.state or {}).get("bodies",[]):
+        if body.get("name") not in parts or not body.get("position_m"): continue
+        off=sum((float(body["position_m"][k])-centre[k])*direction[k] for k in range(3))
+        reach=max(reach,off+_reach(body,direction))
+    return reach
+
+
 def _action_point(app,place,person,moving):
     """Where a step takes the middle of what the hand moves, in the room as it
     is now: in front of the person, on a thing, beside it on a side as the
-    person sees it (near is between it and them), or at an offset from it."""
+    person sees it (near is between it and them), or at an offset from it.
+    Heights and gaps are the whole thing's (_whole_reach), not the gripped
+    part's."""
     mover=_live_body(app,moving)
     here=[float(v) for v in mover.get("position_m") or [0.0,0.0,0.0]]
     up=[0.0,1.0,0.0]
+    down=_whole_reach(app,mover,[0.0,-1.0,0.0])
     if "in_front_m" in place:
         if person is None: raise ValueError("the page did not say where you are")
         sx,sy,sz=person["standing_m"]
@@ -1892,14 +1915,14 @@ def _action_point(app,place,person,moving):
         # says it; 0 is resting on it, and is carried clear like none. Taken as
         # its middle's height, "on the ground in front of me" (height_m 0)
         # carried a crate half into the terrace, and the stroke was blocked.
-        rest=sy+_reach(mover,up)+0.02
+        rest=sy+down+0.02
         high=float(place.get("height_m") or 0.0)
         y=rest+high if high>0.0 else max(here[1]+0.05,rest)
         return [sx+ahead*fx,y,sz+ahead*fz]
     other=_live_body(app,place.get("on") or place.get("beside") or place.get("from"))
     at=[float(v) for v in other.get("position_m") or [0.0,0.0,0.0]]
     if "on" in place:
-        return [at[0],at[1]+_reach(other,up)+_reach(mover,up)+0.02,at[2]]
+        return [at[0],at[1]+_reach(other,up)+down+0.02,at[2]]
     if "from" in place:
         return [at[k]+float(place["offset_m"][k]) for k in range(3)]
     if person is None: raise ValueError("the page did not say where you are")
@@ -1913,8 +1936,9 @@ def _action_point(app,place,person,moving):
     elif side=="left": nx,nz=fz,-fx
     elif side=="right": nx,nz=-fz,fx
     way=[nx,0.0,nz]
-    out=_reach(other,way)+float(place.get("gap_m",0.3))+_reach(mover,way)
-    return [at[0]+nx*out,max(here[1],at[1]-_reach(other,up)+_reach(mover,up))+0.02,at[2]+nz*out]
+    # The side of it that faces the other thing is the one that must keep the gap.
+    out=_reach(other,way)+float(place.get("gap_m",0.3))+_whole_reach(app,mover,[-nx,0.0,-nz])
+    return [at[0]+nx*out,max(here[1],at[1]-_reach(other,up)+down)+0.02,at[2]+nz*out]
 
 
 def _stroke_to(app,target,speed,start):
@@ -2551,8 +2575,11 @@ def put_it_down(app,body):
     # drifting across the screen while the person wondered whether E had
     # worked. The hand is still the engine's, force-limited, so a heavy thing
     # still goes as fast as 800 N can take it and no faster.
-    mass=sum(float(b.get("mass_kg") or 0.0) for b in (app.live.session.state or {}).get("bodies",[])
-             if b.get("name")==name)
+    # All of it: a mace's 9 kg on its 0.7 kg handle is paced as 9 kg.
+    mass=inventory_room.whole_kg(app,inventory_room.item_holding(app,name))
+    if mass is None:
+        mass=sum(float(b.get("mass_kg") or 0.0) for b in (app.live.session.state or {}).get("bodies",[])
+                 if b.get("name")==name)
     speed,accel=put_down_pace(mass)
     line,problem=placement.execute(app,name,person,
                                    lambda a,path,s: _stroke_along(a,path,s,accel=accel),
@@ -2615,7 +2642,14 @@ def _run_action(app,body,own_hold=False):
     if body.get("primary"):
         from mcp import core_use
         _live_body(app, name)
-        action = core_use.selected([a for a in room.spec.get("actions", []) if a.get("body") == name])
+        own = [a for a in room.spec.get("actions", []) if a.get("body") == name]
+        if not own:
+            # A part of a thing of several parts has the thing's use: a mace
+            # taken up by its head still swings, by whichever part is gripped.
+            thing = inventory_room.item_holding(app, name)
+            own = [a for a in room.spec.get("actions", [])
+                   if thing is not None and a.get("body") in thing["bodies"]]
+        action = core_use.selected(own)
     elif body.get("builtin") is not None:
         key=str(body.get("builtin"))
         if key in ("turn","slide"):
@@ -2677,7 +2711,9 @@ def _run_action(app,body,own_hold=False):
                 if held.get("anchored"):
                     problem=f"{part} is fixed in place, and a hand cannot move it"
                     break
-                kg=held.get("mass_kg")
+                # All of it, when it is a thing of several parts: they all come up.
+                kg=inventory_room.whole_kg(app,inventory_room.item_holding(app,part))
+                if kg is None: kg=held.get("mass_kg")
                 if kg is not None and float(kg)>room_world.banjo_mcp.HAND_LIFTS_KG:
                     problem=(f"{part} weighs {float(kg):.0f} kg, more than the "
                              f"{room_world.banjo_mcp.HAND_LIFTS_KG:.0f} kg a hand can hold up")

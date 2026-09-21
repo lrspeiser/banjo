@@ -44,6 +44,14 @@ order. The ones most easily mistaken for done:
 - **A bearing's hold along its axis is not rated**, and the engine's fixings
   check tension and shear only: a joint pried off by a long lever is caught by
   the bench screen and by nothing in the world.
+- **A thing of joined parts is carried whole but never stowed** (2026-09-21).
+  The bag needs the engine to set aside several bodies and their joints
+  together and put them back (LiveWorld park and unpark take one body joined to
+  nothing), so it refuses them, in words. Two smaller gaps come with it:
+  - the engine's own carry budget, checked when the hand takes hold, counts
+    only the part it grips; the page's "what you are carrying" adds the rest;
+  - the hand grips the part you point at, never a handle the product declares
+    (its grip point is stored, and nothing reads it yet).
 - **Nothing melts.** Heat softens oak, iron and concrete and chars oak.
 
 ## 1. Building from language: increments 3 and 4

@@ -540,6 +540,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", nargs="*", help="just these things")
     ap.add_argument("--port", type=int, help="use a server already running here instead of starting one")
     ap.add_argument("--keep-server", action="store_true")
+    ap.add_argument("--scene", default="explore",
+                    help="the room to open (world_room.SCENES), e.g. tests-carry")
     args = ap.parse_args(argv)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -554,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         chrome = qa_browser.Chrome(W, H)
         page = Page(chrome)
-        page.js(f'location.href = "http://127.0.0.1:{port}/explore"')
+        page.js(f'location.href = "http://127.0.0.1:{port}/explore?scene={args.scene}"')
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             time.sleep(0.5)

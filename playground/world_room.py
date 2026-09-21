@@ -1004,6 +1004,11 @@ SCENES = {
     # its brake, a battery, and a crate on the drum's rope, with its actions --
     # wind it up, stop, let it down. Off the menu, like the other test rooms.
     "tests-machines": _saved_room("tests-machines"),
+    # Things of several parts, taken up whole (the owner, 2026-09-21): a mace
+    # whose head swings on its chain, and a chair of boards fixed together, each
+    # built by its recipe. Laid out by tools/build_carry_room.py; open it in the
+    # Explorer at /explore?scene=tests-carry. Off the menu, like the others.
+    "tests-carry": _saved_room("tests-carry"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

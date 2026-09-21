@@ -61,6 +61,22 @@ class TheRoomsThingsAsAPersonCountsThem(unittest.TestCase):
         self.assertFalse(stool["one_piece"], "a stool of joined parts cannot be set aside as one body yet")
         self.assertEqual(len(items), 4)
 
+    def test_exact_rigid_parts_on_joints_are_one_thing_that_the_bag_cannot_hold(self):
+        # A cart as exact rigid parts on its bearings (precise_rigid_bodies):
+        # one thing, the way a stool's joined legs are, and never one piece the
+        # engine could set aside.
+        room = {"bodies": [body("yard floor", "b-floor00001", anchored=True)],
+                "precise_rigid_bodies": [{"name": "cart"}, {"name": "cart wheels 1"},
+                                         {"name": "cart wheels 2"}],
+                "joints": [{"kind": "hinge", "a": "cart", "b": "cart wheels 1"},
+                           {"kind": "hinge", "a": "cart", "b": "cart wheels 2"}]}
+        cart = item_named(inventory.items_of(room), "cart wheels 2")
+        self.assertEqual(sorted(cart["bodies"]), ["cart", "cart wheels 1", "cart wheels 2"])
+        self.assertFalse(cart["installed"])
+        self.assertFalse(cart["one_piece"])
+        alone = item_named(inventory.items_of({"precise_rigid_bodies": [{"name": "crate"}]}), "crate")
+        self.assertFalse(alone["one_piece"], "the engine does not set an exact rigid body aside")
+
 
 class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
 
@@ -108,6 +124,47 @@ class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
                                  self.items, self.act)
         self.assertFalse(stool["ok"])
         self.assertIn("joined", stool["why"])
+        self.assertEqual(self.done, [])
+
+    def test_a_thing_of_joined_parts_is_taken_up_whole_into_a_hand(self):
+        # The owner, 2026-09-21: a thing is picked up as the entire product, its
+        # joints still joints -- taken up by the leg, the stool comes too.
+        stool = item_named(self.items, "stool leg")["id"]
+        took = self.inv.request("r1", None, "take_up", stool, self.items, self.act)
+        self.assertTrue(took["ok"], took)
+        self.assertEqual((took["to"], took["did"]), ("right", "Took up stool seat in your right hand."))
+        self.assertEqual(self.inv.where(stool), "right")
+        self.assertEqual(self.done, [("take_up", stool, "right")])
+
+    def test_a_thing_of_joined_parts_is_never_put_in_the_bag_and_says_why(self):
+        stool = item_named(self.items, "stool seat")["id"]
+        taken = self.inv.request("r1", None, "take", stool, self.items, self.act)
+        self.assertFalse(taken["ok"])
+        self.assertIn("cannot go in the bag", taken["why"])
+        self.assertIn("Take it up in your hand instead", taken["why"])
+        # Both hands full: not into the bag instead, as a thing of one piece is.
+        self.inv.hands = {"right": "b-other000001", "left": "b-other000002"}
+        full = self.inv.request("r2", None, "take_up", stool, self.items, self.act)
+        self.assertFalse(full["ok"])
+        self.assertIn("your hands are full", full["why"])
+        self.assertEqual(self.inv.where(stool), "world")
+        # Held, it is not stowed either -- and the hand keeps it.
+        self.inv.hands = {"right": None, "left": None}
+        self.inv.request("r3", None, "take_up", stool, self.items, self.act)
+        stowed = self.inv.request("r4", None, "stow", stool, self.items, self.act)
+        self.assertFalse(stowed["ok"])
+        self.assertIn("Put it down instead", stowed["why"])
+        self.assertEqual(self.inv.where(stool), "right")
+        self.assertEqual(self.done, [("take_up", stool, "right")])
+
+    def test_what_it_weighs_is_the_whole_things(self):
+        # The room gives the whole thing's weight (inventory_room.whole_kg);
+        # over the lift it is refused before anything is done.
+        stool = item_named(self.items, "stool leg")["id"]
+        heavy = self.inv.request("r1", None, "take_up", stool, self.items, self.act,
+                                 kg=90.0, lift_kg=73.0)
+        self.assertFalse(heavy["ok"])
+        self.assertIn("weighs 90 kg", heavy["why"])
         self.assertEqual(self.done, [])
 
     def test_a_tool_goes_to_the_dominant_hand_and_to_the_inventory_when_the_hands_are_full(self):

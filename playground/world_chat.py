@@ -413,6 +413,9 @@ actions; 1 to 9 select bag slots; / talks to you.
   back_to_start). A portcullis and its winch: THINGS BUILT BY RECIPE below.
 - A rope, a chain, a hanging sign or a bell: tie, or reeve over a point; links
   for a chain. Keys: take hold and haul it. A bell: THINGS BUILT BY RECIPE below.
+- A mace or a flail (a heavy head on a chain from a handle): build_recipe
+  "mace". Keys: E takes up all of it by the part under the crosshair -- the
+  head goes on swinging on its chain -- and the left mouse swings it.
 - A spring (a door that shuts itself, a catapult's arm): spring. The door:
   THINGS BUILT BY RECIPE below.
 - A machine that runs by itself (a hoist, a crane, a winch with a motor): a

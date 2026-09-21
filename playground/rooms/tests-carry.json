@@ -1,0 +1,941 @@
+{
+ "actions": [
+  {
+   "body": "mace",
+   "label": "Swing it",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.6,
+     "do": "strike",
+     "speed_m_s": 4.0
+    }
+   ]
+  },
+  {
+   "body": "oak chair seat",
+   "label": "Pull the chair out",
+   "primary": true,
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "oak chair seat"
+    },
+    {
+     "do": "carry_to",
+     "speed_m_s": 0.5,
+     "to": {
+      "beside": "oak table top",
+      "gap_m": 0.4,
+      "kind": "beside",
+      "side": "near"
+     }
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "oak chair seat",
+   "label": "Push the chair in",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "oak chair seat"
+    },
+    {
+     "do": "carry_to",
+     "speed_m_s": 0.5,
+     "to": {
+      "beside": "oak table top",
+      "gap_m": 0.05,
+      "kind": "beside",
+      "side": "near"
+     }
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  }
+ ],
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    -18000.0,
+    -2600.0,
+    -14000.0
+   ],
+   "color_rgba": "8a8f99ff",
+   "id": "b-9479fa5fb2",
+   "join": "",
+   "material": "concrete",
+   "name": "marker stone",
+   "part": "",
+   "roll": false,
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "subtract": false,
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    13000.0,
+    620.0,
+    -5600.0
+   ],
+   "id": "b-1310a5897c",
+   "material": "oak",
+   "name": "mace",
+   "shape": "box",
+   "size_mm": [
+    600.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    13560.0,
+    660.0,
+    -5600.0
+   ],
+   "id": "b-92ab87e9ad",
+   "material": "iron",
+   "name": "mace head",
+   "shape": "sphere",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10400.0,
+    1420.0,
+    -3400.0
+   ],
+   "id": "b-21ed9a6f5e",
+   "material": "oak",
+   "name": "oak table top",
+   "shape": "box",
+   "size_mm": [
+    800.0,
+    40.0,
+    560.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10020.0,
+    1040.0,
+    -3660.0
+   ],
+   "id": "b-5dd293b751",
+   "material": "oak",
+   "name": "table leg 1",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10780.0,
+    1040.0,
+    -3660.0
+   ],
+   "id": "b-b89722d3f5",
+   "material": "oak",
+   "name": "table leg 2",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10020.0,
+    1040.0,
+    -3140.0
+   ],
+   "id": "b-209c78e4ac",
+   "material": "oak",
+   "name": "table leg 3",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10780.0,
+    1040.0,
+    -3140.0
+   ],
+   "id": "b-f8dc6052c9",
+   "material": "oak",
+   "name": "table leg 4",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10400.0,
+    1140.0,
+    -2840.0
+   ],
+   "id": "b-e5f67b4b1b",
+   "material": "oak",
+   "name": "oak chair seat",
+   "shape": "box",
+   "size_mm": [
+    400.0,
+    40.0,
+    400.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10220.0,
+    900.0,
+    -3020.0
+   ],
+   "id": "b-74f6b00fea",
+   "material": "oak",
+   "name": "chair leg 1",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10580.0,
+    900.0,
+    -3020.0
+   ],
+   "id": "b-9b6f54f504",
+   "material": "oak",
+   "name": "chair leg 2",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10220.0,
+    900.0,
+    -2660.0
+   ],
+   "id": "b-c2be428955",
+   "material": "oak",
+   "name": "chair leg 3",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10580.0,
+    900.0,
+    -2660.0
+   ],
+   "id": "b-945e630991",
+   "material": "oak",
+   "name": "chair leg 4",
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    10400.0,
+    1380.0,
+    -2660.0
+   ],
+   "id": "b-681b9639fa",
+   "material": "oak",
+   "name": "chair back",
+   "shape": "box",
+   "size_mm": [
+    400.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ ],
+ "cell_m": 0.04,
+ "interaction_points": [
+  {
+   "body": "marker stone",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "mace",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "mace head",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "oak table top",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "table leg 1",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "table leg 2",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "table leg 3",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "table leg 4",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "oak chair seat",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair leg 1",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair leg 2",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair leg 3",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair leg 4",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair back",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  }
+ ],
+ "joints": [
+  {
+   "a": "mace",
+   "at_mm": [
+    13300.0,
+    620.0,
+    -5600.0
+   ],
+   "b": "mace head",
+   "breaks_at_n": 0.0,
+   "kind": "link",
+   "length_mm": 200.0,
+   "to_mm": [
+    13500.0,
+    660.0,
+    -5600.0
+   ]
+  },
+  {
+   "a": "oak table top",
+   "at_mm": [
+    10020.0,
+    1400.0,
+    -3660.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "table leg 1",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak table top",
+   "at_mm": [
+    10780.0,
+    1400.0,
+    -3660.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "table leg 2",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak table top",
+   "at_mm": [
+    10020.0,
+    1400.0,
+    -3140.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "table leg 3",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak table top",
+   "at_mm": [
+    10780.0,
+    1400.0,
+    -3140.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "table leg 4",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak chair seat",
+   "at_mm": [
+    10220.0,
+    1120.0,
+    -3020.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "chair leg 1",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak chair seat",
+   "at_mm": [
+    10580.0,
+    1120.0,
+    -3020.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "chair leg 2",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak chair seat",
+   "at_mm": [
+    10220.0,
+    1120.0,
+    -2660.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "chair leg 3",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak chair seat",
+   "at_mm": [
+    10580.0,
+    1120.0,
+    -2660.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "chair leg 4",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  },
+  {
+   "a": "oak chair seat",
+   "at_mm": [
+    10400.0,
+    1160.0,
+    -2660.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "b": "chair back",
+   "holds_shear_n": 0.0,
+   "holds_tension_n": 0.0,
+   "kind": "fixing"
+  }
+ ],
+ "plasticity": "on",
+ "terrain": {
+  "generate": "valley"
+ }
+}

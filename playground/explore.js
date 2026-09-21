@@ -301,10 +301,11 @@ function draw(state) {
   world.shown.length = list.length;
   const was = me.holding;
   me.holding = heldInTheWorld();
+  noteHeld();
   if (me.holding !== was) showHands();
   // See-through while it is in your hands: a table carried in front of you
   // hides the ground you are about to put it on, and the preview with it.
-  for (const slot of world.shown) seeThrough(slot, slot.data.name === me.holding);
+  for (const slot of world.shown) seeThrough(slot, me.heldSet.has(slot.data.name));
 }
 
 function seeThrough(slot, on) {
@@ -370,7 +371,7 @@ function leadHand(dt) {
   // Slower the heavier it is. Most of the hand's 800 N goes on holding a 63 kg
   // iron block up, and what is left cannot brake it: led at 2 m/s it sailed a
   // metre past the hand and over the person's head.
-  const mass = world.shown.filter((s) => s.data.name === me.holding)
+  const mass = world.shown.filter((s) => me.heldSet.has(s.data.name))
     .reduce((m, s) => m + (s.data.mass_kg || 0), 0);
   const pace = HAND_SPEED * Math.min(1, Math.max(0.25, 25 / Math.max(mass, 1)));
   const k = length > pace * dt ? (pace * dt) / length : 1;
@@ -394,7 +395,7 @@ function tellWhatBroke(state) {
 
 /** The longest side of what is in your hand, over all its pieces, in metres. */
 function heldSize() {
-  const parts = world.shown.filter((s) => s.data.name === me.holding).map((s) => s.data);
+  const parts = world.shown.filter((s) => me.heldSet.has(s.data.name)).map((s) => s.data);
   if (!parts.length) return 0.3;
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   for (const part of parts) {
@@ -541,9 +542,10 @@ function sightInView() {
 
 function lookedAt() {
   ray.setFromCamera(sightInView(), camera);
-  // Past what is in your own hand: that is never what you are looking AT.
+  // Past what is in your own hand -- all of it: that is never what you are
+  // looking AT.
   const hit = ray.intersectObjects(
-    world.shown.filter((s) => s.data.name !== me.holding).map((s) => s.mesh), false)[0];
+    world.shown.filter((s) => !me.heldSet.has(s.data.name)).map((s) => s.mesh), false)[0];
   if (!hit) return null;
   const slot = world.shown.find((s) => s.mesh === hit.object);
   return slot ? { name: slot.data.name, known: slot, hit } : null;
@@ -555,8 +557,8 @@ const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n 
 function showWhatYouCanDo(found) {
   const can = [];
   if (me.holding) {
-    can.push(["E", me.canPlace ? `put the ${me.holding} down there`
-                               : `set the ${me.holding} on the ground`]);
+    can.push(["E", me.canPlace ? `put the ${heldName()} down there`
+                               : `set the ${heldName()} on the ground`]);
     can.push(["Q", "into the bag"]);
     can.push(["X", "just let go"]);
   } else if (found) {
@@ -626,8 +628,23 @@ function showLookedAt() {
 // decides nothing about what is allowed -- it asks, and says what it was told.
 // --------------------------------------------------------------------------
 
-const me = { holding: null, record: null, bagItems: [], carried: {},
-             revision: 0, busy: false, said: "" };
+const me = { holding: null, record: null, recordParts: null, heldSet: new Set(),
+             bagItems: [], carried: {}, revision: 0, busy: false, said: "" };
+
+/** Every part of what is in your hand. The engine's hand grips ONE part
+ *  (me.holding, the world's word for it); a thing of several parts -- a mace
+ *  and the head on its chain -- comes with it on its own joints, and the record
+ *  says which parts those are. So "held" is the whole thing: see-through, never
+ *  what the sight lands on, and weighed and sized as all of it. */
+function noteHeld() {
+  const whole = me.holding && me.recordParts && me.recordParts.includes(me.holding);
+  me.heldSet = new Set(me.holding ? (whole ? me.recordParts : [me.holding]) : []);
+}
+
+/** What to call what is in your hand: the thing, not the part the hand grips. */
+function heldName() {
+  return me.record && me.heldSet.has(me.record) ? me.record : me.holding;
+}
 
 /** Where the sight lands: the nearer of the ground and the things in the
  *  world -- never the one in your hand, which would be the first thing hit --
@@ -637,7 +654,7 @@ function aimPoint(within = 4.5) {
   const o = ray.ray.origin.clone(), d = ray.ray.direction.clone();
   const past = person.back;          // the camera may sit back along this line
   let best = null;
-  const meshes = world.shown.filter((s) => s.data.name !== me.holding).map((s) => s.mesh);
+  const meshes = world.shown.filter((s) => !me.heldSet.has(s.data.name)).map((s) => s.mesh);
   const hit = ray.intersectObjects(meshes, false)[0];
   if (hit && hit.distance <= within + past) best = hit.distance;
   // The ground: march the same ray over the heightfield, then halve onto it.
@@ -705,6 +722,9 @@ function tookNote(said) {
   const hands = shown.hands || {};
   const right = hands.right || hands.left || null;
   me.record = right ? (right.name || right.item || right.id || null) : null;
+  // Every part of it, when it is a thing of several (inventory_room.shown).
+  me.recordParts = right && Array.isArray(right.parts) ? right.parts : null;
+  noteHeld();
   me.bagItems = (shown.stowed || []).map((b) => ({
     name: b.name || b.item || b.id || "?", material: b.material || "" }));
   me.carried = shown.carried || me.carried;
@@ -822,11 +842,15 @@ function say(words, { refused = false, stays = false } = {}) {
 function showHands() {
   const slot = me.holding ? world.shown.find((s) => s.data.name === me.holding) : null;
   const body = slot ? slot.data : null;
-  $("hands-held").textContent = me.holding || "nothing";
-  showInHand(body);
+  // All of it: the part the hand grips and whatever hangs on it.
+  const parts = world.shown.filter((s) => me.heldSet.has(s.data.name)).map((s) => s.data);
+  $("hands-held").textContent = heldName() || "nothing";
+  showInHand(parts);
+  const kg = parts.reduce((m, p) => m + (p.mass_kg || 0), 0);
   $("hands-held-facts").textContent = body
-    ? [body.material, body.mass_kg ? KG(body.mass_kg) : null,
-       (body.dimensions_m || []).map((v) => Math.round(v * 1000)).join(" × ") + " mm"]
+    ? [body.material, kg ? KG(kg) : null,
+       parts.length > 1 ? `${parts.length} parts, joined`
+                        : (body.dimensions_m || []).map((v) => Math.round(v * 1000)).join(" × ") + " mm"]
         .filter(Boolean).join(" · ")
     : "";
   $("to-bag").disabled = !me.holding;
@@ -836,8 +860,9 @@ function showHands() {
   if (kind) { link.href = `/world?workshop=1&kind=${encodeURIComponent(kind)}`; link.textContent = `Open the ${kind} in the Workshop`; }
   showCarrying();
   // Say so when the record and the world disagree, rather than picking one
-  // quietly: it is a real fault and hiding it is how it stays unfixed.
-  const split = me.record && me.record !== me.holding;
+  // quietly: it is a real fault and hiding it is how it stays unfixed. The hand
+  // gripping one part of a thing the record lists whole is not a disagreement.
+  const split = me.record && !me.heldSet.has(me.record);
   $("hands-note").hidden = !split;
   if (split) $("hands-note").textContent =
     `The record still lists the ${me.record}; the world says it is not held.`;
@@ -861,20 +886,57 @@ function showGhost(answer, body) {
   }
   ghost.visible = true;
   ghost.scale.set(dx, dy, dz);
-  ghost.position.set(answer.on[0], answer.on[1] + dy / 2, answer.on[2]);
-  ghost.rotation.set(0, (answer.yaw_deg || 0) * Math.PI / 180, 0);
+  // A thing of several parts held in place on each other goes down as one
+  // shape (placement.resolve): every part where it will stand, the gripped one
+  // among them -- a chair's seat up on its legs, not flat on the ground.
+  const parts = Array.isArray(answer.parts) && answer.parts.length > 1 ? answer.parts : null;
+  if (parts) {
+    const [w, x, y, z] = parts[0].facing;
+    ghost.position.set(...parts[0].at_m);
+    ghost.quaternion.set(x, y, z, w);
+  } else {
+    ghost.position.set(answer.on[0], answer.on[1] + dy / 2, answer.on[2]);
+    ghost.rotation.set(0, (answer.yaw_deg || 0) * Math.PI / 180, 0);
+  }
   // Green it fits, amber it is held up by too few corners or is tall for the
   // slope it would stand on, red it does not.
   const corners = answer.supported_corners;
   ghost.material.color.set(!answer.fits ? 0xff9f91
     : ((typeof corners === "number" && corners < 4) || answer.may_fall_over ? 0xffd195 : 0xa2e1c8));
+  showGhostParts(parts ? parts.slice(1) : [], ghost.material);
   $("ghost-said").textContent = answer.why || answer.label || "";
   $("ghost-said").hidden = false;
+}
+
+/** The rest of a thing of several parts, around the gripped one's ghost. */
+let ghostRest = null;
+
+function showGhostParts(rest, material) {
+  if (!ghostRest) { ghostRest = new THREE.Group(); view.add(ghostRest); }
+  while (ghostRest.children.length > rest.length) {
+    const gone = ghostRest.children[ghostRest.children.length - 1];
+    ghostRest.remove(gone);
+    gone.geometry.dispose();
+  }
+  while (ghostRest.children.length < rest.length) {
+    ghostRest.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material));
+  }
+  rest.forEach((part, i) => {
+    const mesh = ghostRest.children[i];
+    const [dx, dy, dz] = part.dimensions_m || [0.1, 0.1, 0.1];
+    const [w, x, y, z] = part.facing;
+    mesh.material = material;
+    mesh.scale.set(dx, dy, dz);
+    mesh.position.set(...part.at_m);
+    mesh.quaternion.set(x, y, z, w);
+  });
+  ghostRest.visible = rest.length > 0;
 }
 
 function hideGhost() {
   me.canPlace = false;
   if (ghost) ghost.visible = false;
+  if (ghostRest) ghostRest.visible = false;
   $("ghost-said").hidden = true;
 }
 
@@ -953,19 +1015,30 @@ const handView = (() => {
   return { canvas, r, scene, cam, spin, of: "" };
 })();
 
-/** Put the held body in the little view, sized so it fills the frame. */
-function showInHand(body) {
+/** Put what is held in the little view -- every part of it, as they stand to
+ *  each other -- sized so it fills the frame. */
+function showInHand(parts) {
   const view3 = handView;
-  if (!body) {
+  if (!parts || !parts.length) {
     view3.spin.clear();
     view3.of = "";
     view3.r.clear();
     return;
   }
-  if (view3.of === body.name) return;
-  view3.of = body.name;
+  const of = parts.map((p) => p.name).join("|");
+  if (view3.of === of) return;
+  view3.of = of;
   view3.spin.clear();
-  const mesh = buildMesh(body);
+  let mesh;
+  if (parts.length === 1) mesh = buildMesh(parts[0]);
+  else {
+    mesh = new THREE.Group();
+    for (const part of parts) {
+      const one = buildMesh(part);
+      place(one, part);
+      mesh.add(one);
+    }
+  }
   // Stand it about its own middle so it turns on the spot.
   const box = new THREE.Box3().setFromObject(mesh);
   const middle = box.getCenter(new THREE.Vector3());
@@ -1090,7 +1163,8 @@ async function intoTheBag() {
       op: "stow", item: going, person: whereIAm(),
     });
     tookNote(said);
-    say(said.why || `The ${going} is in your bag.`);
+    // A refusal looks like one: a thing of joined parts cannot go in the bag.
+    say(said.why || `The ${going} is in your bag.`, { refused: said.ok === false });
   } catch (trouble) {
     say(String(trouble.message).slice(0, 110), { refused: true });
   } finally {

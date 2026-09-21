@@ -120,6 +120,39 @@ hand.
 - A refusal says what is wrong in the person's words: "Cannot stow while
   drawn", "The gate is fixed to its post: it can be opened, not taken".
 
+## Taking up a thing of several parts whole (the owner, 2026-09-21)
+
+"When a user picks up something it can be for the entire product so that it
+doesn't break, but needs to still allow movement if part of the product, like
+swinging a mace."
+
+- **Taken up, a thing is taken whole.** A loose thing whose parts are joined
+  only to each other (a mace and the head on its chain, the chat's chair of
+  boards fixed together, a cart's wheels on their bearings) goes into a hand as
+  one item. Exact rigid parts (`precise_rigid_bodies`) count as parts too.
+  Anything fastened, through its joints, to something anchored is still
+  installed: used where it is, never taken.
+- **The hand grips the part you point at**, at its middle or where the page
+  says, and the others come with it on the joints they already have. Those stay
+  joints: the engine hauls the rest through them, so a mace's head swings on its
+  chain as you carry and swing it, and a wheel still turns. Measured with an oak
+  handle and a 6 kg iron head: lifted by the handle, swung, the head went
+  3.7 m/s and the chain never stretched; let go, it landed still tied
+  (tests/inventory_room_tests.py `AThingOfSeveralPartsIsTakenUpWhole`).
+- **What it weighs is all of it**, for the lift and for "what you are carrying".
+- **The bag refuses it, in words**: "its parts are joined, and the bag only holds
+  things of one piece". The engine sets aside one body joined to nothing.
+- **Putting it down is the whole shape.** What is fixed, pinned or slid to the
+  gripped part goes down with it as one shape: turned as the gripped part would
+  be, its lowest part on the surface, every part checked where it would stand,
+  and the preview drawn as all of it -- a chair on its legs, not its seat on the
+  ground. What only hangs from it (a rope, a chain, a spring) settles by itself,
+  and the hand keeps the thing on the spot until it has, for up to 2.5 s: a mace
+  let go with its head still swinging was dragged 0.47 m off the spot.
+- The chat builds one with `build_recipe "mace"`, and the `tests-carry` room
+  (`tools/build_carry_room.py`, `/explore?scene=tests-carry`) has a mace and
+  the chat's table and chair to try it on.
+
 ## What can be stowed at first
 
 - An item can be stowed when all of these hold:
