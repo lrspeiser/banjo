@@ -8293,6 +8293,62 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // which is the engine's to show, not the copy's to hide.
     const double across = 0.8 * std::max(high.x - low.x, high.z - low.z);
     const bool sloped = out.supported_corners >= 2 && across > 1e-6 && highest - lowest > 0.268 * across;
+    // Whether a TALL thing would stay up on that slope. Stood on ground rising
+    // s along one of its sides, its middle, h over its underside, leans out
+    // over the downhill edge by h s; it goes over once that passes the edge,
+    // b from its middle: at s = b / h. A 1.8 m shelf unit on a 0.28 m base goes
+    // over at 8.8 degrees across its narrow side, and at 27 along its wide one.
+    // Geometry only: its shape, where its centre of mass is, and the ground.
+    //
+    // Read in its own axes, at the corners of its own footprint turned the way
+    // it would stand -- not of the box around it turned, which for that shelf
+    // unit at 45 degrees is three times as deep as the shelf -- and on the
+    // slope itself, not the drop over its longer side, which puts a slope
+    // across its narrow side at 0.28 / 0.92 of what it is. Read as far down as
+    // the ground goes: past about 7.7 degrees across that shelf unit its
+    // downhill corners are further below it than the 35 mm said above.
+    // Only a thing whose middle stands higher than its nearest edge is from it
+    // -- taller than it is wide: a ball rolls and a cube slides long before
+    // they tip, and saying so is the slope's rule above.
+    const auto [own_low, own_high] = impl_->world->shapeBoundsTurned(id, Quat{});
+    const double rise = -low.y;
+    const double nearest = std::min({-own_low.x, own_high.x, -own_low.z, own_high.z});
+    if (!out.rests_on.empty() && nearest > 0.0 && rise > nearest + 0.001) {
+        const double xs[2] = {0.8 * own_low.x, 0.8 * own_high.x};
+        const double zs[2] = {0.8 * own_low.z, 0.8 * own_high.z};
+        const double reach = 0.045 + std::max(own_high.x - own_low.x, own_high.z - own_low.z);
+        double ground_y[2][2]{};
+        bool read[2][2]{};
+        int corners_read = 0;
+        for (int a = 0; a < 2; ++a)
+            for (int c = 0; c < 2; ++c) {
+                const Vec3 corner = turn.rotate(Vec3{xs[a], 0.0, zs[c]});
+                const RayHit met = impl_->world->castRay(
+                    Vec3{out.at_m.x + corner.x, underside + 0.005, out.at_m.z + corner.z}, down, reach, id);
+                // The same thing its middle is on: a corner out over a crate's
+                // edge that finds the floor is not a slope, and "little of it
+                // is on the crate" says that one.
+                read[a][c] = met.hit && met.named == under.named && (!met.named || met.body_id == under.body_id);
+                if (read[a][c]) { ground_y[a][c] = met.point_world_m.y; ++corners_read; }
+            }
+        if (corners_read >= 3) {
+            // Rise along its own x and z, from every pair read both ends of
+            // (three corners of four leave one pair each way).
+            double along_x = 0.0, along_z = 0.0;
+            int pairs_x = 0, pairs_z = 0;
+            for (int k = 0; k < 2; ++k) {
+                if (read[0][k] && read[1][k]) { along_x += (ground_y[1][k] - ground_y[0][k]) / (xs[1] - xs[0]); ++pairs_x; }
+                if (read[k][0] && read[k][1]) { along_z += (ground_y[k][1] - ground_y[k][0]) / (zs[1] - zs[0]); ++pairs_z; }
+            }
+            along_x /= pairs_x;
+            along_z /= pairs_z;
+            // It falls downhill, over the edge on that side of its middle.
+            const double edge_x = along_x > 0.0 ? -own_low.x : own_high.x;
+            const double edge_z = along_z > 0.0 ? -own_low.z : own_high.z;
+            out.tipping_used = rise * std::max(std::abs(along_x) / edge_x, std::abs(along_z) / edge_z);
+            out.may_fall_over = out.tipping_used > 0.5;
+        }
+    }
     // What it would go into, standing there: more than 3 mm, which a thing set
     // down 2 mm clear of what it rests on cannot be by resting on it.
     for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, turn, 0.003))
@@ -8302,6 +8358,13 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
                                                        : "it would go into the " + out.touching.front().first;
     } else if (out.rests_on.empty()) {
         out.why = "there is nothing under it to rest on";
+    } else if (out.tipping_used > 1.0) {
+        out.why = "it is too tall for that slope: it would fall over";
+    } else if (out.may_fall_over) {
+        // Said before its corners: on a slope that far over, a tall thing's
+        // downhill corners are what is out of reach, and why is the slope.
+        out.fits = true;
+        out.why = "it fits, but it is tall for that slope: it may fall over";
     } else if (out.supported_corners < 3) {
         out.fits = true;
         out.why = "it fits, but little of it is on the " + out.rests_on + ": it may tip off";

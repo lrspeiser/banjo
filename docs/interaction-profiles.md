@@ -497,6 +497,13 @@ the surface under the crosshair, within 3 m.
   may slide or roll (the surface is steeper than 15 degrees); it is too steep to
   set on (lifting it clear would take more than half its height: a wall, a
   crate's side); it would go into something else; nothing is under it.
+- A thing taller than it is wide is also asked whether it stays up there. Its
+  middle, h over its underside, leans out over the downhill edge by h times the
+  slope, and it goes over once that passes the edge, b from its middle: at a
+  slope of b / h, read along each of its own sides (a 1.8 m shelf unit on a
+  0.28 m base: 8.8 degrees across it, 27 along it). Past half of that the copy
+  is amber, "it may fall over" (`may_fall_over`, with `tipping_used`, the share
+  of b / h the slope uses); past all of it the copy is red and it is refused.
 - Nothing in the room moves while the copy is shown.
 
 **Turning and cancelling.**

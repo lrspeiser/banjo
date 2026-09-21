@@ -142,6 +142,11 @@ struct LivePlacement {
     std::string rests_on;                    // what is under its middle
     int supported_corners{};                 // corners of its footprint with something under them, of four
     std::vector<std::pair<std::string, double>> touching;   // what it would go into, and how far, m
+    // How far the slope under a tall thing goes towards tipping it over: 1 is
+    // the slope it falls over on. 0 when not asked -- a thing no taller than
+    // it is wide, or too little of the same ground under its corners to read.
+    double tipping_used{};
+    bool may_fall_over{};                    // past half of that: said, and refused past all of it
     std::string why;                         // in words, for the person choosing where
 };
 
@@ -1117,8 +1122,9 @@ public:
     // Costs no step; safe to ask every frame.
     // Where `name` would go set down on a surface at `on_world_m` -- a point a
     // host found with pick() -- turned `yaw_rad` about the vertical, and
-    // whether it fits: what it would go into, what it would rest on, and how
-    // much of its footprint has something under it. The engine's own shapes;
+    // whether it fits: what it would go into, what it would rest on, how much
+    // of its footprint has something under it, and whether a tall thing would
+    // fall over on the slope there. The engine's own shapes;
     // nothing moves. The first half of placing a thing (docs/inventory-and-
     // hands.md, section 5): the host carries it there if the person says so.
     // `onto` names what the point is on, as pick() found it -- empty for the

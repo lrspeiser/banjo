@@ -3616,9 +3616,10 @@ async function settleDown() {
 // is looking -- upright as it was made, on the surface there, turned with the
 // wheel -- and the engine says whether it fits (op place_check,
 // LiveWorld::placement): what it would go into, what it would rest on, whether
-// it may tip off. E again carries it there with the hand -- the same bounded
-// hand, so what is in the way stops it -- and lets go. Esc, and the copy goes;
-// the thing stays in the hand. Nothing in the room moves for the copy.
+// it may tip off, or, a tall thing on a slope, fall over. E again carries it
+// there with the hand -- the same bounded hand, so what is in the way stops it
+// -- and lets go. Esc, and the copy goes; the thing stays in the hand. Nothing
+// in the room moves for the copy.
 const ghostLook = (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4,
                                                             depthWrite: false });
 const GHOST_LOOK = { fits: ghostLook(0x9fe8b0), tips: ghostLook(0xf2c46b), no: ghostLook(0xf07a6a) };
@@ -3694,7 +3695,8 @@ function drawGhost(p) {
   const f = a.facing || a.q;
   p.ghost.position.set(a.at_m[0], a.at_m[1], a.at_m[2]);
   p.ghost.quaternion.set(f[1], f[2], f[3], f[0]);
-  const look = !a.fits ? GHOST_LOOK.no : a.supported_corners < 3 ? GHOST_LOOK.tips : GHOST_LOOK.fits;
+  const look = !a.fits ? GHOST_LOOK.no
+    : a.supported_corners < 3 || a.may_fall_over ? GHOST_LOOK.tips : GHOST_LOOK.fits;
   p.ghost.traverse((part) => { if (part.isMesh) part.material = look; });
   p.ghost.visible = true;
   showDetails(true);

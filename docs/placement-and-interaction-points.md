@@ -5,8 +5,8 @@ September 19, 2026. MCP **1.5.0**; native ABI **25** is unchanged.
 A held loose object shows a translucent destination before placement. Nearby
 valid receiving points attract it; otherwise it rests on reachable ground one
 metre in front of the person. E and the contextual drop/put-down action commit
-the preview. Green means supported, amber warns about limited support, and red
-means blocked. Esc dismisses the preview and keeps hold. Primary Use retains
+the preview. Green means supported, amber warns about limited support or a tall
+thing on a slope it may fall over on, and red means blocked. Esc dismisses the preview and keeps hold. Primary Use retains
 the product's saved function; a product programmed with `place` commits the
 same destination.
 
@@ -82,8 +82,11 @@ gain grip/use defaults.
 ```
 
 The answer includes `fits`, `why`, `at_m`, `facing`, `on`, `onto`,
-`supported_corners`, `label`, and `target: {body, id, on, yaw_deg}` when a
-destination exists. No destination returns `fits:false` with a reason.
+`supported_corners`, `tipping_used`, `may_fall_over`, `label`, and
+`target: {body, id, on, yaw_deg}` when a destination exists. `tipping_used` is
+how far the slope under a thing taller than it is wide goes towards tipping it
+over (1 is where it would; 0 when it is not asked); past 0.5 `may_fall_over` is
+true and the preview is amber, past 1 it is refused. No destination returns `fits:false` with a reason.
 Optional `expected` accepts the prior `target` and checks that same destination.
 It never silently substitutes another receiver on confirmation.
 

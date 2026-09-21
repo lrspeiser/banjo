@@ -238,5 +238,50 @@ class NativePlacement(unittest.TestCase):
         self.assertFalse(a.get("target",{}).get("id")=="cargo",a)
 
 
+@unittest.skipUnless(ENGINE and Path(ENGINE).is_file(), "BANJO_LIVE_ENGINE required")
+class TallThingOnASlope(unittest.TestCase):
+    """A bookcase 0.9 m wide, 1.8 m tall and 0.3 m deep goes over across its
+    narrow side on a slope of 0.15 / 0.9 (9.5 degrees). The engine says so of
+    6 degrees and refuses 12 (tests/placement_tests.cpp); this is that answer
+    reaching the page, which draws the preview amber on `may_fall_over`."""
+    def setUp(self):
+        tmp=tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        live=live_session.Live(); self.addCleanup(live.shutdown)
+        room=world_room.Room("yard")
+        room.spec["cell_m"]=.05
+        room.spec["bodies"]=[
+            {"name":"bookcase","shape":"box","material":"oak","size_mm":[900,1800,300],
+             "center_mm":[0,900,-3000]}]+[
+            {"name":f"ramp {d}","shape":"box","material":"concrete","size_mm":[1500,100,1500],
+             "center_mm":[x,600,0],"rotation_deg":[d,0,0],"anchored":True}
+            for x,d in ((-1500,6),(1500,12))]
+        room.spec["interaction_points"]=[]
+        self.app=SimpleNamespace(live=live, room=room, engine_path=Path(ENGINE),
+                                 runs_path=Path(tmp.name)/"runs",live_holder="world")
+        live.open(self.app,{"spec":room.spec})
+        self.sid=live.session.id
+    def ask(self, op, **args):
+        return self.app.live.act({"session":self.sid,"op":op,**args})
+    def test_the_reply_says_how_near_it_is_to_falling_over(self):
+        for x,degrees,fits in ((-1.5,6,True),(1.5,12,False)):
+            with self.subTest(degrees=degrees):
+                top=self.ask("pick",**{"from":[x,3,0],"dir":[0,-1,0]})
+                self.assertEqual(top["name"],f"ramp {degrees}")
+                a=self.ask("place_check",name="bookcase",on=top["point_m"],onto=top["name"])
+                self.assertIs(a["fits"],fits,a)
+                self.assertIs(a["may_fall_over"],True,a)
+                self.assertAlmostEqual(a["tipping_used"],.9*math.tan(math.radians(degrees))/.15,places=2)
+                self.assertIn("fall over",a["why"])
+    def test_the_preview_carries_it(self):
+        # Standing in front of the 6 degree ramp, looking at its middle: its
+        # top is under 0.25 m above the feet, so the resolver takes it as ground.
+        person={"standing_m":[-1.5,.5,1.2],"eyes_m":[-1.5,2.12,1.2],"facing":[0,0,-1],
+                "aim_m":[-1.5,.65,0]}
+        a=placement.resolve(self.app,{"session":self.sid,"name":"bookcase","person":person})
+        self.assertEqual((a["target"]["id"],a["onto"]),("ground","ramp 6"),a)
+        self.assertTrue(a["fits"] and a["may_fall_over"],a)
+        self.assertEqual(a["why"],"it fits, but it is tall for that slope: it may fall over")
+
+
 
 if __name__=="__main__": unittest.main()

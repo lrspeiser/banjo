@@ -2021,6 +2021,7 @@ int main(int argc, char **argv) {
                         {"facing", nlohmann::json::array({tidy(p.facing_wxyz[0]), tidy(p.facing_wxyz[1]),
                                                           tidy(p.facing_wxyz[2]), tidy(p.facing_wxyz[3])})},
                         {"rests_on", p.rests_on}, {"supported_corners", p.supported_corners},
+                        {"tipping_used", tidy(p.tipping_used)}, {"may_fall_over", p.may_fall_over},
                         {"touching", std::move(touching)}};
                     std::cout << answer.dump() << std::endl;
                     continue;

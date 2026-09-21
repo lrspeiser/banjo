@@ -863,10 +863,11 @@ function showGhost(answer, body) {
   ghost.scale.set(dx, dy, dz);
   ghost.position.set(answer.on[0], answer.on[1] + dy / 2, answer.on[2]);
   ghost.rotation.set(0, (answer.yaw_deg || 0) * Math.PI / 180, 0);
-  // Green it fits, amber it is held up by too few corners, red it does not.
+  // Green it fits, amber it is held up by too few corners or is tall for the
+  // slope it would stand on, red it does not.
   const corners = answer.supported_corners;
   ghost.material.color.set(!answer.fits ? 0xff9f91
-    : (typeof corners === "number" && corners < 4 ? 0xffd195 : 0xa2e1c8));
+    : ((typeof corners === "number" && corners < 4) || answer.may_fall_over ? 0xffd195 : 0xa2e1c8));
   $("ghost-said").textContent = answer.why || answer.label || "";
   $("ghost-said").hidden = false;
 }
