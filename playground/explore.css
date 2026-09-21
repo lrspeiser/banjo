@@ -92,6 +92,21 @@ html, body {
 #matter-table .brittle { color: var(--warn); }
 #matter-table .ductile { color: var(--accent-dim); }
 
+/* Asking the world: the room's own chat, which builds and changes what is in it. */
+#chat-turns { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .45rem;
+              max-height: 15rem; overflow-y: auto; font-size: var(--t-small); line-height: 1.45; }
+#chat-turns:empty { display: none; }
+#chat-turns li { padding: .4rem .55rem; border-radius: 5px; background: var(--surface-lift);
+                 color: var(--ink); overflow-wrap: anywhere; }
+#chat-turns li.you { background: transparent; border: 1px solid var(--line-soft); color: var(--dim); }
+#chat-turns li.bad { color: var(--bad); }
+#chat-turns li.waiting { color: var(--dimmer); font-style: italic; }
+#chat-turns ul { margin: .3rem 0 0; padding-left: 1rem; color: var(--dim); font-size: var(--t-label); }
+#ask { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .4rem; }
+#ask input { min-width: 0; padding: .45rem .55rem; border-radius: 5px; border: 1px solid var(--line-soft);
+             background: var(--bg); color: var(--ink); font: inherit; font-size: var(--t-small); }
+#ask input:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
+
 #keys dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem .7rem; margin: 0; }
 #keys dt { display: flex; gap: .2rem; }
 #keys dd { margin: 0; color: var(--dim); font-size: var(--t-small); }

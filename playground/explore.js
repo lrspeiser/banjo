@@ -455,7 +455,25 @@ function heldSize() {
 const person = { x: 0, z: -9, yaw: 0, pitch: -0.06, back: 0, came: null };
 const pressed = new Set();
 
+/** Typing to the world: while the ask box has the keys they are words, not
+ *  walking, taking or using. Esc hands them back. */
+function typing(e) {
+  const t = e.target;
+  return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+}
+
 addEventListener("keydown", (e) => {
+  if (typing(e)) {
+    if (e.code === "Escape") e.target.blur();
+    return;
+  }
+  // / starts a question to the world, as the chat's guide tells people.
+  if (e.key === "/") {
+    e.preventDefault();
+    pressed.clear();          // a key held when typing began would go on walking
+    $("ask-text").focus();
+    return;
+  }
   if (e.code === "KeyR" && person.came) Object.assign(person, person.came, { came: person.came, back: 0 });
   pressed.add(e.code);
   if (e.code.startsWith("Arrow")) $("hint")?.remove();
@@ -817,6 +835,7 @@ async function takeOrPutDown() {
       });
       await refreshHands();
       if (said.ok) {
+        remember(said.did || `put the ${going} down`);
         const notes = [said.instead && `it would not go where the preview was: ${said.instead}`,
                        said.record].filter(Boolean);
         say(notes.length ? `${said.did} -- ${notes.join("; ")}` : (said.did || `Put the ${going} down.`));
@@ -837,7 +856,7 @@ async function takeOrPutDown() {
       // What the CALL just said, not what the world has caught up to: the hand
       // is read off the engine, which only reports the thing as held on its
       // next step, so asking me.holding here always answered "no".
-      if (me.record) say(`You have the ${me.record}.`);
+      if (me.record) { say(`You have the ${me.record}.`); remember(`took up the ${me.record}`); }
       else say(said.why || said.refused || "It would not come up.", { refused: true });
     }
   } catch (trouble) {
@@ -867,7 +886,10 @@ async function usePrimary() {
   // A refusal first and in its own words: it is the most useful thing the
   // engine ever says, and burying it under a label reads as success.
   if (said.refused) say(`${said.action || "That"}: ${said.refused}`, { refused: true });
-  else say(said.said || said.did || said.why || said.action || "Done.");
+  else {
+    say(said.said || said.did || said.why || said.action || "Done.");
+    remember(`${said.action || "used"}: ${target}`);
+  }
   if (said.inventory || said.shown) tookNote(said.inventory || said);
   else if (me.holding) await refreshHands();
 }
@@ -1224,6 +1246,7 @@ async function letGo() {
     });
     tookNote(said);
     say(said.did || `Let go of the ${going}.`);
+    remember(`let go of the ${going}`);
   } catch (trouble) {
     // The record can disagree with the world -- it does not hear about a let-go
     // that happened inside a `place`. Rather than leave someone stuck holding
@@ -1251,11 +1274,109 @@ async function intoTheBag() {
     tookNote(said);
     // A refusal looks like one: a thing tied to the room cannot go in the bag.
     say(said.why || `The ${going} is in your bag.`, { refused: said.ok === false });
+    if (said.ok !== false) remember(`put the ${going} in the bag`);
   } catch (trouble) {
     say(String(trouble.message).slice(0, 110), { refused: true });
   } finally {
     me.busy = false;
   }
+}
+
+// --------------------------------------------------------------------------
+// Asking the world
+//
+// The room's own chat (/api/world/ask) -- the same model, tools and recipes as
+// the playground's world page -- which builds and changes what is in the room:
+// "build me a mace here". When it changes the room, the server opens it again
+// from what it has become before the answer comes back, and this page takes
+// the new room over (adoptRebuilt).
+// --------------------------------------------------------------------------
+
+world.story = [];
+
+/** What the person did, for the chat: a model asked to change a room it cannot
+ *  see has to be told what has happened in it. */
+function remember(what) {
+  world.story.push(String(what).slice(0, 200));
+  if (world.story.length > 24) world.story.splice(0, world.story.length - 24);
+}
+
+function chatSay(who, text, did) {
+  const li = document.createElement("li");
+  li.className = who;
+  li.textContent = text;
+  if (Array.isArray(did) && did.length) {
+    const ul = document.createElement("ul");
+    for (const line of did) {
+      const item = document.createElement("li");
+      item.textContent = String(line);
+      ul.append(item);
+    }
+    li.append(ul);
+  }
+  const list = $("chat-turns");
+  list.append(li);
+  list.scrollTop = list.scrollHeight;
+  return li;
+}
+
+$("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("ask-text");
+  const text = input.value.trim();
+  if (!text || !world.session || world.asking) return;
+  input.value = "";
+  input.blur();                 // the keys go back to walking while it thinks
+  chatSay("you", text);
+  const waiting = chatSay("waiting", "Reading the room and thinking it over…");
+  const began = performance.now();
+  const tick = setInterval(() => {
+    waiting.textContent = "Reading the room and thinking it over… "
+      + `${((performance.now() - began) / 1000).toFixed(0)} s`;
+  }, 1000);
+  $("ask-send").disabled = true;
+  world.asking = true;
+  try {
+    const answer = await api("/api/world/ask", {
+      session: world.session, message: text,
+      story: world.story.slice(-24),
+      // Where they are: what "here", "near me" and "that" mean.
+      person: whereIAm(),
+    });
+    waiting.remove();
+    const then = (answer.then || []).map((t) => (t.error ? `${t.name}: ${t.error}` : `${t.name}: done`));
+    chatSay("world", answer.reply || "(nothing to say)", [...(answer.did || []), ...then]);
+    if (answer.reopened) adoptRebuilt(answer);
+    if (answer.joint_problems && answer.joint_problems.length)
+      chatSay("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
+    remember(`asked the world: ${text}`);
+  } catch (trouble) {
+    waiting.remove();
+    chatSay("bad", String(trouble.message || trouble));
+  } finally {
+    clearInterval(tick);
+    world.asking = false;
+    $("ask-send").disabled = false;
+  }
+});
+
+/** The room opened again from what the chat made of it: this page's world
+ *  becomes that one. Everything is drawn from the new answer, each thing's
+ *  actions are the new room's, and what the person has is the inventory's --
+ *  a thing that was in the hand is back in the bag (inventory_room.after_open). */
+function adoptRebuilt(answer) {
+  const state = answer.state || {};
+  world.session = answer.session;
+  world.failures = 0;
+  world.actions = (state.spec && state.spec.actions) || [];
+  if (state.terrain) drawGround(state.terrain);
+  if (state.water) drawWater(state.water);
+  world.handAt = null;
+  world.liftTo = null;
+  hideGhost();
+  draw(state);
+  if (state.inventory) tookNote(state.inventory);
+  showHands();
 }
 
 /** Which Workshop product this is, when it is one, so it can be opened there. */
@@ -1344,6 +1465,11 @@ async function tick() {
     owed -= n * dt;
     if (n > 0) {
       const began = performance.now();
+      // Which room this step is for. The chat changing the room opens it again
+      // on the server before its answer arrives, and a step for the old one
+      // comes back "no longer open" -- the switch happening, not the room
+      // stopping (world.js tells the two apart the same way).
+      const driving = world.session;
       try {
         // The hand goes with the step rather than in a call of its own: it is
         // one round trip instead of two, and the engine wants them together.
@@ -1401,9 +1527,10 @@ async function tick() {
         // room, E and the preview all at once, with a word only in the pace
         // readout -- so E went on doing nothing and nothing said why. Three in
         // a row, and it stops, and says so where you are looking.
-        world.failures = (world.failures || 0) + 1;
+        const switching = world.asking || world.session !== driving;
+        if (!switching) world.failures = (world.failures || 0) + 1;
         $("pace").textContent = String(trouble.message).slice(0, 60);
-        if (world.failures >= 3) {
+        if (!switching && world.failures >= 3) {
           world.session = "";
           say(`The world stopped: ${String(trouble.message).slice(0, 140)}. Reload the page to start again.`,
               { refused: true, stays: true });

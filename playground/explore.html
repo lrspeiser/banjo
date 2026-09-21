@@ -50,6 +50,16 @@
     <p id="did" hidden></p>
   </section>
 
+  <section id="chat">
+    <p class="label">Ask the world</p>
+    <ol id="chat-turns" aria-live="polite"></ol>
+    <form id="ask" autocomplete="off">
+      <input id="ask-text" type="text" maxlength="2000"
+             placeholder="Build me a mace here… (press / to type)" aria-label="Ask the world">
+      <button type="submit" id="ask-send">Ask</button>
+    </form>
+  </section>
+
   <section id="carrying">
     <p class="label">What you are carrying</p>
     <table id="bag-table">
@@ -85,6 +95,7 @@
       <dt><kbd>G</kbd></dt><dd>sweep up loose pieces around you</dd>
       <dt><kbd>Wheel</kbd></dt><dd>step back from yourself to see where a thing would land</dd>
       <dt><kbd>J</kbd> or <kbd>Click</kbd></dt><dd>what the thing is for</dd>
+      <dt><kbd>/</kbd></dt><dd>ask the world to build or change something (<kbd>Esc</kbd> stops typing)</dd>
       <dt><kbd>R</kbd></dt><dd>back to where you came in</dd>
     </dl>
   </section>
