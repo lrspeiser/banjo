@@ -168,7 +168,7 @@
   {
    "center_mm": [
     -8100.0,
-    1028.3376569747925,
+    1028.8057918548584,
     -2650.0
    ],
    "material": "oak",
@@ -248,7 +248,7 @@
   {
    "center_mm": [
     -8100.0,
-    1028.229236125946,
+    1028.8057918548584,
     -1849.9999999999998
    ],
    "material": "ceramic",
@@ -328,9 +328,9 @@
   {
    "anchored": false,
    "center_mm": [
-    -200.0,
+    -440.0,
     1540.0,
-    -200.0
+    -440.0
    ],
    "join": "table",
    "material": "oak",
@@ -356,9 +356,9 @@
   {
    "anchored": false,
    "center_mm": [
-    -740.0,
+    -980.0,
     1160.0,
-    -500.0
+    -740.0
    ],
    "join": "table",
    "material": "oak",
@@ -384,9 +384,9 @@
   {
    "anchored": false,
    "center_mm": [
-    340.0,
+    100.0,
     1160.0,
-    -500.0
+    -740.0
    ],
    "join": "table",
    "material": "oak",
@@ -412,9 +412,9 @@
   {
    "anchored": false,
    "center_mm": [
-    340.0,
+    100.0,
     1160.0,
-    100.0
+    -140.0
    ],
    "join": "table",
    "material": "oak",
@@ -440,9 +440,9 @@
   {
    "anchored": false,
    "center_mm": [
-    -740.0,
+    -980.0,
     1160.0,
-    100.0
+    -140.0
    ],
    "join": "table",
    "material": "oak",
@@ -468,9 +468,9 @@
   {
    "anchored": false,
    "center_mm": [
-    4920.0,
-    620.0,
-    3320.0000000000005
+    8440.0,
+    1140.0000000000002,
+    -1400.0000000000002
    ],
    "join": "bench",
    "material": "oak",
@@ -496,9 +496,9 @@
   {
    "anchored": false,
    "center_mm": [
-    4180.0,
-    400.0,
-    3180.0
+    7700.0,
+    920.0,
+    -1540.0
    ],
    "join": "bench",
    "material": "oak",
@@ -524,9 +524,9 @@
   {
    "anchored": false,
    "center_mm": [
-    5660.0,
-    400.0,
-    3180.0
+    9180.0,
+    920.0,
+    -1540.0
    ],
    "join": "bench",
    "material": "oak",
@@ -552,9 +552,9 @@
   {
    "anchored": false,
    "center_mm": [
-    5660.0,
-    400.0,
-    3460.0
+    9180.0,
+    920.0,
+    -1260.0
    ],
    "join": "bench",
    "material": "oak",
@@ -580,9 +580,9 @@
   {
    "anchored": false,
    "center_mm": [
-    4180.0,
-    400.0,
-    3460.0
+    7700.0,
+    920.0,
+    -1260.0
    ],
    "join": "bench",
    "material": "oak",
@@ -608,13 +608,41 @@
   {
    "anchored": false,
    "center_mm": [
-    -2800.0000000000005,
-    1020.0,
-    2860.0
+    -4320.0,
+    1300.0,
+    -320.0
    ],
    "join": "chair",
    "material": "oak",
    "name": "chair",
+   "part": "chair/seat",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    480.0,
+    40.0,
+    480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4320.0,
+    1660.0000000000002,
+    -100.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-1",
    "part": "chair/back-panel",
    "rotation_deg": [
     0.0,
@@ -636,13 +664,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -2980.0,
-    940.0000000000001,
-    2860.0
+    -4500.0,
+    1560.0,
+    -100.0
    ],
    "join": "chair",
    "material": "oak",
-   "name": "chair-1",
+   "name": "chair-2",
    "part": "chair/back-post-1",
    "rotation_deg": [
     0.0,
@@ -652,7 +680,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    480.0,
     40.0
    ],
    "velocity_m_s": [
@@ -664,13 +692,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -2620.0,
-    940.0000000000001,
-    2860.0
+    -4140.0,
+    1560.0,
+    -100.0
    ],
    "join": "chair",
    "material": "oak",
-   "name": "chair-2",
+   "name": "chair-3",
    "part": "chair/back-post-2",
    "rotation_deg": [
     0.0,
@@ -680,7 +708,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    480.0,
     40.0
    ],
    "velocity_m_s": [
@@ -692,13 +720,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -2980.0,
-    460.0,
-    2460.0
+    -4500.0,
+    1080.0,
+    -500.0
    ],
    "join": "chair",
    "material": "oak",
-   "name": "chair-3",
+   "name": "chair-4",
    "part": "chair/leg-1",
    "rotation_deg": [
     0.0,
@@ -708,7 +736,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -720,13 +748,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -2620.0,
-    460.0,
-    2460.0
+    -4140.0,
+    1080.0,
+    -500.0
    ],
    "join": "chair",
    "material": "oak",
-   "name": "chair-4",
+   "name": "chair-5",
    "part": "chair/leg-2",
    "rotation_deg": [
     0.0,
@@ -736,7 +764,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -748,13 +776,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -2620.0,
-    460.0,
-    2820.0
+    -4140.0,
+    1080.0,
+    -140.0
    ],
    "join": "chair",
    "material": "oak",
-   "name": "chair-5",
+   "name": "chair-6",
    "part": "chair/leg-3",
    "rotation_deg": [
     0.0,
@@ -764,7 +792,91 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4500.0,
+    1080.0,
+    -140.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-7",
+   "part": "chair/leg-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -3120.0,
+    1260.0,
+    -1140.0000000000002
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    40.0,
+    200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -3220.0,
+    1040.0,
+    -1260.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-1",
+   "part": "stool/leg-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -777,68 +889,12 @@
    "anchored": false,
    "center_mm": [
     -2980.0,
-    460.0,
-    2820.0
-   ],
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-6",
-   "part": "chair/leg-4",
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    440.0,
-    40.0
-   ],
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4700.0,
-    1060.0,
-    -980.0
+    1040.0,
+    -1260.0
    ],
    "join": "stool",
    "material": "oak",
-   "name": "stool",
-   "part": "stool/leg-1",
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    440.0,
-    40.0
-   ],
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4420.0,
-    1060.0,
-    -980.0
-   ],
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-1",
+   "name": "stool-2",
    "part": "stool/leg-2",
    "rotation_deg": [
     0.0,
@@ -848,7 +904,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -860,13 +916,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -4420.0,
-    1060.0,
-    -700.0000000000001
+    -2980.0,
+    1040.0,
+    -1020.0
    ],
    "join": "stool",
    "material": "oak",
-   "name": "stool-2",
+   "name": "stool-3",
    "part": "stool/leg-3",
    "rotation_deg": [
     0.0,
@@ -876,7 +932,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -888,13 +944,13 @@
   {
    "anchored": false,
    "center_mm": [
-    -4700.0,
-    1060.0,
-    -700.0000000000001
+    -3220.0,
+    1040.0,
+    -1020.0
    ],
    "join": "stool",
    "material": "oak",
-   "name": "stool-3",
+   "name": "stool-4",
    "part": "stool/leg-4",
    "rotation_deg": [
     0.0,
@@ -904,7 +960,7 @@
    "shape": "box",
    "size_mm": [
     40.0,
-    440.0,
+    400.0,
     40.0
    ],
    "velocity_m_s": [
@@ -916,13 +972,209 @@
   {
    "anchored": false,
    "center_mm": [
-    1240.0,
+    -3100.0,
+    1260.0,
+    -1260.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-5",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    280.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -3100.0,
+    1260.0,
+    -1020.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-6",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    280.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -3100.0,
+    1260.0,
+    -1300.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-7",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    200.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -3100.0,
+    1260.0,
+    -980.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-8",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    120.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2940.0,
+    1260.0,
+    -1140.0000000000002
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-9",
+   "part": "stool/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
     780.0,
-    -2000.0
+    1700.0,
+    -2020.0
    ],
    "join": "shelf-unit",
    "material": "oak",
    "name": "shelf-unit",
+   "part": "shelf-unit/side-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    1800.0,
+    280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1660.0000000000002,
+    1700.0,
+    -2020.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit-1",
+   "part": "shelf-unit/side-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    1800.0,
+    280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1220.0,
+    820.0000000000001,
+    -2020.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit-2",
    "part": "shelf-unit/shelf-1",
    "rotation_deg": [
     0.0,
@@ -931,9 +1183,9 @@
    ],
    "shape": "box",
    "size_mm": [
-    880.0,
+    840.0,
     40.0,
-    320.0
+    280.0
    ],
    "velocity_m_s": [
     0.0,
@@ -944,13 +1196,13 @@
   {
    "anchored": false,
    "center_mm": [
-    1240.0,
-    1380.0000000000002,
-    -2000.0
+    1220.0,
+    1420.0,
+    -2020.0
    ],
    "join": "shelf-unit",
    "material": "oak",
-   "name": "shelf-unit-1",
+   "name": "shelf-unit-3",
    "part": "shelf-unit/shelf-2",
    "rotation_deg": [
     0.0,
@@ -959,9 +1211,9 @@
    ],
    "shape": "box",
    "size_mm": [
-    880.0,
+    840.0,
     40.0,
-    320.0
+    280.0
    ],
    "velocity_m_s": [
     0.0,
@@ -972,13 +1224,13 @@
   {
    "anchored": false,
    "center_mm": [
-    1240.0,
-    1940.0,
-    -2000.0
+    1220.0,
+    1980.0,
+    -2020.0
    ],
    "join": "shelf-unit",
    "material": "oak",
-   "name": "shelf-unit-2",
+   "name": "shelf-unit-4",
    "part": "shelf-unit/shelf-3",
    "rotation_deg": [
     0.0,
@@ -987,9 +1239,9 @@
    ],
    "shape": "box",
    "size_mm": [
-    880.0,
+    840.0,
     40.0,
-    320.0
+    280.0
    ],
    "velocity_m_s": [
     0.0,
@@ -1000,13 +1252,13 @@
   {
    "anchored": false,
    "center_mm": [
-    1240.0,
-    2540.0,
-    -2000.0
+    1220.0,
+    2580.0,
+    -2020.0
    ],
    "join": "shelf-unit",
    "material": "oak",
-   "name": "shelf-unit-3",
+   "name": "shelf-unit-5",
    "part": "shelf-unit/shelf-4",
    "rotation_deg": [
     0.0,
@@ -1015,9 +1267,9 @@
    ],
    "shape": "box",
    "size_mm": [
-    880.0,
+    840.0,
     40.0,
-    320.0
+    280.0
    ],
    "velocity_m_s": [
     0.0,
@@ -1029,8 +1281,8 @@
    "anchored": false,
    "center_mm": [
     -1720.0,
-    1140.0000000000002,
-    6640.000000000001
+    1180.0,
+    6880.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1057,8 +1309,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6320.0
+    1000.0,
+    6560.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1085,8 +1337,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6320.0
+    1000.0,
+    6560.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1113,8 +1365,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6960.0
+    1000.0,
+    7200.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1141,8 +1393,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6960.0
+    1000.0,
+    7200.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1169,8 +1421,8 @@
    "anchored": false,
    "center_mm": [
     -1720.0,
-    1380.0000000000002,
-    5740.0
+    1420.0,
+    5980.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1197,8 +1449,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6220.0
+    1000.0,
+    6460.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1225,8 +1477,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6420.0
+    1000.0,
+    6660.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1253,8 +1505,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6220.0
+    1000.0,
+    6460.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1281,8 +1533,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6420.0
+    1000.0,
+    6660.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1309,8 +1561,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6860.0
+    1000.0,
+    7100.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1337,8 +1589,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    7060.000000000001
+    1000.0,
+    7300.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1365,8 +1617,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6860.0
+    1000.0,
+    7100.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1393,8 +1645,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    7060.000000000001
+    1000.0,
+    7300.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1421,8 +1673,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6180.0
+    1000.0,
+    6420.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1449,8 +1701,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6460.0
+    1000.0,
+    6700.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1477,8 +1729,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6180.0
+    1000.0,
+    6420.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1505,8 +1757,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6460.0
+    1000.0,
+    6700.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1533,8 +1785,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    6820.0
+    1000.0,
+    7060.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1561,8 +1813,8 @@
    "anchored": false,
    "center_mm": [
     -2100.0,
-    960.0,
-    7100.000000000001
+    1000.0,
+    7340.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1589,8 +1841,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    6820.0
+    1000.0,
+    7060.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1617,8 +1869,8 @@
    "anchored": false,
    "center_mm": [
     -1340.0,
-    960.0,
-    7100.000000000001
+    1000.0,
+    7340.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1645,8 +1897,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1180.0,
-    6140.000000000001
+    1220.0,
+    6380.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1673,8 +1925,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1220.0,
-    6060.000000000001
+    1260.0,
+    6300.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1701,8 +1953,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1260.0,
-    5980.0
+    1300.0,
+    6220.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1729,8 +1981,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1300.0,
-    5900.0
+    1340.0,
+    6140.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1757,8 +2009,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1340.0,
-    5820.0
+    1380.0000000000002,
+    6060.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1785,8 +2037,8 @@
    "anchored": false,
    "center_mm": [
     -1940.0,
-    1380.0000000000002,
-    5740.0
+    1420.0,
+    5980.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1813,8 +2065,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1180.0,
-    6140.000000000001
+    1220.0,
+    6380.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1841,8 +2093,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1220.0,
-    6060.000000000001
+    1260.0,
+    6300.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1869,8 +2121,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1260.0,
-    5980.0
+    1300.0,
+    6220.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1897,8 +2149,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1300.0,
-    5900.0
+    1340.0,
+    6140.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1925,8 +2177,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1340.0,
-    5820.0
+    1380.0000000000002,
+    6060.000000000001
    ],
    "join": "cart",
    "material": "oak",
@@ -1953,8 +2205,8 @@
    "anchored": false,
    "center_mm": [
     -1500.0,
-    1380.0000000000002,
-    5740.0
+    1420.0,
+    5980.0
    ],
    "join": "cart",
    "material": "oak",
@@ -1981,7 +2233,7 @@
    "anchored": false,
    "center_mm": [
     4800.0,
-    820.0000000000001,
+    860.0,
     6180.0
    ],
    "join": "kettle",
@@ -2009,7 +2261,7 @@
    "anchored": false,
    "center_mm": [
     4800.0,
-    820.0000000000001,
+    860.0,
     5980.0
    ],
    "join": "kettle",
@@ -2131,8 +2383,8 @@
      "label": "Seat",
      "position_m": [
       0.0,
-      -0.07094339622641505,
-      -0.12867924528301888
+      -0.02274193548387088,
+      -0.0567741935483871
      ],
      "size_m": [
       0.46,
@@ -2147,8 +2399,8 @@
      "label": "Grip",
      "position_m": [
       0.0,
-      -0.10374317336713046,
-      -0.10308025017579318
+      -0.05554171262458635,
+      -0.0311751984411614
      ],
      "yaw_deg": 0.0
     },
@@ -2158,8 +2410,8 @@
      "label": "Use",
      "position_m": [
       0.0,
-      -0.10374317336713046,
-      -0.10308025017579318
+      -0.05554171262458635,
+      -0.0311751984411614
      ],
      "yaw_deg": 0.0
     }
@@ -2173,9 +2425,9 @@
      "kind": "surface",
      "label": "Top",
      "position_m": [
-      0.0,
-      0.24000000000000002,
-      0.0
+      -0.0019523809523809554,
+      0.10880952380952386,
+      -0.0019523809523809554
      ],
      "size_m": [
       0.36,
@@ -2189,9 +2441,9 @@
      "kind": "grip",
      "label": "Grip",
      "position_m": [
-      0.0,
-      0.1285377977492345,
-      0.0
+      -0.0019523809523809537,
+      -0.0026526784412416737,
+      -0.0019523809523809537
      ],
      "yaw_deg": 0.0
     },
@@ -2200,9 +2452,9 @@
      "kind": "use",
      "label": "Use",
      "position_m": [
-      0.0,
-      0.1285377977492345,
-      0.0
+      -0.0019523809523809537,
+      -0.0026526784412416737,
+      -0.0019523809523809537
      ],
      "yaw_deg": 0.0
     }
@@ -2216,9 +2468,9 @@
      "kind": "grip",
      "label": "Grip",
      "position_m": [
-      0.0,
+      -0.0050000000000000044,
       -1.1102230246251565e-16,
-      0.0
+      -0.010000000000000004
      ],
      "yaw_deg": 0.0
     },
@@ -2227,9 +2479,9 @@
      "kind": "use",
      "label": "Use",
      "position_m": [
-      0.0,
+      -0.0050000000000000044,
       -1.1102230246251565e-16,
-      0.0
+      -0.010000000000000004
      ],
      "yaw_deg": 0.0
     }
