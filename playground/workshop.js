@@ -1942,7 +1942,11 @@ stage.visibleGeometry = () => {
 
 async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");
-  const answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem } : saved ? { saved_design_id:saved } : { kind:"table" });
+  // ?kind=cart opens the Workshop on that product, so a thing you are holding
+  // in the world can be taken straight to the bench to be looked at properly.
+  const asked = (params.get("kind") || "").trim();
+  const answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
+    : saved ? { saved_design_id:saved } : { kind: asked || "table" });
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }

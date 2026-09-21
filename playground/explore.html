@@ -33,17 +33,30 @@
 
   <section id="hands">
     <p class="label">In your hands</p>
-    <dl>
-      <dt>holding</dt><dd id="hands-held">nothing</dd>
-      <dt>bag</dt><dd id="hands-bag">empty</dd>
-    </dl>
+    <div class="hand" id="hand-right">
+      <canvas class="hand-view" id="hand-right-view" width="96" height="96"></canvas>
+      <div class="hand-what">
+        <strong id="hands-held">nothing</strong>
+        <small id="hands-held-facts"></small>
+        <div class="hand-does">
+          <button type="button" id="to-bag" disabled>Into the bag</button>
+          <a id="to-workshop" class="quiet" hidden>Open in the Workshop</a>
+        </div>
+      </div>
+    </div>
     <p id="hands-note" class="hint" hidden></p>
     <p id="did" hidden></p>
   </section>
 
-  <section id="stuff">
-    <p class="label">What is in this valley</p>
-    <ul id="stuff-list"></ul>
+  <section id="carrying">
+    <p class="label">What you are carrying</p>
+    <table id="bag-table">
+      <tbody></tbody>
+    </table>
+    <p id="bag-empty" class="hint">Nothing yet. <kbd>E</kbd> takes what you look
+      at; <kbd>Q</kbd> puts it in the bag. Loose pieces near you are swept up as
+      they are made.</p>
+    <div id="load"><span id="load-bar"><i id="load-fill"></i></span><span id="load-said" class="num"></span></div>
   </section>
 
   <section id="matters">
@@ -66,6 +79,8 @@
       <dt><kbd>Drag</kbd></dt><dd>look around with the mouse</dd>
       <dt><kbd>Double-click</kbd></dt><dd>keep the mouse for looking (<kbd>Esc</kbd> gives it back)</dd>
       <dt><kbd>E</kbd></dt><dd>pick up what you look at · put it down again</dd>
+      <dt><kbd>Q</kbd></dt><dd>put what you hold into the bag</dd>
+      <dt><kbd>G</kbd></dt><dd>sweep up loose pieces around you</dd>
       <dt><kbd>J</kbd> or <kbd>Click</kbd></dt><dd>what the thing is for</dd>
       <dt><kbd>R</kbd></dt><dd>back to where you came in</dd>
     </dl>

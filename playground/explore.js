@@ -290,6 +290,8 @@ addEventListener("keydown", (e) => {
   if (e.code.startsWith("Arrow")) $("hint")?.remove();
   if (e.code === "KeyE") takeOrPutDown();
   if (e.code === "KeyJ") usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
+  if (e.code === "KeyQ") intoTheBag();
+  if (e.code === "KeyG") sweepUp();
   if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ArrowUp", "ArrowDown",
        "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -449,7 +451,8 @@ function showLookedAt() {
 // decides nothing about what is allowed -- it asks, and says what it was told.
 // --------------------------------------------------------------------------
 
-const me = { holding: null, record: null, bag: [], revision: 0, busy: false, said: "" };
+const me = { holding: null, record: null, bagItems: [], carried: {},
+             revision: 0, busy: false, said: "" };
 
 /** Where the person is, in the words every world route asks for. */
 function whereIAm() {
@@ -484,12 +487,19 @@ function heldInTheWorld() {
 
 function tookNote(said) {
   if (!said) return;
-  if (typeof said.revision === "number") me.revision = said.revision;
+  // The revision lives on the RECORD, not at the top of the reply. Reading the
+  // wrong one left it stale, and the next change was refused with "the
+  // inventory changed since you last saw it" -- the optimistic-concurrency
+  // guard doing its job against a page that was not keeping up.
+  const revision = said.record?.revision ?? said.revision;
+  if (typeof revision === "number") me.revision = revision;
   const shown = said.shown || said;
   const hands = shown.hands || {};
   const right = hands.right || hands.left || null;
   me.record = right ? (right.name || right.item || right.id || null) : null;
-  me.bag = (shown.stowed || []).map((b) => b.name || b.item || b.id || "?");
+  me.bagItems = (shown.stowed || []).map((b) => ({
+    name: b.name || b.item || b.id || "?", material: b.material || "" }));
+  me.carried = shown.carried || me.carried;
   showHands();
 }
 
@@ -556,9 +566,21 @@ function say(words) {
 }
 
 function showHands() {
+  const slot = me.holding ? world.shown.find((s) => s.data.name === me.holding) : null;
+  const body = slot ? slot.data : null;
   $("hands-held").textContent = me.holding || "nothing";
-  $("hands-held").className = me.holding ? "strong" : "";
-  $("hands-bag").textContent = me.bag.length ? me.bag.join(", ") : "empty";
+  showInHand(body);
+  $("hands-held-facts").textContent = body
+    ? [body.material, body.mass_kg ? KG(body.mass_kg) : null,
+       (body.dimensions_m || []).map((v) => Math.round(v * 1000)).join(" × ") + " mm"]
+        .filter(Boolean).join(" · ")
+    : "";
+  $("to-bag").disabled = !me.holding;
+  const kind = workshopKindOf(me.holding);
+  const link = $("to-workshop");
+  link.hidden = !kind;
+  if (kind) { link.href = `/world?workshop=1&kind=${encodeURIComponent(kind)}`; link.textContent = `Open the ${kind} in the Workshop`; }
+  showCarrying();
   // Say so when the record and the world disagree, rather than picking one
   // quietly: it is a real fault and hiding it is how it stays unfixed.
   const split = me.record && me.record !== me.holding;
@@ -650,29 +672,146 @@ async function showMatter() {
   }));
 }
 
-function showStuff() {
-  // A thing is its join group: a table is one table, not five boards.
-  const counts = new Map();
-  for (const { data } of world.shown) {
-    const root = data.name.replace(/-\d+$/, "");
-    const seen = counts.get(root) || { n: 0, material: data.material };
-    seen.n++;
-    counts.set(root, seen);
+// --------------------------------------------------------------------------
+// A picture of what is in your hands
+//
+// Its own small renderer showing the ACTUAL body -- the same cells or the same
+// shape the world is drawing -- turning slowly. A name is not much use when
+// most of what is here is a block of something.
+// --------------------------------------------------------------------------
+
+const handView = (() => {
+  const canvas = $("hand-right-view");
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  r.setPixelRatio(Math.min(devicePixelRatio, 2));
+  r.setSize(96, 96, false);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.01, 60);
+  scene.add(new THREE.HemisphereLight(0xdfe9ec, 0x2a2118, 1.2));
+  const key = new THREE.DirectionalLight(0xfff0d8, 1.4);
+  key.position.set(2, 3, 2);
+  scene.add(key);
+  const spin = new THREE.Group();
+  scene.add(spin);
+  return { canvas, r, scene, cam, spin, of: "" };
+})();
+
+/** Put the held body in the little view, sized so it fills the frame. */
+function showInHand(body) {
+  const view3 = handView;
+  if (!body) {
+    view3.spin.clear();
+    view3.of = "";
+    view3.r.clear();
+    return;
   }
-  $("stuff-list").replaceChildren(...[...counts.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, seen]) => {
-      const li = document.createElement("li");
-      const swatch = document.createElement("i");
-      swatch.style.setProperty("--c", SWATCH[seen.material] || "#888");
-      const what = document.createElement("span");
-      what.className = "what"; what.textContent = name;
-      const count = document.createElement("span");
-      count.className = "count"; count.textContent = seen.n > 1 ? `${seen.n} parts` : "";
-      li.append(swatch, what, count);
-      return li;
-    }));
-  $("made").textContent = `${counts.size} things · ${world.shown.length} bodies`;
+  if (view3.of === body.name) return;
+  view3.of = body.name;
+  view3.spin.clear();
+  const mesh = buildMesh(body);
+  // Stand it about its own middle so it turns on the spot.
+  const box = new THREE.Box3().setFromObject(mesh);
+  const middle = box.getCenter(new THREE.Vector3());
+  mesh.position.sub(middle);
+  view3.spin.add(mesh);
+  const reach = Math.max(0.05, box.getSize(new THREE.Vector3()).length());
+  view3.cam.position.set(reach * 0.9, reach * 0.75, reach * 1.25);
+  view3.cam.lookAt(0, 0, 0);
+}
+
+function drawHandView(dt) {
+  if (!handView.of) return;
+  handView.spin.rotation.y += dt * 0.7;
+  handView.r.render(handView.scene, handView.cam);
+}
+
+// --------------------------------------------------------------------------
+// The bag, and sweeping up
+// --------------------------------------------------------------------------
+
+const SWATCH_OF = (material) => SWATCH[material] || "#8a8f99";
+
+function showCarrying() {
+  const rows = [];
+  // Raw material first: it is a quantity, not a thing, and it is what you come
+  // back with from digging.
+  const ground = me.carried || {};
+  for (const [what, kg] of [["sand", ground.sand_kg], ["soil", ground.soil_kg]]) {
+    if (kg > 0.0005) rows.push({ what, said: kg >= 1 ? `${kg.toFixed(1)} kg` : `${Math.round(kg * 1000)} g`,
+                                 colour: what === "sand" ? "#cbb389" : "#7d6a4f" });
+  }
+  // Then whole things, counted: five oak blocks is one line saying five.
+  const counted = new Map();
+  for (const item of me.bagItems) {
+    const seen = counted.get(item.name) || { n: 0, material: item.material };
+    seen.n++;
+    counted.set(item.name, seen);
+  }
+  for (const [name, seen] of counted) {
+    rows.push({ what: name, said: seen.n > 1 ? `x${seen.n}` : "1", colour: SWATCH_OF(seen.material) });
+  }
+  const body = $("bag-table").querySelector("tbody");
+  body.replaceChildren(...rows.map((row) => {
+    const tr = document.createElement("tr");
+    const first = document.createElement("td");
+    const swatch = document.createElement("i");
+    swatch.style.setProperty("--c", row.colour);
+    first.append(swatch, document.createTextNode(row.what));
+    const much = document.createElement("td");
+    much.className = "num";
+    much.textContent = row.said;
+    tr.append(first, much);
+    return tr;
+  }));
+  $("bag-empty").hidden = rows.length > 0;
+
+  const limit = ground.limit_kg || 0;
+  const total = ground.total_kg || 0;
+  const share = limit ? Math.min(1, total / limit) : 0;
+  $("load-fill").style.width = `${share * 100}%`;
+  $("load-fill").classList.toggle("heavy", share > 0.75);
+  $("load-said").textContent = limit ? `${Math.round(total)} of ${Math.round(limit)} kg` : "";
+}
+
+/** Sweep loose pieces near you into what you carry. Its own engine op, which
+ *  is why this is a sweep and not a pile of separate pick-ups. */
+async function sweepUp(said = true) {
+  if (!world.session) return;
+  try {
+    const answer = await api("/api/live/act", {
+      session: world.session, op: "collect",
+      at: [person.x, groundAt(person.x, person.z), person.z],
+      radius_m: 2.5, largest_cells: 64,
+    });
+    const took = answer.collected ?? answer.taken ?? (answer.gone || []).length;
+    if (took) { if (said) say(`Swept up ${took} loose piece${took === 1 ? "" : "s"}.`); await refreshHands(); }
+    else if (said) say("Nothing loose within reach.");
+  } catch (trouble) {
+    if (said) say(String(trouble.message).slice(0, 110));
+  }
+}
+
+/** Q: the thing in your hand goes into the bag. */
+async function intoTheBag() {
+  if (!me.holding) { say("Your hands are empty."); return; }
+  const going = me.holding;
+  try {
+    const said = await api("/api/world/inventory", {
+      session: world.session, request: newRequest(), revision: me.revision,
+      op: "stow", item: going, person: whereIAm(),
+    });
+    tookNote(said);
+    say(said.why || `The ${going} is in your bag.`);
+  } catch (trouble) {
+    say(String(trouble.message).slice(0, 110));
+  }
+}
+
+/** Which Workshop product this is, when it is one, so it can be opened there. */
+function workshopKindOf(name) {
+  const root = String(name || "").replace(/-\d+$/, "");
+  return ["table", "bench", "chair", "stool", "shelf-unit", "cart", "kettle"].includes(root)
+    ? root : null;
 }
 
 // --------------------------------------------------------------------------
@@ -724,7 +863,6 @@ async function open() {
 
   step("putting everything in it…");
   draw(opened);
-  showStuff();
   if (opened.inventory) tookNote(opened.inventory);
 
   // Come in on the ground, looking at the middle of the valley.
@@ -755,12 +893,15 @@ async function tick() {
       try {
         const state = await api("/api/live/act", { session: world.session, op: "step", dt, n });
         world.t = state.t ?? world.t;
+        const was = world.shown.length;
         draw(state);
+        // Something came apart: its pieces are loose around you, so they are
+        // swept up rather than left for you to chase one at a time.
+        if (world.shown.length > was + 1) sweepUp(false);
         const spent = (performance.now() - began) / 1000;
         world.pace = spent > 0 ? (n * dt) / spent : 0;
         $("pace").textContent = `${world.pace.toFixed(1)}× realtime`;
         $("pace").classList.toggle("slow", world.pace < 1.1);
-        if (++sinceCount % 30 === 0) showStuff();
       } catch (trouble) {
         $("pace").textContent = String(trouble.message).slice(0, 60);
         world.session = "";
@@ -769,12 +910,14 @@ async function tick() {
   }
   showLookedAt();
   askWhereItWouldGo();
+  drawHandView(real);
   renderer.render(view, camera);
   requestAnimationFrame(tick);
 }
 
 sized();
 showMatter();
+$("to-bag").addEventListener("click", intoTheBag);
 open().then(() => requestAnimationFrame(tick)).catch((trouble) => {
   $("opening").classList.add("failed");
   $("opening").querySelector("strong").textContent = "The world would not open";

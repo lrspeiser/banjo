@@ -136,3 +136,31 @@ html, body {
 /* When the inventory record and the world disagree about what is in the hand. */
 #hands-note { color: var(--warn); }
 #hands-note[hidden] { display: none; }
+
+/* What is in your hands, with a picture of it. A name is not much use when
+   everything in the valley is a block of something. */
+.hand { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: .8rem; align-items: start; }
+.hand-view { width: 96px; height: 96px; border: 1px solid var(--line); border-radius: 6px;
+             background: #0a1216; display: block; }
+.hand-what strong { display: block; font-size: var(--t-read); color: var(--ink-strong); line-height: 1.25; }
+.hand-what small { display: block; margin-top: .2rem; color: var(--dim); font-size: var(--t-label);
+                   font-variant-numeric: tabular-nums; }
+.hand-does { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.hand-does button, .hand-does a { font-size: var(--t-label); padding: .3rem .5rem; }
+.hand-does a[hidden] { display: none; }
+
+/* The bag, with how much of each thing. */
+#bag-table { width: 100%; border-collapse: collapse; font-size: var(--t-small); }
+#bag-table td { padding: .26rem 0; border-bottom: 1px solid var(--line); }
+#bag-table td:first-child { display: flex; align-items: center; gap: .5rem; color: var(--ink); }
+#bag-table td.num { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums;
+                    white-space: nowrap; }
+#bag-table i { width: 10px; height: 10px; border-radius: 2px; background: var(--c, #888); flex: none; }
+#bag-empty[hidden] { display: none; }
+
+/* How much of what you can carry is used. */
+#load { display: flex; align-items: center; gap: .6rem; margin-top: .7rem; }
+#load-bar { position: relative; flex: 1; height: 5px; border-radius: 3px; background: #1a2a30; overflow: hidden; }
+#load-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); }
+#load-fill.heavy { background: var(--warn); }
+#load-said { font-size: var(--t-label); color: var(--dim); white-space: nowrap; }
