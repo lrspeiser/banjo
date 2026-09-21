@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banjo Explorer — walk the world</title>
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/explore.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="sight" aria-hidden="true"></div>
+<p id="looking" hidden></p>
+
+<div id="opening"><strong>Building the world</strong><span id="opening-step">asking the engine for the ground…</span></div>
+<p id="hint">Drag to look around · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk</p>
+
+<header id="bar">
+  <span class="brand">BANJO<span>EXPLORER</span></span>
+  <span id="pace" class="num" title="How fast the world runs against the clock">—</span>
+  <span id="made" class="num"></span>
+</header>
+
+<aside id="side">
+  <section id="seen" aria-live="polite">
+    <p class="label">In front of you</p>
+    <h2 id="seen-name">—</h2>
+    <dl id="seen-facts"></dl>
+    <p id="seen-hint" class="hint"></p>
+  </section>
+
+  <section id="stuff">
+    <p class="label">What is in this valley</p>
+    <ul id="stuff-list"></ul>
+  </section>
+
+  <section id="matters">
+    <p class="label">The eight materials</p>
+    <table id="matter-table">
+      <thead><tr><th>material</th><th class="num">kg/m³</th><th>gives way by</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint">Measured properties from the engine's own catalogue, not a
+      description of them. Pick a block up and throw it to see the difference.</p>
+  </section>
+
+  <section id="keys">
+    <p class="label">Controls</p>
+    <dl>
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>walk</dd>
+      <dt><kbd>Shift</kbd></dt><dd>run</dd>
+      <dt><kbd>Space</kbd></dt><dd>up · <kbd>C</kbd> down</dd>
+      <dt><kbd>Drag</kbd></dt><dd>look around</dd>
+      <dt><kbd>Double-click</kbd></dt><dd>keep the mouse for looking (<kbd>Esc</kbd> gives it back)</dd>
+      <dt><kbd>R</kbd></dt><dd>back to where you came in</dd>
+    </dl>
+  </section>
+</aside>
+
+<script type="module" src="/explore.js"></script>
+</body>
+</html>

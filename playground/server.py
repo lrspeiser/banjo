@@ -1123,6 +1123,18 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
             if path=="/api/gameplay/capabilities": return self.send(gameplay_capabilities.catalog())
+            # What each material IS, from the engine's own catalogue. A page that
+            # wants to say what a thing is made of has to read it from here: the
+            # alternative is a table of physics written into the page, which goes
+            # stale the moment the catalogue moves and cannot be told that it has.
+            if path=="/api/materials":
+                from mcp import engine_materials as _materials
+                return self.send({"schema":"banjo.materials.v1",
+                                  "materials":{name:{**_materials.MECHANICS[name],
+                                                     "density_kg_m3":_materials.density(name),
+                                                     "scene_name":_materials.scene_name(name)}
+                                               for name in _materials.MATERIALS},
+                                  "colors":fracture_lab.MATERIAL_COLORS})
             if path=="/api/fabrication-qa/runs": return self.send(fabrication_qa.manager(app).list_runs())
             fabrication_match=re.fullmatch(r"/api/fabrication-qa/runs/([0-9a-f]{32})",path)
             if fabrication_match: return self.send(fabrication_qa.manager(app).status(fabrication_match[1]))
@@ -1171,6 +1183,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(job)
             allowed={"/tool-qa":"tool-qa.html","/tool-qa.js":"tool-qa.js","/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
                 "/base.css":"base.css",
+                # The Explorer: its own page, which builds the world from
+                # scratch through this API and draws what comes back.
+                "/explore":"explore.html","/explore.html":"explore.html",
+                "/explore.js":"explore.js","/explore.css":"explore.css",
                 "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
