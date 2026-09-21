@@ -132,3 +132,7 @@ html, body {
   white-space: nowrap;
 }
 #ghost-said[hidden] { display: none; }
+
+/* When the inventory record and the world disagree about what is in the hand. */
+#hands-note { color: var(--warn); }
+#hands-note[hidden] { display: none; }

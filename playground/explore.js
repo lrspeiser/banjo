@@ -271,6 +271,9 @@ function draw(state) {
     dispose(world.shown[i].mesh);
   }
   world.shown.length = list.length;
+  const was = me.holding;
+  me.holding = heldInTheWorld();
+  if (me.holding !== was) showHands();
 }
 
 // --------------------------------------------------------------------------
@@ -446,7 +449,7 @@ function showLookedAt() {
 // decides nothing about what is allowed -- it asks, and says what it was told.
 // --------------------------------------------------------------------------
 
-const me = { holding: null, revision: 0, busy: false, said: "" };
+const me = { holding: null, record: null, bag: [], revision: 0, busy: false, said: "" };
 
 /** Where the person is, in the words every world route asks for. */
 function whereIAm() {
@@ -465,14 +468,29 @@ function whereIAm() {
 
 const newRequest = () => `explore-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
+/** What the engine says is actually in the hand.
+ *
+ *  THE ENGINE IS THE AUTHORITY HERE, not the inventory record. The two can
+ *  disagree: after a `place` the engine lets go but the record goes on listing
+ *  the thing in the hand (server.run_action never tells the inventory), and a
+ *  room saved in that state opens with the page believing you are carrying
+ *  something you are not -- which showed the ghost before you had touched
+ *  anything and sent E down the "put it down" branch so nothing could be
+ *  picked up. What the page draws is what is physically true. */
+function heldInTheWorld() {
+  const slot = world.shown.find((s) => s.data.held);
+  return slot ? slot.data.name : null;
+}
+
 function tookNote(said) {
   if (!said) return;
   if (typeof said.revision === "number") me.revision = said.revision;
   const shown = said.shown || said;
   const hands = shown.hands || {};
   const right = hands.right || hands.left || null;
-  me.holding = right ? (right.name || right.item || right.id || null) : null;
-  showHands(shown);
+  me.record = right ? (right.name || right.item || right.id || null) : null;
+  me.bag = (shown.stowed || []).map((b) => b.name || b.item || b.id || "?");
+  showHands();
 }
 
 /** E: the one contextual thing. Empty-handed and pointing at something loose,
@@ -497,7 +515,11 @@ async function takeOrPutDown() {
         op: "take_up", item: found.name, person: whereIAm(),
       });
       tookNote(said);
-      say(me.holding ? `You have the ${me.holding}.` : (said.why || "It would not come up."));
+      // What the CALL just said, not what the world has caught up to: the hand
+      // is read off the engine, which only reports the thing as held on its
+      // next step, so asking me.holding here always answered "no".
+      say(me.record ? `You have the ${me.record}.`
+                    : (said.why || said.refused || "It would not come up."));
     }
   } catch (trouble) {
     say(String(trouble.message).slice(0, 120));
@@ -533,14 +555,16 @@ function say(words) {
   $("did").hidden = !words;
 }
 
-function showHands(shown) {
-  const hands = (shown && shown.hands) || {};
-  const held = hands.right || hands.left || null;
-  $("hands-held").textContent = held ? (held.name || held.item || "something") : "nothing";
-  $("hands-held").className = held ? "strong" : "";
-  const bag = (shown && shown.stowed) || [];
-  $("hands-bag").textContent = bag.length
-    ? bag.map((b) => b.name || b.item || "?").join(", ") : "empty";
+function showHands() {
+  $("hands-held").textContent = me.holding || "nothing";
+  $("hands-held").className = me.holding ? "strong" : "";
+  $("hands-bag").textContent = me.bag.length ? me.bag.join(", ") : "empty";
+  // Say so when the record and the world disagree, rather than picking one
+  // quietly: it is a real fault and hiding it is how it stays unfixed.
+  const split = me.record && me.record !== me.holding;
+  $("hands-note").hidden = !split;
+  if (split) $("hands-note").textContent =
+    `The record still lists the ${me.record}; the world says it is not held.`;
 }
 
 // --------------------------------------------------------------------------
