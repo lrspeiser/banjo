@@ -92,10 +92,11 @@ OTHER_SPOTS = ((1.3, 0.0), (1.9, 0.0), (1.6, 0.3), (1.6, -0.3), (1.2, 0.45), (1.
 KEYS = {"KeyE": ("e", 69), "KeyX": ("x", 88), "KeyQ": ("q", 81), "KeyJ": ("j", 74)}
 
 # Things in the valley that cannot yet be whole, and why. Their checks run and
-# are reported, marked KNOWN, and do not fail the run. Empty: the kettle and the
-# cart were here -- neither can be built whole at the valley's 40 mm cells --
-# and the owner's call (2026-09-21) was to take them out of the valley until
-# they can be, rather than keep excusing them.
+# are reported, marked KNOWN, and do not fail the run. Empty: the kettle was
+# here -- it cannot be built whole at the valley's 40 mm cells -- and the
+# owner's call (2026-09-21) was to take it out of the valley until it can be,
+# rather than keep excusing it. The cart, taken out with it, is back as exact
+# bodies on pins (the owner, the same day), whole, and gates like the rest.
 KNOWN: dict[str, str] = {}
 
 
@@ -376,7 +377,9 @@ def journey(page: Page, name: str) -> Journey:
             answer is not None and answer["t"] <= RESPOND_WITHIN_S,
             f"{answer['t']:.2f} s" if answer else "nothing, for 4.5 s", answer or down[-1])
     let_go = first(down, lambda f: not (it(f, name) or {}).get("held"))
-    kg = carried.get("mass_kg") or 0.0
+    # All of what the hands carry, as their panel weighs it: a cart is its
+    # chassis and both wheelsets, not only the part the hand grips.
+    kg = aim[-1]["snap"]["me"].get("heldKg") or carried.get("mass_kg") or 0.0
     allowed = RELEASE_WITHIN_S + max(0.0, kg - LIGHT_KG) / 15.0 * 0.5
     j.check(f"it leaves your hands within {allowed:.1f} s ({kg:.0f} kg)",
             let_go is not None and let_go["t"] <= allowed,

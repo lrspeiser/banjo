@@ -51,14 +51,17 @@ sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
 
 import fracture_lab            # noqa: E402
 import live_session            # noqa: E402
+import rigid_assembly          # noqa: E402
 import workshop_sparse_trial as sparse   # noqa: E402
 from mcp import (core_use, engine_materials, interaction_points,  # noqa: E402
                  workshop_components, workshop_matter_metrics, workshop_visual)
 
 # 60 mm loses the kettle entirely. 40 mm keeps the table and bench as drawn,
 # keeps the chair, stool and shelf unit once they are sampled a few millimetres
-# over (whole_matter), and still cannot keep the kettle's walls and handle or
-# the cart's axles, wherever its grid falls.
+# over (whole_matter), and still cannot keep the kettle's walls and handle,
+# wherever its grid falls. The cart is not cells at all: it stands as exact
+# rigid bodies on pins (stand_rigid), its 30 mm iron axles and round wheels as
+# drawn.
 CELL_M = 0.04
 OUT = ROOT / "playground" / "rooms" / "explore.json"
 # The river that runs through the valley, as the room declares it.
@@ -449,6 +452,36 @@ def compose(ground: dict) -> tuple[dict, dict, tuple]:
     points: list[dict] = []
     taken: list[tuple[float, float, float]] = []
     apart: dict[str, str] = {}
+    precise: list[dict] = []
+    pins: list[dict] = []
+    rigid_uses: list[dict] = []
+    rigid_points: list[dict] = []
+    turning: set[str] = set()
+
+    def stand_rigid(kind, root, at):
+        """A product as exact rigid bodies on pins (rigid_assembly): its round
+        parts round and its thin ones as thin as drawn, which no grid of cells
+        can hold. Turned so that it rolls ACROSS the slope where it stands --
+        its axles pointing downhill, the way a cart is left -- and set on the
+        highest ground under every one of its parts."""
+        params = {"primary_use": PRIMARY_USE[kind]} if kind in PRIMARY_USE else {}
+        design, over = workshop_components.design_from_spec(
+            {"kind": kind, "design_id": root, "parameters": params})
+        artifact = rigid_assembly.compile_design(design, over, root=root)
+        yaw = across_the_slope(ground, at)
+        flat = rigid_assembly.placed(artifact, [at[0], 0.0, at[1]], yaw)
+        lift = max(ground_under(ground, lo, hi) - low for low, lo, hi in rigid_assembly.footprint(flat))
+        placed = rigid_assembly.placed(artifact, [at[0], lift, at[1]], yaw)
+        precise.extend(rigid_assembly.scene_bodies(placed))
+        pins.extend(rigid_assembly.scene_joints(placed))
+        uses, where = rigid_assembly.room_entries(design, placed)
+        rigid_uses.extend(uses)
+        rigid_points.extend(where)
+        # Its wheelsets turn on their pins; which way up one faces says nothing
+        # about whether the cart is standing.
+        turning.update(body["name"] for body in placed["bodies"][1:])
+        print(f"    {len(placed['bodies'])} exact bodies on {len(placed['joints'])} pins, "
+              f"turned {math.degrees(yaw):+.0f} deg to roll across the slope")
 
     def stand(kind, root, at):
         got, use, where, broken = product_bodies(kind, root, at, ground)
@@ -490,26 +523,64 @@ def compose(ground: dict) -> tuple[dict, dict, tuple]:
                                ("shelf-unit", (3.2, -2.8), 0.9)):
         stand(kind, kind, area(kind, want, radius))
 
-    # No cart and no kettle. At the valley's 40 mm cells neither can be built
-    # whole -- the kettle's 10 mm walls, bottom and handle, and the cart's axles
-    # and bearing mounts, get no cells wherever the grid falls -- so each stood
-    # as the pieces that were left, and taking one up took a single panel. The
-    # owner's call (2026-09-21): leave them out until they can be built whole.
+    # No kettle. At the valley's 40 mm cells its 10 mm walls, bottom and handle
+    # get no cells wherever the grid falls, so it stood as the pieces that were
+    # left, and taking it up took a single panel. The owner's call (2026-09-21):
+    # leave it out until it can be built whole.
 
-    # 3. A MACE: the owner's own example of taking up the whole of a thing while
+    # 3. THE CART, on its own so there is room to push it: three exact bodies, a
+    #    chassis and two wheelsets turning on pins. Left out with the kettle for
+    #    the same reason until it stood whole this way, and put back (the owner,
+    #    2026-09-21). Its place is taken here; its bodies go in after the mace
+    #    (with_rigid), since the MCP world the mace is built in takes no exact
+    #    bodies.
+    stand_rigid("cart", "cart", area("cart", (0.0, 5.4), 1.5))
+
+    # 4. A MACE: the owner's own example of taking up the whole of a thing while
     #    its moving part still moves. Only its place is chosen here; it is built
     #    after the rest (with_mace), by the MCP's own build_recipe.
     mace_at = area("mace", (-4.0, -4.4), 0.6, " -- the mace")
 
-    print(f"  {len(actions)} things have a use of their own; "
-          f"{sum(1 for r in points for p in r['points'] if p['kind'] in ('surface', 'container'))}"
+    print(f"  {len(actions) + len(rigid_uses)} things have a use of their own; "
+          f"{sum(1 for r in points + rigid_points for p in r['points'] if p['kind'] in ('surface', 'container'))}"
           f" places to set something down")
-    return {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
+    room = {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
             "terrain": {"generate": "valley"},
             "water": dict(WATER),
             "bodies": bodies,
             "actions": actions,
-            "interaction_points": points}, apart, mace_at
+            "interaction_points": points}
+    return room, apart, mace_at, (precise, pins, rigid_uses, rigid_points), turning
+
+
+def with_rigid(spec: dict, rigid) -> dict:
+    """The exact products, put in once the MCP round trip that built the mace is
+    over: that world takes no exact bodies (room_world.open_room refuses them),
+    so they join the room as it comes back -- their bodies, their pins beside
+    the mace's tie, their uses and their points."""
+    precise, pins, uses, where = rigid
+    if not precise:
+        return spec
+    spec = dict(spec)
+    spec["precise_rigid_bodies"] = list(spec.get("precise_rigid_bodies") or []) + precise
+    spec["joints"] = list(spec.get("joints") or []) + pins
+    spec["actions"] = list(spec.get("actions") or []) + uses
+    spec["interaction_points"] = list(spec.get("interaction_points") or []) + where
+    return spec
+
+
+def across_the_slope(ground: dict, at) -> float:
+    """The turn about y that points a product's axles (its own x) down the
+    slope where it stands, so that it rolls across it: a cart left facing
+    downhill rolls away on anything steeper than its rolling resistance, and
+    one left across it stays. Level ground leaves it as drawn."""
+    x, z = at
+    gx = (height_at(ground, x + 0.5, z) - height_at(ground, x - 0.5, z)) / 1.0
+    gz = (height_at(ground, x, z + 0.5) - height_at(ground, x, z - 0.5)) / 1.0
+    if math.hypot(gx, gz) < 0.005:
+        return 0.0
+    # Its own x turned by yaw about y is (cos yaw, 0, -sin yaw).
+    return math.atan2(-gz, gx)
 
 
 # --------------------------------------------------------------------------
@@ -525,6 +596,34 @@ def _turn(q, v):
             v[2] + w * tz + x * ty - y * tx)
 
 
+def _part_gap(body: dict, part: dict, ground: dict) -> float:
+    """An exact part's lowest point against the ground under it: a box's
+    corners, and the bottom of a cylinder's two end rims -- turned by the part's
+    own rotation and then the body's."""
+    q, p = body["orientation_wxyz"], body["position_m"]
+    own = part.get("rotation_wxyz", [1.0, 0.0, 0.0, 0.0])
+    d, c = part["dimensions_m"], part["center_local_m"]
+    middle = [p[k] + v for k, v in enumerate(_turn(q, c))]
+    points = []
+    if part.get("shape") == "cylinder":
+        axis = _turn(q, _turn(own, (0.0, 1.0, 0.0)))
+        down = [axis[1] * axis[0], axis[1] * axis[1] - 1.0, axis[1] * axis[2]]
+        reach = math.sqrt(sum(v * v for v in down))
+        for end in (-d[1] / 2, d[1] / 2):
+            rim = [middle[k] + end * axis[k] for k in range(3)]
+            if reach > 1e-6:
+                points.append([rim[k] + d[0] / 2 * down[k] / reach for k in range(3)])
+            else:                        # standing on end: its whole rim is lowest
+                for i in range(16):
+                    a = 2 * math.pi * i / 16
+                    points.append([rim[0] + d[0] / 2 * math.cos(a), rim[1], rim[2] + d[0] / 2 * math.sin(a)])
+    else:
+        for corner in itertools.product((-d[0] / 2, d[0] / 2), (-d[1] / 2, d[1] / 2), (-d[2] / 2, d[2] / 2)):
+            local = [c[k] + v for k, v in enumerate(_turn(own, corner))]
+            points.append([p[k] + v for k, v in enumerate(_turn(q, local))])
+    return min(y - surface_at(ground, x, z) for x, y, z in points)
+
+
 def lowest_gap(body: dict, ground: dict, cell: float) -> float:
     """How far a body's lowest corner stands above the ground right under that
     corner; negative is inside it.
@@ -532,7 +631,10 @@ def lowest_gap(body: dict, ground: dict, cell: float) -> float:
     Every corner of every cell, turned as the engine has the body turned. A
     body's centre less half its height is not its underside once it leans:
     a 440 mm leg lying on its side has its centre 20 mm off the ground, and
-    reading it as standing put it "200 mm in the ground"."""
+    reading it as standing put it "200 mm in the ground". An exact body is
+    measured by its own parts."""
+    if body.get("rigid_parts_local"):
+        return min(_part_gap(body, part, ground) for part in body["rigid_parts_local"])
     cells = body.get("cells_local_m") or []
     halves = [(cell / 2.0,) * 3] * len(cells)
     if not cells:                        # a body that carries no cells: its own box
@@ -553,11 +655,16 @@ def lean_deg(body: dict) -> float:
                                                             (0.0, 1.0, 0.0))[1]))))
 
 
-def check(opened: dict, settled: dict, apart: dict) -> list[str]:
+def check(opened: dict, settled: dict, apart: dict, turning: set = frozenset(),
+          pins: list | None = None) -> list[str]:
     """What is wrong with the room as it opens and once it has settled: the
-    owner's rule that nothing is below the ground, and that every product the
-    room could build whole is still one thing, standing."""
+    owner's rule that nothing is below the ground, that every product the room
+    could build whole is still one thing, standing, and that every pin still
+    holds what it was put in."""
     faults = []
+    for pin in pins or []:
+        if not pin.get("attached"):
+            faults.append(f"the pin between {pin.get('a')} and {pin.get('b')} let go")
     ground = ground_of(opened["terrain"])
     cell = float(opened.get("cell_size_m") or CELL_M)
     at_open = {}
@@ -581,7 +688,7 @@ def check(opened: dict, settled: dict, apart: dict) -> list[str]:
         if name not in apart:
             if len(mine) != 1:
                 faults.append(f"{name} came apart into {len(mine)} pieces")
-            elif lean > STANDING_DEG:
+            elif lean > STANDING_DEG and name not in turning:
                 faults.append(f"{name} fell over ({lean:.0f} degrees)")
     return faults
 
@@ -599,8 +706,8 @@ def main() -> int:
           f"{min(ground['h']):.2f} m to {max(ground['h']):.2f} m")
 
     print("Laying the world out ...")
-    spec, apart, mace_at = compose(ground)
-    spec = with_mace(spec, mace_at)
+    spec, apart, mace_at, rigid, turning = compose(ground)
+    spec = with_rigid(with_mace(spec, mace_at), rigid)
     validated = fracture_lab.validate(spec)
     cells = sum(b.get("cells", 0) for b in validated["bodies"])
     print(f"  {len(validated['bodies'])} bodies, {cells:,} cells "
@@ -613,6 +720,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         session = live_session.Session(engine, validated, Path(tmp))
         try:
+            # The pins go in after the world opens, as the room's own open does.
+            hung = live_session.Live._hang(session, validated.get("joints") or [])
+            if hung.get("joint_problems"):
+                print(f"  REFUSED: a pin would not hang: {hung['joint_problems']}", file=sys.stderr)
+                return 1
             opened = session.send(op="poses")                 # as built, before a step
             session.send(op="step", dt=1 / 120, n=2)
             start = time.monotonic()
@@ -620,10 +732,11 @@ def main() -> int:
             pace = 2.0 / (time.monotonic() - start)
             settled = session.send(op="poses")
             water = (session.send(op="environment").get("environment") or {}).get("water") or {}
+            pins = session.send(op="joints").get("joints") or []
         finally:
             session.close()
     print(f"  ran at {pace:.0f}x realtime with {len(settled.get('bodies') or [])} bodies in it")
-    faults = check(opened, settled, apart)
+    faults = check(opened, settled, apart, turning, pins)
     # The engine's own word on what stands in the river or the pond.
     for wet in water.get("bodies_in_water") or []:
         faults.append(f"{wet['name']} is standing in the water "

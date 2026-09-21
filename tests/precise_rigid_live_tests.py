@@ -1,6 +1,7 @@
 """Bounded live precise-rigid admission and real native placement/persistence."""
 from __future__ import annotations
 from copy import deepcopy
+import dataclasses
 import json
 import math
 import os
@@ -13,8 +14,8 @@ import unittest
 from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT/'playground')]
-import fracture_lab, inventory, live_session, precise_rigid, room_store, world_room, workshop_install as install
-from mcp import workshop_components, workshop_rigid
+import fracture_lab, inventory, live_session, precise_rigid, rigid_assembly, room_store, world_room, workshop_install as install
+from mcp import core_use, interaction_points, workshop_components, workshop_rigid
 ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_LIVE_ENGINE') else None
 
 
@@ -28,6 +29,10 @@ def candidate(material='oak'):
 def artifact(material='oak'):
     d,o = workshop_components.design_from_spec(candidate(material))
     return workshop_rigid.compile_rigid(d,o)
+
+
+def cart_design():
+    return workshop_components.design_from_spec({'kind':'cart','design_id':'cart','parameters':{}})
 
 
 def box(name='box', pos=(0,.5,0), material='iron'):
@@ -101,6 +106,112 @@ class PreciseAdmission(unittest.TestCase):
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), 'BANJO_LIVE_ENGINE is required')
+class RigidAssembly(unittest.TestCase):
+    """A Workshop design as exact rigid bodies on pins (rigid_assembly): the
+    cart, the product it was built for."""
+
+    def test_the_cart_is_a_chassis_and_two_wheelsets_on_pins_through_their_axles(self):
+        design, over = cart_design()
+        a = rigid_assembly.compile_design(design, over, root='cart')
+        self.assertEqual(['cart', 'cart-1', 'cart-2'], [b['name'] for b in a['bodies']])
+        chassis, front, back = a['bodies']
+        self.assertEqual({'deck', 'handle', 'handle-arm-1', 'handle-arm-2', 'bearing-mount-11', 'bearing-mount-12',
+                          'bearing-mount-21', 'bearing-mount-22'}, {p['name'] for p in chassis['parts']})
+        for body, axle, wheels in ((front, 'axle-1', ('wheel-11', 'wheel-12')),
+                                   (back, 'axle-2', ('wheel-21', 'wheel-22'))):
+            parts = {p['name']: p for p in body['parts']}
+            self.assertEqual({axle, *wheels}, set(parts))
+            # Oak by mass, with its iron axle marked as its own; all of it round.
+            self.assertEqual('oak', body['material'])
+            self.assertEqual('iron', parts[axle]['material'])
+            self.assertTrue(all('material' not in parts[w] for w in wheels))
+            self.assertTrue(all(p['shape'] == 'cylinder' for p in parts.values()))
+            # Listed first, so the space it runs through the wheels is iron.
+            self.assertEqual(axle, body['parts'][0]['name'])
+        # One pin per wheelset, through its axle, free all the way round.
+        pins = {(j['a'], j['b']): j for j in a['joints']}
+        self.assertEqual({('cart', 'cart-1'), ('cart', 'cart-2')}, set(pins))
+        for name, z in (('cart-1', -320.0), ('cart-2', 320.0)):
+            pin = pins[('cart', name)]
+            self.assertEqual('hinge', pin['kind'])
+            for got, want in zip(pin['at_mm'], (0.0, 160.0, z)):
+                self.assertAlmostEqual(want, got, delta=1e-9)
+            self.assertAlmostEqual(1.0, abs(pin['axis'][0]), delta=1e-12)
+            self.assertEqual((-180.0, 180.0, 0.0), (pin['lower_deg'], pin['upper_deg'], pin['friction_n_m']))
+            self.assertEqual(2, len(pin['stands_for']))              # both of its bearings
+        # Drawn in what it is made of, as a lattice body of that material is.
+        for body in a['bodies']:
+            self.assertEqual(int(fracture_lab.MATERIAL_COLORS[body['material']], 16), body['color_rgba'])
+        spec = world_room.yard(); spec['precise_rigid_bodies'] = rigid_assembly.scene_bodies(a)
+        self.assertEqual(3, len(precise_rigid.normalise(spec['precise_rigid_bodies'], spec)))
+
+    def test_placing_turns_its_bodies_and_pins_as_one_and_stands_it_on_its_wheels(self):
+        design, over = cart_design()
+        a = rigid_assembly.compile_design(design, over, root='cart')
+        yaw = 0.7
+        placed = rigid_assembly.placed(a, [1.0, 2.0, 3.0], yaw)
+        q = [math.cos(yaw / 2), 0.0, math.sin(yaw / 2), 0.0]
+        for body in placed['bodies']:
+            self.assertEqual([1.0, 2.0, 3.0], body['position_m'])
+            for got, want in zip(body['orientation_wxyz'], q):
+                self.assertAlmostEqual(want, got, delta=1e-12)
+        # A turn about y takes (x, y, z) to (x cos + z sin, y, z cos - x sin).
+        c, s = math.cos(yaw), math.sin(yaw)
+        for pin, source in zip(placed['joints'], a['joints']):
+            x, y, z = source['at_mm']
+            for got, want in zip(pin['at_mm'], (1000 + x * c + z * s, 2000 + y, 3000 + z * c - x * s)):
+                self.assertAlmostEqual(want, got, delta=1e-9)
+            x, y, z = source['axis']
+            for got, want in zip(pin['axis'], (x * c + z * s, y, z * c - x * s)):
+                self.assertAlmostEqual(want, got, delta=1e-12)
+        # Its lowest points are its wheels' rims, on the floor it was set on.
+        self.assertAlmostEqual(2.0, min(low for low, _, _ in rigid_assembly.footprint(placed)), delta=1e-9)
+
+    def test_the_chassis_carries_its_use_and_every_point_stays_where_it_was_drawn(self):
+        design, over = cart_design()
+        a = rigid_assembly.compile_design(design, over, root='cart')
+        actions, records = rigid_assembly.room_entries(design, a)
+        self.assertEqual(['cart', 'cart-1', 'cart-2'], [x['body'] for x in actions])
+        self.assertEqual(core_use.installed(design, 'cart'), actions[0])
+        # Every point the design draws -- its deck, and the grip at its handle --
+        # is on the chassis, about the chassis's centre of mass.
+        self.assertEqual(['cart', 'cart-1', 'cart-2'], [r['body'] for r in records])
+        centre = a['bodies'][0]['_centre_m']
+        where = {pt['id']: [pt['position_m'][k] + centre[k] for k in range(3)] for pt in records[0]['points']}
+        drawn = interaction_points.for_design(design)
+        self.assertEqual({pt['id'] for pt in drawn}, set(where))
+        for pt in drawn:
+            for got, want in zip(where[pt['id']], pt['position_m']):
+                self.assertAlmostEqual(want, got, delta=1e-9)
+        # A wheelset has what every passive thing has: a grip and a use at its middle.
+        for record in records[1:]:
+            self.assertEqual({'grip', 'use'}, {pt['id'] for pt in record['points']})
+            self.assertTrue(all(pt['position_m'] == [0.0, 0.0, 0.0] for pt in record['points']))
+
+    def test_what_has_no_exact_rigid_form_is_refused_not_approximated(self):
+        design, over = cart_design()
+
+        def without(name):
+            return dataclasses.replace(design, parts=[p for p in design.parts if p.name != name])
+
+        def changed(name, **fields):
+            return dataclasses.replace(design, parts=[dataclasses.replace(p, **fields) if p.name == name else p
+                                                      for p in design.parts])
+        cases = {'wheels on no axle': (without('axle-1'), 'held by a bearing'),
+                 'an oval wheel': (changed('wheel-11', size_m=(.32, .06, .30)), 'oval cylinder'),
+                 'a rubber wheel': (changed('wheel-11', material='rubber'), 'glass, oak, iron or concrete')}
+        for label, (broken, words) in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(ValueError, words):
+                rigid_assembly.compile_design(broken, over, root='cart')
+        with self.assertRaisesRegex(ValueError, 'An assembly root'):
+            rigid_assembly.compile_design(design, over, root='cart/../x')
+
+    def test_a_workshop_rigid_install_is_drawn_in_its_own_material(self):
+        for material in ('glass', 'oak', 'iron'):
+            body, _ = precise_rigid.placement(artifact(material), 'table', [0, 0])
+            self.assertEqual(int(fracture_lab.MATERIAL_COLORS[material], 16), body['color_rgba'])
+
+
 class NativePreciseInstallation(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -272,6 +383,49 @@ class NativePreciseInstallation(unittest.TestCase):
         self.room.spec=spec;self.live.open(self.app,{'spec':spec})
         pins=[j for j in self.live.session.send(op='joints')['joints'] if j['kind']=='hinge']
         self.assertEqual(1,len(pins));self.assertTrue(pins[0]['attached'])
+
+    def test_the_compiled_cart_rolls_on_its_pins_as_far_as_its_wheels_turn(self):
+        design, over = cart_design()
+        placed = rigid_assembly.placed(rigid_assembly.compile_design(design, over, root='cart'), [0.0, 0.002, 0.0])
+        bodies = rigid_assembly.scene_bodies(placed)
+        for body in bodies:
+            body['velocity_m_s'] = [0.0, 0.0, 1.0]        # along its own z, the way its wheels roll
+        spec = world_room.yard(); spec['precise_rigid_bodies'] = bodies
+        spec['joints'] = rigid_assembly.scene_joints(placed)
+        self.room.spec = spec; self.live.open(self.app, {'spec': spec})
+        # The wheelset as the engine measured it, against its parts by hand: the
+        # iron axle, and two oak wheels less the 30 mm of axle inside each one.
+        mass = {b['name']: b['precise_mass_kg'] for b in self.snap()['bodies'] if 'precise_mass_kg' in b}
+        axle = math.pi * .015 ** 2 * .76 * 7870
+        wheels = 2 * (math.pi * .16 ** 2 * .06 - math.pi * .015 ** 2 * .03) * 700
+        self.assertAlmostEqual(axle + wheels, mass['cart-1'], delta=2e-3)
+        self.assertAlmostEqual(axle + wheels, mass['cart-2'], delta=2e-3)
+
+        def state():
+            poses = {b['name']: b for b in self.live.session.send(op='poses')['bodies']}
+            pins = [j for j in self.live.session.send(op='joints')['joints'] if j['kind'] == 'hinge']
+            return poses, pins
+        # Given nothing but a push, friction spins its wheels up; from then on
+        # it goes as far as its 160 mm wheels turn. A free pin reads within
+        # +-180 degrees, so it is read every eighth of a second -- well under
+        # half a turn at this speed -- and the turns are added up.
+        self.live.session.send(op='step', dt=1/240, n=120)
+        poses0, pins = state()
+        turned = [0.0] * len(pins)
+        for _ in range(8):
+            self.live.session.send(op='step', dt=1/240, n=30)
+            poses1, now = state()
+            for k, (before, after) in enumerate(zip(pins, now)):
+                self.assertTrue(after['attached'])
+                turned[k] += math.radians((after['degrees'] - before['degrees'] + 180.0) % 360.0 - 180.0)
+            pins = now
+        went = poses1['cart']['position_m'][2] - poses0['cart']['position_m'][2]
+        self.assertGreater(went, .5)
+        self.assertLess(abs(poses1['cart']['position_m'][0] - poses0['cart']['position_m'][0]), .01)
+        for angle in turned:
+            self.assertAlmostEqual(went, .16 * abs(angle), delta=.01 * went)
+        w, x, y, z = poses1['cart']['orientation_wxyz']
+        self.assertGreater(1 - 2 * (x * x + z * z), math.cos(math.radians(3)))   # still standing
 
     def test_live_native_mass_and_inertia_agree_with_independent_initial_energy(self):
         # At t=0 there is no contact/solver work. An independent analytic oracle

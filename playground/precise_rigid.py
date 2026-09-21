@@ -160,13 +160,22 @@ def bounds(parts: list[dict[str, Any]], position: list[float], q: list[float]):
     return lo, hi
 
 
+def colour(material: str) -> int:
+    """An exact body's colour, as the engine takes it: its material's, the one
+    fracture_lab gives a lattice body of that material. The glass blue every
+    exact body used to carry drew an oak product as glass wherever a page
+    colours by the body rather than by what it is made of (the Explorer)."""
+    import fracture_lab
+    return int(fracture_lab.MATERIAL_COLORS.get(material, "9fd3ffff"), 16)
+
+
 def placement(artifact: dict[str, Any], root: str, xz: list[float]):
     translation = [xz[0], .002-artifact["bounds_m"][0][1], xz[1]]
     body = {"name": root, "material": artifact["material"],
             "parts": [{"dimensions_m": deepcopy(p["dimensions_m"]), "center_local_m": deepcopy(p["center_local_m"])} for p in artifact["components"]],
             "position_m": [a+b for a,b in zip(artifact["centre_of_mass_m"],translation)],
             "orientation_wxyz": [1,0,0,0], "velocity_m_s": [0,0,0], "spin_rad_s": [0,0,0],
-            "color_rgba": 0x9fd3ffff}
+            "color_rgba": colour(artifact["material"])}
     return body, translation
 
 

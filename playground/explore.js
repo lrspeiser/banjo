@@ -219,11 +219,53 @@ const cellGeometryFor = (size) => {
   return cellGeometry;
 };
 
+/** An exact body's parts as one geometry, each where and as it is: a box, or
+ *  a cylinder along its own y sized {diameter, length, diameter}, turned by its
+ *  own rotation. A body of more than one material colours each part as its
+ *  own -- the cart's iron axles through its oak wheels. */
+const PRECISE_SIDES = 28;
+function preciseGeometry(body, mixed) {
+  const positions = [], normals = [], colours = [];
+  const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion();
+  const at = new THREE.Vector3(), size = new THREE.Vector3();
+  const own = colourOf(body);
+  for (const part of body.rigid_parts_local) {
+    const round = part.shape === "cylinder";
+    const shape = (round ? new THREE.CylinderGeometry(0.5, 0.5, 1, PRECISE_SIDES)
+                         : new THREE.BoxGeometry(1, 1, 1)).toNonIndexed();
+    const q = part.rotation_wxyz || [1, 0, 0, 0];
+    turn.set(q[1], q[2], q[3], q[0]).normalize();
+    matrix.compose(at.fromArray(part.center_local_m), turn, size.fromArray(part.dimensions_m));
+    shape.applyMatrix4(matrix);
+    for (const v of shape.attributes.position.array) positions.push(v);
+    for (const v of shape.attributes.normal.array) normals.push(v);
+    if (mixed) {
+      const stuff = part.material || body.material;
+      const c = stuff === body.material ? own : new THREE.Color(SWATCH_OF(stuff));
+      for (let k = 0; k < shape.attributes.position.count; k++) colours.push(c.r, c.g, c.b);
+    }
+    shape.dispose();
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  if (mixed) geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 /** A body's mesh. Cells win over shape: once the engine sends `cells_local_m`
  *  that IS the thing -- every piece a break left, every cell a dent moved --
  *  and drawing the original box instead would be drawing something that is no
- *  longer there. */
+ *  longer there. An exact rigid body is its parts; it has no cells. */
 function buildMesh(body) {
+  const parts = body.mechanical_model === "precise-rigid-v1" ? body.rigid_parts_local : null;
+  if (Array.isArray(parts) && parts.length) {
+    const mixed = new Set(parts.map((part) => part.material || body.material)).size > 1;
+    const look = mixed ? { vertexColors: true } : { color: colourOf(body) };
+    return new THREE.Mesh(preciseGeometry(body, mixed), new THREE.MeshLambertMaterial(look));
+  }
   const material = new THREE.MeshLambertMaterial({ color: colourOf(body) });
   const cells = body.cells_local_m;
   if (cells && cells.length) {
@@ -258,7 +300,7 @@ function dispose(mesh) {
  *  is, how it is built, and how much of it is left. */
 const signatureOf = (body) =>
   [body.name, body.shape, body.revision, (body.cells_local_m || []).length,
-   (body.dimensions_m || []).join(",")].join("|");
+   (body.rigid_parts_local || []).length, (body.dimensions_m || []).join(",")].join("|");
 
 /** Take what the engine last said.
  *
@@ -371,8 +413,7 @@ function leadHand(dt) {
   // Slower the heavier it is. Most of the hand's 800 N goes on holding a 63 kg
   // iron block up, and what is left cannot brake it: led at 2 m/s it sailed a
   // metre past the hand and over the person's head.
-  const mass = world.shown.filter((s) => me.heldSet.has(s.data.name))
-    .reduce((m, s) => m + (s.data.mass_kg || 0), 0);
+  const mass = heldMass();
   const pace = HAND_SPEED * Math.min(1, Math.max(0.25, 25 / Math.max(mass, 1)));
   const k = length > pace * dt ? (pace * dt) / length : 1;
   world.handAt = [at[0] + d[0] * k, at[1] + d[1] * k, at[2] + d[2] * k];
@@ -639,6 +680,13 @@ const me = { holding: null, record: null, recordParts: null, heldSet: new Set(),
 function noteHeld() {
   const whole = me.holding && me.recordParts && me.recordParts.includes(me.holding);
   me.heldSet = new Set(me.holding ? (whole ? me.recordParts : [me.holding]) : []);
+}
+
+/** What all of what is in your hand weighs: a cart is its chassis and both
+ *  its wheelsets, 43 kg, not the 21 kg the hand grips. */
+function heldMass() {
+  return world.shown.filter((s) => me.heldSet.has(s.data.name))
+    .reduce((m, s) => m + (s.data.mass_kg || 0), 0);
 }
 
 /** What to call what is in your hand: the thing, not the part the hand grips. */
@@ -1552,7 +1600,8 @@ function snapshot(names = []) {
     view: { w: innerWidth, h: innerHeight, side },
     sight: { x: (sight.x + 1) / 2 * innerWidth, y: (1 - sight.y) / 2 * innerHeight },
     person: { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch, back: person.back },
-    me: { holding: me.holding, record: me.record, busy: me.busy, canPlace: !!me.canPlace },
+    me: { holding: me.holding, record: me.record, busy: me.busy, canPlace: !!me.canPlace,
+          heldKg: heldMass() },
     ghost: shownGhost,
     said: { loud: text("said-loud"), refused: !!$("said-loud")?.classList.contains("refused"),
             panel: text("did"), canDo: text("can-do"), ghost: text("ghost-said"),

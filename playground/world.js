@@ -830,6 +830,8 @@ function pressDent(geometry, body) {
     geometry.computeVertexNormals();
 }
 
+const placing = new THREE.Object3D();
+
 // A round part is drawn with this many sides: enough that a wheel reads as a
 // wheel when you stand beside it, few enough for a room of carts.
 const PRECISE_SIDES = 28;

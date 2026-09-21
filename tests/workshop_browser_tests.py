@@ -610,7 +610,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page.send('Page.navigate',{'url':self.js("document.querySelector('#ws-install-result a').href")})
         self.wait("window.banjoRoom?.ready() && [...window.banjoRoom.world.bodies.values()].some(b=>b.fromPrecise)")
         root=self.js("[...window.banjoRoom.world.bodies].find(([name,b])=>b.fromPrecise)[0]")
-        observed=self.js("(()=>{const b=window.banjoRoom.world.bodies.get("+json.dumps(root)+");const m=new window.banjoRoom.THREE.Matrix4();b.mesh.getMatrixAt(0,m);return {count:b.mesh.count,scaleY:m.elements[5],cells:b.fromCells,x:b.mesh.position.x,mass:b.mass,model:b.mechanicalModel};})()")
+        # Drawn as one geometry of its parts, each box its 36 vertices in the
+        # order given: the first part's own height is how thick the top is drawn.
+        observed=self.js("(()=>{const b=window.banjoRoom.world.bodies.get("+json.dumps(root)+");const p=b.mesh.geometry.attributes.position;let lo=Infinity,hi=-Infinity;for(let i=0;i<36;i++){lo=Math.min(lo,p.getY(i));hi=Math.max(hi,p.getY(i));}return {count:b.mesh.userData.collisionParts,scaleY:hi-lo,cells:b.fromCells,x:b.mesh.position.x,mass:b.mass,model:b.mechanicalModel};})()")
         self.assertEqual(5,observed['count']);self.assertAlmostEqual(.005,observed['scaleY'],places=8)
         self.assertFalse(observed['cells']);self.assertAlmostEqual(3.123,observed['x'],places=5)
         self.assertAlmostEqual(3.41565,observed['mass'],places=4);self.assertEqual('precise-rigid-v1',observed['model'])
@@ -621,7 +623,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.capture_evidence('thin-rigid-live-world.png')
         self.js('window.__beforeRigidReload=true');self.page.send('Page.reload',{})
         self.wait('!window.__beforeRigidReload && window.banjoRoom?.ready() && window.banjoRoom.world.bodies.has('+json.dumps(root)+')')
-        self.assertEqual(5,self.js('window.banjoRoom.world.bodies.get('+json.dumps(root)+').mesh.count'))
+        self.assertEqual(5,self.js('window.banjoRoom.world.bodies.get('+json.dumps(root)+').mesh.userData.collisionParts'))
 
     def test_installation_stale_world_is_visible_and_does_not_install(self):
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})['body']
