@@ -303,14 +303,14 @@ class PageJourney(unittest.TestCase):
         return name, authored, self.js("banjoRoom.camera.position.toArray()")
 
     def put_it_down(self, name):
-        """E shows where it will go (the owner: "E shows, E places"): a
-        see-through copy on the ground ahead, which the engine says fits. E
-        again carries it there and lets go. Where it comes to rest."""
-        self.assertTrue(self.offering("Place it…"), f"E is not offering to place it: {self.situation()}")
-        self.press_e()
+        """With it in the hand, the page shows where it will go before any key
+        is pressed: a see-through copy on the ground ahead, which the engine
+        says fits (docs/placement-and-interaction-points.md, since 365f43a; a
+        first E used to show it). E carries it there and lets go. Where it
+        comes to rest."""
         self.assertTrue(self.wait_for("banjoRoom.world.placing && banjoRoom.world.placing.answer && "
                                       "banjoRoom.world.placing.answer.fits", 30),
-                        f"the copy never said it fits: {self.situation()}")
+                        f"no copy showed where it fits before E was pressed: {self.situation()}")
         self.assertTrue(self.offering("Put it here"), f"E is not offering to put it there: {self.situation()}")
         self.press_e()
         self.assertTrue(self.wait_for("!banjoRoom.world.held", 30), f"E did not put it there: {self.situation()}")
