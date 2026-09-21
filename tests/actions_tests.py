@@ -508,6 +508,24 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertIn("position_m", answer["done"][0])
         self.assertEqual(app.live.acts, [])
 
+    def test_a_look_is_said_in_words_with_where_things_go_on_it(self):
+        """J on a thing whose use is to be looked at -- what the Workshop's model
+        chose for all of the valley's furniture -- says what it is, and where
+        things can be set on it by the surfaces its maker named. It used to say
+        its own label back, "Look at it", and nothing else happened."""
+        app = self.start([{"body": "stool", "label": "Look at it", "primary": True,
+                           "steps": [{"do": "inspect"}]}])
+        next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")["mass_kg"] = 7.5
+        app.room.spec["interaction_points"] = [{"body": "stool", "points": [
+            {"id": "seat", "kind": "surface", "label": "Seat top", "position_m": [0.0, 0.225, 0.0],
+             "size_m": [0.35, 0.02, 0.35]}]}]
+        _, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True})
+        self.assertEqual(answer["did"], ["Look at it"])
+        self.assertIn("position_m", answer["done"][0], "the chat no longer reads what was seen")
+        self.assertEqual(answer["said"], "The stool: 7.5 kg, 0.35 x 0.45 x 0.35 m. Things can be set on: seat top.")
+        self.assertEqual(app.live.acts, [])
+
     def test_bring_it_to_me_is_a_grip_a_stroke_and_setting_it_down(self):
         app = self.start([dict(BRING, body="stool")])
         status, answer = self.press(app, "stool", 0)

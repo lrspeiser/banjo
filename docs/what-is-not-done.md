@@ -50,10 +50,17 @@ order. The ones most easily mistaken for done:
   nothing), so it refuses them, in words. Two smaller gaps come with it:
   - the engine's own carry budget, checked when the hand takes hold, counts
     only the part it grips; the page's "what you are carrying" adds the rest;
-  - the hand grips the part you point at, never a handle the product declares
-    (its grip point is stored, and nothing reads it yet);
   - put down as a whole shape, a thing of several parts is not judged for
     falling over on a slope: the engine's tall-thing rule reads one body.
+- **A thing's points steer the hand, the swing and the put-down, and nothing
+  else** (2026-09-21). The grip is where the hand takes it, the use point is
+  what a swing aims, and a surface is where something is set. A container point
+  is stored and read by nothing, and a strike hits with whatever part meets
+  what it is aimed at. The valley's furniture was authored once, by the
+  Workshop's model (tools/explore_uses.json). A product made in the Workshop has
+  points when its chat defined them, and its middle otherwise.
+- **The Explorer opens the valley fresh on every load**, so what its chat
+  builds there is gone after a reload.
 - **Nothing melts.** Heat softens oak, iron and concrete and chars oak.
 
 ## 1. Building from language: increments 3 and 4

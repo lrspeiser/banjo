@@ -75,6 +75,8 @@ const world = {
   why: new Map(),             // what hit a thing the engine is working out a break for
   handAt: null,               // where the hand is being led, eased toward the carry
   liftTo: null,               // the height a thing rises to before it moves across
+  actions: [],                // each thing's actions, from the room's spec
+  partsOf: new Map(),         // part name -> every part of the thing it belongs to
 };
 
 const view = new THREE.Scene();
@@ -612,13 +614,41 @@ function lookedAt() {
 
 const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n * 1000)} g`);
 
-/** What J does to a thing, in its maker's words: the primary action of any of
- *  these parts ("Swing it", "Look at it"), lower-cased to sit in the line. */
-function useOf(parts) {
-  const own = (world.actions || []).filter((a) => parts.includes(a.body));
+/** Which parts make one thing, as the room counts them (inventory.items_of):
+ *  the pieces of a join, and whatever a joint ties together. */
+function partsByName(spec) {
+  const bodies = [...(spec.bodies || []), ...(spec.precise_rigid_bodies || [])].filter((b) => b && b.name);
+  const up = new Map(bodies.map((b) => [b.name, b.name]));
+  const root = (n) => { while (up.get(n) !== n) n = up.get(n); return n; };
+  const tie = (a, b) => { if (up.has(a) && up.has(b) && root(a) !== root(b)) up.set(root(b), root(a)); };
+  const firstOfJoin = new Map();
+  for (const b of bodies) {
+    if (!b.join) continue;
+    if (!firstOfJoin.has(b.join)) firstOfJoin.set(b.join, b.name);
+    tie(firstOfJoin.get(b.join), b.name);
+  }
+  for (const j of spec.joints || []) if (j) tie(String(j.a || ""), String(j.b || ""));
+  const groups = new Map();
+  for (const b of bodies) groups.set(root(b.name), [...(groups.get(root(b.name)) || []), b.name]);
+  const of = new Map();
+  for (const names of groups.values()) for (const n of names) of.set(n, names);
+  return of;
+}
+
+/** What J does to a part, in its maker's words and as the server will choose
+ *  it (server._run_action, core_use.selected): the part's own primary action,
+ *  else the one of the thing it is part of -- the mace's head swings the mace
+ *  -- else Inspect. Lower-cased to sit in the line. */
+function useOf(name) {
+  const all = world.actions || [];
+  let own = all.filter((a) => a.body === name);
+  if (!own.length) {
+    const parts = world.partsOf.get(name) || [name];
+    own = all.filter((a) => parts.includes(a.body));
+  }
   const use = own.find((a) => a.primary) || own[0];
-  if (!use || !use.label) return "use it";
-  return use.label.charAt(0).toLowerCase() + use.label.slice(1);
+  const label = (use && use.label) || "Inspect";
+  return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
 /** The one line under the sight: what E does here, and what J does. */
@@ -628,12 +658,12 @@ function showWhatYouCanDo(found) {
     can.push(["E", me.canPlace ? `put the ${heldName()} down there`
                                : `set the ${heldName()} on the ground`]);
     // What it is for, held: a mace's J swings it.
-    can.push(["J", useOf([...me.heldSet])]);
+    can.push(["J", useOf(me.holding)]);
     can.push(["Q", "into the bag"]);
     can.push(["X", "just let go"]);
   } else if (found) {
     can.push(["E", `take the ${found.name}`]);
-    can.push(["J", useOf([found.name])]);
+    can.push(["J", useOf(found.name)]);
   }
   const box = $("can-do");
   box.replaceChildren(...can.flatMap(([key, what], i) => {
@@ -1367,8 +1397,11 @@ $("ask").addEventListener("submit", async (e) => {
 function adoptRebuilt(answer) {
   const state = answer.state || {};
   world.session = answer.session;
+  world.cell = state.cell_size_m || world.cell;
+  world.t = state.t || world.t;
   world.failures = 0;
   world.actions = (state.spec && state.spec.actions) || [];
+  world.partsOf = partsByName(state.spec || {});
   if (state.terrain) drawGround(state.terrain);
   if (state.water) drawWater(state.water);
   world.handAt = null;
@@ -1431,6 +1464,7 @@ async function open() {
   // Each thing's own actions, as its maker programmed them (the Workshop's
   // model, the room's chat, a recipe): what J is called for it.
   world.actions = (opened.spec && opened.spec.actions) || [];
+  world.partsOf = partsByName(opened.spec || {});
 
   step("drawing the valley…");
   if (opened.terrain) drawGround(opened.terrain);

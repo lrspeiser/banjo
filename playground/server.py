@@ -2468,6 +2468,33 @@ def _chat_live(app,name,args,person=None):
 STRIKE_THROUGH_M = 0.1
 
 
+def _looked_at(app, name):
+    """What an Inspect ("Look at it") tells the PERSON, in words: what all of
+    the thing weighs, how big the part is, and where things go on it -- the
+    surfaces its maker named. Its `done` line is JSON, for the chat; shown as it
+    was, J on a table said only "Look at it", and nothing else happened."""
+    target = _live_body(app, name)
+    thing = inventory_room.item_holding(app, name)
+    kg = inventory_room.whole_kg(app, thing)
+    words = [f"{float(target.get('mass_kg') or 0.0) if kg is None else kg:.1f} kg"]
+    size = target.get("dimensions_m")
+    if isinstance(size, (list, tuple)) and len(size) == 3:
+        words.append(" x ".join(f"{float(v):.2f}" for v in size) + " m")
+    if thing is not None and len(thing["bodies"]) > 1:
+        words.append(f"{len(thing['bodies'])} parts, joined")
+    if target.get("anchored"):
+        words.append("fixed in place")
+    parts = thing["bodies"] if thing is not None else [name]
+    surfaces = [str(p.get("label") or "its top").lower()
+                for r in app.room.spec.get("interaction_points") or [] if r.get("body") in parts
+                for p in r.get("points") or [] if p.get("kind") == "surface"]
+    said = f"The {name}: " + ", ".join(words) + "."
+    if surfaces:
+        listed = surfaces[0] if len(surfaces) == 1 else ", ".join(surfaces[:-1]) + " and " + surfaces[-1]
+        said += f" Things can be set on: {listed}."
+    return said
+
+
 def _core_hand_step(app, name, step, person):
     """Execute a declared gesture, never prescribe an object trajectory."""
     from mcp import core_use
@@ -2836,6 +2863,10 @@ def _run_action(app,body,own_hold=False):
     said={"action":action["label"],"done":done}
     if problem: said["refused"]=problem
     else: said["did"]=[action["label"]]
+    # A look is said in words for the person (the page shows `said` first).
+    if not problem and any(step["do"]=="inspect" for step in action["steps"]):
+        try: said["said"]=_looked_at(app,name)
+        except ValueError: pass
     if kept or (before and not acquired and not worked): said["holding"]=holding
     if opened is not None: said.update(reopened=True,session=opened["session"],state=opened)
     return said

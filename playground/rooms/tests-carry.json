@@ -101,7 +101,7 @@
     620.0,
     -5600.0
    ],
-   "id": "b-5560895dfd",
+   "id": "b-68485bb989",
    "material": "oak",
    "name": "mace",
    "shape": "box",
@@ -123,7 +123,7 @@
     640.0,
     -5600.0
    ],
-   "id": "b-6dc4506363",
+   "id": "b-df89f1a8cc",
    "material": "iron",
    "name": "mace head",
    "shape": "box",
@@ -145,7 +145,7 @@
     1420.0,
     -3400.0
    ],
-   "id": "b-336237b9ff",
+   "id": "b-18c39d766e",
    "material": "oak",
    "name": "oak table top",
    "shape": "box",
@@ -167,7 +167,7 @@
     1040.0,
     -3660.0
    ],
-   "id": "b-3d5b5706f9",
+   "id": "b-ebcce10ce9",
    "material": "oak",
    "name": "table leg 1",
    "shape": "box",
@@ -189,7 +189,7 @@
     1040.0,
     -3660.0
    ],
-   "id": "b-1cd47686d5",
+   "id": "b-a3d0ee7b24",
    "material": "oak",
    "name": "table leg 2",
    "shape": "box",
@@ -211,7 +211,7 @@
     1040.0,
     -3140.0
    ],
-   "id": "b-ccdcefba97",
+   "id": "b-b91112daac",
    "material": "oak",
    "name": "table leg 3",
    "shape": "box",
@@ -233,7 +233,7 @@
     1040.0,
     -3140.0
    ],
-   "id": "b-354d29a653",
+   "id": "b-091a058dbd",
    "material": "oak",
    "name": "table leg 4",
    "shape": "box",
@@ -255,7 +255,7 @@
     1140.0,
     -2840.0
    ],
-   "id": "b-1ed634a128",
+   "id": "b-d9b22ca4da",
    "material": "oak",
    "name": "oak chair seat",
    "shape": "box",
@@ -277,7 +277,7 @@
     900.0,
     -3020.0
    ],
-   "id": "b-993641b4fd",
+   "id": "b-5797d82eb3",
    "material": "oak",
    "name": "chair leg 1",
    "shape": "box",
@@ -299,7 +299,7 @@
     900.0,
     -3020.0
    ],
-   "id": "b-afcb9bafac",
+   "id": "b-0afdbcf4b3",
    "material": "oak",
    "name": "chair leg 2",
    "shape": "box",
@@ -321,7 +321,7 @@
     900.0,
     -2660.0
    ],
-   "id": "b-52b6434b02",
+   "id": "b-1f5dd2ee02",
    "material": "oak",
    "name": "chair leg 3",
    "shape": "box",
@@ -343,7 +343,7 @@
     900.0,
     -2660.0
    ],
-   "id": "b-ad9a8f76cb",
+   "id": "b-75692a6035",
    "material": "oak",
    "name": "chair leg 4",
    "shape": "box",
@@ -365,7 +365,7 @@
     1380.0,
     -2660.0
    ],
-   "id": "b-4db40775da",
+   "id": "b-90c5d672ca",
    "material": "oak",
    "name": "chair back",
    "shape": "box",
@@ -416,9 +416,9 @@
     {
      "id": "grip",
      "kind": "grip",
-     "label": "Grip",
+     "label": "Handle",
      "position_m": [
-      0.0,
+      -0.25,
       0.0,
       0.0
      ],
@@ -441,9 +441,9 @@
    "body": "mace head",
    "points": [
     {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
+     "id": "use",
+     "kind": "use",
+     "label": "Head",
      "position_m": [
       0.0,
       0.0,
@@ -452,9 +452,9 @@
      "yaw_deg": 0.0
     },
     {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
      "position_m": [
       0.0,
       0.0,
