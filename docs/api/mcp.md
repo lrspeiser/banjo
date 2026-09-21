@@ -336,9 +336,13 @@ stdio have no check and behave as before.
 **The playground's chat is a client of exactly these tools.** It is sent this
 list — the same names, descriptions and schemas, less `world_id` — and every
 call it makes runs these handlers, on the person's room held as an MCP world
-(`playground/room_world.py`). A tool added here reaches it untouched;
-`tests/chat_tool_parity_tests.py` fails if one does not and no reason is
-written down.
+(`playground/room_world.py`). A tool added here reaches it untouched, unless
+its handler goes over HTTP to the playground (`expedition_*`, `fabrication_*`,
+`world_open_saved`, or anything else posting through
+`expedition_mcp_tools._post`): that works the playground's own room, not the
+chat's copy, and the room keeps it out by rule. `tests/chat_tool_parity_tests.py`
+fails if any other tool does not reach the chat and no reason is written down,
+and if the chat is given one whose handler's module makes HTTP requests.
 
 ## Things a person uses
 
