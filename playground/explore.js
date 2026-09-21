@@ -1374,7 +1374,7 @@ function thingNamed(name) {
   const parts = world.shown.filter((s) => s.data.name === name).map((s) => s.data);
   if (!parts.length) return null;
   const q = new THREE.Quaternion();
-  let lowest = Infinity, aim = null, most = -1;
+  let lowest = Infinity, aim = null, most = -1, tilt = 0;
   const boxes = [];
   for (const p of parts) {
     const w = p.orientation_wxyz;
@@ -1410,6 +1410,10 @@ function thingNamed(name) {
     const volume = size[0] * size[1] * size[2];
     if (volume > most) {
       most = volume;
+      // How far it leans from the way it was made to stand: fallen over reads
+      // near 90.
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+      tilt = Math.acos(Math.max(-1, Math.min(1, up.y))) * 180 / Math.PI;
       if (cells && cells.length) {
         const want = new THREE.Vector3(offset[0], offset[1] + size[1] * 0.3, offset[2]);
         let best = cells[0], gap = Infinity;
@@ -1426,7 +1430,7 @@ function thingNamed(name) {
   }
   const centre = [0, 1, 2].map((k) => boxes.reduce((s, b) => s + b.at[k], 0) / boxes.length);
   return {
-    parts: parts.length, lowest, centre, aim,
+    parts: parts.length, lowest, centre, aim, tilt,
     mass_kg: parts.reduce((m, p) => m + (p.mass_kg || 0), 0),
     cells: parts.reduce((n, p) => n + ((p.cells_local_m || []).length), 0),
     held: parts.some((p) => p.held),
@@ -1488,8 +1492,8 @@ function faceThing(name, away = 1.8) {
 }
 
 /** Look at the ground `ahead` metres in front, keeping the way you face. */
-function aimAtGround(ahead = 1.6) {
-  const fx = -Math.sin(person.yaw), fz = -Math.cos(person.yaw);
+function aimAtGround(ahead = 1.6, turn = 0) {
+  const fx = -Math.sin(person.yaw + turn), fz = -Math.cos(person.yaw + turn);
   const x = person.x + fx * ahead, z = person.z + fz * ahead;
   aimAt([x, groundAt(x, z), z]);
 }

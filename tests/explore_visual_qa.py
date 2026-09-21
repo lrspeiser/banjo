@@ -75,6 +75,11 @@ PREVIEW_WITHIN_S = 1.0         # looking down to the preview appearing
 PREVIEW_NEAR_SIGHT_PX = 140    # the preview is where you are looking
 FILLS_AT_MOST = 0.6            # of what you can see, taken up by what you hold
 HIDES_AT_MOST = 0.35           # of the preview, hidden behind what you hold
+FALLEN_DEG = 30.0              # leaning more than this from how it was set down is fallen over
+GREEN = "#a2e1c8"              # the preview's colour when it promises the thing will stay
+# Where a person looks next when the preview is amber or red: metres ahead,
+# and a turn from where they first looked.
+OTHER_SPOTS = ((1.3, 0.0), (1.9, 0.0), (1.6, 0.3), (1.6, -0.3), (1.2, 0.45), (1.2, -0.45))
 
 KEYS = {"KeyE": ("e", 69), "KeyX": ("x", 88), "KeyQ": ("q", 81), "KeyJ": ("j", 74)}
 
@@ -306,6 +311,23 @@ def journey(page: Page, name: str) -> Journey:
         off = ((spot["x"] - s["x"]) ** 2 + (spot["y"] - s["y"]) ** 2) ** 0.5
         j.check(f"the preview is where you are looking (within {PREVIEW_NEAR_SIGHT_PX} px)",
                 off <= PREVIEW_NEAR_SIGHT_PX, f"{off:.0f} px from the sight", aim[-1])
+        # Amber or red says it may fall or will not go: a person looks for a
+        # better spot before pressing E, and so does this.
+        first_said = aim[-1]["snap"]["said"]["ghost"]
+        if (g.get("colour") or "").lower() != GREEN:
+            yaw0 = page.js("banjoExplorer.person.yaw")
+            for ahead, turn in OTHER_SPOTS:
+                page.js(f"banjoExplorer.person.yaw = {yaw0}; banjoExplorer.aimAtGround({ahead}, {turn})")
+                more = film(page, names, 0.7, page.now(), "look for a better spot")
+                j.frames += more
+                aim = aim + more
+                now = more[-1]["snap"]["ghost"]
+                if now and (now.get("colour") or "").lower() == GREEN:
+                    break
+            g = aim[-1]["snap"]["ghost"] or g
+            s = aim[-1]["snap"]["sight"]
+        j.promise = "green" if (g.get("colour") or "").lower() == GREEN else "warned"
+        j.warning = "" if j.promise == "green" else (aim[-1]["snap"]["said"]["ghost"] or first_said or "")
         ghost_then = g
         held_box = (it(aim[-1], name) or {}).get("box")
         if g.get("box"):
@@ -356,15 +378,34 @@ def journey(page: Page, name: str) -> Journey:
             if pa and pb and sum((pa["centre"][k] - pb["centre"][k]) ** 2 for k in range(3)) ** 0.5 < 0.004:
                 still = b
                 break
-    j.check(f"it lies still within {REST_WITHIN_S} s", still is not None and still["t"] <= REST_WITHIN_S,
-            f"{still['t']:.2f} s" if still else "still moving", still or down[-1])
     end = down[-1]
     final = it(end, name)
-    if ghost_then is not None and final:
-        off = ((final["centre"][0] - ghost_then["at"][0]) ** 2
-               + (final["centre"][2] - ghost_then["at"][2]) ** 2) ** 0.5
-        j.check(f"it lands where the preview showed (within {LANDS_WITHIN_M} m)",
-                off <= LANDS_WITHIN_M, f"{off:.2f} m away", end)
+    warned = getattr(j, "promise", "green") != "green"
+    fell = bool(final) and let_go is not None and \
+        abs(final["tilt"] - (it(let_go, name) or final)["tilt"]) > FALLEN_DEG
+    if not warned:
+        # A green preview is a promise: it lands there, stays up, and is still.
+        j.check(f"it lies still within {REST_WITHIN_S} s", still is not None and still["t"] <= REST_WITHIN_S,
+                f"{still['t']:.2f} s" if still else "still moving", still or down[-1])
+        if ghost_then is not None and final:
+            off = ((final["centre"][0] - ghost_then["at"][0]) ** 2
+                   + (final["centre"][2] - ghost_then["at"][2]) ** 2) ** 0.5
+            j.check(f"it lands where the preview showed (within {LANDS_WITHIN_M} m)",
+                    off <= LANDS_WITHIN_M, f"{off:.2f} m away", end)
+        if final:
+            j.check("it stays standing, as the green preview promised", not fell,
+                    f"it fell over ({final['tilt']:.0f} degrees from upright)" if fell else
+                    f"{final['tilt']:.0f} degrees from upright", end)
+    elif ghost_then is not None and let_go is not None:
+        # Warned it may fall, and nowhere green in reach: it must still go
+        # where it was shown. What it does after that is what it was warned of.
+        at = it(let_go, name)
+        off = ((at["centre"][0] - ghost_then["at"][0]) ** 2
+               + (at["centre"][2] - ghost_then["at"][2]) ** 2) ** 0.5
+        j.check(f"it is let go where the preview showed (within {LANDS_WITHIN_M} m)",
+                off <= LANDS_WITHIN_M,
+                f"{off:.2f} m away when let go; warned {j.warning!r}, and then it "
+                + ("fell over" if fell else "stayed up"), let_go)
     if final:
         j.check("it is not in the ground", final["lowest"] >= final["ground"] - 0.05,
                 f"underside {final['lowest']:.3f}, ground {final['ground']:.3f}", end)
