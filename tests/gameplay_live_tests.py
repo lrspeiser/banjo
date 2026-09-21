@@ -26,10 +26,15 @@ class LiveExpedition(unittest.TestCase):
             os.environ["BANJO_PLAYGROUND_URL"]=url
             log=open(Path(folder)/"server.log","w")
             process=None
+            # The platform CLI beside the live runner, named as this platform
+            # names programs: the server looks for banjo_live_world_run with
+            # the engine's own suffix, so a Linux build needs none.
+            live_engine=Path(os.environ["BANJO_LIVE_ENGINE"])
+            engine=live_engine.with_name("banjo_platform_cli"+live_engine.suffix)
             def start():
                 proc=subprocess.Popen([sys.executable,str(ROOT/"playground/server.py"),
                     "--port",str(port),"--rooms",str(Path(folder)/"rooms"),
-                    "--runs",str(Path(folder)/"runs"), "--engine",str(Path(os.environ["BANJO_LIVE_ENGINE"]).with_name("banjo_platform_cli.exe"))],cwd=ROOT,stdout=log,stderr=log,
+                    "--runs",str(Path(folder)/"runs"), "--engine",str(engine)],cwd=ROOT,stdout=log,stderr=log,
                     creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
                 for _ in range(150):
                     if proc.poll() is not None: raise RuntimeError("server exited")

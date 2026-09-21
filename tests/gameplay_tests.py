@@ -10,7 +10,9 @@ import unittest
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT/"mcp"), str(ROOT/"playground")]
+# The root too: room_store saves through mcp.fabrication, a package import that
+# resolves only from the repository root (ctest runs this file from tests/).
+sys.path[:0] = [str(ROOT), str(ROOT/"mcp"), str(ROOT/"playground")]
 import gameplay as g
 import gameplay_room
 import room_store
