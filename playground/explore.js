@@ -281,11 +281,23 @@ function draw(state) {
 // --------------------------------------------------------------------------
 
 const EYE = 1.62;
+const REACH = 0.8;          // how far in front of the chest the hand is carried
+
+/** Where the hand is, in the world. Sent with every step: the engine carries a
+ *  held body to the hand, and a hand that is never told where it is never
+ *  moves -- which is why a picked-up table went on lying on the ground. */
+function handPoint() {
+  const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const chest = groundAt(person.x, person.z) + EYE - 0.45;
+  return [person.x + ahead.x * REACH,
+          Math.max(chest + ahead.y * REACH, groundAt(person.x, person.z) + 0.15),
+          person.z + ahead.z * REACH];
+}
 // `back` pulls the camera away along its own line of sight. It is a zoom out,
 // not an orbit: the eye stays where the person is, so the ray through the
 // sight is the SAME line however far back the camera sits and aiming does not
 // change as you zoom.
-const person = { x: 0, z: -9, yaw: 0, pitch: -0.06, fly: 0, back: 0, came: null };
+const person = { x: 0, z: -9, yaw: 0, pitch: -0.06, back: 0, came: null };
 const pressed = new Set();
 
 addEventListener("keydown", (e) => {
@@ -296,7 +308,7 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyJ") usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
   if (e.code === "KeyQ") intoTheBag();
   if (e.code === "KeyG") sweepUp();
-  if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ArrowUp", "ArrowDown",
+  if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown",
        "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
 });
 addEventListener("keyup", (e) => pressed.delete(e.code));
@@ -372,16 +384,13 @@ function walk(dt) {
   if (pressed.has("ArrowDown")) person.pitch -= TURN * 0.55 * dt;
   person.pitch = Math.max(-1.45, Math.min(1.45, person.pitch));
 
-  if (pressed.has("Space")) person.fly = Math.min(9, person.fly + 4 * dt);
-  if (pressed.has("KeyC")) person.fly = Math.max(0, person.fly - 4 * dt);
-
   const g = world.ground;
   if (g) {
     person.x = Math.min(g.x0 + (g.nx - 1) * g.cell, Math.max(g.x0, person.x));
     person.z = Math.min(g.z0 + (g.nz - 1) * g.cell, Math.max(g.z0, person.z));
   }
   camera.rotation.set(person.pitch, person.yaw, 0, "YXZ");
-  const eyeY = groundAt(person.x, person.z) + EYE + person.fly;
+  const eyeY = groundAt(person.x, person.z) + EYE;
   if (person.back < 0.01) {
     camera.position.set(person.x, eyeY, person.z);
   } else {
@@ -426,8 +435,31 @@ function lookedAt() {
 
 const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n * 1000)} g`);
 
+/** The one line under the sight: what E does here, and what J does. */
+function showWhatYouCanDo(found) {
+  const can = [];
+  if (me.holding) {
+    can.push(["E", `put down the ${me.holding}`]);
+    can.push(["Q", "into the bag"]);
+    if (found && found.name !== me.holding) can.push(["E", `take the ${found.name} instead`]);
+  } else if (found) {
+    can.push(["E", `take the ${found.name}`]);
+    can.push(["J", "use it"]);
+  }
+  const box = $("can-do");
+  box.replaceChildren(...can.flatMap(([key, what], i) => {
+    const kbd = document.createElement("kbd");
+    kbd.textContent = key;
+    const said = document.createElement("span");
+    said.textContent = what;
+    return i ? [document.createTextNode(" · "), kbd, said] : [kbd, said];
+  }));
+  box.hidden = !can.length;
+}
+
 function showLookedAt() {
   const found = lookedAt();
+  showWhatYouCanDo(found);
   if (!found) {
     if (looked !== "") { looked = ""; $("looking").hidden = true; $("seen-name").textContent = "—";
                          $("seen-facts").replaceChildren(); $("seen-hint").textContent =
@@ -535,12 +567,18 @@ async function takeOrPutDown() {
   if (me.busy || !world.session) return;
   me.busy = true;
   try {
+    const found = lookedAt();
+    // Pointing at something ELSE while your hands are full: bag what you hold
+    // and take the new thing, because that is plainly what was meant.
+    if (me.holding && found && found.name !== me.holding && !found.known.data.anchored) {
+      await intoTheBag();
+      if (me.holding) return;                 // it would not go in; say why and stop
+    }
     if (me.holding) {
       // Put it down through its own Use, so a thing with a `place` program
       // lands where the ghost is rather than being dropped on the spot.
       await usePrimary();
     } else {
-      const found = lookedAt();
       if (!found) { say("Nothing in front of you to pick up."); return; }
       if (found.known.data.anchored) { say(`${found.name} is fixed down.`); return; }
       // Every /api/world/* call carries the session: the playground runs one
@@ -866,13 +904,12 @@ function standWhereTheThingsAre() {
   }
   person.x = best.x;
   person.z = best.z;
-  person.fly = 0;
   person.back = 0;
   // Face the middle of them. Forward is (-sin yaw, ., -cos yaw).
   person.yaw = Math.atan2(-(middle[0] - person.x), -(middle[2] - person.z));
   const drop = groundAt(person.x, person.z) + EYE - middle[1];
   person.pitch = Math.max(-0.6, Math.min(0.2, -Math.atan2(drop, 7.5)));
-  person.came = { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch, fly: 0 };
+  person.came = { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch };
 }
 
 
@@ -894,7 +931,7 @@ async function open() {
 
   // Come in on the ground, looking at the middle of the valley.
   standWhereTheThingsAre();
-  person.came = { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch, fly: 0 };
+  person.came = { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch };
   $("opening").hidden = true;
 }
 
@@ -918,7 +955,12 @@ async function tick() {
     if (n > 0) {
       const began = performance.now();
       try {
-        const state = await api("/api/live/act", { session: world.session, op: "step", dt, n });
+        // The hand goes with the step rather than in a call of its own: it is
+        // one round trip instead of two, and the engine wants them together.
+        const state = await api("/api/live/act", {
+          session: world.session, op: "step", dt, n,
+          ...(me.holding ? { hand: handPoint() } : {}),
+        });
         world.t = state.t ?? world.t;
         const was = world.shown.length;
         draw(state);
