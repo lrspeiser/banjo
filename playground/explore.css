@@ -113,3 +113,22 @@ html, body {
 }
 #hint kbd { margin: 0 .1rem; }
 @keyframes settle { 0%, 72% { opacity: 1; } 100% { opacity: .34; } }
+
+/* What is in your hands, and what the last thing you did came to. */
+#hands dl { display: grid; grid-template-columns: 5.2em minmax(0, 1fr); gap: .28rem .8rem; margin: 0; }
+#hands dt { color: var(--dim); font-size: var(--t-small); }
+#hands dd { margin: 0; font-size: var(--t-small); color: var(--ink); }
+#hands dd.strong { color: var(--accent); font-weight: 600; }
+#did { margin: .6rem 0 0; padding-top: .5rem; border-top: 1px solid var(--line);
+       color: var(--dim); font-size: var(--t-small); line-height: 1.45; }
+#did[hidden] { display: none; }
+
+/* What the ghost would come to, under the sight. */
+#ghost-said {
+  position: fixed; left: calc(50% - var(--side-w) / 2); top: calc(50% + 44px);
+  transform: translateX(-50%); z-index: 3; margin: 0; pointer-events: none;
+  padding: 2px 9px; border-radius: 5px; background: rgb(8 14 17 / .6);
+  color: var(--accent); font-size: var(--t-label); letter-spacing: .04em;
+  white-space: nowrap;
+}
+#ghost-said[hidden] { display: none; }

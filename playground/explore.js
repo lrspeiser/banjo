@@ -285,6 +285,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyR" && person.came) Object.assign(person, person.came, { came: person.came });
   pressed.add(e.code);
   if (e.code.startsWith("Arrow")) $("hint")?.remove();
+  if (e.code === "KeyE") takeOrPutDown();
+  if (e.code === "KeyJ") usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
   if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ArrowUp", "ArrowDown",
        "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -295,7 +297,9 @@ addEventListener("keyup", (e) => pressed.delete(e.code));
 // first move -- nothing on screen says the click did anything, and a browser
 // can refuse it outright.
 let dragging = false;
+let turnedSince = 0;
 const turn = (dx, dy) => {
+  turnedSince += Math.abs(dx) + Math.abs(dy);
   person.yaw -= dx * 0.0025;
   person.pitch = Math.max(-1.45, Math.min(1.45, person.pitch - dy * 0.0025));
   $("hint")?.remove();
@@ -304,9 +308,13 @@ $("view").addEventListener("pointerdown", (e) => {
   dragging = true;
   $("view").setPointerCapture(e.pointerId);
 });
+$("view").addEventListener("pointerdown", (e) => { turnedSince = 0; });
 $("view").addEventListener("pointerup", (e) => {
   dragging = false;
   $("view").releasePointerCapture(e.pointerId);
+  // A click that did not turn the view is a use of what is in front of you;
+  // one that did was you looking around, and must not also press something.
+  if (turnedSince < 4) usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
 });
 $("view").addEventListener("dblclick", () => {
   // Not every page is allowed to take the mouse: inside an embedded frame the
@@ -364,8 +372,21 @@ const ray = new THREE.Raycaster();
 ray.far = 26;
 let looked = "";
 
+/** Where the sight actually is, in the camera's own coordinates.
+ *
+ *  The canvas fills the window and the side panel sits over its right-hand
+ *  edge, so the middle of what you can SEE is left of the middle of what is
+ *  DRAWN. The sight is moved there in explore.css; casting the ray from the
+ *  camera's centre instead pointed it to the right of the sight, and you took
+ *  hold of whatever was beside the thing you were aiming at. */
+function sightInView() {
+  const side = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue("--side-w")) || 0;
+  return new THREE.Vector2(-side / Math.max(1, innerWidth), 0);
+}
+
 function lookedAt() {
-  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  ray.setFromCamera(sightInView(), camera);
   const hit = ray.intersectObjects(world.shown.map((s) => s.mesh), false)[0];
   if (!hit) return null;
   const slot = world.shown.find((s) => s.mesh === hit.object);
@@ -414,6 +435,160 @@ function showLookedAt() {
         ? `${body.material} is brittle: it does not bend first, it goes.`
         : `${body.material} bends before it breaks.`)
     : "";
+}
+
+// --------------------------------------------------------------------------
+// The person, and what they have hold of
+//
+// Everything below goes through routes that already exist and are already
+// tested: /api/world/inventory for the hands and the bag, /api/world/action
+// for a thing's one use, /api/world/placement for where it would go. The page
+// decides nothing about what is allowed -- it asks, and says what it was told.
+// --------------------------------------------------------------------------
+
+const me = { holding: null, revision: 0, busy: false, said: "" };
+
+/** Where the person is, in the words every world route asks for. */
+function whereIAm() {
+  const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const found = lookedAt();
+  const said = {
+    standing_m: [person.x, groundAt(person.x, person.z), person.z],
+    facing: [-Math.sin(person.yaw), 0, -Math.cos(person.yaw)],
+    eyes_m: [camera.position.x, camera.position.y, camera.position.z],
+    look_direction: [ahead.x, ahead.y, ahead.z],
+  };
+  if (me.holding) said.holding = me.holding;
+  if (found) said.looking_at = found.name;
+  return said;
+}
+
+const newRequest = () => `explore-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+function tookNote(said) {
+  if (!said) return;
+  if (typeof said.revision === "number") me.revision = said.revision;
+  const shown = said.shown || said;
+  const hands = shown.hands || {};
+  const right = hands.right || hands.left || null;
+  me.holding = right ? (right.name || right.item || right.id || null) : null;
+  showHands(shown);
+}
+
+/** E: the one contextual thing. Empty-handed and pointing at something loose,
+ *  take it up; holding something, put it down where the ghost says. */
+async function takeOrPutDown() {
+  if (me.busy || !world.session) return;
+  me.busy = true;
+  try {
+    if (me.holding) {
+      // Put it down through its own Use, so a thing with a `place` program
+      // lands where the ghost is rather than being dropped on the spot.
+      await usePrimary();
+    } else {
+      const found = lookedAt();
+      if (!found) { say("Nothing in front of you to pick up."); return; }
+      if (found.known.data.anchored) { say(`${found.name} is fixed down.`); return; }
+      // Every /api/world/* call carries the session: the playground runs one
+      // room at a time, and a page whose room was reopened elsewhere must not
+      // go on moving things about in somebody else's (server._this_pages_room).
+      const said = await api("/api/world/inventory", {
+        session: world.session, request: newRequest(), revision: me.revision,
+        op: "take_up", item: found.name, person: whereIAm(),
+      });
+      tookNote(said);
+      say(me.holding ? `You have the ${me.holding}.` : (said.why || "It would not come up."));
+    }
+  } catch (trouble) {
+    say(String(trouble.message).slice(0, 120));
+  } finally {
+    me.busy = false;
+  }
+}
+
+/** J or the left button: the one thing this object is for. */
+async function usePrimary() {
+  if (!world.session) return;
+  const target = me.holding || lookedAt()?.name;
+  if (!target) { say("Point at something, or pick something up."); return; }
+  const said = await api("/api/world/action", {
+    session: world.session, object: target, primary: true, person: whereIAm(),
+  });
+  // A refusal first and in its own words: it is the most useful thing the
+  // engine ever says, and burying it under a label reads as success.
+  if (said.refused) say(`${said.action || "That"}: ${said.refused}`);
+  else say(said.said || said.did || said.why || said.action || "Done.");
+  if (said.inventory || said.shown) tookNote(said.inventory || said);
+  else if (me.holding) await refreshHands();
+}
+
+async function refreshHands() {
+  try { tookNote(await api("/api/world/inventory/shown", { session: world.session })); }
+  catch { /* the hands are only a readout */ }
+}
+
+function say(words) {
+  me.said = words;
+  $("did").textContent = words;
+  $("did").hidden = !words;
+}
+
+function showHands(shown) {
+  const hands = (shown && shown.hands) || {};
+  const held = hands.right || hands.left || null;
+  $("hands-held").textContent = held ? (held.name || held.item || "something") : "nothing";
+  $("hands-held").className = held ? "strong" : "";
+  const bag = (shown && shown.stowed) || [];
+  $("hands-bag").textContent = bag.length
+    ? bag.map((b) => b.name || b.item || "?").join(", ") : "empty";
+}
+
+// --------------------------------------------------------------------------
+// The ghost: where it would go if you let go now
+// --------------------------------------------------------------------------
+
+let ghost = null;
+let ghostAsked = 0;
+
+function showGhost(answer, body) {
+  if (!answer || !answer.on) { hideGhost(); return; }
+  const [dx, dy, dz] = body.dimensions_m || [0.3, 0.3, 0.3];
+  if (!ghost) {
+    ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.34, depthWrite: false }));
+    view.add(ghost);
+  }
+  ghost.visible = true;
+  ghost.scale.set(dx, dy, dz);
+  ghost.position.set(answer.on[0], answer.on[1] + dy / 2, answer.on[2]);
+  ghost.rotation.set(0, (answer.yaw_deg || 0) * Math.PI / 180, 0);
+  // Green it fits, amber it is held up by too few corners, red it does not.
+  const corners = answer.supported_corners;
+  ghost.material.color.set(!answer.fits ? 0xff9f91
+    : (typeof corners === "number" && corners < 4 ? 0xffd195 : 0xa2e1c8));
+  $("ghost-said").textContent = answer.why || answer.label || "";
+  $("ghost-said").hidden = false;
+}
+
+function hideGhost() {
+  if (ghost) ghost.visible = false;
+  $("ghost-said").hidden = true;
+}
+
+/** Asked a few times a second while something is held, never faster: it is a
+ *  round trip to the engine, which does a real ray and a real clearance test. */
+async function askWhereItWouldGo() {
+  if (!me.holding || !world.session) { hideGhost(); return; }
+  const now = performance.now();
+  if (now - ghostAsked < 180) return;
+  ghostAsked = now;
+  const slot = world.shown.find((s) => s.data.name === me.holding);
+  try {
+    const answer = await api("/api/world/placement", {
+      session: world.session, name: me.holding, person: whereIAm(),
+    });
+    showGhost(answer, slot ? slot.data : {});
+  } catch { hideGhost(); }
 }
 
 // --------------------------------------------------------------------------
@@ -526,6 +701,7 @@ async function open() {
   step("putting everything in it…");
   draw(opened);
   showStuff();
+  if (opened.inventory) tookNote(opened.inventory);
 
   // Come in on the ground, looking at the middle of the valley.
   standWhereTheThingsAre();
@@ -568,6 +744,7 @@ async function tick() {
     }
   }
   showLookedAt();
+  askWhereItWouldGo();
   renderer.render(view, camera);
   requestAnimationFrame(tick);
 }
@@ -585,5 +762,5 @@ window.banjoExplorer = {
   world, person,
   status: () => ({ session: world.session, t: world.t, pace: world.pace,
                    bodies: world.shown.length, ground: !!world.ground,
-                   looking: looked }),
+                   looking: looked, holding: me.holding }),
 };

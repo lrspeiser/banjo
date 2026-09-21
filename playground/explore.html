@@ -12,6 +12,7 @@
 
 <div id="sight" aria-hidden="true"></div>
 <p id="looking" hidden></p>
+<p id="ghost-said" hidden></p>
 
 <div id="opening"><strong>Building the world</strong><span id="opening-step">asking the engine for the ground…</span></div>
 <p id="hint">Arrow keys or drag to look · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk</p>
@@ -28,6 +29,15 @@
     <h2 id="seen-name">—</h2>
     <dl id="seen-facts"></dl>
     <p id="seen-hint" class="hint"></p>
+  </section>
+
+  <section id="hands">
+    <p class="label">In your hands</p>
+    <dl>
+      <dt>holding</dt><dd id="hands-held">nothing</dd>
+      <dt>bag</dt><dd id="hands-bag">empty</dd>
+    </dl>
+    <p id="did" hidden></p>
   </section>
 
   <section id="stuff">
@@ -54,6 +64,8 @@
       <dt><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></dt><dd>turn and look up or down</dd>
       <dt><kbd>Drag</kbd></dt><dd>look around with the mouse</dd>
       <dt><kbd>Double-click</kbd></dt><dd>keep the mouse for looking (<kbd>Esc</kbd> gives it back)</dd>
+      <dt><kbd>E</kbd></dt><dd>pick up what you look at · put it down again</dd>
+      <dt><kbd>J</kbd> or <kbd>Click</kbd></dt><dd>what the thing is for</dd>
       <dt><kbd>R</kbd></dt><dd>back to where you came in</dd>
     </dl>
   </section>
