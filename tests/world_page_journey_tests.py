@@ -305,9 +305,17 @@ class PageJourney(unittest.TestCase):
     def put_it_down(self, name):
         """E shows where it will go (the owner: "E shows, E places"): a
         see-through copy on the ground ahead, which the engine says fits. E
-        again carries it there and lets go. Where it comes to rest."""
-        self.assertTrue(self.offering("Place it…"), f"E is not offering to place it: {self.situation()}")
-        self.press_e()
+        again carries it there and lets go. Where it comes to rest.
+
+        Since 365f43a the copy shows by itself as soon as a thing is held
+        ("Preview is visible before the key is pressed; E commits that
+        destination"), so E may be offering to put it there already -- after
+        a reload it always is. Only when it is not does E first show it."""
+        either = ("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && "
+                  "(r[1] === 'Place it…' || r[1] === 'Put it here'))")
+        self.assertTrue(self.wait_for(either, 30), f"E is not offering to place it: {self.situation()}")
+        if self.js("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && r[1] === 'Place it…')"):
+            self.press_e()
         self.assertTrue(self.wait_for("banjoRoom.world.placing && banjoRoom.world.placing.answer && "
                                       "banjoRoom.world.placing.answer.fits", 30),
                         f"the copy never said it fits: {self.situation()}")

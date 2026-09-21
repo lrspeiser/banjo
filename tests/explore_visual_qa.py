@@ -297,34 +297,40 @@ def journey(page: Page, name: str) -> Journey:
     since = page.now()
     aim = film(page, names, 1.4, since, "look down: the preview")
     j.frames += aim
-    shown = first(aim, lambda f: f["snap"]["ghost"] is not None)
-    if not j.check(f"the preview appears within {PREVIEW_WITHIN_S} s",
-                   shown is not None and shown["t"] <= PREVIEW_WITHIN_S,
-                   f"{shown['t']:.2f} s" if shown else "never", shown or aim[-1]):
+    # Where you look is answered: a preview, or -- where nothing can go, on top
+    # of a loose block say -- why not. A page that says nothing there looks
+    # like a page that has stopped (the mace, filmed last, got neither).
+    answered = first(aim, lambda f: f["snap"]["ghost"] is not None or f["snap"]["said"]["ghost"])
+    j.check(f"where you look is answered within {PREVIEW_WITHIN_S} s (a preview, or why not)",
+            answered is not None and answered["t"] <= PREVIEW_WITHIN_S,
+            (f"{answered['t']:.2f} s: " + (answered["snap"]["said"]["ghost"] or "a preview"))
+            if answered else "nothing, for 1.4 s", answered or aim[-1])
+    first_said = aim[-1]["snap"]["said"]["ghost"]
+    # Amber, red or only a reason: a person looks for a better spot before
+    # pressing E, and so does this.
+    g = aim[-1]["snap"]["ghost"]
+    if not g or (g.get("colour") or "").lower() != GREEN:
+        yaw0 = page.js("banjoExplorer.person.yaw")
+        for ahead, turn in OTHER_SPOTS:
+            page.js(f"banjoExplorer.person.yaw = {yaw0}; banjoExplorer.aimAtGround({ahead}, {turn})")
+            more = film(page, names, 0.7, page.now(), "look for a better spot")
+            j.frames += more
+            aim = aim + more
+            now = more[-1]["snap"]["ghost"]
+            if now and (now.get("colour") or "").lower() == GREEN:
+                break
+        g = aim[-1]["snap"]["ghost"] or g
+    s = aim[-1]["snap"]["sight"]
+    if not j.check("a preview shows where it would go", g is not None,
+                   "shown" if g else f"nowhere looked at; the screen said {first_said!r}", aim[-1]):
         ghost_then = None
     else:
-        g, s = aim[-1]["snap"]["ghost"] or shown["snap"]["ghost"], aim[-1]["snap"]["sight"]
         # From where it will stand, not from the middle of the preview: a tall
         # thing's middle is far above the spot the sight is on.
         spot = g.get("base") or g["screen"]
         off = ((spot["x"] - s["x"]) ** 2 + (spot["y"] - s["y"]) ** 2) ** 0.5
         j.check(f"the preview is where you are looking (within {PREVIEW_NEAR_SIGHT_PX} px)",
                 off <= PREVIEW_NEAR_SIGHT_PX, f"{off:.0f} px from the sight", aim[-1])
-        # Amber or red says it may fall or will not go: a person looks for a
-        # better spot before pressing E, and so does this.
-        first_said = aim[-1]["snap"]["said"]["ghost"]
-        if (g.get("colour") or "").lower() != GREEN:
-            yaw0 = page.js("banjoExplorer.person.yaw")
-            for ahead, turn in OTHER_SPOTS:
-                page.js(f"banjoExplorer.person.yaw = {yaw0}; banjoExplorer.aimAtGround({ahead}, {turn})")
-                more = film(page, names, 0.7, page.now(), "look for a better spot")
-                j.frames += more
-                aim = aim + more
-                now = more[-1]["snap"]["ghost"]
-                if now and (now.get("colour") or "").lower() == GREEN:
-                    break
-            g = aim[-1]["snap"]["ghost"] or g
-            s = aim[-1]["snap"]["sight"]
         j.promise = "green" if (g.get("colour") or "").lower() == GREEN else "warned"
         j.warning = "" if j.promise == "green" else (aim[-1]["snap"]["said"]["ghost"] or first_said or "")
         ghost_then = g

@@ -948,12 +948,28 @@ async function askWhereItWouldGo() {
   if (now - ghostAsked < 180) return;
   ghostAsked = now;
   const slot = world.shown.find((s) => s.data.name === me.holding);
+  const person = whereIAm();
   try {
     const answer = await api("/api/world/placement", {
-      session: world.session, name: me.holding, person: whereIAm(),
+      session: world.session, name: me.holding, person,
     });
+    // What the engine made of the spot, for the visual QA: a preview that
+    // never appears says nothing on screen about why.
+    world.lastPlacement = { fits: !!answer.fits, why: answer.why || null, on: answer.on || null,
+                            aim: person.aim_m || null };
     showGhost(answer, slot ? slot.data : {});
-  } catch { hideGhost(); }
+    // Nowhere here -- on top of a loose block, say: no box to draw, but the
+    // reason is still said, by the sight. Said nothing, the screen looked the
+    // same as a page that had stopped answering, and E there went on to set
+    // the thing somewhere else without the person ever seeing why.
+    if (!answer.on && answer.why) {
+      $("ghost-said").textContent = `Nowhere to put it here: ${answer.why}`;
+      $("ghost-said").hidden = false;
+    }
+  } catch (trouble) {
+    world.lastPlacement = { error: String(trouble.message).slice(0, 200), aim: person.aim_m || null };
+    hideGhost();
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -1532,6 +1548,7 @@ function snapshot(names = []) {
     waiting: [...inFlight.values()].map((c) => ({ path: c.path, op: c.op || null,
                                                   for_s: (performance.now() - c.since) / 1000 })),
     lastStep: world.lastStep || null, failures: world.failures || 0,
+    lastPlacement: world.lastPlacement || null,
   };
 }
 
