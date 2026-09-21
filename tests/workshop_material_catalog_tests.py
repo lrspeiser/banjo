@@ -85,7 +85,9 @@ class MaterialParity(unittest.TestCase):
             workshop.DENSITY_KG_M3["oak"] = before_oak
             workshop.DENSITY_KG_M3["rubber"] = before_rubber
 
-    def test_a_design_weighs_the_same_whichever_module_was_loaded_first(self):
+    def test_a_design_has_one_mass_whichever_module_was_loaded_first(self):
+        # (Not "weighs_the_same": CI's log masks anything after "ghs_", GitHub's
+        # token prefix, so a failure would have printed as "test_a_design_wei***".)
         # mcp.workshop kept its own oak (750) and rubber (1200) until a module
         # that synchronises it was imported, so one oak table weighed 102.0 kg
         # in a suite run on its own, as CI runs them, and 95.2 kg in the running
