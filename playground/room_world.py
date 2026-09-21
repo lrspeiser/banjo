@@ -14,7 +14,9 @@ built by the MCP's own handlers. The chat is handed the MCP's own tool
 definitions (see chat_tools) and every call it makes runs the MCP's own code.
 A tool added to the MCP arrives here without anyone touching this file -- and a
 tool that should NOT reach the room has to be named in NOT_FOR_THE_ROOM with a
-reason, or tests/chat_tool_parity_tests.py fails.
+reason, or tests/chat_tool_parity_tests.py fails. The one kind kept out without
+being named is a tool that goes over HTTP to the playground itself
+(through_the_playground): that is the playground's own room, never this copy.
 
 What this file adds is only the translation between the MCP world (metres, the
 engine's scene document) and the playground's room (millimetres, the spec the
@@ -25,6 +27,7 @@ the model is told and can fix it rather than the person being told at reopen.
 from __future__ import annotations
 from copy import deepcopy
 
+import inspect
 import math
 import os
 import sys
@@ -48,6 +51,7 @@ if not os.environ.get("BANJO_LIBRARY"):
 sys.path.insert(0, str(ROOT / "mcp"))
 
 import banjo_mcp     # noqa: E402  the MCP server, used as a library
+import expedition_mcp_tools  # noqa: E402  the MCP's HTTP way into the playground
 import fracture_lab  # noqa: E402
 import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's rules
 
@@ -57,7 +61,8 @@ NOT_FOR_THE_ROOM = {
     "world_open_saved": "opens the browser's authoritative saved world; the chat already operates on an authoring copy of that world",
     **{name: "uses the persistent funded room through its HTTP transaction, not the chat authoring copy"
        for name in ("fabrication_open","fabrication_state","fabrication_configure","fabrication_quote",
-                    "fabrication_start","fabrication_pause","fabrication_resume","fabrication_preview",
+                    "fabrication_start","fabrication_pause","fabrication_resume","fabrication_recover",
+                    "fabrication_retrieve_ground","fabrication_store_ground","fabrication_preview",
                     "fabrication_commit","fabrication_wait","fabrication_qa_run",
                     "fabrication_qa_status","fabrication_qa_cancel")},
     "expedition_wait": "advances the live game, not the chat authoring copy",
@@ -77,6 +82,16 @@ NOT_FOR_THE_ROOM = {
                "walking over it, in their own world",
     "carried": "the inventory belongs to the person, not to the room being built",
 }
+
+# And, named above or not, nothing whose handler goes over HTTP to the
+# playground (see through_the_playground): it works one of the playground's own
+# rooms -- the live expedition, the funded fabrication room, a saved world --
+# never the copy the chat builds in. A list keeps out only what someone thought
+# to write in it. fabrication_recover, fabrication_retrieve_ground and
+# fabrication_store_ground came after this one and were offered to the chat
+# unnoticed; a call was refused only because their schemas turn away the
+# world_id the room adds.
+THROUGH_THE_PLAYGROUND = "goes over HTTP to the playground's own room, not the chat authoring copy"
 
 # The calls that change what the room IS, as opposed to trying things out in it.
 # A room is reopened for the person only if one of these ran; running the world,
@@ -635,16 +650,37 @@ def entry_of(world_id: str) -> dict[str, Any]:
 # The chat's view of the MCP
 # ---------------------------------------------------------------------------
 
+def through_the_playground(name: str) -> bool:
+    """Whether the MCP's handler for this tool goes over HTTP to the playground.
+
+    Every such tool posts through expedition_mcp_tools._post, from the module
+    its handler is written in, so that is what is looked for: a tool added to
+    those modules later, or a new module written the same way, is kept from the
+    chat without anyone naming it. tests/chat_tool_parity_tests.py fails if the
+    chat is given a tool written where the playground is reached any other way.
+    """
+    handler = banjo_mcp.HANDLERS.get(name)
+    written_in = getattr(inspect.unwrap(handler), "__globals__", {}) if handler else {}
+    return written_in.get("_post") is expedition_mcp_tools._post
+
+
+def not_for_the_room(name: str) -> str | None:
+    """Why the chat is not given this tool, or None if it is."""
+    if name in NOT_FOR_THE_ROOM:
+        return NOT_FOR_THE_ROOM[name]
+    return THROUGH_THE_PLAYGROUND if through_the_playground(name) else None
+
+
 def chat_tools() -> list[dict[str, Any]]:
     """The MCP's tools, as the model's function definitions.
 
     The same names, the same descriptions and the same argument schemas the
     MCP server publishes, less the world_id -- the room is the only world the
-    chat has -- and less NOT_FOR_THE_ROOM.
+    chat has -- and less what is not for the room (not_for_the_room).
     """
     tools = []
     for tool in banjo_mcp.TOOLS:
-        if tool["name"] in NOT_FOR_THE_ROOM:
+        if not_for_the_room(tool["name"]):
             continue
         schema = dict(tool.get("inputSchema") or {"type": "object", "properties": {}})
         properties = {k: v for k, v in (schema.get("properties") or {}).items()
@@ -664,8 +700,9 @@ def call(world_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
     A refusal comes back as {"error": ...} for the model to read and fix, which
     is what the MCP server itself does with it on the wire.
     """
-    if name in NOT_FOR_THE_ROOM:
-        return {"error": f"{name} is not available in the room: {NOT_FOR_THE_ROOM[name]}"}
+    why = not_for_the_room(name)
+    if why:
+        return {"error": f"{name} is not available in the room: {why}"}
     handler = banjo_mcp.HANDLERS.get(name)
     if handler is None:
         return {"error": f"there is no tool called {name}"}

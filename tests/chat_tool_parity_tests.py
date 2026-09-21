@@ -9,17 +9,23 @@ Now the chat is handed the MCP's own tool definitions and every call runs the
 MCP's own handler (playground/room_world.py). These tests fail the moment that
 stops being true: when the MCP gains a tool the chat does not get and nobody
 has said why, when a description or an argument drifts between the two, or
-when a second tool list turns up in the playground again.
+when a second tool list turns up in the playground again. And they fail when
+the chat is given a tool that goes over HTTP to the playground's own room,
+which is never the copy the chat builds in.
 
 No model and no network: this is about what the model would be SENT.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import math
+import os
 import sys
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "playground"))
@@ -28,6 +34,16 @@ import room_world   # noqa: E402  (puts mcp/ on the path)
 import banjo_mcp    # noqa: E402
 import world_chat   # noqa: E402
 import world_room   # noqa: E402
+import expedition_mcp_tools     # noqa: E402
+import fabrication_mcp_tools    # noqa: E402
+import world_upgrade_mcp_tools  # noqa: E402
+
+# The MCP's modules whose tools go over HTTP to the playground: the live
+# expedition, the persistent funded fabrication room and a saved browser world.
+PLAYGROUND_MODULES = (expedition_mcp_tools, fabrication_mcp_tools, world_upgrade_mcp_tools)
+
+# What a module's source has in it when it can reach the playground over HTTP.
+HTTP_MARKS = ("urlopen", "http.client", "BANJO_PLAYGROUND_URL", "_post(")
 
 
 class TheChatUsesTheMCP(unittest.TestCase):
@@ -35,10 +51,10 @@ class TheChatUsesTheMCP(unittest.TestCase):
         offered = {t["name"] for t in room_world.chat_tools()}
         for tool in banjo_mcp.TOOLS:
             name = tool["name"]
-            if name in room_world.NOT_FOR_THE_ROOM:
+            why = room_world.not_for_the_room(name)
+            if why is not None:
                 self.assertNotIn(name, offered)
-                self.assertTrue(room_world.NOT_FOR_THE_ROOM[name].strip(),
-                                f"{name} is kept from the chat with no reason given")
+                self.assertTrue(why.strip(), f"{name} is kept from the chat with no reason given")
             else:
                 self.assertIn(name, offered,
                               f"the MCP has {name!r} and the chat does not. Give it to "
@@ -88,6 +104,99 @@ class TheChatUsesTheMCP(unittest.TestCase):
             self.assertFalse(hasattr(world_room.Room, gone),
                              f"Room.{gone} is back: a second implementation of a tool "
                              f"the MCP already has")
+
+
+class TheChatStaysOutOfThePlayground(unittest.TestCase):
+    """The chat builds in a copy of the room. A tool that goes over HTTP to the
+    playground works one of the playground's own rooms instead. That is how
+    fabrication_recover, fabrication_retrieve_ground and fabrication_store_ground
+    reached the chat: they were added to the MCP after NOT_FOR_THE_ROOM was
+    written, and the first test above could not notice, because a tool the chat
+    is given passes it."""
+
+    def setUp(self):
+        # Should anything get past these tests it would find a closed port, not
+        # a room someone has open on 8765 -- and it fails the test before that.
+        address = mock.patch.dict(os.environ, {"BANJO_PLAYGROUND_URL": "http://127.0.0.1:9"})
+        address.start()
+        self.addCleanup(address.stop)
+        network = mock.patch("urllib.request.urlopen",
+                             side_effect=AssertionError("the room's chat made an HTTP request"))
+        self.urlopen = network.start()
+        self.addCleanup(network.stop)
+
+    def test_no_tool_that_goes_over_http_to_the_playground_reaches_the_chat(self):
+        offered = {t["name"] for t in room_world.chat_tools()}
+        for module in PLAYGROUND_MODULES:
+            for tool in module.TOOLS:
+                with self.subTest(tool=tool["name"]):
+                    self.assertNotIn(tool["name"], offered,
+                                     f"{tool['name']} ({module.__name__}.py) goes over HTTP "
+                                     f"to the playground's own room, not the chat's copy")
+
+    def test_the_rooms_rule_knows_every_one_of_them_named_or_not(self):
+        # Each is also named in NOT_FOR_THE_ROOM, with its own reason; the rule
+        # is what still keeps it out if that line is lost.
+        for module in PLAYGROUND_MODULES:
+            for tool in module.TOOLS:
+                with self.subTest(tool=tool["name"]):
+                    self.assertTrue(room_world.through_the_playground(tool["name"]))
+
+    def test_the_room_refuses_each_one_before_any_request_is_made(self):
+        # A model can call a tool by a name it was not given this turn.
+        for module in PLAYGROUND_MODULES:
+            for tool in module.TOOLS:
+                with self.subTest(tool=tool["name"]):
+                    answer = room_world.call("a-room", tool["name"], {})
+                    self.assertIn("is not available in the room", answer.get("error", ""))
+        self.urlopen.assert_not_called()
+
+    def test_a_later_tool_that_goes_to_the_playground_is_kept_out_unnamed(self):
+        """Written the way the fabrication tools are, and named nowhere."""
+        module = types.ModuleType("a_later_playground_tool")
+        exec("from expedition_mcp_tools import _post\n\n"
+             "def handler(args):\n"
+             "    return _post('/api/world/open', {'scene': 'fabrication'})\n",
+             module.__dict__)
+        tool = {"name": "a_later_playground_tool", "description": "Opens the fabrication room.",
+                "inputSchema": {"type": "object", "properties": {}}}
+        banjo_mcp.TOOLS.append(tool)
+        self.addCleanup(banjo_mcp.TOOLS.remove, tool)
+        banjo_mcp.HANDLERS[tool["name"]] = module.handler
+        self.addCleanup(banjo_mcp.HANDLERS.pop, tool["name"])
+
+        self.assertNotIn(tool["name"], room_world.NOT_FOR_THE_ROOM)
+        self.assertNotIn(tool["name"], {t["name"] for t in room_world.chat_tools()})
+        self.assertEqual(room_world.not_for_the_room(tool["name"]),
+                         room_world.THROUGH_THE_PLAYGROUND)
+        answer = room_world.call("a-room", tool["name"], {})
+        self.assertIn("is not available in the room", answer["error"])
+        self.urlopen.assert_not_called()
+
+    def test_no_tool_the_chat_is_given_is_written_where_the_playground_is_reached(self):
+        """The room's rule looks for expedition_mcp_tools._post. A module that
+        reached the playground some other way would pass the rule, so this reads
+        what the source of each handler the chat is given has in it."""
+        for module in PLAYGROUND_MODULES:
+            source = Path(module.__file__).read_text(encoding="utf-8")
+            self.assertTrue(any(mark in source for mark in HTTP_MARKS),
+                            f"{module.__name__}.py goes to the playground and none of "
+                            f"{HTTP_MARKS} says so: this test would see nothing")
+        written_in: dict[str, list[str]] = {}
+        for tool in room_world.chat_tools():
+            handler = inspect.unwrap(banjo_mcp.HANDLERS[tool["name"]])
+            written_in.setdefault(inspect.getsourcefile(handler), []).append(tool["name"])
+        self.assertTrue(written_in)
+        for path, names in written_in.items():
+            source = Path(path).read_text(encoding="utf-8")
+            marks = [mark for mark in HTTP_MARKS if mark in source]
+            self.assertFalse(marks,
+                             f"the chat is given {', '.join(sorted(names))}, whose handlers are "
+                             f"written in {Path(path).name}, which makes HTTP requests "
+                             f"({', '.join(map(repr, marks))}). The chat works a copy of the "
+                             f"room: name them in room_world.NOT_FOR_THE_ROOM with the reason, "
+                             f"or, if they go to the playground, post through "
+                             f"expedition_mcp_tools._post, which the room keeps out by itself.")
 
 
 class TheRoomIsToldWhereThePersonIs(unittest.TestCase):

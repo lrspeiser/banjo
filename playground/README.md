@@ -165,7 +165,10 @@ river**, where the ground can be dug and the water dammed (below). Its chat box 
 server's own tools: the same names, schemas and handlers as `mcp/banjo_mcp.py`,
 run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
-tool reaches the MCP and not the chat without a written reason.
+tool reaches the MCP and not the chat without a written reason. The exception
+is a tool that goes over HTTP to the playground itself (the expedition,
+fabrication and saved-world tools): it works the playground's own room, not
+the copy the chat builds in, so the chat never gets it, named or not.
 
 **The side view** has three parts (the owner, 2026-09-14: "a simple chat
 sideview, and then all the other text needs to be in tabs"). On top is the

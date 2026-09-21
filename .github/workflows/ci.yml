@@ -106,6 +106,7 @@ jobs:
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/playground_tests.py -v
+          python3 tests/chat_tool_parity_tests.py -v
           python3 tests/playground_control_tests.py -v
           python3 tests/playground_browser_api_tests.py -v
           python3 tests/drop_builder_tests.py -v
