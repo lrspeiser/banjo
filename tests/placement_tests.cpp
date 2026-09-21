@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -194,8 +195,8 @@ void supportRemainsVisibleWhenTheItemHasArrived() {
 // concrete plinth with a flat top. Across its narrow side the bookcase goes
 // over on a slope of 0.15 / 0.9 (9.5 degrees), along its wide side on
 // 0.45 / 0.9 (26.6 degrees).
-constexpr double kRampXs[] = {-4.5, -1.5, 1.5, 4.5};
-constexpr double kRampDegrees[] = {3.0, 6.0, 7.0, 12.0};
+constexpr double kRampXs[] = {-4.5, -1.5, 1.5, 4.5, 7.5};
+constexpr double kRampDegrees[] = {3.0, 6.0, 7.0, 8.0, 12.0};
 
 TileImpactRequest slopesRoom() {
     TileImpactRequest r;
@@ -221,7 +222,7 @@ TileImpactRequest slopesRoom() {
     plinth.center_m = {-3.0, 0.2, -3.0};
     plinth.anchored = true;
     r.bodies = {bookcase, crate, plinth};
-    for (int k = 0; k < 4; ++k) {
+    for (std::size_t k = 0; k < std::size(kRampDegrees); ++k) {
         SceneBody ramp;
         ramp.name = "ramp " + std::to_string(static_cast<int>(kRampDegrees[k]));
         ramp.shape = BodyShape::Box;
@@ -238,7 +239,7 @@ TileImpactRequest slopesRoom() {
 // `name` set down on the middle of the ramp tilted `degrees`, turned `yaw`
 // about the vertical.
 LivePlacement onRamp(const LiveWorld &world, const std::string &name, double degrees, double yaw = 0.0) {
-    for (int k = 0; k < 4; ++k) {
+    for (std::size_t k = 0; k < std::size(kRampDegrees); ++k) {
         if (kRampDegrees[k] != degrees) continue;
         const LivePick top = world.pick(Vec3{kRampXs[k], 3.0, 0.0}, Vec3{0.0, -1.0, 0.0});
         require(top.hit && top.name.rfind("ramp", 0) == 0, "the ray from above did not find the ramp's top");
@@ -302,6 +303,22 @@ void itsOwnNarrowSideCountsWhicheverWayItIsTurned() {
             "turned a quarter on 6 it used " + std::to_string(quarter.tipping_used) + " of what tips it, not 0.21");
 }
 
+void turnedOnASlopeItStillRestsOnIt() {
+    const auto world = LiveWorld::open(slopesRoom());
+    // Turned 45 degrees, its footprint reaches 0.42 m up the 8 degree ramp from
+    // its middle, and it is lifted 0.42 tan 8 = 60 mm to clear the ramp there:
+    // its middle stands further over the ramp than the 55 mm a thing set down
+    // unlifted is looked under for. It is still on the ramp, and the slope runs
+    // across its narrow side at cos 45 of itself: 0.60 of what tips it.
+    const LivePlacement p = onRamp(*world, "bookcase", 8.0, 0.25 * kPi);
+    require(p.rests_on == "ramp 8",
+            "turned 45 degrees on 8, the bookcase rests on \"" + p.rests_on + "\": " + p.why);
+    require(p.fits && p.may_fall_over && p.why == "it fits, but it is tall for that slope: it may fall over",
+            "turned 45 degrees on 8, the bookcase was not said to be tall for it: " + p.why);
+    require(near(p.tipping_used, 0.9 * std::tan(8.0 * kPi / 180.0) * std::cos(0.25 * kPi) / 0.15, 0.01),
+            "turned 45 degrees on 8 it used " + std::to_string(p.tipping_used) + " of what tips it, not 0.60");
+}
+
 void aThingNoTallerThanItIsWideIsNotSaidToFallOver() {
     const auto world = LiveWorld::open(slopesRoom());
     // The crate slides long before it tips; the slope's own rules speak for it.
@@ -320,6 +337,23 @@ void overAnEdgeIsNotASlope() {
     std::cout << "  the bookcase at the plinth's edge: " << p.why << "\n";
     require(p.fits && p.why.find("tip off") != std::string::npos && p.tipping_used == 0.0,
             "at the plinth's edge it was not said to tip off, or the drop was read as a slope: " + p.why);
+}
+
+void liftedOntoAnEdgeOverAGapThereIsStillNothingUnderIt() {
+    const auto world = LiveWorld::open(slopesRoom());
+    // A point in the air 0.15 m out from the plinth's side, 0.3 m over the
+    // floor: set down there, the bookcase goes into the plinth's top and is
+    // lifted 0.1 m clear of it, its middle out over the floor. However far it
+    // is lifted, its middle is looked under only as far below the point as if
+    // nothing had lifted it -- not down to the floor.
+    const LivePlacement p = world->placement("bookcase", Vec3{-2.45, 0.3, -3.0}, 0.0, "plinth");
+    const double lifted = p.at_m.y - (0.3 + 0.9 + 0.002);
+    std::cout << "  the bookcase beside the plinth, over the floor: " << p.why << "; lifted " << lifted
+              << " m\n";
+    require(lifted > 0.06, "beside the plinth the bookcase was not lifted onto it");
+    require(!p.fits && p.rests_on.empty() && p.why == "there is nothing under it to rest on",
+            "lifted onto the plinth's edge with its middle over the floor, the bookcase was said to rest: " +
+                p.why);
 }
 
 void theSlabIsFixedAndWhatIsNotThereIsSaid() {
@@ -366,6 +400,10 @@ int main() {
         std::cout << "[PASS] a thing no taller than it is wide is not said to fall over\n";
         overAnEdgeIsNotASlope();
         std::cout << "[PASS] a drop over an edge is not read as a slope\n";
+        liftedOntoAnEdgeOverAGapThereIsStillNothingUnderIt();
+        std::cout << "[PASS] lifted onto an edge over a gap, there is still nothing under it\n";
+        turnedOnASlopeItStillRestsOnIt();
+        std::cout << "[PASS] turned on a slope and lifted further, it still rests on it\n";
         std::cout << "\nall placement tests passed\n";
         return 0;
     } catch (const std::exception &error) {

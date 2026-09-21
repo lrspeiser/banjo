@@ -8276,7 +8276,13 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // What is under its middle, and under each corner of its footprint -- a
     // little in from the corners, so a rounded or tapered underside counts.
     // Its own body is where the hand has it, not here, and is not an answer.
-    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down, 0.06, id);
+    // Its middle is looked under down to the same depth below the point
+    // whatever lifted it. Lifted clear of a slope, it stands that much further
+    // over the point and is on it all the same: a 0.9 m bookcase turned 45
+    // degrees on 8 is lifted 60 mm, past the 55 mm looked under unlifted. And
+    // a point out in the air is still over nothing, however far it was lifted.
+    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down,
+                                               0.06 + (out.at_m.y - start_y), id);
     if (under.hit && !(under.named && under.body_id == id)) out.rests_on = called(under.named, under.body_id);
     double highest = -1e30, lowest = 1e30;
     for (const double cx : {0.8 * low.x, 0.8 * high.x})
