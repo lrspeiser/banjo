@@ -1,0 +1,1881 @@
+{
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "center_mm": [
+    -8100.0,
+    1028.3376569747925,
+    -2650.0
+   ],
+   "material": "oak",
+   "name": "oak block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -7350.0,
+    1018.8907380104064,
+    -2650.0
+   ],
+   "material": "iron",
+   "name": "iron block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -6600.0,
+    1010.3049869537352,
+    -2650.0
+   ],
+   "material": "glass",
+   "name": "glass block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -5850.0,
+    1007.7319140434264,
+    -2650.0
+   ],
+   "material": "concrete",
+   "name": "concrete block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -8100.0,
+    1028.229236125946,
+    -1849.9999999999998
+   ],
+   "material": "ceramic",
+   "name": "ceramic block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -7350.0,
+    1017.5756807327269,
+    -1849.9999999999998
+   ],
+   "material": "ice",
+   "name": "ice block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -6600.0,
+    1008.3621735572814,
+    -1849.9999999999998
+   ],
+   "material": "aluminum",
+   "name": "aluminium block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "center_mm": [
+    -5850.0,
+    1003.4532542228698,
+    -1849.9999999999998
+   ],
+   "material": "rubber",
+   "name": "rubber block",
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    320.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -200.0,
+    1540.0,
+    -200.0
+   ],
+   "join": "table",
+   "material": "oak",
+   "name": "table",
+   "part": "table/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    1200.0,
+    40.0,
+    720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -740.0,
+    1160.0,
+    -500.0
+   ],
+   "join": "table",
+   "material": "oak",
+   "name": "table-1",
+   "part": "table/leg-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    340.0,
+    1160.0,
+    -500.0
+   ],
+   "join": "table",
+   "material": "oak",
+   "name": "table-2",
+   "part": "table/leg-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    340.0,
+    1160.0,
+    100.0
+   ],
+   "join": "table",
+   "material": "oak",
+   "name": "table-3",
+   "part": "table/leg-3",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -740.0,
+    1160.0,
+    100.0
+   ],
+   "join": "table",
+   "material": "oak",
+   "name": "table-4",
+   "part": "table/leg-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    4920.0,
+    620.0,
+    3320.0000000000005
+   ],
+   "join": "bench",
+   "material": "oak",
+   "name": "bench",
+   "part": "bench/top",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    1600.0,
+    40.0,
+    400.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    4180.0,
+    400.0,
+    3180.0
+   ],
+   "join": "bench",
+   "material": "oak",
+   "name": "bench-1",
+   "part": "bench/leg-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    5660.0,
+    400.0,
+    3180.0
+   ],
+   "join": "bench",
+   "material": "oak",
+   "name": "bench-2",
+   "part": "bench/leg-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    5660.0,
+    400.0,
+    3460.0
+   ],
+   "join": "bench",
+   "material": "oak",
+   "name": "bench-3",
+   "part": "bench/leg-3",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    4180.0,
+    400.0,
+    3460.0
+   ],
+   "join": "bench",
+   "material": "oak",
+   "name": "bench-4",
+   "part": "bench/leg-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    400.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2800.0000000000005,
+    1020.0,
+    2860.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair",
+   "part": "chair/back-panel",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    320.0,
+    200.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2980.0,
+    940.0000000000001,
+    2860.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-1",
+   "part": "chair/back-post-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2620.0,
+    940.0000000000001,
+    2860.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-2",
+   "part": "chair/back-post-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2980.0,
+    460.0,
+    2460.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-3",
+   "part": "chair/leg-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2620.0,
+    460.0,
+    2460.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-4",
+   "part": "chair/leg-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2620.0,
+    460.0,
+    2820.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-5",
+   "part": "chair/leg-3",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2980.0,
+    460.0,
+    2820.0
+   ],
+   "join": "chair",
+   "material": "oak",
+   "name": "chair-6",
+   "part": "chair/leg-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4700.0,
+    1060.0,
+    -980.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool",
+   "part": "stool/leg-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4420.0,
+    1060.0,
+    -980.0
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-1",
+   "part": "stool/leg-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4420.0,
+    1060.0,
+    -700.0000000000001
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-2",
+   "part": "stool/leg-3",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -4700.0,
+    1060.0,
+    -700.0000000000001
+   ],
+   "join": "stool",
+   "material": "oak",
+   "name": "stool-3",
+   "part": "stool/leg-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1240.0,
+    780.0,
+    -2000.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit",
+   "part": "shelf-unit/shelf-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    880.0,
+    40.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1240.0,
+    1380.0000000000002,
+    -2000.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit-1",
+   "part": "shelf-unit/shelf-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    880.0,
+    40.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1240.0,
+    1940.0,
+    -2000.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit-2",
+   "part": "shelf-unit/shelf-3",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    880.0,
+    40.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    1240.0,
+    2540.0,
+    -2000.0
+   ],
+   "join": "shelf-unit",
+   "material": "oak",
+   "name": "shelf-unit-3",
+   "part": "shelf-unit/shelf-4",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    880.0,
+    40.0,
+    320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1720.0,
+    1140.0000000000002,
+    6640.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart",
+   "part": "cart/deck",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    720.0,
+    40.0,
+    1040.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6320.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-1",
+   "part": "cart/wheel-11",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    320.0,
+    160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6320.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-2",
+   "part": "cart/wheel-12",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    320.0,
+    160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6960.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-3",
+   "part": "cart/wheel-21",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    320.0,
+    160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6960.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-4",
+   "part": "cart/wheel-22",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    320.0,
+    160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1720.0,
+    1380.0000000000002,
+    5740.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-5",
+   "part": "cart/handle",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    400.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6220.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-6",
+   "part": "cart/wheel-11",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6420.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-7",
+   "part": "cart/wheel-11",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6220.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-8",
+   "part": "cart/wheel-12",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6420.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-9",
+   "part": "cart/wheel-12",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6860.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-10",
+   "part": "cart/wheel-21",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    7060.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-11",
+   "part": "cart/wheel-21",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6860.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-12",
+   "part": "cart/wheel-22",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    7060.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-13",
+   "part": "cart/wheel-22",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    240.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6180.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-14",
+   "part": "cart/wheel-11",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6460.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-15",
+   "part": "cart/wheel-11",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6180.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-16",
+   "part": "cart/wheel-12",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6460.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-17",
+   "part": "cart/wheel-12",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    6820.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-18",
+   "part": "cart/wheel-21",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -2100.0,
+    960.0,
+    7100.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-19",
+   "part": "cart/wheel-21",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    6820.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-20",
+   "part": "cart/wheel-22",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1340.0,
+    960.0,
+    7100.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-21",
+   "part": "cart/wheel-22",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1180.0,
+    6140.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-22",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1220.0,
+    6060.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-23",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1260.0,
+    5980.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-24",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1300.0,
+    5900.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-25",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1340.0,
+    5820.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-26",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1940.0,
+    1380.0000000000002,
+    5740.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-27",
+   "part": "cart/handle-arm-1",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1180.0,
+    6140.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-28",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1220.0,
+    6060.000000000001
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-29",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1260.0,
+    5980.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-30",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1300.0,
+    5900.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-31",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1340.0,
+    5820.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-32",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    -1500.0,
+    1380.0000000000002,
+    5740.0
+   ],
+   "join": "cart",
+   "material": "oak",
+   "name": "cart-33",
+   "part": "cart/handle-arm-2",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    4800.0,
+    820.0000000000001,
+    6180.0
+   ],
+   "join": "kettle",
+   "material": "iron",
+   "name": "kettle",
+   "part": "kettle/kettle-back",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    240.0,
+    200.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "anchored": false,
+   "center_mm": [
+    4800.0,
+    820.0000000000001,
+    5980.0
+   ],
+   "join": "kettle",
+   "material": "iron",
+   "name": "kettle-1",
+   "part": "kettle/kettle-front",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "shape": "box",
+   "size_mm": [
+    240.0,
+    200.0,
+    40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ ],
+ "cell_m": 0.04,
+ "plasticity": "on",
+ "terrain": {
+  "generate": "valley"
+ },
+ "water": {
+  "discharge_m3_s": 0.35
+ }
+}

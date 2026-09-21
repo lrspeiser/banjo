@@ -992,6 +992,11 @@ SCENES = {
     "fabrication": yard,
     "expedition": valley,
     "world": world,
+    # The Explore valley: one of everything the engine can make, standing on
+    # ground you can walk. Laid out by tools/build_explore_world.py rather than
+    # by hand, because every object has to be seated on the real heightfield and
+    # on ground flat enough to stand on -- re-run that to rebuild it.
+    "explore": _saved_room("explore"),
     "tests-gates": _saved_room("tests-gates"),
     "tests-ropes": _saved_room("tests-ropes"),
     "tests-motion": _saved_room("tests-motion"),
