@@ -580,17 +580,29 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertIn("put down what you are holding first", answer["error"])
         self.assertEqual(app.live.acts, [])
 
-    def test_holding_the_very_thing_the_action_is_on_is_not_in_its_own_way(self):
+    def test_only_putting_down_may_act_on_the_thing_in_the_hand(self):
         # The owner, of the Explorer: "hitting e doesn't put it down". Putting a
         # cart down ran the cart's own use, which wanted the free hand the cart
         # was in -- so the only way to put down what you held was to put down
-        # what you held. A full hand is only in the way when it holds something
-        # ELSE; holding the thing being acted on is the hand the action wants.
+        # what you held. put_it_down may run put_on_ground on the thing already
+        # in the hand (own_hold). Nothing pressed over HTTP may: letting every
+        # action through for "the same thing" put a winch handle on the ground
+        # mid-turn (world_room_tests, the castle gate).
+        import server
         app = self.start([dict(BRING, body="stool")])
         app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
         status, answer = self.press(app, "stool", 0)
-        self.assertEqual(status, 200, answer)
-        self.assertNotIn("put down what you are holding first", str(answer))
+        self.assertEqual(status, 400)
+        self.assertIn("put down what you are holding first", answer["error"])
+        status, answer = self.post(app, "/api/world/action",
+                                   {"session": app.live.session.id, "object": "stool",
+                                    "builtin": "put_on_ground", "person": PERSON, "own_hold": True})
+        self.assertEqual(status, 400, "a request cannot claim own_hold")
+        self.assertIn("put down what you are holding first", answer["error"])
+        self.assertEqual(app.live.acts, [])
+        said = server.run_action(app, {"session": app.live.session.id, "object": "stool",
+                                       "builtin": "put_on_ground", "person": PERSON}, own_hold=True)
+        self.assertNotIn("put down what you are holding first", str(said))
         self.assertTrue(app.live.acts, "the hand never moved")
 
     def test_a_page_that_no_longer_has_the_room_is_refused_and_nothing_moves(self):

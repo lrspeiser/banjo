@@ -1924,10 +1924,10 @@ def _stroke_to(app,target,speed,start):
     return _stroke_along(app,[start,target],speed)
 
 
-def _stroke_along(app,path,speed):
+def _stroke_along(app,path,speed,accel=2.0):
     """The same along a path of up to sixteen points: round a pin, for a turn."""
     app.live.act({"session":app.live.session.id,"op":"stroke","path":[list(p) for p in path],"speed_m_s":float(speed),
-                  "accel_m_s2":2.0,"lead_m":0.05,"let_go":False,"give_up_s":ACTION_STROKE_S})
+                  "accel_m_s2":float(accel),"lead_m":0.05,"let_go":False,"give_up_s":ACTION_STROKE_S})
     began=time.monotonic()
     started=False
     while time.monotonic()-began<ACTION_STROKE_S+3.0:
@@ -2490,16 +2490,32 @@ def _core_hand_step(app, name, step, person):
     return f"pushed {name} forward {moved:.2f} m (stroke {ended})", None
 
 
-def run_action(app, body):
+def run_action(app, body, *, own_hold=False):
     # A product cannot start overlapping programs on the same physical hand.
     # setdefault is not available on the app Namespace; initialize under GIL.
+    #
+    # `own_hold` is for put_it_down alone: it runs put_on_ground on the thing
+    # already in the hand. It is a keyword, never read from a request, so
+    # nothing arriving over HTTP can say it.
     lock = app.__dict__.setdefault("action_lock", threading.Lock())
     if not lock.acquire(blocking=False):
         raise ValueError("a Use action is already running")
     try:
-        return _run_action(app, body)
+        return _run_action(app, body, own_hold=own_hold)
     finally:
         lock.release()
+
+
+# Measured in the Explorer (tests/explore_visual_qa.py): an oak block carried
+# at the lower right travels about 2.2 m to where the person is looking, and at
+# 2.5 m/s it took 1.28 s to leave the hand. The hand stays force-limited (800 N),
+# so asking for more only lets light things go faster.
+PUT_DOWN_SPEED_M_S=4.0
+PUT_DOWN_ACCEL_M_S2=20.0
+
+
+def _quick_stroke(app,path,speed):
+    return _stroke_along(app,path,speed,accel=PUT_DOWN_ACCEL_M_S2)
 
 
 def put_it_down(app,body):
@@ -2521,7 +2537,13 @@ def put_it_down(app,body):
     if not isinstance(body,dict): raise ValueError("expected {object, person}")
     name=str(body.get("object",""))[:200]
     person=world_chat.where_the_person_is(body.get("person"))
-    line,problem=placement.execute(app,name,person,_stroke_along,body.get("placement_target"))
+    # At the pace of setting a thing down, not of a careful Use: the Use pace
+    # (0.8 m/s, 2 m/s^2) took a block a second and a half to leave the hand,
+    # drifting across the screen while the person wondered whether E had
+    # worked. The hand is still the engine's, force-limited, so a heavy thing
+    # still goes as fast as 800 N can take it and no faster.
+    line,problem=placement.execute(app,name,person,_quick_stroke,body.get("placement_target"),
+                                   speed=PUT_DOWN_SPEED_M_S)
     settled=None
     if problem:
         # Nothing to snap to. A snap wants a flat, clear, three-cornered rest,
@@ -2532,7 +2554,7 @@ def put_it_down(app,body):
         # weight, wherever that turns out to be.
         settled=problem
         said=run_action(app,{"session":body.get("session"),"object":name,
-                             "builtin":"put_on_ground","person":body.get("person")})
+                             "builtin":"put_on_ground","person":body.get("person")},own_hold=True)
         if said.get("refused"):
             return {"ok":False,"why":problem,"also":said["refused"],
                     "shown":inventory_room.shown(app)}
@@ -2560,7 +2582,7 @@ def put_it_down(app,body):
     return answer
 
 
-def _run_action(app,body):
+def _run_action(app,body,own_hold=False):
     """One of a thing's actions, pressed on the page (POST /api/world/action).
 
     An action is a short program the room's chat kept with the thing when it
@@ -2603,10 +2625,12 @@ def _run_action(app,body):
     # letting go first would drop the gate. Anything else needs the hand free.
     hand = (app.live.session.state or {}).get("hand") or {}
     held = (hand.get("name") or hand.get("holding")) if hand.get("holding") else None
-    # Holding the very thing being acted on is not a full hand in the way that
-    # matters: it is the hand this action wants. Refusing it meant the only way
-    # to put down what you held was to put down what you held.
-    if held and held != name and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
+    # Except for putting down the very thing in the hand (own_hold, from
+    # put_it_down only). Without it the only way to put down what you held was
+    # to put down what you held; with it for everyone, "put it on the ground"
+    # ran on a winch handle mid-turn.
+    if held and not (own_hold and held == name) and \
+            action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     # What the hand held before the action: the action lets go only of what it

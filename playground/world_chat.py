@@ -1381,6 +1381,13 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
     eyes = point(raw.get("eyes_m"))
     if eyes is not None:
         said["eyes_m"] = eyes
+    # Where the middle of their view lands -- on the ground or on a thing -- as
+    # the page's own ray through its sight found it. Placing aims there, so a
+    # thing goes down where they are looking rather than a metre in front of
+    # their feet whatever they look at.
+    aim = point(raw.get("aim_m"))
+    if aim is not None:
+        said["aim_m"] = aim
     # What they have in their hand: "this" and "it", before anything they are
     # looking at. By name, as the room's objects are named.
     holding = raw.get("holding")

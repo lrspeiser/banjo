@@ -24,9 +24,25 @@ const SCENE = new URLSearchParams(location.search).get("scene") || "explore";
 
 let token = "";
 
+// What the page is waiting on right now, for the visual QA to say when a call
+// never comes back: the frame loop waits on its step, so a step that hangs
+// stops the world while the screen goes on looking fine.
+const inFlight = new Map();
+let calls = 0;
+
 /** Every POST carries the page's token; a 403 means it went stale, so it is
  *  fetched again and the call retried exactly once. */
 async function api(path, body) {
+  const id = ++calls;
+  inFlight.set(id, { path, op: body && body.op, since: performance.now() });
+  try {
+    return await apiOnce(path, body);
+  } finally {
+    inFlight.delete(id);
+  }
+}
+
+async function apiOnce(path, body) {
   for (let attempt = 0; attempt < 2; attempt++) {
     if (!token) token = (await (await fetch("/api/status")).json()).csrf_token;
     const reply = await fetch(path, {
@@ -56,6 +72,9 @@ const world = {
   shown: [],                  // index -> { data, mesh, sig }
   ground: null,               // { nx, nz, cell, x0, z0, h: Float32Array }
   pace: 0,
+  why: new Map(),             // what hit a thing the engine is working out a break for
+  handAt: null,               // where the hand is being led, eased toward the carry
+  liftTo: null,               // the height a thing rises to before it moves across
 };
 
 const view = new THREE.Scene();
@@ -281,17 +300,80 @@ function draw(state) {
 // --------------------------------------------------------------------------
 
 const EYE = 1.62;
-const REACH = 0.8;          // how far in front of the chest the hand is carried
+const REACH = 0.6;          // how far out a small thing is carried; more for a big one
 
 /** Where the hand is, in the world. Sent with every step: the engine carries a
  *  held body to the hand, and a hand that is never told where it is never
  *  moves -- which is why a picked-up table went on lying on the ground. */
 function handPoint() {
-  const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  const chest = groundAt(person.x, person.z) + EYE - 0.45;
-  return [person.x + ahead.x * REACH,
-          Math.max(chest + ahead.y * REACH, groundAt(person.x, person.z) + 0.15),
-          person.z + ahead.z * REACH];
+  // Low and to the right of where you look, the way a thing is carried to see
+  // past it. Carried in the middle of the view -- where it was -- it sat right
+  // on top of the preview of where it would go, so you could not see where you
+  // were putting it. Further out and lower the bigger it is, so a bench stays
+  // at the edge of the view instead of blotting out the valley.
+  const size = heldSize();
+  const yaw = person.yaw - 0.2;
+  const pitch = Math.min(-0.3, person.pitch - 0.45);
+  const reach = REACH + size * 0.6;
+  const eye = groundAt(person.x, person.z) + EYE;
+  const x = person.x - Math.sin(yaw) * Math.cos(pitch) * reach;
+  const z = person.z - Math.cos(yaw) * Math.cos(pitch) * reach;
+  const y = eye + Math.sin(pitch) * reach;
+  return [x, Math.max(y, groundAt(x, z) + size / 2 + 0.05), z];
+}
+
+/** Where the hand is led this frame: toward the carry point, no faster than a
+ *  person moves a thing, and UP before ACROSS. The carry point jumps -- on
+ *  taking something up, and whenever you turn -- and led straight there by an
+ *  800 N hand, a block whipped across at several metres a second, clipped the
+ *  ceramic block beside it, and the engine stopped the world to work out
+ *  whether it had broken. */
+const HAND_SPEED = 2.0;       // m/s
+
+function leadHand(dt) {
+  const want = handPoint();
+  if (!world.handAt) {
+    const held = world.shown.find((s) => s.data.name === me.holding);
+    world.handAt = held ? held.data.position_m.slice() : want.slice();
+    world.liftTo = world.handAt[1] + heldSize() * 0.5 + 0.25;
+  }
+  const at = world.handAt;
+  const across = Math.hypot(want[0] - at[0], want[2] - at[2]);
+  const goal = at[1] < world.liftTo - 0.02 && across > 0.15 ? [at[0], world.liftTo, at[2]] : want;
+  const d = [goal[0] - at[0], goal[1] - at[1], goal[2] - at[2]];
+  const length = Math.hypot(d[0], d[1], d[2]);
+  const k = length > HAND_SPEED * dt ? (HAND_SPEED * dt) / length : 1;
+  world.handAt = [at[0] + d[0] * k, at[1] + d[1] * k, at[2] + d[2] * k];
+  return world.handAt;
+}
+
+/** What hit it, how hard, and what came of it -- the engine's answer to a
+ *  break it was asked to work out. */
+function tellWhatBroke(state) {
+  const name = state.finished;
+  const hit = world.why.get(name);
+  world.why.delete(name);
+  const how = hit
+    ? `The ${hit.by || "ground"} hit the ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
+    : `The ${name} was struck`;
+  if (state.outcome === "broke") say(`${how}. It broke into ${state.pieces} pieces.`);
+  else if (state.outcome === "dented") say(`${how}. It bent out of shape.`);
+  else say(`${how}, and it held.`);
+}
+
+/** The longest side of what is in your hand, over all its pieces, in metres. */
+function heldSize() {
+  const parts = world.shown.filter((s) => s.data.name === me.holding).map((s) => s.data);
+  if (!parts.length) return 0.3;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const part of parts) {
+    const r = Math.max(...(part.dimensions_m || [0.3, 0.3, 0.3])) / 2;
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], part.position_m[k] - r);
+      hi[k] = Math.max(hi[k], part.position_m[k] + r);
+    }
+  }
+  return Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
 }
 // `back` pulls the camera away along its own line of sight. It is a zoom out,
 // not an orbit: the eye stays where the person is, so the ray through the
@@ -428,7 +510,9 @@ function sightInView() {
 
 function lookedAt() {
   ray.setFromCamera(sightInView(), camera);
-  const hit = ray.intersectObjects(world.shown.map((s) => s.mesh), false)[0];
+  // Past what is in your own hand: that is never what you are looking AT.
+  const hit = ray.intersectObjects(
+    world.shown.filter((s) => s.data.name !== me.holding).map((s) => s.mesh), false)[0];
   if (!hit) return null;
   const slot = world.shown.find((s) => s.mesh === hit.object);
   return slot ? { name: slot.data.name, known: slot, hit } : null;
@@ -514,16 +598,49 @@ function showLookedAt() {
 const me = { holding: null, record: null, bagItems: [], carried: {},
              revision: 0, busy: false, said: "" };
 
+/** Where the sight lands: the nearer of the ground and the things in the
+ *  world -- never the one in your hand, which would be the first thing hit --
+ *  along the ray through the sight, and within reach. Null on the sky. */
+function aimPoint(within = 4.5) {
+  ray.setFromCamera(sightInView(), camera);
+  const o = ray.ray.origin.clone(), d = ray.ray.direction.clone();
+  const past = person.back;          // the camera may sit back along this line
+  let best = null;
+  const meshes = world.shown.filter((s) => s.data.name !== me.holding).map((s) => s.mesh);
+  const hit = ray.intersectObjects(meshes, false)[0];
+  if (hit && hit.distance <= within + past) best = hit.distance;
+  // The ground: march the same ray over the heightfield, then halve onto it.
+  const below = (s) => o.y + d.y * s <= groundAt(o.x + d.x * s, o.z + d.z * s);
+  for (let s = past + 0.05; s <= within + past && (best === null || s < best); s += 0.03) {
+    if (!below(s)) continue;
+    let lo = s - 0.03, hi = s;
+    for (let k = 0; k < 10; k++) { const mid = (lo + hi) / 2; if (below(mid)) hi = mid; else lo = mid; }
+    best = best === null ? hi : Math.min(best, hi);
+    break;
+  }
+  return best === null ? null : [o.x + d.x * best, o.y + d.y * best, o.z + d.z * best];
+}
+
 /** Where the person is, in the words every world route asks for. */
 function whereIAm() {
-  const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  // Which way the SIGHT points, not the middle of the canvas. The sight sits
+  // left of the middle (the side panel covers the right), and "in front of
+  // you" is where you are aiming.
+  ray.setFromCamera(sightInView(), camera);
+  const along = ray.ray.direction.clone();
+  const level = Math.hypot(along.x, along.z) || 1;
   const found = lookedAt();
+  const feet = groundAt(person.x, person.z);
   const said = {
-    standing_m: [person.x, groundAt(person.x, person.z), person.z],
-    facing: [-Math.sin(person.yaw), 0, -Math.cos(person.yaw)],
-    eyes_m: [camera.position.x, camera.position.y, camera.position.z],
-    look_direction: [ahead.x, ahead.y, ahead.z],
+    standing_m: [person.x, feet, person.z],
+    facing: [along.x / level, 0, along.z / level],
+    // The person's eyes, not the camera's: stepped back with the wheel, the
+    // camera is metres behind them, and everything was then out of reach.
+    eyes_m: [person.x, feet + EYE, person.z],
+    look_direction: [along.x, along.y, along.z],
   };
+  const aim = aimPoint();
+  if (aim) said.aim_m = aim;
   if (me.holding) said.holding = me.holding;
   if (found) said.looking_at = found.name;
   return said;
@@ -566,7 +683,12 @@ function tookNote(said) {
 /** E: the one contextual thing. Empty-handed and pointing at something loose,
  *  take it up; holding something, put it down where the ghost says. */
 async function takeOrPutDown() {
-  if (me.busy || !world.session) return;
+  if (!world.session) {
+    say("The world is not running here any more. Reload the page to start again.",
+        { refused: true, stays: true });
+    return;
+  }
+  if (me.busy) { say("Still doing the last thing…"); return; }
   me.busy = true;
   try {
     const found = lookedAt();
@@ -576,6 +698,10 @@ async function takeOrPutDown() {
       // cart down asked you to put the cart down first. /api/world/putdown
       // places anything where the ghost says, whatever it is for.
       const going = me.holding;
+      // Said the moment E is pressed: the hand takes a moment to get there,
+      // and a key that shows nothing for that moment reads as a key that did
+      // nothing.
+      say(`Putting the ${going} down…`);
       const said = await api("/api/world/putdown", {
         session: world.session, object: going, person: whereIAm(),
       });
@@ -643,7 +769,7 @@ async function refreshHands() {
 
 let saidFades = 0;
 
-function say(words, { refused = false } = {}) {
+function say(words, { refused = false, stays = false } = {}) {
   me.said = words;
   $("did").textContent = words;
   $("did").hidden = !words;
@@ -659,7 +785,7 @@ function say(words, { refused = false } = {}) {
   loud.hidden = !words;
   loud.classList.toggle("refused", !!refused);
   clearTimeout(saidFades);
-  saidFades = setTimeout(() => { loud.hidden = true; }, 4200);
+  if (!stays) saidFades = setTimeout(() => { loud.hidden = true; }, 4200);
 }
 
 function showHands() {
@@ -1032,24 +1158,61 @@ async function tick() {
         // stepped -- by this loop -- for it to get anywhere. Carrying on saying
         // "the hand is at my chest" every frame pulled it back each time, so
         // the stroke never arrived and every put-down ended "ran out of time".
-        const state = await api("/api/live/act", {
+        if (!me.holding) { world.handAt = null; world.liftTo = null; }
+        const asked = {
           session: world.session, op: "step", dt, n,
-          ...(me.holding && !me.busy ? { hand: handPoint() } : {}),
-        });
+          ...(me.holding && !me.busy ? { hand: leadHand(n * dt) } : {}),
+        };
+        const before = world.t;
+        const state = await api("/api/live/act", asked);
+        // What the last step asked and what came back, for the visual QA.
+        world.lastStep = { n, hand: asked.hand || null, t: state.t ?? null,
+                           bodies: (state.bodies || []).length, partial: !!state.partial,
+                           ok: state.ok ?? null, stepped_back: state.stepped_back ?? null,
+                           working_on: state.working_on ?? null,
+                           impacts: Array.isArray(state.impacts) ? state.impacts.slice(0, 3) : state.impacts ?? null };
         world.t = state.t ?? world.t;
         const was = world.shown.length;
         draw(state);
+        // Something may break. The engine has taken the step back and waits to
+        // be told to work it out, and until it is told, time does not move:
+        // stepping on only replays the same instant. That is how a carried ice
+        // block clipping the ceramic block froze the whole valley while this
+        // page went on saying "4.9x realtime". Started on the engine's worker
+        // and not waited for, as world.js does; a later step brings the answer.
+        if (state.breakable && state.breakable.length && !state.working_on) {
+          const name = state.breakable[0];
+          const hit = (state.impacts || []).filter((i) => i.struck === name)
+            .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
+          world.why.set(name, hit || null);
+          await api("/api/live/act", { session: world.session, op: "fracture", name, wait: false });
+        }
+        if (state.finished) tellWhatBroke(state);
         // Something came apart: its pieces are loose around you, so they are
         // swept up rather than left for you to chase one at a time.
         if (world.shown.length > was + 1) sweepUp(false);
         const spent = (performance.now() - began) / 1000;
-        world.pace = spent > 0 ? (n * dt) / spent : 0;
+        // What actually passed, not what was asked for: a world held still by
+        // an unanswered break read "4.9x realtime" here while nothing moved.
+        const passed = typeof state.t === "number" ? state.t - before : n * dt;
+        world.pace = spent > 0 ? passed / spent : 0;
         $("pace").textContent = `${world.pace.toFixed(1)}× realtime`
           + (person.back > 0.05 ? ` · ${person.back.toFixed(1)} m back` : "");
         $("pace").classList.toggle("slow", world.pace < 1.1);
+        world.failures = 0;
       } catch (trouble) {
+        // One failed step is not the end: a request can be cut, or the server
+        // busy for a moment. Dropping the session on the FIRST one stopped the
+        // room, E and the preview all at once, with a word only in the pace
+        // readout -- so E went on doing nothing and nothing said why. Three in
+        // a row, and it stops, and says so where you are looking.
+        world.failures = (world.failures || 0) + 1;
         $("pace").textContent = String(trouble.message).slice(0, 60);
-        world.session = "";
+        if (world.failures >= 3) {
+          world.session = "";
+          say(`The world stopped: ${String(trouble.message).slice(0, 140)}. Reload the page to start again.`,
+              { refused: true, stays: true });
+        }
       }
     }
   }
@@ -1070,9 +1233,168 @@ open().then(() => requestAnimationFrame(tick)).catch((trouble) => {
 });
 
 // For the tests and for looking at it from the console.
+//
+// The visual QA (tests/explore_visual_qa.py) reads what is ON SCREEN through
+// this: where the camera would draw a point, where the sight is, where each
+// thing and the ghost are drawn. It only ever reads, apart from aimAt and
+// faceThing, which turn and stand the person exactly as walking there would --
+// they never touch the world.
+function screenOf(point) {
+  const v = new THREE.Vector3(...point).project(camera);
+  return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight,
+           front: v.z > -1 && v.z < 1 };
+}
+
+/** The box on screen that a set of oriented boxes covers. */
+function screenBoxOf(boxes) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, front = false;
+  const q = new THREE.Quaternion();
+  for (const { at, size, wxyz } of boxes) {
+    if (wxyz) q.set(wxyz[1], wxyz[2], wxyz[3], wxyz[0]); else q.identity();
+    for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) {
+      const corner = new THREE.Vector3(sx * size[0], sy * size[1], sz * size[2])
+        .applyQuaternion(q).add(new THREE.Vector3(...at));
+      const s = screenOf([corner.x, corner.y, corner.z]);
+      if (!s.front) continue;
+      front = true;
+      x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y);
+      x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y);
+    }
+  }
+  return front ? { x0, y0, x1, y1 } : null;
+}
+
+function thingNamed(name) {
+  const parts = world.shown.filter((s) => s.data.name === name).map((s) => s.data);
+  if (!parts.length) return null;
+  const q = new THREE.Quaternion();
+  let lowest = Infinity, biggest = null, most = -1;
+  const centre = [0, 0, 0];
+  for (const p of parts) {
+    const size = p.dimensions_m || [0, 0, 0];
+    const w = p.orientation_wxyz;
+    if (w) q.set(w[1], w[2], w[3], w[0]); else q.identity();
+    // The underside of an oriented box: its middle less its reach downwards.
+    let reach = 0;
+    for (let k = 0; k < 3; k++) {
+      const axis = new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
+      reach += Math.abs(axis.y) * size[k] / 2;
+    }
+    lowest = Math.min(lowest, p.position_m[1] - reach);
+    const volume = size[0] * size[1] * size[2];
+    if (volume > most) { most = volume; biggest = p.position_m; }
+    for (let k = 0; k < 3; k++) centre[k] += p.position_m[k] / parts.length;
+  }
+  return {
+    parts: parts.length, lowest, centre,
+    // What a person aims at: the biggest piece -- a stool's seat, not the
+    // middle of its legs, where the sight sees straight through it.
+    aim: biggest,
+    cells: parts.reduce((n, p) => n + ((p.cells_local_m || []).length), 0),
+    held: parts.some((p) => p.held),
+    ground: groundAt(centre[0], centre[2]),
+    box: screenBoxOf(parts.map((p) => ({ at: p.position_m, size: p.dimensions_m || [0, 0, 0],
+                                         wxyz: p.orientation_wxyz }))),
+    screen: screenOf(centre),
+  };
+}
+
+/** Turn until the sight is on a point, the way the arrows would. */
+function aimAt(point) {
+  const target = new THREE.Vector3(...point);
+  // Face it first, straight from the eye. Refining from wherever the view last
+  // was failed whenever the point was behind the camera: a point behind
+  // projects mirrored, and the correction turned the view up at the sky.
+  const eye = groundAt(person.x, person.z) + EYE;
+  person.yaw = Math.atan2(-(target.x - person.x), -(target.z - person.z));
+  person.pitch = Math.atan2(target.y - eye, Math.hypot(target.x - person.x, target.z - person.z));
+  for (let i = 0; i < 16; i++) {
+    walk(0);
+    camera.updateMatrixWorld();
+    const at = target.clone().project(camera);
+    const sight = sightInView();
+    const ex = at.x - sight.x, ey = at.y - sight.y;
+    if (Math.abs(ex) < 2e-4 && Math.abs(ey) < 2e-4) break;
+    const vfov = camera.fov * Math.PI / 180;
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    person.yaw -= ex * hfov / 2;
+    person.pitch += ey * vfov / 2;
+  }
+  walk(0);
+}
+
+/** Stand `away` metres from a thing, on the flattest open side of it, looking
+ *  at it. What a person does by walking up to it; the test does it directly so
+ *  the same thing is looked at every time. */
+function faceThing(name, away = 1.8) {
+  const it = thingNamed(name);
+  if (!it) return false;
+  const [cx, , cz] = it.centre;
+  let best = null;
+  for (let k = 0; k < 16; k++) {
+    const a = k * Math.PI / 8;
+    const x = cx + Math.cos(a) * away, z = cz + Math.sin(a) * away;
+    // Flat under the feet, and nobody else's things in the way.
+    let rough = 0;
+    for (const [dx, dz] of [[0.4, 0], [-0.4, 0], [0, 0.4], [0, -0.4]]) {
+      rough += Math.abs(groundAt(x + dx, z + dz) - groundAt(x, z));
+    }
+    const crowd = world.shown.filter((s) => s.data.name !== name && s.data.position_m &&
+      Math.hypot(s.data.position_m[0] - x, s.data.position_m[2] - z) < 0.9).length;
+    const score = rough + crowd * 2 + Math.abs(groundAt(x, z) + EYE - it.centre[1] - 1.2) * 0.2;
+    if (!best || score < best.score) best = { x, z, score };
+  }
+  Object.assign(person, { x: best.x, z: best.z, back: 0 });
+  aimAt(it.aim);
+  return true;
+}
+
+/** Look at the ground `ahead` metres in front, keeping the way you face. */
+function aimAtGround(ahead = 1.6) {
+  const fx = -Math.sin(person.yaw), fz = -Math.cos(person.yaw);
+  const x = person.x + fx * ahead, z = person.z + fz * ahead;
+  aimAt([x, groundAt(x, z), z]);
+}
+
+function snapshot(names = []) {
+  const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) || 0;
+  const sight = sightInView();
+  const text = (id) => ($(id) && !$(id).hidden ? $(id).textContent.trim() : null);
+  const things = {};
+  for (const name of names) things[name] = thingNamed(name);
+  const shownGhost = ghost && ghost.visible ? {
+    at: [ghost.position.x, ghost.position.y, ghost.position.z],
+    size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
+    colour: `#${ghost.material.color.getHexString()}`,
+    screen: screenOf([ghost.position.x, ghost.position.y, ghost.position.z]),
+    box: screenBoxOf([{ at: [ghost.position.x, ghost.position.y, ghost.position.z],
+                        size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
+                        wxyz: [ghost.quaternion.w, ghost.quaternion.x, ghost.quaternion.y, ghost.quaternion.z] }]),
+  } : null;
+  const handRect = $("hand-right-view").getBoundingClientRect();
+  return {
+    now: performance.now(), t: world.t, pace: world.pace, live: !!world.session,
+    view: { w: innerWidth, h: innerHeight, side },
+    sight: { x: (sight.x + 1) / 2 * innerWidth, y: (1 - sight.y) / 2 * innerHeight },
+    person: { x: person.x, z: person.z, yaw: person.yaw, pitch: person.pitch, back: person.back },
+    me: { holding: me.holding, record: me.record, busy: me.busy, canPlace: !!me.canPlace },
+    ghost: shownGhost,
+    said: { loud: text("said-loud"), refused: !!$("said-loud")?.classList.contains("refused"),
+            panel: text("did"), canDo: text("can-do"), ghost: text("ghost-said"),
+            held: text("hands-held"), inFront: text("seen-name"), pace: text("pace") },
+    handView: { x: handRect.x, y: handRect.y, w: handRect.width, h: handRect.height },
+    things,
+    waiting: [...inFlight.values()].map((c) => ({ path: c.path, op: c.op || null,
+                                                  for_s: (performance.now() - c.since) / 1000 })),
+    lastStep: world.lastStep || null, failures: world.failures || 0,
+  };
+}
+
 window.banjoExplorer = {
   world, person,
   status: () => ({ session: world.session, t: world.t, pace: world.pace,
                    bodies: world.shown.length, ground: !!world.ground,
                    looking: looked, holding: me.holding }),
+  snapshot, faceThing, aimAt, aimAtGround, screenOf,
+  names: () => [...new Set(world.shown.map((s) => s.data.name))],
 };

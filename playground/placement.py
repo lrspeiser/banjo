@@ -42,6 +42,21 @@ def resolve(app, body):
     feet, facing = person["standing_m"], person["facing"]
     eyes = person.get("eyes_m", [feet[0], feet[1]+1.62, feet[2]])
     front = [feet[k]+facing[k] for k in range(3)]
+    # Where they are looking, when the page says and it is within reach and in
+    # front of them: a thing goes down where the sight is, not a metre ahead of
+    # the feet whatever the sight is on -- which drew the preview off to one
+    # side of where the person was looking.
+    aim = person.get("aim_m")
+    # How far from `front` a receiving point may be and still be chosen. A
+    # metre and a quarter when `front` is only a guess at intent (a metre ahead
+    # of the feet); when the page says where the sight actually is, a surface
+    # has to be under it or right beside it -- otherwise looking at the ground
+    # placed the thing on a stool's seat a metre away.
+    near = 1.25
+    if aim is not None and math.dist(aim, eyes) <= REACH_M and \
+            (aim[0]-feet[0])*facing[0]+(aim[2]-feet[2])*facing[2] >= 0.1:
+        front = list(aim)
+        near = 0.4
     def act(op, **args):
         return app.live.act({"session": session.id, "op": op, **args})
     def reachable(on):
@@ -76,7 +91,7 @@ def resolve(app, body):
                 continue
             horizontal = math.hypot(on[0]-front[0], on[2]-front[2])
             aimed = person.get("looking_at") == other["name"]
-            if horizontal > 1.25 and not aimed:
+            if horizontal > near and not aimed:
                 continue
             size = point["size_m"]
             dims = mover.get("dimensions_m", [math.inf]*3)
@@ -137,8 +152,12 @@ def resolve(app, body):
         answer["target"]["id"] = "ground"
     return answer
 
-def execute(app, name, person, stroke, expected=None):
-    """Place with the bounded native hand; the host continues physics ticks."""
+def execute(app, name, person, stroke, expected=None, speed=.8):
+    """Place with the bounded native hand; the host continues physics ticks.
+
+    `speed` is the hand's, along the path, in m/s. The default is the Use
+    action's measured pace; a page putting something down where a person is
+    looking asks for more (server.put_it_down)."""
     import time
     session = app.live.session
     hand = (session.state or {}).get("hand") or {}
@@ -161,7 +180,7 @@ def execute(app, name, person, stroke, expected=None):
     end = plan["at_m"]
     over = max(start[1], end[1]+.2)
     path = [start, [start[0],over,start[2]], [end[0],over,end[2]], end]
-    outcome = stroke(app, path, .8)
+    outcome = stroke(app, path, speed)
     if outcome not in ("reached", "blocked"):
         act("cancel_stroke")
         return "", "placement stroke " + outcome + "; the item is still held"
