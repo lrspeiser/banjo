@@ -125,9 +125,12 @@ def described() -> list[dict[str, Any]]:
 def synchronize_workshop_model() -> None:
     """Make Workshop's cheap mass arithmetic use the engine catalogue values.
 
-    This is a migration bridge while ``mcp.workshop`` still owns its historical
-    display-material table. Unsupported display-only entries (pine, steel) are
-    left present for old saved designs but are not made physically supported.
+    ``mcp.workshop`` now takes the catalogue's density for every engine preset
+    its table names, so this changes none of those. What it still adds is the
+    engine's own spellings that the table (whose names are also the bench's
+    material choices) does not carry, ``aluminum`` and ``ice``. Unsupported
+    display-only entries (pine, steel) are left present for old saved designs
+    but are not made physically supported.
     """
     from mcp import workshop
     # Register EVERY engine name, not only the ones this table already had.

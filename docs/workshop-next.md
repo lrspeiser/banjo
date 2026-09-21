@@ -119,8 +119,13 @@ Done when: swapping oak for iron changes the mass, the centre of mass and the
 tip margin, and the numbers are arithmetic anyone can check by hand.
 
 Density, mass, the real centre of mass, the support polygon and the tip angle
-have landed. What is left is the per-leg load, and materials read from the
-engine's own catalogue rather than a density table here.
+have landed, and so has the per-leg load (`mcp/workshop_statics.py`, e9d9acb).
+A material the engine has a preset for weighs what the engine's catalogue says:
+`mcp/workshop.py` reads it from `mcp/engine_materials.py`, whose parity test
+pins it to `MaterialCatalog.cpp`. Until September 21 the table kept its own oak
+(750 kg/m³) and rubber (1200) wherever nothing had synchronised it, so one
+design had two masses. What is left: pine and steel, which the engine has no
+preset for, still weigh what the table says.
 
 ## Stage 6 — scratch physical trials (increment 4)
 

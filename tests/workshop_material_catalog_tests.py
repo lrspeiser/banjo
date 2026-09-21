@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 import unittest
 
@@ -82,6 +84,32 @@ class MaterialParity(unittest.TestCase):
         finally:
             workshop.DENSITY_KG_M3["oak"] = before_oak
             workshop.DENSITY_KG_M3["rubber"] = before_rubber
+
+    def test_a_design_weighs_the_same_whichever_module_was_loaded_first(self):
+        # mcp.workshop kept its own oak (750) and rubber (1200) until a module
+        # that synchronises it was imported, so one oak table weighed 102.0 kg
+        # in a suite run on its own, as CI runs them, and 95.2 kg in the running
+        # Workshop. A run of many suites in one process hides that, so ask a
+        # fresh interpreter what a bare import holds.
+        script = "\n".join([
+            "import json, sys",
+            f"sys.path.insert(0, {str(ROOT)!r})",
+            "from mcp import engine_materials, workshop",
+            "def weigh():",
+            "    return workshop.assemble('table', parameters={'material': 'oak'}).measure()['mass_kg']",
+            "bare = [dict(workshop.DENSITY_KG_M3), weigh()]",
+            "engine_materials.synchronize_workshop_model()",
+            "print(json.dumps([bare, [dict(workshop.DENSITY_KG_M3), weigh()]]))",
+        ])
+        done = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True,
+                              text=True, timeout=60)
+        self.assertEqual(0, done.returncode, done.stderr)
+        (bare, bare_kg), (synchronized, synchronized_kg) = json.loads(done.stdout)
+        self.assertEqual(synchronized_kg, bare_kg)
+        for name, density in bare.items():
+            self.assertEqual(synchronized[name], density, name)
+            if engine_materials.known(name):
+                self.assertEqual(engine_materials.density(name), density, name)
 
     def test_display_aliases_map_to_engine_presets(self):
         self.assertEqual("aluminum", engine_materials.canonical("aluminium"))
