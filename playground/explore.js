@@ -305,9 +305,10 @@ addEventListener("keydown", (e) => {
   pressed.add(e.code);
   if (e.code.startsWith("Arrow")) $("hint")?.remove();
   if (e.code === "KeyE") takeOrPutDown();
-  if (e.code === "KeyJ") usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
+  if (e.code === "KeyJ") usePrimary().catch((t) => say(String(t.message).slice(0, 120), { refused: true }));
   if (e.code === "KeyQ") intoTheBag();
   if (e.code === "KeyG") sweepUp();
+  if (e.code === "KeyX") letGo();
   if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown",
        "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -335,7 +336,7 @@ $("view").addEventListener("pointerup", (e) => {
   $("view").releasePointerCapture(e.pointerId);
   // A click that did not turn the view is a use of what is in front of you;
   // one that did was you looking around, and must not also press something.
-  if (turnedSince < 4) usePrimary().catch((t) => say(String(t.message).slice(0, 120)));
+  if (turnedSince < 4) usePrimary().catch((t) => say(String(t.message).slice(0, 120), { refused: true }));
 });
 $("view").addEventListener("dblclick", () => {
   // Not every page is allowed to take the mouse: inside an embedded frame the
@@ -439,9 +440,10 @@ const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n 
 function showWhatYouCanDo(found) {
   const can = [];
   if (me.holding) {
-    can.push(["E", `put down the ${me.holding}`]);
+    can.push(["E", me.canPlace ? `put the ${me.holding} down there`
+                               : `set the ${me.holding} on the ground`]);
     can.push(["Q", "into the bag"]);
-    if (found && found.name !== me.holding) can.push(["E", `take the ${found.name} instead`]);
+    can.push(["X", "just let go"]);
   } else if (found) {
     can.push(["E", `take the ${found.name}`]);
     can.push(["J", "use it"]);
@@ -568,19 +570,26 @@ async function takeOrPutDown() {
   me.busy = true;
   try {
     const found = lookedAt();
-    // Pointing at something ELSE while your hands are full: bag what you hold
-    // and take the new thing, because that is plainly what was meant.
-    if (me.holding && found && found.name !== me.holding && !found.known.data.anchored) {
-      await intoTheBag();
-      if (me.holding) return;                 // it would not go in; say why and stop
-    }
     if (me.holding) {
-      // Put it down through its own Use, so a thing with a `place` program
-      // lands where the ghost is rather than being dropped on the spot.
-      await usePrimary();
+      // Its own verb, NOT the thing's Use. A cart's use is "push it forward",
+      // which wants the free hand you are holding the cart with, so putting a
+      // cart down asked you to put the cart down first. /api/world/putdown
+      // places anything where the ghost says, whatever it is for.
+      const going = me.holding;
+      const said = await api("/api/world/putdown", {
+        session: world.session, object: going, person: whereIAm(),
+      });
+      await refreshHands();
+      if (said.ok) {
+        const notes = [said.instead && `it would not go where the preview was: ${said.instead}`,
+                       said.record].filter(Boolean);
+        say(notes.length ? `${said.did} -- ${notes.join("; ")}` : (said.did || `Put the ${going} down.`));
+      } else {
+        say(`${said.why} · X lets go of it where you stand.`, { refused: true });
+      }
     } else {
-      if (!found) { say("Nothing in front of you to pick up."); return; }
-      if (found.known.data.anchored) { say(`${found.name} is fixed down.`); return; }
+      if (!found) { say("Nothing in front of you to pick up.", { refused: true }); return; }
+      if (found.known.data.anchored) { say(`${found.name} is fixed down.`, { refused: true }); return; }
       // Every /api/world/* call carries the session: the playground runs one
       // room at a time, and a page whose room was reopened elsewhere must not
       // go on moving things about in somebody else's (server._this_pages_room).
@@ -592,11 +601,11 @@ async function takeOrPutDown() {
       // What the CALL just said, not what the world has caught up to: the hand
       // is read off the engine, which only reports the thing as held on its
       // next step, so asking me.holding here always answered "no".
-      say(me.record ? `You have the ${me.record}.`
-                    : (said.why || said.refused || "It would not come up."));
+      if (me.record) say(`You have the ${me.record}.`);
+      else say(said.why || said.refused || "It would not come up.", { refused: true });
     }
   } catch (trouble) {
-    say(String(trouble.message).slice(0, 120));
+    say(String(trouble.message).slice(0, 120), { refused: true });
   } finally {
     me.busy = false;
   }
@@ -606,13 +615,22 @@ async function takeOrPutDown() {
 async function usePrimary() {
   if (!world.session) return;
   const target = me.holding || lookedAt()?.name;
-  if (!target) { say("Point at something, or pick something up."); return; }
-  const said = await api("/api/world/action", {
-    session: world.session, object: target, primary: true, person: whereIAm(),
-  });
+  if (!target) { say("Point at something, or pick something up.", { refused: true }); return; }
+  // Held through the whole call: a Use runs the engine's own hand, and the
+  // step loop must leave that hand alone while it does (see the step call).
+  const was = me.busy;
+  me.busy = true;
+  let said;
+  try {
+    said = await api("/api/world/action", {
+      session: world.session, object: target, primary: true, person: whereIAm(),
+    });
+  } finally {
+    me.busy = was;
+  }
   // A refusal first and in its own words: it is the most useful thing the
   // engine ever says, and burying it under a label reads as success.
-  if (said.refused) say(`${said.action || "That"}: ${said.refused}`);
+  if (said.refused) say(`${said.action || "That"}: ${said.refused}`, { refused: true });
   else say(said.said || said.did || said.why || said.action || "Done.");
   if (said.inventory || said.shown) tookNote(said.inventory || said);
   else if (me.holding) await refreshHands();
@@ -623,10 +641,25 @@ async function refreshHands() {
   catch { /* the hands are only a readout */ }
 }
 
-function say(words) {
+let saidFades = 0;
+
+function say(words, { refused = false } = {}) {
   me.said = words;
   $("did").textContent = words;
   $("did").hidden = !words;
+  // And over the world, by the sight. The side panel is not where anyone is
+  // looking when they press a key, so a refusal put only there reads as the
+  // key having done nothing at all.
+  //
+  // Whether it WAS a refusal is said by whoever calls: reading it out of the
+  // wording guessed, and guessed wrong -- "put down what you are holding
+  // first" came up in plain white as though it had worked.
+  const loud = $("said-loud");
+  loud.textContent = words;
+  loud.hidden = !words;
+  loud.classList.toggle("refused", !!refused);
+  clearTimeout(saidFades);
+  saidFades = setTimeout(() => { loud.hidden = true; }, 4200);
 }
 
 function showHands() {
@@ -661,6 +694,7 @@ let ghost = null;
 let ghostAsked = 0;
 
 function showGhost(answer, body) {
+  me.canPlace = !!(answer && answer.fits);
   if (!answer || !answer.on) { hideGhost(); return; }
   const [dx, dy, dz] = body.dimensions_m || [0.3, 0.3, 0.3];
   if (!ghost) {
@@ -681,6 +715,7 @@ function showGhost(answer, body) {
 }
 
 function hideGhost() {
+  me.canPlace = false;
   if (ghost) ghost.visible = false;
   $("ghost-said").hidden = true;
 }
@@ -849,16 +884,48 @@ async function sweepUp(said = true) {
     });
     const took = answer.collected ?? answer.taken ?? (answer.gone || []).length;
     if (took) { if (said) say(`Swept up ${took} loose piece${took === 1 ? "" : "s"}.`); await refreshHands(); }
-    else if (said) say("Nothing loose within reach.");
+    else if (said) say("Nothing loose within reach.", { refused: true });
   } catch (trouble) {
-    if (said) say(String(trouble.message).slice(0, 110));
+    if (said) say(String(trouble.message).slice(0, 110), { refused: true });
+  }
+}
+
+/** X: just let go. The place step looks for somewhere the thing will SIT, and
+ *  standing among other things there may be nowhere -- which left you holding
+ *  it with no way out. This drops it where you are and lets gravity have it. */
+async function letGo() {
+  if (!me.holding) { say("Your hands are empty.", { refused: true }); return; }
+  const going = me.holding;
+  me.busy = true;
+  try {
+    // Through the inventory, not straight at the engine: `drop` releases the
+    // engine's hand AND writes the record in one go. Releasing the hand on its
+    // own would leave the record still listing it as held.
+    const said = await api("/api/world/inventory", {
+      session: world.session, request: newRequest(), revision: me.revision,
+      op: "drop", item: going, person: whereIAm(),
+    });
+    tookNote(said);
+    say(said.did || `Let go of the ${going}.`);
+  } catch (trouble) {
+    // The record can disagree with the world -- it does not hear about a let-go
+    // that happened inside a `place`. Rather than leave someone stuck holding
+    // something, open the engine's hand and say plainly that they are apart.
+    try {
+      await api("/api/live/act", { session: world.session, op: "release" });
+      say(`Let go of the ${going}, but the record did not take it: ${trouble.message}`,
+          { refused: true });
+    } catch { say(String(trouble.message).slice(0, 110), { refused: true }); }
+  } finally {
+    me.busy = false;
   }
 }
 
 /** Q: the thing in your hand goes into the bag. */
 async function intoTheBag() {
-  if (!me.holding) { say("Your hands are empty."); return; }
+  if (!me.holding) { say("Your hands are empty.", { refused: true }); return; }
   const going = me.holding;
+  me.busy = true;
   try {
     const said = await api("/api/world/inventory", {
       session: world.session, request: newRequest(), revision: me.revision,
@@ -867,7 +934,9 @@ async function intoTheBag() {
     tookNote(said);
     say(said.why || `The ${going} is in your bag.`);
   } catch (trouble) {
-    say(String(trouble.message).slice(0, 110));
+    say(String(trouble.message).slice(0, 110), { refused: true });
+  } finally {
+    me.busy = false;
   }
 }
 
@@ -957,9 +1026,15 @@ async function tick() {
       try {
         // The hand goes with the step rather than in a call of its own: it is
         // one round trip instead of two, and the engine wants them together.
+        //
+        // But NOT while the engine is running a stroke of its own. Putting a
+        // thing down moves the hand along a path and waits for the room to be
+        // stepped -- by this loop -- for it to get anywhere. Carrying on saying
+        // "the hand is at my chest" every frame pulled it back each time, so
+        // the stroke never arrived and every put-down ended "ran out of time".
         const state = await api("/api/live/act", {
           session: world.session, op: "step", dt, n,
-          ...(me.holding ? { hand: handPoint() } : {}),
+          ...(me.holding && !me.busy ? { hand: handPoint() } : {}),
         });
         world.t = state.t ?? world.t;
         const was = world.shown.length;

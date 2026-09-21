@@ -580,6 +580,19 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertIn("put down what you are holding first", answer["error"])
         self.assertEqual(app.live.acts, [])
 
+    def test_holding_the_very_thing_the_action_is_on_is_not_in_its_own_way(self):
+        # The owner, of the Explorer: "hitting e doesn't put it down". Putting a
+        # cart down ran the cart's own use, which wanted the free hand the cart
+        # was in -- so the only way to put down what you held was to put down
+        # what you held. A full hand is only in the way when it holds something
+        # ELSE; holding the thing being acted on is the hand the action wants.
+        app = self.start([dict(BRING, body="stool")])
+        app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
+        status, answer = self.press(app, "stool", 0)
+        self.assertEqual(status, 200, answer)
+        self.assertNotIn("put down what you are holding first", str(answer))
+        self.assertTrue(app.live.acts, "the hand never moved")
+
     def test_a_page_that_no_longer_has_the_room_is_refused_and_nothing_moves(self):
         # The playground runs one room at a time. Measured on 8781: a checker's
         # page that had lost its room to the owner's went on pressing "Put it

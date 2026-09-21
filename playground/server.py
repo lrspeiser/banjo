@@ -1239,7 +1239,7 @@ class Handler(BaseHTTPRequestHandler):
                  or fabrication_room.active(self.server.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
             if fabrication_room.active(self.server.app):
-                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/tool", "/api/world/tool/use"}
+                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/tool", "/api/world/tool/use"}
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
@@ -1570,6 +1570,11 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/world/placement":
                 _this_pages_room(self.server.app,body)
                 return self.send(placement.resolve(self.server.app,body))
+            if path=="/api/world/putdown":
+                # Putting a thing down is its own verb, not one of its uses.
+                # See put_it_down. Only on the room the page has open.
+                _this_pages_room(self.server.app,body)
+                return self.send(put_it_down(self.server.app,body))
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
                 # no model is asked: the room's chat wrote the program when it
@@ -2497,6 +2502,64 @@ def run_action(app, body):
         lock.release()
 
 
+def put_it_down(app,body):
+    """Set down what the hand holds, where the preview says it would go
+    (POST /api/world/putdown).
+
+    Its own verb because putting a thing down is NOT one of its uses. A cart is
+    for pushing and a block is for placing, but both have to be settable down,
+    by the same key, whatever they are for -- and routing a put-down through a
+    thing's use asked a cart for the free hand it wanted to push with, so the
+    only way to put down what you held was to put down what you held.
+
+    The body carries {object, person, placement_target?}. It places with the
+    same bounded hand and the same clearance checks the preview used
+    (placement.execute), so a thing lands where the ghost promised or nowhere,
+    and then tells the record, which otherwise goes on listing in a hand what
+    is standing on the floor."""
+    if app.live.session is None: raise ValueError("the room is not open")
+    if not isinstance(body,dict): raise ValueError("expected {object, person}")
+    name=str(body.get("object",""))[:200]
+    person=world_chat.where_the_person_is(body.get("person"))
+    line,problem=placement.execute(app,name,person,_stroke_along,body.get("placement_target"))
+    settled=None
+    if problem:
+        # Nothing to snap to. A snap wants a flat, clear, three-cornered rest,
+        # and in a valley of bumps and slopes a cart finds one almost nowhere --
+        # so refusing here left a person carrying it about with no way to be rid
+        # of it. Set it on the ground in front instead, which is what a person
+        # does: lowered from the hand until whatever is under it takes the
+        # weight, wherever that turns out to be.
+        settled=problem
+        said=run_action(app,{"session":body.get("session"),"object":name,
+                             "builtin":"put_on_ground","person":body.get("person")})
+        if said.get("refused"):
+            return {"ok":False,"why":problem,"also":said["refused"],
+                    "shown":inventory_room.shown(app)}
+        line=f"Set the {name} down on the ground in front of you"
+    # The hand is empty now, so the record's own release is a no-op and this
+    # only writes down what already happened. A record that refuses -- because
+    # it never had the thing in a hand -- must not turn a done put-down into an
+    # error: say it, and let the page show the two sides disagreeing.
+    noted=None
+    try:
+        noted=inventory_room.request(app,{
+            "session":body.get("session"),
+            "request":f"putdown-{name}-{app.live.session.id}-{time.time_ns()}",
+            "op":"drop","item":name,"person":body.get("person")})
+    except Exception as trouble:
+        noted={"ok":False,"why":str(trouble)}
+    answer={"ok":True,"did":line,"shown":inventory_room.shown(app)}
+    # Say when it did not go where the preview promised, rather than letting the
+    # ghost sit on a table top and the thing end up on the floor beside it.
+    if settled: answer["instead"]=settled
+    if noted is not None and not noted.get("ok"):
+        answer["record"]=f"the record did not take it: {noted.get('why')}"
+    elif noted is not None:
+        answer["revision"]=noted.get("revision")
+    return answer
+
+
 def _run_action(app,body):
     """One of a thing's actions, pressed on the page (POST /api/world/action).
 
@@ -2540,7 +2603,10 @@ def _run_action(app,body):
     # letting go first would drop the gate. Anything else needs the hand free.
     hand = (app.live.session.state or {}).get("hand") or {}
     held = (hand.get("name") or hand.get("holding")) if hand.get("holding") else None
-    if held and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
+    # Holding the very thing being acted on is not a full hand in the way that
+    # matters: it is the hand this action wants. Refusing it meant the only way
+    # to put down what you held was to put down what you held.
+    if held and held != name and action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     # What the hand held before the action: the action lets go only of what it
