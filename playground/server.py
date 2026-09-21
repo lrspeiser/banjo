@@ -2512,10 +2512,19 @@ def run_action(app, body, *, own_hold=False):
 # so asking for more only lets light things go faster.
 PUT_DOWN_SPEED_M_S=4.0
 PUT_DOWN_ACCEL_M_S2=20.0
+HAND_N=800.0          # the engine hand's force
 
 
-def _quick_stroke(app,path,speed):
-    return _stroke_along(app,path,speed,accel=PUT_DOWN_ACCEL_M_S2)
+def put_down_pace(mass_kg):
+    """How fast the hand can set a thing down without losing it: speed and
+    acceleration from the force left over once the thing is held up, with half
+    of it kept in hand to brake. Asked for 20 m/s^2, a 63 kg iron block lagged
+    its own hand, overshot the spot by a metre and swung back, and took 3.7 s;
+    a 6 kg oak block is not held back at all."""
+    m=max(0.1,float(mass_kg or 1.0))
+    spare=math.sqrt(max(0.0,HAND_N**2-(m*9.81)**2))
+    accel=min(PUT_DOWN_ACCEL_M_S2,max(1.0,0.5*spare/m))
+    return min(PUT_DOWN_SPEED_M_S,max(0.5,math.sqrt(accel))),accel
 
 
 def put_it_down(app,body):
@@ -2542,8 +2551,12 @@ def put_it_down(app,body):
     # drifting across the screen while the person wondered whether E had
     # worked. The hand is still the engine's, force-limited, so a heavy thing
     # still goes as fast as 800 N can take it and no faster.
-    line,problem=placement.execute(app,name,person,_quick_stroke,body.get("placement_target"),
-                                   speed=PUT_DOWN_SPEED_M_S)
+    mass=sum(float(b.get("mass_kg") or 0.0) for b in (app.live.session.state or {}).get("bodies",[])
+             if b.get("name")==name)
+    speed,accel=put_down_pace(mass)
+    line,problem=placement.execute(app,name,person,
+                                   lambda a,path,s: _stroke_along(a,path,s,accel=accel),
+                                   body.get("placement_target"),speed=speed,direct=True)
     settled=None
     if problem:
         # Nothing to snap to. A snap wants a flat, clear, three-cornered rest,

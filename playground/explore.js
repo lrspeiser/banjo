@@ -272,8 +272,17 @@ function draw(state) {
   if (state.partial) return;      // not asked for; see above
   for (let i = 0; i < list.length; i++) {
     const body = list[i];
-    const sig = signatureOf(body);
     const slot = world.shown[i];
+    // The open reply carries a lattice body's cells; step replies do not, and
+    // a break sends the new ones. Without carrying the last ones forward, the
+    // first step changed every product's signature and rebuilt it from
+    // dimensions_m -- its bounding box -- so the table and the bench were
+    // drawn as solid slabs, and a table in your hands filled the view.
+    if (!body.cells_local_m && slot && slot.data.cells_local_m
+        && slot.data.name === body.name && slot.data.revision === body.revision) {
+      body.cells_local_m = slot.data.cells_local_m;
+    }
+    const sig = signatureOf(body);
     if (!slot || slot.sig !== sig) {
       if (slot) { view.remove(slot.mesh); dispose(slot.mesh); }
       const mesh = buildMesh(body);
@@ -293,6 +302,19 @@ function draw(state) {
   const was = me.holding;
   me.holding = heldInTheWorld();
   if (me.holding !== was) showHands();
+  // See-through while it is in your hands: a table carried in front of you
+  // hides the ground you are about to put it on, and the preview with it.
+  for (const slot of world.shown) seeThrough(slot, slot.data.name === me.holding);
+}
+
+function seeThrough(slot, on) {
+  if (!!slot.clear === on) return;
+  slot.clear = on;
+  const m = slot.mesh.material;
+  m.transparent = on;
+  m.opacity = on ? 0.38 : 1;
+  m.depthWrite = !on;
+  m.needsUpdate = true;
 }
 
 // --------------------------------------------------------------------------
@@ -312,8 +334,11 @@ function handPoint() {
   // were putting it. Further out and lower the bigger it is, so a bench stays
   // at the edge of the view instead of blotting out the valley.
   const size = heldSize();
-  const yaw = person.yaw - 0.2;
-  const pitch = Math.min(-0.3, person.pitch - 0.45);
+  // How much bigger than a block it is: a bench goes to your side and low, a
+  // block to the lower right of the view.
+  const big = Math.max(0, size - 0.5);
+  const yaw = person.yaw - (0.2 + big * 0.25);
+  const pitch = Math.min(-0.3, person.pitch - 0.45 - big * 0.3);
   const reach = REACH + size * 0.6;
   const eye = groundAt(person.x, person.z) + EYE;
   const x = person.x - Math.sin(yaw) * Math.cos(pitch) * reach;
@@ -342,7 +367,13 @@ function leadHand(dt) {
   const goal = at[1] < world.liftTo - 0.02 && across > 0.15 ? [at[0], world.liftTo, at[2]] : want;
   const d = [goal[0] - at[0], goal[1] - at[1], goal[2] - at[2]];
   const length = Math.hypot(d[0], d[1], d[2]);
-  const k = length > HAND_SPEED * dt ? (HAND_SPEED * dt) / length : 1;
+  // Slower the heavier it is. Most of the hand's 800 N goes on holding a 63 kg
+  // iron block up, and what is left cannot brake it: led at 2 m/s it sailed a
+  // metre past the hand and over the person's head.
+  const mass = world.shown.filter((s) => s.data.name === me.holding)
+    .reduce((m, s) => m + (s.data.mass_kg || 0), 0);
+  const pace = HAND_SPEED * Math.min(1, Math.max(0.25, 25 / Math.max(mass, 1)));
+  const k = length > pace * dt ? (pace * dt) / length : 1;
   world.handAt = [at[0] + d[0] * k, at[1] + d[1] * k, at[2] + d[2] * k];
   return world.handAt;
 }
@@ -1268,33 +1299,65 @@ function thingNamed(name) {
   const parts = world.shown.filter((s) => s.data.name === name).map((s) => s.data);
   if (!parts.length) return null;
   const q = new THREE.Quaternion();
-  let lowest = Infinity, biggest = null, most = -1;
-  const centre = [0, 0, 0];
+  let lowest = Infinity, aim = null, most = -1;
+  const boxes = [];
   for (const p of parts) {
-    const size = p.dimensions_m || [0, 0, 0];
     const w = p.orientation_wxyz;
     if (w) q.set(w[1], w[2], w[3], w[0]); else q.identity();
-    // The underside of an oriented box: its middle less its reach downwards.
-    let reach = 0;
-    for (let k = 0; k < 3; k++) {
-      const axis = new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
-      reach += Math.abs(axis.y) * size[k] / 2;
+    const at = new THREE.Vector3(...p.position_m);
+    // A lattice body's position is its centre of mass and its dimensions its
+    // bounds, which need not be centred on it: a table's mass sits up in its
+    // top. Measured from its cells when it has them, from its box when not.
+    let size = p.dimensions_m || [0, 0, 0], offset = [0, 0, 0];
+    const cells = p.cells_local_m;
+    if (cells && cells.length) {
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (const c of cells) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], c[k]); hi[k] = Math.max(hi[k], c[k]); }
+      size = [0, 1, 2].map((k) => hi[k] - lo[k] + world.cell);
+      offset = [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2);
+      // Lowest point: every cell's own lowest corner, turned as the body is.
+      for (const c of cells) {
+        const y = new THREE.Vector3(...c).applyQuaternion(q).y + at.y;
+        lowest = Math.min(lowest, y - world.cell / 2);
+      }
+    } else {
+      let reach = 0;
+      for (let k = 0; k < 3; k++) {
+        const axis = new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
+        reach += Math.abs(axis.y) * size[k] / 2;
+      }
+      lowest = Math.min(lowest, at.y - reach);
     }
-    lowest = Math.min(lowest, p.position_m[1] - reach);
+    const middle = new THREE.Vector3(...offset).applyQuaternion(q).add(at);
+    boxes.push({ at: [middle.x, middle.y, middle.z], size, wxyz: w });
+    // What a person aims at: a solid bit of its upper part -- a stool's seat,
+    // not the middle of its legs, where the sight sees straight through it.
     const volume = size[0] * size[1] * size[2];
-    if (volume > most) { most = volume; biggest = p.position_m; }
-    for (let k = 0; k < 3; k++) centre[k] += p.position_m[k] / parts.length;
+    if (volume > most) {
+      most = volume;
+      if (cells && cells.length) {
+        const want = new THREE.Vector3(offset[0], offset[1] + size[1] * 0.3, offset[2]);
+        let best = cells[0], gap = Infinity;
+        for (const c of cells) {
+          const d = (c[0] - want.x) ** 2 + (c[1] - want.y) ** 2 + (c[2] - want.z) ** 2;
+          if (d < gap) { gap = d; best = c; }
+        }
+        const v = new THREE.Vector3(...best).applyQuaternion(q).add(at);
+        aim = [v.x, v.y, v.z];
+      } else {
+        aim = [middle.x, middle.y, middle.z];
+      }
+    }
   }
+  const centre = [0, 1, 2].map((k) => boxes.reduce((s, b) => s + b.at[k], 0) / boxes.length);
   return {
-    parts: parts.length, lowest, centre,
-    // What a person aims at: the biggest piece -- a stool's seat, not the
-    // middle of its legs, where the sight sees straight through it.
-    aim: biggest,
+    parts: parts.length, lowest, centre, aim,
+    mass_kg: parts.reduce((m, p) => m + (p.mass_kg || 0), 0),
     cells: parts.reduce((n, p) => n + ((p.cells_local_m || []).length), 0),
     held: parts.some((p) => p.held),
+    seeThrough: world.shown.some((s) => s.data.name === name && s.clear),
     ground: groundAt(centre[0], centre[2]),
-    box: screenBoxOf(parts.map((p) => ({ at: p.position_m, size: p.dimensions_m || [0, 0, 0],
-                                         wxyz: p.orientation_wxyz }))),
+    box: screenBoxOf(boxes),
     screen: screenOf(centre),
   };
 }
@@ -1367,6 +1430,9 @@ function snapshot(names = []) {
     size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
     colour: `#${ghost.material.color.getHexString()}`,
     screen: screenOf([ghost.position.x, ghost.position.y, ghost.position.z]),
+    // Where it will STAND: the middle of its base. For a 1.8 m shelf unit the
+    // middle of the preview is 0.9 m above the spot the sight is on.
+    base: screenOf([ghost.position.x, ghost.position.y - ghost.scale.y / 2, ghost.position.z]),
     box: screenBoxOf([{ at: [ghost.position.x, ghost.position.y, ghost.position.z],
                         size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
                         wxyz: [ghost.quaternion.w, ghost.quaternion.x, ghost.quaternion.y, ghost.quaternion.z] }]),

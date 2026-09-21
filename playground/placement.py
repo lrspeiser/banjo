@@ -152,12 +152,18 @@ def resolve(app, body):
         answer["target"]["id"] = "ground"
     return answer
 
-def execute(app, name, person, stroke, expected=None, speed=.8):
+def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     """Place with the bounded native hand; the host continues physics ticks.
 
     `speed` is the hand's, along the path, in m/s. The default is the Use
     action's measured pace; a page putting something down where a person is
-    looking asks for more (server.put_it_down)."""
+    looking asks for more (server.put_it_down).
+
+    `direct` lets the hand go straight down to just above the spot when the
+    spot is below it, instead of across at its own height and then down --
+    about a quarter less path from the hip to the ground in front. A spot
+    ABOVE the hand still goes up first, so it cannot clip the edge of a table
+    it is being lifted onto."""
     import time
     session = app.live.session
     hand = (session.state or {}).get("hand") or {}
@@ -179,17 +185,35 @@ def execute(app, name, person, stroke, expected=None, speed=.8):
     act("step", dt=1/240, n=1, hand_q=plan["facing"])
     end = plan["at_m"]
     over = max(start[1], end[1]+.2)
-    path = [start, [start[0],over,start[2]], [end[0],over,end[2]], end]
+    if direct and start[1] >= end[1]+.2:
+        path = [start, [end[0],end[1]+.2,end[2]], end]
+    else:
+        path = [start, [start[0],over,start[2]], [end[0],over,end[2]], end]
     outcome = stroke(app, path, speed)
     if outcome not in ("reached", "blocked"):
         act("cancel_stroke")
         return "", "placement stroke " + outcome + "; the item is still held"
-    until = time.monotonic()+1.5
+    # How far off upright it may be let go of: 8.6 degrees for a thing that
+    # stands on a broad base, a third of its tipping angle for a tall thin one.
+    # At 8.6 degrees a 1.8 m shelf unit on a 0.28 m base -- which tips at about
+    # 9 -- was let go leaning, and fell over towards the person a second later.
+    dims = current().get("dimensions_m") or [1.0, 1.0, 1.0]
+    tips = math.atan2(min(dims[0], dims[2]) / 2, max(dims[1] / 2, 1e-3))
+    half_turn = min(.075, tips / 6)
+    until = time.monotonic()+2.0
+    was = None
     while time.monotonic() < until:
         b = current()
         q = b["orientation_wxyz"]
-        aligned = abs(sum(q[k]*plan["facing"][k] for k in range(4))) >= math.cos(.075)
-        if math.dist(b["position_m"], end) <= .05 and aligned:
+        aligned = abs(sum(q[k]*plan["facing"][k] for k in range(4))) >= math.cos(half_turn)
+        # And STILL: let go of a thing that is still swinging and it goes on
+        # swinging. The hand reports how fast the point it grips is moving;
+        # the turn is compared across two looks 30 ms apart.
+        grip = ((session.state or {}).get("hand") or {}).get("grip_velocity_m_s") or [0.0, 0.0, 0.0]
+        still = math.hypot(*grip) < .1 and was is not None and \
+            abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004)
+        was = q
+        if math.dist(b["position_m"], end) <= .05 and aligned and still:
             now = resolve(app, {**request, "expected": plan["target"]})
             if not now.get("fits"):
                 return "", now["why"]

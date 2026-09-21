@@ -404,9 +404,15 @@ def product_bodies(kind: str, root: str, at_xz, ground: dict, *, material=None):
             interaction_points.installed(design, root, com), broken)
 
 
-def block(name: str, material: str, at_xz, ground: dict, side_mm: float = 320.0) -> dict:
+def block(name: str, material: str, at_xz, ground: dict, side_mm: float = 200.0) -> dict:
     """One loose block of a material, sitting on the ground: something to pick
-    up, throw, and find out what it does when it lands."""
+    up, throw, and find out what it does when it lands.
+
+    200 mm, so that every one of them CAN be picked up. At 320 mm five of the
+    eight weighed more than the 73 kg a hand lifts (banjo_mcp.HAND_LIFTS_KG) --
+    glass 82, concrete 79, aluminium 88, ceramic 128, iron 258 kg -- and "take
+    the glass block" was refused. At 200 mm the heaviest, iron, is 63 kg. It is
+    also five whole 40 mm cells, which the room's validation asks of a box."""
     half = side_mm / 2000.0
     floor = ground_under(ground, (at_xz[0] - half, at_xz[1] - half),
                          (at_xz[0] + half, at_xz[1] + half))
@@ -448,7 +454,9 @@ def compose(ground: dict) -> tuple[dict, dict]:
     #    throwing it at something rather than by reading a table.
     bank = area("bank", (-7.0, -4.0), 1.9, " -- the material bank")
     for i, material in enumerate(MATERIALS):
-        at = (bank[0] - 1.1 + (i % 4) * 0.75, bank[1] - 0.4 + (i // 4) * 0.8)
+        # A metre apart: at 0.75 m there was nowhere between them to set down a
+        # block taken from the next one, and every put-down there was refused.
+        at = (bank[0] - 1.5 + (i % 4) * 1.0, bank[1] - 0.5 + (i // 4) * 1.0)
         name = BLOCK_NOTE[material]
         bodies.append(block(name, material, at, ground))
         # A block is the thing you carry, so its one use is setting it down --
