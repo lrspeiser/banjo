@@ -1,4 +1,168 @@
 {
+ "actions": [
+  {
+   "body": "oak block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "iron block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "glass block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "concrete block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "ceramic block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "ice block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "aluminium block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "rubber block",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  },
+  {
+   "body": "table",
+   "label": "Shove it along",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "bench",
+   "label": "Shove it along",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "chair",
+   "label": "Push it in",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "stool",
+   "label": "Push it in",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "shelf-unit",
+   "label": "Shove it along",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "cart",
+   "label": "Push the cart",
+   "primary": true,
+   "steps": [
+    {
+     "distance_m": 0.4,
+     "do": "push_forward",
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "kettle",
+   "label": "Set it down",
+   "primary": true,
+   "steps": [
+    {
+     "do": "place"
+    }
+   ]
+  }
+ ],
  "algorithm": "lattice",
  "bodies": [
   {
@@ -1871,6 +2035,277 @@
   }
  ],
  "cell_m": 0.04,
+ "interaction_points": [
+  {
+   "body": "table",
+   "points": [
+    {
+     "id": "top",
+     "kind": "surface",
+     "label": "Top",
+     "position_m": [
+      0.0,
+      0.06470588235294117,
+      0.0
+     ],
+     "size_m": [
+      1.2,
+      2.0,
+      0.7
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      -0.044901104546622106,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      -0.044901104546622106,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "bench",
+   "points": [
+    {
+     "id": "top",
+     "kind": "surface",
+     "label": "Top",
+     "position_m": [
+      0.0,
+      0.04999999999999999,
+      0.0
+     ],
+     "size_m": [
+      1.6,
+      2.0,
+      0.36
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      -0.003990420044215182,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      -0.003990420044215182,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "chair",
+   "points": [
+    {
+     "id": "seat",
+     "kind": "surface",
+     "label": "Seat",
+     "position_m": [
+      0.0,
+      -0.07094339622641505,
+      -0.12867924528301888
+     ],
+     "size_m": [
+      0.46,
+      2.0,
+      0.46
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      -0.10374317336713046,
+      -0.10308025017579318
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      -0.10374317336713046,
+      -0.10308025017579318
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "stool",
+   "points": [
+    {
+     "id": "top",
+     "kind": "surface",
+     "label": "Top",
+     "position_m": [
+      0.0,
+      0.24000000000000002,
+      0.0
+     ],
+     "size_m": [
+      0.36,
+      2.0,
+      0.36
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.1285377977492345,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.1285377977492345,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "shelf-unit",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      -1.1102230246251565e-16,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      -1.1102230246251565e-16,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "cart",
+   "points": [
+    {
+     "id": "deck",
+     "kind": "surface",
+     "label": "Cargo deck",
+     "position_m": [
+      0.0,
+      0.08779369627507161,
+      0.024928366762177648
+     ],
+     "size_m": [
+      0.7,
+      2.0,
+      1.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.2877936962750717,
+      -0.8750716332378223
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.2877936962750717,
+      -0.8750716332378223
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "kettle",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.165,
+      0.08099999999999999,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.165,
+      0.08099999999999999,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  }
+ ],
  "plasticity": "on",
  "terrain": {
   "generate": "valley"

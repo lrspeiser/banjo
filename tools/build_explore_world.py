@@ -41,7 +41,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
 import fracture_lab            # noqa: E402
 import live_session            # noqa: E402
 import workshop_sparse_trial as sparse   # noqa: E402
-from mcp import engine_materials, workshop_components, workshop_visual  # noqa: E402
+from mcp import (core_use, engine_materials, interaction_points,  # noqa: E402
+                 workshop_components, workshop_visual)
 
 CELL_M = 0.04                  # 60 mm loses the kettle entirely; 40 mm keeps every part
 OUT = ROOT / "playground" / "rooms" / "explore.json"
@@ -52,6 +53,19 @@ MATERIALS = ["oak", "iron", "glass", "concrete", "ceramic", "ice", "aluminum", "
 
 # What each block is for, said in its name, because the name is what the room
 # shows under the crosshair.
+# The one thing each product is for, as a saved program (mcp/core_use.py). The
+# four steps a portable program may use are inspect, place, strike and
+# push_forward; anything richer belongs to the room's own action DSL.
+PRIMARY_USE = {
+    "table":      {"label": "Shove it along",   "steps": [{"do": "push_forward"}]},
+    "bench":      {"label": "Shove it along",   "steps": [{"do": "push_forward"}]},
+    "chair":      {"label": "Push it in",       "steps": [{"do": "push_forward"}]},
+    "stool":      {"label": "Push it in",       "steps": [{"do": "push_forward"}]},
+    "shelf-unit": {"label": "Shove it along",   "steps": [{"do": "push_forward"}]},
+    "cart":       {"label": "Push the cart",    "steps": [{"do": "push_forward"}]},
+    "kettle":     {"label": "Set it down",      "steps": [{"do": "place"}]},
+}
+
 BLOCK_NOTE = {
     "oak": "oak block", "iron": "iron block", "glass": "glass block",
     "concrete": "concrete block", "ceramic": "ceramic block", "ice": "ice block",
@@ -146,6 +160,8 @@ def product_bodies(kind: str, root: str, at_xz, ground: dict, *, material=None) 
     world is the same matter the Workshop measured and the bench broke.
     """
     params = {"material": material} if material else {}
+    if kind in PRIMARY_USE:
+        params["primary_use"] = PRIMARY_USE[kind]
     design, over = workshop_components.design_from_spec(
         {"kind": kind, "design_id": root, "parameters": params})
     matter = workshop_visual.matter_document(design, over, cell_size_m=CELL_M,
@@ -171,9 +187,20 @@ def product_bodies(kind: str, root: str, at_xz, ground: dict, *, material=None) 
     labels = {tuple(g[a] + shift[a] for a in range(3)): f"{root}/{p}"
               for g, p in part_of.items()}
     material_name = engine_materials.canonical(next(iter(matter["cells"]))["material"])
-    return [sparse._box_body(root if i == 0 else f"{root}-{i}", box, CELL_M,
-                             material_name, root, part)
-            for i, (box, part) in enumerate(sparse.decompose_by_part(placed, labels))]
+    bodies = [sparse._box_body(root if i == 0 else f"{root}-{i}", box, CELL_M,
+                               material_name, root, part)
+              for i, (box, part) in enumerate(sparse.decompose_by_part(placed, labels))]
+    # What it is for, and where a thing can be set down on it -- the same two
+    # calls the install path makes (workshop_install.py), including its way of
+    # taking the centre of mass from the placed cells, so a product standing
+    # here behaves exactly like one the Workshop put here.
+    # From the DESIGN's cells, not the placed ones. The points come out of
+    # for_design in the design's own frame, so the centre they are rebased onto
+    # has to be in that frame too. Taking it from the placed cells put the
+    # bench's top 4.9 m away from the bench -- exactly the distance the bench
+    # had been moved.
+    com = [sum((g[a] + 0.5) * CELL_M for g in cells) / len(cells) for a in range(3)]
+    return bodies, core_use.installed(design, root), interaction_points.installed(design, root, com)
 
 
 def block(name: str, material: str, at_xz, ground: dict, side_mm: float = 320.0) -> dict:
@@ -190,7 +217,15 @@ def block(name: str, material: str, at_xz, ground: dict, side_mm: float = 320.0)
 
 def compose(ground: dict) -> dict:
     bodies: list[dict] = []
+    actions: list[dict] = []
+    points: list[dict] = []
     taken: list[tuple[float, float, float]] = []
+
+    def stand(kind, root, at):
+        got, use, where = product_bodies(kind, root, at, ground)
+        bodies.extend(got)
+        actions.append(use)
+        points.append(where)
 
     def area(key, want, radius, note=""):
         at, spread = flattest_near(ground, want, radius, taken)
@@ -205,7 +240,12 @@ def compose(ground: dict) -> dict:
     bank = area("bank", (-7.0, -4.0), 1.9, " -- the material bank")
     for i, material in enumerate(MATERIALS):
         at = (bank[0] - 1.1 + (i % 4) * 0.75, bank[1] - 0.4 + (i // 4) * 0.8)
-        bodies.append(block(BLOCK_NOTE[material], material, at, ground))
+        name = BLOCK_NOTE[material]
+        bodies.append(block(name, material, at, ground))
+        # A block is the thing you carry, so its one use is setting it down --
+        # which is the step that goes looking for somewhere to set it ON.
+        actions.append({"body": name, "label": "Set it down", "primary": True,
+                        "steps": [{"do": "place"}]})
 
     # 2. THE WORKSHOP YARD. The furniture family, standing as it would be used.
     for kind, want, radius in (("table", (0.0, 0.0), 1.1),
@@ -213,20 +253,23 @@ def compose(ground: dict) -> dict:
                                ("chair", (-2.6, 1.4), 0.7),
                                ("stool", (-2.6, -1.4), 0.5),
                                ("shelf-unit", (3.2, -2.8), 0.9)):
-        at = area(kind, want, radius)
-        bodies += product_bodies(kind, kind, at, ground)
+        stand(kind, kind, area(kind, want, radius))
 
     # 3. THE CART, on its own so there is room to push it.
-    bodies += product_bodies("cart", "cart", area("cart", (0.0, 5.4), 1.5), ground)
+    stand("cart", "cart", area("cart", (0.0, 5.4), 1.5))
 
     # 4. THE KETTLE, which is the one iron thing among the oak.
-    bodies += product_bodies("kettle", "kettle", area("kettle", (6.0, 3.8), 0.6), ground)
+    stand("kettle", "kettle", area("kettle", (6.0, 3.8), 0.6))
 
-    spec = {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
+    print(f"  {len(actions)} things have a use of their own; "
+          f"{sum(1 for r in points for p in r['points'] if p['kind'] in ('surface', 'container'))}"
+          f" places to set something down")
+    return {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
             "terrain": {"generate": "valley"},
             "water": {"discharge_m3_s": 0.35},
-            "bodies": bodies}
-    return spec
+            "bodies": bodies,
+            "actions": actions,
+            "interaction_points": points}
 
 
 # --------------------------------------------------------------------------
