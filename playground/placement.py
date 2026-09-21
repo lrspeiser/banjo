@@ -55,6 +55,37 @@ def _reach(body, q, axis):
     return sum(abs(rotate(q, [1 if j == k else 0 for j in range(3)])[axis])*dims[k]/2 for k in range(3))
 
 
+def _part_span(part, q, axis):
+    """Where one exact part begins and ends along a world axis, from its body's
+    position, the body turned by q: a box by its corners, a cylinder (along its
+    own y, sized {diameter, length, diameter}) by its rims."""
+    turn = mul(q, part.get("rotation_wxyz") or [1, 0, 0, 0])
+    middle = rotate(q, part["center_local_m"])[axis]
+    d = part["dimensions_m"]
+    if part.get("shape") == "cylinder":
+        along = rotate(turn, [0, 1, 0])[axis]
+        reach = d[1]/2*abs(along) + d[0]/2*math.sqrt(max(0.0, 1.0 - along*along))
+    else:
+        reach = sum(abs(rotate(turn, [1 if j == k else 0 for j in range(3)])[axis])*d[k]/2 for k in range(3))
+    return middle - reach, middle + reach
+
+
+def _span(body, q, axis):
+    """How far a part reaches below and above its middle along a world axis (0
+    x, 1 y, 2 z), turned by q. An exact body by its own parts: a round wheel
+    reaches as far down however far it has turned on its axle, where the box
+    round it reaches 41% further at 45 degrees -- and the engine sets a part
+    down by its real shape (LiveWorld::placement), so a cart carried with its
+    wheels turned was previewed at one height and refused at another. Anything
+    else by its box."""
+    parts = body.get("rigid_parts_local")
+    if parts:
+        spans = [_part_span(part, q, axis) for part in parts]
+        return min(s[0] for s in spans), max(s[1] for s in spans)
+    reach = _reach(body, q, axis)
+    return -reach, reach
+
+
 # What holds a part IN PLACE on the one the hand grips: fixed to it, on a pin
 # through it, or in a groove in it. Those go down with it as one shape -- a
 # chair's legs under its seat, a cart's wheels under its bed. What only hangs
@@ -166,15 +197,15 @@ def resolve(app, body):
             q = mul(turn, p.get("orientation_wxyz", [1, 0, 0, 0]))
             off = rotate(turn, [p["position_m"][k]-g["position_m"][k] for k in range(3)])
             placed.append((p, off, q))
-        lowest = min(off[1]-_reach(p, q, 1) for p, off, q in placed)
-        mid = [(min(off[k]-_reach(p, q, k) for p, off, q in placed) +
-                max(off[k]+_reach(p, q, k) for p, off, q in placed)) / 2 for k in (0, 2)]
+        lowest = min(off[1]+_span(p, q, 1)[0] for p, off, q in placed)
+        mid = [(min(off[k]+_span(p, q, k)[0] for p, off, q in placed) +
+                max(off[k]+_span(p, q, k)[1] for p, off, q in placed)) / 2 for k in (0, 2)]
         centre = [on[0]-mid[0], on[1]-lowest+.002, on[2]-mid[1]]
         for _ in range(2):
             answers, lift = [], 0.0
             for p, off, q in placed:
                 at = [centre[k]+off[k] for k in range(3)]
-                down = _reach(p, q, 1)
+                down = -_span(p, q, 1)[0]
                 got = engine_check(p["name"], [at[0], at[1]-down, at[2]], onto, yaw_of({"orientation_wxyz": q}),
                                    square=False)
                 if got.get("why") == "that is too steep to set it on":
@@ -298,8 +329,15 @@ def resolve(app, body):
     # handle in the hand -- and never skip an unrelated obstacle.
     if hit.get("hit") and hit.get("name") in own:
         def bottom(b):
-            return b["position_m"][1] - sum(abs(rotate(b.get("orientation_wxyz",[1,0,0,0]),
-                [1 if j == k else 0 for j in range(3)])[1])*b["dimensions_m"][k]/2 for k in range(3))
+            q = b.get("orientation_wxyz", [1, 0, 0, 0])
+            # An exact body by its own parts: a wheel turned on its axle reaches
+            # no lower. A body of cells by its box, never less: its cells stand
+            # out past a smooth outline (a ball of them past its sphere), and a
+            # ray started inside the mace's head found the head, not the ground.
+            if b.get("rigid_parts_local"):
+                return b["position_m"][1] + _span(b, q, 1)[0]
+            return b["position_m"][1] - sum(abs(rotate(q, [1 if j == k else 0 for j in range(3)])[1])
+                                            * b["dimensions_m"][k]/2 for k in range(3))
         lower = min(bottom(b) for b in parts if b.get("dimensions_m")) if parts else bottom(mover)
         hit = act("pick", **{"from": [front[0], lower-.01, front[2]], "dir": [0,-1,0], "max_m": REACH_M})
     if (not hit.get("hit") or (hit.get("name") in bodies and

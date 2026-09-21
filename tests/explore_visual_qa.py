@@ -57,10 +57,11 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 W, H = 1280, 800
 # The mace is taken up by its handle ("mace"); its head comes with it, on its
-# tie (the owner's carry rule, agent/carry-whole).
+# tie (the owner's carry rule, agent/carry-whole). The cart by its chassis
+# ("cart"); its two wheelsets come with it on their pins.
 THINGS = ("oak block", "iron block", "glass block", "concrete block", "ceramic block", "ice block",
           "aluminium block", "rubber block", "stool", "chair", "bench", "table", "shelf-unit",
-          "mace")
+          "mace", "cart")
 
 # What a person expects, as numbers. Each is the longest a person waits before
 # deciding it did not work, or the furthest a thing may be from where it was

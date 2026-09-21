@@ -375,10 +375,22 @@ axle inside each wheel.
 - **It can be watched.** Both pages draw an exact body as its parts, its wheels
   round and each part in its material's colour.
 
-Where it stands is the owner's to say: 635900c took the valley's cells cart out
-"until they can be built whole"; the valley builder can stand the exact cart
-again (`stand_rigid`), turned to roll across its slope and set on the highest
-ground under every part.
+It stands in the Explore valley again. 635900c took the cells cart out "until
+they can be built whole"; once it was, the owner put it back (2026-09-21). The
+valley builder stands it (`stand_rigid`) turned to roll across its slope and set
+on the highest ground under every part, and puts its bodies in after the mace's
+MCP round trip (`with_rigid`), since that world takes no exact bodies.
+
+Looking at it, the room page offers what a person does with a cart -- push it,
+take it -- and not the hinge verbs a gate's pin needs ("Turn it all the way"):
+turned from the menu, a wheelset's pin tipped the cart over its axle, and the
+owner asked for them to go (2026-09-21). A product's own wheel is a pin free all
+the way round between two exact parts (`ownWheel` in world.js).
+
+Set down, it is measured by its parts: the placement preview used each part's
+box, and the box round a round wheel turned 45 degrees on its axle reaches 41%
+lower than the wheel, so a cart carried with its wheels turned was previewed at
+one height and refused by the engine at another (`placement._span`).
 
 Tests: `tests/precise_rigid_parts_tests.cpp` (the cart on its bearings in glass,
 oak, iron and oak with iron axles; into the bag and out whole, and through a
@@ -393,9 +405,11 @@ wheels turn; through the person's bag with `inventory_room`, a restart included)
    native fixings rated by `engine_fixing`: a fixed group is one compound
    today, so a joint inside it cannot part (item 3). The design id on the body,
    so a product reopens in the Workshop by what it is rather than by its name.
-   And where a person meets its pins: looking at the cart, the room page offers
-   the hinge verbs a gate needs ("Turn it all the way"), which on a cart tip it
-   over its axle.
+   Set down on a slope, a thing of several parts goes down as one rigid shape
+   lifted clear of the highest ground under it; across more than the 6 cm the
+   engine looks down for ground, its other feet are over nothing and it is
+   refused, and on the edge of that the preview flickers between green and red.
+   Letting it settle onto all its feet would fix both.
 2. **The engine checking what the bench checks.** Read a fixing's rotational
    impulse for a bending capacity; give a hinge a radial capacity. With
    glass/oak/iron tests, as `fixing_tests.cpp` has for tension and shear. Then

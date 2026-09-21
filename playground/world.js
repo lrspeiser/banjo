@@ -2280,9 +2280,10 @@ function detailsModel() {
   const focused = world.bodies.get(held?.name || world.aim?.name);
   if (focused?.fromPrecise) {
     model.facts += " · precise rigid, no internal failure";
-    model.note = [model.note, "Exact collision shape; no bending, fracture, heat, joints or bag storage."].filter(Boolean).join(" · ");
+    model.note = [model.note, "Exact collision shape; it turns on its pins and goes in the bag whole, and does not bend, break or take heat."].filter(Boolean).join(" · ");
+    // It takes no heat yet; the bag it does take, whole (LiveWorld::park).
     for (let i = rows.length - 1; i >= 0; i--) {
-      if (rows[i][1] === "heat it" || rows[i][1] === "put it in your bag") rows.splice(i, 1);
+      if (rows[i][1] === "heat it") rows.splice(i, 1);
     }
   }
   if (world.doing) model.note = `${world.doing}: doing it…`;
@@ -3246,6 +3247,19 @@ function guideFor(name) {
     these = next;
   }
   return null;
+}
+
+// A product's own wheel: a pin free all the way round between two of its
+// exact rigid parts -- the cart's wheelsets on their axles (rigid_assembly's
+// bearings). It turns because the thing is pushed along, not because a hand
+// works it. Every hinge a room gives a hand to work -- a gate, a winch's drum,
+// a door -- is made of cells, or has stops.
+function ownWheel(joint) {
+  if (!joint || joint.kind !== "hinge") return false;
+  const free = joint.lower_deg == null || joint.upper_deg == null
+    || joint.upper_deg - joint.lower_deg >= 359;
+  const a = world.bodies.get(joint.a), b = world.bodies.get(joint.b);
+  return free && !!(a && a.fromPrecise) && !!(b && b.fromPrecise);
 }
 
 // The fixing that holds a thing fast: on the way from it, through what it is
@@ -5620,7 +5634,10 @@ function builtinsFor(name) {
   const latch = jointed && latchHolding(name);
   if (latch) out.push({ label: "Release the latch", ask: { latch: latch.id } });
   const joint = jointed && guideFor(name);
-  if (joint && joint.kind === "hinge") {
+  // Not a product's own wheel: the cart's wheelsets turn because the cart is
+  // pushed, and turned from here they would tip it over its axle (the owner,
+  // 2026-09-21: take these off the cart).
+  if (joint && joint.kind === "hinge" && !ownWheel(joint)) {
     // A wheel -- no stops, or stops a whole turn apart -- is all the way round
     // half a turn either way, so "all the way back" would be the same place.
     const wheel = joint.lower_deg == null || joint.upper_deg == null

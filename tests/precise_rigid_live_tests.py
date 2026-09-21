@@ -205,6 +205,35 @@ class RigidAssembly(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'An assembly root'):
             rigid_assembly.compile_design(design, over, root='cart/../x')
 
+    def test_a_wheel_turned_on_its_axle_is_set_down_by_its_rim_not_its_box(self):
+        # Placing measures an exact body by its own parts (placement._span): a
+        # round wheel reaches 160 mm below its axle however far it has turned,
+        # where the box round it reaches 226 mm at 45 degrees -- the preview
+        # said one height and the engine set it down at another. A body of
+        # cells is still measured by its box.
+        sys.path.append(str(ROOT/'mcp'))
+        import placement
+        design, over = cart_design()
+        wheelset = rigid_assembly.compile_design(design, over, root='cart')['bodies'][1]
+        centre = wheelset['_centre_m']
+        parts = [dict(part, center_local_m=[part['center_local_m'][k]-centre[k] for k in range(3)])
+                 for part in wheelset['parts']]
+        body = {'dimensions_m': [.82, .32, .32], 'rigid_parts_local': parts}
+        for degrees in (0, 20, 45, 70, 90):
+            half = math.radians(degrees)/2
+            spun = [math.cos(half), math.sin(half), 0.0, 0.0]        # on its own axle, x
+            with self.subTest(degrees=degrees):
+                for axis, reach in ((1, .16), (0, .41), (2, .16)):
+                    low, high = placement._span(body, spun, axis)
+                    self.assertAlmostEqual(-reach, low, delta=1e-8)     # the turns are built from degrees
+                    self.assertAlmostEqual(reach, high, delta=1e-8)
+        boxed = {'dimensions_m': [.1, .2, .3]}
+        tilt = [math.cos(.3), .2, math.sin(.3), .1]
+        norm = math.sqrt(sum(v*v for v in tilt)); tilt = [v/norm for v in tilt]
+        for axis in range(3):
+            self.assertEqual((-placement._reach(boxed, tilt, axis), placement._reach(boxed, tilt, axis)),
+                             placement._span(boxed, tilt, axis))
+
     def test_a_workshop_rigid_install_is_drawn_in_its_own_material(self):
         for material in ('glass', 'oak', 'iron'):
             body, _ = precise_rigid.placement(artifact(material), 'table', [0, 0])
