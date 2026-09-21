@@ -114,8 +114,10 @@ class ThingsMadeAreGivenActions(unittest.TestCase):
                                         "a crate, please", [])
             finally:
                 world_chat._call = real
+            # By how the note STARTS: since 7428eff it goes on to name what is
+            # missing ("Missing core Use: test crate").
             noted = [m for m in sent[-1] if isinstance(m, dict)
-                     and m.get("content") == world_chat.NOTHING_OFFERED]
+                     and str(m.get("content", "")).startswith(world_chat.NOTHING_OFFERED)]
             if makes:
                 self.assertEqual((len(sent), len(noted), answer["reply"]), (3, 1, "answer 3"))
             else:
@@ -761,8 +763,11 @@ class ATurnIsNotDoneWhileItsStructureFails(unittest.TestCase):
         self.assertTrue(answer["reply"].endswith("Here is your ski ramp."))
         self.assertEqual([(c["construction"], c["passed"]) for c in answer["checked"]], [("ski ramp", False)])
         # An anchored board is not a thing to take: it is not asked for actions.
+        # By how the note STARTS: since 7428eff it goes on to name what is
+        # missing ("Missing core Use: ..."), and compared whole this could no
+        # longer fail.
         self.assertFalse([m for m in sent[-1] if isinstance(m, dict)
-                          and m.get("content") == world_chat.NOTHING_OFFERED])
+                          and str(m.get("content", "")).startswith(world_chat.NOTHING_OFFERED)])
         # The room keeps what was declared, and its part.
         self.assertEqual([(c["name"], c["kind"], c["parts"]) for c in room.spec["constructions"]],
                          [("ski ramp", "ski_jump", ["ramp"])])
