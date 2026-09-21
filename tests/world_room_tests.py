@@ -2258,7 +2258,8 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
         live.open(app, {"spec": spec})
         running = threading.Event()
         running.set()
-        fastest = []
+        fastest = {"mace": [], "mace head": []}
+        world_s = [0.0]                # how long the room has run, in its own time
 
         def keep_running():            # the page's part: the room runs while the hand works
             while running.is_set():
@@ -2266,13 +2267,26 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
                     got = live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
                 except Exception:
                     return
-                # `moved` answers with what moved: the head at rest is not in it.
-                head = next((b for b in got.get("bodies") or [] if b["name"] == "mace head"), None)
-                if head is not None:
-                    fastest.append(math.hypot(*(head.get("velocity_m_s") or [0, 0, 0])))
+                world_s[0] += 4 / 240.0
+                # `moved` answers with what moved: a part at rest is not in it.
+                for part in got.get("bodies") or []:
+                    if part["name"] in fastest:
+                        fastest[part["name"]].append(math.hypot(*(part.get("velocity_m_s") or [0, 0, 0])))
                 time.sleep(0.005)
         runner = threading.Thread(target=keep_running, daemon=True)
         runner.start()
+
+        def let_run(seconds):
+            """The room run on this long in ITS time. Waited for in wall seconds, how
+            much world went by depended on the machine: on GitHub's slower runner
+            the head was still swinging from being carried when the swing began,
+            and peaked at 1.49 m/s against 1.64-1.88 on a faster machine."""
+            until = world_s[0] + seconds
+            deadline = time.monotonic() + 30.0 + 20.0 * seconds
+            while world_s[0] < until:
+                self.assertTrue(runner.is_alive(), "the room stopped running")
+                self.assertLess(time.monotonic(), deadline, f"{seconds} s of world took too long")
+                time.sleep(0.01)
 
         def body(name):
             return next(b for b in live.session.state["bodies"] if b["name"] == name)
@@ -2286,7 +2300,7 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
             return math.dist(tie, head["position_m"])
         whole = 0.2 + 0.04 + 0.03          # the chain, to the head's middle, and a cell's slack
         try:
-            time.sleep(1.5)            # settled on the ground it was built just over
+            let_run(1.5)               # settled on the ground it was built just over
             at = body("mace")["position_m"]
             person = {"standing_m": [at[0], y0, at[2] + 1.0], "facing": [0.0, 0.0, -1.0],
                       "eyes_m": [at[0], y0 + 1.62, at[2] + 1.0], "look_direction": [0.0, -0.35, -0.94],
@@ -2298,31 +2312,43 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
             # What the person is said to carry is all of it, not the handle alone.
             both = body("mace")["mass_kg"] + body("mace head")["mass_kg"]
             self.assertAlmostEqual(took["shown"]["carried"]["objects_kg"], both, delta=0.05)
-            time.sleep(0.3)
+            let_run(0.3)
             # Up to the lower right of the view, as explore.js leads the hand.
             grip = (live.session.state.get("hand") or {}).get("grip_m") or at
             carry = [at[0] + 0.25, y0 + 1.05, at[2] + 0.45]
             self.assertEqual(server._stroke_along(app, [grip, [grip[0], carry[1], grip[2]], carry], 1.5),
                              "reached")
-            time.sleep(1.0)
+            let_run(1.0)
             self.assertGreater(body("mace head")["position_m"][1], y0 + 0.5,
                                "carried by its handle, the head was left on the ground")
             self.assertLess(chain(), whole, "carried, it came apart")
 
-            fastest.clear()
+            for seen in fastest.values():
+                seen.clear()
             person["look_direction"] = [0.0, -0.1, -0.99]
             swung = server.run_action(app, {"object": "mace", "primary": True, "person": person})
             self.assertNotIn("refused", swung, swung)
             self.assertEqual(swung.get("action"), "Swing it")
-            self.assertGreater(max(fastest), 1.5, "swung, the head did not swing on its chain")
+            # Against the handle, not a fixed speed. The handle goes at the hand's
+            # own stroke, 1.07-1.11 m/s on every run; the head's peak depends on
+            # where in its swing it was when the hand stopped and turned back --
+            # 1.64-2.23 m/s here, 1.49 on GitHub's Linux runner -- so a floor of
+            # 1.5 m/s went red at random. Swinging on its chain, it outruns the
+            # handle: 1.6-2.0 times over here, about 1.35 on that runner. Left
+            # behind or dragged along, it would not.
+            head, handle = max(fastest["mace head"]), max(fastest["mace"])
+            self.assertGreater(handle, 0.8, "swung, the handle hardly moved")
+            self.assertGreater(head, 1.15 * handle,
+                               f"swung, the head did not swing on its chain: {head:.2f} m/s, "
+                               f"the handle {handle:.2f}")
             self.assertLess(chain(), whole, "swung, it came apart")
 
-            time.sleep(0.5)
+            let_run(0.5)
             person["aim_m"] = [at[0], y0, at[2] - 0.3]
             person["look_direction"] = [0.0, -0.6, -0.8]
             down = server.put_it_down(app, {"object": "mace", "person": person})
             self.assertTrue(down["ok"], down)
-            time.sleep(2.0)
+            let_run(2.0)
             self.assertEqual((live.session.state.get("hand") or {}).get("holding") or "", "")
             self.assertEqual(inventory_room.inventory_of(app).hands, {"right": None, "left": None})
             for part in ("mace", "mace head"):
