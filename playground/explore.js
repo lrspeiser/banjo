@@ -274,7 +274,9 @@ const pressed = new Set();
 addEventListener("keydown", (e) => {
   if (e.code === "KeyR" && person.came) Object.assign(person, person.came, { came: person.came });
   pressed.add(e.code);
-  if (["KeyW", "KeyA", "KeyS", "KeyD", "Space"].includes(e.code)) e.preventDefault();
+  if (e.code.startsWith("Arrow")) $("hint")?.remove();
+  if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ArrowUp", "ArrowDown",
+       "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
 });
 addEventListener("keyup", (e) => pressed.delete(e.code));
 // Two ways to look, because one of them always turns out not to work for
@@ -323,6 +325,15 @@ function walk(dt) {
     person.x += ((-sin * ahead) + (cos * side)) / length * step;
     person.z += ((-cos * ahead) - (sin * side)) / length * step;
   }
+  // Turning on the arrows as well as by dragging. Not everyone wants to hold a
+  // mouse button down to look round, and a trackpad drag runs out of desk.
+  const TURN = 1.9;              // radians a second, about a half-turn in a second
+  if (pressed.has("ArrowLeft")) person.yaw += TURN * dt;
+  if (pressed.has("ArrowRight")) person.yaw -= TURN * dt;
+  if (pressed.has("ArrowUp")) person.pitch += TURN * 0.55 * dt;
+  if (pressed.has("ArrowDown")) person.pitch -= TURN * 0.55 * dt;
+  person.pitch = Math.max(-1.45, Math.min(1.45, person.pitch));
+
   if (pressed.has("Space")) person.fly = Math.min(9, person.fly + 4 * dt);
   if (pressed.has("KeyC")) person.fly = Math.max(0, person.fly - 4 * dt);
 
