@@ -56,9 +56,11 @@ import qa_browser  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 W, H = 1280, 800
+# The mace is taken up by its handle ("mace"); its head comes with it, on its
+# tie (the owner's carry rule, agent/carry-whole).
 THINGS = ("oak block", "iron block", "glass block", "concrete block", "ceramic block", "ice block",
           "aluminium block", "rubber block", "stool", "chair", "bench", "table", "shelf-unit",
-          "kettle", "cart")
+          "mace")
 
 # What a person expects, as numbers. Each is the longest a person waits before
 # deciding it did not work, or the furthest a thing may be from where it was
@@ -83,15 +85,12 @@ OTHER_SPOTS = ((1.3, 0.0), (1.9, 0.0), (1.6, 0.3), (1.6, -0.3), (1.2, 0.45), (1.
 
 KEYS = {"KeyE": ("e", 69), "KeyX": ("x", 88), "KeyQ": ("q", 81), "KeyJ": ("j", 74)}
 
-# Things that cannot yet be put in the valley whole, and why. Their checks run
-# and are reported, marked KNOWN, and do not fail the run: what to do about
-# them is the owner's call, not a regression.
-KNOWN = {
-    "kettle": "not whole at the valley's 40 mm cells: its 10 mm walls and handle get no cells "
-              "at any offset, so it stands as loose panels",
-    "cart": "not whole at 40 mm cells: its iron axles overlap its oak at every offset and are "
-            "refused, so it stands as loose parts",
-}
+# Things in the valley that cannot yet be whole, and why. Their checks run and
+# are reported, marked KNOWN, and do not fail the run. Empty: the kettle and the
+# cart were here -- neither can be built whole at the valley's 40 mm cells --
+# and the owner's call (2026-09-21) was to take them out of the valley until
+# they can be, rather than keep excusing them.
+KNOWN: dict[str, str] = {}
 
 
 # --------------------------------------------------------------------------

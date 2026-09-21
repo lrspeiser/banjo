@@ -422,7 +422,25 @@ def block(name: str, material: str, at_xz, ground: dict, side_mm: float = 200.0)
             "velocity_m_s": [0.0, 0.0, 0.0]}
 
 
-def compose(ground: dict) -> tuple[dict, dict]:
+def with_mace(spec: dict, at_xz) -> dict:
+    """The mace, built into the room by the MCP's build_recipe -- the same oak
+    handle, iron head, 0.2 m tie and "Swing it" as a mace the room's chat
+    builds -- and the room taken back out of the MCP world, as server._stand
+    does when it stands a thing up."""
+    import room_world
+    world_id = room_world.open_room(spec)
+    try:
+        answer = room_world.call(world_id, "build_recipe", {"recipe": "mace", "at_m": list(at_xz)})
+        if "error" in answer:
+            raise SystemExit(f"the mace would not build at {at_xz}: {answer['error']}")
+        print(f"  mace           built at ({at_xz[0]:+6.2f}, {at_xz[1]:+6.2f}): "
+              f"{', '.join(answer['parts'])}, tied")
+        return room_world.export_spec(room_world.entry_of(world_id))
+    finally:
+        room_world.close_room(world_id)
+
+
+def compose(ground: dict) -> tuple[dict, dict, tuple]:
     """The room, and which of its products are not whole at its cell size (and
     why), so the check after it can hold every other product to being one
     thing still standing."""
@@ -472,11 +490,16 @@ def compose(ground: dict) -> tuple[dict, dict]:
                                ("shelf-unit", (3.2, -2.8), 0.9)):
         stand(kind, kind, area(kind, want, radius))
 
-    # 3. THE CART, on its own so there is room to push it.
-    stand("cart", "cart", area("cart", (0.0, 5.4), 1.5))
+    # No cart and no kettle. At the valley's 40 mm cells neither can be built
+    # whole -- the kettle's 10 mm walls, bottom and handle, and the cart's axles
+    # and bearing mounts, get no cells wherever the grid falls -- so each stood
+    # as the pieces that were left, and taking one up took a single panel. The
+    # owner's call (2026-09-21): leave them out until they can be built whole.
 
-    # 4. THE KETTLE, which is the one iron thing among the oak.
-    stand("kettle", "kettle", area("kettle", (6.0, 3.8), 0.6))
+    # 3. A MACE: the owner's own example of taking up the whole of a thing while
+    #    its moving part still moves. Only its place is chosen here; it is built
+    #    after the rest (with_mace), by the MCP's own build_recipe.
+    mace_at = area("mace", (-4.0, -4.4), 0.6, " -- the mace")
 
     print(f"  {len(actions)} things have a use of their own; "
           f"{sum(1 for r in points for p in r['points'] if p['kind'] in ('surface', 'container'))}"
@@ -486,7 +509,7 @@ def compose(ground: dict) -> tuple[dict, dict]:
             "water": dict(WATER),
             "bodies": bodies,
             "actions": actions,
-            "interaction_points": points}, apart
+            "interaction_points": points}, apart, mace_at
 
 
 # --------------------------------------------------------------------------
@@ -576,7 +599,8 @@ def main() -> int:
           f"{min(ground['h']):.2f} m to {max(ground['h']):.2f} m")
 
     print("Laying the world out ...")
-    spec, apart = compose(ground)
+    spec, apart, mace_at = compose(ground)
+    spec = with_mace(spec, mace_at)
     validated = fracture_lab.validate(spec)
     cells = sum(b.get("cells", 0) for b in validated["bodies"])
     print(f"  {len(validated['bodies'])} bodies, {cells:,} cells "
