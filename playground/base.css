@@ -1,0 +1,124 @@
+/* The house style: what every Banjo screen is made of.
+
+   The QA screens (material-qa, tool-qa, mechanics-qa, fabrication) arrived with
+   a look that works -- one palette, one type scale, one set of controls -- and
+   they got it in a fifth of the CSS the older screens spend. This file is that
+   look, pulled out so the world can be built on it too, instead of every page
+   inventing its own greys.
+
+   TOKENS AND PRIMITIVES ONLY. No layout, no page background, no positioning:
+   a screen that is a full-bleed 3D view and a screen that is a centred document
+   both have to be able to link this without a fight. Layout belongs to the
+   page's own stylesheet, which loads after this one and wins.
+
+   The QA screens still carry their own copy of these values inside
+   material-qa.css. They can drop it and link this instead; the values here are
+   theirs, unchanged, so nothing moves when they do. */
+
+:root {
+  /* Surfaces, from the room's own darkness up to a raised panel. */
+  --bg: #0c1418;
+  --surface: #101c21;
+  --surface-lift: #16262c;
+  --line: #26383f;
+  --line-soft: #2b3e45;
+
+  /* Text, in three weights of attention. */
+  --ink: #dde8e8;
+  --ink-strong: #f0f6f6;
+  --dim: #9db2b8;
+  --dimmer: #87989e;
+
+  /* One accent. Mint means "this is the live one" -- the selected tab, the
+     focus ring, the button that commits. Amber is NOT here: on a Banjo screen
+     amber belongs to the physics (balance, support, a drawn bow), and a screen
+     that spends it on chrome has nothing left to say that with. */
+  --accent: #a2e1c8;
+  --accent-dim: #87b8aa;
+  --on-accent: #102b22;
+
+  /* What a measurement came to. */
+  --good: #99dfbe;
+  --bad: #ff9f91;
+  --warn: #ffd195;
+
+  /* Type. A screen has three sizes and one small-caps label, and that is all;
+     more than that is how a panel turns into a wall. */
+  --font: Inter, "Segoe UI", ui-sans-serif, system-ui, Arial, sans-serif;
+  --t-read: .875rem;    /* body text and values */
+  --t-small: .78rem;    /* secondary values, dense lists */
+  --t-label: .66rem;    /* the small-caps label above a value */
+  --t-head: 1.05rem;    /* the name of the thing being looked at */
+  --label-track: .11em;
+}
+
+/* A label is a label everywhere: small, letterspaced, dim, and never the same
+   weight as the number beside it. This one rule is most of why the QA screens
+   scan and the older ones do not. */
+.label {
+  font-size: var(--t-label);
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 500;
+}
+
+/* Controls. */
+button, select, input, textarea {
+  font: inherit;
+  color: var(--ink);
+}
+button, select {
+  border: 1px solid var(--line-soft);
+  background: var(--surface-lift);
+  border-radius: 5px;
+  padding: .45rem .6rem;
+}
+button { cursor: pointer; white-space: nowrap; }
+button:hover:enabled, select:hover { border-color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 650;
+}
+/* One focus ring, on everything, always visible on a dark surface. */
+button:focus-visible, a:focus-visible, select:focus-visible,
+input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+a { color: var(--accent-dim); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* A key you press, shown inline. */
+kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: .05em .35em;
+  border: 1px solid var(--line-soft);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface-lift);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: .78em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Anything measured is tabular, so a column of numbers reads as a column. */
+.num, output, td.num, .metric strong { font-variant-numeric: tabular-nums; }
+
+/* A verdict, wherever it is reported. */
+.status.passed, .status.good { color: var(--good); }
+.status.failed, .status.error, .status.bad { color: var(--bad); }
+.status.review_required, .status.warn { color: var(--warn); }
+
+/* Scrollbars that do not draw attention to themselves. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-soft) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 5px; }
+*::-webkit-scrollbar-track { background: transparent; }

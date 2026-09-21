@@ -1170,6 +1170,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
             allowed={"/tool-qa":"tool-qa.html","/tool-qa.js":"tool-qa.js","/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+                "/base.css":"base.css",
                 "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",

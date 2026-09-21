@@ -1844,11 +1844,14 @@ function showInventory() {
   if (carriedKg() > 0 && world.carryLimitKg)
     carrying.push({ what: carriedKg() >= world.carryLimitKg - 0.05 ? "all you can carry" : "of what you can carry",
                     much: `${Math.round(carriedKg())} of ${Math.round(world.carryLimitKg)} kg · walking at ${Math.round(100 * loadPace())}%` });
+  // A key and the short thing it does, rather than a sentence about it: these
+  // are read at a glance while looking at the room, not studied (the owner,
+  // 2026-09-14: "there is way too much text on the screen").
   const uses = [
     ...(world.tools || []).map((p) => ({ what: p.object,
-      keys: `${keyOf("interact")} take it up · ${keyOf("primary")} use it where the ring is · hold to keep going` })),
+      binds: [[keyOf("interact"), "take it up"], [keyOf("primary"), "use it, hold to keep going"]] })),
     ...(world.profiles || []).map((p) => ({ what: p.object,
-      keys: `${keyOf("interact")} take it up · hold ${keyOf("primary")} to draw · let go to shoot` })),
+      binds: [[keyOf("interact"), "take it up"], [keyOf("primary"), "hold to draw, let go to shoot"]] })),
   ];
   const storedHeat = new Map((heat.last?.stored || []).map(b => [b.name, b]));
   const temperatures = slots.map(thing => thing ? storedHeat.get(thing.name) : null);
@@ -1909,11 +1912,17 @@ function showInventory() {
       much.textContent = item.much;
       li.append(much);
     }
-    if (item.keys) {
-      const keysSaid = document.createElement("span");
-      keysSaid.className = "keys";
-      keysSaid.textContent = item.keys;
-      li.append(keysSaid);
+    if (item.binds) {
+      for (const [pressed, does] of item.binds) {
+        const line = document.createElement("span");
+        line.className = "bind";
+        const key = document.createElement("kbd");
+        key.textContent = pressed;
+        const what = document.createElement("span");
+        what.textContent = does;
+        line.append(key, what);
+        li.append(line);
+      }
     }
     return li;
   });
@@ -1932,10 +1941,18 @@ function showHotbar(slots, hand) {
   const any = slots.slice(0, SLOT_KEYS).some(Boolean) || (home >= 0 && home < SLOT_KEYS);
   bar.hidden = !any;
   if (!any) { bar.replaceChildren(); return; }
+  // Only the slots that hold something are drawn, plus the one after the last
+  // of them, so the row says where the next thing goes without putting eight
+  // empty boxes in front of the room. Every slot is still in the list, so the
+  // numbers and what status() reports are unchanged.
+  const filled = Array.from({ length: SLOT_KEYS },
+                            (_, i) => Boolean(slots[i] || (i === home ? hand : null)));
+  const next = filled.lastIndexOf(true) + 1;
   bar.replaceChildren(...Array.from({ length: SLOT_KEYS }, (_, i) => {
     const thing = slots[i] || (i === home ? hand : null);
     const li = document.createElement("li");
-    li.className = `slot${thing ? "" : " empty"}${i === home ? " in-hand" : ""}`;
+    li.className = `slot${thing ? "" : " empty"}${!thing && i === next ? " next" : ""}`
+                 + `${i === home ? " in-hand" : ""}`;
     const number = document.createElement("b");
     number.textContent = String(i + 1);
     li.append(number);
@@ -2195,10 +2212,15 @@ function detailsModel() {
       const tool = (world.tools || [])[0] || null;
       model.note = underfoot === "rock"
         ? (tool ? "Bare rock: a point no harder than the rock stops on it." : "")
-        : !tool ? `No tool here to dig with: ${k("talk")} and ask the room to make you a pick.`
+        : !tool ? `Nothing here to dig with — ${k("talk")} and ask the room for a pick.`
           : list.length ? ""
-            : `The tool for this ground: ${tool.object}. Look at it and press ${k("interact")} to take it up;`
-              + ` then ${k("primary")} uses it where the ring is.`;
+            // WHICH tool, and nothing about how to hold it. How to hold it is
+            // already written twice over: on the tool itself in the Bag tab,
+            // and in the Keys tab. Saying it a third time here is what turned
+            // the side view into a wall of text.
+            // tool.object already reads "the pick", so it only wants a capital
+            // and a stop -- writing "The " in front of it gave "The the pick".
+            : sentence(`${tool.object} digs this ground`);
     }
   } else {
     model.facts = "Look at something to see what it is and what you can do with it.";
@@ -2207,7 +2229,7 @@ function detailsModel() {
   const focused = world.bodies.get(held?.name || world.aim?.name);
   if (focused?.fromPrecise) {
     model.facts += " · precise rigid, no internal failure";
-    model.note = [model.note, "Exact collision geometry. Bending, fracture, heat, joints and bag storage are not implemented for this model."].filter(Boolean).join(" · ");
+    model.note = [model.note, "Exact collision shape; no bending, fracture, heat, joints or bag storage."].filter(Boolean).join(" · ");
     for (let i = rows.length - 1; i >= 0; i--) {
       if (rows[i][1] === "heat it" || rows[i][1] === "put it in your bag") rows.splice(i, 1);
     }
