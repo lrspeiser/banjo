@@ -106,6 +106,21 @@ PRIMARY_USE = {
     "kettle":     {"label": "Set it down",      "steps": [{"do": "place"}]},
 }
 
+# What each product is for and where a person holds it, as the Workshop's own
+# model decided (tools/author_explore_uses.py): its primary use and its
+# interaction points -- grip, the part that does its work, the surfaces things
+# go on. The owner, 2026-09-21, wanted every object's use to be the model's, not
+# a table's. PRIMARY_USE above is only for a product that file does not name.
+USES = ROOT / "tools" / "explore_uses.json"
+
+
+def authored_use(kind: str) -> dict | None:
+    """The model's use and points for a product, or None when it has none yet."""
+    if not USES.is_file():
+        return None
+    return (json.loads(USES.read_text(encoding="utf-8")).get("products") or {}).get(kind)
+
+
 BLOCK_NOTE = {
     "oak": "oak block", "iron": "iron block", "glass": "glass block",
     "concrete": "concrete block", "ceramic": "ceramic block", "ice": "ice block",
@@ -359,11 +374,24 @@ def product_bodies(kind: str, root: str, at_xz, ground: dict, *, material=None):
     returned says why a product is not whole when nothing could make it so.
     """
     params = {"material": material} if material else {}
-    if kind in PRIMARY_USE:
+    said = authored_use(kind)
+    if said:
+        params["primary_use"] = said["primary_use"]
+        params["interaction_points"] = said["interaction_points"]
+    elif kind in PRIMARY_USE:
         params["primary_use"] = PRIMARY_USE[kind]
     design, over = workshop_components.design_from_spec(
         {"kind": kind, "design_id": root, "parameters": params})
     design, matter, phase, broken = whole_matter(design, over)
+    # Sampled a few millimetres over, the parts moved (whole_matter) and so do
+    # the points written about them: a template's own points are made from its
+    # parts and follow them, but the model's are the design's words, and would
+    # otherwise sit where the parts were before they moved.
+    if any(phase) and "interaction_points" in design.parameters:
+        design = dataclasses.replace(design, parameters={
+            **design.parameters,
+            "interaction_points": [dict(p, position_m=[p["position_m"][a] + phase[a] for a in range(3)])
+                                   for p in design.parameters["interaction_points"]]})
     cells = sparse._grid_set(matter)
     if not cells:
         raise ValueError(f"{kind} resolves to nothing at {CELL_M} m cells")

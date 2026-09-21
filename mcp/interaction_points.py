@@ -65,6 +65,27 @@ def checked(points):
     return out
 
 
+def trimmed(points):
+    """What a model sent, less what a point of its kind does not take -- and
+    what was left out, to say so. A model fills every field it is offered: the
+    Workshop's gave a chair's grip and use points a usable size and a load, was
+    refused ("only receiving points have size_m or max_mass_kg"), and answered by
+    zeroing them, again and again, until its turn ran out with nothing written.
+    For what a model sends only (the tools); a stored room is still checked()
+    as strictly as ever."""
+    if not isinstance(points, list):
+        return points, []
+    out, left = [], set()
+    for raw in points:
+        if isinstance(raw, dict) and raw.get("kind") in ("grip", "use"):
+            extra = sorted(k for k in ("size_m", "max_mass_kg") if k in raw)
+            if extra:
+                left.add(f"a {raw['kind']} point takes no {' or '.join(extra)}")
+                raw = {k: v for k, v in raw.items() if k not in extra}
+        out.append(raw)
+    return out, sorted(left)
+
+
 def normalise(records, bodies):
     if not isinstance(records, list):
         raise ValueError("interaction_points must be a list of {body, points}")

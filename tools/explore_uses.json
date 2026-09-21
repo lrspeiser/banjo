@@ -1,0 +1,361 @@
+{
+ "about": "Each product's primary use and interaction points, as the Workshop's own model wrote them (tools/author_explore_uses.py). Read by tools/build_explore_world.py; edit by running that script again.",
+ "model": "gpt-5-mini",
+ "products": {
+  "bench": {
+   "interaction_points": [
+    {
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry grip",
+     "position_m": [
+      0.0,
+      0.45,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-1",
+     "kind": "use",
+     "label": "Look at surface",
+     "position_m": [
+      0.0,
+      0.45,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
+     "kind": "surface",
+     "label": "Top surface",
+     "max_mass_kg": 300.0,
+     "position_m": [
+      0.0,
+      0.45,
+      0.0
+     ],
+     "size_m": [
+      1.6,
+      0.45,
+      0.36
+     ],
+     "yaw_deg": 0.0
+    }
+   ],
+   "primary_use": {
+    "label": "Look at it",
+    "steps": [
+     {
+      "do": "inspect"
+     }
+    ]
+   },
+   "said": "Done.\n\nWhat I set\n- Primary use programmed: \"Look at it\" (left mouse = inspect).\n  - Rationale: the bench's purpose is \"seat two or three people in a row\" but in the Explore valley people can't sit; its natural primary interaction left-click can only be to inspect/look at it.\n- Interaction points added:\n  - Grip: \"Carry grip\" at [0.0, 0.45, 0.0] on the top, sized 0.05\u00d70.02\u00d70.05 m. Placed near the bench top center to keep the 18.998 kg mass hanging level when carried by one hand.\n  - Use: \"Look at surface\" at [0.0, 0.45, 0.0] on the top \u2014 the part that is used to look at.\n  - Surface: \"Top surface\" at [0.0, 0.45, 0.0], usable area 1.6\u00d70.45\u00d70.36 m.\n\nNotes and evidence\n- I inspected the design: total mass 18.998 kg, centre of mass at [0.0, 0.396, 0.0], top component center at [0.0, 0.43, 0.0]. I placed the grip on the top surface near the design's vertical centreline and above the COM so the 60 N\u00b7m wrist limit is less likely to cause tipping.\n- I did not change geometry.\n\nIf you want a different primary action (push_forward to slide it, or strike to use it as a club) or a different grip location, tell me which and I'll update the program_use and interaction points.",
+   "tools": [
+    "inspect_design: 5 components; 18.998 kg",
+    "program_use: Use: Look at it",
+    "define_interaction_points: Defined interaction points"
+   ]
+  },
+  "chair": {
+   "interaction_points": [
+    {
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry grip (one hand)",
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-inspect",
+     "kind": "use",
+     "label": "Look at seat",
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "seat-top",
+     "kind": "surface",
+     "label": "Seat top surface",
+     "max_mass_kg": 150.0,
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "size_m": [
+      0.46,
+      0.04,
+      0.46
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "back-top",
+     "kind": "surface",
+     "label": "Back top edge",
+     "max_mass_kg": 1.0,
+     "position_m": [
+      0.0,
+      0.8832,
+      0.218
+     ],
+     "size_m": [
+      0.384,
+      0.012,
+      0.012
+     ],
+     "yaw_deg": 0.0
+    }
+   ],
+   "primary_use": {
+    "label": "Look at it",
+    "steps": [
+     {
+      "do": "inspect"
+     }
+    ]
+   },
+   "said": "Done \u2014 I inspected the chair first, then set its primary use and defined the interaction points. I changed no geometry.\n\nWhat I set\n- Primary use (Left mouse): \"Look at it\" \u2014 a single inspect step. Rationale: in the Explore valley people do not sit or lie down there, so the chair's meaningful primary action is being examined rather than used for seating or being swung/pushed.\n\nInteraction points added (all positions are in the design frame; components referenced from the inspected design)\n1. Grip (one hand)\n   - id: grip-1, label: \"Carry grip (one hand)\"\n   - kind: grip\n   - position_m: [0.0, 0.46, 0.0]\n   - size_m: [0.08, 0.08, 0.08]\n   - yaw_deg: 0\n   - note: placed on the top/seat surface (component \"seat\") near the centre so a single hand grip is directly above the chair's centre of mass.\n\n2. Use point (primary use)\n   - id: use-inspect, label: \"Look at seat\"\n   - kind: use\n   - position_m: [0.0, 0.46, 0.0]\n   - size_m: [0.1, 0.02, 0.1]\n   - yaw_deg: 0\n   - note: on the seat surface so the left mouse's \"Look at it\" action focuses on the seat area.\n\n3. Surface points (places things can be set)\n   - id: seat-top, label: \"Seat top surface\"\n     - kind: surface\n     - position_m: [0.0, 0.46, 0.0]\n     - size_m: [0.46, 0.04, 0.46]\n     - max_mass_kg: 150\n     - maps to component \"seat\" (center [0.0, 0.44, 0.0], size [0.46,0.04,0.46])\n   - id: back-top, label: \"Back top edge\"\n     - kind: surface\n     - position_m: [0.0, 0.8832, 0.218]\n     - size_m: [0.384, 0.012, 0.012]\n     - max_mass_kg: 1\n     - maps to top edge of component \"back-panel\" (component center [0.0,0.7797,0.218], size [0.384,0.207,0.012])\n\nWhy the grip position\n- Measured chair mass: 8.845 kg; centre_of_mass_m: [0.0, 0.4272, 0.0256].\n- The grip was placed at [0.0,0.46,0.0] \u2014 on the seat surface and nearly directly above the CoM (x,z within ~0.0256 m). That keeps the gravitational moment small:\n  - weight \u2248 8.845 kg \u00d7 9.81 m/s\u00b2 \u2248 86.8 N; worst-case lever arm \u2248 0.026 m \u2192 torque \u2248 2.3 N\u00b7m, well below the wrist limit of 60 N\u00b7m.\n- This meets the instruction to put the grip on a part directly above the centre of mass for a heavier object so it hangs level when carried by one hand. (Hand strength is ample; wrist torque is the limiting factor and is respected.)\n\nNotes and assumptions\n- No geometry was altered.\n- There are no container (cavity) points because the chair has no internal cavity.\n- Surface usable sizes come from the part geometries returned by the design inspection.\n- I inspected the design before making these decisions and used actual component names and measured CoM from that inspection.",
+   "tools": [
+    "inspect_design: 8 components; 8.845 kg",
+    "program_use: Use: Look at it",
+    "define_interaction_points: Defined interaction points"
+   ]
+  },
+  "shelf-unit": {
+   "interaction_points": [
+    {
+     "id": "grip-main",
+     "kind": "grip",
+     "label": "Carry (one hand)",
+     "position_m": [
+      0.0,
+      1.213333,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-inspect",
+     "kind": "use",
+     "label": "Look at it",
+     "position_m": [
+      0.0,
+      0.626667,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-1",
+     "kind": "surface",
+     "label": "Shelf 1 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      0.0,
+      0.04,
+      0.0
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-2",
+     "kind": "surface",
+     "label": "Shelf 2 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      0.0,
+      0.626667,
+      0.0
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-3",
+     "kind": "surface",
+     "label": "Shelf 3 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      0.0,
+      1.213333,
+      0.0
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-4",
+     "kind": "surface",
+     "label": "Shelf 4 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      0.0,
+      1.8,
+      0.0
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    }
+   ],
+   "primary_use": {
+    "label": "Look at it",
+    "steps": [
+     {
+      "do": "inspect"
+     }
+    ]
+   },
+   "said": "Done.\n\nSummary of what I set for this shelf-unit (no geometry changed):\n\n1) Primary use programmed\n- Label: \"Look at it\"\n- Core step: inspect (no movement) \u2014 the left mouse action is to inspect/observe the shelf.\n\n2) Interaction points added\n- Grip (one-hand): \"Carry (one hand)\" at [0.0, 1.213333, 0.0]. Small local grip size 0.06 m cube. Placed on the front face of shelf-3 near its centre so that, for the 42.64 kg mass, the hand is close to the unit's centre of mass and it will hang approximately level when carried.\n- Use point: \"Look at it\" at [0.0, 0.626667, 0.0] on shelf-2 (mid-height) as the representative spot for inspection.\n- Surface points for each shelf top:\n  - \"Shelf 1 top\" at [0.0, 0.04, 0.0], usable area [0.864 \u00d7 0.04 \u00d7 0.3] m.\n  - \"Shelf 2 top\" at [0.0, 0.626667, 0.0], usable area [0.864 \u00d7 0.04 \u00d7 0.3] m.\n  - \"Shelf 3 top\" at [0.0, 1.213333, 0.0], usable area [0.864 \u00d7 0.04 \u00d7 0.3] m.\n  - \"Shelf 4 top\" at [0.0, 1.8, 0.0], usable area [0.864 \u00d7 0.04 \u00d7 0.3] m.\n  - Each shelf surface assigned a nominal max supported mass of 30 kg.\n\nNotes and reasoning:\n- The design's measured centre of mass is at [0.0, 0.9, 0.0]. I placed the grip slightly above that (on shelf-3 center) so a person gripping it by one hand will not create a large tipping moment; the grip is on an actual component surface (shelf-3).\n- The Explore valley rules require the primary use to be one of inspect/strike/push_forward. This unit's purpose is to hold things and be observed; carrying and placing are handled by the world mechanics, so \"Look at it\" (inspect) is the appropriate primary use.\n- No geometry was changed. If you want a different grip location (e.g., lower or centered exactly at COM) or different shelf load limits, tell me which components or shelves to adjust and I'll edit the interaction points or component parameters.",
+   "tools": [
+    "inspect_design: 6 components; 42.638 kg",
+    "program_use: Use: Look at it",
+    "define_interaction_points: Defined interaction points"
+   ]
+  },
+  "stool": {
+   "interaction_points": [
+    {
+     "id": "grip-top-center",
+     "kind": "grip",
+     "label": "Carry by top center",
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-top",
+     "kind": "use",
+     "label": "Top surface (use)",
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
+     "kind": "surface",
+     "label": "Seat top",
+     "max_mass_kg": 120.0,
+     "position_m": [
+      0.0,
+      0.46,
+      0.0
+     ],
+     "size_m": [
+      0.36,
+      0.02,
+      0.36
+     ],
+     "yaw_deg": 0.0
+    }
+   ],
+   "primary_use": {
+    "label": "Look at it",
+    "steps": [
+     {
+      "do": "inspect"
+     }
+    ]
+   },
+   "said": "Done.\n\nWhat I changed\n- Set the stool's primary use to \"Look at it\" (inspect). Left mouse now runs a single inspect step.\n- Added interaction points:\n  - Grip (grip-top-center) at [0.00, 0.46, 0.00] on the top center for carrying. Size 0.06 m cube. Rated for ~80 kg (hand strength).\n  - Use (use-top) at the same top-center position, for the stool's functional surface.\n  - Surface (surface-top) called \"Seat top\" at the same position with usable area 0.36 \u00d7 0.02 \u00d7 0.36 m and max mass 120 kg.\n\nNotes and rationale\n- The design inspection shows this is a small oak stool (4.73 kg) with a round top at y \u2248 0.44\u20130.46 m and four legs. Its centre of mass is at [0, 0.3485, 0], so I placed the grip on the top roughly above the COM so a single-handed carry won't tip it.\n- Because the Explore world already handles picking up and putting down everything, the stool's left-click action should be what it is for beyond being carried. The product brief described it as \"seat one person, with no back\" but in Explore the world does not support sitting, so the appropriate core action is inspect (\"Look at it\"). If you'd prefer the left-click to be \"push_forward\" or \"strike\" instead (e.g., treat it as a small movable table or as a club), tell me which and I'll update the primary use without changing geometry.",
+   "tools": [
+    "inspect_design: 5 components; 4.732 kg",
+    "program_use: Use: Look at it",
+    "define_interaction_points: Defined interaction points"
+   ]
+  },
+  "table": {
+   "interaction_points": [
+    {
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry by one hand",
+     "position_m": [
+      0.0,
+      0.74,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-1",
+     "kind": "use",
+     "label": "Table surface",
+     "position_m": [
+      0.0,
+      0.74,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
+     "kind": "surface",
+     "label": "Top surface",
+     "max_mass_kg": 50.0,
+     "position_m": [
+      0.0,
+      0.74,
+      0.0
+     ],
+     "size_m": [
+      1.16,
+      0.04,
+      0.66
+     ],
+     "yaw_deg": 0.0
+    }
+   ],
+   "primary_use": {
+    "label": "Look at it",
+    "steps": [
+     {
+      "do": "inspect"
+     }
+    ]
+   },
+   "said": "Done.\n\nSummary of decisions and actions:\n- I set the table's primary use to \"Look at it\" (inspect). Left mouse will inspect the table rather than perform a physical action.\n- I defined three interaction points on the table:\n  - Grip: \"Carry by one hand\" at [0.0, 0.74, 0.0] (on the top surface, centred over the table). The grip size is 0.06\u00d70.04\u00d70.06 m. Placed near the table's center so a carried table hangs roughly level given the hand/wrist limits.\n  - Use: \"Table surface\" at [0.0, 0.74, 0.0], usable area 1.16\u00d70.04\u00d70.66 m.\n  - Surface: \"Top surface\" at [0.0, 0.74, 0.0], usable area 1.16\u00d70.04\u00d70.66 m.\n\nNotes:\n- I did not change any geometry.\n- The grip is on the top surface, directly above the measured centre of mass (0.0, 0.6504, 0.0) to keep the table roughly level when carried by one hand. If you prefer the grip lower (e.g., on an apron or leg) or multiple grips, tell me exactly where or which component(s) to add.",
+   "tools": [
+    "inspect_design: 5 components; 30.778 kg",
+    "program_use: Use: Look at it",
+    "define_interaction_points: Defined interaction points"
+   ]
+  }
+ },
+ "prompt": "This {kind} is about to be placed, as it is, in the Explore valley: a world a person walks around in first person. There E takes ANY thing up -- one hand holds it at its grip point -- and E again puts it down where they look, so carrying and setting down are never its use. The left mouse runs its primary use: what it is FOR beyond being carried. Other things can be set on or in it. Decide from what it is for. Change nothing about its geometry.\n\n1. Call program_use with its one primary use: one core step -- push_forward (it is shoved or slid along the ground without being lifted: a table slid across, a chair pushed in), strike (it is held and swung at something: a club, a hammer), or inspect when a person does nothing more with it than carry it and set things on it. Not place: E already does that for everything. Its label is what the left mouse DOES, in a few words a person reads before pressing it: an inspect is \"Look at it\", never something this world cannot do yet (nobody can sit or lie down here).\n2. Call define_interaction_points with: ONE grip, where a person's hand holds it to carry it; ONE use point, on the part that does its work; and a surface point for every real surface something can be set on (a container point for every real cavity), each with its usable size.\n\nThe hand is one hand: strong (800 N) but with a wrist that holds only 60 N m, so a heavy thing gripped away from its centre of mass hangs tipped. For anything heavier than a few kilograms put the grip on a part directly above its centre of mass, so it hangs level. Every grip and use point is ON the thing, on the surface of one of its parts -- never in the air beside or above it. Inspect the design first for where its parts are. Positions are metres in the design frame.",
+ "written": "2026-09-21"
+}

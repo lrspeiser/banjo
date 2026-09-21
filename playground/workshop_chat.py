@@ -31,6 +31,13 @@ MAX_HISTORY = 20
 MAX_MESSAGE_CHARS = 48_000
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_CALLS = 24
+# The whole answer a round may take, its thinking included. At 1400 the model
+# thought through a chair's eight components after inspect_design, ran out
+# before it could call program_use or define_interaction_points, and the turn
+# ended "I inspected the design but made no changes" -- a person asking the
+# Workshop to program a product's use got that too. The room's chat has 6000
+# (world_chat.MAX_OUTPUT_TOKENS) for the same model.
+MAX_OUTPUT_TOKENS = 6000
 
 SYSTEM = """You are the Banjo Workshop design assistant.
 
@@ -322,25 +329,45 @@ class _State:
                                                      for name in names]})
 
         if tool == "define_interaction_points":
-            points = interaction_points.checked(args.get("points"))
+            sent, left_out = interaction_points.trimmed(args.get("points"))
+            points = interaction_points.checked(sent)
             parameters = {**self.design.parameters, "interaction_points": points}
             base = assemble(str(self.design.kind), design_id=self.design.design_id,
                             purpose=self.design.purpose, parameters=parameters)
             self.design = workshop_components.apply_overrides(base, self.overrides)
             _refresh(self.app, self.candidate, self.design, self.overrides)
             self.changed.append("interaction_points")
-            return self.record(tool, {"summary": "Defined interaction points", "points": points})
+            said = {"summary": "Defined interaction points", "points": points}
+            if left_out:
+                said["left_out"] = "; ".join(left_out)
+            return self.record(tool, said)
 
         if tool == "program_use":
             from mcp import core_use
-            program = core_use.checked_program(args)
+            # The model fills every field it is offered -- a place's distance and
+            # speed too, which a place does not take -- and answered the refusal
+            # by changing their values, six times, until the turn ran out: a
+            # chair's use was never written. What a step of its kind does not
+            # take is left out, and the answer says so.
+            left_out, steps = [], []
+            for step in args.get("steps") if isinstance(args.get("steps"), list) else []:
+                if isinstance(step, dict) and step.get("do") in ("inspect", "place"):
+                    extra = sorted(set(step) - {"do"})
+                    if extra:
+                        left_out.append(f"{step['do']} takes no {', '.join(extra)}")
+                    step = {"do": step["do"]}
+                steps.append(step)
+            program = core_use.checked_program(dict(args, steps=steps) if steps else args)
             parameters = {**self.design.parameters, "primary_use": program}
             base = assemble(str(self.design.kind), design_id=self.design.design_id,
                             purpose=self.design.purpose, parameters=parameters)
             self.design = workshop_components.apply_overrides(base, self.overrides)
             _refresh(self.app, self.candidate, self.design, self.overrides)
             self.changed.append("primary_use")
-            return self.record(tool, {"summary": f"Use: {program['label']}", "primary_use": program})
+            said = {"summary": f"Use: {program['label']}", "primary_use": program}
+            if left_out:
+                said["left_out"] = "; ".join(sorted(set(left_out)))
+            return self.record(tool, said)
 
         if tool == "set_parameter":
             name = str(args.get("name") or "")
@@ -411,6 +438,29 @@ def _call_model(app: Any, payload: dict[str, Any]) -> dict[str, Any]:
     return json.loads(raw)
 
 
+def _answer(app: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """One round of the model's, asked once more when it used up its whole
+    answer before it finished -- which usually works, as the room's chat found
+    (world_chat.ran_out) -- and said plainly when it did so twice, never passed
+    off as a finished answer that changed nothing."""
+    response = _call_model(app, payload)
+    for asked_again in (False, True):
+        details = response.get("incomplete_details")
+        reason = str(details.get("reason") or "") if isinstance(details, dict) else ""
+        if response.get("status") != "incomplete":
+            return response
+        if reason == "max_output_tokens" and not asked_again:
+            response = _call_model(app, payload)
+            continue
+        if reason == "max_output_tokens":
+            raise ValueError(f"The Workshop's model used up its whole answer -- {MAX_OUTPUT_TOKENS} tokens, "
+                             f"its thinking included -- before it finished, and again when asked once "
+                             f"more, so nothing was changed; asking for less at a time may work")
+        raise ValueError(f"The Workshop's model answer came back unfinished"
+                         + (f" ({reason})" if reason else "") + ", so nothing was changed")
+    return response
+
+
 def _carry(response: dict[str, Any]) -> list[dict[str, Any]]:
     """The model's own items to send back, when we carry the turn ourselves.
 
@@ -430,11 +480,11 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
         "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-        "max_output_tokens": 1400, "reasoning": {"effort": "medium"},
+        "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
         "instructions": instructions, "input": inputs,
         "tools": tools, "tool_choice": "auto",
     }
-    response = _call_model(app, payload)
+    response = _answer(app, payload)
     calls_used = 0
     for _round in range(MAX_TOOL_ROUNDS):
         calls = [output for output in response.get("output") or [] if output.get("type") == "function_call"]
@@ -468,11 +518,11 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         inputs = inputs + _carry(response) + outputs
         payload = {
             "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-            "max_output_tokens": 1400, "reasoning": {"effort": "medium"},
+            "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
             "instructions": instructions,
             "input": inputs, "tools": tools, "tool_choice": "auto",
         }
-        response = _call_model(app, payload)
+        response = _answer(app, payload)
     raise ValueError("Workshop chat could not finish within its bounded reasoning loop")
 
 

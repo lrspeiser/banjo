@@ -1803,14 +1803,20 @@ def tool_define_interaction_points(args: dict[str, Any]) -> dict[str, Any]:
     if name not in names:
         raise Refused(f"there is nothing called {name!r}")
     existing = next((r["points"] for r in entry.get("interaction_points", []) if r["body"] == name), [])
+    # What the chat fills in that a point of its kind does not take is left out
+    # and said (interaction_points.trimmed), rather than refused round after round.
+    sent, left_out = interaction_points.trimmed(args.get("points", existing))
     try:
-        points = interaction_points.checked(args.get("points", existing))
+        points = interaction_points.checked(sent)
     except ValueError as failure:
         raise Refused(str(failure)) from None
     if "points" in args:
         entry["interaction_points"] = [r for r in entry.get("interaction_points", []) if r["body"] != name] + [
             {"body": name, "points": points}]
-    return {"body": name, "frame": "body centre of mass, local axes", "points": points}
+    answer = {"body": name, "frame": "body centre of mass, local axes", "points": points}
+    if left_out:
+        answer["left_out"] = "; ".join(left_out)
+    return answer
 
 
 def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
@@ -4160,8 +4166,17 @@ RECIPES: dict[str, dict[str, Any]] = {
         "actions": {"mace": [
             {"label": "Swing it", "primary": True, "steps": [
                 {"do": "strike", "distance_m": 0.6, "speed_m_s": 4.0}]}]},
-        "use": "taken up by either part, all of it comes, the head swinging on its chain; "
-               "the left mouse swings it at what is in front",
+        # Where a hand holds it and what does the hitting, declared here: the
+        # handle near its end away from the head, and the head. Body-local
+        # metres from each part's middle, as LISTS -- a tuple in a recipe is a
+        # place in the world (build_recipe's made()).
+        "then": [
+            ("define_interaction_points", {"name": "mace", "points": [
+                {"id": "grip", "kind": "grip", "label": "Handle", "position_m": [-0.25, 0.0, 0.0]}]}),
+            ("define_interaction_points", {"name": "mace head", "points": [
+                {"id": "use", "kind": "use", "label": "Head", "position_m": [0.0, 0.0, 0.0]}]})],
+        "use": "taken up by either part, all of it comes, held by the end of its handle, the "
+               "head swinging on its chain; the left mouse swings the head at what you look at",
     },
     # The courtyard's own bow, number for number (the room's guide carries it
     # too): tried there, drawn 0.44 m by 214 N it held 42 J.

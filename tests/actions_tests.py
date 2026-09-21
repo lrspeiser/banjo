@@ -443,6 +443,36 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertAlmostEqual(app.live.acts[0]["path"][-1][1], .82)
         self.assertEqual(app.live.acts[-1]["path"][-1], [0, 1, 1])
 
+    def test_a_strike_takes_the_part_that_hits_to_where_the_person_looks(self):
+        """Its use point, not the hand, goes to the spot looked at -- and a hand's
+        width through it -- no further than the strike reaches."""
+        app = self.start([{"body": "stool", "label": "Strike", "primary": True,
+                           "steps": [{"do": "strike", "distance_m": .3, "speed_m_s": 3}]}])
+        # Held up by a grip 0.2 m above its middle; the part that hits 0.2 m below.
+        app.room.spec["interaction_points"] = [{"body": "stool", "points": [
+            {"id": "grip", "kind": "grip", "position_m": [0, .2, 0]},
+            {"id": "use", "kind": "use", "position_m": [0, -.2, 0]}]}]
+        app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
+        # The stool's middle is at (0, 0.225, 1), so what hits is at (0, 0.025, 1).
+        near = dict(PERSON, look_direction=[0, -.6, -.8], aim_m=[.15, .025, 1])
+        status, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": near})
+        self.assertEqual(status, 200, answer)
+        self.assertNotIn("refused", answer)
+        # 0.15 m to the spot and 0.1 through it: 0.25 m along +x, within the 0.3 it reaches.
+        for got, want in zip(app.live.acts[0]["path"][-1], [.25, 1, 1]):
+            self.assertAlmostEqual(got, want, places=6)
+        self.assertEqual(app.live.acts[1]["path"][-1], [0, 1, 1], "the hand did not come back")
+        app.live.acts.clear()
+        app.live.session.state["hand"].update(grip_m=[0, 1, 1])
+        # The stand-in moved the stool with its strokes: back where it was.
+        next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")["position_m"] = [0, .225, 1]
+        far = dict(PERSON, look_direction=[0, -.6, -.8], aim_m=[3, .025, 1])
+        self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": far})
+        for got, want in zip(app.live.acts[0]["path"][-1], [.3, 1, 1]):
+            self.assertAlmostEqual(got, want, places=6)
+
     def test_unheld_strike_and_concurrent_use_are_refused(self):
         app = self.start([{"body": "stool", "label": "Strike", "primary": True,
                            "steps": [{"do": "strike"}]}])

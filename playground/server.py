@@ -2463,6 +2463,11 @@ def _chat_live(app,name,args,person=None):
     except Exception as failure:
         return {"error":str(failure)}
 
+# How far past the spot looked at a strike carries the part that hits, so it
+# goes through what it is aimed at rather than stopping on its surface.
+STRIKE_THROUGH_M = 0.1
+
+
 def _core_hand_step(app, name, step, person):
     """Execute a declared gesture, never prescribe an object trajectory."""
     from mcp import core_use
@@ -2484,6 +2489,18 @@ def _core_hand_step(app, name, step, person):
         start = list(hand.get("grip_m") or at)
         way = person.get("look_direction") or person["facing"]
         end = [start[k] + way[k] * step["distance_m"] for k in range(3)]
+        # Aimed with the part that does the work: the hand moves so the thing's
+        # use point -- a mace's head -- goes to where the person is looking and a
+        # hand's width through it, no further than the strike reaches. Without
+        # somewhere looked at, straight out along the look as before.
+        aim = person.get("aim_m")
+        hits = inventory_room.use_point(app, inventory_room.item_holding(app, name), start, name)
+        if aim is not None and hits is not None:
+            toward = [float(aim[k]) - hits[k] for k in range(3)]
+            size = math.sqrt(sum(v * v for v in toward))
+            if size > 0.02:
+                travel = min(step["distance_m"], size + STRIKE_THROUGH_M)
+                end = [start[k] + toward[k] / size * travel for k in range(3)]
         ended = _stroke_to(app, end, step["speed_m_s"], start)
         if ended not in ("reached", "blocked"):
             app.live.act({"session": app.live.session.id, "op": "cancel_stroke"})

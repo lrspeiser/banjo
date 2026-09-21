@@ -594,17 +594,28 @@ function lookedAt() {
 
 const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n * 1000)} g`);
 
+/** What J does to a thing, in its maker's words: the primary action of any of
+ *  these parts ("Swing it", "Look at it"), lower-cased to sit in the line. */
+function useOf(parts) {
+  const own = (world.actions || []).filter((a) => parts.includes(a.body));
+  const use = own.find((a) => a.primary) || own[0];
+  if (!use || !use.label) return "use it";
+  return use.label.charAt(0).toLowerCase() + use.label.slice(1);
+}
+
 /** The one line under the sight: what E does here, and what J does. */
 function showWhatYouCanDo(found) {
   const can = [];
   if (me.holding) {
     can.push(["E", me.canPlace ? `put the ${heldName()} down there`
                                : `set the ${heldName()} on the ground`]);
+    // What it is for, held: a mace's J swings it.
+    can.push(["J", useOf([...me.heldSet])]);
     can.push(["Q", "into the bag"]);
     can.push(["X", "just let go"]);
   } else if (found) {
     can.push(["E", `take the ${found.name}`]);
-    can.push(["J", "use it"]);
+    can.push(["J", useOf([found.name])]);
   }
   const box = $("can-do");
   box.replaceChildren(...can.flatMap(([key, what], i) => {
@@ -1296,6 +1307,9 @@ async function open() {
   world.session = opened.session;
   world.cell = opened.cell_size_m || 0.04;
   world.t = opened.t || 0;
+  // Each thing's own actions, as its maker programmed them (the Workshop's
+  // model, the room's chat, a recipe): what J is called for it.
+  world.actions = (opened.spec && opened.spec.actions) || [];
 
   step("drawing the valley…");
   if (opened.terrain) drawGround(opened.terrain);
