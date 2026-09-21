@@ -123,12 +123,27 @@ The preceding ground-only limit is superseded in terrain worlds by a budget incl
 
 ## Internal heat while stored (September 20)
 
+Superseded September 21 by [stored heat held exactly](#stored-heat-held-exactly-september-21): a stored object's surface and core no longer even out while it is away. What follows is the September 20 record.
+
 Stored native objects now continue their existing surface-to-core heat conduction over accepted world time. Parking still disconnects external heaters, ambient/floor/contact heat paths and reaction exchange. This is explicitly insulated, nonreacting storage; it does not model a physical bag, finite container air, contact between packed items or a safe way to store reactive material. Total internal energy and composition stay with the object. Single-temperature objects remain unchanged until an external connection is restored.
 
 The same two-node conductance/capacity law used in the world runs while parked. Save/restore retains its temperatures and energy, and returning the object uses those evolved temperatures. The regression compares 400 K surfaces and 300 K cores against exponential equilibration for glass/oak/iron, checks energy and material closure, and checks exact continuation after restoring an intermediate state. Existing higher-temperature live inventory cases separately verify preserved material and total energy while stored. No external cooling or general chemical-storage claim is made.
 
 ### Stored temperature visibility (September 20)
 
-The BAG panel uses native `heat.stored` observations, with surface/core temperatures in Celsius. The wire format is documented in [MCP/API observations](api/mcp.md#stored-item-thermal-observations). Items without a thermal lump explicitly show “Temperature not tracked”; the existing manufactured oak part is one such case. No ambient-temperature value is invented and no state is changed to obtain a reading. Initial thermal admission for newly manufactured cold objects is still incomplete. Heated glass/oak/iron regressions cover actual readouts after restart and continued internal conduction, and the readout disappears from storage after return to the world.
+The BAG panel uses native `heat.stored` observations, with surface/core temperatures in Celsius. The wire format is documented in [MCP/API observations](api/mcp.md#stored-item-thermal-observations). Items without a thermal lump explicitly show “Temperature not tracked”; the existing manufactured oak part is one such case. No ambient-temperature value is invented and no state is changed to obtain a reading. Initial thermal admission for newly manufactured cold objects is still incomplete. Heated glass/oak/iron regressions cover actual readouts after restart, check that they do not move while the item stays stored (since September 21; they covered continued internal conduction before), and check that the readout disappears from storage after return to the world.
 
 Newly funded outputs now have an explicit [cold-output thermal handoff](fabrication.md#cold-output-thermal-transfer-september-20). Immediate storage therefore retains their native parcel and temperatures, including across restart. Earlier untracked items keep their missing-history status; this does not infer a historical thermal state for them.
+
+## Stored heat held exactly (September 21)
+
+A parked (stored) object is again kept exactly as it was put away. External heaters, ambient, floor and contact heat paths and reactions stay disconnected, and now its own surface-to-core conduction is suspended too. Each parcel's energy and composition, its peak temperatures and its layer's fuel stay unchanged to the bit however long it is away, and its `heat.stored` reading does not move. Brought back, it goes on from exactly where it was put away. This restores the room's rule that time stands still for a thing set aside (`aHotThingSetAsideKeepsItsHeat` in `tests/live_world_tests.cpp`). The September 20 change had broken that rule, and the owner confirmed it should stand. Bisection: 2e1d275 passes the test; 6742792, the stored-conduction commit, fails it with "what the block holds changed while it was set aside".
+
+The thermochemistry regression (`storedObjectsKeepTheirHeatExactly`) keeps the September 20 fixture: 120 mm glass, oak and iron cubes with a 2 mm surface layer, 400 K surface and 300 K core, parked for 10 s at 0.05 s steps. It requires:
+- the lump unchanged to the bit;
+- no heat to the surroundings and no heater input;
+- the ledger unmoved;
+- the same after restoring a state saved mid-storage;
+- 2 s after return, a state identical to the bit to a twin that was never set aside.
+
+After those 2 s the surface and core are at 396.598 K and 300.273 K (glass), 362.49 K and 300.075 K (oak), and 333.707 K and 307.333 K (iron). The native inventory regression requires the heated glass/oak/iron parcels and their `heat.stored` readings unchanged through 120 steps in the bag. No MCP version, ABI or wire field changed. This is still storage by fiat, not a physical container: bag cooling, contact between packed items and reactive storage remain unmodelled.

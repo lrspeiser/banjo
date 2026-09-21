@@ -589,8 +589,9 @@ struct ThermoWorld::Impl {
         const double tamb = ambient.temperature_k;
         for (std::size_t i = 0; i < s.lumps.size(); ++i) {
             Lump &l = s.lumps[i];
-            // Storage disconnects outside heat paths, not the object's own
-            // surface/core conductance. Energy stays in the stored object.
+            // Set aside: nothing goes in or out of it, and nothing moves inside
+            // it either. Time stands still for it until it is back (park).
+            if (l.parked) continue;
             if (l.core_conductance_w_k > 0.0 && massKg(l.core) > 0.0) {
                 const double q = pairTransfer(temperature(l.surface), temperature(l.core),
                                               capacity(l.surface), capacity(l.core),
@@ -598,7 +599,6 @@ struct ThermoWorld::Impl {
                 l.surface.internal_energy_j -= q;
                 l.core.internal_energy_j += q;
             }
-            if (l.parked) continue; // insulated storage; no external bath
             const double t = temperature(l.surface);
             const double c = capacity(l.surface);
             const double sky = i < s.sky_fraction.size() ? s.sky_fraction[i] : 1.0;

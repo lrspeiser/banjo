@@ -562,34 +562,89 @@ void aSceneDeclaresItsThermochemistry() {
     require(report.find("demonstration") != std::string::npos, "and says where its numbers came from");
 }
 
-void storedObjectsEquilibrateWithoutAnExternalBath() {
-    for (const auto &[material,density]:std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
-        ThermoWorld world;
-        world.refresh({box("stored",material,{0,1,0},{.12,.12,.12},density)},0);
-        world.declareContents({"stored",{},300,.002,""});
-        auto initial=world.state();auto &l=initial.lumps.front();
-        l.surface=parcelAt(world.model(),l.surface.kg,400);
-        l.core=parcelAt(world.model(),l.core.kg,300);
-        const double cs=heatCapacityJK(world.model(),l.surface),cc=heatCapacityJK(world.model(),l.core);
-        require(cs>0 && cc>0 && l.core_conductance_w_k>0,"fixture has two thermal nodes");
-        const double equilibrium=(cs*400+cc*300)/(cs+cc);
-        const double difference=100*std::exp(-l.core_conductance_w_k*(1/cs+1/cc)*10);
-        const double energy=l.surface.internal_energy_j+l.core.internal_energy_j;
-        world.restore(initial);world.park("stored");
-        run(world,5,.05);const auto saved=world.state();
-        run(world,5,.05);const auto uninterrupted=world.state();
-        const auto &final=uninterrupted.lumps.front();
-        near(temperatureK(world.model(),final.surface),equilibrium+cc/(cs+cc)*difference,1e-8,"surface analytical relaxation");
-        near(temperatureK(world.model(),final.core),equilibrium-cs/(cs+cc)*difference,1e-8,"core analytical relaxation");
-        near(final.surface.internal_energy_j+final.core.internal_energy_j,energy,std::abs(energy)*1e-12,"stored internal energy");
-        require(final.surface.kg==initial.lumps.front().surface.kg && final.core.kg==initial.lumps.front().core.kg,"storage cannot create or consume material");
-        near(world.ledger().heat_to_surroundings_j,0,0,"no external cooling");
-        near(world.ledger().heater_in_j,0,0,"no external heat source");
-        world.restore(saved);run(world,5,.05);
-        require(world.state().lumps.front().surface.internal_energy_j==final.surface.internal_energy_j &&
-                world.state().lumps.front().core.internal_energy_j==final.core.internal_energy_j,"restart continues exact stored conduction");
-        std::cout<<"stored "<<material<<": "<<temperatureK(world.model(),final.surface)<<" K surface, "
-                 <<temperatureK(world.model(),final.core)<<" K core; internal energy retained\n";
+// Set aside, a thing is kept exactly as it was put away (ThermoWorld::park):
+// nothing leaves it, no heater reaches it, and its surface and core do not even
+// out either -- time stands still for it. Glass, oak and iron alike, whose
+// surface-to-core conductances are orders of magnitude apart, each put away
+// 400 K at the surface and 300 K in the core. Brought back, it goes on from
+// exactly where it was put away: after two seconds it is, to the last bit,
+// what the same thing never set aside is after two seconds.
+//
+// On September 20 a stored thing's surface and core were let even out while it
+// was away. That broke the room's own rule (live_world_tests,
+// aHotThingSetAsideKeepsItsHeat), and the owner restored the rule on
+// September 21 (docs/material-collection-contract.md).
+void storedObjectsKeepTheirHeatExactly() {
+    const auto same = [](const Lump &a, const Lump &b) {
+        return a.surface.kg == b.surface.kg && a.core.kg == b.core.kg &&
+               a.surface.internal_energy_j == b.surface.internal_energy_j &&
+               a.core.internal_energy_j == b.core.internal_energy_j && a.initial_kg == b.initial_kg &&
+               a.peak_surface_k == b.peak_surface_k && a.peak_core_k == b.peak_core_k &&
+               a.layer_fuel_kg == b.layer_fuel_kg;
+    };
+    for (const auto &[material, density] :
+         std::vector<std::pair<std::string, double>>{{"glass", 2500.0}, {"oak", 700.0}, {"iron", 7870.0}}) {
+        const BodyShape cube = box("stored", material, {0.0, 1.0, 0.0}, {0.12, 0.12, 0.12}, density);
+        const auto open = [&](ThermoWorld &world) {
+            world.refresh({cube}, 0.0);
+            world.declareContents({"stored", {}, 300.0, 0.002, ""});
+            ThermoState initial = world.state();
+            Lump &l = initial.lumps.front();
+            l.surface = parcelAt(world.model(), l.surface.kg, 400.0);
+            l.core = parcelAt(world.model(), l.core.kg, 300.0);
+            // And the hottest each has been, as if it had been heated there: a
+            // peak below the temperature is a state no step could leave. Read
+            // back from the parcel, not written as 400: the round trip through
+            // internal energy can land a last bit above it.
+            l.peak_surface_k = std::max(l.peak_surface_k, temperatureK(world.model(), l.surface));
+            l.peak_core_k = std::max(l.peak_core_k, temperatureK(world.model(), l.core));
+            world.restore(initial);
+        };
+        ThermoWorld world, never;
+        open(world);
+        open(never);
+        const Lump put_away = world.state().lumps.front();
+        require(heatCapacityJK(world.model(), put_away.surface) > 0.0 &&
+                    heatCapacityJK(world.model(), put_away.core) > 0.0 && put_away.core_conductance_w_k > 0.0,
+                "the fixture has two thermal nodes");
+
+        world.park("stored");
+        const Ledger put_away_ledger = world.ledger();
+        run(world, 5.0, 0.05);
+        const ThermoState saved = world.state();
+        run(world, 5.0, 0.05);
+        const Lump &away = world.state().lumps.front();
+        require(away.parked, "the stored thing was not still set aside");
+        require(same(away, put_away), material + " set aside for 10 s changed what it holds");
+        near(world.ledger().heat_to_surroundings_j, 0.0, 0.0, "no external cooling");
+        near(world.ledger().heater_in_j, 0.0, 0.0, "no external heat source");
+        // The fixture's gradient was written straight into the state, so the
+        // ledger never closed; what matters is that nothing moves it while the
+        // thing is away.
+        near(world.ledger().storedJ(), put_away_ledger.storedJ(), 0.0, "what the network holds changed");
+        near(world.ledger().residualJ(), put_away_ledger.residualJ(), 0.0, "the ledger moved while it was away");
+        // Saved while it is away and restored, it is still set aside, and time
+        // still stands still for it.
+        world.restore(saved);
+        run(world, 5.0, 0.05);
+        require(same(world.state().lumps.front(), put_away),
+                material + " restored while set aside changed what it holds");
+
+        // Brought back where it was, and coupled again by the host's refresh.
+        world.unpark("stored");
+        world.refresh({cube}, 0.0);
+        never.refresh({cube}, 0.0);
+        run(world, 2.0, 0.05);
+        run(never, 2.0, 0.05);
+        const Lump &back = world.state().lumps.front();
+        const Lump &twin = never.state().lumps.front();
+        const double surface_k = temperatureK(world.model(), back.surface);
+        const double core_k = temperatureK(world.model(), back.core);
+        require(surface_k < 400.0 - 1e-3 && core_k > 300.0 + 1e-6,
+                material + " brought back did not go on evening out");
+        require(same(back, twin), material + " brought back did not go on from where it was put away");
+        std::cout << "  " << material << ": held at 400/300 K for 10 s set aside; back for 2 s, " << surface_k
+                  << " K surface and " << core_k << " K core, as if never set aside\n";
     }
 }
 
@@ -614,7 +669,8 @@ int main() {
         {"piston lift converges as the step shrinks", pistonLiftConvergesAsTheStepShrinks},
         {"an open vent lets the gas out", anOpenVentLetsTheGasOut},
         {"a scene declares its thermochemistry", aSceneDeclaresItsThermochemistry},
-        {"stored objects equilibrate without an external bath", storedObjectsEquilibrateWithoutAnExternalBath},
+        {"a stored thing keeps its heat exactly, and goes on from there once it is back",
+         storedObjectsKeepTheirHeatExactly},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

@@ -585,8 +585,10 @@ class StoredMaterialState(unittest.TestCase):
                     restored,why=live.snapshot();self.assertIsNotNone(restored,why)
                     self.assertEqual(heat(restored),expected)
                     self.assertEqual(restored["material_geometry"],stored["material_geometry"])
-                    # Insulated storage retains energy/material, while any
-                    # surface/core gradient continues to equilibrate.
+                    # Set aside, time stands still for it: nothing leaves it,
+                    # nothing reacts, and its surface and core do not even out
+                    # (ThermoWorld::park). Preservation, not a claim of
+                    # physical bag cooling.
                     live.act({"session":sid,"op":"step","dt":1/240,"n":120})
                     summary=live.act({"session":sid,"op":"poses"})["heat"]
                     reading=next(b for b in summary["stored"] if b["name"]=="crafted part")
@@ -595,16 +597,8 @@ class StoredMaterialState(unittest.TestCase):
                     self.assertTrue(exact["set_aside"])
                     self.assertAlmostEqual(reading["t_k"],exact["temperature_k"],delta=.050001)
                     self.assertAlmostEqual(reading["core_k"],exact["core_temperature_k"],delta=.050001)
-                    parked,_=live.snapshot()
-                    aheat,bheat=heat(before,False),heat(parked,False)
-                    ea=sum(aheat[z]["internal_energy_j"] for z in ("surface","core"))
-                    eb=sum(bheat[z]["internal_energy_j"] for z in ("surface","core"))
-                    self.assertAlmostEqual(ea,eb,delta=max(1e-7,abs(ea)*1e-12))
-                    for zone in ("surface","core"):
-                        self.assertEqual(aheat[zone]["kg_b64"],bheat[zone]["kg_b64"])
-                    if aheat["core"]["internal_energy_j"]!=0:
-                        self.assertNotEqual(aheat["surface"]["internal_energy_j"],bheat["surface"]["internal_energy_j"])
-                    expected_parked=deepcopy(bheat)
+                    self.assertEqual(reading,stored_reading)
+                    parked,_=live.snapshot();self.assertEqual(heat(parked,False),heat(before,False))
                     dropped=inventory_room.request(app,{"request":"return-material-0001",
                         "revision":shown["record"]["revision"],"op":"drop","item":"crafted part","person":PERSON})
                     self.assertTrue(dropped["ok"],dropped)
@@ -612,7 +606,7 @@ class StoredMaterialState(unittest.TestCase):
                     self.assertNotIn("crafted part",[b["name"] for b in summary["stored"]])
                     returned,why=live.snapshot();self.assertIsNotNone(returned,why)
                     returned_heat=heat(returned,False)
-                    expected_heat=expected_parked
+                    expected_heat=heat(before,False)
                     # The part was on the floor and is now in free space:
                     # exposed area is a derived boundary, not stored material.
                     self.assertAlmostEqual(returned_heat.pop("exposed_area_m2"),6*.12**2)

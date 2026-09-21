@@ -12334,8 +12334,7 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     }
     I.parked.emplace(name, record);
     // What it holds -- its heat, what it is made of, its fuel -- stays with it
-    // on the ledger; internal conduction continues while external heat paths
-    // and reactions are suspended (ThermoWorld::park),
+    // exactly: time stands still for it while it is away (ThermoWorld::park),
     // and it is still the network's, on its ledger.
     if (I.thermo) I.thermo->park(name);
     // What rested on it falls, and what it rested on carries it no more. Jolt
