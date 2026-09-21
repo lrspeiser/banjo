@@ -48,7 +48,12 @@ async function api(path, body) {
 
 const world = {
   session: "", cell: 0.04, t: 0,
-  bodies: new Map(),          // name -> { data, mesh, revision, cellCount }
+  // A LIST, in the order the engine sends them -- not a map by name. A body
+  // has no id of its own, and names are NOT unique: every part of a joined
+  // product carries the group's name, so a cart arrives as ten bodies all
+  // called "cart". Keyed by name they collapsed onto each other and nine
+  // tenths of every product was never drawn.
+  shown: [],                  // index -> { data, mesh, sig }
   ground: null,               // { nx, nz, cell, x0, z0, h: Float32Array }
   pace: 0,
 };
@@ -225,42 +230,47 @@ function place(mesh, body) {
   if (q && q.length === 4) mesh.quaternion.set(q[1], q[2], q[3], q[0]);
 }
 
-function forget(name) {
-  const known = world.bodies.get(name);
-  if (!known) return;
-  view.remove(known.mesh);
-  if (!known.mesh.isInstancedMesh) known.mesh.geometry.dispose();
-  known.mesh.material.dispose();
-  world.bodies.delete(name);
+function dispose(mesh) {
+  if (!mesh.isInstancedMesh) mesh.geometry.dispose();
+  mesh.material.dispose();
 }
 
-/** Take what the engine last said. A step reply may be `partial` -- only the
- *  bodies that moved, plus `gone` -- so the ones it leaves out are left alone
- *  rather than deleted, which is the whole point of a partial reply. */
+/** What would make this body need a new mesh rather than a new pose: what it
+ *  is, how it is built, and how much of it is left. */
+const signatureOf = (body) =>
+  [body.name, body.shape, body.revision, (body.cells_local_m || []).length,
+   (body.dimensions_m || []).join(",")].join("|");
+
+/** Take what the engine last said.
+ *
+ *  Matched up by POSITION in the reply, because that is the only stable handle
+ *  a body has: there is no id, and ten of them can share a name. The page
+ *  therefore always asks for a whole reply -- a partial one carries only what
+ *  moved, and there is no way to say which "cart" that was.
+ */
 function draw(state) {
-  for (const name of state.gone || []) forget(name);
-  for (const body of state.bodies || []) {
-    const known = world.bodies.get(body.name);
-    const cellCount = (body.cells_local_m || []).length;
-    // Rebuilt when the engine says the thing itself changed: a new revision, a
-    // different number of cells (it broke), or a dent it did not have before.
-    const rebuild = !known || known.revision !== body.revision
-      || known.cellCount !== cellCount;
-    if (rebuild) {
-      forget(body.name);
+  const list = state.bodies || [];
+  if (state.partial) return;      // not asked for; see above
+  for (let i = 0; i < list.length; i++) {
+    const body = list[i];
+    const sig = signatureOf(body);
+    const slot = world.shown[i];
+    if (!slot || slot.sig !== sig) {
+      if (slot) { view.remove(slot.mesh); dispose(slot.mesh); }
       const mesh = buildMesh(body);
       place(mesh, body);
       view.add(mesh);
-      world.bodies.set(body.name, { data: body, mesh, revision: body.revision, cellCount });
+      world.shown[i] = { data: body, mesh, sig };
     } else {
-      known.data = { ...known.data, ...body };
-      place(known.mesh, body);
+      slot.data = body;
+      place(slot.mesh, body);
     }
   }
-  if (!state.partial) {
-    const here = new Set((state.bodies || []).map((b) => b.name));
-    for (const name of [...world.bodies.keys()]) if (!here.has(name)) forget(name);
+  for (let i = list.length; i < world.shown.length; i++) {
+    view.remove(world.shown[i].mesh);
+    dispose(world.shown[i].mesh);
   }
+  world.shown.length = list.length;
 }
 
 // --------------------------------------------------------------------------
@@ -356,11 +366,10 @@ let looked = "";
 
 function lookedAt() {
   ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-  const meshes = [...world.bodies.values()].map((k) => k.mesh);
-  const hit = ray.intersectObjects(meshes, false)[0];
+  const hit = ray.intersectObjects(world.shown.map((s) => s.mesh), false)[0];
   if (!hit) return null;
-  for (const [name, known] of world.bodies) if (known.mesh === hit.object) return { name, known, hit };
-  return null;
+  const slot = world.shown.find((s) => s.mesh === hit.object);
+  return slot ? { name: slot.data.name, known: slot, hit } : null;
 }
 
 const KG = (n) => (n >= 1 ? `${n.toFixed(n < 10 ? 2 : 1)} kg` : `${Math.round(n * 1000)} g`);
@@ -445,7 +454,7 @@ async function showMatter() {
 function showStuff() {
   // A thing is its join group: a table is one table, not five boards.
   const counts = new Map();
-  for (const { data } of world.bodies.values()) {
+  for (const { data } of world.shown) {
     const root = data.name.replace(/-\d+$/, "");
     const seen = counts.get(root) || { n: 0, material: data.material };
     seen.n++;
@@ -464,7 +473,7 @@ function showStuff() {
       li.append(swatch, what, count);
       return li;
     }));
-  $("made").textContent = `${counts.size} things · ${world.bodies.size} bodies`;
+  $("made").textContent = `${counts.size} things · ${world.shown.length} bodies`;
 }
 
 // --------------------------------------------------------------------------
@@ -476,7 +485,7 @@ function showStuff() {
  *  chosen in: (0, -9) in this valley is the top of a hill, four metres above
  *  everything, and from up there the whole place is a band on the horizon. */
 function standWhereTheThingsAre() {
-  const all = [...world.bodies.values()].map((k) => k.data.position_m).filter(Boolean);
+  const all = world.shown.map((s) => s.data.position_m).filter(Boolean);
   const middle = all.length
     ? all.reduce((sum, at) => [sum[0] + at[0], sum[1] + at[1], sum[2] + at[2]], [0, 0, 0])
         .map((v) => v / all.length)
@@ -575,6 +584,6 @@ open().then(() => requestAnimationFrame(tick)).catch((trouble) => {
 window.banjoExplorer = {
   world, person,
   status: () => ({ session: world.session, t: world.t, pace: world.pace,
-                   bodies: world.bodies.size, ground: !!world.ground,
+                   bodies: world.shown.length, ground: !!world.ground,
                    looking: looked }),
 };
