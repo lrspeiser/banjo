@@ -71,9 +71,10 @@
 //        {"op":"environment_state"}          the water, for carrying into a reopen
 //        {"op":"terrain"}                    the whole ground again, for drawing
 //        {"op":"place_check","name":"stool","on":[x,y,z],"yaw_deg":30,"onto":"table"}
-//                                            where it would go set down upright at a
-//                                            point on a surface, and whether it fits
-//                                            (LiveWorld::placement); changes nothing
+//                                            where it would go set down square to the
+//                                            ground at a point on a surface, and whether
+//                                            it fits (LiveWorld::placement); changes
+//                                            nothing. "square":false keeps it upright
 //        {"op":"blade","body":"sword","heel":[..],"tip":[..],"facing":[0,0,-1],
 //         "thickness_m":0.01,"edge_radius_m":0.0002,"bevel_deg":30,"grip":[..]}
 //                                            give a body an edge (docs/cutting-model.md)
@@ -2010,7 +2011,8 @@ int main(int argc, char **argv) {
                     const LivePlacement p = world->placement(command.at("name").get<std::string>(),
                                                              readVec(command, "on"),
                                                              command.value("yaw_deg", 0.0) * kDegree,
-                                                             command.value("onto", std::string{}));
+                                                             command.value("onto", std::string{}),
+                                                             command.value("square", true));
                     nlohmann::json touching = nlohmann::json::array();
                     for (const auto &[what, depth] : p.touching)
                         touching.push_back({{"name", what}, {"depth_mm", tidy(1000.0 * depth)}});

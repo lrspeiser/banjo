@@ -1714,9 +1714,12 @@ class Live:
             if not all(math.isfinite(v) for v in point + [yaw]):
                 raise LiveError("a placement was given a point or a turn that is not a number")
             # `onto`: what the point is on, as pick found it; empty is the ground.
+            # `square`: set square to the ground under it (the default), or
+            # upright, as one part of a bigger shape is asked.
             return session.send(op="place_check", name=str(body.get("name", "")), on=point,
                                 yaw_deg=((yaw + 180.0) % 360.0) - 180.0,
-                                onto=str(body.get("onto") or "")[:200])
+                                onto=str(body.get("onto") or "")[:200],
+                                square=body.get("square", True) is not False)
         if op == "pick":
             # A ray in world metres. Costs no step and changes nothing, so it is
             # not bounded the way a step is -- but it is still checked, because

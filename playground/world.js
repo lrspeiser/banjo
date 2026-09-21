@@ -3613,7 +3613,7 @@ async function settleDown() {
 //
 // The owner, 2026-09-15: "E shows, E places" (docs/inventory-and-hands.md,
 // section 5). With a thing in the hand, E shows a copy of it where the person
-// is looking -- upright as it was made, on the surface there, turned with the
+// is looking -- as it was made, square to the surface there, turned with the
 // wheel -- and the engine says whether it fits (op place_check,
 // LiveWorld::placement): what it would go into, what it would rest on, whether
 // it may tip off, or, a tall thing on a slope, fall over. E again carries it

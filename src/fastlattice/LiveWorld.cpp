@@ -8197,8 +8197,104 @@ LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,
     return out;
 }
 
+namespace {
+
+// The ground under a thing's footprint, a point of it: x and z in the thing's
+// own axes from its centre of mass, y the ground's height in the world.
+struct GroundSample {
+    double x, y, z;
+};
+
+// The plane a flat underside comes to rest on over its middle: of the planes
+// through three samples with no sample above them, the one lowest over (0, 0)
+// -- the facet of the ground's upper hull there, which the three it passes
+// through hold up. y = a x + b z + c, as {a, b, c}; none from fewer than three
+// samples, or none that has its middle between them.
+std::optional<std::array<double, 3>> restingPlane(const std::vector<GroundSample> &ground) {
+    const std::size_t n = ground.size();
+    if (n < 3) return std::nullopt;
+    // Every triple: at most 81 samples, and a triple is dropped at once unless
+    // it is around the middle and lower there than the best so far. Measured on
+    // the valley, place_check's whole round trip: 0.2 ms for the shelf unit's
+    // 36 samples, 0.5 ms for the table's 81. (Searching only the samples
+    // highest above the plane that fits them best misses this plane on flat
+    // ground, where which is highest is rounding.)
+    std::optional<std::array<double, 3>> best;
+    const auto side = [](const GroundSample &u, const GroundSample &v) {
+        return (v.x - u.x) * (0.0 - u.z) - (v.z - u.z) * (0.0 - u.x);
+    };
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = i + 1; j < n; ++j)
+            for (std::size_t k = j + 1; k < n; ++k) {
+                const GroundSample &p = ground[i], &q = ground[j], &r = ground[k];
+                const double s1 = side(p, q), s2 = side(q, r), s3 = side(r, p);
+                const bool around = (s1 >= -1e-12 && s2 >= -1e-12 && s3 >= -1e-12) ||
+                                    (s1 <= 1e-12 && s2 <= 1e-12 && s3 <= 1e-12);
+                if (!around) continue;
+                const double det = (q.x - p.x) * (r.z - p.z) - (r.x - p.x) * (q.z - p.z);
+                if (std::abs(det) < 1e-9) continue;
+                const double a = ((q.y - p.y) * (r.z - p.z) - (r.y - p.y) * (q.z - p.z)) / det;
+                const double b = ((q.x - p.x) * (r.y - p.y) - (r.x - p.x) * (q.y - p.y)) / det;
+                const double c = p.y - a * p.x - b * p.z;
+                if (best && c >= (*best)[2]) continue;
+                bool over = true;
+                for (const GroundSample &g : ground)
+                    if (a * g.x + b * g.z + c < g.y - 1e-6) { over = false; break; }
+                if (over) best = std::array<double, 3>{a, b, c};
+            }
+    return best;
+}
+
+// The outline of points in (x, z), anticlockwise (Andrew's monotone chain).
+std::vector<std::array<double, 2>> outlineOf(std::vector<std::array<double, 2>> points) {
+    std::sort(points.begin(), points.end());
+    points.erase(std::unique(points.begin(), points.end()), points.end());
+    if (points.size() < 3) return points;
+    const auto turn = [](const std::array<double, 2> &o, const std::array<double, 2> &a,
+                         const std::array<double, 2> &b) {
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    };
+    std::vector<std::array<double, 2>> hull(2 * points.size());
+    std::size_t k = 0;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        while (k >= 2 && turn(hull[k - 2], hull[k - 1], points[i]) <= 0.0) --k;
+        hull[k++] = points[i];
+    }
+    for (std::size_t i = points.size() - 1, lower = k + 1; i-- > 0;) {
+        while (k >= lower && turn(hull[k - 2], hull[k - 1], points[i]) <= 0.0) --k;
+        hull[k++] = points[i];
+    }
+    hull.resize(k - 1);
+    return hull;
+}
+
+// How far a lean takes a thing towards the edge of what it rests on: the lean
+// is where its middle's plumb line meets its underside, from the middle, and 1
+// is that point on the outline's edge -- where it goes over. 1000 for a thing
+// standing on an edge already and leaning across it.
+double tippingUsed(const std::vector<std::array<double, 2>> &outline, double px, double pz) {
+    if (outline.size() < 3) return 1000.0;
+    double worst = 0.0;
+    for (std::size_t k = 0; k < outline.size(); ++k) {
+        const auto &p = outline[k], &q = outline[(k + 1) % outline.size()];
+        const double ex = q[0] - p[0], ez = q[1] - p[1], length = std::hypot(ex, ez);
+        if (!(length > 0.0)) continue;
+        const double nx = ez / length, nz = -ex / length;  // outwards, anticlockwise
+        const double inside = p[0] * nx + p[1] * nz;       // the middle's distance in from the edge
+        const double towards = px * nx + pz * nz;
+        if (inside <= 1e-9) {
+            if (towards > 1e-12) return 1000.0;
+            continue;
+        }
+        worst = std::max(worst, towards / inside);
+    }
+    return std::min(worst, 1000.0);
+}
+
+}  // namespace
+
 LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world_m, double yaw_rad,
-                                   const std::string &onto) const {
+                                   const std::string &onto, bool square) const {
     LivePlacement out{};
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) { out.why = "there is nothing called that here"; return out; }
@@ -8208,23 +8304,15 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     const MatterBodyId id = impl_->body_of[i];
     // Upright as it was made, turned about the vertical: a body's rigid frame is
     // the one it was built in, and a thing is built standing the way it stands
-    // -- a stool on its feet, a plank flat, a cup on its base.
+    // -- a stool on its feet, a plank flat, a cup on its base. Then, below,
+    // square to the ground under it.
     const Quat turn{std::cos(0.5 * yaw_rad), 0.0, std::sin(0.5 * yaw_rad), 0.0};
     const auto [low, high] = impl_->world->shapeBoundsTurned(id, turn);
+    // Its own box, in its own axes: its footprint whichever way it is turned.
+    const auto [own_low, own_high] = impl_->world->shapeBoundsTurned(id, Quat{});
     // Its underside on the surface, 2 mm clear of it, its middle over the point.
     constexpr double kClearM = 0.002;
     out.at_m = Vec3{on_world_m.x, on_world_m.y - low.y + kClearM, on_world_m.z};
-    out.turn_wxyz[0] = turn.w;
-    out.turn_wxyz[1] = turn.x;
-    out.turn_wxyz[2] = turn.y;
-    out.turn_wxyz[3] = turn.z;
-    // Which way it would face there, as poses() says of a body: the rigid turn
-    // with the one a whole box or ball carries inside its shape on top.
-    const Quat facing = compose(turn, impl_->shapeTurn(i));
-    out.facing_wxyz[0] = facing.w;
-    out.facing_wxyz[1] = facing.x;
-    out.facing_wxyz[2] = facing.y;
-    out.facing_wxyz[3] = facing.z;
     const Vec3 down{0.0, -1.0, 0.0};
     // What it is being set down on: the thing the point is on, as the host
     // found it, or the ground. Not guessed from under the point: a ball lying
@@ -8246,15 +8334,103 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // Clear of it, not merely within the 3 mm said of other things below: a
     // 50 mm ball on a 20 degree slope goes 1 mm in, and let go there it would
     // be pushed out with a jump.
-    const double start_y = out.at_m.y;
-    bool clear = false;
-    for (int k = 0; k < 8; ++k) {
-        double deepest = 0.0;
-        for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, turn, 0.0005))
-            if (!met.named || (onto_body && met.body_id == onto_id)) deepest = std::max(deepest, met.depth_m);
-        if (!(deepest > 0.0)) { clear = true; break; }
-        out.at_m.y += deepest + 0.001;
+    const auto clear_of_it = [&](const Quat &stand) {
+        for (int k = 0; k < 8; ++k) {
+            double deepest = 0.0;
+            for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, stand, 0.0005))
+                if (!met.named || (onto_body && met.body_id == onto_id)) deepest = std::max(deepest, met.depth_m);
+            if (!(deepest > 0.0)) return true;
+            out.at_m.y += deepest + 0.001;
+        }
+        return false;
+    };
+    double start_y = out.at_m.y;
+    bool clear = clear_of_it(turn);
+    // The ground under it: a grid over its whole footprint, in its own axes
+    // turned the way it would stand, out to its edges -- a twisted or folded
+    // ground holds a thing up there, and four samples in from its corners missed
+    // a 15 mm rise at one end of the valley's shelf unit, which then stood on
+    // that and fell -- read from just over its underside, clear upright, and as
+    // far down as the ground goes; only where the ray meets the thing the point
+    // is on (a corner out over a crate's edge that finds the floor is a drop,
+    // not a slope).
+    const double xs[2] = {0.8 * own_low.x, 0.8 * own_high.x};
+    const double zs[2] = {0.8 * own_low.z, 0.8 * own_high.z};
+    std::vector<GroundSample> under_it;
+    if (clear) {
+        const double wide = own_high.x - own_low.x, deep = own_high.z - own_low.z;
+        const double span = std::max(wide, deep);
+        const double reach = 0.045 + span;
+        // About every 10 cm, 3 to 9 a side: finer than the valley's 25 cm ground.
+        const int nx = std::clamp(static_cast<int>(std::ceil(wide / 0.1)) + 1, 3, 9);
+        const int nz = std::clamp(static_cast<int>(std::ceil(deep / 0.1)) + 1, 3, 9);
+        for (int a = 0; a < nx; ++a)
+            for (int c = 0; c < nz; ++c) {
+                const double lx = own_low.x + wide * a / (nx - 1);
+                const double lz = own_low.z + deep * c / (nz - 1);
+                const Vec3 corner = turn.rotate(Vec3{lx, 0.0, lz});
+                const Vec3 from{out.at_m.x + corner.x, out.at_m.y + low.y + 0.005, out.at_m.z + corner.z};
+                RayHit met = impl_->world->castRay(from, down, reach, id);
+                // A round or tapered underside clears a slope only where it is
+                // lowest, and under its uphill corners the ground is higher than
+                // that: a ray started there is inside the ramp (which answers
+                // at once, where the ray began) or under the ground (which it
+                // passes). Asked again from over ground rising 45 degrees
+                // across it; the lower start stays first, so that nothing over
+                // a thing's footprint -- a shelf above, a container's rim --
+                // is taken for the ground under it.
+                if (!met.hit || !(met.distance_m > 0.0))
+                    met = impl_->world->castRay(from + Vec3{0.0, 1.2 * span, 0.0}, down, reach + 1.2 * span, id);
+                if (met.hit && (onto_body ? met.named && met.body_id == onto_id : !met.named))
+                    under_it.push_back({lx, met.point_world_m.y, lz});
+            }
     }
+    // What its flat underside would come to rest on there: the plane through
+    // the three highest points around its middle (restingPlane). Not the plane
+    // that fits the ground best -- on ground twisted across its footprint that
+    // is a plane it touches at one point and rocks off.
+    const std::optional<std::array<double, 3>> rests = restingPlane(under_it);
+    const bool plane = rests.has_value();
+    const double along_x = plane ? (*rests)[0] : 0.0, along_z = plane ? (*rests)[1] : 0.0;
+    // Set down SQUARE to that ground, not upright over it. Let go upright over
+    // a slope, a thing first pivots on its uphill edge down onto the slope, and
+    // what that swing gains carries a tall one over its downhill edge long
+    // before the slope itself would: the valley's 1.8 m shelf unit, let go at
+    // rest and exactly upright on planar ramps across its 0.28 m side, stood on
+    // 2.25 degrees and fell over every time from 2.5 -- where it statically
+    // tips at 8.8. Square to the ground there is no swing, and what tips it is
+    // the slope alone. Its middle stays over the point and its underside 2 mm
+    // clear of the ground, measured square to it; a bump is still lifted off.
+    // Past 45 degrees under it the ground is a wall, and it is upright as it
+    // always was -- so the crosshair on a crate's side is too steep, as ever.
+    // `square` false keeps it upright: the host putting a thing of several
+    // parts down as one shape asks for each part as it stands in that shape.
+    Quat stand = turn;
+    const double steepest = std::hypot(along_x, along_z);
+    if (square && plane && steepest > 1e-4 && steepest <= 1.0) {
+        const Vec3 n = normalized(turn.rotate(Vec3{-along_x, 1.0, -along_z}));
+        const double s = std::hypot(n.x, n.z);
+        const double half = 0.5 * std::atan2(s, n.y);
+        // About the level line of that slope, by its steepness: its own up to
+        // the ground's.
+        stand = compose(Quat{std::cos(half), std::sin(half) * n.z / s, 0.0, -std::sin(half) * n.x / s}, turn);
+        // Its underside 2 mm clear of that plane, square to it; the plane is
+        // where it stands over its middle, which the point may be a dip under.
+        out.at_m = Vec3{on_world_m.x, (*rests)[2] + (kClearM - low.y) / n.y, on_world_m.z};
+        start_y = out.at_m.y;
+        clear = clear_of_it(stand);
+    }
+    out.turn_wxyz[0] = stand.w;
+    out.turn_wxyz[1] = stand.x;
+    out.turn_wxyz[2] = stand.y;
+    out.turn_wxyz[3] = stand.z;
+    // Which way it would face there, as poses() says of a body: the rigid turn
+    // with the one a whole box or ball carries inside its shape on top.
+    const Quat facing = compose(stand, impl_->shapeTurn(i));
+    out.facing_wxyz[0] = facing.w;
+    out.facing_wxyz[1] = facing.x;
+    out.facing_wxyz[2] = facing.y;
+    out.facing_wxyz[3] = facing.z;
     // Lifted more than half its own height, or still not clear: it is not being
     // set ON that -- the crosshair is on a wall, or on the side of a crate -- and
     // it is not put on top of it by being pushed up it. Measured on the page: a
@@ -8265,7 +8441,6 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
         out.why = "that is too steep to set it on";
         return out;
     }
-    const double underside = out.at_m.y + low.y;
     const std::string ground = impl_->environment ? "ground" : "floor";
     const auto called = [&](bool named, MatterBodyId body) {
         if (!named) return ground;
@@ -8273,22 +8448,28 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
             if (impl_->body_of[j] == body) return impl_->described[j].name;
         return std::string("something");
     };
-    // What is under its middle, and under each corner of its footprint -- a
-    // little in from the corners, so a rounded or tapered underside counts.
+    // What is under the middle of its underside, and under each corner of its
+    // footprint -- a little in from the corners, so a rounded or tapered
+    // underside counts -- straight down from its underside as it would stand.
     // Its own body is where the hand has it, not here, and is not an answer.
     // Its middle is looked under down to the same depth below the point
-    // whatever lifted it. Lifted clear of a slope, it stands that much further
-    // over the point and is on it all the same: a 0.9 m bookcase turned 45
-    // degrees on 8 is lifted 60 mm, past the 55 mm looked under unlifted. And
-    // a point out in the air is still over nothing, however far it was lifted.
-    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down,
-                                               0.06 + (out.at_m.y - start_y), id);
+    // whatever lifted it or set it square. Lifted clear of a slope, it stands
+    // that much further over the point and is on it all the same: a 0.9 m
+    // bookcase turned 45 degrees on 8 is lifted 60 mm, past the 55 mm looked
+    // under unlifted. And a point out in the air is still over nothing,
+    // however far it was lifted.
+    const Vec3 over{0.0, 0.005, 0.0};
+    const Vec3 middle = out.at_m + stand.rotate(Vec3{0.0, own_low.y, 0.0}) + over;
+    const RayHit under = impl_->world->castRay(middle, down, std::max(0.06, middle.y - (on_world_m.y - 0.053)), id);
     if (under.hit && !(under.named && under.body_id == id)) out.rests_on = called(under.named, under.body_id);
+    // Each corner is looked under as far as it would reach not lifted: set
+    // square it sits flush on even ground, and only a bump lifts it, which is
+    // not the corners' lack of ground.
     double highest = -1e30, lowest = 1e30;
-    for (const double cx : {0.8 * low.x, 0.8 * high.x})
-        for (const double cz : {0.8 * low.z, 0.8 * high.z}) {
+    for (const double cx : xs)
+        for (const double cz : zs) {
             const RayHit corner = impl_->world->castRay(
-                Vec3{out.at_m.x + cx, underside + 0.005, out.at_m.z + cz}, down, 0.04, id);
+                out.at_m + stand.rotate(Vec3{cx, own_low.y, cz}) + over, down, 0.04 + (out.at_m.y - start_y), id);
             if (!corner.hit || (corner.named && corner.body_id == id)) continue;
             ++out.supported_corners;
             highest = std::max(highest, corner.point_world_m.y);
@@ -8297,7 +8478,7 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // How steep what it stands on is, across its footprint -- steeper than 15
     // degrees (tan = 0.268) is said: a ball on a slope fits, and then rolls,
     // which is the engine's to show, not the copy's to hide.
-    const double across = 0.8 * std::max(high.x - low.x, high.z - low.z);
+    const double across = 0.8 * std::max(own_high.x - own_low.x, own_high.z - own_low.z);
     const bool sloped = out.supported_corners >= 2 && across > 1e-6 && highest - lowest > 0.268 * across;
     // Whether a TALL thing would stay up on that slope. Stood on ground rising
     // s along one of its sides, its middle, h over its underside, leans out
@@ -8306,58 +8487,33 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // over at 8.8 degrees across its narrow side, and at 27 along its wide one.
     // Geometry only: its shape, where its centre of mass is, and the ground.
     //
-    // Read in its own axes, at the corners of its own footprint turned the way
-    // it would stand -- not of the box around it turned, which for that shelf
-    // unit at 45 degrees is three times as deep as the shelf -- and on the
-    // slope itself, not the drop over its longer side, which puts a slope
-    // across its narrow side at 0.28 / 0.92 of what it is. Read as far down as
-    // the ground goes: past about 7.7 degrees across that shelf unit its
-    // downhill corners are further below it than the 35 mm said above.
+    // Read in its own axes, from the plane it rests on, against the outline of
+    // what it rests on: the ground within 2 mm of that plane under its
+    // footprint, which on flat or evenly sloping ground is all of its footprint
+    // and on twisted ground may be a small triangle of it -- the valley's shelf
+    // unit, set square at rest on such ground, fell over on 3.5 to 5 degrees
+    // with three points under it. Its lean is where its middle's plumb line
+    // meets its underside, h along the plane's fall from its middle. Not the
+    // box around it turned, which for that shelf unit at 45 degrees is three
+    // times as deep as the shelf, and not the drop over its longer side, which
+    // puts a slope across its narrow side at 0.28 / 0.92 of what it is. Set down
+    // square, the slope is all that leans it out; half of what tips it is what
+    // is said, the other half the margin a hand's let-go has.
     // Only a thing whose middle stands higher than its nearest edge is from it
     // -- taller than it is wide: a ball rolls and a cube slides long before
     // they tip, and saying so is the slope's rule above.
-    const auto [own_low, own_high] = impl_->world->shapeBoundsTurned(id, Quat{});
     const double rise = -low.y;
     const double nearest = std::min({-own_low.x, own_high.x, -own_low.z, own_high.z});
-    if (!out.rests_on.empty() && nearest > 0.0 && rise > nearest + 0.001) {
-        const double xs[2] = {0.8 * own_low.x, 0.8 * own_high.x};
-        const double zs[2] = {0.8 * own_low.z, 0.8 * own_high.z};
-        const double reach = 0.045 + std::max(own_high.x - own_low.x, own_high.z - own_low.z);
-        double ground_y[2][2]{};
-        bool read[2][2]{};
-        int corners_read = 0;
-        for (int a = 0; a < 2; ++a)
-            for (int c = 0; c < 2; ++c) {
-                const Vec3 corner = turn.rotate(Vec3{xs[a], 0.0, zs[c]});
-                const RayHit met = impl_->world->castRay(
-                    Vec3{out.at_m.x + corner.x, underside + 0.005, out.at_m.z + corner.z}, down, reach, id);
-                // The same thing its middle is on: a corner out over a crate's
-                // edge that finds the floor is not a slope, and "little of it
-                // is on the crate" says that one.
-                read[a][c] = met.hit && met.named == under.named && (!met.named || met.body_id == under.body_id);
-                if (read[a][c]) { ground_y[a][c] = met.point_world_m.y; ++corners_read; }
-            }
-        if (corners_read >= 3) {
-            // Rise along its own x and z, from every pair read both ends of
-            // (three corners of four leave one pair each way).
-            double along_x = 0.0, along_z = 0.0;
-            int pairs_x = 0, pairs_z = 0;
-            for (int k = 0; k < 2; ++k) {
-                if (read[0][k] && read[1][k]) { along_x += (ground_y[1][k] - ground_y[0][k]) / (xs[1] - xs[0]); ++pairs_x; }
-                if (read[k][0] && read[k][1]) { along_z += (ground_y[k][1] - ground_y[k][0]) / (zs[1] - zs[0]); ++pairs_z; }
-            }
-            along_x /= pairs_x;
-            along_z /= pairs_z;
-            // It falls downhill, over the edge on that side of its middle.
-            const double edge_x = along_x > 0.0 ? -own_low.x : own_high.x;
-            const double edge_z = along_z > 0.0 ? -own_low.z : own_high.z;
-            out.tipping_used = rise * std::max(std::abs(along_x) / edge_x, std::abs(along_z) / edge_z);
-            out.may_fall_over = out.tipping_used > 0.5;
-        }
+    if (plane && !out.rests_on.empty() && nearest > 0.0 && rise > nearest + 0.001) {
+        std::vector<std::array<double, 2>> held_up_by;
+        for (const GroundSample &g : under_it)
+            if (along_x * g.x + along_z * g.z + (*rests)[2] - g.y <= 0.002) held_up_by.push_back({g.x, g.z});
+        out.tipping_used = tippingUsed(outlineOf(std::move(held_up_by)), -rise * along_x, -rise * along_z);
+        out.may_fall_over = out.tipping_used > 0.5;
     }
     // What it would go into, standing there: more than 3 mm, which a thing set
     // down 2 mm clear of what it rests on cannot be by resting on it.
-    for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, turn, 0.003))
+    for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, stand, 0.003))
         out.touching.emplace_back(called(met.named, met.body_id), met.depth_m);
     if (!out.touching.empty()) {
         out.why = out.touching.front().first == ground ? "the " + ground + " is too uneven there"
@@ -8367,8 +8523,9 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     } else if (out.tipping_used > 1.0) {
         out.why = "it is too tall for that slope: it would fall over";
     } else if (out.may_fall_over) {
-        // Said before its corners: on a slope that far over, a tall thing's
-        // downhill corners are what is out of reach, and why is the slope.
+        // Said before its corners: stood upright on a slope that far over (not
+        // set square: one of several parts), a tall thing's downhill corners are
+        // what is out of reach, and why is the slope.
         out.fits = true;
         out.why = "it fits, but it is tall for that slope: it may fall over";
     } else if (out.supported_corners < 3) {

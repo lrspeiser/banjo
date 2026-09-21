@@ -152,7 +152,7 @@ A small vocabulary, combined per object:
 | Component | What the hand does | Meter (measured) | Aiming guide | Status |
 |---|---|---|---|---|
 | carry | places it where it is put (no force), beside the view | where it is, what is under it | drop line and landing ring | exists; held beside the view since section 7 |
-| place | E shows a see-through copy where the crosshair meets a surface, upright and turned with the wheel, and the engine says whether it fits; E again carries it there with the bounded hand and lets go | fits; what it rests on; whether it may tip or roll | the see-through copy: green, amber or red | section 7 |
+| place | E shows a see-through copy where the crosshair meets a surface, square to it and turned with the wheel, and the engine says whether it fits; E again carries it there with the bounded hand and lets go | fits; what it rests on; whether it may tip or roll | the see-through copy: green, amber or red | section 7 |
 | turn | the wrist turns it towards what the keys ask, with at most 60 N m | how it stands | — | section 7 |
 | throw | winds up, then strokes forward and lets go at the end | wind-up reached; after: speed left with, work done | preview arc and first impact | increment 1 |
 | draw-and-release | hauls the draw point back; lets go to loose | draw reached; energy in this bow's own limbs; pull | aim line and predicted arrow flight (approximate) | increment 2 |
@@ -488,7 +488,18 @@ section 5).
 
 **Showing where.** With a thing in the hand, E shows a see-through copy of it on
 the surface under the crosshair, within 3 m.
-- The copy is upright as the thing was built, with its middle over the point.
+- The copy stands as the thing was built, turned with the wheel and set square
+  to what its underside would rest on (up to 45 degrees of it), with its middle
+  over the point. That is read from a grid of the ground under its whole
+  footprint: the plane through the highest points around its middle, not the
+  plane that fits the ground best, which on the valley's twisted ground it
+  touches at one point and rocks off. Set down upright on a slope, a tall thing
+  first swings down onto the slope on its uphill edge, and that carries it
+  over: the valley's 1.8 m shelf unit, let go at rest and upright across its
+  0.28 m base, fell over from 2.5 degrees though it tips only at 8.8. Set
+  square, a bookcase that falls over let go upright on 6 degrees stands
+  (tests/placement_tests.cpp). A thing whose parts are held in place on each
+  other goes down upright, as one shape (`square: false`).
 - The engine's `place_check` (LiveWorld::placement, from the shapes the solver
   collides) lifts it clear of that surface and the ground, which matters on a
   slope or a rounded top.
@@ -501,9 +512,15 @@ the surface under the crosshair, within 3 m.
   middle, h over its underside, leans out over the downhill edge by h times the
   slope, and it goes over once that passes the edge, b from its middle: at a
   slope of b / h, read along each of its own sides (a 1.8 m shelf unit on a
-  0.28 m base: 8.8 degrees across it, 27 along it). Past half of that the copy
-  is amber, "it may fall over" (`may_fall_over`, with `tipping_used`, the share
-  of b / h the slope uses); past all of it the copy is red and it is refused.
+  0.28 m base: 8.8 degrees across it, 27 along it). The edge is the edge of
+  what it rests on -- the ground within 2 mm of that plane -- which on
+  twisted ground may be a small triangle of its footprint. Past half of that
+  the copy is amber, "it may fall over" (`may_fall_over`, with
+  `tipping_used`, the share of the way to the edge the slope leans it); past
+  all of it the copy is red and it is refused. Measured on the valley, each
+  let go at rest where and as the engine said: of the spots it drew green,
+  the shelf unit stood on 23 of 23, the table on 9 of 9, the chair and the
+  stool on 16 of 16 each.
 - Nothing in the room moves while the copy is shown.
 
 **Turning and cancelling.**

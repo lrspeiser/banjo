@@ -36,6 +36,16 @@ def conj(q):
     return [q[0], -q[1], -q[2], -q[3]]
 
 
+def unit(q):
+    """A turn as the engine reports it, made a unit again: every number in its
+    reply is rounded to 1e-5, so a still body's turn compared with itself came
+    out 0.46 degrees -- more than the 0.45 execute allows between looks -- and a
+    chair set square on the ground was held there, still, until the hand gave
+    up."""
+    size = math.sqrt(sum(v * v for v in q)) or 1.0
+    return [v / size for v in q]
+
+
 def _reach(body, q, axis):
     """How far a part reaches from its middle along a world axis (0 x, 1 y,
     2 z), turned by q."""
@@ -126,8 +136,11 @@ def resolve(app, body):
     def reachable(on):
         d = [on[k]-feet[k] for k in range(3)]
         return math.dist(on, eyes) <= REACH_M and d[0]*facing[0]+d[2]*facing[2] >= 0.1
-    def engine_check(part, on, onto, angle):
-        got = act("place_check", name=part, on=on, onto=onto, yaw_deg=angle)
+    def engine_check(part, on, onto, angle, square=True):
+        # Set square to the ground under it (LiveWorld::placement), unless it
+        # is one part of a bigger shape, which is asked as it stands in that
+        # shape.
+        got = act("place_check", name=part, on=on, onto=onto, yaw_deg=angle, square=square)
         # Its own other parts are not in its way: they go down with it, or hang
         # from it -- a mace's head lying where its handle goes is its head.
         if any(t.get("name") in own for t in got.get("touching") or []):
@@ -162,7 +175,8 @@ def resolve(app, body):
             for p, off, q in placed:
                 at = [centre[k]+off[k] for k in range(3)]
                 down = _reach(p, q, 1)
-                got = engine_check(p["name"], [at[0], at[1]-down, at[2]], onto, yaw_of({"orientation_wxyz": q}))
+                got = engine_check(p["name"], [at[0], at[1]-down, at[2]], onto, yaw_of({"orientation_wxyz": q}),
+                                   square=False)
                 if got.get("why") == "that is too steep to set it on":
                     return dict(first, fits=False, why=got["why"])
                 # How far the engine had to lift this part clear of what it is on.
@@ -203,7 +217,9 @@ def resolve(app, body):
     def check(on, onto, angle, key, label):
         if not reachable(on):
             return {"fits": False, "why": "that destination is out of reach"}
-        result = engine_check(name, on, onto, angle)
+        # A thing of several parts goes down as one shape, turned as its
+        # gripped part stands upright (whole_shape); one thing is set square.
+        result = engine_check(name, on, onto, angle, square=len(shape) == 1)
         if len(shape) > 1 and result.get("facing"):
             result = whole_shape(result, on, onto)
         if key != "ground" and result.get("supported_corners", 0) < 3:
@@ -337,13 +353,23 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     if outcome not in ("reached", "blocked"):
         act("cancel_stroke")
         return "", "placement stroke " + outcome + "; the item is still held"
-    # How far off upright it may be let go of: 8.6 degrees for a thing that
-    # stands on a broad base, a third of its tipping angle for a tall thin one.
-    # At 8.6 degrees a 1.8 m shelf unit on a 0.28 m base -- which tips at about
-    # 9 -- was let go leaning, and fell over towards the person a second later.
+    # How far off square to the ground it may be let go of (the preview's
+    # facing): 8.6 degrees for a thing that stands on a broad base, a third of
+    # its tipping angle for a tall thin one. At 8.6 degrees a 1.8 m shelf unit
+    # on a 0.28 m base -- which tips at about 9 -- was let go leaning, and fell
+    # over towards the person a second later.
     dims = current().get("dimensions_m") or [1.0, 1.0, 1.0]
     tips = math.atan2(min(dims[0], dims[2]) / 2, max(dims[1] / 2, 1e-3))
-    half_turn = min(.075, tips / 6)
+    # On a slope less of that is left: what tips it from resting square there
+    # takes a lift of R (1 - cos((1 - used) tips)), which shrinks as the square
+    # of what the slope leaves, while what a let-go adds does not -- the swing
+    # down from being off square grows with the angle, and the hand's speed
+    # and spin carry energy of their own. So the angle allowed shrinks with
+    # that square, and the speed and spin with what is left: the let-go keeps
+    # the same share of the margin on a slope as on flat ground. `used` is the
+    # engine's tipping_used, 0 for what is not tall.
+    left = 1.0 - min(max(float(plan.get("tipping_used") or 0.0), 0.0), 0.95)
+    half_turn = min(.075, tips / 6) * left * left
     # What hangs from it has to have settled too. A mace's head still swinging
     # on its chain when the handle was let go dragged the handle after it:
     # measured in the Explorer (tests/explore_visual_qa.py), a handle set down
@@ -352,18 +378,21 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     # settle by then is let go with it rather than the put-down refused.
     rest = own_parts(app, name) - {name}
     settle_until = time.monotonic() + (2.5 if rest else 0.0)
-    until = time.monotonic()+(3.0 if rest else 2.0)
+    # And the time to be that square and still: running out sets it down on the
+    # ground in front instead (server.put_it_down), which no tall thing survives.
+    until = time.monotonic()+(3.0 if rest else 2.0)/left
     was = None
+    facing = unit(plan["facing"])
     while time.monotonic() < until:
         b = current()
-        q = b["orientation_wxyz"]
-        aligned = abs(sum(q[k]*plan["facing"][k] for k in range(4))) >= math.cos(half_turn)
+        q = unit(b["orientation_wxyz"])
+        aligned = abs(sum(q[k]*facing[k] for k in range(4))) >= math.cos(half_turn)
         # And STILL: let go of a thing that is still swinging and it goes on
         # swinging. The hand reports how fast the point it grips is moving;
         # the turn is compared across two looks 30 ms apart.
         grip = ((session.state or {}).get("hand") or {}).get("grip_velocity_m_s") or [0.0, 0.0, 0.0]
-        still = math.hypot(*grip) < .1 and was is not None and \
-            abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004)
+        still = math.hypot(*grip) < .1 * left and was is not None and \
+            abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004 * left)
         was = q
         if math.dist(b["position_m"], end) <= .05 and aligned and still:
             swinging = [p for p in session.state.get("bodies", []) if p.get("name") in rest and

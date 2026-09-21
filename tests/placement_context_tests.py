@@ -272,6 +272,19 @@ class TallThingOnASlope(unittest.TestCase):
                 self.assertIs(a["may_fall_over"],True,a)
                 self.assertAlmostEqual(a["tipping_used"],.9*math.tan(math.radians(degrees))/.15,places=2)
                 self.assertIn("fall over",a["why"])
+    def test_it_is_set_square_to_the_slope_unless_asked_upright(self):
+        # The 6 degree ramp is turned about x: its top faces (0, cos 6, sin 6).
+        # Square to it, the bookcase's own up is the ramp's (to the reply's 1e-5
+        # rounding); asked upright -- as a part of a bigger shape is -- it is not
+        # turned off the vertical at all.
+        top=self.ask("pick",**{"from":[-1.5,3,0],"dir":[0,-1,0]})
+        ramp=[0,math.cos(math.radians(6)),math.sin(math.radians(6))]
+        a=self.ask("place_check",name="bookcase",on=top["point_m"],onto=top["name"])
+        up=placement.rotate(a["facing"],[0,1,0])
+        self.assertGreater(sum(u*r for u,r in zip(up,ramp)),math.cos(math.radians(.05)),a)
+        self.assertEqual(a["supported_corners"],4,a)
+        b=self.ask("place_check",name="bookcase",on=top["point_m"],onto=top["name"],square=False)
+        self.assertAlmostEqual(placement.rotate(b["facing"],[0,1,0])[1],1.0,places=9)
     def test_the_preview_carries_it(self):
         # Standing in front of the 6 degree ramp, looking at its middle: its
         # top is under 0.25 m above the feet, so the resolver takes it as ground.
@@ -281,6 +294,8 @@ class TallThingOnASlope(unittest.TestCase):
         self.assertEqual((a["target"]["id"],a["onto"]),("ground","ramp 6"),a)
         self.assertTrue(a["fits"] and a["may_fall_over"],a)
         self.assertEqual(a["why"],"it fits, but it is tall for that slope: it may fall over")
+        # And the preview stands it square to the ramp, which the hand follows.
+        self.assertAlmostEqual(placement.rotate(a["facing"],[0,1,0])[2],math.sin(math.radians(6)),places=4)
 
 
 

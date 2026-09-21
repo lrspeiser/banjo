@@ -137,7 +137,7 @@ struct LivePick {
 struct LivePlacement {
     bool fits{};
     Vec3 at_m{};                             // its centre of mass, set down there
-    double turn_wxyz[4]{1.0, 0.0, 0.0, 0.0}; // its rigid orientation there
+    double turn_wxyz[4]{1.0, 0.0, 0.0, 0.0}; // its rigid orientation there: square to the ground under it
     double facing_wxyz[4]{1.0, 0.0, 0.0, 0.0}; // which way it would face: that with its shape's own turn on top
     std::string rests_on;                    // what is under its middle
     int supported_corners{};                 // corners of its footprint with something under them, of four
@@ -1130,8 +1130,15 @@ public:
     // `onto` names what the point is on, as pick() found it -- empty for the
     // ground. It is lifted off that, and the ground, until it clears them (a
     // slope, a rounded top); anything else it would go into is in the way.
+    // It is set down square to what its underside would rest on -- the plane
+    // through the highest ground around its middle, read under its whole
+    // footprint -- up to 45 degrees of it, its middle over the point
+    // (turn_wxyz / facing_wxyz say how): set down upright on a slope, a tall
+    // thing swings onto it and over.
+    // `square` false keeps it upright, as a part of a bigger shape is asked.
     [[nodiscard]] LivePlacement placement(const std::string &name, const Vec3 &on_world_m,
-                                          double yaw_rad, const std::string &onto = {}) const;
+                                          double yaw_rad, const std::string &onto = {},
+                                          bool square = true) const;
 
     [[nodiscard]] LivePick pick(const Vec3 &from_world_m,const Vec3 &direction,
                                 double max_distance_m = 1000.0) const;

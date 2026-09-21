@@ -894,6 +894,17 @@ function showGhost(answer, body) {
     const [w, x, y, z] = parts[0].facing;
     ghost.position.set(...parts[0].at_m);
     ghost.quaternion.set(x, y, z, w);
+  } else if (answer.facing && answer.at_m) {
+    // Square to the ground under it, as the engine will set it down
+    // (LiveWorld::placement): its box standing on the middle of its underside,
+    // which is straight down its own up from its centre of mass by as much as
+    // the engine put that over the point.
+    const [w, x, y, z] = answer.facing;
+    ghost.quaternion.set(x, y, z, w);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(ghost.quaternion);
+    const at = new THREE.Vector3(...answer.at_m);
+    const height = at.clone().sub(new THREE.Vector3(...answer.on)).dot(up);
+    ghost.position.copy(at.addScaledVector(up, dy / 2 - height));
   } else {
     ghost.position.set(answer.on[0], answer.on[1] + dy / 2, answer.on[2]);
     ghost.rotation.set(0, (answer.yaw_deg || 0) * Math.PI / 180, 0);
@@ -1525,9 +1536,12 @@ function snapshot(names = []) {
     size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
     colour: `#${ghost.material.color.getHexString()}`,
     screen: screenOf([ghost.position.x, ghost.position.y, ghost.position.z]),
-    // Where it will STAND: the middle of its base. For a 1.8 m shelf unit the
-    // middle of the preview is 0.9 m above the spot the sight is on.
-    base: screenOf([ghost.position.x, ghost.position.y - ghost.scale.y / 2, ghost.position.z]),
+    // Where it will STAND: the middle of its base, down its own up (it is set
+    // square to the ground). For a 1.8 m shelf unit the middle of the preview
+    // is 0.9 m above the spot the sight is on.
+    base: screenOf(ghost.position.clone()
+      .addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(ghost.quaternion), -ghost.scale.y / 2)
+      .toArray()),
     box: screenBoxOf([{ at: [ghost.position.x, ghost.position.y, ghost.position.z],
                         size: [ghost.scale.x, ghost.scale.y, ghost.scale.z],
                         wxyz: [ghost.quaternion.w, ghost.quaternion.x, ghost.quaternion.y, ghost.quaternion.z] }]),

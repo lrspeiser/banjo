@@ -2,12 +2,13 @@
 //
 // The first half of placing a thing (docs/inventory-and-hands.md, section 5):
 // the page shows a see-through copy where the person is looking and asks the
-// engine this -- set down upright on the surface there, what would it go into,
+// engine this -- set down square to the surface there, what would it go into,
 // what would it rest on, and how much of it has something under it. Asked of
 // the shapes the solver collides, and nothing in the room moves for it.
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <iterator>
@@ -327,6 +328,26 @@ void aThingNoTallerThanItIsWideIsNotSaidToFallOver() {
             "the crate on 12 degrees was said to fall over: " + p.why);
 }
 
+void aCrateOnAGentleSlopeFitsOnAllFourCorners() {
+    const auto world = LiveWorld::open(slopesRoom());
+    // Set square to 6 degrees the crate sits flush, all four corners on the
+    // ramp.
+    const LivePlacement p = onRamp(*world, "oak crate", 6.0);
+    require(p.fits && p.rests_on == "ramp 6" && p.supported_corners == 4 && p.why == "it fits here, on the ramp 6",
+            "the crate on 6 degrees did not simply fit on all four corners: " + p.why);
+    // Asked upright, as one part of a bigger shape is, it is lifted about 20 mm
+    // clear at its uphill edge: its downhill corners, 0.16 m down the ramp, are
+    // 17 mm below the point and 39 mm below the lifted underside, past the
+    // 35 mm looked under unlifted. Each corner is looked under as far as it
+    // would reach not lifted, so all four are still on the ramp.
+    const LivePick top = world->pick(Vec3{kRampXs[1], 3.0, 0.0}, Vec3{0.0, -1.0, 0.0});
+    const LivePlacement upright = world->placement("oak crate", top.point_world_m, 0.0, top.name, false);
+    std::cout << "  the crate upright on 6 degrees: " << upright.why << ", " << upright.supported_corners
+              << " corners\n";
+    require(upright.fits && upright.supported_corners == 4 && upright.why == "it fits here, on the ramp 6",
+            "asked upright on 6 degrees, the crate's corners were not all on the ramp: " + upright.why);
+}
+
 void overAnEdgeIsNotASlope() {
     const auto world = LiveWorld::open(slopesRoom());
     // Its middle 50 mm in from the plinth's edge: half of it is over the floor
@@ -351,9 +372,100 @@ void liftedOntoAnEdgeOverAGapThereIsStillNothingUnderIt() {
     std::cout << "  the bookcase beside the plinth, over the floor: " << p.why << "; lifted " << lifted
               << " m\n";
     require(lifted > 0.06, "beside the plinth the bookcase was not lifted onto it");
+    // Nor are its corners out over the floor looked under down to it: two on
+    // the plinth, two over nothing.
+    require(p.supported_corners == 2, "beside the plinth " + std::to_string(p.supported_corners) +
+                                          " of its corners had something under them, not 2");
     require(!p.fits && p.rests_on.empty() && p.why == "there is nothing under it to rest on",
             "lifted onto the plinth's edge with its middle over the floor, the bookcase was said to rest: " +
                 p.why);
+}
+
+// Which way its own up points, turned as a placement or a pose says.
+Vec3 upOf(const double wxyz[4]) { return Quat{wxyz[0], wxyz[1], wxyz[2], wxyz[3]}.rotate(Vec3{0.0, 1.0, 0.0}); }
+
+double degreesBetween(const Vec3 &a, const Vec3 &b) {
+    return std::acos(std::clamp(dot(a, b) / (length(a) * length(b)), -1.0, 1.0)) * 180.0 / kPi;
+}
+
+void onASlopeItIsSetSquareToIt() {
+    const auto world = LiveWorld::open(slopesRoom());
+    // The 6 degree ramp is turned about x: its top faces (0, cos 6, sin 6).
+    const Vec3 ramp_up{0.0, std::cos(6.0 * kPi / 180.0), std::sin(6.0 * kPi / 180.0)};
+    const LivePick top = world->pick(Vec3{kRampXs[1], 3.0, 0.0}, Vec3{0.0, -1.0, 0.0});
+    require(top.hit && top.name == "ramp 6", "the ray from above did not find the 6 degree ramp");
+    for (const double yaw : {0.0, kPi / 6.0}) {
+        const LivePlacement p = world->placement("bookcase", top.point_world_m, yaw, top.name);
+        const double off = degreesBetween(upOf(p.turn_wxyz), ramp_up);
+        std::cout << "  the bookcase on 6 degrees, turned " << yaw * 180.0 / kPi << ": its up " << off
+                  << " degrees off the ramp's; " << p.supported_corners << " corners; " << p.why << "\n";
+        require(off < 0.05, "turned " + std::to_string(yaw * 180.0 / kPi) + ", it was not set square to the ramp");
+        // Its middle still over the point, and its underside 2 mm clear of the
+        // ramp measured square to it: its middle 0.9 + 0.002 m out along the
+        // ramp's up.
+        require(std::abs(p.at_m.x - top.point_world_m.x) < 1e-9 && std::abs(p.at_m.z - top.point_world_m.z) < 1e-9,
+                "set square, its middle is no longer over the point");
+        require(std::abs(dot(p.at_m - top.point_world_m, ramp_up) - 0.902) < 0.001,
+                "set square, its underside is not 2 mm clear of the ramp");
+        require(p.supported_corners == 4, "set square, it is not on the ramp at all four corners");
+    }
+    // Upright when asked: one part of a bigger shape is asked as it stands.
+    const LivePlacement upright = world->placement("bookcase", top.point_world_m, 0.0, top.name, false);
+    require(degreesBetween(upOf(upright.turn_wxyz), Vec3{0.0, 1.0, 0.0}) < 1e-9,
+            "asked upright, it was turned off the vertical");
+    // A ball too: its middle 52 mm from the ramp square to it, which on 20
+    // degrees is 0.052 / cos 20 = 55.3 mm over the point.
+    const auto ramp_world = LiveWorld::open(rampRoom());
+    const LivePick ramp_top = ramp_world->pick(Vec3{-1.0, 2.0, -1.0}, Vec3{0.0, -1.0, 0.0});
+    const LivePlacement ball = ramp_world->placement("iron ball", ramp_top.point_world_m, 0.0, ramp_top.name);
+    const Vec3 twenty_up{-std::sin(20.0 * kPi / 180.0), std::cos(20.0 * kPi / 180.0), 0.0};
+    std::cout << "  the ball on 20 degrees: its up " << degreesBetween(upOf(ball.turn_wxyz), twenty_up)
+              << " degrees off the ramp's, its middle " << dot(ball.at_m - ramp_top.point_world_m, twenty_up)
+              << " m from it\n";
+    require(degreesBetween(upOf(ball.turn_wxyz), twenty_up) < 0.05, "the ball was not set square to the ramp");
+    require(std::abs(dot(ball.at_m - ramp_top.point_world_m, twenty_up) - 0.052) < 0.0005,
+            "the ball's middle is not 52 mm from the ramp square to it");
+}
+
+void tick(LiveWorld &world) {
+    world.step(1.0 / 240.0);
+    if (!world.steppedBack()) return;
+    for (const std::string &name : world.breakable()) world.declineBreak(name);
+}
+
+// The bookcase let go at rest where a placement on a ramp says, turned as it
+// says -- the hand's carry puts it exactly there -- and left for five seconds:
+// how far its own up then leans from the vertical, in degrees.
+double letGoThere(double ramp_degrees, bool square) {
+    const auto world = LiveWorld::open(slopesRoom());
+    int k = 0;
+    while (kRampDegrees[k] != ramp_degrees) ++k;
+    const LivePick top = world->pick(Vec3{kRampXs[k], 3.0, 0.0}, Vec3{0.0, -1.0, 0.0});
+    const LivePlacement p = world->placement("bookcase", top.point_world_m, 0.0, top.name, square);
+    require(p.fits, "the bookcase does not fit on the ramp: " + p.why);
+    require(world->grab("bookcase"), "the hand could not take the bookcase");
+    world->aimHeld(Quat{p.facing_wxyz[0], p.facing_wxyz[1], p.facing_wxyz[2], p.facing_wxyz[3]});
+    world->moveHeld(p.at_m);
+    for (int n = 0; n < 4; ++n) tick(*world);
+    world->release();
+    for (int n = 0; n < 1200; ++n) tick(*world);
+    for (const LiveBodyPose &pose : world->poses())
+        if (pose.name == "bookcase") return degreesBetween(upOf(pose.orientation_wxyz), Vec3{0.0, 1.0, 0.0});
+    throw std::runtime_error("the bookcase is gone");
+}
+
+void setDownSquareItStandsWhereUprightItFallsOver() {
+    // 6 degrees is 0.63 of the slope that statically tips it, and more than
+    // twice the slope a thing this slender rocks over on when let go upright:
+    // it swings down onto the slope on its uphill edge and that carries it
+    // over the downhill one.
+    const double square = letGoThere(6.0, true);
+    const double upright = letGoThere(6.0, false);
+    std::cout << "  let go at rest on 6 degrees: set square it leans " << square << " degrees after 5 s; set "
+              << "upright, " << upright << "\n";
+    require(square < 8.0, "set down square on 6 degrees, the bookcase fell over (" + std::to_string(square) + ")");
+    require(upright > 45.0, "set down upright on 6 degrees it stood (" + std::to_string(upright) +
+                                ") -- so this no longer shows what setting it down square is for");
 }
 
 void theSlabIsFixedAndWhatIsNotThereIsSaid() {
@@ -398,12 +510,18 @@ int main() {
         std::cout << "[PASS] its own narrow side counts, whichever way it is turned\n";
         aThingNoTallerThanItIsWideIsNotSaidToFallOver();
         std::cout << "[PASS] a thing no taller than it is wide is not said to fall over\n";
+        aCrateOnAGentleSlopeFitsOnAllFourCorners();
+        std::cout << "[PASS] a crate on a gentle slope fits, on all four corners\n";
         overAnEdgeIsNotASlope();
         std::cout << "[PASS] a drop over an edge is not read as a slope\n";
         liftedOntoAnEdgeOverAGapThereIsStillNothingUnderIt();
         std::cout << "[PASS] lifted onto an edge over a gap, there is still nothing under it\n";
         turnedOnASlopeItStillRestsOnIt();
         std::cout << "[PASS] turned on a slope and lifted further, it still rests on it\n";
+        onASlopeItIsSetSquareToIt();
+        std::cout << "[PASS] on a slope it is set square to it, its middle over the point\n";
+        setDownSquareItStandsWhereUprightItFallsOver();
+        std::cout << "[PASS] set down square it stands where set down upright it falls over\n";
         std::cout << "\nall placement tests passed\n";
         return 0;
     } catch (const std::exception &error) {

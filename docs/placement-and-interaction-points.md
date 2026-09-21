@@ -13,7 +13,7 @@ same destination.
 The resolver considers receiving points in front, within three metres of the
 eyes, and within 1.25 horizontal metres of the ground fallback (or on the
 aimed body). It prefers aimed receivers, then distance and stable identifiers.
-It checks at most eight candidates. Capacity, upright orientation, native
+It checks at most eight candidates. Capacity, upright receptacles, native
 collision geometry and support all matter. Occupied or undersized receiving
 areas do not become free inventory slots.
 
@@ -86,7 +86,15 @@ The answer includes `fits`, `why`, `at_m`, `facing`, `on`, `onto`,
 `target: {body, id, on, yaw_deg}` when a destination exists. `tipping_used` is
 how far the slope under a thing taller than it is wide goes towards tipping it
 over (1 is where it would; 0 when it is not asked); past 0.5 `may_fall_over` is
-true and the preview is amber, past 1 it is refused. No destination returns `fits:false` with a reason.
+true and the preview is amber, past 1 it is refused. `at_m` and `facing` set the
+thing down square to what its underside would rest on -- the plane through the
+highest ground around its middle, under its whole footprint -- up to 45
+degrees of it, its middle over the point: set down upright on a slope, a tall
+thing swings onto it and over. The engine's `place_check` takes `square: false` to keep it
+upright, which is how each part of a thing of several parts is asked. The hand
+lets go only when the thing is that square and still, to within a share of
+its tipping angle that shrinks as the slope uses more of it. No destination
+returns `fits:false` with a reason.
 Optional `expected` accepts the prior `target` and checks that same destination.
 It never silently substitutes another receiver on confirmation.
 
