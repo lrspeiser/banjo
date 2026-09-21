@@ -190,6 +190,11 @@ class HTTP(WorkbenchTestCase):
 class NativeProtocol(unittest.TestCase):
     def test_platform_tools_run_and_return_the_same_native_evidence(self):
         import banjo_mcp_tests as protocol
+        # Who the platform server says it is: what its script declares, not a
+        # literal each release makes stale (this one had followed the world
+        # server's 1.14.0 while the platform declared 1.17.0).
+        from mcp import banjo_platform_mcp
+        declared=dict(banjo_platform_mcp.core.SERVER)
         with tempfile.TemporaryDirectory() as folder:
             environment={"BANJO_WORKSHOP_HOME":folder,
                          "BANJO_LIVE_ENGINE":str(Path(os.environ["BANJO_TRIAL_ENGINE"]).resolve())}
@@ -198,7 +203,7 @@ class NativeProtocol(unittest.TestCase):
                 watchdog=threading.Timer(30,client.process.kill);watchdog.start()
                 try:
                     hello=client.send("initialize",{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qa","version":"1"}})
-                    self.assertEqual(hello["result"]["serverInfo"]["version"],"1.14.0")
+                    self.assertEqual(hello["result"]["serverInfo"],declared)
                     offered=client.send("tools/list")["result"]["tools"]
                     names=[t["name"] for t in offered]
                     self.assertEqual(len(names),len(set(names)))

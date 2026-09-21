@@ -21,6 +21,16 @@ from tests.product_circuit_tests import product
 from mcp.product_contract import compile_contract
 from mcp.product_circuit import bind_circuit
 from circuit_api import CIRCUIT_SCHEMA, validate
+import banjo_mcp
+
+# Who each server says it is in its handshake: what its script declares, read
+# here rather than written out, because every release bumps it (the literal
+# "1.2.0" this test once held went stale at the next release). The world
+# server's own declaration is taken before the platform wrapper is imported,
+# since the wrapper renames the core's server in place.
+DECLARED = {"banjo_mcp.py": dict(banjo_mcp.SERVER)}
+import banjo_platform_mcp
+DECLARED["banjo_platform_mcp.py"] = dict(banjo_platform_mcp.core.SERVER)
 
 SCENE = {"bodies": [
     {"name": "post", "shape": "box", "material": "iron", "dimensions_m": [.1, .8, .1],
@@ -49,13 +59,14 @@ class PublicMachineAPI(unittest.TestCase):
             with self.subTest(server=server), patch.object(protocol, "SERVER", ROOT / "mcp" / server):
                 client = protocol.Client()
                 try:
-                    self.journey(client, product_install=server.startswith("banjo_platform"))
+                    self.journey(client, DECLARED[server],
+                                 product_install=server.startswith("banjo_platform"))
                 finally:
                     client.close()
 
-    def journey(self, client, product_install):
+    def journey(self, client, declared, product_install):
         initialized = client.send("initialize")["result"]
-        self.assertEqual(initialized["serverInfo"]["version"], "1.2.0")
+        self.assertEqual(initialized["serverInfo"], declared)
         tools = {t["name"]: t for t in client.send("tools/list")["result"]["tools"]}
         self.assertEqual(tools["circuit"]["inputSchema"]["properties"]["network"], CIRCUIT_SCHEMA)
         objects = [{**{k: v for k, v in body.items() if k not in ("dimensions_m", "center_m")},
