@@ -258,6 +258,40 @@ struct LiveStrokePreview {
     LiveFlight flight;
 };
 
+// What a break cost the material it broke, and what the room's law charges for
+// one (docs/what-a-break-costs.md).
+//
+// The lattice removes bonds. Every removed bond carries away the elastic energy
+// it held, and stands for a share of new crack surface: N_100 / h^2 bonds cross
+// a unit area of a {100} lattice plane, so one bond is h^2 / N_100 of crack.
+// Dividing the energy that left by the area it opened gives what this break
+// cost per square metre, which is the number to hold against the material's own
+// fracture energy.
+//
+// `law_energy_j_m2` is the same quantity worked out ahead of any break, from
+// the removal stretch the law sets: N_100 E h s^2 / 2m. Under the energy-scaled
+// law that is the material's declared fracture energy, at any cell size, unless
+// the material's strength bounds it first (`bounded_by_strength`). Under the
+// strain-threshold law it is whatever the strength threshold implies -- and it
+// goes with the cell size, which is why the same strike breaks a thing into
+// three pieces at one cell size and hundreds at another.
+struct LiveBreakCost {
+    std::string material;        // what broke, or was asked about
+    std::string failure_law;     // the law the room runs
+    std::size_t broken_bonds{};
+    // Which way they went. Only the bonds pulled apart are the mode-I crack the
+    // energy-scaled charge is set for; crushed and sheared bonds go at their
+    // material's strength, whatever law is in force.
+    std::size_t tensile_bonds{}, compressive_bonds{}, shear_bonds{};
+    double removed_energy_j{};
+    double crack_area_m2{};
+    double crack_energy_j_m2{};  // removed_energy_j / crack_area_m2, when there is area
+    double declared_energy_j_m2{};   // the material's own fracture energy
+    double law_energy_j_m2{};        // what the law charges for a crack at this cell size
+    bool bounded_by_strength{};      // the strength bound, not Gc, set the removal stretch
+    double cell_size_m{};
+};
+
 struct LiveImpact {
     std::string struck;              // the object that took the hit
     std::string by;                  // what hit it, or "the ground"
@@ -1218,6 +1252,13 @@ public:
     // pieces, which cannot tell "held exactly as it was" from "held, but bent
     // out of shape" -- both are one piece.
     [[nodiscard]] LiveOutcome lastOutcome() const;
+    // And what it cost the material it broke (LiveBreakCost).
+    [[nodiscard]] LiveBreakCost lastBreak() const;
+    // What a crack costs per square metre in this room, under the law in
+    // force, for a body that is there: the charge the lattice makes, and what
+    // the material itself declares. A body that is not there, or has no cells,
+    // gives a cost with an empty material.
+    [[nodiscard]] LiveBreakCost crackCost(const std::string &name) const;
 
     // Every moment the world waited, or was spared waiting, since the last
     // forgetDelays(). A host that never looks at this cannot tell a world that

@@ -9,6 +9,7 @@
 #include "fastlattice/FastLattice.hpp"
 #include "fastlattice/LatticePhysics.hpp"
 #include "fastlattice/Refracture.hpp"
+#include "fracture/BondFailure.hpp"
 #include "fracture/FragmentGeometry.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
@@ -633,6 +634,7 @@ struct LiveWorld::Impl {
     std::unordered_map<std::size_t, std::size_t> partner_of;
     bool stepped_back{};
     LiveOutcome last_outcome{LiveOutcome::Nothing};
+    LiveBreakCost last_break{};
     std::vector<LiveDelay> delays;
     std::unique_ptr<LiveWorld::Pending> pending;
     std::future<void> worker;
@@ -7509,6 +7511,33 @@ bool LiveWorld::steppedBack() const { return impl_->stepped_back; }
 
 LiveOutcome LiveWorld::lastOutcome() const { return impl_->last_outcome; }
 
+LiveBreakCost LiveWorld::lastBreak() const { return impl_->last_break; }
+
+// What a crack costs here, before anything breaks: the law in force, the charge
+// it makes per square metre at this cell size, and what the material declares.
+LiveBreakCost LiveWorld::crackCost(const std::string &name) const {
+    Impl &I = *impl_;
+    LiveBreakCost cost{};
+    cost.cell_size_m = I.request.cell_size_m;
+    cost.failure_law = std::string(bondFailureLawName(I.request.failure_law));
+    const auto found = I.index_of.find(name);
+    if (found == I.index_of.end() || I.isPrecise(found->second)) return cost;
+    const MaterialDefinition &made_of = I.definitionOf(found->second);
+    cost.material = made_of.name;
+    cost.declared_energy_j_m2 = made_of.fracture_energy_j_m2;
+    // The same compile the room's own lattice uses for this material
+    // (TileImpactScene): the elastic reference, then the law in force.
+    const CompiledBrittleMaterial compiled = withFailureLaw(
+        compileElasticLatticeReference(made_of, I.request.cell_size_m, I.request.neighbor_horizon_cells),
+        made_of, I.request.cell_size_m, I.request.neighbor_horizon_cells);
+    const LatticeHorizonGeometry g = latticeHorizonGeometry(I.request.neighbor_horizon_cells);
+    cost.law_energy_j_m2 = g.crossings_100 * made_of.young_modulus_pa * I.request.cell_size_m *
+                           compiled.damage_end_stretch * compiled.damage_end_stretch /
+                           (2.0 * static_cast<double>(I.request.neighbor_horizon_cells));
+    cost.bounded_by_strength = compiled.strength_bound_active;
+    return cost;
+}
+
 std::vector<LiveDelay> LiveWorld::delays() const { return impl_->delays; }
 void LiveWorld::forgetDelays() { impl_->delays.clear(); }
 void LiveWorld::foreseeCollisions(double horizon_s) {
@@ -7777,6 +7806,9 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // real break quietly suppressed by a prediction about a later one.
     if (!guess) impl_->held_through.insert(name);
     impl_->last_outcome = LiveOutcome::Nothing;
+    // What this one costs, before it has cost anything: the law in force and
+    // what it charges for a crack in the thing being asked about.
+    impl_->last_break = crackCost(name);
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) { job.settled = true; job.answer = 0; return held; }
     const std::size_t which = found->second;
@@ -8943,6 +8975,28 @@ std::size_t LiveWorld::applyPending() {
     impl_->last_outcome = of_asked > 1 ? LiveOutcome::Broke
                         : dented       ? LiveOutcome::Dented
                                        : LiveOutcome::Held;
+    // And what it cost: the bonds the lattice removed, the crack area they
+    // stand for (h^2 / N_100 each) and the elastic energy that went with them.
+    // The charge and the declaration were set when the run began (crackCost).
+    {
+        const LatticeHorizonGeometry g = latticeHorizonGeometry(impl_->request.neighbor_horizon_cells);
+        LiveBreakCost &cost = impl_->last_break;
+        if (job.struck_material != nullptr && cost.material.empty()) {
+            cost.material = job.struck_material->name;
+            cost.declared_energy_j_m2 = job.struck_material->fracture_energy_j_m2;
+        }
+        cost.broken_bonds = status.broken_bonds;
+        const BondFailureModeCounts modes = countBondFailureModes(island.matter);
+        cost.tensile_bonds = modes.tensile;
+        cost.compressive_bonds = modes.compressive;
+        cost.shear_bonds = modes.shear;
+        cost.removed_energy_j = status.removed_energy_j;
+        cost.crack_area_m2 = g.crossings_100 > 0.0
+            ? static_cast<double>(status.broken_bonds) * impl_->request.cell_size_m *
+                  impl_->request.cell_size_m / g.crossings_100
+            : 0.0;
+        cost.crack_energy_j_m2 = cost.crack_area_m2 > 0.0 ? cost.removed_energy_j / cost.crack_area_m2 : 0.0;
+    }
     // It broke, so the name it held under is gone and its pieces are new ones
     // that have never been tried. A body that only BENT keeps its name, and
     // must keep its place in the already-answered set with it -- otherwise the

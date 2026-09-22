@@ -137,6 +137,21 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
         request.plasticity = document.at("plasticity").get<bool>();
     if (document.contains("hardening_ratio"))
         request.hardening_ratio = document.at("hardening_ratio").get<double>();
+    // Which rule decides when a bond is gone (material/Material.hpp). A scene
+    // that says nothing runs the lane's original strain-threshold criterion,
+    // whose charge for a crack goes with the cell size; "energy-scaled" sets
+    // the removal stretch from the material's own fracture energy, so a crack
+    // costs what the material says it costs at any cell size
+    // (docs/criterion-energy-scaled-checkpoint.md).
+    if (document.contains("failure_law")) {
+        const std::string law = document.at("failure_law").get<std::string>();
+        try {
+            request.failure_law = parseBondFailureLaw(law);
+        } catch (const std::exception &) {
+            throw std::invalid_argument("scene failure_law is \"strain-threshold\" or \"energy-scaled\", not \"" +
+                                        law + "\"");
+        }
+    }
     // What a declared joint leaves the bonds that cross it. Every factor is
     // required and named, so a misspelling is a refusal and not a silent 1.
     if (document.contains("interfaces")) {

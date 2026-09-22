@@ -1148,6 +1148,35 @@ class ARoverRestsThroughTheNight(PageJourney):
         self.no_page_errors("after the rover rested through the night")
 
 
+class ABreakSaysWhatItCost(PageJourney):
+    """What a break costs (docs/what-a-break-costs.md), in the tests-break room:
+    an oak plank bridged between two iron piers, and a 200 mm iron ball a metre
+    and a half above it.
+
+    Nothing to do. The ball lands at about 5 m/s, above the 2.7 m/s the plank
+    can take, and the room says what the break took: the energy that left with
+    the bonds the lattice removed, over the crack they stand for, against what
+    oak itself takes to crack and what this room charges. It is the one room
+    that runs the energy-scaled law, so the charge is oak's own 1,000 J/m2."""
+
+    CHAT = ("[...document.querySelectorAll('#chat p')].map((e) => e.textContent)"
+            ".filter((t) => t.includes('J/m'))")
+
+    def test_the_room_says_what_the_break_took(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-break"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-break' && "
+                                      "banjoRoom.ready()", 300), "the breaking room did not open")
+        self.assertTrue(self.wait_for(f"{self.CHAT}.length > 0", 180),
+                        f"the plank never broke, or the room never said what it cost: {self.situation()}")
+        said = self.js(f"{self.CHAT}[0]")
+        print(f"\n   {said}", flush=True)
+        self.assertRegex(said, r"broke into \d+ pieces")
+        self.assertRegex(said, r"It cost [\d.]+ (?:k?J) over \d+ cm. of new crack")
+        self.assertIn("where oak itself takes 1,000 J/m", said)
+        self.assertIn("this room charges 1,000 (energy-scaled)", said)
+        self.no_page_errors("after the plank broke")
+
+
 class AChatChangeKeepsTheHoistUp(PageJourney):
     """The room's chat changes a room, and what it did not touch is as it stood
     (server.world_to_carry, live_session.Live.open with a carry). In the

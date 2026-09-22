@@ -184,10 +184,20 @@ that stayed connected.*
 | Heat weakening what breaks | World | heat a plank or beam, then load or hit it |
 | Cutting with a blade | World, Test room | the sword in the world; `/world?scene=armoury` (10 mm cells) has a rope, a panel and a batten to cut |
 | Joints weaker than the material they join | Code only | built and tested, but every joint is held at full strength until the owner sets numbers |
-| The energy-scaled failure law | Page | the fracture lab at `/` only; the world always uses the strain-threshold law |
+| The energy-scaled failure law, which charges a crack the material's own fracture energy | Page, Test room | the fracture lab at `/`, and any room that asks for it: `/world?scene=tests-break`. A room that says nothing still runs the strain-threshold law |
 | "Algorithm 3" (precomputed propagators) | Page | a lane in the fracture lab at `/` |
 | Implicit Newton, modal-basis, quasi-static and GPU (CUDA) fracture solvers | Code only | command-line tools; the GPU backend needs `-DBANJO_BUILD_CUDA=ON` |
 | The older "network" solver, cohesive interfaces, tetrahedral contact, continuum and J2 plasticity references | Code only | tests and probes; the lab panels that ran some of them no longer have a way in |
+
+**What a break costs** ([what-a-break-costs.md](docs/what-a-break-costs.md)):
+every break now says what it took -- the bonds the lattice removed, the crack
+they stand for, the energy that left with them -- against what the material
+itself takes to crack. Measured, the law every room runs charges a crack in oak
+148,500 J/m2 at 20 mm cells and 37,125 at 5 mm, where oak's own is 1,000: the
+charge is a property of the grid, not of the wood. A room can now ask for the
+energy-scaled law instead (`"failure_law": "energy-scaled"`), and the charge is
+then the material's own at every cell size. `/world?scene=tests-break` drops an
+iron ball on an oak plank and says what breaking it cost.
 
 **Limits:** nothing is calibrated against laboratory data, and piece counts do
 not converge as the cell size or timestep shrinks. One break is worked out at a
@@ -673,6 +683,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | `tests-rover` | 50 mm | address | a rover with a motor on each back wheel and a program that roams a lake's shore by itself |
 | `tests-solar` | 50 mm | address | the rover with its battery nearly flat: it rests while the solar panel on its deck charges it |
 | `tests-day` | 50 mm | address | the rover under a sun with a four-minute day, from four in the afternoon: it rests through the night |
+| `tests-break` | 20 mm | address | an oak plank on piers and an iron ball dropped on it: the room says what breaking it cost, under the energy-scaled law |
 | `watershed` | 40 mm | address | rivers beyond the valley; dam one and watch the reservoir fill |
 | `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
 | `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |

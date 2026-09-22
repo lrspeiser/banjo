@@ -1181,6 +1181,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_sun_day_tests)
             add_test(NAME banjo_sun_day_tests COMMAND banjo_sun_day_tests)
 
+            # What a break costs: the charge the room's failure law makes for
+            # a crack, against what the material itself declares, and what a
+            # break actually took away.
+            add_executable(banjo_break_cost_tests tests/break_cost_tests.cpp)
+            target_link_libraries(banjo_break_cost_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_break_cost_tests)
+            add_test(NAME banjo_break_cost_tests COMMAND banjo_break_cost_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows
@@ -1492,4 +1500,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_DAY_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/day_room_tests.py -v)
     set_tests_properties(banjo_day_room_tests PROPERTIES TIMEOUT 180)
+    # And what a break costs: the room's failure law reaching the engine, and
+    # the account the world gives of a break in the tests-break room.
+    add_test(NAME banjo_break_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_BREAK_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/break_room_tests.py -v)
+    set_tests_properties(banjo_break_room_tests PROPERTIES TIMEOUT 180)
 endif()

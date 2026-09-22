@@ -988,6 +988,43 @@ def world() -> dict[str, Any]:
     return json.loads(kept.read_text(encoding="utf-8")) if kept.is_file() else valley()
 
 
+def breaking() -> dict[str, Any]:
+    """What a break costs (docs/what-a-break-costs.md): an oak plank bridged
+    between two piers, and a 200 mm iron ball dropped a metre and a half onto
+    the middle of it.
+
+    The room asks for the energy-scaled failure law, the only room that does.
+    A crack in the plank is then charged what oak says a crack costs -- 1,000
+    joules a square metre -- instead of the charge the strain-threshold law
+    makes, which is a property of the cell size and not of the oak: 148,500
+    J/m2 at these 20 mm cells, and half that again if the cells were halved.
+
+    Nothing to do here but watch. The ball lands at about 5 m/s, above the
+    2.7 m/s the plank can take, and the room says what the break cost: the
+    energy that left with the bonds the lattice removed, over the crack they
+    stand for, against what oak itself takes. Measured: 7 pieces, 419 bonds,
+    4.5 J over 152 cm2 -- 294 J/m2, where the charge was 1,000. What leaves is
+    not yet what is charged, and the gap is the thing to close.
+
+    Oak rather than glass on purpose. Glass is admitted for breaking at 0.2 m/s
+    here, so its pieces break again as they fall and land, and a cascade of
+    secondary breaks buries the one number the room is for.
+    """
+    rest = 120           # how high the piers carry the plank
+    drop = 1500          # how far above it the ball starts
+    return {"algorithm": "lattice", "cell_m": 0.02, "duration_s": 6.0,
+            "failure_law": "energy-scaled",
+            "bodies": [
+                {"name": "left pier", "shape": "box", "material": "iron", "size_mm": [40, rest, 200],
+                 "center_mm": [-160, rest // 2, 0], "anchored": True},
+                {"name": "right pier", "shape": "box", "material": "iron", "size_mm": [40, rest, 200],
+                 "center_mm": [160, rest // 2, 0], "anchored": True},
+                {"name": "plank", "shape": "box", "material": "oak", "size_mm": [320, 40, 200],
+                 "center_mm": [0, rest + 20, 0]},
+                {"name": "ball", "shape": "sphere", "material": "iron", "size_mm": [200, 200, 200],
+                 "center_mm": [0, rest + 40 + drop, 0]}]}
+
+
 SCENES = {
     "fabrication": yard,
     "expedition": valley,
@@ -1030,6 +1067,10 @@ SCENES = {
     # roams on. Laid out by tools/build_rover_room.py; open it at
     # /world?scene=tests-day.
     "tests-day": _saved_room("tests-day"),
+    # What a break costs (docs/what-a-break-costs.md): an oak plank on piers, a
+    # ball dropped on it, and the room's own account of what breaking it cost.
+    # The one room that runs the energy-scaled failure law.
+    "tests-break": breaking,
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

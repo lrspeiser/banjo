@@ -2045,10 +2045,10 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
     """The --scene file: metres, the engine's units, nothing the panel added.
 
     Plus the handful of settings the engine reads from the scene itself. Only
-    those: `readSceneSettings` takes plasticity and its hardening ratio and
-    ignores everything else, and a document that carried the whole panel spec
-    would be inviting the engine to start caring about fields that are the
-    panel's business.
+    those: `readSceneSettings` takes plasticity, its hardening ratio and the
+    failure law, and ignores everything else, and a document that carried the
+    whole panel spec would be inviting the engine to start caring about fields
+    that are the panel's business.
 
     Without this the flag was set on the panel, validated, shown in the summary
     and never reached the solver -- the one lane that could carry it was the C
@@ -2081,6 +2081,9 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
         return out
 
     document = {"plasticity": spec.get("plasticity") == "on",
+                # Which rule decides when a bond is gone, and so what a
+                # crack costs: docs/what-a-break-costs.md.
+                "failure_law": spec.get("failure_law") or "strain-threshold",
                 "bodies": [body(b) for b in spec["bodies"]]}
     # What a declared joint leaves the bonds that cross it. Absent, nothing
     # changes: every bond is the material's own.
@@ -2170,6 +2173,12 @@ def validate(spec: Any) -> dict[str, Any]:
             result.get("interaction_points", []), result["bodies"] + result.get("precise_rigid_bodies", []))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
+        # Which rule decides when a bond is gone, and so what a crack costs
+        # (docs/what-a-break-costs.md). Checked here as well as in the lab
+        # path below: a room is validated on this side and would otherwise
+        # carry a law the engine only refuses when it opens.
+        if result["failure_law"] not in FAILURE_LAWS:
+            raise ValueError(f"failure_law must be one of {list(FAILURE_LAWS)}")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])
         check_placement(result["bodies"], result["cell_m"], bool(result["terrain"]))
         result["cells"] = scene_cell_count(result["bodies"], result["cell_m"])

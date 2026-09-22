@@ -272,6 +272,27 @@ function lightFromSun(sun) {
   }
 }
 
+// What a break cost, in a sentence (docs/what-a-break-costs.md): the energy
+// that left with the bonds the lattice removed, over the crack they stand for,
+// and what that is per square metre against what the material itself takes to
+// crack. The second number is the one to watch: today the room charges the
+// material's own only under the energy-scaled law, and even then what leaves is
+// more than the charge.
+function breakCost(cost) {
+  if (!cost || !cost.broken_bonds) return "";
+  const material = (cost.material || "it").replace(/_/g, " ");
+  // A crack in glass costs single joules, one in iron thousands, so the
+  // small numbers keep their decimals: "0.19 J" says something, "0 J" does not.
+  const each = (j) => (j >= 10 ? Math.round(j).toLocaleString() : j.toFixed(1));
+  return ` It cost ${cost.removed_energy_j >= 1000 ? `${(cost.removed_energy_j / 1000).toFixed(2)} kJ`
+    : cost.removed_energy_j >= 10 ? `${Math.round(cost.removed_energy_j)} J`
+    : `${cost.removed_energy_j.toFixed(2)} J`}`
+    + ` over ${(cost.crack_area_m2 * 1e4).toFixed(0)} cm² of new crack:`
+    + ` ${each(cost.crack_energy_j_m2)} J/m², where ${material} itself takes`
+    + ` ${each(cost.declared_energy_j_m2)} J/m² and this room charges`
+    + ` ${each(cost.law_energy_j_m2)} (${cost.failure_law}).`;
+}
+
 // The time of day under a sun with a day, as a clock and where the sun is:
 // "14:05, the sun 38° up", or "21:40, night". Nothing for a sun without one.
 function dayWords(sun) {
@@ -5293,11 +5314,12 @@ async function tick() {
       const how = hit
         ? `${hit.by || "the ground"} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
         : `${name} was struck`;
+      const cost = breakCost(state.cost);
       if (state.outcome === "broke") {
-        say("world", `${how}${bars}. It broke into ${state.pieces} pieces.`);
+        say("world", `${how}${bars}. It broke into ${state.pieces} pieces.${cost}`);
         remember(`${name} broke into ${state.pieces} pieces`);
       } else if (state.outcome === "dented") {
-        say("world", `${how}${bars}. It held together and came out a different shape.`);
+        say("world", `${how}${bars}. It held together and came out a different shape.${cost}`);
         remember(`${name} was dented`);
       } else if (hit) {
         say("world", `${how}${bars} and it held. A threshold is the speed below which`

@@ -438,6 +438,27 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"rests", p.rests}};
 }
 
+// What a break cost, as a host reads it (LiveBreakCost): the bonds the lattice
+// removed, the crack they stand for, the energy that left with them and what
+// that is per square metre -- against the material's own fracture energy and
+// what the room's law charges for a crack at this cell size.
+nlohmann::json costOf(const LiveBreakCost &cost) {
+    if (cost.material.empty() && cost.broken_bonds == 0) return nullptr;
+    return {{"material", cost.material},
+            {"failure_law", cost.failure_law},
+            {"broken_bonds", cost.broken_bonds},
+            {"tensile_bonds", cost.tensile_bonds},
+            {"compressive_bonds", cost.compressive_bonds},
+            {"shear_bonds", cost.shear_bonds},
+            {"removed_energy_j", tidy(cost.removed_energy_j)},
+            {"crack_area_m2", tidy(cost.crack_area_m2)},
+            {"crack_energy_j_m2", tidy(cost.crack_energy_j_m2)},
+            {"declared_energy_j_m2", tidy(cost.declared_energy_j_m2)},
+            {"law_energy_j_m2", tidy(cost.law_energy_j_m2)},
+            {"bounded_by_strength", cost.bounded_by_strength},
+            {"cell_size_m", tidy(cost.cell_size_m)}};
+}
+
 // The room's sun as a host reads it: where it is in the sky, and the way to it;
 // and, for a sun with a day, the day and the hour.
 nlohmann::json sunOf(const LiveSun &sun) {
@@ -1658,6 +1679,8 @@ int main(int argc, char **argv) {
                         reply["outcome"] = std::array<const char *, 4>{
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
+                        if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
+                            reply["cost"] = std::move(cost);
                     }
                 } else if (op == "snapshot") {
                     // The whole world as it stands, for opening again after a
@@ -1882,6 +1905,9 @@ int main(int argc, char **argv) {
                         reply["outcome"] = std::array<const char *, 4>{
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
+                        // And what it cost the thing that took the hit.
+                        if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
+                            reply["cost"] = std::move(cost);
                     }
                 } else if (op == "carry_limit") {
                     // How much dug ground the person can carry, from now
