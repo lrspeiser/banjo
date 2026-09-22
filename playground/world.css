@@ -330,6 +330,11 @@ kbd {
                 letter-spacing: var(--label-track); text-transform: uppercase; color: var(--dim); }
 #water p { margin: 2px 0; font-variant-numeric: tabular-nums; }
 #water-cost { color: var(--dim); font-size: 11px; }
+/* The Machines list: what the machine is, then what it is doing and what it
+   has cost. The two were adjacent spans with nothing between them, so the
+   panel read "rover battery1.39 kJ of 5.00 kJ". */
+#machine-list .what { font-weight: 600; }
+#machine-list .much { margin-left: 8px; }
 #heat-list { margin: 0; padding: 0; list-style: none; }
 #heat-list li { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0; }
 #heat-list .much { font-variant-numeric: tabular-nums; color: rgb(255 196 140 / .95); text-align: right; }

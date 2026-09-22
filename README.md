@@ -22,10 +22,11 @@ same tools a programmer would.
 ![The main world: a generated valley with a river and a pond. A gate and a portcullis stand on the left terrace; a hearth, a battery hoist and a table stand on the right](docs/images/readme/world-valley.jpg)
 
 *The main world at `/world`. Every picture in this README is a screenshot of
-the running world, taken on 21 September 2026. What happens in them is
-simulated, not animated.*
+the running world, taken on 21 and 22 September 2026. What happens in them is
+simulated, not animated. Where there are two, they are the same camera in the
+same room, so the only difference is what the physics did.*
 
-> **Status (21 September 2026).** Banjo is early and experimental. A lot of
+> **Status (22 September 2026).** Banjo is early and experimental. A lot of
 > physics has been built and merged, but not all of it has reached the world
 > you can walk around in. [The physics](#the-physics) shows where each part
 > stands, and the [to-do list](#to-do) collects everything that remains.
@@ -133,7 +134,7 @@ build; the tables further down say which):
 
 | System | In the live world | Built, but not in the world | Not built yet |
 |---|---|---|---|
-| Breaking | impact fracture of all eight materials, pieces breaking again, denting, breaking under a steady load, foresight, cutting | other fracture solvers and failure laws; joints weaker than their material (switched off) | calibration against real materials; converged piece counts |
+| Breaking | impact fracture of all eight materials, pieces breaking again, denting, breaking under a steady load, foresight, cutting; a room chooses its failure law, and every break says what it cost against the material's own fracture energy | other fracture solvers; joints weaker than their material (switched off) | calibration against real materials; converged piece counts; a break costing what it is charged |
 | Cell sizes | one size per room: 10, 20, 40 or 50 mm; exact bodies with no cells | Workshop designs at 5-200 mm; per-object resolution in an older solver | different cell sizes in one world |
 | Materials | eight materials: brittle or dentable, friction, bounce, rolling resistance | internal damping, strength variation, wood grain, full plasticity | grain in the world, rate effects |
 | Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
@@ -146,7 +147,7 @@ The main world is the room at `/world` ("The world"). It stands on a generated
 valley with a river and a pond, and holds a latched gate, a portcullis on a
 winch, a self-closing door, a bell on a rope, a crate, a ceramic pot, a plank, a
 rubber ball, a bow, an iron sword, a pick, a hearth with an iron pot and two
-burning logs, a table and chair, and a battery hoist. Seventeen more rooms exist
+burning logs, a table and chair, and a battery hoist. Nineteen more rooms exist
 but the room menu shows only "The world" and "Expedition"; the rest open by
 address ([the rooms](#the-rooms)). `/explore`, the newest interface, can pick
 things up, carry, place and bag them and use them for what they are for (push
@@ -189,6 +190,20 @@ that stayed connected.*
 | Implicit Newton, modal-basis, quasi-static and GPU (CUDA) fracture solvers | Code only | command-line tools; the GPU backend needs `-DBANJO_BUILD_CUDA=ON` |
 | The older "network" solver, cohesive interfaces, tetrahedral contact, continuum and J2 plasticity references | Code only | tests and probes; the lab panels that ran some of them no longer have a way in |
 
+| An oak plank on two piers | The moment it broke |
+|---|---|
+| ![An oak plank bridged between two iron piers on the floor of an empty room](docs/images/readme/break-cost-before.jpg) | ![The same view: the plank is in several pieces with the iron ball resting among them between the piers](docs/images/readme/break-cost-after.jpg) |
+
+*What a break costs (`/world?scene=tests-break`): a 200 mm iron ball is dropped
+a metre and a half onto the middle of the plank. The picture on the right is
+held at the instant the room reported the break, before the pieces fell and
+broke again. The room's own account of it:*
+
+> ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 2.7 m/s). It
+> broke into 7 pieces. It cost 4.47 J over 152 cm² of new crack: 294 J/m²,
+> where oak itself takes 1,000 J/m² and this room charges 1,000
+> (energy-scaled).
+
 **What a break costs** ([what-a-break-costs.md](docs/what-a-break-costs.md)):
 every break now says what it took -- the bonds the lattice removed, the crack
 they stand for, the energy that left with them -- against what the material
@@ -213,9 +228,9 @@ Every world has exactly one cell size. The rooms use different ones:
 | Cell size | Rooms |
 |---|---|
 | 10 mm | armoury |
-| 20 mm | bench |
+| 20 mm | bench, tests-break |
 | 40 mm | world, expedition, explore, valley, watershed, clearing, yard, courtyard, fabrication, tests-gates, tests-ropes, tests-motion, tests-carry |
-| 50 mm | tests-machines |
+| 50 mm | tests-machines, tests-cart, tests-rover, tests-solar, tests-day |
 
 The cell size shows in the pieces: the pane above broke into 40 mm cubes, and
 the bench plates under [Materials](#materials) into 20 mm ones.
@@ -471,35 +486,39 @@ which 380 J became work and 601 J heat, and the rope now carries 316 N.*
 rolls: when the cart was added, a push moved it 0.404 m while its wheels turned
 145 degrees, which is 0.405 m of rim, so it rolls rather than slides.*
 
-| Before | After |
+| Turned on, at the top of the shore | Six metres later, at the water |
 |---|---|
-| ![The self-driving cart at the top of a lake's shore, facing the water, with its sensor's blue bead on a thread in front of it](docs/images/readme/self-driving-cart-before.jpg) | ![The cart stopped at the water's edge with its sensor's bead amber over the water, and its panel saying "water ahead: it stopped at the water's edge"](docs/images/readme/self-driving-cart-after.jpg) |
+| ![The lake on the left, a concrete post in the middle of the shore, and the cart standing on the right with its sensor's blue bead on a thread in front of it](docs/images/readme/self-driving-cart-before.jpg) | ![The same view: the cart has driven past the post and stopped with its front wheels at the water's edge](docs/images/readme/self-driving-cart-after.jpg) |
 
 *A cart that drives itself (`/world?scene=tests-cart`): the same cart, with a
 24 V battery in its chassis, a motor with a brake on its back wheels, and a
 controller whose water sensor looks at the ground 0.6 m in front of the deck.
 E on the cart opens its panel, and **On** then **Forward** send it down the
-shore. The sensor is the bead on a thread; it turns amber when the water under
-it is more than 10 mm deep, and the controller brakes. In the engine it went
-6.0 m in 5.2 s and stopped with its front wheels 0.13 m short of the water.
-Going downhill the motor mostly held it back: the battery gave 26 J, the
-motor's work was -83 J, and 110 J became heat.*
+shore. Both pictures are from the same place, with the concrete post as a fixed
+mark: between them the cart drove itself down the shore and stopped. The sensor
+is the bead on the thread; it turns amber when the water under it is more than
+10 mm deep, and the controller brakes. In the engine it went 6.0 m in 5.2 s and
+stopped with its front wheels 0.13 m short of the water. Going downhill the
+motor mostly held it back: the battery gave 26 J, the motor's work was -83 J,
+and 110 J became heat.*
 
-| Turned on | A while later |
+| A sensor finds the water | Seconds later, turned away |
 |---|---|
-| ![The rover on the lake's shore: a deck on two big back wheels and a small caster wheel in front, its two sensors' beads ahead of it, and its program's panel turned on](docs/images/readme/rover-before.jpg) | ![The rover further round the shore, turning away from the water, its panel saying what it is doing and why](docs/images/readme/rover-after.jpg) |
+| ![The rover driving at the lake, a green arc on the wheel that is turning forward; of the two beads on threads ahead of it, the one over the water is amber and the one over dry ground is blue](docs/images/readme/rover-before.jpg) | ![The same view: the rover has swung round to face along the shore, one wheel driving forward and the other backing, and both beads are blue over dry ground](docs/images/readme/rover-after.jpg) |
 
 *A rover that roams by itself (`/world?scene=tests-rover`): a motor on each
 back wheel, so it steers by driving them differently, and a caster in front
 that swings round to follow. Its **program** works the two wheels' controllers
-as a person works their panels. It goes forward; where one of its two front
-sensors sees water it backs off and turns away from that side; where the
-ground is steeper than 8 degrees it turns downhill. Nothing tells it where
-the lake is. E on it opens the program's panel, whose only buttons are **On**
-and **Off**. In the engine it roamed 50 m of shore in a minute, turned away 5
-times, and never had a wheel in the water.*
+as a person works their panels. The two pictures are the same camera a few
+seconds apart: on the left the bead over the water has turned amber while its
+wheels are still driving forward; on the right it has backed off and turned
+away from the side that saw water -- one wheel forward, one back -- and both
+beads are over dry ground again. Nothing tells it where the lake is. It also
+turns downhill where the ground is steeper than 8 degrees. In the engine it
+roamed 50 m of shore in a minute, turned away 5 times, and never had a wheel
+in the water.*
 
-![The rover resting on the shore, a glass solar panel on its deck, its panel saying its battery is low so it rests while its panel charges it](docs/images/readme/solar-resting.jpg)
+![The rover standing still on the shore with the pale glass solar panel on its deck and both sensor beads blue over dry ground](docs/images/readme/solar-resting.jpg)
 
 *Solar panels (`/world?scene=tests-solar`): the owner chose them to charge a
 machine's batteries. The room declares a sun, 50 degrees up at 1000 W/m2. The
@@ -507,23 +526,35 @@ glass panel on the rover's deck puts into its battery the sunlight on its face
 (irradiance, times area, times the cosine of the angle to the sun) times its
 efficiency, and nothing in shade. Roaming draws more than the panel gives, so
 when the battery is down to a quarter the rover stops where it is and rests
-until the sun has charged it to three fifths, then roams on. In the engine the
-panel gave 29.8 W of 148.8 W of sunlight, and what the battery held was exactly
-what it began with, plus what it took in, less what it gave.*
+until the sun has charged it to three fifths, then roams on. The rover above is
+resting: standing still is all there is to see of it.*
 
-| At sunset | At night |
+![The Machines list while it rests: the rover battery at 1.38 kJ of 5.00 kJ (28%), having given 399 J and taken in 382 J; each wheel's controller stopped and holding on its brake; the program resting because its battery is low while its panel charges it; the solar panel on the rover giving 29 W from 147 W of sun on it, having given 382 J; and each motor's draw, work and heat](docs/images/readme/solar-machines.jpg)
+
+*The joules are the one thing the room cannot show you, so here is the Room
+tab's Machines list at that moment. It is worth a look because it is the whole
+account in seven lines: the panel turning 29 W out of the 147 W of sunlight on
+it, the battery holding 28% and having taken in 382 J of it, and each motor's
+draw split into work and heat. What the battery holds is always what it began
+with, plus what it took in, less what it gave.*
+
+| Four in the afternoon | Ten to seven, after sunset |
 |---|---|
-| ![The rover roaming the shore under a red evening sky, the low sun glinting on the lake, its panel saying it is going forward with nothing in its way](docs/images/readme/day-sunset.jpg) | ![The rover resting on the dark shore under a black sky, its panel saying its battery is low and the sun is down, so it rests until morning](docs/images/readme/day-night.jpg) |
+| ![The lake and the rover on its shore under a blue sky, the ground and the rover's deck lit, the sun glinting off the water](docs/images/readme/day-afternoon.jpg) | ![The same view with nothing moved: the sky is black, the ground is dim and the rover is barely lit](docs/images/readme/day-night.jpg) |
 
 *A day for the sun (`/world?scene=tests-day`): the room's sun goes round in
 four minutes, rising in the east, highest in the south at noon and setting in
-the west, and the room begins at four in the afternoon. Low in the sky less of
-its light gets through the air, and at night none. The page is lit from where
-the sun is, and the Room tab's clock says the hour. The rover roams on into
-the dark on what its battery holds. When the battery is down to a quarter it
-rests until morning, taking in nothing all night. In the engine the sun set
-20 s in, the rover rested at 20:34, and it woke at 11:00, once the morning sun
-had charged it to two fifths.*
+the west, and the room begins at four in the afternoon. Nothing in the room
+moved between these two pictures -- the rover is switched off and standing
+where it was, and the camera has not moved -- so the only difference is the
+light. They are 28 seconds of the room's time apart, which is nearly three
+hours of its day. Low in the sky less of the sun's light gets through the air;
+below the horizon none does, and the sun's lamp goes out. The Room tab's clock
+says the hour: "16:08, the sun 24° up", then "18:56, night". Turned on, the
+rover roams into the dark on what its battery holds; when the battery is down
+to a quarter it rests until morning, taking in nothing all night. In the
+engine the sun set 20 s in, the rover rested at 20:34, and it woke at 11:00,
+once the morning sun had charged it to two fifths.*
 
 | Capability | Status | How to try it |
 |---|---|---|
@@ -867,7 +898,7 @@ stands at 1 complete, 26 partial and 3 planned.
   machine, and it does not animate the water. It rebuilds its valley on every
   load, so nothing done there is kept.
 - [ ] **Put the test rooms' physics in the main world, or on the menu.** The
-  menu shows 2 of 19 rooms. Breaking under load, the gas piston, fine cells for
+  menu shows 2 of 21 rooms. Breaking under load, the gas piston, fine cells for
   cutting, the plates of every material and the watershed can only be reached
   by typing an address.
 - [ ] **Freezing in the world.** Ice melts in the world now; water does not
@@ -879,10 +910,12 @@ stands at 1 complete, 26 partial and 3 planned.
 - [ ] **Different cell sizes in one world.** The scene format, scene builder and
   renderer all assume one size. Needed for Workshop detail, thin parts and
   imported models.
-- [ ] **Choose the fracture solver and failure law**, then integrate or archive
-  the rest: the energy-scaled law, algorithm 3, the implicit, modal,
-  quasi-static and GPU solvers, the network solver, the cohesive, tetrahedral
-  and continuum references. Bring the GPU backend to the world if it is kept.
+- [ ] **Choose the fracture solver**, then integrate or archive the rest:
+  algorithm 3, the implicit, modal, quasi-static and GPU solvers, the network
+  solver, the cohesive, tetrahedral and continuum references. Bring the GPU
+  backend to the world if it is kept. The failure law is settled: a room picks
+  one, and the energy-scaled law charges a crack the material's own fracture
+  energy ([what-a-break-costs.md](docs/what-a-break-costs.md)).
 - [ ] **Turn on the material properties that are switched off:** internal
   damping and strength variation. Give oak its grain in the world's lattice.
 - [ ] **Joint strengths.** The mechanism for a joint weaker than its material is
@@ -959,13 +992,15 @@ stands at 1 complete, 26 partial and 3 planned.
   (MIT), raylib (zlib) and three.js (MIT), plus `CONTRIBUTING.md` and
   `SECURITY.md`. The repository is public, and without a licence nobody may
   legally use it.
-- [ ] **A green nightly run.** CI on `main` passed again on 21 September
-  (cee3b8d), after failing or being cancelled on every run since 19 September.
-  The nightly long-physics job has failed every night since 14 September.
+- [ ] **A green nightly run.** CI on `main` is green at the newest commit
+  (22 September). Of the eight runs since 19 September, seven passed and one
+  failed -- a browser journey that judged a machine stopped by the wall clock
+  rather than the room's, fixed the same day. The nightly long-physics job has
+  failed every night since 14 September.
 - [ ] **A first build that works.** Make every script default to one build
   folder per platform (fifteen files point at `build/win-joint-double`), and
   make the desktop lab optional so a headless Linux configure works.
-- [ ] **Docs that are current.** `docs/` has 201 files; 123 are dated
+- [ ] **Docs that are current.** `docs/` has 202 files; 123 are dated
   checkpoint notes and 139 were last changed between 4 and 8 September. Several
   contradict the code (for example, `docs/building-on-banjo.md` says there are
   no joints and no saving). Move the history out of the way, keep a few current
@@ -990,9 +1025,10 @@ stands at 1 complete, 26 partial and 3 planned.
   unexpected errors close the connection without a reply; a chat turn holds the
   world for up to 420 s; logs and run folders are never cleaned up.
 - [ ] **A real host.** The hosted copy on Render is on the free plan (0.1 CPU,
-  512 MB, no disk): each deploy or idle spin-down deletes the rooms, and it runs
-  a build from 18 September. [docs/deploy.md](docs/deploy.md) sizes a real host
-  at 8 cores, 16 GB and a 10 GB volume.
+  512 MB, no disk): each deploy or idle spin-down deletes the rooms, and the
+  copy running there was deployed on 18 September, well behind `main`.
+  [docs/deploy.md](docs/deploy.md) sizes a real host at 8 cores, 16 GB and a
+  10 GB volume.
 
 ### Decisions for the owner
 
@@ -1025,11 +1061,12 @@ right. Start with these:
 | Cutting and handling | [cutting-model.md](docs/cutting-model.md), [interaction-profiles.md](docs/interaction-profiles.md), [placement-and-interaction-points.md](docs/placement-and-interaction-points.md) |
 | The Workshop and products | [workshop-mode.md](docs/workshop-mode.md), [product-framework.md](docs/product-framework.md) |
 | Building from language | [building-from-language.md](docs/building-from-language.md) |
+| Breaking: what it costs, and what is not calibrated | [what-a-break-costs.md](docs/what-a-break-costs.md), [criterion-energy-scaled-checkpoint.md](docs/criterion-energy-scaled-checkpoint.md), [glass-drop-benchmark.md](docs/glass-drop-benchmark.md) |
 | Every mechanic and its evidence | [mechanics-scorecard.md](docs/mechanics-scorecard.md) |
 | The pages and HTTP routes | [playground/README.md](playground/README.md) |
 | Hosting | [deploy.md](docs/deploy.md) |
 | The long-term plan | [project-master-plan.md](docs/project-master-plan.md), [roadmap.md](docs/roadmap.md) |
-| What is not done | [what-is-not-done.md](docs/what-is-not-done.md) |
+| What is not done, as it stood on 16 September | [what-is-not-done.md](docs/what-is-not-done.md) |
 
 ## Repository layout
 
