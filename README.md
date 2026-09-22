@@ -139,14 +139,14 @@ build; the tables further down say which):
 | Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
 | Water | river and pond, floating, drag, dams, rivers beyond the valley | | waves, sediment, rain, wet ground, water putting out fire |
 | Ground | digging, heaping, slumping, a pick in soil, carrying what you dig | storing dug material (manufacturing page) | breaking rock, wet soil, tool wear |
-| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels | electrical and thermal circuits | gears, charging batteries, joints that fail by bending |
+| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge | electrical and thermal circuits | gears, charging batteries, joints that fail by bending, a machine that roams and docks |
 | Hands and tools | pick up, carry, place, bag, throw, bow, sword, pick; things of several parts taken up whole | | two hands, grip points |
 
 The main world is the room at `/world` ("The world"). It stands on a generated
 valley with a river and a pond, and holds a latched gate, a portcullis on a
 winch, a self-closing door, a bell on a rope, a crate, a ceramic pot, a plank, a
 rubber ball, a bow, an iron sword, a pick, a hearth with an iron pot and two
-burning logs, a table and chair, and a battery hoist. Fourteen more rooms exist
+burning logs, a table and chair, and a battery hoist. Fifteen more rooms exist
 but the room menu shows only "The world" and "Expedition"; the rest open by
 address ([the rooms](#the-rooms)). `/explore`, the newest interface, can pick
 things up, carry, place and bag them and use them for what they are for (push
@@ -461,6 +461,20 @@ which 380 J became work and 601 J heat, and the rope now carries 316 N.*
 rolls: when the cart was added, a push moved it 0.404 m while its wheels turned
 145 degrees, which is 0.405 m of rim, so it rolls rather than slides.*
 
+| Before | After |
+|---|---|
+| ![The self-driving cart at the top of a lake's shore, facing the water, with its sensor's blue bead on a thread in front of it](docs/images/readme/self-driving-cart-before.jpg) | ![The cart stopped at the water's edge with its sensor's bead amber over the water, and its panel saying "water ahead: it stopped at the water's edge"](docs/images/readme/self-driving-cart-after.jpg) |
+
+*A cart that drives itself (`/world?scene=tests-cart`): the same cart, with a
+24 V battery in its chassis, a motor with a brake on its back wheels, and a
+controller whose water sensor looks at the ground 0.6 m in front of the deck.
+E on the cart opens its panel, and **On** then **Forward** send it down the
+shore. The sensor is the bead on a thread; it turns amber when the water under
+it is more than 10 mm deep, and the controller brakes. In the engine it went
+6.0 m in 5.2 s and stopped with its front wheels 0.13 m short of the water.
+Going downhill the motor mostly held it back: the battery gave 26 J, the
+motor's work was -83 J, and 110 J became heat.*
+
 | Capability | Status | How to try it |
 |---|---|---|
 | Hinges, slides, rope links, pulleys, latches (fixings), springs | World | the gate, door, bell, portcullis and winch; the bow's limbs |
@@ -468,11 +482,14 @@ rolls: when the cart was added, a push moved it 0.404 m while its wheels turned
 | Drum, DC motor, battery and brake | World | the hoist: E on the drum, or its Operate panel |
 | Every joule of a machine accounted for | World | the Room tab's Machines panel |
 | Wheels on pins: a product made of exact bodies | World (`/explore`) | the cart: J pushes it, Q puts all of it in the bag and it comes back whole |
+| A machine that stops itself by what a sensor reads | Test room (`/world?scene=tests-cart`) | E on the cart, **On**, **Forward**: its water sensor stops it at the lake's edge |
 | Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |
 
 **Not built:** gears; charging batteries; motor heat that warms anything;
 hinges with a strength; joints that fail by bending or prying; a bearing's
-strength along its axis.
+strength along its axis; the rest of the self-driving cart, which is a bump
+sensor, roaming, and finding a charging post and docking at it
+([machine-world.md](docs/machine-world.md)).
 
 ### Hands, tools and handling
 
@@ -609,6 +626,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | `tests-motion` | 40 mm | address | breaking, denting, bouncing, sliding, burning, a gas piston |
 | `tests-machines` | 50 mm | address | a motor, drum, battery and brake |
 | `tests-carry` | 40 mm | `/explore?scene=tests-carry` | a mace, a table and a chair, each taken up whole |
+| `tests-cart` | 50 mm | address | a cart with a battery and a motor that drives down a shore until its water sensor stops it |
 | `watershed` | 40 mm | address | rivers beyond the valley; dam one and watch the reservoir fill |
 | `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
 | `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |
@@ -792,7 +810,7 @@ stands at 1 complete, 26 partial and 3 planned.
   machine, and it does not animate the water. It rebuilds its valley on every
   load, so nothing done there is kept.
 - [ ] **Put the test rooms' physics in the main world, or on the menu.** The
-  menu shows 2 of 16 rooms. Breaking under load, the gas piston, fine cells for
+  menu shows 2 of 17 rooms. Breaking under load, the gas piston, fine cells for
   cutting, the plates of every material and the watershed can only be reached
   by typing an address.
 - [ ] **Freezing in the world.** Ice melts in the world now; water does not
@@ -838,7 +856,8 @@ stands at 1 complete, 26 partial and 3 planned.
 - [ ] **Ground:** breaking rock (mining), tool wear, rotational landslides.
 - [ ] **Machines:** gears, charging batteries, motor heat, hinges with a
   strength, joints that fail by bending or prying, bearings rated along their
-  axis.
+  axis; the rest of the self-driving cart (a bump sensor, roaming, finding a
+  charging post and docking), and bringing it into the main world.
 - [ ] **Breaking:** calibration against laboratory data, converged piece
   counts, a failure path for thin parts, keeping a crack in a body that stays
   whole.

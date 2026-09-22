@@ -181,10 +181,15 @@ def compile_design(design, overrides=None, *, root: str = "assembly") -> dict[st
                             "No internal failure: a blow that would break a lattice body against one of these is declined and reported."]}
 
 
-def placed(artifact: dict[str, Any], origin_m: list[float], yaw_rad: float = 0.0) -> dict[str, Any]:
+def placed(artifact: dict[str, Any], origin_m: list[float], yaw_rad: float = 0.0,
+           pitch_rad: float = 0.0) -> dict[str, Any]:
     """The artifact turned about y by `yaw_rad` and set down with its design
-    origin at `origin_m`: bodies, pins and all."""
-    q = [math.cos(yaw_rad / 2), 0.0, math.sin(yaw_rad / 2), 0.0]
+    origin at `origin_m`: bodies, pins and all. `pitch_rad` first tips it about
+    its own x, its front (+z) going down, to stand square on a slope it faces
+    down: a cart set level there stands on its back wheels alone."""
+    cy, sy = math.cos(yaw_rad / 2), math.sin(yaw_rad / 2)
+    cp, sp = math.cos(pitch_rad / 2), math.sin(pitch_rad / 2)
+    q = [cy * cp, cy * sp, sy * cp, -sy * sp]
     r = _turn(q)
     out = deepcopy(artifact)
     for body in out["bodies"]:

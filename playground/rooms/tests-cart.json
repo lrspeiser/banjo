@@ -1,0 +1,547 @@
+{
+ "actions": [
+  {
+   "body": "cart",
+   "label": "Inspect",
+   "primary": true,
+   "steps": [
+    {
+     "do": "inspect"
+    }
+   ]
+  },
+  {
+   "body": "cart-1",
+   "label": "Inspect",
+   "primary": true,
+   "steps": [
+    {
+     "do": "inspect"
+    }
+   ]
+  },
+  {
+   "body": "cart-2",
+   "label": "Inspect",
+   "primary": true,
+   "steps": [
+    {
+     "do": "inspect"
+    }
+   ]
+  }
+ ],
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    1600.0,
+    1526.6,
+    -11500.0
+   ],
+   "material": "concrete",
+   "name": "post",
+   "shape": "box",
+   "size_mm": [
+    150.0,
+    900.0,
+    150.0
+   ]
+  }
+ ],
+ "cell_m": 0.05,
+ "interaction_points": [
+  {
+   "body": "cart",
+   "points": [
+    {
+     "id": "deck",
+     "kind": "surface",
+     "label": "Cargo deck",
+     "position_m": [
+      0.0,
+      0.01673057058367472,
+      0.03350295428306452
+     ],
+     "size_m": [
+      0.7,
+      2.0,
+      1.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.2167305705836748,
+      -0.8664970457169355
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.2167305705836748,
+      -0.8664970457169355
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "cart-1",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  },
+  {
+   "body": "cart-2",
+   "points": [
+    {
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use",
+     "kind": "use",
+     "label": "Use",
+     "position_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    }
+   ]
+  }
+ ],
+ "joints": [
+  {
+   "a": "cart",
+   "at_mm": [
+    0.0,
+    1643.7979335784912,
+    -13788.65842929637
+   ],
+   "axis": [
+    1.0,
+    4.752508423334677e-17,
+    1.5625714814457558e-16
+   ],
+   "b": "cart-1",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "cart",
+   "at_mm": [
+    0.0,
+    1536.5363320624413,
+    -13157.710769945605
+   ],
+   "axis": [
+    1.0,
+    4.752508423334677e-17,
+    1.5625714814457558e-16
+   ],
+   "b": "cart-2",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  }
+ ],
+ "machines": {
+  "controls": [
+   {
+    "name": "cart",
+    "on": [
+     "cart",
+     "cart-1"
+    ],
+    "sensors": [
+     {
+      "at_mm": [
+       0.0,
+       1603.0,
+       -12355.2
+      ],
+      "body": "cart",
+      "depth_mm": 10.0,
+      "kind": "water",
+      "stops": 1
+     }
+    ]
+   }
+  ],
+  "motors": [
+   {
+    "brake_torque_n_m": 40.0,
+    "no_load_rpm": 60.0,
+    "on": [
+     "cart",
+     "cart-1"
+    ],
+    "stall_torque_n_m": 20.0,
+    "store": "cart battery"
+   }
+  ],
+  "stores": [
+   {
+    "body": "cart",
+    "capacity_j": 100000.0,
+    "name": "cart battery",
+    "voltage_v": 24.0
+   }
+  ]
+ },
+ "plasticity": "on",
+ "precise_rigid_bodies": [
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "cart",
+   "orientation_wxyz": [
+    0.9964576553310166,
+    0.08409602328417745,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.36,
+      0.0
+     ],
+     "dimensions_m": [
+      0.7,
+      0.04,
+      1.0
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      -0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.18000000000000002,
+      0.034499999999999996
+     ],
+     "name": "bearing-mount-11"
+    },
+    {
+     "center_local_m": [
+      0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.18000000000000002,
+      0.034499999999999996
+     ],
+     "name": "bearing-mount-12"
+    },
+    {
+     "center_local_m": [
+      -0.1925,
+      0.25,
+      0.32
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.18000000000000002,
+      0.034499999999999996
+     ],
+     "name": "bearing-mount-21"
+    },
+    {
+     "center_local_m": [
+      0.1925,
+      0.25,
+      0.32
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.18000000000000002,
+      0.034499999999999996
+     ],
+     "name": "bearing-mount-22"
+    },
+    {
+     "center_local_m": [
+      -0.21,
+      0.48000000000000004,
+      -0.7
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.44721359549995804,
+      0.034499999999999996
+     ],
+     "name": "handle-arm-1",
+     "rotation_wxyz": [
+      0.6015009550075457,
+      -0.37174803446018445,
+      -0.6015009550075456,
+      0.37174803446018445
+     ]
+    },
+    {
+     "center_local_m": [
+      0.21,
+      0.48000000000000004,
+      -0.7
+     ],
+     "dimensions_m": [
+      0.034499999999999996,
+      0.44721359549995804,
+      0.034499999999999996
+     ],
+     "name": "handle-arm-2",
+     "rotation_wxyz": [
+      0.6015009550075457,
+      -0.37174803446018445,
+      -0.6015009550075456,
+      0.37174803446018445
+     ]
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.5800000000000001,
+      -0.9
+     ],
+     "dimensions_m": [
+      0.03,
+      0.42,
+      0.03
+     ],
+     "name": "handle",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    1.4324302179827744,
+    -13.5
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "cart-1",
+   "orientation_wxyz": [
+    0.9964576553310166,
+    0.08409602328417745,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.76,
+      0.03
+     ],
+     "material": "iron",
+     "name": "axle-1",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      -0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel-11",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel-12",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    1.4324302179827744,
+    -13.5
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "cart-2",
+   "orientation_wxyz": [
+    0.9964576553310166,
+    0.08409602328417745,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.16,
+      0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.76,
+      0.03
+     ],
+     "material": "iron",
+     "name": "axle-2",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      -0.38,
+      0.16,
+      0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel-21",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.38,
+      0.16,
+      0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel-22",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    1.4324302179827744,
+    -13.5
+   ]
+  }
+ ],
+ "terrain": {
+  "generate": {
+   "cell_m": 0.25,
+   "kind": "basin",
+   "lake_level_m": 0.5,
+   "nx": 128,
+   "nz": 128,
+   "sand_m": 0.0
+  }
+ }
+}

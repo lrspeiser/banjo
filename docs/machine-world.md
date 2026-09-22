@@ -450,6 +450,94 @@ The runner (`tools/live_world_run.cpp`) takes the operations `store`,
 A saved world keeps the stores, the motors and the ropes on drums, so a
 restart gives a machine back as it stood.
 
+**A controller's sensors** go on the controller in the room's `machines`, each
+where it is as the room is made, in millimetres, like a pin:
+
+```json
+"controls": [{"name": "cart", "on": ["cart", "cart-1"],
+              "sensors": [{"kind": "water", "body": "cart", "at_mm": [0, 1603, -12355],
+                           "depth_mm": 10, "stops": 1}]}]
+```
+
+- `kind` is `"water"`, the only kind so far. It reads the depth of the room's
+  water under the point.
+- `stops` is the direction it stops the machine going: 1 forward, -1 back.
+- `depth_mm` is more than 0 and at most 10 m.
+- A controller has at most 8 sensors.
+
+The runner's `sense` operation puts one on:
+`{"op": "sense", "control": id, "kind": "water", "body": "cart", "at_m": [x, y, z], "depth_m": 0.01, "stops": 1}`.
+Each controller that `machines` reports carries its `sensors`: for each, where
+it is now (`at_m`), what it reads (`reading_m`), and whether it sees more than
+its depth (`sees`). A controller's `parts` are its motor pin's two things, a
+hoist's load, and whatever else turns on a pin through either of the two.
+
+## Milestone 2, its first step: a cart that stops at the water's edge
+
+**Status, 2026-09-22.** The Workshop's cart drives itself down a shore and
+stops at the water's edge. It is three exact bodies turning on two pins, a
+chassis and two wheelsets, with:
+
+- a 24 V battery holding 100 kJ, in its chassis;
+- a DC motor with a brake on the pin of its back wheels: 20 N m at a standstill
+  and 60 turns a minute unloaded, which is about 1 m/s on its 320 mm wheels,
+  and 40 N m of brake;
+- a controller with a **water sensor**. The sensor looks straight down at the
+  ground 0.6 m in front of the deck. Where the water there is more than 10 mm
+  deep, the controller will not drive forward, and brakes.
+
+These are a demonstration machine's numbers, which the room declares. They were
+not measured from a real cart.
+
+A sensor is a point on one of the machine's parts, and it moves with that part.
+Each step it reads the depth of the room's water under that point. It has a
+depth and a direction it stops: deeper than its depth, and the controller will
+not drive that way, and says why ("water ahead: it stopped at the water's
+edge"). It can still drive the other way, so a cart stopped at the edge can back
+away. Nothing in the world is changed by a sensor. It reads only what is there.
+
+Measured in the engine:
+
+- On a flat floor, driven for 3 s, the cart went 2.60 m and reached 0.995 m/s.
+  The battery gave 52.9 J, which was the motor's work (27.5 J) plus its heat
+  (25.4 J).
+- On the test room's shore, it went 6.0 m in 5.2 s and stopped on its brake. The
+  sensor had seen 19 mm of water, and the front wheels were 0.13 m short of the
+  water's edge. Told forward again, it does not move. Told back, it backs away.
+- Downhill, gravity drives the cart faster than the motor's unloaded speed, so
+  the motor mostly holds it back: the battery gave 26 J, the motor's work was
+  -83 J, and 110 J became heat. Nothing goes back into the battery (D2).
+
+It can be worked in the page at `/world?scene=tests-cart`. That is a test room
+off the menu, built and driven before it is written by
+`tools/build_cart_room.py`:
+
+- a round lake in a basin 32 m across, with the cart 13.5 m out on its shore,
+  facing the middle;
+- E on any part of the cart opens its panel. A machine is everything that turns
+  on a pin through either of its motor's two things, so the front wheels count,
+  though the motor does not turn them;
+- Power On and Forward send it down the shore. The sensor is drawn as a bead on
+  a thread down to the ground. The bead is blue while the sensor reads less than
+  its depth, and turns amber when it sees more;
+- the panel's Measured line gives the sensor's reading, and its Condition says
+  why the cart stopped.
+
+What made it possible:
+
+- **Rooms of exact bodies take machines.** A battery can be in an exact body,
+  and a motor can sit on a pin between exact bodies. A saved world keeps the
+  motors and controllers of a room with exact bodies, which the engine refused
+  to carry before.
+- **The sensors are declared in the room** and kept in a saved world
+  (`tests/cart_drive_tests.cpp`, `tests/cart_room_tests.py`).
+- **A browser journey drives it** as a person would
+  (`tests/world_page_journey_tests.py`, `ACartDrivesItselfToTheWater`).
+
+Not built yet: the bump sensor, roaming, and finding a charging post and
+docking at it. These are the rest of this milestone. The room and the runner
+carry sensors; the C API, the Python binding and the chat's tools do not yet.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is
@@ -457,7 +545,8 @@ seen working in the page.
 
 2. **One autonomous creature.** Wheels before legs: a battery cart with two
    driven wheels, a bump sensor, and a controller that roams, finds a charging
-   post and docks.
+   post and docks. Its first step is built: a cart whose water sensor stops it
+   at a lake's edge (above).
 3. **Repair and persistence.** Parts fail by what they do, such as a burnt
    motor or a cut wire, and can be repaired. A creature's identity is kept
    apart from its body.

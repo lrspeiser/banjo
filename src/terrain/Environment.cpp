@@ -778,6 +778,13 @@ double Environment::addWater(double x_m, double z_m, double volume_m3) {
     return water_->addWater(*cell, volume_m3);
 }
 
+double Environment::waterDepthAt(double x_m, double z_m) const {
+    if (!water_) return 0.0;
+    const auto cell = terrain_->cellAt(x_m, z_m);
+    if (!cell) return 0.0;
+    return std::max(0.0, water_->depth(*cell));
+}
+
 double Environment::rollingResistanceAt(double x_m, double z_m) const {
     const auto cell = terrain_->cellAt(x_m, z_m);
     if (!cell) return soilMaterial().rolling_resistance;

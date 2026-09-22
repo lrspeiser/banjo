@@ -736,7 +736,8 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
     Checked here, like the pins: a motor that will not go on is a hoist that
     does not wind, which reads as the physics being wrong. A motor names its
     pin by the two things it joins, in either order, and there has to be a pin
-    between them; it draws on a store the room has."""
+    between them; it draws on a store the room has. `bodies` is everything in
+    the room, exact bodies with the rest: a cart's battery is in its chassis."""
     if not machines:
         return {}
     if not isinstance(machines, dict):
@@ -837,6 +838,9 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         rope = _hoist_rope(motor["on"], joints)
         if rope is not None:
             travel(made, rope, control)
+        sensors = _sensors(control.get("sensors"), name, named)
+        if sensors:
+            made["sensors"] = sensors
         controls.append(made)
     for motor in motors:
         if any(c["on"] == motor["on"] for c in controls):
@@ -854,6 +858,44 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
             travel(made, rope, {})
         controls.append(made)
     return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {})}
+
+
+def _sensors(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
+    """A controller's sensors (docs/machine-world.md, "One autonomous
+    creature"): each a point on one of the room's things -- where it is as the
+    room is made, in the room's millimetres, like a pin's -- that reads the
+    world, and the direction it stops the machine going when it reads more than
+    its depth. The one kind there is yet is "water": the depth of the room's
+    water under the point, so a cart stops at a lake's edge."""
+    if given in (None, []):
+        return []
+    if not isinstance(given, list) or len(given) > 8:
+        raise ValueError(f"control {name!r}: sensors is a list of at most 8")
+    out: list[dict[str, Any]] = []
+    for k, sensor in enumerate(given):
+        what = f"control {name!r} sensor {k}"
+        if not isinstance(sensor, dict):
+            raise ValueError(f"{what} is not an object")
+        unknown = set(sensor) - {"kind", "body", "at_mm", "depth_mm", "stops"}
+        if unknown:
+            raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds kind, body, at_mm, depth_mm and stops")
+        if sensor.get("kind", "water") != "water":
+            raise ValueError(f"{what} is of kind {sensor.get('kind')!r}; the only kind there is yet is water")
+        body = str(sensor.get("body", ""))
+        if body not in named:
+            raise ValueError(f"{what} is on {body!r}, which is not in this room")
+        at = sensor.get("at_mm")
+        if not isinstance(at, list) or len(at) != 3:
+            raise ValueError(f"{what} needs at_mm as three numbers")
+        stops = sensor.get("stops", 1)
+        if stops not in (1, -1) or isinstance(stops, bool):
+            raise ValueError(f"{what}: stops is the direction it stops the machine going, 1 or -1")
+        out.append({"kind": "water", "body": body,
+                    "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
+                    # The engine's own bound: deeper than 10 m is no edge.
+                    "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm"),
+                    "stops": int(stops)})
+    return out
 
 
 def _hoist_rope(on: list[str], joints: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -1946,7 +1988,8 @@ def validate(spec: Any) -> dict[str, Any]:
         # nothing, so its document -- and the word a saved world is checked
         # against -- is what it was before there were machines.
         if result.get("machines"):
-            result["machines"] = normalise_machines(result["machines"], result["bodies"],
+            result["machines"] = normalise_machines(result["machines"],
+                                                    result["bodies"] + result.get("precise_rigid_bodies", []),
                                                     result["joints"])
         else:
             result.pop("machines", None)

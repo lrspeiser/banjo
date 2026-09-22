@@ -23,6 +23,10 @@ hoist wound up and braked, the room's chat -- a scripted model in place of the
 paid one (tests/scripted_chat_server.py) -- adds a crate through the page's own
 chat box, and the hoist is still up with its battery as it was, at realtime.
 
+A cart drives itself to a lake's edge (docs/machine-world.md): E on its front
+wheels opens its panel, On and Forward send it down the shore, and its water
+sensor stops it with its front wheels dry.
+
 Each starts a playground server of its own on a free port, with the engine the
 build made (BANJO_BUILD_DIR, or build/integration/Release) and rooms in a
 folder of its own, and drives headless Chrome over the DevTools protocol
@@ -853,6 +857,80 @@ class AHoistWorkedFromItsPanel(PageJourney):
         time.sleep(1.0)
         self.assertEqual(self.machines()["controls"][0]["direction"], 0, "a cancelled press set the hoist going")
         self.no_page_errors("after working the hoist from its panel")
+
+
+class ACartDrivesItselfToTheWater(PageJourney):
+    """The first step of the machine world's autonomous creature
+    (docs/machine-world.md, "One autonomous creature"), in the tests-cart room:
+    a battery in the Workshop's cart, a motor on its back wheels, and a
+    controller whose water sensor looks at the ground in front of it.
+
+    Looking at the cart's front wheels -- which the motor does not turn -- E
+    opens the cart's panel. Power On and Forward, pressed with the mouse, send
+    it down the shore; the sensor's bead ahead of it turns from blue to amber
+    over the water, and the cart stops on its brake with its front wheels on dry
+    ground, the panel saying why. Forward again does not move it; Reverse
+    backs it away."""
+
+    def test_it_drives_down_the_shore_and_stops_at_the_waters_edge(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-cart"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-cart' && "
+                                      "banjoRoom.ready()", 300), "the cart room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && "
+                                      "(banjoRoom.world.machines.controls || []).length === 1", 60),
+                        f"the room's steps do not carry the cart's machine: {self.situation()}")
+        control = "banjoRoom.world.machines.controls[0]"
+        self.assertEqual(self.js(f"{control}.sensors.map((s) => [s.kind, s.sees])"), [["water", False]])
+        self.assertEqual(self.js("banjoRoom.sensorMarks().map((m) => m.sees)"), [False],
+                         "the sensor's bead is not drawn, blue")
+        # Beside the front wheels, low enough that the crosshair is on a wheel
+        # rather than the deck above it.
+        x, y, z = self.position("cart-2")
+        self.page.evaluate(f"banjoRoom.standAt({x + 1.4}, {y + 0.12}, {z}); banjoRoom.lookAt({x}, {y}, {z}); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'cart-2'", 10),
+                        f"the crosshair is not on the front wheels: {self.situation()}")
+        self.assertTrue(self.offering("Open the cart's panel"),
+                        f"E on the front wheels does not open the cart's panel: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
+                        f"E did not open the cart's panel: {self.situation()}")
+        start = self.position("cart")
+        self.click("mp-on")
+        self.assertTrue(self.wait_for(f"{control}.power === true", 15),
+                        f"Power On did not reach the cart: {self.situation()}")
+        self.click("mp-ahead")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.motors[0].state === 'driving'", 30),
+                        f"Forward did not set the motor driving: {self.situation()}")
+        self.assertTrue(self.wait_for(f"({control}.condition || '').startsWith('water ahead')", 90),
+                        f"the cart never stopped for the water: {self.situation()}")
+        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
+        self.assertEqual(text("mp-condition"), "water ahead: it stopped at the water's edge")
+        self.assertIn("its water sensor ahead:", text("mp-measured"))
+        self.assertTrue(self.wait_for("banjoRoom.sensorMarks().every((m) => m.sees)", 10),
+                        "the sensor's bead did not turn to show the water it sees")
+        rest = self.at_rest("cart")
+        c = self.js(control)
+        wx, wy, wz = self.position("cart-2")
+        wet = self.js(f"banjoRoom.waterAt({wx}, {wz})")
+        print(f"\n   sent forward from its panel, it went {math.dist(start, rest):.2f} m down the shore and "
+              f"stopped: the panel says {text('mp-measured')!r}", flush=True)
+        self.assertGreater(math.dist(start, rest), 3.0, "it did not drive down the shore")
+        self.assertTrue(c["brake"] and c["command"] == 0, f"it is not held on its brake: {c}")
+        self.assertTrue(wet is None or wet["depth"] < 0.005, f"its front wheels stopped in the water: {wet}")
+        # Forward again: the sensor still sees the water, so it will not go.
+        self.click("mp-stop")
+        self.assertTrue(self.wait_for(f"{control}.direction === 0", 15), f"Stop did not reach it: {self.situation()}")
+        self.click("mp-ahead")
+        self.assertTrue(self.wait_for(f"{control}.direction === 1", 15), f"Forward did not reach it: {self.situation()}")
+        time.sleep(1.5)
+        self.assertLess(math.dist(self.position("cart"), rest), 0.03, "told forward at the edge, it went on")
+        # Back: the sensor stops it only going forward.
+        self.click("mp-back")
+        self.assertTrue(self.wait_for(f"{control}.direction === -1", 15), f"Reverse did not reach it: {self.situation()}")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.bodies.get('cart').mesh.position.distanceTo("
+                                      f"new banjoRoom.THREE.Vector3({rest[0]}, {rest[1]}, {rest[2]})) > 0.5", 30),
+                        f"told back, it did not back away from the water: {self.situation()}")
+        self.no_page_errors("after driving the cart to the water's edge")
 
 
 class AChatChangeKeepsTheHoistUp(PageJourney):

@@ -246,7 +246,9 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
                     told[i] = _told(motor)
                 break
     # A controller is kept, as it was told, when it is made the same way; the
-    # engine keeps it only if its motor came back too.
+    # engine keeps it only if its motor came back too. One made anew has its
+    # sensors put on where the room has them, so the things they are on come
+    # back as the room has them, as a new pin's do.
     controls = list(was.get("controls") or [])
     for i, control in enumerate(machines.get("controls") or []):
         if not isinstance(control, dict):
@@ -262,6 +264,9 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
                 if "power" in control and _told_control(control) != tuple(told_then):
                     told_controls[i] = _told_control(control)
                 break
+        else:
+            anew.update(str(sensor.get("body") or "") for sensor in control.get("sensors") or []
+                        if isinstance(sensor, dict))
     engine["declared_anew"] = sorted(name for name in anew if name)
     return {"engine": engine, "pairs": pairs, "told": told, "told_controls": told_controls}
 
@@ -1034,6 +1039,21 @@ class Live:
                 made_id = answer.get("control")
                 if made is not None and made_id is not None:
                     made["controls"][name] = made_id
+                # Its sensors, before it is told anything, so what it is told
+                # first is decided against what they read: each where the room
+                # has it on its part, as a pin is.
+                for sensor in control.get("sensors") or []:
+                    if made_id is None:
+                        break
+                    try:
+                        session.send(op="sense", control=made_id, kind=str(sensor.get("kind", "water")),
+                                     body=str(sensor.get("body", "")),
+                                     at_m=[float(v) / 1000.0 for v in sensor.get("at_mm") or []],
+                                     depth_m=float(sensor.get("depth_mm", 10.0)) / 1000.0,
+                                     stops=int(sensor.get("stops", 1)))
+                    except Exception as error:
+                        problems.append(f"the {name}'s {sensor.get('kind', 'water')} sensor on "
+                                        f"{sensor.get('body', '?')} would not go on: {error}")
                 if made_id is not None and "power" in control:
                     told = (bool(control["power"]), int(control["direction"]), float(control["setting"]))
                     if told != (False, 0, 1.0):

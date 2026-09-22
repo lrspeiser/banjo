@@ -64,10 +64,14 @@ class PreciseAdmission(unittest.TestCase):
             spec=world_room.yard();spec[key]=value
             with self.subTest(key=key):self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
 
-    def test_heat_machines_tools_and_rich_actions_are_refused_not_downgraded(self):
-        for key in ('thermo','machines','blades','tool_points','interactions','actions'):
+    def test_heat_tools_and_rich_actions_are_refused_not_downgraded(self):
+        # Machines are not among them: a cart carries a battery, a motor and
+        # a controller with its sensors (tests/cart_room_tests.py).
+        for key in ('thermo','blades','tool_points','interactions','actions'):
             spec=world_room.yard();spec[key]=[{}]
             with self.subTest(key=key), self.assertRaises(ValueError):precise_rigid.normalise([box()],spec)
+        spec=world_room.yard();spec['machines']={'stores':[{'name':'battery','capacity_j':1000}]}
+        self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
 
     def test_bad_geometry_and_unknown_fields_never_fall_back(self):
         cases=[]

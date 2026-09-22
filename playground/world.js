@@ -988,6 +988,9 @@ function draw(state) {
     held.material = body.material || "";
     held.dentMm = body.dent_mm || 0;
     held.dims = body.dimensions_m;
+    // An exact body's parts, which come with its geometry (the mark on a
+    // turning wheel goes on the wheel, not on its box).
+    if (body.rigid_parts_local) held.parts = body.rigid_parts_local;
     held.anchored = !!body.anchored;
     held.shape = body.shape;
     held.mechanicalModel = body.mechanical_model || "lattice";
@@ -1122,6 +1125,7 @@ function followMachines(machines) {
   drawMachines(world.machines);
   showMachinePanel();
   dressMachines();
+  dressSensors();
 }
 
 // What a machine's controller was told, in a person's words.
@@ -1357,10 +1361,16 @@ function showMachinePanel() {
       : `coming down ${(-v).toFixed(2)} m/s`;
     measured += ` · ${load} ${going} · ${(c.out_m || 0).toFixed(2)} m of rope out`;
   }
+  // What its sensors read, as the last step left them.
+  for (const s of c.sensors || []) {
+    const mm = Math.round((s.reading_m || 0) * 1000);
+    measured += ` · its ${s.kind} sensor ${s.stops > 0 ? "ahead" : "behind"}: `
+      + (mm > 0 ? `${mm} mm of water` : "dry");
+  }
   setText("mp-measured", measured);
   setText("mp-condition", c.condition || "nothing in its way");
   $("mp-condition").classList.toggle("attention",
-    /stalled|too weak|flat|held back|hand|gone|coasts/.test(c.condition || ""));
+    /stalled|too weak|flat|held back|hand|gone|coasts|water/.test(c.condition || ""));
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
@@ -1414,6 +1424,44 @@ function stripeFor(dims, k) {
   return stripe;
 }
 
+// On an exact body, the stripe on each wheel that turns about the pin -- the
+// widest round parts whose own axis is the pin's -- as a spoke painted on its
+// outer face, in the body's own frame so it turns with it. Laid along the
+// body's box, as on a drum, it was a yellow plank floating between a
+// wheelset's two wheels. Null when the body has no such part.
+function spokesFor(parts, axisLocal) {
+  const up = new THREE.Vector3(0, 1, 0);
+  const round = [];
+  for (const part of parts || []) {
+    if (part.shape !== "cylinder") continue;
+    const q = part.rotation_wxyz || [1, 0, 0, 0];
+    const along = up.clone().applyQuaternion(new THREE.Quaternion(q[1], q[2], q[3], q[0]));
+    if (Math.abs(along.dot(axisLocal)) > 0.99) round.push({ part, along });
+  }
+  const widest = Math.max(0, ...round.map((r) => r.part.dimensions_m[0]));
+  const spokes = new THREE.Group();
+  for (const { part, along } of round) {
+    const [d, length] = part.dimensions_m;
+    if (d < 0.9 * widest) continue;                  // an axle through the wheels
+    const centre = new THREE.Vector3(...part.center_local_m);
+    const out = centre.dot(along) < 0 ? along.clone().negate() : along.clone();
+    const radial = new THREE.Vector3(1, 0, 0).cross(out);
+    if (radial.lengthSq() < 1e-6) radial.set(0, 1, 0).cross(out);
+    radial.normalize();
+    const third = new THREE.Vector3().crossVectors(radial, out);
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.42 * d, 0.006, 0.12 * d), STRIPE_PAINT);
+    spoke.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(radial, out, third));
+    spoke.position.copy(centre).addScaledVector(out, length / 2 + 0.003).addScaledVector(radial, 0.26 * d);
+    spokes.add(spoke);
+  }
+  return spokes.children.length ? spokes : null;
+}
+
+function disposeStripe(stripe) {
+  stripe.parent?.remove(stripe);
+  stripe.traverse((o) => o.geometry?.dispose());
+}
+
 // Most of a ring with a head on its end, the positive way round +z.
 function arrowFor(radius) {
   const arrow = new THREE.Group();
@@ -1428,7 +1476,7 @@ function arrowFor(radius) {
 }
 
 function forgetMarks(marks) {
-  if (marks.stripe) { marks.stripe.parent?.remove(marks.stripe); marks.stripe.geometry.dispose(); }
+  if (marks.stripe) disposeStripe(marks.stripe);
   if (marks.arrow) { scene.remove(marks.arrow); marks.arrow.traverse((o) => o.geometry?.dispose()); }
 }
 
@@ -1456,8 +1504,10 @@ function dressMachines() {
     // The stripe rides the turning part's own mesh, so it turns with it: put on
     // again whenever that mesh is made again (a dent, a burn).
     if (marks.host !== body.mesh) {
-      if (marks.stripe) { marks.stripe.parent?.remove(marks.stripe); marks.stripe.geometry.dispose(); }
-      marks.stripe = stripeFor(body.dims, k);
+      if (marks.stripe) disposeStripe(marks.stripe);
+      const axisLocal = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize()
+        .applyQuaternion(body.mesh.quaternion.clone().invert());
+      marks.stripe = (body.fromPrecise && spokesFor(body.parts, axisLocal)) || stripeFor(body.dims, k);
       body.mesh.add(marks.stripe);
       marks.host = body.mesh;
     }
@@ -1485,6 +1535,47 @@ function dressMachines() {
     if (seen.has(id)) continue;
     forgetMarks(marks);
     machineMarks.delete(id);
+  }
+}
+
+// Where each controller's sensors look (the runner's `sensors`, docs/machine-
+// world.md): a bead at the point and a thread from it straight down to the
+// ground, since a water sensor reads the water under it -- blue while it reads
+// less than its depth, amber once it sees more, which is what stops the machine.
+// So why a cart stopped is there on the ground in front of it.
+const SENSOR_DRY = new THREE.MeshStandardMaterial({ color: 0x6fb7ff, emissive: 0x16324a, roughness: 0.5 });
+const SENSOR_SEES = new THREE.MeshStandardMaterial({ color: 0xf0b429, emissive: 0x4a3510, roughness: 0.5 });
+const sensorMarks = new Map();   // "controller id/sensor index" -> { bead, thread }
+
+function dressSensors() {
+  const seen = new Set();
+  for (const c of controlsNow()) {
+    (c.sensors || []).forEach((s, i) => {
+      if (!Array.isArray(s.at_m) || s.at_m.length !== 3) return;
+      const key = `${c.id}/${i}`;
+      seen.add(key);
+      let mark = sensorMarks.get(key);
+      if (!mark) {
+        mark = { bead: new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), SENSOR_DRY),
+                 thread: new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6), SENSOR_DRY) };
+        scene.add(mark.bead, mark.thread);
+        sensorMarks.set(key, mark);
+      }
+      const [x, y, z] = s.at_m;
+      const floor = ground.grid ? Math.min(groundAt(x, z), y) : y;
+      mark.bead.position.set(x, y, z);
+      mark.thread.position.set(x, (y + floor) / 2, z);
+      mark.thread.scale.set(1, Math.max(y - floor, 1e-3), 1);
+      const paint = s.sees ? SENSOR_SEES : SENSOR_DRY;
+      if (mark.bead.material !== paint) mark.bead.material = mark.thread.material = paint;
+    });
+  }
+  for (const [key, mark] of sensorMarks) {
+    if (seen.has(key)) continue;
+    scene.remove(mark.bead, mark.thread);
+    mark.bead.geometry.dispose();
+    mark.thread.geometry.dispose();
+    sensorMarks.delete(key);
   }
 }
 
@@ -6195,6 +6286,9 @@ window.banjoRoom = {
   // arrow while it drives.
   machineMarks: () => [...machineMarks].map(([id, m]) => ({
     id, stripe: !!(m.stripe && m.stripe.parent), arrow: !!(m.arrow && m.arrow.visible) })),
+  // Each sensor's bead as drawn: where, and whether it is showing water seen.
+  sensorMarks: () => [...sensorMarks].map(([key, m]) => ({
+    key, at: m.bead.position.toArray(), sees: m.bead.material === SENSOR_SEES })),
   held: () => world.held && ({
     name: world.held.name, distance: world.held.distance, loose: !!world.held.loose,
     turnable: !!world.held.turn, wish: world.held.turn ? world.held.turn.asked.toArray() : null,

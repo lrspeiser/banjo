@@ -334,7 +334,7 @@ LiveStroke readStroke(const nlohmann::json &command) {
 // load), since a host finds the machine from the thing a person looks at, and
 // whether its motor has a brake to stop and hold with.
 nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &motors,
-                         const std::vector<LiveJoint> &joints) {
+                         const std::vector<LiveJoint> &joints, const LiveWorld &world) {
     nlohmann::json parts = nlohmann::json::array();
     bool holds = false;
     for (const LiveMotor &m : motors) {
@@ -347,7 +347,29 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
         for (const LiveJoint &joint : joints)
             if (joint.id == c.rope && std::find(parts.begin(), parts.end(), joint.b) == parts.end())
                 parts.push_back(joint.b);
+    // And whatever else turns on a pin through either of the motor's two that
+    // moves with the machine: a cart's front wheels turn on the chassis its
+    // motor drives from, and are as much the machine -- E on them finds it. A
+    // thing on a pin through anchored scenery is not: two hoists on one post
+    // are two machines.
+    if (parts.size() >= 2) {
+        const std::string frame = parts[0], turned = parts[1];
+        for (const LiveJoint &joint : joints) {
+            if (joint.kind != "hinge" || !joint.attached) continue;
+            for (const auto &[mine, other] : {std::pair{joint.a, joint.b}, std::pair{joint.b, joint.a}})
+                if ((mine == frame || mine == turned) && !world.anchored(mine) &&
+                    std::find(parts.begin(), parts.end(), other) == parts.end())
+                    parts.push_back(other);
+        }
+    }
+    // What it senses, where each sensor is now, and what each reads.
+    nlohmann::json sensors = nlohmann::json::array();
+    for (const LiveSensor &s : c.sensors)
+        sensors.push_back({{"kind", s.kind}, {"body", s.body}, {"depth_m", tidy(s.depth_m)},
+                           {"stops", s.stops}, {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
+                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
     return {{"id", c.id},
+            {"sensors", std::move(sensors)},
             {"name", c.name},
             {"kind", c.rope != 0 ? "hoist" : "shaft"},
             {"motor", c.motor},
@@ -388,7 +410,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     if (stores.empty() && motors.empty() && ropes.empty() && controls.empty()) return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
-    for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints));
+    for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints, world));
     for (const LiveEnergyStore &s : stores)
         out["stores"].push_back({{"id", s.id},
                                  {"name", s.name},
@@ -1979,6 +2001,20 @@ int main(int argc, char **argv) {
                             "turns, and its travel runs from the rope out at the top to the rope out at the bottom, "
                             "the top the less and the bottom no more than the rope");
                     reply["control"] = control;
+                } else if (op == "sense") {
+                    // A sensor on a controller's machine (LiveSensor): of a kind
+                    // ("water"), on a part at a point given where it is now,
+                    // stopping the machine going one way when it reads deeper
+                    // than depth_m.
+                    const nlohmann::json &at = command.at("at_m");
+                    if (!world->sense(command.at("control").get<unsigned>(), command.value("kind", std::string{}),
+                                      command.value("body", std::string{}),
+                                      Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()},
+                                      command.value("depth_m", 0.0), command.value("stops", 1)))
+                        throw std::invalid_argument(
+                            "a sensor goes on a controller that is there, on a part that is in the world: of kind "
+                            "\"water\", with a depth above nothing and no more than 10 m, stopping the way 1 or -1");
+                    reply["sensed"] = true;
                 } else if (op == "operate") {
                     // What a controller is told, by a sender and its count --
                     // power, a direction, a drive setting, each only if given --
@@ -1995,7 +2031,7 @@ int main(int argc, char **argv) {
                     if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
                     reply["operated"] = answer;
                     for (const LiveControl &c : world->controls())
-                        if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints());
+                        if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints(), *world);
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {

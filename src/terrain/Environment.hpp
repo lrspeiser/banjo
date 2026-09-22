@@ -203,6 +203,9 @@ public:
     // the room's water under (x, z). Returns the volume that went in: nothing
     // outside the valley's grid, where it runs off the world instead.
     double addWater(double x_m, double z_m, double volume_m3);
+    // How deep the room's water stands in the column under (x, z), metres:
+    // zero outside the grid or where it is dry. What a sensor reads.
+    [[nodiscard]] double waterDepthAt(double x_m, double z_m) const;
 
     // Everything, as JSON: the ground and its ledger, the water and its
     // ledger, rivers and ponds, the costs. `full` adds the model's provenance

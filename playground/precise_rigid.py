@@ -3,8 +3,10 @@
 Exact rigid compounds -- boxes and cylinders, each turned as drawn and of its own
 material if need be -- share a room with everything made of cells, with its
 terrain and water, and with joints: a cart is three of them turning on pins.
-What they cannot do yet is break inside, take heat, carry blades or tool points,
-or drive a machine; those are refused rather than weakened. The engine is the
+They carry machines too -- a battery in one, a motor on a pin between two, and
+the controller that works it, with its sensors: a cart that drives itself.
+What they cannot do yet is break inside, take heat, or carry blades or tool
+points; those are refused rather than weakened. The engine is the
 authority on their geometry: it counts overlapping parts once, re-centres each
 body on its material's centre of mass, and asks Jolt's own shapes whether every
 part meets another (src/fastlattice/PreciseRigidScene.cpp).
@@ -39,7 +41,7 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not spec.get("bodies"):
         raise ValueError("Precise rigid bodies need a room with at least one lattice body in it; use a yard")
-    for key in ("thermo", "machines", "blades", "tool_points", "interactions"):
+    for key in ("thermo", "blades", "tool_points", "interactions"):
         if spec.get(key):
             raise ValueError(f"Precise rigid rooms do not yet support {key}; nothing was installed")
     # Saved core gestures use the existing rigid hand/contact path. Rich

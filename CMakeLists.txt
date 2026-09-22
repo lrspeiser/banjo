@@ -1154,6 +1154,11 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_machine_control_tests)
             add_test(NAME banjo_machine_control_tests COMMAND banjo_machine_control_tests)
 
+            add_executable(banjo_cart_drive_tests tests/cart_drive_tests.cpp)
+            target_link_libraries(banjo_cart_drive_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_cart_drive_tests)
+            add_test(NAME banjo_cart_drive_tests COMMAND banjo_cart_drive_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows
@@ -1433,4 +1438,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_PRECISE_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/precise_rigid_live_tests.py -v)
     set_tests_properties(banjo_precise_rigid_live_tests PROPERTIES TIMEOUT 120)
+    # And the cart that drives itself: the room's sensors checked and carried,
+    # and the tests-cart room opened, driven and saved through the runner.
+    add_test(NAME banjo_cart_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_CART_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cart_room_tests.py -v)
+    set_tests_properties(banjo_cart_room_tests PROPERTIES TIMEOUT 120)
 endif()

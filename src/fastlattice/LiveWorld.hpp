@@ -465,6 +465,28 @@ struct LiveMotor {
     double work_j{}, heat_j{}, drawn_j{}, friction_heat_j{};
 };
 
+// What a controller senses (docs/machine-world.md, "One autonomous creature"):
+// a point on one of its machine's parts that reads the world, and a reading
+// that stops the machine going one way. The first kind is "water": the depth of
+// the room's water under the point -- a float, or a look straight down, on the
+// front of a cart. Deeper there than `depth_m`, and the controller will not
+// drive the way it stops; the other way it still may, so a cart stopped at the
+// edge can back away from it. Declared, as a real sensor is fitted: nothing in
+// the world is changed by it, and it reads only what is there.
+struct LiveSensor {
+    std::string kind;             // "water"
+    std::string body;             // the part it is on
+    Vec3 at_local_m{};            // where on it, in the part's own frame about its centre of mass
+    double depth_m{};             // deeper than this under it, and it stops
+    int stops{1};                 // the direction it stops: 1 forward, -1 reverse
+    // Measured, as the last kept step left it: where the point is in the
+    // world, the water's depth under it (zero where the room has no water), and
+    // whether that is deeper than depth_m.
+    Vec3 at_m{};
+    double reading_m{};
+    bool sees{};
+};
+
 // A machine's controller (docs/machine-world.md, "Operating a machine"): what a
 // person or a program means -- power on or off, a direction, a drive setting --
 // turned into its motor's command and brake before every step. It governs the
@@ -518,8 +540,11 @@ struct LiveControl {
     // "stalled: it made no progress, so it stopped"; "too weak at this
     // setting: the load turned it back, so it stopped"; "held back by its
     // battery's power"; "its battery is flat"; "the hand is on it"; "its
-    // motor is gone".
+    // motor is gone"; and what a sensor stopped it for, such as "water ahead:
+    // it stopped at the water's edge".
     std::string condition;
+    // What it senses (LiveWorld::sense), with their last readings.
+    std::vector<LiveSensor> sensors;
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -1359,6 +1384,14 @@ public:
     // off, its motor stopped on its brake.
     unsigned control(const std::string &name, unsigned motor, unsigned rope = 0, double top_out_m = 0.0,
                      double bottom_out_m = 0.0);
+    // A sensor on a controller's machine (LiveSensor): of `kind` ("water"), on
+    // the named part at a point given where it is now in the world, stopping
+    // the machine going `stops` (1 forward, -1 reverse) when it reads deeper
+    // than `depth_m`. Returns false, with nothing changed, when there is no
+    // such controller or part, the kind is not one it knows, or the numbers
+    // are not a sensor's.
+    bool sense(unsigned control, const std::string &kind, const std::string &body, const Vec3 &point_world_m,
+               double depth_m, int stops = 1);
     // What a controller is told, by a sender and that sender's count. What is
     // left out stays as it was: states are said outright, never toggled.
     struct ControlCommand {
@@ -1618,6 +1651,9 @@ public:
     [[nodiscard]] bool unpark(const std::string &name, const Vec3 &at_world_m, const Quat &facing_world,
                               std::string &why);
     [[nodiscard]] bool parked(const std::string &name) const;
+    // Whether the thing of that name is fixed in place: anchored scenery, which the
+    // solver never moves. False for a name that is not in the world.
+    [[nodiscard]] bool anchored(const std::string &name) const;
 
     // ---- a world that is kept: a restart gives back the room as it stood ----
     //

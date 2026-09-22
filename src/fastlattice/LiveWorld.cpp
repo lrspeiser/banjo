@@ -1384,6 +1384,14 @@ struct LiveWorld::Impl {
             why = s.condition;  // what stopped it, until it is told something again
         } else if (!(s.setting > 0.0)) {
             why = "its drive setting is at nothing";
+        } else if (stopping(s, s.direction) != nullptr) {
+            // A sensor sees what it was fitted to stop for: it stops, on its
+            // brake if it has one, until it is told something again -- told the
+            // same way while the sensor still sees it, it stops again at once;
+            // the other way, it goes.
+            c.tripped = true;
+            why = s.direction > 0 ? "water ahead: it stopped at the water's edge"
+                                  : "water behind: it stopped at the water's edge";
         } else if (c.reversing && s.direction * speed < -kReverseAtShare * motor.no_load_rad_s &&
                    c.reversing_s < kReverseMostS) {
             c.reversing_now = true;
@@ -1488,6 +1496,26 @@ struct LiveWorld::Impl {
     void prepareControls(double dt_s) {
         for (Control &c : controls) decide(c, dt_s);
     }
+    // What each of a controller's sensors reads now: for "water", the depth of
+    // the room's water under its point, wherever its part has got to.
+    void readSensors(Control &c) {
+        for (LiveSensor &sensor : c.said.sensors) {
+            sensor.reading_m = 0.0;
+            const auto found = index_of.find(sensor.body);
+            if (found != index_of.end() && inWorld(found->second)) {
+                const RigidSnapshot at = world->snapshot(body_of[found->second]);
+                sensor.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(sensor.at_local_m);
+                if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);
+            }
+            sensor.sees = sensor.reading_m > sensor.depth_m;
+        }
+    }
+    // The first sensor that stops a controller going `direction`, if any.
+    [[nodiscard]] static const LiveSensor *stopping(const LiveControl &s, int direction) {
+        for (const LiveSensor &sensor : s.sensors)
+            if (sensor.stops == direction && sensor.sees) return &sensor;
+        return nullptr;
+    }
     // After a kept step: what each controller's machine did -- its shaft's
     // speed, a hoist's rope -- and the timing of what it decided: a stretch of
     // driving that got nowhere in kStallS stops it, since a motor driven into
@@ -1535,6 +1563,7 @@ struct LiveWorld::Impl {
                     c.turned_from = s.forward * motor.turned_rad;
                 }
             }
+            readSensors(c);
             decide(c, dt_s);
         }
     }
@@ -2813,9 +2842,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 (!body.join.empty() && impl.precise_bodies.count(body.join)))
                 throw std::invalid_argument("a precise rigid body cannot share its name with a lattice body");
         // Joints are kept: they hold bodies, not cells, and are rebuilt from the
-        // save like any others. What works on cells is not.
+        // save like any others -- and so are the motors on them and the
+        // controllers that work those, which name a pin, a store and a motor and
+        // never a cell (a cart driving itself, tests/cart_drive_tests.cpp).
+        // What works on cells is not.
         if (saved) {
-            for (const char *key : {"blades", "tool_points", "motors", "controls"})
+            for (const char *key : {"blades", "tool_points"})
                 if (saved->doc.contains(key) && !saved->doc[key].empty())
                     throw std::invalid_argument("precise-rigid carry cannot preserve an unsupported attached mechanism");
         }
@@ -4113,6 +4145,17 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 c.seen.emplace_back(p[0].get<std::string>(), p[1].get<std::uint64_t>());
         c.tripped = o.value("tripped", false);
         c.said.condition = o.value("condition", std::string{});
+        for (const nlohmann::json &p : o.value("sensors", nlohmann::json::array())) {
+            LiveSensor sensor;
+            sensor.kind = p.at("kind").get<std::string>();
+            sensor.body = p.at("body").get<std::string>();
+            sensor.at_local_m = vecFrom(p.at("at_local_m"));
+            sensor.depth_m = numberFrom(p.at("depth_m"));
+            sensor.stops = p.at("stops").get<int>() < 0 ? -1 : 1;
+            if (sensor.kind != "water" || !(sensor.depth_m > 0.0))
+                throw std::invalid_argument("a saved controller's sensor is not one this engine knows");
+            c.said.sensors.push_back(std::move(sensor));
+        }
         if (carrying) {
             const bool declared = kept(asked.controls, c.said.id);
             const bool motor = std::any_of(impl.motors.begin(), impl.motors.end(),
@@ -4128,6 +4171,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             }
             ++said.carried.controls;
         }
+        // What its sensors read where their parts now are, before the first
+        // step says it: a reply before that would put each at the world's origin.
+        impl.readSensors(c);
         impl.controls.push_back(std::move(c));
     }
     impl.next_control = doc.value("next_control", 1U);
@@ -5417,6 +5463,30 @@ unsigned LiveWorld::control(const std::string &name, unsigned motor, unsigned ro
     // Off, its motor stopped on its brake: said at once.
     impl_->decide(impl_->controls.back(), 0.0);
     return impl_->controls.back().said.id;
+}
+
+bool LiveWorld::sense(unsigned control, const std::string &kind, const std::string &body, const Vec3 &point_world_m,
+                      double depth_m, int stops) {
+    Impl::Control *c = nullptr;
+    for (Impl::Control &each : impl_->controls)
+        if (each.said.id == control) c = &each;
+    if (c == nullptr || kind != "water" || (stops != 1 && stops != -1)) return false;
+    if (!std::isfinite(depth_m) || !(depth_m > 0.0) || depth_m > 10.0) return false;
+    if (!std::isfinite(point_world_m.x) || !std::isfinite(point_world_m.y) || !std::isfinite(point_world_m.z))
+        return false;
+    const auto found = impl_->index_of.find(body);
+    if (found == impl_->index_of.end() || !impl_->inWorld(found->second)) return false;
+    // Kept in the part's own frame, so the sensor goes where the part goes.
+    const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[found->second]);
+    LiveSensor sensor;
+    sensor.kind = kind;
+    sensor.body = body;
+    sensor.at_local_m = conjugateOf(at.orientation_world).rotate(point_world_m - at.center_of_mass_world_m);
+    sensor.depth_m = depth_m;
+    sensor.stops = stops;
+    c->said.sensors.push_back(sensor);
+    impl_->readSensors(*c);
+    return true;
 }
 
 std::string LiveWorld::operate(unsigned control, const ControlCommand &command) {
@@ -12907,6 +12977,12 @@ bool LiveWorld::unpark(const std::string &name, const Vec3 &at_world_m, const Qu
 
 bool LiveWorld::parked(const std::string &name) const { return impl_->parked.count(name) != 0; }
 
+bool LiveWorld::anchored(const std::string &name) const {
+    const auto found = impl_->index_of.find(name);
+    return found != impl_->index_of.end() && found->second < impl_->described.size() &&
+           impl_->described[found->second].anchored;
+}
+
 // ===========================================================================
 // A world that is kept: the whole of it as it stands, and the scene opened
 // again from that (docs/inventory-and-hands-design.md, "What a room keeps").
@@ -13169,7 +13245,13 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     for (const Impl::Control &c : I.controls) {
         nlohmann::json seen = nlohmann::json::array();
         for (const auto &[sender, count] : c.seen) seen.push_back({sender, count});
+        nlohmann::json sensors = nlohmann::json::array();
+        for (const LiveSensor &sensor : c.said.sensors)
+            sensors.push_back({{"kind", sensor.kind}, {"body", sensor.body},
+                               {"at_local_m", savedVec(sensor.at_local_m)},
+                               {"depth_m", savedNumber(sensor.depth_m)}, {"stops", sensor.stops}});
         controls.push_back({{"id", c.said.id},
+                            {"sensors", std::move(sensors)},
                             {"name", c.said.name},
                             {"motor", c.said.motor},
                             {"rope", c.said.rope},

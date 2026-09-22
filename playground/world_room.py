@@ -1009,6 +1009,12 @@ SCENES = {
     # built by its recipe. Laid out by tools/build_carry_room.py; open it in the
     # Explorer at /explore?scene=tests-carry. Off the menu, like the others.
     "tests-carry": _saved_room("tests-carry"),
+    # A cart that drives itself (docs/machine-world.md, "One autonomous
+    # creature"): a battery in the cart, a motor on its back wheels, and a
+    # controller whose water sensor stops it at a lake's edge. Laid out, and
+    # driven before it is written, by tools/build_cart_room.py; open it at
+    # /world?scene=tests-cart. Off the menu, like the others.
+    "tests-cart": _saved_room("tests-cart"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,
