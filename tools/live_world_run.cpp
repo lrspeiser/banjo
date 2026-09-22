@@ -263,7 +263,8 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
         const LiveRestore::Carried &n = restored.carried;
         out["carried"] = {{"placed", n.placed}, {"fresh", n.fresh}, {"gone", n.gone}, {"joints", n.joints},
                           {"energy_stores", n.energy_stores}, {"motors", n.motors},
-                          {"controls", n.controls}, {"programs", n.programs}, {"blades", n.blades},
+                          {"controls", n.controls}, {"programs", n.programs},
+                          {"solar_panels", n.solar_panels}, {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
         out["woken"] = restored.woken;
@@ -286,6 +287,7 @@ LiveCarry carryFrom(const nlohmann::json &doc) {
     ids("motors", carry.motors);
     ids("controls", carry.controls);
     ids("programs", carry.programs);
+    ids("solar_panels", carry.solar_panels);
     ids("blades", carry.blades);
     ids("tool_points", carry.tool_points);
     if (doc.contains("declared_anew"))
@@ -429,7 +431,41 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"turned_deg", tidy(p.turned_deg)},
             {"turns", p.turns},
             {"pitch_deg", tidy(p.pitch_deg)},
-            {"roll_deg", tidy(p.roll_deg)}};
+            {"roll_deg", tidy(p.roll_deg)},
+            {"rest_below", tidy(p.rest_below)},
+            {"rest_until", tidy(p.rest_until)},
+            {"charge_share", tidy(p.charge_share)},
+            {"rests", p.rests}};
+}
+
+// The room's sun as a host reads it: where it is in the sky, and the way to it.
+nlohmann::json sunOf(const LiveSun &sun) {
+    if (!sun.declared) return nullptr;
+    return {{"elevation_deg", tidy(sun.elevation_deg)},
+            {"azimuth_deg", tidy(sun.azimuth_deg)},
+            {"irradiance_w_m2", tidy(sun.irradiance_w_m2)},
+            {"toward", {tidy(sun.toward.x), tidy(sun.toward.y), tidy(sun.toward.z)}}};
+}
+
+// A solar panel as a host reads it (LiveSolarPanel).
+nlohmann::json panelOf(const LiveSolarPanel &panel) {
+    return {{"id", panel.id},
+            {"name", panel.name},
+            {"body", panel.body},
+            {"store", panel.store},
+            {"area_m2", tidy(panel.area_m2)},
+            {"efficiency", tidy(panel.efficiency)},
+            {"at_m", vec(panel.at_m)},
+            {"normal", vec(panel.normal)},
+            {"cos_incidence", tidy(panel.cos_incidence)},
+            {"shaded", panel.shaded},
+            {"shaded_by", panel.shaded_by},
+            {"sunlight_w", tidy(panel.sunlight_w)},
+            {"power_w", tidy(panel.power_w)},
+            {"sunlight_j", tidy(panel.sunlight_j)},
+            {"collected_j", tidy(panel.collected_j)},
+            {"spilled_j", tidy(panel.spilled_j)},
+            {"heat_j", tidy(panel.heat_j)}};
 }
 
 nlohmann::json machinesOf(const LiveWorld &world) {
@@ -438,6 +474,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveJoint> joints = world.joints();
     const std::vector<LiveControl> controls = world.controls();
     const std::vector<LiveProgram> programs = world.programs();
+    const std::vector<LiveSolarPanel> panels = world.solarPanels();
     nlohmann::json ropes = nlohmann::json::array();
     for (const LiveJoint &joint : joints) {
         if (joint.kind != "drum" || !joint.attached) continue;
@@ -448,7 +485,8 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                          {"leaves", vec(joint.leaves_m)},
                          {"meets", vec(joint.meets_m)}});
     }
-    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty()) return nullptr;
+    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty() && panels.empty())
+        return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
     for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints, world));
@@ -461,6 +499,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"voltage_v", tidy(s.voltage_v)},
                                  {"max_power_w", tidy(s.max_power_w)},
                                  {"given_j", tidy(s.given_j)},
+                                 {"taken_j", tidy(s.taken_j)},
                                  {"short_j", tidy(s.short_j)}});
     for (const LiveMotor &m : motors) {
         // The two things its pin joins, by name: a step's joints travel only
@@ -490,10 +529,15 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"friction_heat_j", tidy(m.friction_heat_j)}});
     }
     out["circuits"] = nlohmann::json::parse(world.circuits());
-    // Only a world with a program says anything of programs.
+    // Only a world with a program says anything of programs, and only one
+    // with a solar panel of panels.
     if (!programs.empty()) {
         out["programs"] = nlohmann::json::array();
         for (const LiveProgram &p : programs) out["programs"].push_back(programOf(p, out["controls"]));
+    }
+    if (!panels.empty()) {
+        out["panels"] = nlohmann::json::array();
+        for (const LiveSolarPanel &panel : panels) out["panels"].push_back(panelOf(panel));
     }
     return out;
 }
@@ -2071,6 +2115,32 @@ int main(int argc, char **argv) {
                             "world: of kind \"water\", with a depth above nothing and no more than 10 m, stopping "
                             "the way 1 or -1");
                     reply["sensed"] = true;
+                } else if (op == "sun") {
+                    // The room's sun (LiveSun): where it stands in the sky and
+                    // how strongly it shines.
+                    if (!world->setSun(command.value("elevation_deg", -1.0), command.value("azimuth_deg", 0.0),
+                                       command.value("irradiance_w_m2", -1.0)))
+                        throw std::invalid_argument(
+                            "a sun is from 0 to 90 degrees above the horizon, at any azimuth, shining from 0 to "
+                            "1400 W/m2");
+                    reply["sun"] = sunOf(world->sun());
+                } else if (op == "solar_panel") {
+                    // A solar panel (LiveSolarPanel) on a part, wired to a store:
+                    // its middle and the way its face looks, given in the world.
+                    const nlohmann::json &at = command.at("at_m");
+                    const nlohmann::json &normal = command.at("normal");
+                    const unsigned made = world->solarPanel(
+                        command.value("name", std::string{}), command.value("body", std::string{}),
+                        command.at("store").get<unsigned>(),
+                        Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()},
+                        Vec3{normal.at(0).get<double>(), normal.at(1).get<double>(), normal.at(2).get<double>()},
+                        command.value("area_m2", 0.0), command.value("efficiency", 0.0));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a solar panel goes on a part that is in the world, wired to a store that is there, "
+                            "with a face that looks some way, an area above 0 and up to 100 m2, and an efficiency "
+                            "above 0 and at most 1");
+                    reply["solar_panel"] = made;
                 } else if (op == "program") {
                     // A program for a machine (LiveProgram): of a kind ("roam"),
                     // working the controllers of its left and right wheels, on a
@@ -2079,12 +2149,14 @@ int main(int argc, char **argv) {
                         command.value("name", std::string{}), command.value("kind", std::string{}),
                         command.at("left").get<unsigned>(), command.at("right").get<unsigned>(),
                         command.value("body", std::string{}), command.value("setting", 1.0),
-                        command.value("climb_deg", 8.0));
+                        command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
+                        command.value("rest_until", 0.0));
                     if (made == 0)
                         throw std::invalid_argument(
                             "a program is of kind \"roam\", on two shafts' controllers that no program works yet, "
-                            "each on a pin through the body it names, with a setting above 0 and no more than 1 and "
-                            "a climb above 0 and below 60 degrees");
+                            "each on a pin through the body it names, with a setting above 0 and no more than 1, "
+                            "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
+                            "more than 1");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,

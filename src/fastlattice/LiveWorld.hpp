@@ -417,11 +417,61 @@ struct LiveEnergyStore {
     double max_power_w{};
     // All it has given since it was made, joules.
     double given_j{};
+    // All it has taken in since it was made, joules: from solar panels
+    // (LiveSolarPanel). What it holds is what it began with, plus this, less
+    // what it has given.
+    double taken_j{};
     // What steps asked of it that it no longer had, joules. A motor's drive is
     // held to what is left before each step, from the speed the step starts
     // at; a step that ends faster did a little more work than that, and the
     // little is this. Reported rather than folded in anywhere.
     double short_j{};
+};
+
+// The room's sun (docs/machine-world.md, "Solar panels"): where it stands in
+// the sky and how strongly it shines on a surface square to its beam. A room
+// declares it; a room that does not has none, and its panels make nothing. It
+// stands where it is put: there is no day yet.
+struct LiveSun {
+    bool declared{};
+    double elevation_deg{};       // above the horizon
+    double azimuth_deg{};         // round from +z towards +x
+    double irradiance_w_m2{};     // on a surface square to its beam
+    Vec3 toward{0.0, 1.0, 0.0};   // unit vector from the ground towards it
+};
+
+// A solar panel (docs/machine-world.md, "Solar panels"): a flat collector fixed
+// on a part and wired to a store of energy. Each kept step it puts into its
+// store the sunlight on its face -- the sun's irradiance, times its area, times
+// the cosine of the angle between its face and the sun -- times its efficiency:
+// nothing while the sun is behind its face, or anything stands between it and
+// the sun, which a ray from just off its face towards the sun finds. What a
+// full store cannot take is spilled; the sunlight it does not turn into charge
+// is heat, which warms nothing yet.
+struct LiveSolarPanel {
+    unsigned id{};
+    std::string name;
+    std::string body;             // the part it is on
+    unsigned store{};             // what it charges (LiveEnergyStore)
+    // Its middle and the way its face looks, in the part's own frame about its
+    // centre of mass.
+    Vec3 at_local_m{}, normal_local{};
+    double area_m2{};
+    double efficiency{};          // the share of the sunlight on it it turns into charge
+    // As the last kept step left it: where it is and which way it faces; the
+    // cosine of the angle between its face and the sun, 0 with the sun behind
+    // it; whether something stands between it and the sun, and what -- a
+    // thing's name, or "the ground"; the sunlight on its face, and what it put
+    // into its store, watts.
+    Vec3 at_m{}, normal{};
+    double cos_incidence{};
+    bool shaded{};
+    std::string shaded_by;
+    double sunlight_w{}, power_w{};
+    // Since it was made, joules: the sunlight on its face, what it put into its
+    // store, what a full store could not take, and the rest, as heat. The
+    // sunlight is the other three together.
+    double sunlight_j{}, collected_j{}, spilled_j{}, heat_j{};
 };
 
 // A motor on a pin, wired to a store: a DC motor's torque-speed line, from the
@@ -571,13 +621,18 @@ struct LiveProgram {
     std::string body;             // the part both wheels turn on: its chassis, whose slope it reads
     double setting{1.0};          // the drive setting it tells its wheels, 0 to 1
     double climb_deg{8.0};        // nose up steeper than this, and it turns back
+    // Its battery -- the store its wheels' motors draw on -- below this share
+    // of full, and it stops to rest on its brakes until the battery is back to
+    // `rest_until`, charged by whatever charges it: a solar panel in the sun.
+    // Zero for a machine that never rests.
+    double rest_below{}, rest_until{};
     std::vector<LiveSensor> sensors;
     // What it was told, and by whom: on or off.
     bool power{};
     std::string sender;
     std::uint64_t seq{};
     // What it is doing -- "going forward", "backing off", "turning left",
-    // "turning right", "stopped" -- and why, as the last kept step left it; how
+    // "turning right", "resting", "stopped" -- and why, as the last kept step left it; how
     // long it has been doing it and how far it has turned in it; how many times
     // it has turned away from something since it was made; and the slope it
     // faces, nose up, and the one across it, its left side up, in degrees.
@@ -587,6 +642,10 @@ struct LiveProgram {
     double turned_deg{};
     unsigned turns{};
     double pitch_deg{}, roll_deg{};
+    // Its battery's share of full, as the last kept step left it, and how many
+    // times it has stopped to rest.
+    double charge_share{};
+    unsigned rests{};
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -985,7 +1044,8 @@ struct LiveRestore {
         std::size_t placed{};     // whole things whose cells could not be found again, put back where left
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
-        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, blades{}, tool_points{};
+        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{}, blades{},
+            tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
     };
@@ -1012,7 +1072,7 @@ struct LiveRestore {
 struct LiveCarry {
     // Explicit host assertion that terrain declarations/edits are unchanged.
     bool ground{};
-    std::set<unsigned> joints, energy_stores, motors, controls, programs, blades, tool_points;
+    std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1457,10 +1517,12 @@ public:
     // wheel to the left, in the body's own level. Returns its id, above zero,
     // or 0 when a controller is not there or is a hoist's, the two are one,
     // either is worked by a program already, `body` is not what both turn on,
-    // the kind is not one it knows, or the numbers are not a program's. It
-    // starts off, and does nothing to its wheels until it is turned on.
+    // the kind is not one it knows, or the numbers are not a program's -- a
+    // rest_until at or below a rest_below above 0, or either above 1. It starts
+    // off, and does nothing to its wheels until it is turned on.
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
-                     const std::string &body, double setting = 1.0, double climb_deg = 8.0);
+                     const std::string &body, double setting = 1.0, double climb_deg = 8.0,
+                     double rest_below = 0.0, double rest_until = 0.0);
     // A sensor on a program's machine, as sense() puts one on a controller's:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out
@@ -1477,6 +1539,21 @@ public:
     // a command.
     std::string run(unsigned program, const ProgramCommand &command);
     [[nodiscard]] std::vector<LiveProgram> programs() const;
+    // The room's sun (LiveSun): `elevation_deg` above the horizon, from 0 to 90,
+    // `azimuth_deg` round from +z towards +x, shining `irradiance_w_m2` on a
+    // surface square to its beam, from 0 to 1400 (a clear day's is about 1000).
+    // False, with nothing changed, for numbers that are not a sun's.
+    bool setSun(double elevation_deg, double azimuth_deg, double irradiance_w_m2);
+    [[nodiscard]] LiveSun sun() const;
+    // A solar panel (LiveSolarPanel) on the named part, wired to `store`: its
+    // middle at a point given where it is now in the world, its face looking
+    // along `normal_world`, of `area_m2` (up to 100), turning `efficiency` (above
+    // 0, at most 1) of the sunlight on it into charge. Returns its id, above
+    // zero, or 0 when the part or the store is not there or the numbers are not
+    // a panel's.
+    unsigned solarPanel(const std::string &name, const std::string &body, unsigned store, const Vec3 &at_world_m,
+                        const Vec3 &normal_world, double area_m2, double efficiency);
+    [[nodiscard]] std::vector<LiveSolarPanel> solarPanels() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;

@@ -163,6 +163,7 @@ def _declared(spec: dict[str, Any], machines: Any = None,
     motors = dict((made or {}).get("motors") or {})
     controls = dict((made or {}).get("controls") or {})
     programs = dict((made or {}).get("programs") or {})
+    panels = dict((made or {}).get("panels") or {})
     if isinstance(machines, dict):
         for store in machines.get("stores") or []:
             if isinstance(store.get("id"), int):
@@ -177,6 +178,9 @@ def _declared(spec: dict[str, Any], machines: Any = None,
         for program in machines.get("programs") or []:
             if isinstance(program.get("id"), int):
                 programs.setdefault(str(program.get("name", "")), program["id"])
+        for panel in machines.get("panels") or []:
+            if isinstance(panel.get("id"), int):
+                panels.setdefault(str(panel.get("name", "")), panel["id"])
     declared = spec.get("machines") or {}
     return {"joints": ided("joints"), "blades": ided("blades"), "tool_points": ided("tool_points"),
             "stores": [(_plain(s), stores[s["name"]]) for s in declared.get("stores") or []
@@ -188,7 +192,9 @@ def _declared(spec: dict[str, Any], machines: Any = None,
                          if isinstance(c, dict) and controls.get(c.get("name")) is not None],
             "programs": [(_made_program(q), bool(q.get("power", False)), programs[q["name"]])
                          for q in declared.get("programs") or []
-                         if isinstance(q, dict) and programs.get(q.get("name")) is not None]}
+                         if isinstance(q, dict) and programs.get(q.get("name")) is not None],
+            "panels": [(_plain(q), panels[q["name"]]) for q in declared.get("panels") or []
+                       if isinstance(q, dict) and panels.get(q.get("name")) is not None]}
 
 
 def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
@@ -207,8 +213,10 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     spec's entry index -> the id it keeps, "told": motor index -> (command,
     brake)}."""
     engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "controls": [], "programs": [],
+                              "solar_panels": [],
                               "blades": [], "tool_points": [], "declared_anew": []}
     pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "controls": {}, "programs": {},
+                                        "panels": {},
                                         "blades": {}, "tool_points": {}}
     told: dict[int, tuple[Any, Any]] = {}
     told_controls: dict[int, tuple[Any, Any, Any]] = {}
@@ -301,6 +309,18 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
         else:
             anew.update(str(sensor.get("body") or "") for sensor in program.get("sensors") or []
                         if isinstance(sensor, dict))
+    # A solar panel is kept when it is made the same way, as a store is; the
+    # engine keeps it only if its part and its store came back. One made anew
+    # goes on where the room has it, so its part comes back as the room has it.
+    pool = list(was.get("panels") or [])
+    for i, panel in enumerate(machines.get("panels") or []):
+        ident = keep(pool, _plain(panel)) if isinstance(panel, dict) else None
+        if ident is None:
+            if isinstance(panel, dict):
+                anew.add(str(panel.get("body") or ""))
+            continue
+        pairs["panels"][i] = ident
+        engine["solar_panels"].append(ident)
     engine["declared_anew"] = sorted(name for name in anew if name)
     return {"engine": engine, "pairs": pairs, "told": told, "told_controls": told_controls,
             "told_programs": told_programs}
@@ -711,6 +731,9 @@ class Live:
                                       made=made)
                 if powered.get("machine_problems"):
                     adopted["machine_problems"] = powered["machine_problems"]
+            # Its sun as the room has it: the saved world's, unless the room's
+            # has changed since.
+            adopted.update(self._sun(session, spec.get("sun")))
             session.declared = _declared(spec, opening.get("machines"), made)
             return {"session": session.id, "spec": spec, **opening, **adopted}
         if tier == "carried" and plan is not None:
@@ -719,6 +742,8 @@ class Live:
         hung = self._hang(session, pins)
         # And its batteries and the motors on its pins, which name the pins.
         hung.update(self._power(session, spec.get("machines") or {}, pins, made=made))
+        # And its sun, which its solar panels charge from.
+        hung.update(self._sun(session, spec.get("sun")))
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
         armed = self._arm(session, spec.get("blades") or [])
@@ -755,13 +780,20 @@ class Live:
         stores_now = {s.get("id") for s in machines_now.get("stores") or []}
         motors_now = {m.get("id") for m in machines_now.get("motors") or []}
         controls_now = {c.get("id") for c in machines_now.get("controls") or []}
-        made: dict[str, Any] = {"stores": {}, "motors": {}, "controls": {}, "programs": {}}
+        made: dict[str, Any] = {"stores": {}, "motors": {}, "controls": {}, "programs": {}, "panels": {}}
         new_stores, new_motors, new_controls, new_programs, told = [], [], [], [], False
         for i, store in enumerate(machines.get("stores") or []):
             if pairs["stores"].get(i) in stores_now:
                 made["stores"][str(store.get("name", ""))] = pairs["stores"][i]
             else:
                 new_stores.append(store)
+        panels_now = {q.get("id") for q in machines_now.get("panels") or []}
+        new_panels = []
+        for i, panel in enumerate(machines.get("panels") or []):
+            if pairs.get("panels", {}).get(i) in panels_now:
+                made["panels"][str(panel.get("name", ""))] = pairs["panels"][i]
+            else:
+                new_panels.append(panel)
         for i, motor in enumerate(machines.get("motors") or []):
             ident = pairs["motors"].get(i)
             if ident not in motors_now:
@@ -811,9 +843,12 @@ class Live:
                 except LiveError as error:
                     hung.setdefault("machine_problems", []).append(
                         f"the program {program.get('name')} would not take what it was told: {error}")
-        if new_stores or new_motors or new_controls or new_programs:
+        if new_stores or new_motors or new_controls or new_programs or new_panels:
+            # A new panel on a kept store finds the store by its name in
+            # `made`, which _power reads its stores from.
             powered = self._power(session, {"stores": new_stores, "motors": new_motors,
-                                            "controls": new_controls, "programs": new_programs}, pins, made=made)
+                                            "controls": new_controls, "programs": new_programs,
+                                            "panels": new_panels}, pins, made=made)
             if powered.get("machine_problems"):
                 hung.setdefault("machine_problems", []).extend(powered["machine_problems"])
         blades = [b for b in spec.get("blades") or []]
@@ -837,7 +872,8 @@ class Live:
         out = {"session": session.id, "spec": spec, **opening, **hung, **armed, **tooled}
         # Machines as they are now, when something was declared or told since
         # the opening said them.
-        if ((new_stores or new_motors or new_controls or new_programs or told)
+        out.update(self._sun(session, spec.get("sun")))
+        if ((new_stores or new_motors or new_controls or new_programs or new_panels or told)
                 and isinstance(session.state.get("machines"), dict)):
             out["machines"] = session.state["machines"]
         return out
@@ -1031,6 +1067,27 @@ class Live:
             stores[name] = answer.get("store")
             if made is not None:
                 made["stores"][name] = stores[name]
+        # Each solar panel (docs/machine-world.md, "Solar panels"), on its part
+        # where the room has it, wired to its store by name.
+        if made is not None:
+            made.setdefault("panels", {})
+        for panel in machines.get("panels") or []:
+            name = str(panel.get("name", ""))
+            store = stores.get(str(panel.get("store", "")))
+            if store is None:
+                problems.append(f"the {name} has no store called {panel.get('store', '')!r} to charge")
+                continue
+            try:
+                answer = session.send(op="solar_panel", name=name, body=str(panel.get("body", "")), store=store,
+                                      at_m=[float(v) / 1000.0 for v in panel.get("at_mm") or []],
+                                      normal=[float(v) for v in panel.get("normal") or []],
+                                      area_m2=float(panel.get("area_m2", 0.0)),
+                                      efficiency=float(panel.get("efficiency", 0.0)))
+            except Exception as error:
+                problems.append(f"the {name} would not go on: {error}")
+                continue
+            if made is not None and answer.get("solar_panel") is not None:
+                made["panels"][name] = answer.get("solar_panel")
         hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
                   for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
         # Each motor's id by its pin's two things -- those the world has
@@ -1144,7 +1201,9 @@ class Live:
                 answer = session.send(op="program", name=name, kind=str(program.get("kind", "roam")),
                                       left=left, right=right, body=str(program.get("body", "")),
                                       setting=float(program.get("setting", 1.0)),
-                                      climb_deg=float(program.get("climb_deg", 8.0)))
+                                      climb_deg=float(program.get("climb_deg", 8.0)),
+                                      rest_below=float(program.get("rest_below", 0.0)),
+                                      rest_until=float(program.get("rest_until", 0.0)))
             except Exception as error:
                 problems.append(f"the program {name} would not go on: {error}")
                 continue
@@ -1166,6 +1225,21 @@ class Live:
                 except Exception as error:
                     problems.append(f"the program {name} would not start: {error}")
         return {"machine_problems": problems} if problems else {}
+
+    @staticmethod
+    def _sun(session: "Session", sun: Any) -> dict[str, Any]:
+        """The room's sun put in its sky (docs/machine-world.md, "Solar
+        panels"), and said back for the page to light the room from it. A sun
+        that will not go up is said out loud, as a pin that will not hang is."""
+        if not isinstance(sun, dict) or not sun:
+            return {}
+        try:
+            answer = session.send(op="sun", elevation_deg=float(sun.get("elevation_deg", 45.0)),
+                                  azimuth_deg=float(sun.get("azimuth_deg", 0.0)),
+                                  irradiance_w_m2=float(sun.get("irradiance_w_m2", 1000.0)))
+        except Exception as error:
+            return {"sun_problem": f"the sun would not go up: {error}"}
+        return {"sun": answer.get("sun")} if answer.get("sun") else {}
 
     @staticmethod
     def _hang(session: "Session", pins: Any) -> dict[str, Any]:

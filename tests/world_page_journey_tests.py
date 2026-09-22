@@ -27,7 +27,8 @@ A cart drives itself to a lake's edge (docs/machine-world.md): E on its front
 wheels opens its panel, On and Forward send it down the shore, and its water
 sensor stops it with its front wheels dry. A rover roams the shore by itself:
 E on it opens its program's panel, On sets it roaming, turning away from the
-water, and Off stops it.
+water, and Off stops it. With its battery low it rests while the solar panel
+on its deck charges it from the room's sun.
 
 Each starts a playground server of its own on a free port, with the engine the
 build made (BANJO_BUILD_DIR, or build/integration/Release) and rooms in a
@@ -1020,6 +1021,64 @@ class ARoverRoamsTheShore(PageJourney):
         self.wait_world(1.0)
         self.assertLess(math.dist(self.position("rover"), rest), 0.02, "turned off, it did not stop")
         self.no_page_errors("after the rover roamed")
+
+
+class ARoverRestsInTheSun(PageJourney):
+    """Solar panels (docs/machine-world.md), in the tests-solar room: the rover's
+    battery is nearly flat, and a solar panel on its deck charges it from the
+    room's sun, which the page is lit from.
+
+    Turned on from its panel, it roams until its battery is low, then rests
+    where it is, on its brakes, while the sun charges it. The panel says why;
+    the Machines list says what the solar panel gives and what the battery has
+    taken in. Off, and it stops."""
+
+    def test_it_rests_while_the_sun_charges_it(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-solar"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-solar' && "
+                                      "banjoRoom.ready()", 300), "the solar room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && "
+                                      "(banjoRoom.world.machines.programs || []).length === 1", 60),
+                        f"the room's steps do not carry the rover's program: {self.situation()}")
+        sun = self.js("banjoRoom.world.sun")
+        self.assertTrue(sun and sun["elevation_deg"] == 50.0, f"the page does not have the room's sun: {sun}")
+        program = "banjoRoom.world.machines.programs[0]"
+        store = "banjoRoom.world.machines.stores[0]"
+        x, y, z = self.at_rest("rover")
+        self.page.evaluate(f"banjoRoom.standAt({x + 0.3}, {y + 1.4}, {z - 1.9}); "
+                           f"banjoRoom.lookAt({x}, {y + 0.05}, {z}); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 10),
+                        f"the crosshair is not on the rover: {self.situation()}")
+        self.assertTrue(self.offering("Open the rover's panel"), f"E does not open its panel: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
+                        f"E did not open the rover's panel: {self.situation()}")
+        self.click("mp-on")
+        self.assertTrue(self.wait_for(f"{program}.power === true", 15),
+                        f"On did not reach the rover's program: {self.situation()}")
+        self.assertTrue(self.wait_for(f"{program}.doing === 'resting'", 240),
+                        f"its battery never ran low enough to rest: {self.situation()}")
+        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
+        self.assertEqual(text("mp-condition"), "its battery is low, so it rests while its panel charges it")
+        rest = self.at_rest("rover")
+        charge, began = self.js(f"{store}.charge_j"), self.js("banjoRoom.status().time_s")
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < 8.0:
+            time.sleep(0.5)
+        gained = self.js(f"{store}.charge_j") - charge
+        panel = self.js("banjoRoom.world.machines.panels[0]")
+        listed = self.js("document.getElementById('machine-list').innerText")
+        print(f"\n   resting in the sun for 8 s: the battery gained {gained:.0f} J, the panel giving "
+              f"{panel['power_w']:.1f} W of {panel['sunlight_w']:.0f} W of sun", flush=True)
+        self.assertGreater(gained, 100.0, "resting in the sun, its battery did not charge")
+        self.assertGreater(panel["power_w"], 0.0)
+        self.assertIn("solar panel on rover", listed)
+        self.assertIn("has taken in", listed)
+        self.assertLess(math.dist(self.position("rover"), rest), 0.02, "resting, it moved")
+        self.click("mp-off")
+        self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
+                        f"Off did not reach the rover's program: {self.situation()}")
+        self.no_page_errors("after the rover rested in the sun")
 
 
 class AChatChangeKeepsTheHoistUp(PageJourney):

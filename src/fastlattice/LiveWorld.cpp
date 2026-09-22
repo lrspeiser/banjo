@@ -1586,6 +1586,55 @@ struct LiveWorld::Impl {
         }
     }
 
+    // ---- the sun and solar panels (LiveSun, LiveSolarPanel) --------------------
+    LiveSun sun;
+    std::vector<LiveSolarPanel> panels;
+    unsigned next_panel{1};
+    // After a kept step: where each panel is and which way it faces, the
+    // sunlight on it, and what it put into its store -- after the motors have
+    // drawn what the step cost them, so the step's charge is what they had.
+    void settlePanels(double dt_s) {
+        constexpr double kOffFaceM = 0.01;
+        constexpr double kReachM = 1000.0;
+        for (LiveSolarPanel &panel : panels) {
+            panel.cos_incidence = panel.sunlight_w = panel.power_w = 0.0;
+            panel.shaded = false;
+            panel.shaded_by.clear();
+            const auto found = index_of.find(panel.body);
+            if (found == index_of.end() || !inWorld(found->second)) continue;
+            const RigidSnapshot at = world->snapshot(body_of[found->second]);
+            panel.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(panel.at_local_m);
+            panel.normal = at.orientation_world.rotate(panel.normal_local);
+            if (!sun.declared) continue;
+            panel.cos_incidence = std::max(0.0, dot(panel.normal, sun.toward));
+            if (!(panel.cos_incidence > 0.0)) continue;
+            // Anything between it and the sun: a thing, or the ground itself.
+            const RayHit hit = world->castRay(panel.at_m + kOffFaceM * panel.normal, sun.toward, kReachM);
+            if (hit.hit) {
+                panel.shaded = true;
+                panel.shaded_by = "the ground";
+                if (hit.named)
+                    for (std::size_t i = 0; i < body_of.size(); ++i)
+                        if (body_of[i] == hit.body_id) panel.shaded_by = described[i].name;
+                continue;
+            }
+            panel.sunlight_w = sun.irradiance_w_m2 * panel.area_m2 * panel.cos_incidence;
+            const double sunlight = panel.sunlight_w * dt_s;
+            const double made = sunlight * panel.efficiency;
+            double taken = 0.0;
+            if (LiveEnergyStore *store = energyStoreById(panel.store); store != nullptr) {
+                taken = std::clamp(store->capacity_j - store->charge_j, 0.0, made);
+                store->charge_j += taken;
+                store->taken_j += taken;
+            }
+            panel.power_w = taken / dt_s;
+            panel.sunlight_j += sunlight;
+            panel.collected_j += taken;
+            panel.spilled_j += made - taken;
+            panel.heat_j += sunlight - made;
+        }
+    }
+
     // ---- a machine's program (LiveProgram) ------------------------------------
     [[nodiscard]] Control *controlById(unsigned id) {
         for (Control &c : controls)
@@ -1594,9 +1643,18 @@ struct LiveWorld::Impl {
     }
     // A program's machine as the last kept step left it: what its sensors
     // read, and its chassis's slope, nose up and left side up, and heading.
+    // The store a program's machine runs on: the one its left wheel's motor
+    // draws on.
+    [[nodiscard]] LiveEnergyStore *storeOfProgram(const Program &p) {
+        const Control *left = controlById(p.said.left);
+        const Motor *motor = left != nullptr ? motorById(left->said.motor) : nullptr;
+        return motor != nullptr ? energyStoreById(motor->said.store) : nullptr;
+    }
     void readProgram(Program &p) {
         constexpr double kDegPerRad = 57.295779513082320876798;
         readSensorList(p.said.sensors);
+        if (const LiveEnergyStore *store = storeOfProgram(p); store != nullptr && store->capacity_j > 0.0)
+            p.said.charge_share = store->charge_j / store->capacity_j;
         const auto found = index_of.find(p.said.body);
         if (found == index_of.end() || !inWorld(found->second)) return;
         const RigidSnapshot at = world->snapshot(body_of[found->second]);
@@ -1656,10 +1714,27 @@ struct LiveWorld::Impl {
             return c.tripped && c.said.condition.rfind("stalled", 0) == 0;
         };
         const int alternate = s.turns % 2 == 0 ? 1 : -1;
+        // What charges its battery: a solar panel wired to it with the sun on it.
+        const LiveEnergyStore *store = storeOfProgram(p);
+        const auto charging = [&]() {
+            return std::any_of(panels.begin(), panels.end(), [&](const LiveSolarPanel &panel) {
+                return store != nullptr && panel.store == store->id && panel.power_w > 0.0;
+            });
+        };
+        const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
         if (!s.power) {
             if (s.doing != "stopped") into("stopped", "off");
         } else if (s.doing == "stopped") {
             into("going forward", "nothing in its way");
+        } else if (s.doing == "resting") {
+            if (s.charge_share >= s.rest_until) into("going forward", "its battery is charged again");
+            else s.why = charging() ? "its battery is low, so it rests while its panel charges it"
+                                    : "its battery is low, and nothing is charging it";
+        } else if (low) {
+            // Whatever it is doing: it stops where it is, on its brakes.
+            into("resting", charging() ? "its battery is low, so it rests while its panel charges it"
+                                       : "its battery is low, and nothing is charging it");
+            ++s.rests;
         } else if (s.doing == "going forward") {
             if (water_left && water_right) {
                 into("backing off", "water ahead");
@@ -1694,7 +1769,7 @@ struct LiveWorld::Impl {
             else if (s.doing_s >= kTurnMostS)
                 into("going forward", "it could not turn clear in time, so it goes on");
         }
-        int l = 0, r = 0;
+        int l = 0, r = 0;   // stopped, or resting: held on their brakes
         if (s.doing == "going forward") l = r = 1;
         else if (s.doing == "backing off") l = r = -1;
         else if (s.doing == "turning left") l = -1, r = 1;
@@ -4222,6 +4297,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         store.voltage_v = numberFrom(o.at("voltage_v"));
         store.max_power_w = numberFrom(o.at("max_power_w"));
         store.given_j = numberFrom(o.at("given_j"));
+        store.taken_j = o.contains("taken_j") ? numberFrom(o.at("taken_j")) : 0.0;
         store.short_j = numberFrom(o.at("short_j"));
         // Carried: what it holds and has given, while what it is in came back
         // as it was saved and the host still declares it the same way.
@@ -4379,6 +4455,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.doing_s = numberFrom(o.at("doing_s"));
         p.said.turned_deg = numberFrom(o.at("turned_deg"));
         p.said.turns = o.at("turns").get<unsigned>();
+        p.said.rest_below = o.contains("rest_below") ? numberFrom(o.at("rest_below")) : 0.0;
+        p.said.rest_until = o.contains("rest_until") ? numberFrom(o.at("rest_until")) : 0.0;
+        p.said.rests = o.value("rests", 0U);
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
@@ -4401,6 +4480,42 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.programs.push_back(std::move(p));
     }
     impl.next_program = doc.value("next_program", 1U);
+    // The room's sun, and each solar panel, carried while its part and its
+    // store came back and the host still declares it the same way.
+    if (doc.contains("sun")) {
+        const nlohmann::json &sun = doc.at("sun");
+        if (!live->setSun(numberFrom(sun.at("elevation_deg")), numberFrom(sun.at("azimuth_deg")),
+                          numberFrom(sun.at("irradiance_w_m2"))))
+            throw std::invalid_argument("a saved sun is not one this engine can put in the sky");
+    }
+    for (const nlohmann::json &o : doc.value("solar_panels", nlohmann::json::array())) {
+        LiveSolarPanel panel;
+        panel.id = o.at("id").get<unsigned>();
+        panel.name = o.at("name").get<std::string>();
+        panel.body = o.at("body").get<std::string>();
+        panel.store = o.at("store").get<unsigned>();
+        panel.at_local_m = vecFrom(o.at("at_local_m"));
+        panel.normal_local = vecFrom(o.at("normal_local"));
+        panel.area_m2 = numberFrom(o.at("area_m2"));
+        panel.efficiency = numberFrom(o.at("efficiency"));
+        panel.sunlight_j = numberFrom(o.at("sunlight_j"));
+        panel.collected_j = numberFrom(o.at("collected_j"));
+        panel.spilled_j = numberFrom(o.at("spilled_j"));
+        panel.heat_j = numberFrom(o.at("heat_j"));
+        if (carrying) {
+            const bool declared = kept(asked.solar_panels, panel.id);
+            const bool store = impl.energyStoreById(panel.store) != nullptr;
+            if (!declared || !store || !back(panel.body)) {
+                if (declared)
+                    lost.push_back("the " + panel.name + ": the " + (store ? panel.body : std::string("store")) +
+                                   " it is on did not come back as it was, so it is as the room declares it");
+                continue;
+            }
+            ++said.carried.solar_panels;
+        }
+        impl.panels.push_back(std::move(panel));
+    }
+    impl.next_panel = doc.value("next_panel", 1U);
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -4846,6 +4961,7 @@ void LiveWorld::step(double dt_s) {
         // nothing from a store.
         if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
         if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
+        if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
         if (!impl_->controls.empty()) impl_->settleControls(dt_s);
         if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
@@ -4885,6 +5001,7 @@ void LiveWorld::step(double dt_s) {
     impl_->rememberJointAngles(*impl_->world);
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
+    if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
     settleCuts(dt_s);
@@ -5752,10 +5869,13 @@ std::vector<LiveControl> LiveWorld::controls() const {
 }
 
 unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
-                            const std::string &body, double setting, double climb_deg) {
+                            const std::string &body, double setting, double climb_deg, double rest_below,
+                            double rest_until) {
     Impl &I = *impl_;
     if (kind != "roam" || left == right) return 0;
     if (!(setting > 0.0 && setting <= 1.0) || !(climb_deg > 0.0 && climb_deg < 60.0)) return 0;
+    if (!(rest_below >= 0.0 && rest_below < 1.0) || (rest_below > 0.0 && !(rest_until > rest_below && rest_until <= 1.0)))
+        return 0;
     Impl::Control *l = I.controlById(left);
     Impl::Control *r = I.controlById(right);
     if (l == nullptr || r == nullptr || l->said.rope != 0 || r->said.rope != 0) return 0;
@@ -5797,6 +5917,8 @@ unsigned LiveWorld::program(const std::string &name, const std::string &kind, un
     p.said.body = body;
     p.said.setting = setting;
     p.said.climb_deg = climb_deg;
+    p.said.rest_below = rest_below;
+    p.said.rest_until = rest_below > 0.0 ? rest_until : 0.0;
     I.readProgram(p);
     I.programs.push_back(std::move(p));
     return I.programs.back().said.id;
@@ -5869,6 +5991,55 @@ std::vector<LiveProgram> LiveWorld::programs() const {
     for (const Impl::Program &p : impl_->programs) out.push_back(p.said);
     return out;
 }
+
+bool LiveWorld::setSun(double elevation_deg, double azimuth_deg, double irradiance_w_m2) {
+    if (!std::isfinite(elevation_deg) || !std::isfinite(azimuth_deg) || !std::isfinite(irradiance_w_m2) ||
+        elevation_deg < 0.0 || elevation_deg > 90.0 || irradiance_w_m2 < 0.0 || irradiance_w_m2 > 1400.0)
+        return false;
+    constexpr double kRadPerDeg = 3.14159265358979323846 / 180.0;
+    LiveSun &sun = impl_->sun;
+    sun.declared = true;
+    sun.elevation_deg = elevation_deg;
+    sun.azimuth_deg = azimuth_deg;
+    sun.irradiance_w_m2 = irradiance_w_m2;
+    const double el = elevation_deg * kRadPerDeg, az = azimuth_deg * kRadPerDeg;
+    sun.toward = Vec3{std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
+    return true;
+}
+
+LiveSun LiveWorld::sun() const { return impl_->sun; }
+
+unsigned LiveWorld::solarPanel(const std::string &name, const std::string &body, unsigned store,
+                               const Vec3 &at_world_m, const Vec3 &normal_world, double area_m2, double efficiency) {
+    Impl &I = *impl_;
+    if (I.energyStoreById(store) == nullptr) return 0;
+    if (!(area_m2 > 0.0 && area_m2 <= 100.0) || !(efficiency > 0.0 && efficiency <= 1.0)) return 0;
+    if (!std::isfinite(at_world_m.x) || !std::isfinite(at_world_m.y) || !std::isfinite(at_world_m.z) ||
+        !std::isfinite(normal_world.x) || !std::isfinite(normal_world.y) || !std::isfinite(normal_world.z) ||
+        length(normal_world) < 1e-6)
+        return 0;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+    // Kept in the part's own frame, so the panel goes, and turns, where the
+    // part does.
+    const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
+    const Quat back = conjugateOf(at.orientation_world);
+    LiveSolarPanel panel;
+    panel.id = I.next_panel++;
+    panel.name = name.empty() ? "solar panel " + std::to_string(panel.id) : name;
+    panel.body = body;
+    panel.store = store;
+    panel.at_local_m = back.rotate(at_world_m - at.center_of_mass_world_m);
+    panel.normal_local = back.rotate(normalized(normal_world));
+    panel.area_m2 = area_m2;
+    panel.efficiency = efficiency;
+    panel.at_m = at_world_m;
+    panel.normal = normalized(normal_world);
+    I.panels.push_back(std::move(panel));
+    return I.panels.back().id;
+}
+
+std::vector<LiveSolarPanel> LiveWorld::solarPanels() const { return impl_->panels; }
 
 double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) const {
     const auto found = impl_->index_of.find(name);
@@ -13561,6 +13732,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                  {"voltage_v", savedNumber(s.voltage_v)},
                                  {"max_power_w", savedNumber(s.max_power_w)},
                                  {"given_j", savedNumber(s.given_j)},
+                                 {"taken_j", savedNumber(s.taken_j)},
                                  {"short_j", savedNumber(s.short_j)}});
     doc["energy_stores"] = std::move(energy_stores);
     nlohmann::json motors = nlohmann::json::array();
@@ -13647,6 +13819,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"doing_s", savedNumber(p.said.doing_s)},
                                 {"turned_deg", savedNumber(p.said.turned_deg)},
                                 {"turns", p.said.turns},
+                                {"rest_below", savedNumber(p.said.rest_below)},
+                                {"rest_until", savedNumber(p.said.rest_until)},
+                                {"rests", p.said.rests},
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},
@@ -13654,6 +13829,30 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         }
         doc["programs"] = std::move(programs);
         doc["next_program"] = I.next_program;
+    }
+    // The room's sun, and each solar panel with its account. Only a world with
+    // either says anything of them.
+    if (I.sun.declared)
+        doc["sun"] = {{"elevation_deg", savedNumber(I.sun.elevation_deg)},
+                      {"azimuth_deg", savedNumber(I.sun.azimuth_deg)},
+                      {"irradiance_w_m2", savedNumber(I.sun.irradiance_w_m2)}};
+    if (!I.panels.empty()) {
+        nlohmann::json panels = nlohmann::json::array();
+        for (const LiveSolarPanel &panel : I.panels)
+            panels.push_back({{"id", panel.id},
+                              {"name", panel.name},
+                              {"body", panel.body},
+                              {"store", panel.store},
+                              {"at_local_m", savedVec(panel.at_local_m)},
+                              {"normal_local", savedVec(panel.normal_local)},
+                              {"area_m2", savedNumber(panel.area_m2)},
+                              {"efficiency", savedNumber(panel.efficiency)},
+                              {"sunlight_j", savedNumber(panel.sunlight_j)},
+                              {"collected_j", savedNumber(panel.collected_j)},
+                              {"spilled_j", savedNumber(panel.spilled_j)},
+                              {"heat_j", savedNumber(panel.heat_j)}});
+        doc["solar_panels"] = std::move(panels);
+        doc["next_panel"] = I.next_panel;
     }
     doc["next_energy_store"] = I.next_energy_store;
     doc["next_motor"] = I.next_motor;
@@ -13893,6 +14092,7 @@ LiveCarry LiveWorld::carryAll(const std::string &snapshot) {
     ids("motors", all.motors);
     ids("controls", all.controls);
     ids("programs", all.programs);
+    ids("solar_panels", all.solar_panels);
     ids("blades", all.blades);
     ids("tool_points", all.tool_points);
     return all;

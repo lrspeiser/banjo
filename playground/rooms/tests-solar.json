@@ -158,6 +158,8 @@
     "kind": "roam",
     "left": "left wheel",
     "name": "rover",
+    "rest_below": 0.25,
+    "rest_until": 0.6,
     "right": "right wheel",
     "sensors": [
      {
@@ -187,8 +189,8 @@
   "stores": [
    {
     "body": "rover",
-    "capacity_j": 100000.0,
-    "charge_j": 100000.0,
+    "capacity_j": 5000.0,
+    "charge_j": 1400.0,
     "name": "rover battery",
     "voltage_v": 24.0
    }

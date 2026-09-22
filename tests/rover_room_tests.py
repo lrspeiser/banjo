@@ -90,7 +90,8 @@ class CarryingIt(unittest.TestCase):
     def was(self, room, running=False):
         made = {"stores": {"rover battery": 1},
                 "motors": {("rover", "rover: left wheel"): 1, ("rover", "rover: right wheel"): 2},
-                "controls": {"left wheel": 1, "right wheel": 2}, "programs": {"rover": 1}}
+                "controls": {"left wheel": 1, "right wheel": 2}, "programs": {"rover": 1},
+                "panels": {"solar panel": 1}}
         declared = live_session._declared(room, None, made)
         if running:
             declared["programs"] = [(made_as, True, ident) for made_as, _, ident in declared["programs"]]

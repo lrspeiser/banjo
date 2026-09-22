@@ -9,6 +9,9 @@
 //    water wherever a sensor sees it, and none of it is ever in the water.
 // 3. Turned off, it stops on its brakes; a stale command changes nothing.
 // 4. A saved world gives it back roaming, as far into what it was doing.
+// 5. With a solar panel on its deck and its battery low, it rests in the sun
+//    until the panel has charged it, and roams on; every joule the battery
+//    held, took in and gave is accounted for.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -70,11 +73,14 @@ nlohmann::json body(const std::string &name, const std::string &material, Vec3 a
 // left the +x side. An oak deck on two bearing mounts at the back and a caster
 // mount at the front; each back wheel a 320 mm oak wheel on an iron stub
 // through its mount; the caster an iron fork on a swivel under the front, with
-// a 160 mm oak wheel trailing 60 mm behind the swivel's axis.
+// a 160 mm iron wheel trailing 60 mm behind the swivel's axis -- iron, as a
+// real caster's is: a light oak one sank into the ground under the rover's
+// weight at steps longer than the page's.
 std::string roverScene(Vec3 at) {
     const nlohmann::json chassis = body(
         "rover", "oak", at,
         nlohmann::json::array({box("deck", {0.7, 0.04, 1.0}, {0.0, 0.36, 0.0}),
+                               box("solar panel", {0.4, 0.01, 0.5}, {0.0, 0.385, -0.05}, "glass"),
                                box("left mount", {0.0345, 0.18, 0.0345}, {0.1925, 0.25, -0.32}),
                                box("right mount", {0.0345, 0.18, 0.0345}, {-0.1925, 0.25, -0.32}),
                                box("caster mount", {0.10, 0.03, 0.10}, {0.0, 0.325, 0.38})}));
@@ -90,7 +96,7 @@ std::string roverScene(Vec3 at) {
                                box("right cheek", {0.012, 0.22, 0.05}, {-0.035, 0.18, 0.335}),
                                roundAcross("pin", 0.012, 0.082, {0.0, 0.08, 0.32})}));
     const nlohmann::json caster_wheel =
-        body("rover: caster wheel", "oak", at,
+        body("rover: caster wheel", "iron", at,
              nlohmann::json::array({roundAcross("wheel", 0.16, 0.04, {0.0, 0.08, 0.32})}));
     return nlohmann::json::array({chassis, wheel("rover: left wheel", 1.0), wheel("rover: right wheel", -1.0), fork,
                                   caster_wheel})
@@ -222,7 +228,10 @@ void itGoesStraightAndTurnsOnTheSpot() {
     }
     std::cout << "    from rest, left forward and right back for 3 s: turned " << swept * 180.0 / kPi
               << " degrees, never more than " << furthest << " m from where it began\n";
-    require(swept * 180.0 / kPi < -90.0,
+    // Its iron caster wheel scrubs as it swings round to follow, so it turns on
+    // the spot slowly: 68 degrees in the 3 s here (the oak wheel it had first
+    // let it turn 200, but sank into the ground at the page's longer steps).
+    require(swept * 180.0 / kPi < -45.0,
             "driven against each other, it turns right, the left wheel forward: " +
                 std::to_string(swept * 180.0 / kPi) + " degrees");
     require(furthest < 1.5, "and turns near where it is: " + std::to_string(furthest) + " m");
@@ -425,6 +434,82 @@ void aSavedRoverRoamsOn() {
     require(wet <= 0.003, "and stays out of the water");
 }
 
+// 5. The rover with a solar panel on its deck -- 0.2 m2, a fifth of the
+//    sunlight into charge -- under a sun 50 degrees up, and a small battery
+//    already down to 28%: told to rest below a quarter and roam again at
+//    three fifths. Roaming draws more than the panel gives, so it runs down,
+//    stops where it is on its brakes, rests while the sun charges it, and goes
+//    on. Nothing else puts energy in or takes it out.
+void itRestsInTheSunAndRoamsOn() {
+    const auto world = LiveWorld::open(shoreRoom());
+    const Pins pins = pinUp(*world, kShoreAt);
+    Machine m;
+    m.store = world->energyStore("battery", "rover", 5000.0, 1400.0, 24.0, 0.0);
+    m.left_motor = world->motor(pins.left, m.store, 20.0, 2.0 * kPi, 40.0);
+    m.right_motor = world->motor(pins.right, m.store, 20.0, 2.0 * kPi, 40.0);
+    m.left = world->control("left wheel", m.left_motor);
+    m.right = world->control("right wheel", m.right_motor);
+    const unsigned panel =
+        world->solarPanel("panel", "rover", m.store, kShoreAt + Vec3{0.0, 0.39, -0.05}, {0.0, 1.0, 0.0}, 0.2, 0.2);
+    const unsigned program = world->program("rover", "roam", m.left, m.right, "rover", 1.0, 8.0, 0.25, 0.6);
+    require(panel != 0 && program != 0, "the panel or the program would not go on");
+    require(world->program("twin", "roam", m.left, m.right, "rover", 1.0, 8.0, 0.5, 0.4) == 0,
+            "a program that would rest until less than it rests below is refused");
+    for (const double side : {0.55, -0.55})
+        require(world->programSense(program, "water", "rover", kShoreAt + Vec3{side, 0.36, 1.0}, 0.003),
+                "a sensor would not fit");
+    require(world->setSun(50.0, 200.0, 1000.0), "the sun would not go in the sky");
+    for (int i = 0; i < 240; ++i) tick(*world);
+    const double began = 1400.0;   // as the battery was made; the sun has been on it since
+    runIt(*world, program, true, 1);
+    std::vector<std::string> seen;
+    double rested_from = -1.0, charged_to = 0.0, moved_while_resting = 0.0, wet = 0.0;
+    Vec3 rested_at{};
+    bool stopped = false;
+    for (int i = 0; i < 180 * 240; ++i) {
+        tick(*world);
+        const LiveProgram said = programOf(*world, program);
+        if (seen.empty() || seen.back() != said.doing) {
+            seen.push_back(said.doing);
+            if (said.doing == "resting") {
+                rested_from = world->energyStores().front().charge_j;
+                stopped = false;
+            }
+        }
+        // Once it has come to a stop on its brakes -- a second in -- it stays put.
+        if (said.doing == "resting" && said.doing_s >= 1.0 && i % 24 == 0) {
+            const Vec3 at = posed(world->poses(), "rover").position_m;
+            if (!stopped) rested_at = at;
+            stopped = true;
+            moved_while_resting = std::max(moved_while_resting, length(at - rested_at));
+        }
+        if (said.doing == "resting") charged_to = std::max(charged_to, world->energyStores().front().charge_j);
+        if (i % 24 == 23) wet = std::max(wet, wettest(*world));
+        // Rested, and roaming again a while: enough seen.
+        if (said.rests >= 1 && said.doing != "resting" && seen.size() >= 3 && said.doing_s > 5.0) break;
+    }
+    const LiveProgram said = programOf(*world, program);
+    const LiveEnergyStore store = world->energyStores().front();
+    LiveSolarPanel p;
+    for (const LiveSolarPanel &each : world->solarPanels()) p = each;
+    std::string order;
+    for (const std::string &each : seen) order += (order.empty() ? "" : ", ") + each;
+    std::cout << "    from " << began << " J: " << order << "; it rested from " << rested_from << " J up to "
+              << charged_to << " J, the panel giving " << p.power_w << " W of " << p.sunlight_w
+              << " W of sun; now " << store.charge_j << " J (took in " << store.taken_j << ", gave "
+              << store.given_j << "); at most " << wet * 1000.0 << " mm of water under a wheel\n";
+    require(said.rests >= 1 && rested_from > 0.0, "its battery ran low and it rested: " + order);
+    require(rested_from < 0.25 * 5000.0 + 50.0, "it rested when the battery was down to a quarter");
+    require(charged_to >= 0.6 * 5000.0 - 1.0, "resting, the sun charged it back to three fifths");
+    require(moved_while_resting < 0.02, "resting, it stayed where it stopped: " + std::to_string(moved_while_resting));
+    require(said.doing != "resting" && std::find(seen.begin(), seen.end(), "resting") != seen.end(),
+            "and then it roamed on");
+    require(std::abs(store.charge_j - (began + store.taken_j - store.given_j)) < 1e-6,
+            "what the battery holds is what it held, plus what it took in, less what it gave");
+    require(std::abs(store.taken_j - p.collected_j) < 1e-9, "and all it took in came from its panel");
+    require(wet <= 0.003, "and it stayed out of the water");
+}
+
 } // namespace
 
 int main() {
@@ -432,6 +517,7 @@ int main() {
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
         {"it roams the shore and never gets wet", itRoamsTheShoreAndNeverGetsWet},
         {"a saved rover roams on", aSavedRoverRoamsOn},
+        {"it rests in the sun and roams on", itRestsInTheSunAndRoamsOn},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;

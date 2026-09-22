@@ -502,6 +502,33 @@ how long, how far it has turned, how many `turns` it has made, the slope under
 it (`pitch_deg`, `roll_deg`), its sensors with their `side`, and its `parts`. A
 saved world keeps its programs.
 
+**A room's sun** is a key of its own, and **its solar panels** go in its
+`machines`:
+
+```json
+"sun": {"elevation_deg": 50, "azimuth_deg": 200, "irradiance_w_m2": 1000},
+"machines": {"panels": [{"name": "solar panel", "body": "rover", "store": "rover battery",
+                         "at_mm": [0, 1174, -9006], "normal": [0, 0.994, 0.111],
+                         "area_m2": 0.2, "efficiency": 0.2}], ...}
+```
+
+- `elevation_deg` is 0 to 90 above the horizon, `azimuth_deg` is round from +z
+  towards +x, and `irradiance_w_m2` is 0 to 1400.
+- A panel names its part and its store. It is where it is as the room is made,
+  like a pin, facing along `normal`. Its `area_m2` is up to 100, and its
+  `efficiency` is above 0 and at most 1.
+- A program can say `rest_below` and `rest_until`: the shares of full at which
+  it stops to rest and at which it goes on.
+
+The runner's `sun` operation puts the sun in the sky and says it back, with
+`toward`, the unit vector to it. `solar_panel` puts a panel on
+(`{"op": "solar_panel", "name", "body", "store": store id, "at_m", "normal",
+"area_m2", "efficiency"}`), and `program` takes `rest_below` and `rest_until`.
+`machines` reports each panel with `panels`: where it is, the cosine of its
+angle to the sun, whether it is in shade and by what, the sunlight on it and
+the power it gives, and its account. It also reports what each store has
+`taken_j`.
+
 ## Milestone 2, its first step: a cart that stops at the water's edge
 
 **Status, 2026-09-22.** The Workshop's cart drives itself down a shore and
@@ -656,6 +683,77 @@ Not built yet: a bump sensor that feels a knock rather than a stall, and
 finding a charging post and docking at it, which waits on decision D1. The
 C API, the Python binding and the chat's tools do not carry programs yet.
 
+## Solar panels
+
+**The owner's decision, 2026-09-22 (D1):** a machine's battery is charged by
+solar panels.
+
+**Status, 2026-09-22.** A room can have a sun, and a machine can carry solar
+panels that charge its battery from it. The rover rests in the sun when its
+battery runs low, and roams on once the panel has charged it.
+
+**The sun** is the room's to declare: how high it stands, which way it lies,
+and how strongly it shines on a surface square to its beam. A clear day's is
+about 1000 W/m2. It stands where it is put: there is no day yet. The page is
+lit from where the engine has it.
+
+**A solar panel** is a flat collector fixed on a part and wired to a battery.
+Each step, it puts into the battery the sunlight on its face times its
+efficiency. The sunlight on its face is the sun's irradiance, times the
+panel's area, times the cosine of the angle between its face and the sun.
+
+- With the sun behind its face, it makes nothing.
+- In shade it makes nothing. A ray from just off its face towards the sun
+  finds anything in the way, a thing or the ground, and the panel names it.
+- A full battery takes no more, and the rest is spilled.
+- The sunlight it does not turn into charge is counted as heat, which warms
+  nothing yet.
+- A battery now counts what it takes in as well as what it gives. What it
+  holds is what it began with, plus what it took in, less what it gave.
+
+**The rover** has a glass panel on its deck, 0.4 m by 0.5 m, turning a fifth
+of the sunlight on it into charge. Its program rests when the battery falls
+below a share of full the room declares, and roams on at another. Resting, it
+stops where it is, on its brakes, and says so: "its battery is low, so it
+rests while its panel charges it". Roaming draws more than the panel gives
+(about 40 W against 30 W), so a small battery runs down and the rover rests.
+
+Measured in the engine:
+
+- Square to an overhead sun, a 0.8 m2 panel at 20% gave 160 W and put exactly
+  1,600 J into its battery in 10 s; the other 6,400 J was heat.
+- With the sun 60 degrees up it gave cos 30 degrees of that, 138.6 W. Under an
+  awning it gave nothing and named the awning. A battery with room for 10 J took
+  10 J and spilled 150 J.
+- The rover with a 5 kJ battery at 28%, under a sun 50 degrees up: it roamed,
+  stopped to rest at 1,250 J (a quarter), and the panel charged it to 3,000 J
+  (three fifths) at 29.8 W from 148.8 W of sunlight. Then it roamed on. What the
+  battery held was exactly what it began with, plus the 2,119 J it took in from
+  its panel, less the 667 J it gave.
+- A saved world keeps its sun, its panels and every joule of their accounts.
+
+It can be watched in the page at `/world?scene=tests-solar`. That is a test room
+off the menu, built by `tools/build_rover_room.py`, which lets the rover run
+down, rest and roam on in the engine before it writes the room. Turned on, the
+rover rests within a minute. The Machines list shows what the panel gives, for
+example "solar panel on rover: 29 W from 147 W of sun on it", and what the
+battery has taken in. `/world?scene=tests-rover` has the same sun and panel,
+with a full 100 kJ battery.
+
+A lesson on the way: the rover's caster wheel was oak. At the page's own step,
+1/240 s, it held, but at 1/120 s the light wheel under the rover's weight sank
+27 mm into the ground in three seconds, and the rover stuck. It is iron now, as
+a real caster's is. The solver holds a heavy machine up on a light wheel only at
+short steps. The heavier caster also turns the rover on the spot more slowly,
+68 degrees in 3 s where the oak one turned 200.
+
+Checked by `tests/solar_panel_tests.cpp`, `tests/rover_roam_tests.cpp`,
+`tests/solar_room_tests.py` and the browser journey `ARoverRestsInTheSun`.
+
+Not built yet: a day, when the sun moves and sets; a battery charged at a post
+from a panel elsewhere; heat from a panel's losses warming anything; a panel
+that turns to follow the sun.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is
@@ -663,9 +761,10 @@ seen working in the page.
 
 2. **One autonomous creature.** Wheels before legs: a battery cart with two
    driven wheels, a bump sensor, and a controller that roams, finds a charging
-   post and docks. Its first two steps are built: a cart whose water sensor
-   stops it at a lake's edge, and a rover that roams a lake's shore by itself
-   (above).
+   post and docks. Its first steps are built: a cart whose water sensor
+   stops it at a lake's edge, a rover that roams a lake's shore by itself,
+   and solar panels that charge its battery while it rests in the sun
+   (above). The owner chose solar panels over a charging post (D1).
 3. **Repair and persistence.** Parts fail by what they do, such as a burnt
    motor or a cut wire, and can be repaired. A creature's identity is kept
    apart from its body.
@@ -683,10 +782,11 @@ reduced model is always measured, never invented.
 
 ## Decisions for the owner
 
-- **D1. How a battery is charged at first.**
+- **D1. How a battery is charged at first.** *Decided by the owner,
+  2026-09-22: by solar panels* ([Solar panels](#solar-panels)). The options
+  that were put:
   - A charging post in the workshop that fills any battery set on it, labelled
-    as unlimited for now. *Recommended: the first machine can run all day while
-    the rest is built.*
+    as unlimited for now.
   - Only from something you build, such as a hand crank or a water wheel, so
     energy is scarce from the start.
 - **D2. Lowering a load.**

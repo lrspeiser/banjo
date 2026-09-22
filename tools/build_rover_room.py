@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Compose the rover room: a battery rover that roams a lake's shore by itself.
+"""Compose the rover rooms: a battery rover that roams a lake's shore by itself,
+and the same rover resting in the sun while its solar panel charges it.
 
     BANJO_LIVE_ENGINE=.../banjo_live_world_run.exe python tools/build_rover_room.py
 
-Writes playground/rooms/tests-rover.json, which world_room serves as the
-`tests-rover` scene. Open it at /world?scene=tests-rover, press E on the rover
-for its panel, and turn it on.
+Writes playground/rooms/tests-rover.json and tests-solar.json, which world_room
+serves as the `tests-rover` and `tests-solar` scenes. Open one at
+/world?scene=tests-rover, press E on the rover for its panel, and turn it on.
 
 The second step of the machine world's autonomous creature
 (docs/machine-world.md, "One autonomous creature"): wheels it steers with, and
@@ -13,11 +14,14 @@ a program that decides where it goes.
 
   * Its body, exact bodies on pins: an oak deck; a 320 mm oak wheel on each
     side at the back, each on a pin of its own through a bearing mount; and at
-    the front an iron caster fork on a swivel, its 160 mm oak wheel trailing
+    the front an iron caster fork on a swivel, its 160 mm iron wheel trailing
     60 mm behind the swivel's axis, so it swings round to follow.
   * Its machine: a 24 V battery of 100 kJ in the deck, and a DC motor with a
     brake on each back wheel -- 20 N m at a standstill and 60 turns a minute
     unloaded, about 1 m/s -- each worked by a controller of its own.
+  * A solar panel on its deck, 0.4 m by 0.5 m, turning a fifth of the
+    sunlight on it into charge, under a sun 50 degrees up shining 1000 W/m2
+    (the owner, 2026-09-22: batteries are charged by solar panels).
   * Its program, "roam": a water sensor at each front corner, half a metre
     ahead of the deck and wider than the wheels, looking down for more than
     3 mm of water. It goes forward; where a sensor sees water it backs
@@ -34,12 +38,19 @@ holding water to 0.35 m, a lake 9.7 m across -- 9 m out from the middle,
 facing it, tipped to sit square on the slope. A room of exact bodies needs one
 thing made of cells (precise_rigid): a concrete post, in a far corner.
 
+In tests-rover its battery holds 100 kJ and is full, and it roams all day. In
+tests-solar the battery holds 5 kJ and is down to 28%, and the program rests
+below a quarter until the panel has charged it to three fifths: roaming draws
+more than the panel gives, so it runs down, stops where it is, rests in the sun,
+and roams on.
+
 The numbers are a demonstration machine's, declared by the room, not measured
-from a real rover. Before it writes the room, this opens it in the engine,
-turns the program on and lets it roam for a minute, and refuses to write it
-unless the rover roamed, turned away again and again, kept to the basin, and
-never had a wheel in the water. Re-run it to rebuild the room; nothing is
-hand-edited in the JSON.
+from a real rover. Before it writes a room, this opens it in the engine, turns
+the program on and watches: tests-rover must roam a minute, turning away again
+and again, keeping to the basin and never with a wheel in the water;
+tests-solar must run down, rest, be charged by the sun and roam on, dry, with
+every joule of its battery accounted for. Re-run it to rebuild the rooms;
+nothing is hand-edited in the JSON.
 """
 from __future__ import annotations
 
@@ -59,7 +70,7 @@ import fracture_lab                     # noqa: E402
 import live_session                     # noqa: E402
 import rigid_assembly                   # noqa: E402
 
-OUT = ROOT / "playground" / "rooms" / "tests-rover.json"
+ROOMS = ROOT / "playground" / "rooms"
 CELL_M = 0.05
 LAKE_M = 0.35
 TERRAIN = {"generate": {"kind": "basin", "nx": 128, "nz": 128, "cell_m": 0.25,
@@ -78,8 +89,21 @@ SENSOR_DEPTH_MM = 3.0
 MACHINE = {"capacity_j": 100000.0, "voltage_v": 24.0,
            "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
 PROGRAM = {"setting": 1.0, "climb_deg": 8.0}
+SUN = {"elevation_deg": 50.0, "azimuth_deg": 200.0, "irradiance_w_m2": 1000.0}
+# The panel, in the rover's own frame: the top of the glass plate on its deck.
+PANEL_AT_LOCAL_M = (0.0, 0.39, -0.05)
+PANEL = {"area_m2": 0.2, "efficiency": 0.2}
+# Each room's battery and how its program rests.
+ROOM_KINDS = {
+    "tests-rover": {"capacity_j": 100000.0, "charge_j": 100000.0},
+    "tests-solar": {"capacity_j": 5000.0, "charge_j": 1400.0, "rest_below": 0.25, "rest_until": 0.6},
+}
 ROAM_S = 60.0
-DT = 1 / 120
+# The world page's own step (world.js LIVE_DT). At 1/120 s the caster's oak
+# wheel, light under the rover's weight, sank into the ground -- 27 mm in three
+# seconds -- and the rover stuck; at the page's step it did not.
+DT = 1 / 240
+PER_QUARTER = 60
 ONTO_X = [math.sqrt(0.5), 0.0, 0.0, math.sqrt(0.5)]   # a cylinder's own y turned onto x
 
 
@@ -114,6 +138,7 @@ def rover_artifact() -> dict:
     bodies = [
         {"name": "rover", "material": "oak", "color_rgba": OAK, "_centre_m": [0.0, 0.35, 0.0],
          "parts": [_box("deck", (0.7, 0.04, 1.0), (0.0, 0.36, 0.0)),
+                   _box("solar panel", (0.4, 0.01, 0.5), (0.0, 0.385, -0.05), "glass"),
                    _box("left mount", (0.0345, 0.18, 0.0345), (0.1925, 0.25, -0.32)),
                    _box("right mount", (0.0345, 0.18, 0.0345), (-0.1925, 0.25, -0.32)),
                    _box("caster mount", (0.10, 0.03, 0.10), (0.0, 0.325, 0.38))]},
@@ -124,7 +149,10 @@ def rover_artifact() -> dict:
                    _box("left cheek", (0.012, 0.22, 0.05), (0.035, 0.18, 0.335)),
                    _box("right cheek", (0.012, 0.22, 0.05), (-0.035, 0.18, 0.335)),
                    _across("pin", 0.012, 0.082, (0.0, 0.08, 0.32))]},
-        {"name": "rover: caster wheel", "material": "oak", "color_rgba": OAK, "_centre_m": [0.0, 0.08, 0.32],
+        # An iron caster wheel, as a real caster's is: the solver holds a heavy
+        # machine up on a light wheel only at short steps -- at 1/120 s an oak
+        # one sank 27 mm into the ground in three seconds, an iron one 1 mm.
+        {"name": "rover: caster wheel", "material": "iron", "_centre_m": [0.0, 0.08, 0.32],
          "parts": [_across("wheel", 0.16, 0.04, (0.0, 0.08, 0.32))]},
     ]
     joints = [pin("rover", "rover: left wheel", (192.5, 160.0, -320.0), (1.0, 0.0, 0.0)),
@@ -152,8 +180,10 @@ def read_ground(engine: Path) -> dict:
     return ground
 
 
-def compose(ground: dict) -> dict:
-    """The room: the post, the rover on the shore, its machine and its program."""
+def compose(ground: dict, kind: str) -> dict:
+    """The room: the post, the rover on the shore, its machine, its panel and
+    its program, and the sun -- with the battery and the rest of `kind`."""
+    battery = ROOM_KINDS[kind]
     x, z = ROVER_AT
     # Tipped about its own x to the slope it faces down, so its wheels and its
     # caster all meet the ground.
@@ -180,18 +210,25 @@ def compose(ground: dict) -> dict:
             "size_mm": [150.0, 900.0, 150.0],
             "center_mm": [round(px * 1000.0, 1), round((base + 0.45) * 1000.0, 1), round(pz * 1000.0, 1)]}
     wheels = {"left": ["rover", "rover: left wheel"], "right": ["rover", "rover: right wheel"]}
+    panel_at = [round((bodies[0]["position_m"][k] + v) * 1000.0, 1)
+                for k, v in enumerate(grounds._turn(q, PANEL_AT_LOCAL_M))]
+    facing = [round(v, 9) for v in grounds._turn(q, (0.0, 1.0, 0.0))]
+    rest = {k: battery[k] for k in ("rest_below", "rest_until") if k in battery}
     machines = {
-        "stores": [{"name": "rover battery", "body": "rover", "capacity_j": MACHINE["capacity_j"],
-                    "voltage_v": MACHINE["voltage_v"]}],
+        "stores": [{"name": "rover battery", "body": "rover", "capacity_j": battery["capacity_j"],
+                    "charge_j": battery["charge_j"], "voltage_v": MACHINE["voltage_v"]}],
         "motors": [{"on": on, "store": "rover battery", "stall_torque_n_m": MACHINE["stall_torque_n_m"],
                     "no_load_rpm": MACHINE["no_load_rpm"], "brake_torque_n_m": MACHINE["brake_torque_n_m"]}
                    for on in wheels.values()],
         "controls": [{"name": f"{side} wheel", "on": on} for side, on in wheels.items()],
         "programs": [{"name": "rover", "kind": "roam", "left": "left wheel", "right": "right wheel",
                       "body": "rover", "setting": PROGRAM["setting"], "climb_deg": PROGRAM["climb_deg"],
-                      "sensors": sensors}]}
+                      "sensors": sensors, **rest}],
+        "panels": [{"name": "solar panel", "body": "rover", "store": "rover battery", "at_mm": panel_at,
+                    "normal": facing, **PANEL}]}
     return {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
             "terrain": TERRAIN,
+            "sun": dict(SUN),
             "bodies": [post],
             "precise_rigid_bodies": bodies,
             "joints": pins,
@@ -202,9 +239,11 @@ def pose(poses: dict, name: str) -> dict:
     return next(b for b in poses.get("bodies") or [] if b.get("name") == name)
 
 
-def roam(engine: Path, validated: dict) -> list[str]:
+def roam(engine: Path, validated: dict, kind: str) -> list[str]:
     """Open the room as the playground does, let it settle, turn the program on
-    and watch it roam: what is wrong, or nothing."""
+    and watch it: what is wrong, or nothing. tests-rover roams a minute;
+    tests-solar goes on until it has rested and roamed on again, or three
+    minutes have passed."""
     faults: list[str] = []
     wheels = ("rover: left wheel", "rover: right wheel", "rover: caster wheel")
     with tempfile.TemporaryDirectory() as tmp:
@@ -214,22 +253,32 @@ def roam(engine: Path, validated: dict) -> list[str]:
             hung = live_session.Live._hang(session, pins)
             made: dict = {}
             hung.update(live_session.Live._power(session, validated.get("machines") or {}, pins, made=made))
-            for key in ("joint_problems", "machine_problems"):
-                faults.extend(hung.get(key) or [])
+            hung.update(live_session.Live._sun(session, validated.get("sun")))
+            for key in ("joint_problems", "machine_problems", "sun_problem"):
+                value = hung.get(key)
+                faults.extend(value if isinstance(value, list) else [value] if value else [])
             if faults:
                 return faults
             program = made["programs"]["rover"]
-            session.send(op="step", dt=DT, n=240)            # two seconds to settle, on its brakes
+            session.send(op="step", dt=DT, n=int(2.0 / DT))   # two seconds to settle, on its brakes
             start = pose(session.send(op="poses"), "rover")["position_m"]
             session.send(op="run", program=program, sender="builder", seq=1, power=True)
             path, nearest, furthest, wettest, wet_at, doing_seen = 0.0, 1e9, 0.0, 0.0, "", set()
             was, wall = start, time.monotonic()
             said: dict = {}
-            for _ in range(int(ROAM_S / (30 * DT))):          # a quarter of a second at a time
-                reply = session.send(op="step", dt=DT, n=30)
+            seconds = ROAM_S if kind == "tests-rover" else 180.0
+            order: list[str] = []
+            for tick in range(int(seconds / (PER_QUARTER * DT))):   # a quarter of a second at a time
+                reply = session.send(op="step", dt=DT, n=PER_QUARTER)
                 said = next((q for q in (reply.get("machines") or {}).get("programs") or []
                              if q.get("id") == program), said)
                 doing_seen.add(said.get("doing", ""))
+                if not order or order[-1] != said.get("doing"):
+                    order.append(said.get("doing"))
+                if (kind == "tests-solar" and said.get("rests", 0) >= 1 and said.get("doing") != "resting"
+                        and said.get("doing_s", 0.0) > 5.0):
+                    seconds = (tick + 1) * PER_QUARTER * DT
+                    break
                 poses = session.send(op="poses")
                 at = pose(poses, "rover")["position_m"]
                 path += math.dist(at, was)
@@ -241,21 +290,29 @@ def roam(engine: Path, validated: dict) -> list[str]:
                     water = (session.send(op="survey", at=[w[0], w[2]]).get("survey") or {}).get("water")
                     if water and water.get("depth_m", 0.0) > wettest:
                         wettest, wet_at = water["depth_m"], f"{name} while {said.get('doing')} ({said.get('why')})"
-            pace = ROAM_S / (time.monotonic() - wall)
+            pace = seconds / (time.monotonic() - wall)
             machines = session.send(op="step", dt=DT, n=1).get("machines") or {}
-            given = sum(s.get("given_j", 0.0) for s in machines.get("stores") or [])
+            store = (machines.get("stores") or [{}])[0]
+            panel = (machines.get("panels") or [{}])[0]
             edge = 0.5 * 127 * 0.25 * math.sqrt((LAKE_M - 0.2) / 1.6)
-            print(f"  roamed for {ROAM_S:.0f} s: {path:.1f} m, {said.get('turns', 0)} turns away, between "
+            print(f"  roamed for {seconds:.0f} s: {path:.1f} m, {said.get('turns', 0)} turns away, between "
                   f"{nearest:.2f} m and {furthest:.2f} m out (the lake's edge is {edge:.2f} m out); the battery "
-                  f"gave {given:.0f} J; run at {pace:.0f}x realtime (with a survey of its wheels every quarter "
-                  f"second)")
-            print(f"  it did: {', '.join(sorted(d for d in doing_seen if d))}; now \"{said.get('doing')}\": "
-                  f"{said.get('why')}")
+                  f"gave {store.get('given_j', 0):.0f} J and took in {store.get('taken_j', 0):.0f} J from its "
+                  f"panel ({panel.get('power_w', 0):.1f} W of {panel.get('sunlight_w', 0):.0f} W of sun now); run "
+                  f"at {pace:.0f}x realtime (with a survey of its wheels every quarter second)")
+            print(f"  it did: {', '.join(d for d in order if d)}; now \"{said.get('doing')}\": {said.get('why')}")
+            began = ROOM_KINDS[kind]["charge_j"]
+            if abs(store.get("charge_j", 0) - (began + store.get("taken_j", 0) - store.get("given_j", 0))) > 1e-3:
+                faults.append("its battery's account does not close")
+            if abs(store.get("taken_j", 0) - panel.get("collected_j", 0)) > 1e-3:
+                faults.append("its battery took in something its panel did not give")
+            if kind == "tests-solar" and (said.get("rests", 0) < 1 or said.get("doing") == "resting"):
+                faults.append(f"in {seconds:.0f} s it did not rest and roam on: {order}")
             if wettest > 0.003:
                 faults.append(f"it had {wettest * 1000:.0f} mm of water under its {wet_at}")
-            if path < 15.0:
+            if path < (15.0 if kind == "tests-rover" else 5.0):
                 faults.append(f"it roamed only {path:.1f} m")
-            if said.get("turns", 0) < 3:
+            if kind == "tests-rover" and said.get("turns", 0) < 3:
                 faults.append(f"it turned away only {said.get('turns', 0)} times")
             if furthest > 14.0:
                 faults.append(f"it went {furthest:.1f} m out, near the basin's edge")
@@ -274,18 +331,20 @@ def main() -> int:
     ground = read_ground(engine)
     print(f"  {ground['nx']}x{ground['nz']} at {ground['cell']} m, "
           f"{min(ground['h']):.2f} m to {max(ground['h']):.2f} m")
-    print("Laying the room out ...")
-    spec = compose(ground)
-    validated = fracture_lab.validate(spec)
-    print("Opening it and letting the rover roam ...")
-    faults = roam(engine, validated)
-    if faults:
-        for fault in faults:
-            print(f"  REFUSED: {fault}", file=sys.stderr)
-        return 1
-    # The authored spec, not the validated one (build_explore_world.main).
-    OUT.write_text(json.dumps(spec, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
-    print(f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size:,} bytes)")
+    for kind in ROOM_KINDS:
+        print(f"Laying {kind} out ...")
+        spec = compose(ground, kind)
+        validated = fracture_lab.validate(spec)
+        print("Opening it and letting the rover go ...")
+        faults = roam(engine, validated, kind)
+        if faults:
+            for fault in faults:
+                print(f"  REFUSED: {fault}", file=sys.stderr)
+            return 1
+        # The authored spec, not the validated one (build_explore_world.main).
+        out = ROOMS / f"{kind}.json"
+        out.write_text(json.dumps(spec, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
+        print(f"Wrote {out.relative_to(ROOT)} ({out.stat().st_size:,} bytes)")
     return 0
 
 

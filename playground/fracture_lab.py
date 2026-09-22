@@ -402,7 +402,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces", "interaction_points"}
+                         "interfaces", "interaction_points", "sun"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -742,7 +742,7 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         return {}
     if not isinstance(machines, dict):
         raise ValueError("machines must be an object with stores and motors")
-    unknown = set(machines) - {"stores", "motors", "controls", "programs"}
+    unknown = set(machines) - {"stores", "motors", "controls", "programs", "panels"}
     if unknown:
         raise ValueError(f"machines has fields it does not know: {sorted(unknown)}")
     named = {str(body.get("name", "")) for body in bodies}
@@ -858,8 +858,67 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
             travel(made, rope, {})
         controls.append(made)
     programs = _programs(machines.get("programs"), controls, named)
+    panels = _panels(machines.get("panels"), stores, named)
     return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {}),
-            **({"programs": programs} if programs else {})}
+            **({"programs": programs} if programs else {}), **({"panels": panels} if panels else {})}
+
+
+def normalise_sun(sun: Any) -> dict[str, Any]:
+    """A room's sun (docs/machine-world.md, "Solar panels"): how high it stands,
+    from 0 to 90 degrees above the horizon; its azimuth, round from +z towards
+    +x; and how strongly it shines on a surface square to its beam, up to 1400
+    W/m2 (a clear day's is about 1000). It stands where it is put: there is no
+    day yet."""
+    if not isinstance(sun, dict):
+        raise ValueError("sun is an object: elevation_deg, azimuth_deg and irradiance_w_m2")
+    unknown = set(sun) - {"elevation_deg", "azimuth_deg", "irradiance_w_m2"}
+    if unknown:
+        raise ValueError(f"sun cannot say {sorted(unknown)}: it holds elevation_deg, azimuth_deg and irradiance_w_m2")
+    return {"elevation_deg": _number(sun.get("elevation_deg", 45.0), 0.0, 90.0, "sun elevation_deg"),
+            "azimuth_deg": _number(sun.get("azimuth_deg", 0.0), -360.0, 360.0, "sun azimuth_deg") % 360.0,
+            "irradiance_w_m2": _number(sun.get("irradiance_w_m2", 1000.0), 0.0, 1400.0, "sun irradiance_w_m2")}
+
+
+def _panels(given: Any, stores: list[dict[str, Any]], named: set[str]) -> list[dict[str, Any]]:
+    """A room's solar panels (docs/machine-world.md, "Solar panels"): each a
+    flat collector on one of the room's things, where it is as the room is made
+    -- in millimetres, like a pin -- its face looking along `normal`, wired to one
+    of the room's stores by name, of `area_m2`, turning `efficiency` of the
+    sunlight on it into charge."""
+    if given in (None, []):
+        return []
+    if not isinstance(given, list) or len(given) > 32:
+        raise ValueError("panels is a list of at most 32")
+    out: list[dict[str, Any]] = []
+    for i, panel in enumerate(given):
+        if not isinstance(panel, dict):
+            raise ValueError(f"panel {i} is not an object")
+        unknown = set(panel) - {"name", "body", "store", "at_mm", "normal", "area_m2", "efficiency"}
+        if unknown:
+            raise ValueError(f"panel {i} cannot say {sorted(unknown)}: it holds name, body, store, at_mm, normal, "
+                             f"area_m2 and efficiency")
+        name = " ".join(str(panel.get("name") or "").split())[:60]
+        if not name or any(o["name"] == name for o in out):
+            raise ValueError(f"panel {i} needs a name of its own")
+        body = str(panel.get("body", ""))
+        if body not in named:
+            raise ValueError(f"panel {name!r} is on {body!r}, which is not in this room")
+        store = str(panel.get("store", ""))
+        if not any(s["name"] == store for s in stores):
+            raise ValueError(f"panel {name!r} charges {store!r}, and there is no store called that")
+        at, normal = panel.get("at_mm"), panel.get("normal")
+        if not isinstance(at, list) or len(at) != 3 or not isinstance(normal, list) or len(normal) != 3:
+            raise ValueError(f"panel {name!r} needs at_mm and normal as three numbers each")
+        normal = [_number(v, -1e6, 1e6, f"panel {name!r} normal") for v in normal]
+        if math.sqrt(sum(v * v for v in normal)) < 1e-6:
+            raise ValueError(f"panel {name!r}: its normal must look some way")
+        out.append({"name": name, "body": body, "store": store,
+                    "at_mm": [_number(v, -100000.0, 100000.0, f"panel {name!r} at_mm") for v in at],
+                    "normal": normal,
+                    "area_m2": _number(panel.get("area_m2", 0.0), 0.0001, 100.0, f"panel {name!r} area_m2"),
+                    "efficiency": _number(panel.get("efficiency", 0.2), 0.001, 1.0,
+                                          f"panel {name!r} efficiency")})
+    return out
 
 
 PROGRAM_KINDS = ("roam",)
@@ -880,10 +939,11 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
     for i, program in enumerate(given):
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
-        unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors"}
+        unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
+                                  "rest_below", "rest_until"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power and sensors")
+                             f"setting, climb_deg, power, sensors, rest_below and rest_until")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
@@ -912,6 +972,12 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
                                 "climb_deg": _number(program.get("climb_deg", 8.0), 0.1, 59.0,
                                                      f"program {name!r} climb_deg"),
                                 "power": bool(program.get("power", False))}
+        # Its battery below `rest_below` of full, it rests until `rest_until`.
+        if program.get("rest_below"):
+            below = _number(program["rest_below"], 0.001, 0.99, f"program {name!r} rest_below")
+            made["rest_below"] = below
+            made["rest_until"] = _number(program.get("rest_until", min(1.0, below + 0.5)), below + 0.001, 1.0,
+                                         f"program {name!r} rest_until")
         sensors = _sensors(program.get("sensors"), name, named, stops=False)
         if sensors:
             made["sensors"] = sensors
@@ -2056,6 +2122,11 @@ def validate(spec: Any) -> dict[str, Any]:
                                                     result["joints"])
         else:
             result.pop("machines", None)
+        # And its sun, likewise only in a room that has one.
+        if result.get("sun"):
+            result["sun"] = normalise_sun(result["sun"])
+        else:
+            result.pop("sun", None)
         # The structures its chat declared, each with what it must do and its
         # parts (docs/building-from-language.md). Like the machines, only in a
         # room that has one: a room without keeps the document it had.

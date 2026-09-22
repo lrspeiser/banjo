@@ -216,6 +216,19 @@ scene.add(rim);
 const fill = new THREE.DirectionalLight(0xffffff, 0.35);
 fill.position.set(0, 2, 8);
 scene.add(fill);
+const KEY_AT = key.position.clone();
+
+// A room with a sun (docs/machine-world.md, "Solar panels") is lit from where
+// the engine has it, so the side of a panel the light falls on is the side the
+// engine charges it from; one without keeps the lamp it had.
+function lightFromSun(sun) {
+  world.sun = sun || null;
+  if (sun && Array.isArray(sun.toward) && sun.toward[1] > 0) {
+    key.position.set(sun.toward[0] * 20, sun.toward[1] * 20, sun.toward[2] * 20);
+  } else {
+    key.position.copy(KEY_AT);
+  }
+}
 const expedition = expeditionUI({
   scene, camera, sun: key,
   request: action => api("/api/world/gameplay", {session: world.session, op: "action", action}),
@@ -1178,7 +1191,8 @@ function drawMachines(block) {
   for (const s of (block && block.stores) || []) {
     const share = s.capacity_j > 0 ? Math.round(100 * s.charge_j / s.capacity_j) : 0;
     row(`store ${s.id}`, s.name,
-        `${joules(s.charge_j)} of ${joules(s.capacity_j)} (${share}%) · has given ${joules(s.given_j)}`);
+        `${joules(s.charge_j)} of ${joules(s.capacity_j)} (${share}%) · has given ${joules(s.given_j)}`
+        + (s.taken_j > 0 ? ` · has taken in ${joules(s.taken_j)}` : ""));
   }
   for (const c of (block && block.controls) || []) {
     row(`control ${c.id}`, `${c.name}: its controller`,
@@ -1187,6 +1201,12 @@ function drawMachines(block) {
   for (const p of (block && block.programs) || []) {
     row(`program ${p.id}`, `${p.name}: its program`,
         p.power ? `on, ${p.doing}${p.why ? ` · ${p.why}` : ""}` : "off", p);
+  }
+  for (const panel of (block && block.panels) || []) {
+    const lit = panel.shaded ? `in the shade of ${panel.shaded_by}`
+      : panel.sunlight_w > 0 ? `${Math.round(panel.power_w)} W from ${Math.round(panel.sunlight_w)} W of sun on it`
+      : world.sun && world.sun.irradiance_w_m2 > 0 ? "facing away from the sun" : "no sun";
+    row(`panel ${panel.id}`, `${panel.name} on ${panel.body}`, `${lit} · has given ${joules(panel.collected_j)}`);
   }
   for (const m of (block && block.motors) || []) {
     const turns = m.on && m.on.length === 2 ? m.on[1] : `pin ${m.joint}`;
@@ -1211,8 +1231,8 @@ function drawMachines(block) {
   }
   const shown = new Set(rows);
   for (const [key, r] of machineRows) if (!shown.has(r.li)) machineRows.delete(key);
-  const note = "what each motor drew is its work and its heat; nothing goes back into a battery, and a"
-    + " brake holds without drawing";
+  const note = "what each motor drew is its work and its heat; no motor gives anything back to a battery,"
+    + " and a brake holds without drawing";
   if ($("machine-note").textContent !== note) $("machine-note").textContent = note;
   $("machines").hidden = rows.length === 0;
 }
@@ -1436,6 +1456,7 @@ function showProgramPanel(p) {
     "backing off": "both wheels back",
     "turning left": "left wheel back, right wheel forward",
     "turning right": "left wheel forward, right wheel back",
+    "resting": "both wheels held on their brakes",
   };
   const doing = p.doing.charAt(0).toUpperCase() + p.doing.slice(1);
   setText("mp-commanded", p.power ? `${doing}: ${wheels[p.doing] || "stopped"}` : "Nothing: it is off");
@@ -1447,10 +1468,13 @@ function showProgramPanel(p) {
     const mm = Math.round((s.reading_m || 0) * 1000);
     return `${s.side > 0 ? "left" : s.side < 0 ? "right" : "middle"} ${mm > 0 ? `${mm} mm of water` : "dry"}`;
   });
-  setText("mp-measured", `${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
+  const battery = `its battery ${Math.round((p.charge_share || 0) * 100)}%`
+    + (p.rest_below > 0 ? ` (it rests below ${Math.round(p.rest_below * 100)}%)` : "");
+  setText("mp-measured", `${battery} · ${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
     + (sensors.length ? ` · its water sensors: ${sensors.join(", ")}` : ""));
   setText("mp-condition", p.power ? (p.why || "nothing in its way") : "off");
-  $("mp-condition").classList.toggle("attention", p.power && /water|steeper|progress|gone/.test(p.why || ""));
+  $("mp-condition").classList.toggle("attention",
+    p.power && /water|steeper|progress|gone|battery is low/.test(p.why || ""));
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
@@ -6249,6 +6273,7 @@ async function open({ again = false } = {}) {
     // opened again says its own, so its rope and its panel are there before
     // the first step rather than the last room's.
     followMachines(data.machines);
+    lightFromSun(data.sun);
     drawRopes();
     clearHeat();
     // The room as it stood: rejoined on a reload, or opened again whole from

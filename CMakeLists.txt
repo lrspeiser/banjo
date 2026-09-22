@@ -1166,6 +1166,13 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_rover_roam_tests)
             add_test(NAME banjo_rover_roam_tests COMMAND banjo_rover_roam_tests)
 
+            # Solar panels: a room's sun, and what a panel on a part puts into the
+            # store it is wired to -- square on, at an angle, in shade, and full.
+            add_executable(banjo_solar_panel_tests tests/solar_panel_tests.cpp)
+            target_link_libraries(banjo_solar_panel_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_solar_panel_tests)
+            add_test(NAME banjo_solar_panel_tests COMMAND banjo_solar_panel_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows
@@ -1461,4 +1468,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_room_tests.py -v)
     set_tests_properties(banjo_rover_room_tests PROPERTIES TIMEOUT 180)
+    # And solar panels: the room's sun and panels checked and carried, and the
+    # tests-solar room's rover resting while the sun charges it.
+    add_test(NAME banjo_solar_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_SOLAR_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/solar_room_tests.py -v)
+    set_tests_properties(banjo_solar_room_tests PROPERTIES TIMEOUT 180)
 endif()
