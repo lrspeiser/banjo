@@ -220,6 +220,17 @@ class PageJourney(unittest.TestCase):
         return self.js(f"banjoRoom.world.bodies.get({q}) ? "
                        f"banjoRoom.world.bodies.get({q}).mesh.position.toArray() : null")
 
+    def wait_world(self, seconds, wall_s=240.0):
+        """Wait until `seconds` of the room's own time have passed. CI draws a
+        frame or seven a second and a step can be half a second in coming, so
+        a pause in the wall clock is not a pause in the world: a machine judged
+        at rest when its position had not changed for half a second of wall
+        was still braking (the rover's journey, main 70859d5, 64 mm)."""
+        began = self.js("banjoRoom.status().time_s")
+        deadline = time.monotonic() + wall_s
+        while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < seconds:
+            time.sleep(0.2)
+
     def at_rest(self, name, timeout_s=30.0):
         """Where it lies once it has stopped moving."""
         last = self.position(name)
@@ -910,7 +921,8 @@ class ACartDrivesItselfToTheWater(PageJourney):
         self.assertIn("its water sensor ahead:", text("mp-measured"))
         self.assertTrue(self.wait_for("banjoRoom.sensorMarks().every((m) => m.sees)", 10),
                         "the sensor's bead did not turn to show the water it sees")
-        rest = self.at_rest("cart")
+        self.wait_world(2.0)          # brought to rest on its brake
+        rest = self.position("cart")
         c = self.js(control)
         wx, wy, wz = self.position("cart-2")
         wet = self.js(f"banjoRoom.waterAt({wx}, {wz})")
@@ -924,7 +936,7 @@ class ACartDrivesItselfToTheWater(PageJourney):
         self.assertTrue(self.wait_for(f"{control}.direction === 0", 15), f"Stop did not reach it: {self.situation()}")
         self.click("mp-ahead")
         self.assertTrue(self.wait_for(f"{control}.direction === 1", 15), f"Forward did not reach it: {self.situation()}")
-        time.sleep(1.5)
+        self.wait_world(1.5)
         self.assertLess(math.dist(self.position("cart"), rest), 0.03, "told forward at the edge, it went on")
         # Back: the sensor stops it only going forward.
         self.click("mp-back")
@@ -1003,8 +1015,9 @@ class ARoverRoamsTheShore(PageJourney):
         self.click("mp-off")
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
                         f"Off did not reach the rover's program: {self.situation()}")
-        rest = self.at_rest("rover")
-        time.sleep(1.0)
+        self.wait_world(2.0)          # brought to rest on its brakes
+        rest = self.position("rover")
+        self.wait_world(1.0)
         self.assertLess(math.dist(self.position("rover"), rest), 0.02, "turned off, it did not stop")
         self.no_page_errors("after the rover roamed")
 
