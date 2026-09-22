@@ -225,3 +225,42 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-top .ws-workspace-tabs button {padding:.45rem .9rem;}
 .ws-bom-table th{color:#91a2b5;font-weight:500;font-size:.68rem;text-align:left;text-transform:uppercase;letter-spacing:.06em;padding-bottom:.2rem}
 .ws-short{color:#e08a8a}
+
+/* One bench: the product, its parts, the chat, and what the rack holds. */
+.ws-chips{display:flex;gap:.3rem;flex-wrap:wrap}
+.ws-chip{border:1px solid #27313d;border-radius:.35rem;background:transparent;color:#8fa8bd;font:inherit;font-size:.78rem;padding:.35rem .7rem;cursor:pointer}
+.ws-chip:hover{border-color:#5a6b7e;color:#dce7f5}
+.ws-chip[aria-current="true"]{background:#dce7f5;color:#0b1622;border-color:#dce7f5}
+#ws-make-status{margin:0;max-width:26rem;font-size:.72rem;line-height:1.35;color:#9ed4ad}
+#ws-make-status[data-bad="yes"]{color:#e08a8a}
+.ws-benchbar{position:absolute;left:.7rem;right:.7rem;bottom:.7rem;display:flex;align-items:center;gap:1rem;padding:.45rem .6rem;border:1px solid #27313d;border-radius:.45rem;background:#0b1622e6}
+.ws-benchbar-field{display:flex;align-items:center;gap:.5rem;flex-grow:1;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:#8fa3b8}
+.ws-benchbar-field input[type=range]{flex-grow:1;accent-color:#e0a45c}
+.ws-left h2,.ws-right h2{margin:0 0 .5rem;font-size:.64rem;letter-spacing:.16em;text-transform:uppercase;color:#8fa3b8;font-weight:700}
+#ws-chat-home{display:flex;flex-direction:column;min-height:0;flex-grow:1}
+#ws-held-box{flex-shrink:0;border-top:1px solid #27313d;padding-top:.6rem;margin-top:.6rem}
+.ws-held-row{display:flex;align-items:baseline;gap:.5rem;padding:.3rem .45rem;border:1px solid #1d2835;border-radius:.35rem;margin-bottom:.25rem;font-size:.76rem}
+.ws-held-row span{flex-grow:1;color:#c3d4e4}
+.ws-held-row strong{font-weight:500;color:#dce7f5}
+.ws-held-run strong{color:#6a7d91}
+#ws-extras{margin-top:.8rem;border-top:1px solid #27313d;padding-top:.5rem}
+#ws-extras>summary{cursor:pointer;color:#8fa3b8;font-size:.74rem}
+#ws-rack-foot{grid-column:1/-1;display:flex;align-items:center;gap:.7rem;padding:.5rem .8rem;border-top:1px solid #27313d}
+#ws-rack-foot h2{margin:0;white-space:nowrap}
+#ws-rack-strip{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.ws-bin{display:flex;align-items:center;gap:.4rem;border:1px solid #27313d;border-radius:.35rem;padding:.25rem .5rem;font-size:.74rem}
+.ws-bin[data-state="wanted"]{border-color:#2f5c45}
+.ws-bin[data-state="short"]{border-color:#6b3f3f}
+.ws-bin-name{color:#c3d4e4}
+.ws-bin input{width:5rem;border:1px solid #2a3a4a;border-radius:.25rem;background:#0b1622;color:#dce7f5;padding:.2rem .3rem;font:inherit;font-size:.74rem}
+.ws-bin-need{font-size:.66rem;color:#8fa3b8}
+.ws-bin-says{margin:0 0 0 .4rem;font-size:.72rem;color:#9ed4ad}
+.ws-bin-says[data-bad="yes"]{color:#e08a8a}
+.ws-right{display:flex;flex-direction:column;min-height:0}
+#ws-chat-home{overflow:auto}
+#ws-held-box{flex-shrink:0}
+.ws-viewport{position:relative}
+.ws-viewport .ws-caption{margin-bottom:3.2rem}
+.ws-viewbar-extra{position:static;display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0 .6rem}
+#ws-chat-home{flex:1 1 auto;min-height:13rem}
+#ws-held-box{max-height:45%;overflow:auto}

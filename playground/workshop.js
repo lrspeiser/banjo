@@ -68,7 +68,7 @@ const target = new THREE.Vector3(0, 0.42, 0);
 
 const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0,
-  session: null, savedDesigns: [], personalLibrary: [], pricebook: null, rack: null,
+  session: null, savedDesigns: [], personalLibrary: [], pricebook: null, rack: null, spread: 0,
   libraryInspection: null, selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
@@ -288,7 +288,7 @@ function drawWire(candidate) {
     const line = new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry),
       new THREE.LineBasicMaterial({ color: part.name === bench.selectedPart ? 0xffd166 : 0xdce7f5 }));
-    line.position.set(...part.center_m); line.rotation.copy(spinFor(part.rotation_deg));
+    line.position.set(...laidOutCenter(candidate, part)); line.rotation.copy(spinFor(part.rotation_deg));
     line.userData.partName = part.name; group.add(line); geometry.dispose();
   }
 }
@@ -305,7 +305,7 @@ function drawSkin(candidate, opacity = 1) {
       metalness: Number(descriptor?.metalness ?? 0),
       transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
     }));
-    mesh.position.set(...(descriptor?.center_m || part.center_m));
+    mesh.position.set(...laidOutCenter(candidate, Object.assign({}, part, { center_m: descriptor?.center_m || part.center_m })));
     mesh.rotation.copy(spinFor(descriptor?.rotation_deg || part.rotation_deg));
     mesh.userData.partName = part.name; group.add(mesh);
   }
@@ -318,7 +318,7 @@ function drawDesignMatterFallback(candidate) {
       color: part.name === bench.selectedPart ? 0xd9a441 : 0x6f8194,
       roughness: 0.6, transparent: true, opacity: 0.28,
     }));
-    mesh.position.set(...part.center_m); mesh.rotation.copy(spinFor(part.rotation_deg));
+    mesh.position.set(...laidOutCenter(candidate, part)); mesh.rotation.copy(spinFor(part.rotation_deg));
     mesh.userData.partName = part.name; group.add(mesh);
   }
 }
@@ -900,7 +900,239 @@ function installEditor() {
   timeline.oninput = () => { bench.playbackPlaying=false; $("#ws-play").textContent="Play"; setPlaybackIndex(Number(timeline.value)); };
   installPlacementControls(right);
 }
+// ---------------------------------------------------------------------------
+// One bench. The world is the other place; this is the only place a product is
+// taken apart and changed. Everything here is the product in front of you: its
+// parts on the left, what it is held to and the chat on the right, what the
+// rack holds along the bottom. The older panels are still here, folded away,
+// until each has a home in this frame.
+// ---------------------------------------------------------------------------
+const BENCH_VIEWS = [["3/4", 0.72, 0.42], ["X", Math.PI / 2, 0.06], ["Y", 0, 1.45], ["Z", 0, 0.06]];
+
+function centroidOf(candidate) {
+  const parts = candidate?.parts || [];
+  if (!parts.length) return [0, 0, 0];
+  const sum = [0, 0, 0];
+  for (const part of parts) for (let axis = 0; axis < 3; axis++) sum[axis] += part.center_m[axis];
+  return sum.map((v) => v / parts.length);
+}
+// Where a part is drawn once the bench is laid out: straight out from the
+// middle of the product, so nothing crosses anything else on the way.
+function laidOutCenter(candidate, part) {
+  const spread = bench.spread || 0;
+  if (!spread) return part.center_m;
+  const middle = centroidOf(candidate);
+  return part.center_m.map((v, axis) => v + (v - middle[axis]) * spread * 1.8);
+}
+
+function setMakeStatus(message, bad) {
+  const line = $("#ws-make-status");
+  if (!line) return;
+  line.textContent = message || "";
+  line.dataset.bad = bad ? "yes" : "no";
+}
+
+// Make it: the one act that spends. Preview is free and runs whatever the rack
+// holds, so a short rack is reported here rather than refused in the engine.
+// Where a made thing is set down. The room refuses ground another body already
+// claims, so walk along the row until one is free rather than reporting a
+// collision the person did not ask about.
+const MAKE_SPOTS = [[3, 0], [3, 1.6], [3, -1.6], [4.6, 0], [4.6, 1.6], [4.6, -1.6], [1.4, 1.6], [1.4, -1.6]];
+
+async function makeIt(button) {
+  button.disabled = true;
+  try {
+    setMakeStatus("Looking at the world…", false);
+    const source = await api("/api/world/workshop/context", {});
+    const candidate = candidateBody();
+    let preview = null, refused = null;
+    for (const position_m of MAKE_SPOTS) {
+      try {
+        preview = await api("/api/world/workshop/preview", {
+          session: source.session, scene: source.scene, mode: "authoring", candidate, position_m });
+        break;
+      } catch (error) {
+        refused = error;
+        // Ground that is taken is worth stepping over; anything else is the
+        // real answer and must not be hidden behind seven more attempts.
+        if (!/claim .* of the same cells|placement error/i.test(String(error.message))) throw error;
+      }
+    }
+    if (!preview) throw refused || new Error("There is nowhere clear to set it down.");
+    if (preview.needs && !preview.needs.enough) {
+      setMakeStatus(preview.needs.says + " Nothing has been spent.", true);
+      return;
+    }
+    setMakeStatus("Making it…", false);
+    const done = await api("/api/world/workshop/commit", {
+      session: preview.session, scene: preview.scene,
+      preview_id: preview.preview_id, request_id: crypto.randomUUID(),
+    });
+    if (done.rack) { bench.rack = done.rack; renderRack(); }
+    const spent = (done.materials_taken || [])
+      .map((row) => `${row.took_kg} kg of ${row.material} gone, ${row.left_kg} kg left`).join("; ");
+    setMakeStatus(`Made. It is standing in ${done.scene}. ${spent}`, false);
+    reprobe();
+  } catch (error) {
+    setMakeStatus(String(error.message || error).split(String.fromCharCode(10))[0], true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderHeldTo() {
+  const root = $("#ws-held");
+  if (!root) return;
+  const candidate = chosen();
+  root.replaceChildren();
+  if (!candidate) return;
+  const measured = candidate.measured || {};
+  const rows = [
+    ["parts", String((candidate.parts || []).length)],
+    ["mass", measured.mass_kg == null ? "—" : `${measured.mass_kg} kg`],
+    ["stands on", measured.support_footprint_m ? measured.support_footprint_m.map((v) => v.toFixed(2)).join(" × ") + " m" : "—"],
+    ["tips at", measured.tip_angle_deg == null ? "—" : `${measured.tip_angle_deg.toFixed(1)}°`],
+  ];
+  for (const [name, value] of rows) {
+    const row = make("div", { class:"ws-held-row" });
+    row.append(make("span", {}, name), make("strong", {}, value));
+    root.append(row);
+  }
+  for (const test of candidate.tests || []) {
+    const row = make("div", { class:"ws-held-row ws-held-run" });
+    const said = test.kind === "static_load" ? `hold ${test.load_kg} kg on its ${test.on}`
+      : test.kind === "tip" ? `tip about ${test.direction}` : test.kind;
+    row.append(make("span", {}, said), make("strong", {}, "run it"));
+    root.append(row);
+  }
+}
+
+function installBench() {
+  const root = $("#design-workshop");
+  const top = $(".ws-top"), left = $(".ws-left"), right = $(".ws-right"), viewport = $(".ws-viewport");
+  if (!root || !top || !left || !right || !viewport || root.classList.contains("ws-benched")) return;
+  root.classList.add("ws-benched");
+
+  // The header: which product, and the one act that spends.
+  const picker = $("#ws-archetype");
+  const keep = make("div", { id:"ws-hidden-controls", hidden:true });
+  const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
+  const status = make("p", { id:"ws-make-status", role:"status", "aria-live":"polite" });
+  const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
+  madeButton.onclick = () => makeIt(madeButton);
+  top.replaceChildren(
+    make("h1", {}, "Workshop"), products, make("span", { class:"ws-spacer" }),
+    status, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
+  if (picker) {
+    keep.append(picker);
+    const chips = () => {
+      products.replaceChildren();
+      for (const option of [...picker.options]) {
+        const chip = make("button", { type:"button", class:"ws-chip" }, option.textContent || option.value);
+        chip.dataset.value = option.value;
+        chip.setAttribute("aria-current", option.value === picker.value ? "true" : "false");
+        chip.onclick = () => { picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true })); };
+        products.append(chip);
+      }
+    };
+    chips();
+    picker.addEventListener("change", chips);
+    new MutationObserver(chips).observe(picker, { childList:true, subtree:true });
+  }
+
+  // Left: the parts of the thing, and nothing else.
+  const parts = $("#ws-parts");
+  const leftKeep = [...left.children];
+  left.replaceChildren(make("h2", {}, "Parts"));
+  if (parts) left.append(parts);
+
+  // Under the view: which way you are looking at it, and how far apart it lies.
+  const bar = make("div", { class:"ws-benchbar" });
+  const views = make("div", { class:"ws-chips", role:"group", "aria-label":"Point of view" });
+  for (const [name, y, p] of BENCH_VIEWS) {
+    const button = make("button", { type:"button", class:"ws-chip" }, name);
+    button.onclick = () => {
+      yaw = y; pitch = p; placeCamera();
+      for (const other of [...views.children]) other.setAttribute("aria-current", other === button ? "true" : "false");
+    };
+    views.append(button);
+  }
+  views.firstChild?.setAttribute("aria-current", "true");
+  const apart = make("input", { id:"ws-spread", type:"range", min:"0", max:"100", step:"1", value:"0",
+                                "aria-label":"How far apart the parts lie" });
+  apart.addEventListener("input", () => { bench.spread = apart.valueAsNumber / 100; draw(chosen()); });
+  const apartLabel = make("label", { class:"ws-benchbar-field" }, "Apart");
+  apartLabel.append(apart);
+  bar.append(views, apartLabel);
+  viewport.append(bar);
+
+  // Right: the chat on top, then what it is held to. Everything the old bench
+  // had is folded into one place until it earns a spot in this frame.
+  const chatForm = $("#ws-component-chat");
+  const chatHome = make("section", { id:"ws-chat-home" });
+  chatHome.append(make("h2", {}, "Chat"));
+  const heldBox = make("section", { id:"ws-held-box" });
+  heldBox.append(make("h2", {}, "Held to"), make("div", { id:"ws-held" }));
+  const extras = make("details", { id:"ws-extras" });
+  extras.append(make("summary", {}, "Bench extras"));
+  const rightKeep = [...right.children];
+  right.replaceChildren(chatHome, heldBox, extras);
+  for (const node of rightKeep) extras.append(node);
+  for (const node of leftKeep) if (node !== parts) extras.append(node);
+  if (chatForm) chatHome.append(chatForm);
+
+  // Wire and Skin are the product. Matter, physics, collision and relations
+  // describe how it is compiled, which is bench plumbing, not editing a thing.
+  const viewbar = $(".ws-viewbar");
+  if (viewbar) {
+    const plumbing = make("div", { class:"ws-viewbar ws-viewbar-extra", role:"group", "aria-label":"How it compiles" });
+    for (const button of [...viewbar.children]) {
+      if (!["wire", "skin"].includes(button.dataset.view)) plumbing.append(button);
+    }
+    if (plumbing.children.length) extras.append(make("h3", {}, "How it compiles"), plumbing);
+  }
+
+  // The rack runs along the bottom, where the world keeps its bag slots.
+  const rackBox = $("#ws-rack")?.closest("section") || null;
+  const foot = make("footer", { id:"ws-rack-foot" });
+  foot.append(make("h2", {}, "The rack"), make("div", { id:"ws-rack-strip" }));
+  root.append(foot);
+  if (rackBox) rackBox.hidden = false;
+  renderRackStrip();
+}
+
+// The rack as a row of bins, the same shape as the world's numbered bag slots.
+function renderRackStrip() {
+  const strip = $("#ws-rack-strip");
+  if (!strip) return;
+  const rows = (bench.rack && bench.rack.materials) || [];
+  const needs = chosen()?.needs || null;
+  const wanted = {};
+  for (const row of (needs && needs.materials) || []) wanted[row.material] = row;
+  strip.replaceChildren();
+  for (const row of rows) {
+    const want = wanted[row.material];
+    const bin = make("label", { class:"ws-bin" });
+    if (want) bin.dataset.state = want.short_kg > 0 ? "short" : "wanted";
+    bin.append(make("span", { class:"ws-bin-name" }, row.material));
+    const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(row.mass_kg),
+                                  "aria-label":`${row.material} in the rack, kilograms` });
+    input.addEventListener("change", () => guard(input, async () => {
+      const mass = input.valueAsNumber;
+      if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
+      const answer = await api("/api/workshop/library", { action:"set_rack", material:row.material, mass_kg:mass });
+      bench.rack = answer.rack; renderRack(); renderRackStrip(); reprobe();
+    }));
+    bin.append(input);
+    if (want) bin.append(make("span", { class:"ws-bin-need" },
+      want.short_kg > 0 ? `wants ${want.needed_kg} · short ${want.short_kg}` : `wants ${want.needed_kg}`));
+    strip.append(bin);
+  }
+  if (needs) strip.append(make("p", { class:"ws-bin-says", "data-bad": needs.enough ? "no" : "yes" }, needs.says));
+}
+
 installEditor();
+installBench();
 for (const id of ["#ws-matter-cell", "#ws-matter-exterior"]) {
   $(id).addEventListener("change", () => { invalidateMatter("Settings changed. Rebuild Matter view."); clearPlayback(); $("#ws-bench-result").replaceChildren(); show(false); });
 }
@@ -1531,6 +1763,7 @@ function renderRack() {
     label.append(input); root.append(label);
   }
 }
+function renderBenchReadouts() { renderHeldTo(); renderRackStrip(); }
 function renderBom(candidate) {
   const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.mechanical_model !== "rigid" && ["matter", "collision", "relations"].includes(view) && bench.matterBom ? bench.matterBom : candidate.bom;
   if (!bom) { root.append(make("p", { class:"ws-feedback-count" }, "No material estimate.")); return; }
@@ -1557,6 +1790,7 @@ function renderBom(candidate) {
       "Keep designing, measuring and testing it. It cannot be made or placed until the rack covers it."));
   }
   root.append(make("p", { class:"ws-bom-total" }, `Material cost: ${bom.material_cost} credits`), make("p", { class:"ws-feedback-count" }, bom.basis));
+  renderBenchReadouts();
 }
 function renderIsolation() {
   const bar = $("#ws-isolation"); if (!bar) return;
