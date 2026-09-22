@@ -1060,11 +1060,10 @@ class ARoverRestsInTheSun(PageJourney):
                         f"its battery never ran low enough to rest: {self.situation()}")
         text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
         self.assertEqual(text("mp-condition"), "its battery is low, so it rests while its panel charges it")
-        rest = self.at_rest("rover")
-        charge, began = self.js(f"{store}.charge_j"), self.js("banjoRoom.status().time_s")
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < 8.0:
-            time.sleep(0.5)
+        self.wait_world(2.0)          # brought to rest on its brakes
+        rest = self.position("rover")
+        charge = self.js(f"{store}.charge_j")
+        self.wait_world(8.0)
         gained = self.js(f"{store}.charge_j") - charge
         panel = self.js("banjoRoom.world.machines.panels[0]")
         listed = self.js("document.getElementById('machine-list').innerText")
