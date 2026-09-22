@@ -223,3 +223,5 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 }
 .ws-top .ws-workspace-tabs {display:flex;gap:.35rem;margin:0;}
 .ws-top .ws-workspace-tabs button {padding:.45rem .9rem;}
+.ws-bom-table th{color:#91a2b5;font-weight:500;font-size:.68rem;text-align:left;text-transform:uppercase;letter-spacing:.06em;padding-bottom:.2rem}
+.ws-short{color:#e08a8a}

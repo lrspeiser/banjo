@@ -30,6 +30,7 @@ import world_room
 import precise_rigid
 import workshop_sparse_trial as sparse
 import workshop_articulation
+import workshop_library
 from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_visual,
                  workshop_matter_metrics, workshop_rigid)
 
@@ -507,6 +508,22 @@ def _preview_cache(app):
     return cache
 
 
+def _with_needs(app: Any, design: Any, answer: dict[str, Any]) -> dict[str, Any]:
+    """Say what making this would take, and keep it with the preview.
+
+    A design is previewed whatever the rack holds -- the refusal belongs at
+    ``commit``, where material actually leaves the rack -- so the page can show
+    the shortfall and still let the person keep designing.
+    """
+    needs = workshop_library.what_it_needs(app, design)
+    answer["needs"] = needs
+    answer["can_be_made"] = needs["enough"]
+    entry = _preview_cache(app).get(answer.get("preview_id"))
+    if entry is not None:
+        entry["needs"] = needs
+    return answer
+
+
 def preview(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body, {"session", "scene", "mode", "candidate", "position_m"})
     if body.get("mode") != "authoring":
@@ -521,10 +538,10 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
         models = workshop_rigid.requested_models(design, overrides)
         if models == {"rigid"}:
-            return _preview_rigid(app, room, live, old, design, overrides, pos)
+            return _with_needs(app, design, _preview_rigid(app, room, live, old, design, overrides, pos))
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if workshop_articulation.has_bearings(design):
-            return _preview_articulated(app, room, live, old, design, overrides, pos, body["candidate"])
+            return _with_needs(app, design, _preview_articulated(app, room, live, old, design, overrides, pos, body["candidate"]))
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])
@@ -606,7 +623,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
                         "spec": spec, "matter": matter, "root": root, "shift": shift,
                         "candidate_hash": _hash(body["candidate"])}
-        return answer
+        return _with_needs(app, design, answer)
 
 
 
@@ -790,6 +807,15 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         before = _snapshot(live)
         if plan["source_hash"] != _hash([before,room.spec,_inventory(room)]):
             raise ValueError("The world or inventory changed after preview. Preview again; nothing was installed")
+        # Material leaves the rack here and nowhere else. A design may be drawn,
+        # measured and tried on the bench with an empty rack; it cannot be MADE
+        # out of stock that is not there. The fabrication lane funds its own
+        # stock, so a funded job is not charged a second time.
+        needs = plan.get("needs") if funding_job is None else None
+        if needs is not None and not needs.get("enough"):
+            raise ValueError("The rack cannot cover this yet: short " + ", ".join(
+                f"{m['short_kg']:g} kg of {m['material']}" for m in needs["missing"])
+                + ". The design is kept; get the material and make it then")
         fabrication_state = deepcopy(getattr(room, "fabrication_record", None))
         if fabrication_state is not None:
             fabrication.advance(fabrication_state, before["t_s"])
@@ -800,6 +826,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                 raise ValueError("Preview does not match the funded design and core-use program")
             fabrication_state = fabrication.transfer(fabrication_state, funding_job, plan["answer"], request)
         staged, saved = _stage(app, live, old, plan["spec"], before, plan["matter"], plan["root"], plan["shift"])
+        drawn = None
         try:
             thermal_transfer = None
             if funding_job is not None:
@@ -818,6 +845,9 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,
                                limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
+            if needs is not None:
+                drawn = workshop_library.take_from_rack(app, needs)
+                receipt.update(resources_charged=True, materials_taken=drawn["took"], rack=drawn["rack"])
             kept = deepcopy(receipts[-(MAX_RECEIPTS-1):]) + [deepcopy(receipt)]
             record = SimpleNamespace(scene=room.scene, spec=plan["spec"], chat=deepcopy(room.chat),
                                      inventory_record=_inventory(room), world_record=saved, workshop_installs=kept,
@@ -829,6 +859,10 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if not app.store.save(record):
                 raise ValueError("The room store refused the installation")
         except BaseException:
+            # Nothing was installed, so nothing was spent: put the stock back.
+            if drawn is not None:
+                for row in drawn["took"]:
+                    workshop_library.set_rack(app, row["material"], row["left_kg"] + row["took_kg"])
             staged.session.close()
             raise
         room.spec = plan["spec"]

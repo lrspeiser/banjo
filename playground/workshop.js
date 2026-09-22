@@ -68,7 +68,7 @@ const target = new THREE.Vector3(0, 0.42, 0);
 
 const bench = {
   kind: "table", generation: 0, candidates: [], selected: 0,
-  session: null, savedDesigns: [], personalLibrary: [], pricebook: null,
+  session: null, savedDesigns: [], personalLibrary: [], pricebook: null, rack: null,
   libraryInspection: null, selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
   benchTests: [], benchPresets: [], selectedBenchTest: null,
   matter: null, matterKey: null, matterMeasured: null, matterBom: null, matterMasses: null,
@@ -134,7 +134,16 @@ function installPlacementControls(right) {
     installation.preview=answer;installation.request=crypto.randomUUID();
     const result=$("#ws-install-result");result.dataset.status="preview";
     result.textContent=`Ready: ${answer.design_id}, ${answer.mass_kg.toFixed(3)} kg, ${answer.mechanical_model === "precise-rigid-v1" ? `${answer.collision_boxes} precise collision boxes, zero lattice cells` : `${answer.cells} exact cells`}. Translation: ${answer.applied_translation_m.map(x=>x.toFixed(3)).join(", ")} m. Native geometry and existing state verified. No strength certification or resource charge. ${answer.limits}`;
-    confirm.disabled=false;
+    // Material leaves the rack at commit, so a short rack still previews: the
+    // person sees exactly what it would take and what they are missing.
+    if (answer.needs && !answer.needs.enough) {
+      result.dataset.status="short";
+      result.append(make("p",{class:"ws-short"}, answer.needs.says + " Nothing has been spent; make it when you have that."));
+      confirm.disabled=true; confirm.title=answer.needs.says;
+    } else {
+      confirm.disabled=false; confirm.title="";
+      if (answer.needs) result.append(make("p",{class:"ws-bom-total"}, answer.needs.says));
+    }
   });
   confirm.onclick=async()=>{
     const ready=installation.preview,request=installation.request;
@@ -147,7 +156,13 @@ function installPlacementControls(right) {
       const result=$("#ws-install-result");result.dataset.status="installed";
       result.textContent=`Installed ${answer.design_id} as ${answer.root_body} in ${answer.scene}. The original world state and inventory were preserved. `;
       result.append(make("a",{href:`/world?scene=${encodeURIComponent(answer.scene)}&hold=1`},"Return to the world"));
-      say("Prototype installed and room saved.");
+      if (answer.materials_taken && answer.materials_taken.length) {
+        result.append(make("p",{class:"ws-bom-total"}, "Taken from the rack: " + answer.materials_taken
+          .map(r=>`${r.took_kg} kg of ${r.material}, ${r.left_kg} kg left`).join("; ")));
+      }
+      if (answer.rack) { bench.rack = answer.rack; renderRack(); }
+      say("Made, installed, and the rack charged.");
+      reprobe();
     } catch(error) {
       // Retain the same request ID on an uncertain network result: retrying
       // retrieves the saved receipt rather than creating another prototype.
@@ -781,6 +796,11 @@ function installEditor() {
   installBuildPanel(editor);
 
   const bom = make("section", { id:"ws-bom-box" }); bom.append(make("h3", {}, "Materials"), make("div", { id:"ws-bom" }));
+  // The rack: what the workshop holds. Designing never touches it; making does.
+  // Editable here because nothing in the world stocks it yet.
+  bom.append(make("h3", {}, "The rack"),
+    make("p", { class:"ws-note" }, "What the workshop holds, in kilograms. A design is drawn, measured and tested whatever is here; only making it draws on it."),
+    make("div", { id:"ws-rack" }));
   right.insertBefore(bom, $("#ws-checks").previousElementSibling);
 
   const testBox = make("section", { id:"ws-test-bench" });
@@ -1492,12 +1512,51 @@ function renderProductCatalog() {
     root.append(entry);
   }
 }
+function renderRack() {
+  const root = $("#ws-rack"); if (!root) return;
+  const rows = (bench.rack && bench.rack.materials) || [];
+  root.replaceChildren();
+  if (!rows.length) { root.append(make("p", { class:"ws-feedback-count" }, "The rack has not been read yet.")); return; }
+  for (const row of rows) {
+    const label = make("label", { class:"ws-field" }, row.material);
+    const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(row.mass_kg) });
+    input.dataset.material = row.material;
+    input.addEventListener("change", () => guard(input, async () => {
+      const mass = input.valueAsNumber;
+      if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
+      const answer = await api("/api/workshop/library", { action:"set_rack", material:row.material, mass_kg:mass });
+      bench.rack = answer.rack; renderRack(); reprobe();
+      say(`The rack holds ${mass} kg of ${row.material}.`);
+    }));
+    label.append(input); root.append(label);
+  }
+}
 function renderBom(candidate) {
   const root = $("#ws-bom"); root.replaceChildren(); const bom = candidate.mechanical_model !== "rigid" && ["matter", "collision", "relations"].includes(view) && bench.matterBom ? bench.matterBom : candidate.bom;
   if (!bom) { root.append(make("p", { class:"ws-feedback-count" }, "No material estimate.")); return; }
+  // What it takes, what the rack holds, and what is short. A design is drawn,
+  // measured and tested whatever the rack has; only making it is refused.
+  const needs = candidate.needs, byMaterial = {};
+  for (const row of (needs && needs.materials) || []) byMaterial[row.material] = row;
   const table = make("table", { class:"ws-bom-table" });
-  for (const row of bom.materials || []) { const tr = make("tr"); tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`), make("td", {}, row.cost == null ? "unpriced" : `${row.cost} cr`)); table.append(tr); }
-  root.append(table, make("p", { class:"ws-bom-total" }, `Material cost: ${bom.material_cost} credits`), make("p", { class:"ws-feedback-count" }, bom.basis));
+  const head = make("tr");
+  for (const label of ["material", "it takes", "the rack", "short"]) head.append(make("th", {}, label));
+  table.append(head);
+  for (const row of bom.materials || []) {
+    const have = byMaterial[row.material], missing = have && have.short_kg > 0;
+    const tr = make("tr");
+    tr.append(make("td", {}, row.material), make("td", {}, `${row.mass_kg} kg`),
+      make("td", {}, have ? `${have.held_kg} kg` : "—"),
+      make("td", { class: missing ? "ws-short" : "" }, missing ? `${have.short_kg} kg` : "—"));
+    table.append(tr);
+  }
+  root.append(table);
+  if (needs) {
+    root.append(make("p", { class: needs.enough ? "ws-bom-total" : "ws-short" }, needs.says));
+    if (!needs.enough) root.append(make("p", { class:"ws-feedback-count" },
+      "Keep designing, measuring and testing it. It cannot be made or placed until the rack covers it."));
+  }
+  root.append(make("p", { class:"ws-bom-total" }, `Material cost: ${bom.material_cost} credits`), make("p", { class:"ws-feedback-count" }, bom.basis));
 }
 function renderIsolation() {
   const bar = $("#ws-isolation"); if (!bar) return;
@@ -1952,7 +2011,7 @@ async function start() {
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
   picker.value = answer.kind; renderProductCatalog();
   bench.families = answer.families || []; savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
-  bench.pricebook = answer.pricebook || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); renderBuildChoices(); took(answer);
+  bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); renderRack(); renderBuildChoices(); took(answer);
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;

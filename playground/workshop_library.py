@@ -26,6 +26,12 @@ DEFAULT_PRICES = {
     "oak": 3.00, "iron": 1.20, "aluminum": 4.00, "glass": 1.50,
     "alumina ceramic": 6.00, "rubber": 2.50, "ice": 0.10, "concrete": 0.15,
 }
+#: What the rack starts with, in kilograms. A design may be drawn, measured and
+#: tried on the bench whatever the rack holds; only MAKING it draws on these.
+DEFAULT_RACK = {
+    "oak": 12.4, "iron": 6.2, "aluminum": 0.0, "glass": 0.6,
+    "alumina ceramic": 0.0, "rubber": 1.1, "ice": 0.0, "concrete": 40.0,
+}
 
 
 def owner_id(app: Any) -> str:
@@ -96,6 +102,13 @@ def _open_connection(app: Any) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, material)
         );
+        CREATE TABLE IF NOT EXISTS workshop_material_rack (
+            owner_id TEXT NOT NULL,
+            material TEXT NOT NULL,
+            mass_kg REAL NOT NULL CHECK(mass_kg >= 0),
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(owner_id, material)
+        );
         CREATE TABLE IF NOT EXISTS workshop_bench_presets (
             owner_id TEXT NOT NULL,
             preset_id TEXT NOT NULL,
@@ -111,6 +124,10 @@ def _open_connection(app: Any) -> sqlite3.Connection:
         db.execute("""INSERT OR IGNORE INTO workshop_material_prices
                     (owner_id, material, price_per_kg, currency, updated_at)
                     VALUES (?, ?, ?, 'credits', ?)""", (who, material, price, now))
+    for material, mass in DEFAULT_RACK.items():
+        db.execute("""INSERT OR IGNORE INTO workshop_material_rack
+                    (owner_id, material, mass_kg, updated_at)
+                    VALUES (?, ?, ?, ?)""", (who, material, mass, now))
     db.commit()
     return db
 
@@ -314,6 +331,96 @@ def set_price(app: Any, material: str, price_per_kg: float, currency: str = "cre
                     price_per_kg=excluded.price_per_kg,currency=excluded.currency,updated_at=excluded.updated_at""",
                    (owner_id(app), material, price, currency, _now()))
     return pricebook(app)
+
+
+RACK_SCHEMA = "banjo.workshop-rack.v1"
+NEEDS_SCHEMA = "banjo.workshop-needs.v1"
+#: The bill rounds masses to four decimal places, so a match can miss by that.
+_SLACK_KG = 5e-5
+
+
+def rack(app: Any) -> dict[str, Any]:
+    """What the workshop holds, per material, in kilograms."""
+    with _connect(app) as db:
+        rows = db.execute("""SELECT material,mass_kg,updated_at FROM workshop_material_rack
+                           WHERE owner_id=? ORDER BY material""", (owner_id(app),)).fetchall()
+    return {"schema": RACK_SCHEMA, "unit": "kg",
+            "materials": [{"material": r["material"], "mass_kg": round(r["mass_kg"], 4),
+                           "updated_at": r["updated_at"]} for r in rows]}
+
+
+def set_rack(app: Any, material: str, mass_kg: float) -> dict[str, Any]:
+    material, mass = engine_materials.canonical(material), float(mass_kg)
+    if not 0.0 <= mass <= 1e9:
+        raise ValueError("mass_kg must be between 0 and 1e9")
+    with _connect(app) as db:
+        db.execute("""INSERT INTO workshop_material_rack(owner_id,material,mass_kg,updated_at)
+                    VALUES (?,?,?,?) ON CONFLICT(owner_id,material) DO UPDATE SET
+                    mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
+                   (owner_id(app), material, mass, _now()))
+    return rack(app)
+
+
+def _needs_sentence(rows: list[dict[str, Any]], missing: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "It takes no material at all."
+    takes = ", ".join(f"{r['needed_kg']:g} kg of {r['material']}" for r in rows)
+    if not missing:
+        return f"It takes {takes}, and the rack has all of it."
+    short = ", ".join(f"{m['short_kg']:g} kg of {m['material']}" for m in missing)
+    return f"It takes {takes}. You are short {short}."
+
+
+def what_it_needs(app: Any, design: WorkshopDesign, *, matter_summary=None) -> dict[str, Any]:
+    """What making this design would take, against what the rack holds.
+
+    A design is never refused for want of material: it is drawn, measured and
+    tried on the bench whatever the rack has.  This is both the answer to "what
+    else do I need" and the gate that MAKING it has to pass.
+    """
+    bom = bill_of_materials(app, design, matter_summary=matter_summary)
+    held = {row["material"]: row["mass_kg"] for row in rack(app)["materials"]}
+    rows: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    for row in bom["materials"]:
+        need, have = float(row["mass_kg"]), float(held.get(row["material"], 0.0))
+        short = round(max(0.0, need - have), 4)
+        rows.append({"material": row["material"], "needed_kg": need, "held_kg": round(have, 4),
+                     "short_kg": short, "enough": need - have <= _SLACK_KG})
+        if need - have > _SLACK_KG:
+            missing.append({"material": row["material"], "short_kg": short})
+    return {"schema": NEEDS_SCHEMA, "unit": "kg", "enough": not missing,
+            "materials": rows, "missing": missing, "basis": bom.get("basis"),
+            "material_cost": bom.get("material_cost"), "currency": bom.get("currency"),
+            "says": _needs_sentence(rows, missing)}
+
+
+def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
+    """Draw a design's materials out of the rack: all of them, or none.
+
+    The rack is read again inside the transaction, so two makers cannot spend
+    the same oak, and a shortfall raises with what is missing rather than
+    quietly making it anyway.
+    """
+    wanted = {row["material"]: float(row["needed_kg"]) for row in needs.get("materials") or []
+              if float(row["needed_kg"]) > 0.0}
+    who, now, took = owner_id(app), _now(), []
+    with _connect(app) as db:
+        held = {r["material"]: float(r["mass_kg"]) for r in db.execute(
+            "SELECT material,mass_kg FROM workshop_material_rack WHERE owner_id=?", (who,)).fetchall()}
+        missing = [{"material": m, "short_kg": round(want - held.get(m, 0.0), 4)}
+                   for m, want in sorted(wanted.items()) if want - held.get(m, 0.0) > _SLACK_KG]
+        if missing:
+            raise ValueError("the rack is short " + ", ".join(
+                f"{m['short_kg']:g} kg of {m['material']}" for m in missing))
+        for material, want in sorted(wanted.items()):
+            left = max(0.0, held.get(material, 0.0) - want)
+            db.execute("""INSERT INTO workshop_material_rack(owner_id,material,mass_kg,updated_at)
+                        VALUES (?,?,?,?) ON CONFLICT(owner_id,material) DO UPDATE SET
+                        mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
+                       (who, material, left, now))
+            took.append({"material": material, "took_kg": round(want, 4), "left_kg": round(left, 4)})
+    return {"schema": RACK_SCHEMA, "took": took, "rack": rack(app)}
 
 
 def save_bench_preset(app: Any, *, name: str, test_name: str, config: dict[str, Any],

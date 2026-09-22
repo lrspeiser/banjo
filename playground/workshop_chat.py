@@ -62,6 +62,14 @@ Important behavior:
 - inspect_physics exposes measured mass/balance/support, analytical load
   evidence, ProductGraph relationships and the reduced PhysicsContract.
 - search_library can find reusable components by name/role/family/physics tags.
+- what_it_needs answers what MAKING the design would take in materials, what
+  the rack holds and what is short. Call it whenever the person asks what a
+  design needs, what else they need, whether they can make it, or what it
+  costs, and after an edit that changes size or material when they are asking
+  about making it. Designing, measuring and bench-testing are free whatever the
+  rack holds; only making it draws stock. Report a shortfall in the material
+  and the kilograms, and never shrink or re-material a design to fit the rack
+  unless the person asks for that.
 - Edits are deterministic tools. Do not fabricate geometry or silently change
   unrelated components.
 - If the request is ambiguous in a way that materially changes the object, ask
@@ -182,6 +190,12 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         {"type": "function", "name": "inspect_physics",
          "description": "Inspect mass/balance/support, analytical static-load evidence, ProductGraph relationships and the reduced PhysicsContract.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
+        {"type": "function", "name": "what_it_needs",
+         "description": "What making the current design would take in materials, what the rack holds, and what is short. "
+                        "Call this whenever the person asks what a design needs, what else they need, whether they can "
+                        "make it, or what it would cost. Designing and bench-testing cost nothing; only making it draws "
+                        "on the rack, so a shortfall is a fact to report, never a reason to change the design unasked.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": [], "properties": {}}},
         {"type": "function", "name": "list_materials",
          "description": "List materials currently available to Workshop component edits.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
@@ -277,6 +291,17 @@ class _State:
                 "relationships": graph.described().get("relationships") or [],
                 "physics_contract": contract,
                 "declared_tests": deepcopy(self.design.tests),
+            })
+
+        if tool == "what_it_needs":
+            needs = workshop_library.what_it_needs(self.app, self.design)
+            return self.record(tool, {
+                "summary": needs["says"], "enough": needs["enough"],
+                "materials": needs["materials"], "missing": needs["missing"],
+                "material_cost": needs["material_cost"], "currency": needs["currency"],
+                "basis": needs["basis"],
+                "note": ("The rack covers this design." if needs["enough"] else
+                         "It can still be drawn, measured and tried on the bench. It cannot be made."),
             })
 
         if tool == "list_materials":

@@ -118,6 +118,10 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     except ValueError as problem:
         wire["analytical"] = {"static_loads": [], "limitations": [str(problem)]}
     wire["bom"] = workshop_library.bill_of_materials(app, design)
+    # What making it would take against the rack. Carried on every candidate so
+    # the bench can say what is short without a second round trip; it never
+    # stops a candidate being drawn, measured or tried.
+    wire["needs"] = workshop_library.what_it_needs(app, design)
     wire["measured"]["basis"] = "wireframe-estimate"
     if workshop_matter_metrics.has_physical_skin(design):
         wire["design_measured"] = wire["measured"]
@@ -135,6 +139,7 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
             for part in wire["parts"]:
                 part["mass_kg"] = summary["component_mass_kg"].get(part["name"], 0.0)
             wire["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+            wire["needs"] = workshop_library.what_it_needs(app, design, matter_summary=summary)
             wire["notes"] += summary["measured"]["warnings"]
     return wire
 
@@ -185,6 +190,14 @@ def library(app: Any = None, body: Any = None,
                     "pricebook": workshop_library.set_price(
                         app, str(body.get("material") or ""), float(body.get("price_per_kg")),
                         str(body.get("currency") or "credits"))}
+        if action == "set_rack":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "rack": workshop_library.set_rack(
+                        app, str(body.get("material") or ""), float(body.get("mass_kg")))}
+        if action == "needs":
+            design, _ = workshop_components.design_from_spec(body)
+            return {"schema": WORKSHOP_SCHEMA, "needs": workshop_library.what_it_needs(app, design),
+                    "rack": workshop_library.rack(app)}
         if action == "save_component":
             design, _ = workshop_components.design_from_spec(body)
             recipe = workshop_components.component_recipe(design, str(body.get("part_name") or ""))
@@ -224,6 +237,7 @@ def library(app: Any = None, body: Any = None,
         "saved_designs": workshop_store.list_saved(_store(app)) if app is not None else [],
         "personal_library": workshop_library.list_items(app) if app is not None else [],
         "pricebook": workshop_library.pricebook(app) if app is not None else {},
+        "rack": workshop_library.rack(app) if app is not None else {},
         "bench_tests": workshop_bench.catalog(kind),
         "bench_presets": workshop_library.list_bench_presets(app) if app is not None else [],
     }
@@ -389,6 +403,10 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         raise ValueError("cell_size_m must be between 2 mm and 500 mm")
     answer = materialize(design, cell_size_m=cell)
     answer["bom"] = workshop_library.bill_of_materials(app, design)
+    # What making it would take, against the rack. A design is never refused
+    # for want of material; only MAKING it is (workshop_library.what_it_needs).
+    answer["needs"] = workshop_library.what_it_needs(app, design)
+    answer["rack"] = workshop_library.rack(app)
     if workshop_matter_metrics.has_physical_skin(design):
         overrides = design.lineage.get("component_overrides") or {}
         answer["wireframe_fingerprint"] = answer["fingerprint"]
@@ -406,6 +424,7 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         else:
             answer["measured"] = summary["measured"]
             answer["bom"] = workshop_library.bill_of_materials(app, design, matter_summary=summary)
+            answer["needs"] = workshop_library.what_it_needs(app, design, matter_summary=summary)
             answer["fingerprint"] = matter["physics_hash"]
             answer["geometry_basis"] = "canonical-matter-grid"
             answer["matter_physics_hash"] = matter["physics_hash"]
