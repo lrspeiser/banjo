@@ -492,7 +492,14 @@ def compose(ground: dict) -> tuple[dict, dict, tuple]:
         can hold. Turned so that it rolls ACROSS the slope where it stands --
         its axles pointing downhill, the way a cart is left -- and set on the
         highest ground under every one of its parts."""
-        params = {"primary_use": PRIMARY_USE[kind]} if kind in PRIMARY_USE else {}
+        # Its use and points as the Workshop's model wrote them, as for the
+        # products built of cells (product_bodies); room_entries puts each
+        # point on the exact body nearest it.
+        said = authored_use(kind)
+        if said:
+            params = {"primary_use": said["primary_use"], "interaction_points": said["interaction_points"]}
+        else:
+            params = {"primary_use": PRIMARY_USE[kind]} if kind in PRIMARY_USE else {}
         design, over = workshop_components.design_from_spec(
             {"kind": kind, "design_id": root, "parameters": params})
         artifact = rigid_assembly.compile_design(design, over, root=root)

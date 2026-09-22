@@ -38,12 +38,13 @@ import server               # noqa: E402  where the key and the model are found
 import workshop_api_core    # noqa: E402
 import workshop_chat        # noqa: E402
 import workshop_library     # noqa: E402
-from mcp import workshop_components  # noqa: E402
+from mcp import workshop_components, workshop_construction  # noqa: E402
 from mcp.workshop import assembly     # noqa: E402
 
 OUT = ROOT / "tools" / "explore_uses.json"
-# The valley's Workshop products (tools/build_explore_world.py compose()).
-KINDS = ("table", "bench", "chair", "stool", "shelf-unit")
+# The valley's Workshop products (tools/build_explore_world.py compose()): the
+# five built of cells, and the cart, which stands as exact bodies on pins.
+KINDS = ("table", "bench", "chair", "stool", "shelf-unit", "cart")
 
 PROMPT = """This {kind} is about to be placed, as it is, in the Explore valley: a world a person walks around in first person. There E takes ANY thing up -- one hand holds it at its grip point -- and E again puts it down where they look, so carrying and setting down are never its use. The left mouse runs its primary use: what it is FOR beyond being carried. Other things can be set on or in it. Decide from what it is for. Change nothing about its geometry.
 
@@ -57,41 +58,61 @@ ON_THE_THING_M = 0.02
 
 
 def off_the_thing(design, points: list[dict]) -> list[str]:
-    """Grip and use points that are not on any part of the design: the model once
-    put a table's grip 0.14 m above its top, which a hand would hold by nothing."""
+    """Points that are not where they say: a grip or use point on no part of the
+    design -- the model once put a table's grip 0.14 m above its top, which a
+    hand would hold by nothing -- and a surface on no part's top face: it once
+    put a cart's deck on the ground under the cart. Each part is measured as it
+    is turned (the box round its corners), so a cart's handle, a bar lying
+    across, is where it is drawn."""
+    boxes = [workshop_construction._bounds(part) for part in design.parts]
     bad = []
     for point in points:
-        if point.get("kind") not in ("grip", "use"):
-            continue
         at = point["position_m"]
-        if not any(all(abs(at[a] - part.center_m[a]) <= part.size_m[a] / 2 + ON_THE_THING_M
-                       for a in range(3)) for part in design.parts):
+        if point.get("kind") in ("grip", "use"):
+            on = any(all(lo[a] - ON_THE_THING_M <= at[a] <= hi[a] + ON_THE_THING_M for a in range(3))
+                     for lo, hi in boxes)
+        elif point.get("kind") == "surface":
+            # On the face things rest on, or in the board under it by up to half
+            # its thickness (3 cm at most): the model puts a table's surface at
+            # the middle of its top, and the engine finds the face itself.
+            on = any(hi[1] - min((hi[1] - lo[1]) / 2, 0.03) - 1e-6 <= at[1] <= hi[1] + ON_THE_THING_M and
+                     all(lo[a] - ON_THE_THING_M <= at[a] <= hi[a] + ON_THE_THING_M for a in (0, 2))
+                     for lo, hi in boxes)
+        else:
+            continue
+        if not on:
             bad.append(f"{point['kind']} {point['id']} at {[round(v, 3) for v in at]}")
     return bad
 
 
-def author(app, kind: str) -> dict:
+def author(app, kind: str, tries: int = 3) -> dict:
+    """The model's use and points for one product. A point it puts off the
+    thing is said back to it, as a person would, and it is asked again; after
+    `tries` nothing is saved."""
     design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": kind, "parameters": {}})
-    candidate = workshop_api_core._candidate(app, design, assembly(kind), overrides)
     book = workshop_library.pricebook(app)
-    said = workshop_chat.propose(app, message=PROMPT.format(kind=kind), selected_part=None,
-                                 candidate=candidate,
-                                 materials=[m["material"] for m in book["materials"]], library=[])
-    parameters = candidate.get("parameters") or {}
-    missing = [k for k in ("primary_use", "interaction_points") if k not in parameters]
-    if missing:
-        raise SystemExit(f"{kind}: the model did not write {', '.join(missing)}; it said: {said['reply']!r}")
-    # Rotated parts are not measured here: a point near a turned part is taken
-    # as on it only within its unturned box.
-    bad = off_the_thing(design, parameters["interaction_points"])
-    if bad:
-        raise SystemExit(f"{kind}: the model put points that are not on the {kind}: {'; '.join(bad)}. "
-                         f"Nothing was saved for it; run it again.")
-    return {"primary_use": parameters["primary_use"],
-            "interaction_points": parameters["interaction_points"],
-            "said": said["reply"],
-            "tools": [f"{t['tool']}: {t['summary']}" for t in said.get("tool_trace") or []]}
+    ask = PROMPT.format(kind=kind)
+    for attempt in range(1, tries + 1):
+        candidate = workshop_api_core._candidate(app, design, assembly(kind), overrides)
+        said = workshop_chat.propose(app, message=ask, selected_part=None, candidate=candidate,
+                                     materials=[m["material"] for m in book["materials"]], library=[])
+        parameters = candidate.get("parameters") or {}
+        missing = [k for k in ("primary_use", "interaction_points") if k not in parameters]
+        if missing:
+            raise SystemExit(f"{kind}: the model did not write {', '.join(missing)}; it said: {said['reply']!r}")
+        bad = off_the_thing(design, parameters["interaction_points"])
+        if not bad:
+            return {"primary_use": parameters["primary_use"],
+                    "interaction_points": parameters["interaction_points"],
+                    "said": said["reply"], "tries": attempt,
+                    "tools": [f"{t['tool']}: {t['summary']}" for t in said.get("tool_trace") or []]}
+        print(f"  {kind:10s} try {attempt}: not on the {kind}: {'; '.join(bad)}", flush=True)
+        ask = (PROMPT.format(kind=kind) + f"\n\nA try before this one put these where no part of the {kind} "
+               f"is: {'; '.join(bad)}. Inspect where its parts are, and put each grip and use point on "
+               f"a part, and each surface on the top face of what things rest on.")
+    raise SystemExit(f"{kind}: after {tries} tries the model still put points off the {kind}. "
+                     f"Nothing was saved for it.")
 
 
 def main(argv: list[str]) -> int:

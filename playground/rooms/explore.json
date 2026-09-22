@@ -82,61 +82,51 @@
   },
   {
    "body": "table",
-   "label": "Shove it along",
+   "label": "Look at it",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
+     "do": "inspect"
     }
    ]
   },
   {
    "body": "bench",
-   "label": "Shove it along",
+   "label": "Look at it",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
+     "do": "inspect"
     }
    ]
   },
   {
    "body": "chair",
-   "label": "Push it in",
+   "label": "Look at it",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
+     "do": "inspect"
     }
    ]
   },
   {
    "body": "stool",
-   "label": "Push it in",
+   "label": "Look at it",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
+     "do": "inspect"
     }
    ]
   },
   {
    "body": "shelf-unit",
-   "label": "Shove it along",
+   "label": "Look at it",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
+     "do": "inspect"
     }
    ]
   },
@@ -154,13 +144,13 @@
   },
   {
    "body": "cart",
-   "label": "Push the cart",
+   "label": "Push forward",
    "primary": true,
    "steps": [
     {
-     "distance_m": 0.4,
+     "distance_m": 1.0,
      "do": "push_forward",
-     "speed_m_s": 0.4
+     "speed_m_s": 0.5
     }
    ]
   },
@@ -1538,7 +1528,7 @@
     860.0,
     -1920.0
    ],
-   "id": "b-074e655332",
+   "id": "b-b417bc6306",
    "material": "oak",
    "name": "mace",
    "shape": "box",
@@ -1560,7 +1550,7 @@
     880.0,
     -1920.0
    ],
-   "id": "b-f997cbb932",
+   "id": "b-84738df7d4",
    "material": "iron",
    "name": "mace head",
    "shape": "box",
@@ -1798,40 +1788,41 @@
    "body": "table",
    "points": [
     {
-     "id": "top",
-     "kind": "surface",
-     "label": "Top",
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry by one hand",
      "position_m": [
       0.0,
-      0.06470588235294117,
+      0.04470588235294115,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-1",
+     "kind": "use",
+     "label": "Table surface",
+     "position_m": [
+      0.0,
+      0.04470588235294115,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
+     "kind": "surface",
+     "label": "Top surface",
+     "max_mass_kg": 50.0,
+     "position_m": [
+      0.0,
+      0.04470588235294115,
       0.0
      ],
      "size_m": [
-      1.2,
-      2.0,
-      0.7
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      -0.04490110454662233,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.04490110454662233,
-      0.0
+      1.16,
+      0.04,
+      0.66
      ],
      "yaw_deg": 0.0
     }
@@ -1949,9 +1940,32 @@
    "body": "bench",
    "points": [
     {
-     "id": "top",
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry grip",
+     "position_m": [
+      0.0,
+      0.04999999999999999,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-1",
+     "kind": "use",
+     "label": "Look at surface",
+     "position_m": [
+      0.0,
+      0.04999999999999999,
+      0.0
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
      "kind": "surface",
-     "label": "Top",
+     "label": "Top surface",
+     "max_mass_kg": 300.0,
      "position_m": [
       0.0,
       0.04999999999999999,
@@ -1959,30 +1973,8 @@
      ],
      "size_m": [
       1.6,
-      2.0,
+      0.45,
       0.36
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      -0.003990420044215237,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.003990420044215237,
-      0.0
      ],
      "yaw_deg": 0.0
     }
@@ -2100,9 +2092,32 @@
    "body": "chair",
    "points": [
     {
-     "id": "seat",
+     "id": "grip-1",
+     "kind": "grip",
+     "label": "Carry grip (one hand)",
+     "position_m": [
+      0.0,
+      -0.02274193548387088,
+      -0.0567741935483871
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-inspect",
+     "kind": "use",
+     "label": "Look at seat",
+     "position_m": [
+      0.0,
+      -0.02274193548387088,
+      -0.0567741935483871
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "seat-top",
      "kind": "surface",
-     "label": "Seat",
+     "label": "Seat top surface",
+     "max_mass_kg": 150.0,
      "position_m": [
       0.0,
       -0.02274193548387088,
@@ -2110,30 +2125,25 @@
      ],
      "size_m": [
       0.46,
-      2.0,
+      0.04,
       0.46
      ],
      "yaw_deg": 0.0
     },
     {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
+     "id": "back-top",
+     "kind": "surface",
+     "label": "Back top edge",
+     "max_mass_kg": 1.0,
      "position_m": [
       0.0,
-      -0.05554171262458629,
-      -0.031175198441161393
+      0.4004580645161291,
+      0.16122580645161289
      ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.05554171262458629,
-      -0.031175198441161393
+     "size_m": [
+      0.384,
+      0.012,
+      0.012
      ],
      "yaw_deg": 0.0
     }
@@ -2332,9 +2342,32 @@
    "body": "stool",
    "points": [
     {
-     "id": "top",
+     "id": "grip-top-center",
+     "kind": "grip",
+     "label": "Carry by top center",
+     "position_m": [
+      -0.0019523809523809554,
+      0.10880952380952386,
+      -0.0019523809523809554
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-top",
+     "kind": "use",
+     "label": "Top surface (use)",
+     "position_m": [
+      -0.0019523809523809554,
+      0.10880952380952386,
+      -0.0019523809523809554
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top",
      "kind": "surface",
-     "label": "Top",
+     "label": "Seat top",
+     "max_mass_kg": 120.0,
      "position_m": [
       -0.0019523809523809554,
       0.10880952380952386,
@@ -2342,30 +2375,8 @@
      ],
      "size_m": [
       0.36,
-      2.0,
+      0.02,
       0.36
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      -0.0019523809523809468,
-      -0.0026526784412416182,
-      -0.0019523809523809468
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      -0.0019523809523809468,
-      -0.0026526784412416182,
-      -0.0019523809523809468
      ],
      "yaw_deg": 0.0
     }
@@ -2618,24 +2629,92 @@
    "body": "shelf-unit",
    "points": [
     {
-     "id": "grip",
+     "id": "grip-main",
      "kind": "grip",
-     "label": "Grip",
+     "label": "Carry (one hand)",
      "position_m": [
-      -0.004999999999999992,
-      1.1102230246251565e-16,
+      -0.005000000000000008,
+      0.313333,
       -0.010000000000000004
      ],
      "yaw_deg": 0.0
     },
     {
-     "id": "use",
+     "id": "use-inspect",
      "kind": "use",
-     "label": "Use",
+     "label": "Look at it",
      "position_m": [
-      -0.004999999999999992,
-      1.1102230246251565e-16,
+      -0.005000000000000008,
+      -0.27333300000000005,
       -0.010000000000000004
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-1",
+     "kind": "surface",
+     "label": "Shelf 1 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      -0.005000000000000008,
+      -0.86,
+      -0.010000000000000004
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-2",
+     "kind": "surface",
+     "label": "Shelf 2 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      -0.005000000000000008,
+      -0.27333300000000005,
+      -0.010000000000000004
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-3",
+     "kind": "surface",
+     "label": "Shelf 3 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      -0.005000000000000008,
+      0.313333,
+      -0.010000000000000004
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "surface-top-4",
+     "kind": "surface",
+     "label": "Shelf 4 top",
+     "max_mass_kg": 30.0,
+     "position_m": [
+      -0.005000000000000008,
+      0.9,
+      -0.010000000000000004
+     ],
+     "size_m": [
+      0.864,
+      0.04,
+      0.3
      ],
      "yaw_deg": 0.0
     }
@@ -2782,9 +2861,9 @@
     {
      "id": "grip",
      "kind": "grip",
-     "label": "Grip",
+     "label": "Handle",
      "position_m": [
-      0.0,
+      -0.25,
       0.0,
       0.0
      ],
@@ -2807,9 +2886,9 @@
    "body": "mace head",
    "points": [
     {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
+     "id": "use",
+     "kind": "use",
+     "label": "Head",
      "position_m": [
       0.0,
       0.0,
@@ -2818,9 +2897,9 @@
      "yaw_deg": 0.0
     },
     {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
+     "id": "grip",
+     "kind": "grip",
+     "label": "Grip",
      "position_m": [
       0.0,
       0.0,
@@ -2834,9 +2913,32 @@
    "body": "cart",
    "points": [
     {
-     "id": "deck",
+     "id": "grip-deck-com",
+     "kind": "grip",
+     "label": "Carry (handhold on deck above CoM)",
+     "position_m": [
+      0.0,
+      0.01673057058367472,
+      0.017102954283064516
+     ],
+     "yaw_deg": 0.0
+    },
+    {
+     "id": "use-handle-push",
+     "kind": "use",
+     "label": "Push from handle",
+     "position_m": [
+      0.03,
+      0.21673057058367468,
+      -0.8664970457169355
+     ],
+     "yaw_deg": 180.0
+    },
+    {
+     "id": "deck-top-surface",
      "kind": "surface",
-     "label": "Cargo deck",
+     "label": "Deck top (place items)",
+     "max_mass_kg": 250.0,
      "position_m": [
       0.0,
       0.01673057058367472,
@@ -2844,30 +2946,8 @@
      ],
      "size_m": [
       0.7,
-      2.0,
+      0.5,
       1.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.2167305705836748,
-      -0.8664970457169355
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.2167305705836748,
-      -0.8664970457169355
      ],
      "yaw_deg": 0.0
     }

@@ -48,7 +48,9 @@ CAD/physics copilot, not a one-shot intent classifier.
 Important behavior:
 - Define the finished product\'s key interaction points with define_interaction_points:
   grip/use plus real receiving surfaces or cargo interiors. Positions are in the
-  design frame; receiving position is on the floor and size_m is usable space.
+  design frame. A receiving point sits on the face things rest on -- the top of
+  the deck, seat, shelf or cavity floor, never the ground under the product --
+  and its size_m is the usable space above that face.
   Update these points when geometry changes. Metadata never creates a cavity.
 - Every finished product needs a primary_use program. Call program_use to write
   its purpose-specific core action when creating or completing it; it is stored

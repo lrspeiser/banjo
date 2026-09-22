@@ -44,14 +44,12 @@ order. The ones most easily mistaken for done:
 - **A bearing's hold along its axis is not rated**, and the engine's fixings
   check tension and shear only: a joint pried off by a long lever is caught by
   the bench screen and by nothing in the world.
-- **A thing of joined parts is carried whole but never stowed** (2026-09-21).
-  The bag needs the engine to set aside several bodies and their joints
-  together and put them back (LiveWorld park and unpark take one body joined to
-  nothing), so it refuses them, in words. Two smaller gaps come with it:
-  - the engine's own carry budget, checked when the hand takes hold, counts
-    only the part it grips; the page's "what you are carrying" adds the rest;
-  - put down as a whole shape, a thing of several parts is not judged for
-    falling over on a slope: the engine's tall-thing rule reads one body.
+- **A thing of joined parts is carried and bagged whole, but weighed and
+  judged by one part** (2026-09-21). The engine's own carry budget, checked when
+  the hand takes hold, counts only the part it grips; the page's "what you are
+  carrying" adds the rest. Put down as a whole shape, a thing of several parts
+  is not judged for falling over on a slope: the engine's tall-thing rule reads
+  one body.
 - **A thing's points steer the hand, the swing and the put-down, and nothing
   else** (2026-09-21). The grip is where the hand takes it, the use point is
   what a swing aims, and a surface is where something is set. A container point
