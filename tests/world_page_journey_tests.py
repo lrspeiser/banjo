@@ -25,7 +25,9 @@ chat box, and the hoist is still up with its battery as it was, at realtime.
 
 A cart drives itself to a lake's edge (docs/machine-world.md): E on its front
 wheels opens its panel, On and Forward send it down the shore, and its water
-sensor stops it with its front wheels dry.
+sensor stops it with its front wheels dry. A rover roams the shore by itself:
+E on it opens its program's panel, On sets it roaming, turning away from the
+water, and Off stops it.
 
 Each starts a playground server of its own on a free port, with the engine the
 build made (BANJO_BUILD_DIR, or build/integration/Release) and rooms in a
@@ -931,6 +933,80 @@ class ACartDrivesItselfToTheWater(PageJourney):
                                       f"new banjoRoom.THREE.Vector3({rest[0]}, {rest[1]}, {rest[2]})) > 0.5", 30),
                         f"told back, it did not back away from the water: {self.situation()}")
         self.no_page_errors("after driving the cart to the water's edge")
+
+
+class ARoverRoamsTheShore(PageJourney):
+    """The machine world's autonomous creature, its second step
+    (docs/machine-world.md), in the tests-rover room: a rover with a motor on
+    each back wheel, a caster in front, and a program that roams.
+
+    E on the rover opens its program's panel -- not each wheel's -- whose only
+    buttons are On and Off. On, and it roams by itself: forward, backing off and
+    turning away wherever a front sensor sees water, turning back from ground
+    too steep, and never with a wheel in the water. The panel says what it is
+    doing and why. Off, and it stops on its brakes."""
+
+    WHEELS = ("rover: left wheel", "rover: right wheel", "rover: caster wheel")
+
+    def test_turned_on_it_roams_by_itself_and_turned_off_it_stops(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-rover' && "
+                                      "banjoRoom.ready()", 300), "the rover room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && "
+                                      "(banjoRoom.world.machines.programs || []).length === 1", 60),
+                        f"the room's steps do not carry the rover's program: {self.situation()}")
+        program = "banjoRoom.world.machines.programs[0]"
+        self.assertEqual(self.js(f"[{program}.power, {program}.doing]"), [False, "stopped"])
+        # From behind and above its deck, once it has settled on its wheels.
+        x, y, z = self.at_rest("rover")
+        self.page.evaluate(f"banjoRoom.standAt({x + 0.3}, {y + 1.4}, {z - 1.9}); "
+                           f"banjoRoom.lookAt({x}, {y + 0.05}, {z}); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 10),
+                        f"the crosshair is not on the rover: {self.situation()}")
+        self.assertTrue(self.offering("Open the rover's panel"),
+                        f"E on the rover does not open its program's panel: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
+                        f"E did not open the rover's panel: {self.situation()}")
+        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
+        self.assertEqual(text("mp-kind"), "Machine with a program")
+        self.assertEqual(self.js("getComputedStyle(document.querySelector('#machine-panel .mp-drive')).display"),
+                         "none", "a program's panel offers its wheels' directions")
+        self.click("mp-on")
+        self.assertTrue(self.wait_for(f"{program}.power === true", 15),
+                        f"On did not reach the rover's program: {self.situation()}")
+        # Forty seconds of its world, however long the page takes to draw them.
+        began = self.js("banjoRoom.status().time_s")
+        path, wet, seen, was = 0.0, 0.0, [], self.position("rover")
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < 40.0:
+            time.sleep(0.5)
+            now = self.position("rover")
+            path += math.dist(now, was)
+            was = now
+            for wheel in self.WHEELS:
+                wx, _, wz = self.position(wheel)
+                water = self.js(f"banjoRoom.waterAt({wx}, {wz})")
+                if water and water.get("depth") is not None:
+                    wet = max(wet, water["depth"])
+            doing = self.js(f"{program}.doing")
+            if not seen or seen[-1] != doing:
+                seen.append(doing)
+        said = self.js(program)
+        print(f"\n   roamed by itself for {self.js('banjoRoom.status().time_s') - began:.0f} s: {path:.1f} m, "
+              f"{said['turns']} turns away, at most {wet * 1000:.1f} mm of water under a wheel; it did {seen}",
+              flush=True)
+        self.assertGreater(path, 10.0, "it did not roam")
+        self.assertGreaterEqual(said["turns"], 1, f"it never turned away from anything: {seen}")
+        self.assertLessEqual(wet, 0.003, "a wheel went into the water")
+        self.assertIn(text("mp-condition"), (said["why"], "nothing in its way"))
+        self.click("mp-off")
+        self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
+                        f"Off did not reach the rover's program: {self.situation()}")
+        rest = self.at_rest("rover")
+        time.sleep(1.0)
+        self.assertLess(math.dist(self.position("rover"), rest), 0.02, "turned off, it did not stop")
+        self.no_page_errors("after the rover roamed")
 
 
 class AChatChangeKeepsTheHoistUp(PageJourney):

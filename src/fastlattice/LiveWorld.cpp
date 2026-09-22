@@ -990,6 +990,23 @@ struct LiveWorld::Impl {
     };
     std::vector<Control> controls;
     unsigned next_control{1};
+    // A machine's program (LiveProgram), and what it keeps to itself: its
+    // chassis's forward and left in the chassis's own frame, worked out when it
+    // was made; which way it is turning, how far at least, and the heading the
+    // last kept step left it at; which way it turns once it has backed off; and
+    // the count it tells its wheels by.
+    struct Program {
+        LiveProgram said;
+        std::vector<std::pair<std::string, std::uint64_t>> seen;
+        Vec3 forward_local{0.0, 0.0, 1.0}, left_local{1.0, 0.0, 0.0};
+        int turn_sign{};
+        double turn_least_deg{};
+        double heading_rad{};
+        int then_turn{1};
+        std::uint64_t told{};
+    };
+    std::vector<Program> programs;
+    unsigned next_program{1};
     [[nodiscard]] Motor *motorById(unsigned id) {
         for (Motor &m : motors)
             if (m.said.id == id) return &m;
@@ -1498,8 +1515,9 @@ struct LiveWorld::Impl {
     }
     // What each of a controller's sensors reads now: for "water", the depth of
     // the room's water under its point, wherever its part has got to.
-    void readSensors(Control &c) {
-        for (LiveSensor &sensor : c.said.sensors) {
+    void readSensors(Control &c) { readSensorList(c.said.sensors); }
+    void readSensorList(std::vector<LiveSensor> &sensors) {
+        for (LiveSensor &sensor : sensors) {
             sensor.reading_m = 0.0;
             const auto found = index_of.find(sensor.body);
             if (found != index_of.end() && inWorld(found->second)) {
@@ -1565,6 +1583,152 @@ struct LiveWorld::Impl {
             }
             readSensors(c);
             decide(c, dt_s);
+        }
+    }
+
+    // ---- a machine's program (LiveProgram) ------------------------------------
+    [[nodiscard]] Control *controlById(unsigned id) {
+        for (Control &c : controls)
+            if (c.said.id == id) return &c;
+        return nullptr;
+    }
+    // A program's machine as the last kept step left it: what its sensors
+    // read, and its chassis's slope, nose up and left side up, and heading.
+    void readProgram(Program &p) {
+        constexpr double kDegPerRad = 57.295779513082320876798;
+        readSensorList(p.said.sensors);
+        const auto found = index_of.find(p.said.body);
+        if (found == index_of.end() || !inWorld(found->second)) return;
+        const RigidSnapshot at = world->snapshot(body_of[found->second]);
+        const Vec3 forward = at.orientation_world.rotate(p.forward_local);
+        const Vec3 left = at.orientation_world.rotate(p.left_local);
+        p.said.pitch_deg = std::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
+        p.said.roll_deg = std::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
+        p.heading_rad = std::atan2(forward.x, forward.z);
+    }
+    // What a program's machine does next, from what the last kept step left it
+    // reading, and what its wheels are told for it. "roam": going forward, from
+    // water seen ahead it backs off for kBackOffS and then turns away on the
+    // spot, from the side that saw it -- one way and the other in turn when
+    // both did -- the wheel on that side driving and the other backing. It
+    // backs off first because a turn on the spot swings its front round: turned
+    // where it saw the water, the caster went in. From wheels that stopped for
+    // want of progress it does the same. From ground steeper than its climb_deg
+    // -- rising ahead, or falling away to one side, where running along a
+    // slope it climbs as surely and could tip -- it turns towards the lower
+    // side. Turning, it goes on until
+    // it has turned at least as far as it was turning for and nothing is in its
+    // way ahead -- or kTurnMostS has passed, when it goes on regardless. Before
+    // every step; nothing is timed here (settlePrograms).
+    void decideProgram(Program &p) {
+        constexpr double kBackOffS = 1.2;
+        constexpr double kTurnMostS = 6.0;
+        constexpr double kSideTurnDeg = 50.0;
+        constexpr double kBackedTurnDeg = 110.0;
+        constexpr double kClimbTurnDeg = 90.0;
+        LiveProgram &s = p.said;
+        Control *left = controlById(s.left);
+        Control *right = controlById(s.right);
+        if (left == nullptr || right == nullptr) {
+            s.doing = "stopped";
+            s.why = "its wheels' controllers are gone";
+            return;
+        }
+        const auto into = [&](const char *doing, std::string why) {
+            s.doing = doing;
+            s.why = std::move(why);
+            s.doing_s = 0.0;
+            s.turned_deg = 0.0;
+        };
+        const auto turn = [&](int sign, double least, std::string why) {
+            into(sign > 0 ? "turning left" : "turning right", std::move(why));
+            p.turn_sign = sign;
+            p.turn_least_deg = least;
+            ++s.turns;
+        };
+        bool water_left = false, water_right = false;
+        for (const LiveSensor &sensor : s.sensors) {
+            if (!sensor.sees) continue;
+            if (sensor.side >= 0) water_left = true;
+            if (sensor.side <= 0) water_right = true;
+        }
+        const auto stalled = [](const Control &c) {
+            return c.tripped && c.said.condition.rfind("stalled", 0) == 0;
+        };
+        const int alternate = s.turns % 2 == 0 ? 1 : -1;
+        if (!s.power) {
+            if (s.doing != "stopped") into("stopped", "off");
+        } else if (s.doing == "stopped") {
+            into("going forward", "nothing in its way");
+        } else if (s.doing == "going forward") {
+            if (water_left && water_right) {
+                into("backing off", "water ahead");
+                p.then_turn = alternate;
+                p.turn_least_deg = kBackedTurnDeg;
+            } else if (water_left) {
+                into("backing off", "water ahead on its left");
+                p.then_turn = -1;
+                p.turn_least_deg = kSideTurnDeg;
+            } else if (water_right) {
+                into("backing off", "water ahead on its right");
+                p.then_turn = 1;
+                p.turn_least_deg = kSideTurnDeg;
+            } else if (stalled(*left) || stalled(*right)) {
+                into("backing off", "its wheels made no progress");
+                p.then_turn = alternate;
+                p.turn_least_deg = kBackedTurnDeg;
+            } else if (s.pitch_deg > s.climb_deg || std::abs(s.roll_deg) > s.climb_deg) {
+                // Towards the lower side: its left side up, that is the right.
+                turn(s.roll_deg > 0.0 ? -1 : 1, kClimbTurnDeg, "the ground here is steeper than it climbs");
+            }
+        } else if (s.doing == "backing off") {
+            if (s.doing_s >= kBackOffS || stalled(*left) || stalled(*right)) {
+                const std::string why = s.why;
+                turn(p.then_turn, p.turn_least_deg, why);
+            }
+        } else if (s.doing == "turning left" || s.doing == "turning right") {
+            const bool clear = !water_left && !water_right && s.pitch_deg <= s.climb_deg &&
+                               std::abs(s.roll_deg) <= s.climb_deg;
+            if (clear && s.turned_deg >= p.turn_least_deg)
+                into("going forward", "nothing in its way");
+            else if (s.doing_s >= kTurnMostS)
+                into("going forward", "it could not turn clear in time, so it goes on");
+        }
+        int l = 0, r = 0;
+        if (s.doing == "going forward") l = r = 1;
+        else if (s.doing == "backing off") l = r = -1;
+        else if (s.doing == "turning left") l = -1, r = 1;
+        else if (s.doing == "turning right") l = 1, r = -1;
+        // Each wheel told only what it is not doing already: one that stopped
+        // for want of progress stays stopped, told the same, and the program
+        // reads that and backs off.
+        const auto tellWheel = [&](Control &c, int direction) {
+            const LiveControl &now = c.said;
+            if (now.power == s.power && now.direction == direction && now.setting == s.setting) return;
+            tell(c, s.power, direction, s.setting, "program " + s.name, ++p.told);
+        };
+        tellWheel(*left, l);
+        tellWheel(*right, r);
+    }
+    void preparePrograms() {
+        for (Program &p : programs) decideProgram(p);
+    }
+    // After a kept step: what each program's machine reads now, how long it
+    // has been doing what it is doing, and how far it has turned in it.
+    void settlePrograms(double dt_s) {
+        constexpr double kPi = 3.14159265358979323846;
+        constexpr double kDegPerRad = 180.0 / kPi;
+        for (Program &p : programs) {
+            const double was = p.heading_rad;
+            readProgram(p);
+            if (!p.said.power) continue;
+            p.said.doing_s += dt_s;
+            if (p.said.doing == "turning left" || p.said.doing == "turning right") {
+                double turned = p.heading_rad - was;
+                while (turned > kPi) turned -= 2.0 * kPi;
+                while (turned < -kPi) turned += 2.0 * kPi;
+                p.said.turned_deg += p.turn_sign * turned * kDegPerRad;
+            }
         }
     }
 
@@ -4177,6 +4341,66 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.controls.push_back(std::move(c));
     }
     impl.next_control = doc.value("next_control", 1U);
+    // Each machine's program, as it was told and as far as it had got; carried
+    // while both of its wheels' controllers came back and the host still
+    // declares it the same way.
+    for (const nlohmann::json &o : doc.value("programs", nlohmann::json::array())) {
+        Impl::Program p{};
+        p.said.id = o.at("id").get<unsigned>();
+        p.said.name = o.at("name").get<std::string>();
+        p.said.kind = o.at("kind").get<std::string>();
+        p.said.left = o.at("left").get<unsigned>();
+        p.said.right = o.at("right").get<unsigned>();
+        p.said.body = o.at("body").get<std::string>();
+        p.said.setting = std::clamp(numberFrom(o.at("setting")), 0.0, 1.0);
+        p.said.climb_deg = numberFrom(o.at("climb_deg"));
+        if (p.said.kind != "roam")
+            throw std::invalid_argument("a saved program is not of a kind this engine knows");
+        for (const nlohmann::json &q : o.at("sensors")) {
+            LiveSensor sensor;
+            sensor.kind = q.at("kind").get<std::string>();
+            sensor.body = q.at("body").get<std::string>();
+            sensor.at_local_m = vecFrom(q.at("at_local_m"));
+            sensor.depth_m = numberFrom(q.at("depth_m"));
+            sensor.side = std::clamp(q.at("side").get<int>(), -1, 1);
+            if (sensor.kind != "water" || !(sensor.depth_m > 0.0))
+                throw std::invalid_argument("a saved program's sensor is not one this engine knows");
+            p.said.sensors.push_back(std::move(sensor));
+        }
+        p.forward_local = vecFrom(o.at("forward_local"));
+        p.left_local = vecFrom(o.at("left_local"));
+        p.said.power = o.at("power").get<bool>();
+        p.said.sender = o.value("sender", std::string{});
+        p.said.seq = o.value("seq", std::uint64_t{0});
+        for (const nlohmann::json &q : o.value("seen", nlohmann::json::array()))
+            if (q.is_array() && q.size() == 2) p.seen.emplace_back(q[0].get<std::string>(), q[1].get<std::uint64_t>());
+        p.said.doing = o.at("doing").get<std::string>();
+        p.said.why = o.at("why").get<std::string>();
+        p.said.doing_s = numberFrom(o.at("doing_s"));
+        p.said.turned_deg = numberFrom(o.at("turned_deg"));
+        p.said.turns = o.at("turns").get<unsigned>();
+        p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
+        p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
+        p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
+        p.told = o.at("told").get<std::uint64_t>();
+        if (carrying) {
+            const bool declared = kept(asked.programs, p.said.id);
+            const bool wheels = impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
+            if (!declared || !wheels) {
+                if (declared)
+                    lost.push_back("the program of " + p.said.name +
+                                   ": its wheels' controllers did not come back as they were, so it is as the "
+                                   "room declares it");
+                continue;
+            }
+            ++said.carried.programs;
+        }
+        // Its slope and heading, and what its sensors read, where its parts
+        // now are, before the first step says it.
+        impl.readProgram(p);
+        impl.programs.push_back(std::move(p));
+    }
+    impl.next_program = doc.value("next_program", 1U);
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -4568,6 +4792,7 @@ void LiveWorld::step(double dt_s) {
     // A motor's drive, the same way round: set before the trial, from its line
     // at the speed its pin has now (docs/machine-world.md) -- after its
     // controller, if it has one, has said what the motor is to do this step.
+    if (!impl_->programs.empty()) impl_->preparePrograms();
     if (!impl_->controls.empty()) impl_->prepareControls(dt_s);
     if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
@@ -4622,6 +4847,7 @@ void LiveWorld::step(double dt_s) {
         if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
         if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
         if (!impl_->controls.empty()) impl_->settleControls(dt_s);
+        if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
         settleCuts(dt_s);
@@ -4660,6 +4886,7 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
+    if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
     settleCuts(dt_s);
     if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
     partOverloadedLinks();
@@ -5521,6 +5748,125 @@ std::vector<LiveControl> LiveWorld::controls() const {
     std::vector<LiveControl> out;
     out.reserve(impl_->controls.size());
     for (const Impl::Control &c : impl_->controls) out.push_back(c.said);
+    return out;
+}
+
+unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
+                            const std::string &body, double setting, double climb_deg) {
+    Impl &I = *impl_;
+    if (kind != "roam" || left == right) return 0;
+    if (!(setting > 0.0 && setting <= 1.0) || !(climb_deg > 0.0 && climb_deg < 60.0)) return 0;
+    Impl::Control *l = I.controlById(left);
+    Impl::Control *r = I.controlById(right);
+    if (l == nullptr || r == nullptr || l->said.rope != 0 || r->said.rope != 0) return 0;
+    for (const Impl::Program &p : I.programs)
+        if (p.said.left == left || p.said.right == left || p.said.left == right || p.said.right == right) return 0;
+    // Each wheel: the other thing on its motor's pin through `body`.
+    const auto wheelOf = [&](const Impl::Control &c) -> std::string {
+        const Impl::Motor *m = I.motorById(c.said.motor);
+        const Impl::SceneJoint *pin = m != nullptr ? I.motorPin(m->said.joint) : nullptr;
+        if (pin == nullptr) return {};
+        if (pin->a == body) return pin->b;
+        if (pin->b == body) return pin->a;
+        return {};
+    };
+    const std::string left_wheel = wheelOf(*l), right_wheel = wheelOf(*r);
+    if (left_wheel.empty() || right_wheel.empty() || left_wheel == right_wheel) return 0;
+    const auto chassis = I.index_of.find(body);
+    const auto lw = I.index_of.find(left_wheel);
+    const auto rw = I.index_of.find(right_wheel);
+    if (chassis == I.index_of.end() || lw == I.index_of.end() || rw == I.index_of.end() ||
+        !I.inWorld(chassis->second) || !I.inWorld(lw->second) || !I.inWorld(rw->second))
+        return 0;
+    // From the right wheel to the left, in the chassis's own level: its left;
+    // and forward, square to that across the level.
+    const RigidSnapshot at = I.world->snapshot(I.body_of[chassis->second]);
+    Vec3 across = conjugateOf(at.orientation_world)
+                      .rotate(I.world->snapshot(I.body_of[lw->second]).center_of_mass_world_m -
+                              I.world->snapshot(I.body_of[rw->second]).center_of_mass_world_m);
+    across.y = 0.0;
+    if (length(across) < 0.01) return 0;
+    Impl::Program p{};
+    p.left_local = normalized(across);
+    p.forward_local = cross(p.left_local, Vec3{0.0, 1.0, 0.0});
+    p.said.id = I.next_program++;
+    p.said.name = name.empty() ? "program " + std::to_string(p.said.id) : name;
+    p.said.kind = kind;
+    p.said.left = left;
+    p.said.right = right;
+    p.said.body = body;
+    p.said.setting = setting;
+    p.said.climb_deg = climb_deg;
+    I.readProgram(p);
+    I.programs.push_back(std::move(p));
+    return I.programs.back().said.id;
+}
+
+bool LiveWorld::programSense(unsigned program, const std::string &kind, const std::string &body,
+                             const Vec3 &point_world_m, double depth_m) {
+    Impl &I = *impl_;
+    Impl::Program *p = nullptr;
+    for (Impl::Program &each : I.programs)
+        if (each.said.id == program) p = &each;
+    if (p == nullptr || kind != "water") return false;
+    if (!std::isfinite(depth_m) || !(depth_m > 0.0) || depth_m > 10.0) return false;
+    if (!std::isfinite(point_world_m.x) || !std::isfinite(point_world_m.y) || !std::isfinite(point_world_m.z))
+        return false;
+    const auto found = I.index_of.find(body);
+    const auto chassis = I.index_of.find(p->said.body);
+    if (found == I.index_of.end() || !I.inWorld(found->second) || chassis == I.index_of.end() ||
+        !I.inWorld(chassis->second))
+        return false;
+    // Kept in the part's own frame, so the sensor goes where the part goes; and
+    // on the side of the machine it is across its chassis, the middle within
+    // kMiddleM counting as both.
+    constexpr double kMiddleM = 0.02;
+    const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
+    const RigidSnapshot frame = I.world->snapshot(I.body_of[chassis->second]);
+    LiveSensor sensor;
+    sensor.kind = kind;
+    sensor.body = body;
+    sensor.at_local_m = conjugateOf(at.orientation_world).rotate(point_world_m - at.center_of_mass_world_m);
+    sensor.depth_m = depth_m;
+    const double across =
+        dot(frame.orientation_world.rotate(p->left_local), point_world_m - frame.center_of_mass_world_m);
+    sensor.side = across > kMiddleM ? 1 : across < -kMiddleM ? -1 : 0;
+    p->said.sensors.push_back(sensor);
+    I.readSensorList(p->said.sensors);
+    return true;
+}
+
+std::string LiveWorld::run(unsigned program, const ProgramCommand &command) {
+    Impl::Program *p = nullptr;
+    for (Impl::Program &each : impl_->programs)
+        if (each.said.id == program) p = &each;
+    if (p == nullptr) return "there is no program " + std::to_string(program);
+    if (command.sender.size() > 64) return "a sender's name is 64 characters at most";
+    // As a controller keeps them (operate): a command no newer than its
+    // sender's last is stale and changes nothing; a count of 0 is no count.
+    if (command.seq != 0) {
+        for (std::size_t i = 0; i < p->seen.size(); ++i) {
+            if (p->seen[i].first != command.sender) continue;
+            if (command.seq <= p->seen[i].second) return "stale";
+            p->seen.erase(p->seen.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+        p->seen.emplace_back(command.sender, command.seq);
+        constexpr std::size_t kSendersKept = 8;
+        if (p->seen.size() > kSendersKept) p->seen.erase(p->seen.begin());
+    }
+    p->said.power = command.power;
+    p->said.sender = command.sender;
+    p->said.seq = command.seq;
+    // What it will do, said at once, and its wheels told.
+    impl_->decideProgram(*p);
+    return "applied";
+}
+
+std::vector<LiveProgram> LiveWorld::programs() const {
+    std::vector<LiveProgram> out;
+    out.reserve(impl_->programs.size());
+    for (const Impl::Program &p : impl_->programs) out.push_back(p.said);
     return out;
 }
 
@@ -13268,6 +13614,47 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"condition", c.said.condition}});
     }
     doc["controls"] = std::move(controls);
+    // And each machine's program: what it was told and by whom, what it is
+    // doing and how far into it, and the frame it reads its chassis in. Only a
+    // world with one says anything of programs.
+    if (!I.programs.empty()) {
+        nlohmann::json programs = nlohmann::json::array();
+        for (const Impl::Program &p : I.programs) {
+            nlohmann::json seen = nlohmann::json::array();
+            for (const auto &[sender, count] : p.seen) seen.push_back({sender, count});
+            nlohmann::json sensors = nlohmann::json::array();
+            for (const LiveSensor &sensor : p.said.sensors)
+                sensors.push_back({{"kind", sensor.kind}, {"body", sensor.body},
+                                   {"at_local_m", savedVec(sensor.at_local_m)},
+                                   {"depth_m", savedNumber(sensor.depth_m)}, {"side", sensor.side}});
+            programs.push_back({{"id", p.said.id},
+                                {"name", p.said.name},
+                                {"kind", p.said.kind},
+                                {"left", p.said.left},
+                                {"right", p.said.right},
+                                {"body", p.said.body},
+                                {"setting", savedNumber(p.said.setting)},
+                                {"climb_deg", savedNumber(p.said.climb_deg)},
+                                {"sensors", std::move(sensors)},
+                                {"forward_local", savedVec(p.forward_local)},
+                                {"left_local", savedVec(p.left_local)},
+                                {"power", p.said.power},
+                                {"sender", p.said.sender},
+                                {"seq", p.said.seq},
+                                {"seen", std::move(seen)},
+                                {"doing", p.said.doing},
+                                {"why", p.said.why},
+                                {"doing_s", savedNumber(p.said.doing_s)},
+                                {"turned_deg", savedNumber(p.said.turned_deg)},
+                                {"turns", p.said.turns},
+                                {"turn_sign", p.turn_sign},
+                                {"turn_least_deg", savedNumber(p.turn_least_deg)},
+                                {"then_turn", p.then_turn},
+                                {"told", p.told}});
+        }
+        doc["programs"] = std::move(programs);
+        doc["next_program"] = I.next_program;
+    }
     doc["next_energy_store"] = I.next_energy_store;
     doc["next_motor"] = I.next_motor;
     doc["next_control"] = I.next_control;
@@ -13505,6 +13892,7 @@ LiveCarry LiveWorld::carryAll(const std::string &snapshot) {
     ids("energy_stores", all.energy_stores);
     ids("motors", all.motors);
     ids("controls", all.controls);
+    ids("programs", all.programs);
     ids("blades", all.blades);
     ids("tool_points", all.tool_points);
     return all;

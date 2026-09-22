@@ -1184,6 +1184,10 @@ function drawMachines(block) {
     row(`control ${c.id}`, `${c.name}: its controller`,
         `${c.power ? `on, told to ${commandedWords(c)}` : "off"}${c.condition ? ` · ${c.condition}` : ""}`, c);
   }
+  for (const p of (block && block.programs) || []) {
+    row(`program ${p.id}`, `${p.name}: its program`,
+        p.power ? `on, ${p.doing}${p.why ? ` · ${p.why}` : ""}` : "off", p);
+  }
   for (const m of (block && block.motors) || []) {
     const turns = m.on && m.on.length === 2 ? m.on[1] : `pin ${m.joint}`;
     const doing = m.state === "driving"
@@ -1238,24 +1242,46 @@ const machinePanel = {
   // once, since the engine takes the page's commands in the order they were
   // sent. Raise pressed a moment after On was lost while it waited.
   poweringOn: false,
+  // What the panel shows: a machine's controller, or a machine's program.
+  of: "control",
 };
 
 function controlsNow() {
   return (world.machines && world.machines.controls) || [];
 }
 
+// A machine's programs (docs/machine-world.md, "One autonomous creature"):
+// each works the controllers of a machine's wheels, from what its sensors read.
+function programsNow() {
+  return (world.machines && world.machines.programs) || [];
+}
+
+const isProgram = (m) => !!m && typeof m.doing === "string";
+
 // The machines a thing is part of: either side of a motor's pin, and a hoist's
-// load (the runner's `parts`).
+// load (the runner's `parts`) -- and a program's machine, whose wheels it
+// works: that machine is offered as its program, not wheel by wheel.
 function machinesOfPart(name) {
-  return controlsNow().filter((c) => (c.parts || []).includes(name));
+  const programs = programsNow().filter((p) => (p.parts || []).includes(name));
+  const worked = new Set(programsNow().flatMap((p) => [p.left, p.right]));
+  return [...programs, ...controlsNow().filter((c) => !worked.has(c.id) && (c.parts || []).includes(name))];
 }
 
 function shownControl() {
-  const all = controlsNow();
+  const all = machinePanel.of === "program" ? programsNow() : controlsNow();
   return all.find((c) => c.id === machinePanel.id) || all.find((c) => c.name === machinePanel.name) || null;
 }
 
+function mergeProgram(program) {
+  if (!world.machines) return;
+  const list = world.machines.programs || (world.machines.programs = []);
+  const at = list.findIndex((p) => p.id === program.id);
+  if (at >= 0) list[at] = program;
+  else list.push(program);
+}
+
 function openMachinePanel(control) {
+  machinePanel.of = isProgram(control) ? "program" : "control";
   machinePanel.id = control.id;
   machinePanel.name = control.name;
   machinePanel.said = "";
@@ -1290,9 +1316,12 @@ async function commandMachine(what) {
   machinePanel.seq += 1;
   const seq = machinePanel.seq;
   try {
-    const answer = await api("/api/world/machine", { session: world.session, control: control.id,
-                                                     sender: machinePanel.sender, seq, ...what });
+    const body = machinePanel.of === "program"
+      ? { session: world.session, program: control.id, sender: machinePanel.sender, seq, power: !!what.power }
+      : { session: world.session, control: control.id, sender: machinePanel.sender, seq, ...what };
+    const answer = await api("/api/world/machine", body);
     if (answer.control) mergeControl(answer.control);
+    if (answer.program) mergeProgram(answer.program);
     machinePanel.stale = answer.operated === "stale";
     machinePanel.said = machinePanel.stale
       ? "That arrived after a newer command, so the machine did not take it."
@@ -1328,6 +1357,11 @@ function showMachinePanel() {
     return;
   }
   machinePanel.id = c.id;
+  if (machinePanel.of === "program") {
+    showProgramPanel(c);
+    return;
+  }
+  panelRows(false);
   const hoist = c.kind === "hoist";
   setText("mp-kind", hoist ? "Hoist" : "Machine");
   setText("mp-name", titled(c.name));
@@ -1371,6 +1405,52 @@ function showMachinePanel() {
   setText("mp-condition", c.condition || "nothing in its way");
   $("mp-condition").classList.toggle("attention",
     /stalled|too weak|flat|held back|hand|gone|coasts|water/.test(c.condition || ""));
+  setText("mp-ack", machinePanel.said);
+  $("mp-ack").classList.toggle("stale", machinePanel.stale);
+  if ($("machine-panel").hidden) $("machine-panel").hidden = false;
+}
+
+// A program is turned on and off, and nothing else: its wheels' directions
+// and their setting are its own to decide, so those rows are put away -- by
+// their display, which the panel's own rules set and `hidden` does not beat.
+function panelRows(program) {
+  const panel = $("machine-panel");
+  for (const selector of [".mp-drive", ".mp-setting", ".mp-hint"]) {
+    const row = panel.querySelector(selector);
+    const want = program ? "none" : "";
+    if (row && row.style.display !== want) row.style.display = want;
+  }
+}
+
+// A program's panel: whether it is on, what it has its wheels doing, what its
+// sensors and its own slope read, and why it is doing what it does.
+function showProgramPanel(p) {
+  panelRows(true);
+  setText("mp-kind", "Machine with a program");
+  setText("mp-name", titled(p.name));
+  setPressed("mp-on", p.power);
+  setPressed("mp-off", !p.power);
+  setText("mp-enabled", p.power ? "On" : "Off");
+  const wheels = {
+    "going forward": "both wheels forward",
+    "backing off": "both wheels back",
+    "turning left": "left wheel back, right wheel forward",
+    "turning right": "left wheel forward, right wheel back",
+  };
+  const doing = p.doing.charAt(0).toUpperCase() + p.doing.slice(1);
+  setText("mp-commanded", p.power ? `${doing}: ${wheels[p.doing] || "stopped"}` : "Nothing: it is off");
+  const pitch = Math.round(p.pitch_deg || 0), roll = Math.round(p.roll_deg || 0);
+  const slope = pitch === 0 && roll === 0 ? "level ground"
+    : [pitch !== 0 ? `${Math.abs(pitch)}° ${pitch > 0 ? "up" : "down"} ahead` : "",
+       roll !== 0 ? `${Math.abs(roll)}° down to its ${roll > 0 ? "right" : "left"}` : ""].filter(Boolean).join(", ");
+  const sensors = (p.sensors || []).map((s) => {
+    const mm = Math.round((s.reading_m || 0) * 1000);
+    return `${s.side > 0 ? "left" : s.side < 0 ? "right" : "middle"} ${mm > 0 ? `${mm} mm of water` : "dry"}`;
+  });
+  setText("mp-measured", `${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
+    + (sensors.length ? ` · its water sensors: ${sensors.join(", ")}` : ""));
+  setText("mp-condition", p.power ? (p.why || "nothing in its way") : "off");
+  $("mp-condition").classList.toggle("attention", p.power && /water|steeper|progress|gone/.test(p.why || ""));
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
@@ -1549,10 +1629,11 @@ const sensorMarks = new Map();   // "controller id/sensor index" -> { bead, thre
 
 function dressSensors() {
   const seen = new Set();
-  for (const c of controlsNow()) {
+  const carriers = [...controlsNow().map((c) => ["", c]), ...programsNow().map((p) => ["program ", p])];
+  for (const [of, c] of carriers) {
     (c.sensors || []).forEach((s, i) => {
       if (!Array.isArray(s.at_m) || s.at_m.length !== 3) return;
-      const key = `${c.id}/${i}`;
+      const key = `${of}${c.id}/${i}`;
       seen.add(key);
       let mark = sensorMarks.get(key);
       if (!mark) {

@@ -263,7 +263,7 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
         const LiveRestore::Carried &n = restored.carried;
         out["carried"] = {{"placed", n.placed}, {"fresh", n.fresh}, {"gone", n.gone}, {"joints", n.joints},
                           {"energy_stores", n.energy_stores}, {"motors", n.motors},
-                          {"controls", n.controls}, {"blades", n.blades},
+                          {"controls", n.controls}, {"programs", n.programs}, {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
         out["woken"] = restored.woken;
@@ -285,6 +285,7 @@ LiveCarry carryFrom(const nlohmann::json &doc) {
     ids("energy_stores", carry.energy_stores);
     ids("motors", carry.motors);
     ids("controls", carry.controls);
+    ids("programs", carry.programs);
     ids("blades", carry.blades);
     ids("tool_points", carry.tool_points);
     if (doc.contains("declared_anew"))
@@ -347,19 +348,21 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
         for (const LiveJoint &joint : joints)
             if (joint.id == c.rope && std::find(parts.begin(), parts.end(), joint.b) == parts.end())
                 parts.push_back(joint.b);
-    // And whatever else turns on a pin through either of the motor's two that
-    // moves with the machine: a cart's front wheels turn on the chassis its
-    // motor drives from, and are as much the machine -- E on them finds it. A
-    // thing on a pin through anchored scenery is not: two hoists on one post
-    // are two machines.
+    // And whatever else turns on a pin through a part of it that moves with
+    // the machine, and on through those: a cart's front wheels turn on the
+    // chassis its motor drives from, and a caster's wheel on its fork -- all as
+    // much the machine, and E on any of them finds it. Nothing is followed
+    // through anchored scenery: two hoists on one post are two machines.
     if (parts.size() >= 2) {
-        const std::string frame = parts[0], turned = parts[1];
-        for (const LiveJoint &joint : joints) {
-            if (joint.kind != "hinge" || !joint.attached) continue;
-            for (const auto &[mine, other] : {std::pair{joint.a, joint.b}, std::pair{joint.b, joint.a}})
-                if ((mine == frame || mine == turned) && !world.anchored(mine) &&
-                    std::find(parts.begin(), parts.end(), other) == parts.end())
+        for (std::size_t k = 0; k < parts.size(); ++k) {
+            const std::string from = parts[k];
+            if (world.anchored(from)) continue;
+            for (const LiveJoint &joint : joints) {
+                if (joint.kind != "hinge" || !joint.attached) continue;
+                const std::string other = joint.a == from ? joint.b : joint.b == from ? joint.a : std::string{};
+                if (!other.empty() && std::find(parts.begin(), parts.end(), other) == parts.end())
                     parts.push_back(other);
+            }
         }
     }
     // What it senses, where each sensor is now, and what each reads.
@@ -392,11 +395,49 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
             {"condition", c.condition}};
 }
 
+// A program as a host reads it (LiveProgram): what it is doing and why, what
+// each of its sensors reads and which side it is on, and the parts of its
+// machine -- its controllers' parts -- so a person's E on any of them finds it.
+nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
+    nlohmann::json parts = nlohmann::json::array();
+    for (const nlohmann::json &c : controls) {
+        if (c.at("id") != p.left && c.at("id") != p.right) continue;
+        for (const nlohmann::json &part : c.at("parts"))
+            if (std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
+    }
+    nlohmann::json sensors = nlohmann::json::array();
+    for (const LiveSensor &s : p.sensors)
+        sensors.push_back({{"kind", s.kind}, {"body", s.body}, {"depth_m", tidy(s.depth_m)}, {"side", s.side},
+                           {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
+                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
+    return {{"id", p.id},
+            {"name", p.name},
+            {"kind", p.kind},
+            {"left", p.left},
+            {"right", p.right},
+            {"body", p.body},
+            {"parts", std::move(parts)},
+            {"setting", tidy(p.setting)},
+            {"climb_deg", tidy(p.climb_deg)},
+            {"sensors", std::move(sensors)},
+            {"power", p.power},
+            {"sender", p.sender},
+            {"seq", p.seq},
+            {"doing", p.doing},
+            {"why", p.why},
+            {"doing_s", tidy(p.doing_s)},
+            {"turned_deg", tidy(p.turned_deg)},
+            {"turns", p.turns},
+            {"pitch_deg", tidy(p.pitch_deg)},
+            {"roll_deg", tidy(p.roll_deg)}};
+}
+
 nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveEnergyStore> stores = world.energyStores();
     const std::vector<LiveMotor> motors = world.motors();
     const std::vector<LiveJoint> joints = world.joints();
     const std::vector<LiveControl> controls = world.controls();
+    const std::vector<LiveProgram> programs = world.programs();
     nlohmann::json ropes = nlohmann::json::array();
     for (const LiveJoint &joint : joints) {
         if (joint.kind != "drum" || !joint.attached) continue;
@@ -407,7 +448,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                          {"leaves", vec(joint.leaves_m)},
                          {"meets", vec(joint.meets_m)}});
     }
-    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty()) return nullptr;
+    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty()) return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
     for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints, world));
@@ -449,6 +490,11 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"friction_heat_j", tidy(m.friction_heat_j)}});
     }
     out["circuits"] = nlohmann::json::parse(world.circuits());
+    // Only a world with a program says anything of programs.
+    if (!programs.empty()) {
+        out["programs"] = nlohmann::json::array();
+        for (const LiveProgram &p : programs) out["programs"].push_back(programOf(p, out["controls"]));
+    }
     return out;
 }
 
@@ -2006,15 +2052,55 @@ int main(int argc, char **argv) {
                     // ("water"), on a part at a point given where it is now,
                     // stopping the machine going one way when it reads deeper
                     // than depth_m.
+                    // On a program's machine instead with "program": its side
+                    // is worked out from where it is.
                     const nlohmann::json &at = command.at("at_m");
-                    if (!world->sense(command.at("control").get<unsigned>(), command.value("kind", std::string{}),
-                                      command.value("body", std::string{}),
-                                      Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()},
-                                      command.value("depth_m", 0.0), command.value("stops", 1)))
+                    const Vec3 point{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()};
+                    const bool fitted =
+                        command.contains("program")
+                            ? world->programSense(command.at("program").get<unsigned>(),
+                                                  command.value("kind", std::string{}),
+                                                  command.value("body", std::string{}), point,
+                                                  command.value("depth_m", 0.0))
+                            : world->sense(command.at("control").get<unsigned>(), command.value("kind", std::string{}),
+                                           command.value("body", std::string{}), point,
+                                           command.value("depth_m", 0.0), command.value("stops", 1));
+                    if (!fitted)
                         throw std::invalid_argument(
-                            "a sensor goes on a controller that is there, on a part that is in the world: of kind "
-                            "\"water\", with a depth above nothing and no more than 10 m, stopping the way 1 or -1");
+                            "a sensor goes on a controller or a program that is there, on a part that is in the "
+                            "world: of kind \"water\", with a depth above nothing and no more than 10 m, stopping "
+                            "the way 1 or -1");
                     reply["sensed"] = true;
+                } else if (op == "program") {
+                    // A program for a machine (LiveProgram): of a kind ("roam"),
+                    // working the controllers of its left and right wheels, on a
+                    // body both turn on; it starts off.
+                    const unsigned made = world->program(
+                        command.value("name", std::string{}), command.value("kind", std::string{}),
+                        command.at("left").get<unsigned>(), command.at("right").get<unsigned>(),
+                        command.value("body", std::string{}), command.value("setting", 1.0),
+                        command.value("climb_deg", 8.0));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a program is of kind \"roam\", on two shafts' controllers that no program works yet, "
+                            "each on a pin through the body it names, with a setting above 0 and no more than 1 and "
+                            "a climb above 0 and below 60 degrees");
+                    reply["program"] = made;
+                } else if (op == "run") {
+                    // A program turned on or off, by a sender and its count,
+                    // answered as operate is, with the program as it now stands.
+                    LiveWorld::ProgramCommand told;
+                    told.sender = command.value("sender", std::string{});
+                    told.seq = command.value("seq", std::uint64_t{0});
+                    told.power = command.at("power").get<bool>();
+                    const unsigned id = command.at("program").get<unsigned>();
+                    const std::string answer = world->run(id, told);
+                    if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
+                    reply["ran"] = answer;
+                    const nlohmann::json machines = machinesOf(*world);
+                    if (machines.is_object() && machines.contains("programs"))
+                        for (const nlohmann::json &each : machines.at("programs"))
+                            if (each.at("id") == id) reply["program"] = each;
                 } else if (op == "operate") {
                     // What a controller is told, by a sender and its count --
                     // power, a direction, a drive setting, each only if given --

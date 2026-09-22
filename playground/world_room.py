@@ -1015,6 +1015,11 @@ SCENES = {
     # driven before it is written, by tools/build_cart_room.py; open it at
     # /world?scene=tests-cart. Off the menu, like the others.
     "tests-cart": _saved_room("tests-cart"),
+    # A rover that roams by itself: a motor on each back wheel, a caster in
+    # front, and a program that turns it away from the water its sensors see.
+    # Laid out, and let roam before it is written, by tools/build_rover_room.py;
+    # open it at /world?scene=tests-rover. Off the menu, like the others.
+    "tests-rover": _saved_room("tests-rover"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

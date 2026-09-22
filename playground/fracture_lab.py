@@ -742,7 +742,7 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         return {}
     if not isinstance(machines, dict):
         raise ValueError("machines must be an object with stores and motors")
-    unknown = set(machines) - {"stores", "motors", "controls"}
+    unknown = set(machines) - {"stores", "motors", "controls", "programs"}
     if unknown:
         raise ValueError(f"machines has fields it does not know: {sorted(unknown)}")
     named = {str(body.get("name", "")) for body in bodies}
@@ -857,16 +857,76 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         if rope is not None:
             travel(made, rope, {})
         controls.append(made)
-    return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {})}
+    programs = _programs(machines.get("programs"), controls, named)
+    return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {}),
+            **({"programs": programs} if programs else {})}
 
 
-def _sensors(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
+PROGRAM_KINDS = ("roam",)
+
+
+def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> list[dict[str, Any]]:
+    """A room's machine programs (docs/machine-world.md, "One autonomous
+    creature"): each works the controllers of a machine's left and right
+    wheels, named as the room names them, on the part both turn on, with its
+    sensors -- a "roam" program drives a cart about, turning away from the water
+    its sensors see. The engine works out which way is forward and which side
+    each sensor is on from where things are."""
+    if given in (None, []):
+        return []
+    if not isinstance(given, list) or len(given) > 16:
+        raise ValueError("programs is a list of at most 16")
+    out: list[dict[str, Any]] = []
+    for i, program in enumerate(given):
+        if not isinstance(program, dict):
+            raise ValueError(f"program {i} is not an object")
+        unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors"}
+        if unknown:
+            raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
+                             f"setting, climb_deg, power and sensors")
+        name = " ".join(str(program.get("name") or "").split())[:60]
+        if not name or any(o["name"] == name for o in out):
+            raise ValueError(f"program {i} needs a name of its own")
+        kind = program.get("kind", "roam")
+        if kind not in PROGRAM_KINDS:
+            raise ValueError(f"program {name!r} is of kind {kind!r}; the only kind there is yet is 'roam'")
+        body = str(program.get("body", ""))
+        wheels = []
+        for side in ("left", "right"):
+            control = next((c for c in controls if c["name"] == str(program.get(side, ""))), None)
+            if control is None:
+                raise ValueError(f"program {name!r} works the controller {program.get(side)!r} for its {side} "
+                                 f"wheel, and there is none")
+            if "top_out_mm" in control:
+                raise ValueError(f"program {name!r}: {control['name']!r} works a hoist, not a wheel")
+            if body not in control["on"]:
+                raise ValueError(f"program {name!r}: {control['name']!r} does not turn a wheel on {body!r}")
+            if any(control["name"] in (o["left"], o["right"]) for o in out):
+                raise ValueError(f"program {name!r}: {control['name']!r} is worked by another program")
+            wheels.append(control["name"])
+        if wheels[0] == wheels[1]:
+            raise ValueError(f"program {name!r}: its left and right wheels are one")
+        made: dict[str, Any] = {"name": name, "kind": kind, "left": wheels[0], "right": wheels[1], "body": body,
+                                "setting": _number(program.get("setting", 1.0), 0.01, 1.0,
+                                                   f"program {name!r} setting"),
+                                "climb_deg": _number(program.get("climb_deg", 8.0), 0.1, 59.0,
+                                                     f"program {name!r} climb_deg"),
+                                "power": bool(program.get("power", False))}
+        sensors = _sensors(program.get("sensors"), name, named, stops=False)
+        if sensors:
+            made["sensors"] = sensors
+        out.append(made)
+    return out
+
+
+def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list[dict[str, Any]]:
     """A controller's sensors (docs/machine-world.md, "One autonomous
     creature"): each a point on one of the room's things -- where it is as the
     room is made, in the room's millimetres, like a pin's -- that reads the
     world, and the direction it stops the machine going when it reads more than
     its depth. The one kind there is yet is "water": the depth of the room's
-    water under the point, so a cart stops at a lake's edge."""
+    water under the point, so a cart stops at a lake's edge. A program's
+    sensors (`stops` False) stop nothing themselves: the program reads them."""
     if given in (None, []):
         return []
     if not isinstance(given, list) or len(given) > 8:
@@ -876,9 +936,10 @@ def _sensors(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
         what = f"control {name!r} sensor {k}"
         if not isinstance(sensor, dict):
             raise ValueError(f"{what} is not an object")
-        unknown = set(sensor) - {"kind", "body", "at_mm", "depth_mm", "stops"}
+        keys = {"kind", "body", "at_mm", "depth_mm"} | ({"stops"} if stops else set())
+        unknown = set(sensor) - keys
         if unknown:
-            raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds kind, body, at_mm, depth_mm and stops")
+            raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds {', '.join(sorted(keys))}")
         if sensor.get("kind", "water") != "water":
             raise ValueError(f"{what} is of kind {sensor.get('kind')!r}; the only kind there is yet is water")
         body = str(sensor.get("body", ""))
@@ -887,14 +948,16 @@ def _sensors(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
         at = sensor.get("at_mm")
         if not isinstance(at, list) or len(at) != 3:
             raise ValueError(f"{what} needs at_mm as three numbers")
-        stops = sensor.get("stops", 1)
-        if stops not in (1, -1) or isinstance(stops, bool):
+        way = sensor.get("stops", 1)
+        if stops and (way not in (1, -1) or isinstance(way, bool)):
             raise ValueError(f"{what}: stops is the direction it stops the machine going, 1 or -1")
-        out.append({"kind": "water", "body": body,
-                    "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
-                    # The engine's own bound: deeper than 10 m is no edge.
-                    "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm"),
-                    "stops": int(stops)})
+        made = {"kind": "water", "body": body,
+                "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
+                # The engine's own bound: deeper than 10 m is no edge.
+                "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm")}
+        if stops:
+            made["stops"] = int(way)
+        out.append(made)
     return out
 
 

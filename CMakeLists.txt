@@ -1159,6 +1159,13 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_cart_drive_tests)
             add_test(NAME banjo_cart_drive_tests COMMAND banjo_cart_drive_tests)
 
+            # A rover that roams: a motor on each back wheel, a caster in front,
+            # and a program that works the two wheels' controllers.
+            add_executable(banjo_rover_roam_tests tests/rover_roam_tests.cpp)
+            target_link_libraries(banjo_rover_roam_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_rover_roam_tests)
+            add_test(NAME banjo_rover_roam_tests COMMAND banjo_rover_roam_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows
@@ -1446,4 +1453,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_CART_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cart_room_tests.py -v)
     set_tests_properties(banjo_cart_room_tests PROPERTIES TIMEOUT 120)
+    # And the rover that roams: the room's programs checked and carried, and the
+    # tests-rover room opened, set roaming and saved through the runner.
+    add_test(NAME banjo_rover_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_room_tests.py -v)
+    set_tests_properties(banjo_rover_room_tests PROPERTIES TIMEOUT 180)
 endif()

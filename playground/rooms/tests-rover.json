@@ -1,0 +1,492 @@
+{
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    13000.0,
+    2820.8,
+    13000.0
+   ],
+   "material": "concrete",
+   "name": "post",
+   "shape": "box",
+   "size_mm": [
+    150.0,
+    900.0,
+    150.0
+   ]
+  }
+ ],
+ "cell_m": 0.05,
+ "joints": [
+  {
+   "a": "rover",
+   "at_mm": [
+    192.5,
+    975.6483430862427,
+    -9300.200281690708
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: left wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover",
+   "at_mm": [
+    -192.5,
+    975.6483430862427,
+    -9300.200281690708
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: right wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover",
+   "at_mm": [
+    0.0,
+    1046.7935190095568,
+    -8587.85320059692
+   ],
+   "axis": [
+    0.0,
+    0.9937848451788276,
+    0.11131792979072887
+   ],
+   "b": "rover: caster",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover: caster",
+   "at_mm": [
+    0.0,
+    824.90208040587,
+    -8673.083415159517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: caster wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  }
+ ],
+ "machines": {
+  "controls": [
+   {
+    "name": "left wheel",
+    "on": [
+     "rover",
+     "rover: left wheel"
+    ]
+   },
+   {
+    "name": "right wheel",
+    "on": [
+     "rover",
+     "rover: right wheel"
+    ]
+   }
+  ],
+  "motors": [
+   {
+    "brake_torque_n_m": 40.0,
+    "no_load_rpm": 60.0,
+    "on": [
+     "rover",
+     "rover: left wheel"
+    ],
+    "stall_torque_n_m": 20.0,
+    "store": "rover battery"
+   },
+   {
+    "brake_torque_n_m": 40.0,
+    "no_load_rpm": 60.0,
+    "on": [
+     "rover",
+     "rover: right wheel"
+    ],
+    "stall_torque_n_m": 20.0,
+    "store": "rover battery"
+   }
+  ],
+  "programs": [
+   {
+    "body": "rover",
+    "climb_deg": 8.0,
+    "kind": "roam",
+    "left": "left wheel",
+    "name": "rover",
+    "right": "right wheel",
+    "sensors": [
+     {
+      "at_mm": [
+       550.0,
+       1027.5,
+       -7966.1
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water"
+     },
+     {
+      "at_mm": [
+       -550.0,
+       1027.5,
+       -7966.1
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water"
+     }
+    ],
+    "setting": 1.0
+   }
+  ],
+  "stores": [
+   {
+    "body": "rover",
+    "capacity_j": 100000.0,
+    "name": "rover battery",
+    "voltage_v": 24.0
+   }
+  ]
+ },
+ "plasticity": "on",
+ "precise_rigid_bodies": [
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.36,
+      0.0
+     ],
+     "dimensions_m": [
+      0.7,
+      0.04,
+      1.0
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.0345,
+      0.18,
+      0.0345
+     ],
+     "name": "left mount"
+    },
+    {
+     "center_local_m": [
+      -0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.0345,
+      0.18,
+      0.0345
+     ],
+     "name": "right mount"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.325,
+      0.38
+     ],
+     "dimensions_m": [
+      0.1,
+      0.03,
+      0.1
+     ],
+     "name": "caster mount"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover: left wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.26,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.2,
+      0.03
+     ],
+     "material": "iron",
+     "name": "stub",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover: right wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      -0.26,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.2,
+      0.03
+     ],
+     "material": "iron",
+     "name": "stub",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      -0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "rover: caster",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.3,
+      0.38
+     ],
+     "dimensions_m": [
+      0.08,
+      0.02,
+      0.08
+     ],
+     "name": "top"
+    },
+    {
+     "center_local_m": [
+      0.035,
+      0.18,
+      0.335
+     ],
+     "dimensions_m": [
+      0.012,
+      0.22,
+      0.05
+     ],
+     "name": "left cheek"
+    },
+    {
+     "center_local_m": [
+      -0.035,
+      0.18,
+      0.335
+     ],
+     "dimensions_m": [
+      0.012,
+      0.22,
+      0.05
+     ],
+     "name": "right cheek"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08,
+      0.32
+     ],
+     "dimensions_m": [
+      0.012,
+      0.082,
+      0.012
+     ],
+     "name": "pin",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover: caster wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.08,
+      0.32
+     ],
+     "dimensions_m": [
+      0.16,
+      0.04,
+      0.16
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  }
+ ],
+ "terrain": {
+  "generate": {
+   "cell_m": 0.25,
+   "kind": "basin",
+   "lake_level_m": 0.35,
+   "nx": 128,
+   "nz": 128,
+   "sand_m": 0.0
+  }
+ }
+}

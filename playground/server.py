@@ -2382,6 +2382,14 @@ def operate_machine(app,body):
     then does comes with every step."""
     if app.live.session is None: raise ValueError("the room is not open")
     if not isinstance(body,dict): raise ValueError("expected {control, sender, seq, power, direction, setting}")
+    if body.get("program") is not None:
+        # A machine's program, turned on or off from its panel the same way:
+        # {program, sender, seq, power}, answered with the program as it now is.
+        said=app.live.act({"session":app.live.session.id,"op":"run","program":body.get("program"),
+                           "sender":str(body.get("sender") or "")[:64],"seq":body.get("seq",0),
+                           "power":body.get("power")})
+        if said.get("ran")=="applied": keep_world(app,"a machine's program was turned on or off")
+        return {"operated":said.get("ran"),"program":said.get("program")}
     command={"session":app.live.session.id,"op":"operate","control":body.get("control"),
              "sender":str(body.get("sender") or "")[:64],"seq":body.get("seq",0)}
     for key in ("power","direction","setting"):

@@ -470,7 +470,37 @@ The runner's `sense` operation puts one on:
 Each controller that `machines` reports carries its `sensors`: for each, where
 it is now (`at_m`), what it reads (`reading_m`), and whether it sees more than
 its depth (`sees`). A controller's `parts` are its motor pin's two things, a
-hoist's load, and whatever else turns on a pin through either of the two.
+hoist's load, and whatever else turns on a pin through a part of the machine
+that moves with it, and on through those; nothing is followed through anchored
+scenery.
+
+**A machine's program** goes in the room's `machines` too, on its wheels'
+controllers by their names:
+
+```json
+"programs": [{"name": "rover", "kind": "roam", "left": "left wheel", "right": "right wheel",
+              "body": "rover", "setting": 1, "climb_deg": 8, "power": false,
+              "sensors": [{"kind": "water", "body": "rover", "at_mm": [550, 1028, -7966],
+                           "depth_mm": 3}]}]
+```
+
+- `kind` is `"roam"`, the only kind so far.
+- `left` and `right` name the controllers of two shafts on pins through
+  `body`, which no other program works.
+- `setting` is the drive setting it tells its wheels, and `climb_deg` the
+  steepest ground it goes on.
+- `power` says whether it starts running.
+- Its sensors stop nothing themselves, so they say no `stops`.
+
+The runner's `program` operation makes one
+(`{"op": "program", "name", "kind", "left": control id, "right": control id,
+"body", "setting", "climb_deg"}`); `sense` with `"program"` in place of
+`"control"` puts a sensor on it; and `run` turns it on or off, by a sender and
+its count as `operate` does (`{"op": "run", "program": id, "sender", "seq",
+"power"}`). `machines` reports each program: what it is `doing` and `why`, for
+how long, how far it has turned, how many `turns` it has made, the slope under
+it (`pitch_deg`, `roll_deg`), its sensors with their `side`, and its `parts`. A
+saved world keeps its programs.
 
 ## Milestone 2, its first step: a cart that stops at the water's edge
 
@@ -538,6 +568,94 @@ Not built yet: the bump sensor, roaming, and finding a charging post and
 docking at it. These are the rest of this milestone. The room and the runner
 carry sensors; the C API, the Python binding and the chat's tools do not yet.
 
+## Milestone 2, its second step: a rover that roams
+
+**Status, 2026-09-22.** A rover roams a lake's shore by itself: it goes
+forward, turns away wherever it sees water, turns back from ground too steep
+to climb, and never puts a wheel in the water. Nothing tells it where the lake
+is. It knows only what its sensors and its own slope tell it.
+
+**Its body** is exact bodies on pins:
+
+- an oak deck;
+- a 320 mm oak wheel on each side at the back, each on a pin of its own
+  through a bearing mount;
+- at the front, an iron caster fork on a swivel, with a 160 mm oak wheel
+  trailing 60 mm behind the swivel's axis, so it swings round to follow.
+
+**Its machine** is a 24 V battery in the deck and a DC motor with a brake on
+each back wheel: 20 N m at a standstill, 60 turns a minute unloaded (about
+1 m/s), 40 N m of brake. Each motor is worked by a controller of its own.
+Driven alike, the two wheels send it straight; driven against each other,
+they turn it on the spot.
+
+**Its program** is a new layer above the controllers. It works them the way
+a person works their panels, from what its sensors read, and is turned on and
+off from its own panel. The one kind so far, "roam":
+
+- It goes forward.
+- Where a sensor sees water ahead, it backs off for 1.2 s, then turns away on
+  the spot from the side that saw it. When both sensors see water, it turns
+  one way and then the other in turn.
+- Where the ground is steeper than 8 degrees, rising ahead or falling away to
+  one side, it turns towards the lower side.
+- Where its wheels stop for want of progress, it backs off and turns. For now
+  that stands in for a bump sensor.
+- It turns until it has turned at least as far as it meant to and nothing is
+  in its way, or for 6 s at most.
+- Turned off, it stops on its brakes.
+
+Its two water sensors sit half a metre ahead of the deck, 0.55 m either side
+of its middle, and look for more than 3 mm of water. That is the depth the
+water itself counts as wet. Which side a sensor is on, and which way is
+forward, the program works out from where the wheels are.
+
+These are a demonstration machine's numbers, which the room declares.
+
+Measured in the engine:
+
+- Driven alike for 3 s, it went 2.84 m and veered 0.02 degrees. From rest,
+  driven against each other for 3 s, it turned 200 degrees and stayed within
+  a metre of where it began.
+- Roaming for a minute on the test room's shore, it went 50.3 m and turned
+  away 5 times. It kept between 5.7 m and 12.4 m from the lake's middle (the
+  water's edge is 4.9 m out), and no wheel was ever in water. The battery gave
+  2,283 J, all of it the two motors' work and heat.
+- Saved while roaming and opened again, it came back doing the same thing, as
+  far into it, and roamed on.
+
+What it took, each found by the tests' own check that no wheel is ever in the
+water:
+
+- **Back off before turning.** Turned on the spot where it saw the water, it
+  swung its front round over the edge, and the caster went in.
+- **Sensors wider than the wheels, looking for less water.** Set inside the
+  wheels' track and looking for a centimetre, they let a back wheel run along
+  the shore into water they had not seen. On a curve the back wheels cut
+  inside the line the front takes.
+- **A slope to the side counts.** Checking only the slope ahead, it ran along
+  a steep contour and spiralled up towards the basin's rim.
+
+It can be worked in the page at `/world?scene=tests-rover`. That is a test room
+off the menu, built by `tools/build_rover_room.py`, which lets the rover roam a
+minute in the engine and refuses to write the room unless it stayed dry and in
+the basin:
+
+- E on any part of the rover opens its program's panel. The panel offers only
+  On and Off, since the wheels are the program's to drive.
+- The panel says what the program has the wheels doing, how many times it has
+  turned away, the slope under it and what each sensor reads, and why it is
+  doing what it does.
+- The sensors are drawn as beads on threads ahead of it, blue while dry and
+  amber over water. Each wheel's arrow shows which way its motor drives it.
+
+Checked by `tests/rover_roam_tests.cpp`, `tests/rover_room_tests.py` and the
+browser journey `ARoverRoamsTheShore`.
+
+Not built yet: a bump sensor that feels a knock rather than a stall, and
+finding a charging post and docking at it, which waits on decision D1. The
+C API, the Python binding and the chat's tools do not carry programs yet.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is
@@ -545,8 +663,9 @@ seen working in the page.
 
 2. **One autonomous creature.** Wheels before legs: a battery cart with two
    driven wheels, a bump sensor, and a controller that roams, finds a charging
-   post and docks. Its first step is built: a cart whose water sensor stops it
-   at a lake's edge (above).
+   post and docks. Its first two steps are built: a cart whose water sensor
+   stops it at a lake's edge, and a rover that roams a lake's shore by itself
+   (above).
 3. **Repair and persistence.** Parts fail by what they do, such as a burnt
    motor or a cut wire, and can be repaired. A creature's identity is kept
    apart from its body.

@@ -139,14 +139,14 @@ build; the tables further down say which):
 | Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
 | Water | river and pond, floating, drag, dams, rivers beyond the valley | | waves, sediment, rain, wet ground, water putting out fire |
 | Ground | digging, heaping, slumping, a pick in soil, carrying what you dig | storing dug material (manufacturing page) | breaking rock, wet soil, tool wear |
-| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge | electrical and thermal circuits | gears, charging batteries, joints that fail by bending, a machine that roams and docks |
+| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge; a rover that roams a lake's shore by itself | electrical and thermal circuits | gears, charging batteries, joints that fail by bending, a machine that docks to charge |
 | Hands and tools | pick up, carry, place, bag, throw, bow, sword, pick; things of several parts taken up whole | | two hands, grip points |
 
 The main world is the room at `/world` ("The world"). It stands on a generated
 valley with a river and a pond, and holds a latched gate, a portcullis on a
 winch, a self-closing door, a bell on a rope, a crate, a ceramic pot, a plank, a
 rubber ball, a bow, an iron sword, a pick, a hearth with an iron pot and two
-burning logs, a table and chair, and a battery hoist. Fifteen more rooms exist
+burning logs, a table and chair, and a battery hoist. Sixteen more rooms exist
 but the room menu shows only "The world" and "Expedition"; the rest open by
 address ([the rooms](#the-rooms)). `/explore`, the newest interface, can pick
 things up, carry, place and bag them and use them for what they are for (push
@@ -475,6 +475,20 @@ it is more than 10 mm deep, and the controller brakes. In the engine it went
 Going downhill the motor mostly held it back: the battery gave 26 J, the
 motor's work was -83 J, and 110 J became heat.*
 
+| Turned on | A while later |
+|---|---|
+| ![The rover on the lake's shore: a deck on two big back wheels and a small caster wheel in front, its two sensors' beads ahead of it, and its program's panel turned on](docs/images/readme/rover-before.jpg) | ![The rover further round the shore, turning away from the water, its panel saying what it is doing and why](docs/images/readme/rover-after.jpg) |
+
+*A rover that roams by itself (`/world?scene=tests-rover`): a motor on each
+back wheel, so it steers by driving them differently, and a caster in front
+that swings round to follow. Its **program** works the two wheels' controllers
+as a person works their panels. It goes forward; where one of its two front
+sensors sees water it backs off and turns away from that side; where the
+ground is steeper than 8 degrees it turns downhill. Nothing tells it where
+the lake is. E on it opens the program's panel, whose only buttons are **On**
+and **Off**. In the engine it roamed 50 m of shore in a minute, turned away 5
+times, and never had a wheel in the water.*
+
 | Capability | Status | How to try it |
 |---|---|---|
 | Hinges, slides, rope links, pulleys, latches (fixings), springs | World | the gate, door, bell, portcullis and winch; the bow's limbs |
@@ -483,12 +497,13 @@ motor's work was -83 J, and 110 J became heat.*
 | Every joule of a machine accounted for | World | the Room tab's Machines panel |
 | Wheels on pins: a product made of exact bodies | World (`/explore`) | the cart: J pushes it, Q puts all of it in the bag and it comes back whole |
 | A machine that stops itself by what a sensor reads | Test room (`/world?scene=tests-cart`) | E on the cart, **On**, **Forward**: its water sensor stops it at the lake's edge |
+| A machine with a program that roams by itself | Test room (`/world?scene=tests-rover`) | E on the rover, **On**: it roams the shore, turning away from the water and from steep ground |
 | Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |
 
 **Not built:** gears; charging batteries; motor heat that warms anything;
 hinges with a strength; joints that fail by bending or prying; a bearing's
-strength along its axis; the rest of the self-driving cart, which is a bump
-sensor, roaming, and finding a charging post and docking at it
+strength along its axis; a bump sensor that feels a knock rather than a
+stall; a charging post that a machine finds and docks at
 ([machine-world.md](docs/machine-world.md)).
 
 ### Hands, tools and handling
@@ -627,6 +642,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | `tests-machines` | 50 mm | address | a motor, drum, battery and brake |
 | `tests-carry` | 40 mm | `/explore?scene=tests-carry` | a mace, a table and a chair, each taken up whole |
 | `tests-cart` | 50 mm | address | a cart with a battery and a motor that drives down a shore until its water sensor stops it |
+| `tests-rover` | 50 mm | address | a rover with a motor on each back wheel and a program that roams a lake's shore by itself |
 | `watershed` | 40 mm | address | rivers beyond the valley; dam one and watch the reservoir fill |
 | `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
 | `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |
@@ -810,7 +826,7 @@ stands at 1 complete, 26 partial and 3 planned.
   machine, and it does not animate the water. It rebuilds its valley on every
   load, so nothing done there is kept.
 - [ ] **Put the test rooms' physics in the main world, or on the menu.** The
-  menu shows 2 of 17 rooms. Breaking under load, the gas piston, fine cells for
+  menu shows 2 of 18 rooms. Breaking under load, the gas piston, fine cells for
   cutting, the plates of every material and the watershed can only be reached
   by typing an address.
 - [ ] **Freezing in the world.** Ice melts in the world now; water does not
@@ -856,8 +872,8 @@ stands at 1 complete, 26 partial and 3 planned.
 - [ ] **Ground:** breaking rock (mining), tool wear, rotational landslides.
 - [ ] **Machines:** gears, charging batteries, motor heat, hinges with a
   strength, joints that fail by bending or prying, bearings rated along their
-  axis; the rest of the self-driving cart (a bump sensor, roaming, finding a
-  charging post and docking), and bringing it into the main world.
+  axis; a bump sensor, a charging post a machine finds and docks at, and
+  bringing the cart and the rover into the main world.
 - [ ] **Breaking:** calibration against laboratory data, converged piece
   counts, a failure path for thin parts, keeping a crack in a body that stays
   whole.
@@ -940,8 +956,9 @@ stands at 1 complete, 26 partial and 3 planned.
 
 ### Decisions for the owner
 
-The licence; the hosting plan; whether `/explore` replaces `/world`; which
-fracture solvers to keep; joint-strength numbers; whether charred wood keeps a
+The licence; the hosting plan; whether `/explore` replaces `/world`; how a
+machine's battery is charged ([D1](docs/machine-world.md#decisions-for-the-owner));
+which fracture solvers to keep; joint-strength numbers; whether charred wood keeps a
 little strength; and the uncommitted fixes on `agent/shard-rest` and
 `agent/foresight-partner`.
 

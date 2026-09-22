@@ -479,6 +479,10 @@ struct LiveSensor {
     Vec3 at_local_m{};            // where on it, in the part's own frame about its centre of mass
     double depth_m{};             // deeper than this under it, and it stops
     int stops{1};                 // the direction it stops: 1 forward, -1 reverse
+    // On a program's machine (LiveProgram), the side of it the sensor is on,
+    // worked out from where it was fitted: 1 its left wheel's side, -1 its
+    // right's, 0 the middle, which counts as both. A controller's reads 0.
+    int side{};
     // Measured, as the last kept step left it: where the point is in the
     // world, the water's depth under it (zero where the room has no water), and
     // whether that is deeper than depth_m.
@@ -545,6 +549,44 @@ struct LiveControl {
     std::string condition;
     // What it senses (LiveWorld::sense), with their last readings.
     std::vector<LiveSensor> sensors;
+};
+
+// A machine's program (docs/machine-world.md, "One autonomous creature"): what
+// works a machine's controllers the way a person works their panels, from what
+// its sensors read -- the machine deciding for itself. The one kind so far is
+// "roam", for a cart with a driven wheel on either side and a caster: it goes
+// forward; where a water sensor sees water ahead on one side it turns away on
+// the spot, the wheel on that side driving and the other backing; where the
+// sensors on both sides do, or its wheels stop for want of progress, it backs
+// off before it turns; where the ground is steeper than it will climb -- rising
+// ahead, or falling away to one side -- it turns towards the lower side. It
+// goes on like that until it is
+// turned off, and then stops on its brakes. Nothing is scripted by place: it
+// knows only what its sensors and its own slope tell it.
+struct LiveProgram {
+    unsigned id{};
+    std::string name;             // the machine's, as the host calls it
+    std::string kind;             // "roam"
+    unsigned left{}, right{};     // the controllers of its left and right wheels (LiveControl)
+    std::string body;             // the part both wheels turn on: its chassis, whose slope it reads
+    double setting{1.0};          // the drive setting it tells its wheels, 0 to 1
+    double climb_deg{8.0};        // nose up steeper than this, and it turns back
+    std::vector<LiveSensor> sensors;
+    // What it was told, and by whom: on or off.
+    bool power{};
+    std::string sender;
+    std::uint64_t seq{};
+    // What it is doing -- "going forward", "backing off", "turning left",
+    // "turning right", "stopped" -- and why, as the last kept step left it; how
+    // long it has been doing it and how far it has turned in it; how many times
+    // it has turned away from something since it was made; and the slope it
+    // faces, nose up, and the one across it, its left side up, in degrees.
+    std::string doing{"stopped"};
+    std::string why{"off"};
+    double doing_s{};
+    double turned_deg{};
+    unsigned turns{};
+    double pitch_deg{}, roll_deg{};
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -943,7 +985,7 @@ struct LiveRestore {
         std::size_t placed{};     // whole things whose cells could not be found again, put back where left
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
-        std::size_t joints{}, energy_stores{}, motors{}, controls{}, blades{}, tool_points{};
+        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, blades{}, tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
     };
@@ -970,7 +1012,7 @@ struct LiveRestore {
 struct LiveCarry {
     // Explicit host assertion that terrain declarations/edits are unchanged.
     bool ground{};
-    std::set<unsigned> joints, energy_stores, motors, controls, blades, tool_points;
+    std::set<unsigned> joints, energy_stores, motors, controls, programs, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1407,6 +1449,34 @@ public:
     // setting outside 0 to 1.
     std::string operate(unsigned control, const ControlCommand &command);
     [[nodiscard]] std::vector<LiveControl> controls() const;
+    // A program for a machine (LiveProgram): of `kind` ("roam"), working the
+    // controllers of its `left` and `right` wheels -- each a shaft's, on a pin
+    // through `body`, the part both turn on -- at the drive `setting`, turning
+    // back from ground nose-up steeper than `climb_deg`. Which way is forward
+    // is worked out from where its wheels are: across the line from the right
+    // wheel to the left, in the body's own level. Returns its id, above zero,
+    // or 0 when a controller is not there or is a hoist's, the two are one,
+    // either is worked by a program already, `body` is not what both turn on,
+    // the kind is not one it knows, or the numbers are not a program's. It
+    // starts off, and does nothing to its wheels until it is turned on.
+    unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
+                     const std::string &body, double setting = 1.0, double climb_deg = 8.0);
+    // A sensor on a program's machine, as sense() puts one on a controller's:
+    // of `kind` ("water"), on the named part at a point given where it is now,
+    // seeing what is deeper than `depth_m`. Which side it is on is worked out
+    // from where it is. False, with nothing changed, as sense() refuses.
+    bool programSense(unsigned program, const std::string &kind, const std::string &body,
+                      const Vec3 &point_world_m, double depth_m);
+    // What a program is told, by a sender and that sender's count: on or off.
+    struct ProgramCommand {
+        std::string sender;
+        std::uint64_t seq{};
+        bool power{};
+    };
+    // "applied" or "stale", as operate() says; anything else is why it is not
+    // a command.
+    std::string run(unsigned program, const ProgramCommand &command);
+    [[nodiscard]] std::vector<LiveProgram> programs() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;
