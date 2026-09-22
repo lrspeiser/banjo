@@ -199,6 +199,10 @@ public:
     // set down on a sandy bank stays put and one let go on bare rock rolls.
     // Off the ground, soil's. See docs/rolling-resistance.md.
     [[nodiscard]] double rollingResistanceAt(double x_m, double z_m) const;
+    // Water from the world -- meltwater running off ice -- into the column of
+    // the room's water under (x, z). Returns the volume that went in: nothing
+    // outside the valley's grid, where it runs off the world instead.
+    double addWater(double x_m, double z_m, double volume_m3);
 
     // Everything, as JSON: the ground and its ledger, the water and its
     // ledger, rivers and ponds, the costs. `full` adds the model's provenance

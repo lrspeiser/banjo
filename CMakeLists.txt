@@ -1048,7 +1048,7 @@ if(BANJO_BUILD_TESTS)
             # a load through a real slide, a refused step taking its chemistry
             # back, a burning plank breaking and sharing out what it held.
             add_executable(banjo_thermo_live_tests tests/thermo_live_tests.cpp)
-            target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene)
+            target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_thermo_live_tests)
             add_test(NAME banjo_thermo_live_tests COMMAND banjo_thermo_live_tests)
 

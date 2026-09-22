@@ -139,6 +139,44 @@ std::vector<MechanicalLaw> makeLaws() {
             "the further loss of strength that comes with cooling"};
         laws.push_back(std::move(concrete));
     }
+
+    // ---- ice ------------------------------------------------------------
+    //
+    // A law with no curves. Ice melts (thermo/Thermochemistry.cpp, "melting of
+    // ice"), and what melts must leave the body -- its section, its mass, the
+    // shape it collides and is drawn with -- exactly as what burns leaves an
+    // oak beam. That is decided by the load-bearing matter used, which only a
+    // law names. The law says nothing else: the strength the catalogue gives
+    // ice holds at every temperature up to its melting point.
+    {
+        MechanicalLaw ice;
+        ice.material = "ice";
+        ice.id = "ice, melting only";
+        ice.version = "1";
+        ice.provenance = Provenance::Demonstration;
+        ice.source =
+            "no temperature dependence is declared for ice's strength or stiffness: the "
+            "catalogue's values hold up to the melting point. The law names ice as its own "
+            "load-bearing matter, so what melts is taken out of the section, the mass and the "
+            "shape";
+        ice.load_bearing = "ice";
+        ice.reference_fraction = 1.0;
+        ice.gone = "melted";
+        ice.char_k = 0.0;
+        ice.recovers = true;
+        // Ice exists only up to its melting point, and nothing here changes
+        // with temperature below it.
+        ice.supported_from_k = 0.0;
+        ice.supported_to_k = 273.15;
+        ice.recovery_to_k = 273.15;
+        ice.not_modelled = {
+            "ice is stronger and stiffer the colder it is: not modelled, the catalogue's values "
+            "hold at every temperature up to melting",
+            "creep: ice flows under a sustained load",
+            "brine, trapped air and grain size",
+            "meltwater held on or in the ice: it runs off as it melts"};
+        laws.push_back(std::move(ice));
+    }
     return laws;
 }
 

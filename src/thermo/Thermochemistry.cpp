@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -81,6 +82,27 @@ void Model::addReaction(Reaction reaction) {
     }
 }
 
+void Model::addTransition(Transition transition) {
+    transitions.push_back(std::move(transition));
+    try {
+        validate();
+    } catch (...) {
+        transitions.pop_back();
+        throw;
+    }
+}
+
+const Transition *Model::meltingOf(std::size_t solid) const {
+    for (const Transition &transition : transitions)
+        if (transition.solid == solid) return &transition;
+    return nullptr;
+}
+
+double Model::latentHeatJPerKg(const Transition &transition) const {
+    return specificEnergyJKg(substances.at(transition.liquid), transition.melting_k) -
+           specificEnergyJKg(substances.at(transition.solid), transition.melting_k);
+}
+
 void Model::setComposition(const std::string &material,
                            const std::vector<std::pair<std::string, double>> &fractions) {
     require(!fractions.empty(), material + ": a composition needs at least one substance");
@@ -153,6 +175,31 @@ void Model::validate() const {
         require(finite(rate.supply_coefficient_m_s) && rate.supply_coefficient_m_s >= 0.0,
                 who + ": the supply coefficient is finite and not negative");
     }
+    for (std::size_t t = 0; t < transitions.size(); ++t) {
+        const Transition &transition = transitions[t];
+        const std::string who = "transition \"" + transition.id + "\"";
+        require(!transition.id.empty(), "a transition needs a name");
+        require(transition.solid < substances.size() && transition.liquid < substances.size(),
+                who + " names a missing substance");
+        require(substances[transition.solid].phase == Phase::Solid &&
+                    substances[transition.liquid].phase == Phase::Liquid,
+                who + " melts a solid into a liquid");
+        for (std::size_t other = 0; other < t; ++other)
+            require(transitions[other].id != transition.id && transitions[other].solid != transition.solid,
+                    who + ": a solid melts one way, once");
+        require(finite(transition.melting_k) && transition.melting_k >= minimum_temperature_k &&
+                    transition.melting_k <= maximum_temperature_k,
+                who + ": the melting point is inside the model's range");
+        require(finite(transition.latent_j_kg) && transition.latent_j_kg > 0.0,
+                who + ": melting takes heat");
+        // The latent heat is the two substances' energies apart at the melting
+        // point, or melting would make or lose energy.
+        const double implied = latentHeatJPerKg(transition);
+        require(std::abs(implied - transition.latent_j_kg) <= 1.0e-9 * transition.latent_j_kg,
+                who + ": the reference energies imply " + std::to_string(implied) +
+                    " J/kg at the melting point, not the declared " +
+                    std::to_string(transition.latent_j_kg));
+    }
     for (const auto &[material, parts] : composition_of) {
         double sum = 0.0;
         for (const auto &[substance, fraction] : parts) {
@@ -183,7 +230,10 @@ bool Model::isFuel(std::size_t substance) const {
 Model demonstrationModel() {
     Model model;
     model.id = "banjo-demonstration";
-    model.version = "1";
+    // 2: ice melts, so its reference energy is set against liquid water's.
+    // A world saved under version 1 has its ice brought across at the same
+    // temperature (LiveWorld's saved-heat migration).
+    model.version = "2";
 
     // Gases. cp at 300 K from ideal-gas tables; cv is cp less R/M, held
     // constant. Argon's is exact: a monatomic ideal gas has cv = 3R/2M.
@@ -240,7 +290,7 @@ Model demonstrationModel() {
     // Inert solids: what the catalogue's materials are made of when nothing in
     // them reacts. Room-temperature handbook values.
     const auto solid = [&](const char *id, double cv, double conductivity, double emissivity,
-                           Provenance provenance, const char *note) {
+                           Provenance provenance, const char *note, double reference = 0.0) {
         Substance s;
         s.id = id;
         s.phase = Phase::Solid;
@@ -249,6 +299,7 @@ Model demonstrationModel() {
         s.emissivity = emissivity;
         s.provenance = provenance;
         s.note = note;
+        s.reference_energy_j_kg = reference;
         return model.add(std::move(s));
     };
     solid("iron", 449.0, 80.2, 0.7, Provenance::ReferenceDerived, "oxidised surface");
@@ -257,8 +308,18 @@ Model demonstrationModel() {
     solid("alumina", 880.0, 30.0, 0.8, Provenance::ReferenceDerived, "");
     solid("rubber", 2000.0, 0.16, 0.9, Provenance::ReferenceDerived,
           "no reaction is declared for rubber: it heats and does not burn here");
-    solid("ice", 2100.0, 2.2, 0.97, Provenance::ReferenceDerived,
-          "melting is not modelled in this model");
+    // Ice melts into the same liquid water a material holds as moisture, so its
+    // reference energy is set so that melting at 273.15 K takes the latent heat
+    // of fusion, 333.55 kJ/kg, with the constant heat capacities used
+    // everywhere else. (Its place in the list is kept: a saved world counts
+    // substances by position.)
+    constexpr double kIceCv = 2100.0;
+    constexpr double kMeltingK = 273.15;
+    constexpr double kFusionJKg = 333.55e3;
+    const std::size_t ice =
+        solid("ice", kIceCv, 2.2, 0.97, Provenance::ReferenceDerived,
+              "latent heat of fusion 333.55 kJ/kg at 273.15 K with cp 2100 J/kg K",
+              (liquid_cv - kIceCv) * kMeltingK - kFusionJKg);
     solid("concrete", 880.0, 1.4, 0.9, Provenance::ReferenceDerived, "");
     const std::size_t ash = solid("ash", 800.0, 0.1, 0.9, Provenance::Demonstration,
                                   "the incombustible residue of wood");
@@ -378,9 +439,34 @@ Model demonstrationModel() {
     // Seasoned oak, on a demonstration basis: mostly dry wood, a tenth water,
     // a little ash. This is what makes an oak log able to burn.
     model.setComposition("oak", {{"dry wood", 0.88}, {"moisture", 0.10}, {"ash", 0.02}});
+    {
+        Transition melt;
+        melt.id = "melting of ice";
+        melt.solid = ice;
+        melt.liquid = water;
+        melt.melting_k = kMeltingK;
+        melt.latent_j_kg = kFusionJKg;
+        melt.liquid_fate = Fate::Released;
+        melt.provenance = Provenance::ReferenceDerived;
+        melt.note =
+            "water's melting point and latent heat of fusion at one atmosphere, handbook values. "
+            "The meltwater runs off the ice at once: a block of ice holds no liquid";
+        model.addTransition(std::move(melt));
+    }
     (void)ash;
     model.validate();
     return model;
+}
+
+double meltingPointOf(const Model &model, std::string_view material) {
+    double lowest = std::numeric_limits<double>::infinity();
+    const auto composition = model.composition_of.find(material);
+    if (composition == model.composition_of.end()) return lowest;
+    for (const auto &[substance, fraction] : composition->second)
+        if (fraction > 0.0)
+            if (const Transition *transition = model.meltingOf(substance))
+                lowest = std::min(lowest, transition->melting_k);
+    return lowest;
 }
 
 Parcel emptyParcel(const Model &model) {

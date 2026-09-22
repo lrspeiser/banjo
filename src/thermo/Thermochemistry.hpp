@@ -118,6 +118,30 @@ struct Reaction {
     RateLaw rate;
 };
 
+// A change of phase at one temperature: a solid that melts into a liquid.
+//
+// It has no rate. While the solid is there, matter holding it cannot be warmer
+// than its melting point: the heat that would take it higher goes into melting
+// instead, exactly as much solid as that heat melts. (Freezing, the same line
+// crossed the other way, is not modelled yet: ThermoWorld::limitations.) The
+// latent heat is not a number added to anything: it IS the difference between
+// the liquid's and the solid's specific energies at the melting point, which
+// the two substances' reference energies must say, and validate() checks that
+// they do -- as the vapour's reference energy is what makes drying take the
+// latent heat of vaporisation.
+struct Transition {
+    std::string id;
+    std::size_t solid{};
+    std::size_t liquid{};
+    double melting_k{};
+    double latent_j_kg{};
+    // Where the liquid goes: Retained stays in the matter; Released runs off
+    // it, carrying its energy -- meltwater off a block of ice, which holds none.
+    Fate liquid_fate{Fate::Released};
+    Provenance provenance{Provenance::ReferenceDerived};
+    std::string note;
+};
+
 struct Model {
     std::string id;
     std::string version;
@@ -126,6 +150,7 @@ struct Model {
     double maximum_temperature_k{3000.0};
     std::vector<Substance> substances;
     std::vector<Reaction> reactions;
+    std::vector<Transition> transitions;
     // What a body of each catalogue material is made of, by mass fraction.
     // An oak block is combustible because of what it CONTAINS -- dry wood,
     // moisture and ash -- not because anything says oak burns.
@@ -133,6 +158,12 @@ struct Model {
 
     std::size_t add(Substance substance);
     void addReaction(Reaction reaction);
+    void addTransition(Transition transition);
+    // The transition that melts this solid, or null if it does not melt here.
+    [[nodiscard]] const Transition *meltingOf(std::size_t solid) const;
+    // What melting one kilogram takes by the substances' own energies: u of the
+    // liquid less u of the solid, both at the melting point.
+    [[nodiscard]] double latentHeatJPerKg(const Transition &transition) const;
     void setComposition(const std::string &material,
                         const std::vector<std::pair<std::string, double>> &fractions);
     [[nodiscard]] std::size_t index(std::string_view id) const;
@@ -152,6 +183,10 @@ struct Model {
 
 // The model the playground runs. Every number in it says where it came from.
 [[nodiscard]] Model demonstrationModel();
+
+// The lowest melting point of anything a catalogue material is made of, or
+// infinity when nothing in it melts: while solid it can be no warmer.
+[[nodiscard]] double meltingPointOf(const Model &model, std::string_view material);
 
 // A closed amount of matter: how much of each substance, and one internal energy.
 struct Parcel {

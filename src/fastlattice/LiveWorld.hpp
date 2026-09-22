@@ -649,6 +649,8 @@ struct LiveBurnedAway {
     double time_s{};
     double residue_kg{};
     std::string why;
+    // How its load-bearing matter went: "burned" (oak) or "melted" (ice).
+    std::string gone{"burned"};
 };
 
 // An edge on a body. See docs/cutting-model.md for the whole model; this is
@@ -1398,6 +1400,10 @@ public:
     // the retry would burn them twice. Pressure boundaries push on bodies
     // inside the same trial and are charged exactly the work those pushes did.
     [[nodiscard]] const thermo::ThermoWorld *thermo() const;
+    // Meltwater that has run off ice since the world opened, in kilograms:
+    // into the room's water, and off across the floor where it had none.
+    [[nodiscard]] double meltwaterIntoWaterKg() const;
+    [[nodiscard]] double meltwaterRanOffKg() const;
     // Declare into the running world: {"contents": [{"body": ...}],
     // "gas_regions": [...], "heaters": [...]} -- a heater's start is from now.
     void declareThermo(const std::string &json);

@@ -286,8 +286,17 @@ class InProcessSession:
             return None
         ambient = report["ambient"]["temperature_k"]
         bodies = [b for b in report["bodies"]
-                  if b["reacting"] or b["heater_w"] > 0 or abs(b["temperature_k"] - ambient) >= 1.0]
+                  if b["reacting"] or b.get("melting") or b["heater_w"] > 0
+                  or abs(b["temperature_k"] - ambient) >= 1.0]
         bodies.sort(key=lambda b: -(abs(b["temperature_k"] - ambient) + (1e4 if b["reacting"] else 0)))
+
+        def melting(b: dict[str, Any]) -> dict[str, Any]:
+            # Only for what melts, as the subprocess lane sends it.
+            if not (b.get("melting") or b.get("melted_kg", 0.0) > 0.0):
+                return {}
+            return {"melt_g_s": round(1000.0 * b.get("melt_kg_s", 0.0), 2),
+                    "melted_kg": round(b.get("melted_kg", 0.0), 4)}
+
         return {"t": report["time_s"], "ambient_k": ambient,
                 "bodies": [{"name": b["name"], "t_k": round(b["temperature_k"], 1),
                             "core_k": round(b["core_temperature_k"], 1),
@@ -296,7 +305,7 @@ class InProcessSession:
                             "heater_w": round(b["heater_w"]),
                             "remaining_s": (round(b["remaining_s"]) if b["remaining_s"] is not None
                                             else None),
-                            "reacting": b["reacting"]} for b in bodies[:48]],
+                            "reacting": b["reacting"], **melting(b)} for b in bodies[:48]],
                 "regions": [{"name": r["name"], "piston": r["piston"],
                              "t_k": round(r["temperature_k"], 1), "p_pa": round(r["pressure_pa"]),
                              "v_m3": r["volume_m3"], "base_m": r["base_m"], "axis": r["axis"],

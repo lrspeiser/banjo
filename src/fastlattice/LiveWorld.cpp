@@ -79,6 +79,13 @@ std::string percent(double fraction) {
     return text;
 }
 
+// What taking a body's load-bearing matter away is called, for its material:
+// oak's burns, ice's melts (thermo::MechanicalLaw::gone).
+std::string goneWord(const std::string &material) {
+    const thermo::MechanicalLaw *law = thermo::lawFor(material);
+    return law != nullptr ? law->gone : std::string("burned");
+}
+
 // What a member is now, in one line: the words a joint made of it parts with.
 std::string describeMember(const LiveMaterialState &m) {
     char text[640];
@@ -89,10 +96,11 @@ std::string describeMember(const LiveMaterialState &m) {
         return text;
     }
     std::snprintf(text, sizeof text,
-                  "%s: surface %.0f K (hottest %.0f K), core %.0f K; %.1f mm burned away and %.1f mm "
+                  "%s: surface %.0f K (hottest %.0f K), core %.0f K; %.1f mm %s away and %.1f mm "
                   "char; %.0f x %.0f mm of its %.0f x %.0f mm section still sound; %s of its tension, "
                   "%s of its shear and %s of its stiffness left",
                   m.name.c_str(), m.surface_k, m.peak_surface_k, m.core_k, 1000.0 * s.consumed_m,
+                  goneWord(m.material).c_str(),
                   1000.0 * s.char_m, 1000.0 * s.sound_breadth_m, 1000.0 * s.sound_depth_m,
                   1000.0 * s.breadth_m, 1000.0 * s.depth_m, percent(s.tension).c_str(),
                   percent(s.shear).c_str(), percent(s.axial_stiffness).c_str());
@@ -571,6 +579,14 @@ struct LiveWorld::Impl {
         if (!precise_bodies.empty())
             throw std::invalid_argument(std::string(operation) + ": precise-rigid rooms currently support motion, picking, carrying and joints only; internal failure, thermal mechanics, blades and fabrication are unavailable");
     }
+    // Heat on an exact body: its matter has no thermal model yet (thermoShapes
+    // leaves it out), so it is refused by name rather than lost silently.
+    void refuseExactHeat(const std::string &name, const char *operation) const {
+        if (!name.empty() && precise_bodies.count(name) != 0)
+            throw std::invalid_argument(std::string(operation) + ": " + name +
+                                        " is an exact (precise rigid) body, and heat is not modelled for exact "
+                                        "bodies yet: only things made of cells can be heated");
+    }
     // An exact compound rather than a body made of cells.
     [[nodiscard]] bool isPrecise(std::size_t body) const {
         return body < described.size() && !described[body].mechanical_model.empty();
@@ -798,6 +814,10 @@ struct LiveWorld::Impl {
     // Terrain and water (terrain/Environment.hpp). Null unless the scene
     // declares them, so a room without them pays nothing.
     std::unique_ptr<terrain::Environment> environment;
+    // Meltwater that has run off ice since the world opened: into the room's
+    // water under it, or off across the floor where there is none to take it.
+    double meltwater_into_water_kg{};
+    double meltwater_ran_off_kg{};
     // A broken piece's cells in its own frame, for the water to press on,
     // kept by name while its cell count stays the same.
     std::unordered_map<std::string, std::pair<std::size_t, std::vector<Vec3>>> water_cells_of;
@@ -831,13 +851,15 @@ struct LiveWorld::Impl {
     // Mutable because it is filled in the first time anything asks, which can
     // be a report; what it is filled with is the same whenever that happens.
     mutable std::unordered_map<std::string, MatterRecord> matter_of;
-    // Bodies that burned away entirely, with what was left of them, in order.
+    // Bodies that burned or melted away entirely, with what was left of them,
+    // in order.
     struct BurnedAway {
         std::string name;
         std::string material;
         double time_s{};
         double residue_kg{};
         std::string why;
+        std::string gone{"burned"};
     };
     std::vector<BurnedAway> burned_away;
 
@@ -2430,10 +2452,39 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"heater_w", savedNumber(l.heater_w)},
             {"gained_w", savedNumber(l.gained_w)},
             {"lost_w", savedNumber(l.lost_w)},
+            {"layer_melt_kg", savedNumber(l.layer_melt_kg)},
+            {"melt_kg_s", savedNumber(l.melt_kg_s)},
+            {"meltwater_kg", savedNumber(l.meltwater_kg)},
             {"parked", l.parked}};
 }
 
-thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state, std::size_t substances) {
+// What to add to each kilogram of each substance's energy to bring a saved
+// world's matter across to this model at the same temperature. A world saved
+// before the model said which version it was is version 1, whose ice had a
+// reference energy of 0: version 2 sets it against liquid water's so that
+// melting takes the latent heat (thermo/Thermochemistry.cpp). Empty when
+// nothing changed.
+std::vector<double> referenceShift(const nlohmann::json &heat, const thermo::Model &model) {
+    const std::string version =
+        heat.contains("model") && heat.at("model").is_object() ? heat.at("model").value("version", std::string{"1"})
+                                                                : std::string{"1"};
+    if (version != "1" || model.id != "banjo-demonstration" || model.version != "2" || !model.has("ice"))
+        return {};
+    std::vector<double> shift(model.size(), 0.0);
+    const std::size_t ice = model.index("ice");
+    shift[ice] = model[ice].reference_energy_j_kg;   // less version 1's 0
+    return shift;
+}
+
+// The energy that shift adds to a parcel.
+double shiftOf(const thermo::Parcel &p, const std::vector<double> &shift) {
+    double added = 0.0;
+    for (std::size_t i = 0; i < shift.size() && i < p.kg.size(); ++i) added += p.kg[i] * shift[i];
+    return added;
+}
+
+thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state, std::size_t substances,
+                      const thermo::Model &model, const std::vector<double> &shift) {
     thermo::Lump l;
     l.body = j.at("body").get<std::string>();
     l.material = j.value("material", std::string{});
@@ -2442,8 +2493,20 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     l.initial_kg = unpackedArray<double>(j, "initial_kg_b64");
     if (l.surface.kg.size() != substances || l.core.kg.size() != substances || l.initial_kg.size() != substances)
         throw std::invalid_argument("the " + l.body + "'s heat is not one number a substance");
+    l.surface.internal_energy_j += shiftOf(l.surface, shift);
+    l.core.internal_energy_j += shiftOf(l.core, shift);
     l.layer_depth_m = numberFrom(j.at("layer_depth_m"));
     l.layer_fuel_kg = numberFrom(j.at("layer_fuel_kg"));
+    // Saved before melting was modelled: the melting front keeps what the
+    // layer holds now.
+    if (j.contains("layer_melt_kg")) {
+        l.layer_melt_kg = numberFrom(j.at("layer_melt_kg"));
+    } else {
+        for (const thermo::Transition &transition : model.transitions)
+            if (transition.solid < l.surface.kg.size()) l.layer_melt_kg += l.surface.kg[transition.solid];
+    }
+    l.melt_kg_s = j.contains("melt_kg_s") ? numberFrom(j.at("melt_kg_s")) : 0.0;
+    l.meltwater_kg = j.contains("meltwater_kg") ? numberFrom(j.at("meltwater_kg")) : 0.0;
     l.area_m2 = numberFrom(j.at("area_m2"));
     l.exposed_area_m2 = numberFrom(j.at("exposed_area_m2"));
     l.volume_m3 = numberFrom(j.at("volume_m3"));
@@ -2622,10 +2685,12 @@ nlohmann::json savedThermoState(const thermo::ThermoState &v) {
     return j;
 }
 
-thermo::ThermoState readThermoState(const nlohmann::json &heat, std::size_t substances) {
+thermo::ThermoState readThermoState(const nlohmann::json &heat, const thermo::Model &model) {
+    const std::size_t substances = model.size();
     const auto &j = heat.at("network");
     if (j.at("schema") != "banjo.thermal-state.v1" || heat.at("substances").get<std::size_t>() != substances)
         throw std::invalid_argument("incompatible saved thermal network");
+    const std::vector<double> shift = referenceShift(heat, model);
     thermo::ThermoState v;
     v.time_s = numberFrom(j.at("time_s"));
     v.next_heater = j.at("next_heater").get<unsigned>();
@@ -2640,6 +2705,7 @@ thermo::ThermoState readThermoState(const nlohmann::json &heat, std::size_t subs
         region.gas = parcelFrom(r.at("gas"));
         if (!regions.insert(region.name).second || region.gas.kg.size() != substances)
             throw std::invalid_argument("invalid saved gas region");
+        region.gas.internal_energy_j += shiftOf(region.gas, shift);
         region.volume_m3 = numberFrom(r.at("volume_m3"));
         region.wall_conductance_w_k = numberFrom(r.at("wall_conductance_w_k"));
         region.vent_area_m2 = numberFrom(r.at("vent_area_m2"));
@@ -2654,9 +2720,18 @@ thermo::ThermoState readThermoState(const nlohmann::json &heat, std::size_t subs
         const auto environment = l.value("environment", std::string{});
         if (!environment.empty() && !regions.count(environment))
             throw std::invalid_argument("saved thermal body has no gas region");
-        auto lump = lumpFrom(l, v, substances);
+        auto lump = lumpFrom(l, v, substances, model, shift);
         if (!bodies.insert(lump.body).second) throw std::invalid_argument("duplicate saved thermal body");
         v.lumps.push_back(std::move(lump));
+    }
+    // Brought across to this model's reference energies, the network holds
+    // more by exactly the shift; its ledger is re-based by the same amount, so
+    // what was unaccounted before is unaccounted still -- no more, no less.
+    if (!shift.empty()) {
+        double added = 0.0;
+        for (const thermo::Lump &lump : v.lumps) added += shiftOf(lump.surface, shift) + shiftOf(lump.core, shift);
+        for (const thermo::GasRegion &region : v.regions) added += shiftOf(region.gas, shift);
+        v.ledger.initial_j += added;
     }
     std::set<unsigned> ids;
     for (const auto &h : j.at("heaters")) {
@@ -3411,6 +3486,19 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         if (saved != nullptr) keepWhatIsThere(declared, impl.index_of);
         if (declared.any()) thermo::apply(live->ensureThermo(), declared);
     }
+    // Ice melts in a warm room whether or not anything heats it -- the network
+    // follows it from the start (ThermoWorld::refresh) -- so a room holding
+    // something that melts below the room's temperature has a network even
+    // when its scene declares no heat at all.
+    if (!impl.thermo) {
+        const thermo::Model model = thermo::demonstrationModel();
+        const double room = thermo::Ambient{}.temperature_k;
+        for (const LiveBodyPose &pose : impl.described)
+            if (impl.precise_bodies.count(pose.name) == 0 && thermo::meltingPointOf(model, pose.material) < room) {
+                (void)live->ensureThermo();
+                break;
+            }
+    }
     // Carried: the heat of each thing that came back as it was saved -- what
     // it holds and how hot each zone is, its fuel and its char, the hottest it
     // has been -- as the saved world's network held it, unless the scene now
@@ -3445,8 +3533,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                                "declares it");
             } else {
                 thermo::ThermoState state = network.state();
+                const std::vector<double> shift = referenceShift(heat, network.model());
                 for (const nlohmann::json *j : coming) {
-                    thermo::Lump lump = lumpFrom(*j, state, substances);
+                    thermo::Lump lump = lumpFrom(*j, state, substances, network.model(), shift);
                     // The rigid body was made again from its cells, so it is
                     // told what the network says it weighs -- only when that
                     // differs, so a thing heat has not lightened keeps its
@@ -3503,7 +3592,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         const bool cold_additions = std::all_of(current.lumps.begin(), current.lumps.end(),
             [&](const thermo::Lump &lump) { return prior_thermal_bodies.count(lump.body) || !lump.declared; });
         if (compatible && supports && cold_additions && carried_heat == heat.at("lumps").size()) {
-            impl.thermo->restore(readThermoState(heat, impl.thermo->model().size()));
+            impl.thermo->restore(readThermoState(heat, impl.thermo->model()));
             impl.thermo->refresh(live->thermoShapes(), setup.ground_y);
             carried_thermal_network = true;
         }
@@ -3522,7 +3611,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         state.lumps.clear();
         std::set<std::string> names;
         for (const auto &record : heat.at("lumps")) {
-            auto lump = lumpFrom(record, state, substances);
+            auto lump = lumpFrom(record, state, substances, network.model(), referenceShift(heat, network.model()));
             if (!impl.index_of.count(lump.body) || !names.insert(lump.body).second)
                 throw std::invalid_argument("invalid legacy thermal body");
             const auto region = record.value("environment", std::string{});
@@ -3543,7 +3632,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // Older snapshots remain readable through the existing legacy path.
     if (saved && !carrying && saved->doc.contains("heat") && saved->doc.at("heat").contains("network")) {
         auto &network = live->ensureThermo();
-        auto state = readThermoState(saved->doc.at("heat"), network.model().size());
+        auto state = readThermoState(saved->doc.at("heat"), network.model());
         for (const auto &lump : state.lumps)
             if (!impl.index_of.count(lump.body)) throw std::invalid_argument("saved thermal body is absent");
         for (const auto &region : state.regions)
@@ -6334,10 +6423,11 @@ void LiveWorld::surveyLoads() {
         if (heated_section) {
             char text[320];
             std::snprintf(text, sizeof text,
-                          "; heated: surface %.0f K, core %.0f K, %.1f mm burned away and %.1f mm "
+                          "; heated: surface %.0f K, core %.0f K, %.1f mm %s away and %.1f mm "
                           "char, so its section holds %s of what it did cold",
                           heated_matter->surface_k, heated_matter->core_k, 1000.0 * heated_section->consumed_m,
-                          1000.0 * heated_section->char_m, percent(capacity).c_str());
+                          goneWord(heated_matter->material).c_str(), 1000.0 * heated_section->char_m,
+                          percent(capacity).c_str());
             heated = text;
         }
         if (traced)
@@ -8788,6 +8878,25 @@ void LiveWorld::settleThermo() {
     // A body whose matter has been used up or given off weighs less, and the
     // rigid body is told, so momentum and energy are about what is really there.
     impl_->mirrorMasses();
+    // Meltwater that ran off ice in the step just kept goes where the ice
+    // stands: into the column of the room's water under it -- which carries it
+    // on downhill, into the river if that is where the ground runs -- or, in a
+    // room with no water, off across the floor. Before settleEnvironment, so
+    // the water steps with it; before reviseMatter, which may take away ice
+    // that has melted to nothing.
+    for (const auto &[name, kg] : network->takeMeltwater()) {
+        double into_water = 0.0;
+        const auto found = impl_->index_of.find(name);
+        if (impl_->environment && found != impl_->index_of.end() &&
+            impl_->world->contains(impl_->body_of[found->second])) {
+            const Vec3 at = impl_->world->snapshot(impl_->body_of[found->second]).center_of_mass_world_m;
+            const water::ShallowWater *water = impl_->environment->water();
+            const double density = water != nullptr ? water->settings().density_kg_m3 : 1000.0;
+            into_water = density * impl_->environment->addWater(at.x, at.z, kg / density);
+        }
+        impl_->meltwater_into_water_kg += into_water;
+        impl_->meltwater_ran_off_kg += std::max(0.0, kg - into_water);
+    }
     // And where it is: the shape, the cells and the attachments of everything
     // whose matter has burned, at the network's own stride.
     if (impl_->steps_taken % 8 == 0) reviseMatter();
@@ -8797,9 +8906,23 @@ void LiveWorld::settleThermo() {
 
 const thermo::ThermoWorld *LiveWorld::thermo() const { return impl_->thermo.get(); }
 
+double LiveWorld::meltwaterIntoWaterKg() const { return impl_->meltwater_into_water_kg; }
+
+double LiveWorld::meltwaterRanOffKg() const { return impl_->meltwater_ran_off_kg; }
+
+// Heat skips exact bodies one by one, as breaking and the load survey do: the
+// network never holds one (thermoShapes), so a room with a cart in it can
+// still heat its ice. What is refused is heat ON an exact body, in words.
 void LiveWorld::declareThermo(const std::string &json) {
-    impl_->requireLatticeRoom("declareThermo");
     thermo::Declarations declared = thermo::readDeclarations(json);
+    for (const thermo::ContentsDeclaration &contents : declared.contents)
+        impl_->refuseExactHeat(contents.body, "declareThermo");
+    for (const thermo::HeaterDeclaration &heater : declared.heaters)
+        impl_->refuseExactHeat(heater.target, "declareThermo");
+    for (const thermo::GasRegionDeclaration &region : declared.regions) {
+        impl_->refuseExactHeat(region.piston, "declareThermo");
+        impl_->refuseExactHeat(region.container, "declareThermo");
+    }
     thermo::ThermoWorld &network = ensureThermo();
     // A heater declared into a running world starts from now.
     for (thermo::HeaterDeclaration &heater : declared.heaters) heater.start_s += network.timeS();
@@ -8807,7 +8930,7 @@ void LiveWorld::declareThermo(const std::string &json) {
 }
 
 unsigned LiveWorld::heat(const std::string &target, double power_w, double seconds) {
-    impl_->requireLatticeRoom("heat");
+    impl_->refuseExactHeat(target, "heat");
     thermo::ThermoWorld &network = ensureThermo();
     return network.heat({target, power_w, network.timeS(), seconds, "heater"});
 }
@@ -9396,15 +9519,16 @@ void LiveWorld::reviseMatter() {
                 joint.rigid = 0;
                 joint.attached = false;
                 char text[400];
+                const std::string word = goneWord(I.described[body].material);
                 std::snprintf(text, sizeof text,
-                              "the %s it was fixed to has burned away under it: %.1f mm of it gone from where "
+                              "the %s it was fixed to has %s away under it: %.1f mm of it gone from where "
                               "the joint held, more than the %.1f mm a joint grips (half a cell)",
-                              name.c_str(), 1000.0 * gone, 1000.0 * grip);
+                              name.c_str(), word.c_str(), 1000.0 * gone, 1000.0 * grip);
                 joint.parted_because = text;
                 for (const std::string &side : {joint.a, joint.b})
                     if (const auto found = I.index_of.find(side); found != I.index_of.end())
                         I.world->wake(I.body_of[found->second]);
-                I.delays.push_back({I.time_s, name, "burned off", 1000.0 * gone, 0.0});
+                I.delays.push_back({I.time_s, name, word == "melted" ? "melted off" : "burned off", 1000.0 * gone, 0.0});
             }
         }
     };
@@ -9444,8 +9568,8 @@ void LiveWorld::reviseMatter() {
             if (!busy(i)) {
                 char why[200];
                 const std::optional<thermo::MatterState> matter = network->matter(pose.name);
-                std::snprintf(why, sizeof why, "%.1f%% of its load-bearing matter burned: nothing left to hold a shape",
-                              100.0 * (matter ? matter->consumed_fraction : 1.0));
+                std::snprintf(why, sizeof why, "%.1f%% of its load-bearing matter %s: nothing left to hold a shape",
+                              100.0 * (matter ? matter->consumed_fraction : 1.0), goneWord(pose.material).c_str());
                 going.emplace_back(pose.name, why);
             }
             continue;
@@ -9517,13 +9641,14 @@ void LiveWorld::burnAway(std::size_t body, const std::string &why) {
     if (I.thermo)
         if (const auto matter = I.thermo->matter(name)) residue = matter->surface_kg + matter->core_kg;
     if (I.holding == body) release();
+    const std::string word = goneWord(I.described[body].material);
     // Everything fixed to it comes off, and says why.
     for (Impl::SceneJoint &joint : I.joints) {
         if (!joint.attached || (joint.a != name && joint.b != name)) continue;
         if (joint.rigid != 0 && I.world->hasJoint(joint.rigid)) I.world->removeJoint(joint.rigid);
         joint.rigid = 0;
         joint.attached = false;
-        joint.parted_because = "the " + name + " it was fixed to burned away";
+        joint.parted_because = "the " + name + " it was fixed to " + word + " away";
         for (const std::string &side : {joint.a, joint.b})
             if (const auto found = I.index_of.find(side); found != I.index_of.end() && side != name)
                 I.world->wake(I.body_of[found->second]);
@@ -9538,8 +9663,8 @@ void LiveWorld::burnAway(std::size_t body, const std::string &why) {
             if (length(there - at) <= reach + 0.5 * length(I.described[j].dimensions_m)) I.world->wake(I.body_of[j]);
         }
     }
-    I.burned_away.push_back({name, I.described[body].material, I.time_s, residue, why});
-    I.delays.push_back({I.time_s, name, "burned away", 1000.0 * residue, 0.0});
+    I.burned_away.push_back({name, I.described[body].material, I.time_s, residue, why, word});
+    I.delays.push_back({I.time_s, name, word == "melted" ? "melted away" : "burned away", 1000.0 * residue, 0.0});
     // What it still held -- its ash, the last of its moisture -- leaves the
     // thermal network with it, as a crossing the ledger counts (left_kg).
     dropBodies({body});
@@ -9864,7 +9989,8 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
                                {"material", b.material},
                                {"time_s", b.time_s},
                                {"residue_kg", b.residue_kg},
-                               {"why", b.why}});
+                               {"why", b.why},
+                               {"gone", b.gone}});
     json attachments = json::array();
     for (const LiveJoint &j : joints()) {
         if (j.member.empty() && j.parted_because.empty()) continue;
@@ -9923,7 +10049,7 @@ std::vector<LiveBurnedAway> LiveWorld::burnedAway() const {
     std::vector<LiveBurnedAway> out;
     out.reserve(impl_->burned_away.size());
     for (const Impl::BurnedAway &b : impl_->burned_away)
-        out.push_back({b.name, b.material, b.time_s, b.residue_kg, b.why});
+        out.push_back({b.name, b.material, b.time_s, b.residue_kg, b.why, b.gone});
     return out;
 }
 
@@ -13190,7 +13316,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         const thermo::ThermoState &state = I.thermo->state();
         nlohmann::json lumps = nlohmann::json::array();
         for (const thermo::Lump &lump : state.lumps) lumps.push_back(savedLump(lump, state));
-        doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)},
+        doc["heat"] = {{"substances", I.thermo->model().size()},
+                       {"model", {{"id", I.thermo->model().id}, {"version", I.thermo->model().version}}},
+                       {"lumps", std::move(lumps)},
                        {"network", savedThermoState(state)},
                        {"scene_settings", thermalSettings(I.request.thermo_scene_json)}};
     }

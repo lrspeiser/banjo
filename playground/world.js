@@ -4388,6 +4388,7 @@ const heat = {
   flames: new Map(),      // body name -> { group, outer, inner, height, rx, rz }
   columns: new Map(),     // gas region name -> the column drawn for it
   burning: new Set(),     // what was burning at the last reply, to say when it changes
+  melting: new Set(),     // what was melting fast at the last reply, likewise
   // What heat has done to what things can carry: the engine's "mechanics"
   // block (docs/thermal-mechanics.md), and each body's share of section that is
   // char or gone, which it is drawn darker by -- a picture of that number.
@@ -4583,6 +4584,20 @@ function narrateHeat(block) {
     remember(`${name} stopped burning`);
   }
   heat.burning = now;
+  // Melting, said once when something starts melting fast -- heated, not the
+  // room's slow warmth, which melts ice by a fraction of a gram a second.
+  const melting = new Set();
+  for (const b of block.bodies) {
+    const was = heat.melting.has(b.name);
+    if (b.melt_g_s > (was ? 0.5 : 2)) melting.add(b.name);
+  }
+  for (const b of block.bodies) {
+    if (!melting.has(b.name) || heat.melting.has(b.name)) continue;
+    say("world", `${b.name} is melting: ${Number(b.melt_g_s).toFixed(1)} g of water a second runs off it,`
+      + ` and it stays at ${Math.round(b.t_k)} K until the ice is gone.`);
+    remember(`${b.name} started melting`);
+  }
+  heat.melting = melting;
 }
 
 function showHeat(block) {
@@ -4601,9 +4616,11 @@ function showHeat(block) {
   const strength = new Map(((heat.strength && heat.strength.bodies) || []).map((s) => [s.name, s]));
   const strengthOf = (s) => {
     if (!s) return "";
-    let text = ` · ${Math.round(100 * Math.min(s.tension, s.shear))}% strength left`;
+    // Ice's law changes nothing about its strength: only what melted is gone.
+    const melts = s.gone === "melted";
+    let text = melts ? "" : ` · ${Math.round(100 * Math.min(s.tension, s.shear))}% strength left`;
     if (s.char_mm > 0) text += `, ${s.char_mm.toFixed(1)} mm char`;
-    if (s.burned_mm >= 0.05) text += `, ${s.burned_mm.toFixed(1)} mm burned`;
+    if (s.burned_mm >= 0.05) text += `${melts ? " ·" : ","} ${s.burned_mm.toFixed(1)} mm ${s.gone || "burned"}`;
     // What is left of it: the size it collides and is drawn at, and what it
     // weighs -- the same state its strength is read from.
     if (s.burned_mm >= 0.05 && Array.isArray(s.now_mm))
@@ -4629,14 +4646,22 @@ function showHeat(block) {
     if (b.reacting && b.power_w > 0 && b.remaining_s)
       text += ` · ~${Math.round(b.remaining_s / 60)} min at this rate`;
     if (b.heater_w > 0) text += ` · heated ${(b.heater_w / 1000).toFixed(1)} kW`;
+    if (b.melt_g_s > 0) text += ` · melting ${Number(b.melt_g_s).toFixed(2)} g/s`;
+    if (b.melted_kg > 0) text += ` · ${Number(b.melted_kg).toFixed(2)} kg melted`;
     text += strengthOf(strength.get(b.name));
     text += staticsOf(b.name);
     listed.add(b.name);
     row(b.name, text);
   }
-  // Whatever has burned away entirely, and what was left of it.
+  // Whatever has burned or melted away entirely, and what was left of it.
   for (const gone of ((heat.strength && heat.strength.burned_away) || []).slice(-4))
-    row(gone.name, `burned away at ${Math.round(gone.t)} s · ${Number(gone.residue_kg).toFixed(2)} kg of ash left with it`);
+    row(gone.name, gone.gone === "melted"
+      ? `melted away at ${Math.round(gone.t)} s`
+      : `burned away at ${Math.round(gone.t)} s · ${Number(gone.residue_kg).toFixed(2)} kg of ash left with it`);
+  // Where the meltwater off ice has gone.
+  if (block.meltwater)
+    row("meltwater", `${Number(block.meltwater.into_water_kg).toFixed(2)} kg into the water`
+      + ` · ${Number(block.meltwater.ran_off_kg).toFixed(2)} kg ran off across the floor`);
   // What heat has left of anything that has cooled again: the char stays.
   for (const s of strength.values()) {
     if (listed.has(s.name) || Math.min(s.tension, s.shear) > 0.999) continue;

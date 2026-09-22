@@ -19,6 +19,7 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
 #include "terrain/Environment.hpp"
+#include "thermo/ThermoWorld.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -505,6 +506,44 @@ void theValleyRunsInsideRealtime() {
     require(ratio < 1.1, "the valley runs inside the owner's 1.1x realtime rule");
 }
 
+// Ice floating in a closed basin, heated: it melts at the network's rate,
+// shrinks as it goes, and every kilogram of its meltwater is in the lake --
+// which holds exactly that much more, and whose ledger counts it as added and
+// still closes. The same water, counted once on each side.
+void meltingIceFillsTheLake() {
+    const Json scene = {{"plasticity", true},
+                        {"bodies", {box("ice", "ice", {0.4, 0.2, 0.4}, {0.0, 1.2, 0.0}),
+                                    box("marker stone", "concrete", {0.16, 0.16, 0.16}, {-7.5, 2.0, -5.5}, true)}},
+                        {"terrain", {{"generate", {{"kind", "basin"}, {"nx", 64}, {"nz", 48},
+                                                   {"lake_level_m", 1.0}}}}}};
+    auto world = open(scene);
+    require(world->thermo() != nullptr && world->thermo()->holds("ice"), "the ice is followed from the start");
+    const water::ShallowWater &w = *world->environment()->water();
+    run(*world, 2.0);   // let it settle afloat
+    const double v0 = w.volume();
+    const double added0 = w.ledger().added_m3;
+    const double melted0 = world->meltwaterIntoWaterKg();
+    const Vec3 size0 = poseOf(*world, "ice").dimensions_m;
+    world->heat("ice", 10000.0, 30.0);
+    run(*world, 31.0);
+    const double into = world->meltwaterIntoWaterKg() - melted0;
+    double melted = 0.0;
+    for (const thermo::BodyHeat &b : world->thermo()->bodies())
+        if (b.body == "ice") melted = b.melted_kg;
+    const double density = w.settings().density_kg_m3;
+    require(into > 0.5, "the heat melted ice into the lake: " + std::to_string(into) + " kg");
+    near(world->meltwaterIntoWaterKg(), melted, 1e-6 * melted, "all the meltwater went into the lake");
+    near(w.ledger().added_m3 - added0, into / density, 1e-12 * std::max(1.0, into), "the lake counts it as added");
+    near(w.volume() - v0, into / density, 1e-9 * v0, "and holds exactly that much more");
+    require(std::abs(w.residual()) < 1e-9 * w.volume(), "its ledger still closes: " + std::to_string(w.residual()));
+    near(world->meltwaterRanOffKg(), 0.0, 0.0, "none of it ran off: it was over the water");
+    const Vec3 size1 = poseOf(*world, "ice").dimensions_m;
+    require(size1.x < size0.x && size1.y < size0.y && size1.z < size0.z, "the ice shrank as it melted");
+    std::cout << "    10 kW for 30 s: " << into << " kg of ice melted into the lake, " << (w.volume() - v0)
+              << " m^3 more in it; the block is now " << 1000.0 * size1.x << " x " << 1000.0 * size1.y << " x "
+              << 1000.0 * size1.z << " mm\n";
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -527,6 +566,7 @@ int main(int argc, char **argv) {
         {"an oak log drifts and iron sinks", anOakLogDriftsAndIronSinks},
         {"water carried into a reopened world is the same", waterCarriedIntoAReopenedWorldIsTheSame},
         {"the valley runs inside realtime", theValleyRunsInsideRealtime},
+        {"melting ice fills the lake", meltingIceFillsTheLake},
     };
     const std::string only = argc > 1 ? argv[1] : "";
     unsigned failures = 0, ran = 0;

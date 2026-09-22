@@ -136,7 +136,7 @@ build; the tables further down say which):
 | Breaking | impact fracture of all eight materials, pieces breaking again, denting, breaking under a steady load, foresight, cutting | other fracture solvers and failure laws; joints weaker than their material (switched off) | calibration against real materials; converged piece counts |
 | Cell sizes | one size per room: 10, 20, 40 or 50 mm; exact bodies with no cells | Workshop designs at 5-200 mm; per-object resolution in an older solver | different cell sizes in one world |
 | Materials | eight materials: brittle or dentable, friction, bounce, rolling resistance | internal damping, strength variation, wood grain, full plasticity | grain in the world, rate effects |
-| Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons | melting and freezing, which live in a separate thermal simulation | melting in the world, fires going out, thermal expansion, smoke |
+| Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
 | Water | river and pond, floating, drag, dams, rivers beyond the valley | | waves, sediment, rain, wet ground, water putting out fire |
 | Ground | digging, heaping, slumping, a pick in soil, carrying what you dig | storing dug material (manufacturing page) | breaking rock, wet soil, tool wear |
 | Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels | electrical and thermal circuits | gears, charging batteries, joints that fail by bending |
@@ -318,6 +318,26 @@ flames are only pictures of the engine's numbers: the glow follows a log's
 temperature and the flame's height its power, and a drawn flame warms
 nothing.*
 
+Ice melts. While a body has ice in it, it is never warmer than 273.15 K: the
+heat that would take it higher melts exactly as much ice as that heat can, at
+333.55 kJ a kilogram, with nothing added and nothing lost. The block shrinks
+from every face by what melted, weighs what is left, and its meltwater runs
+into the room's water under it, or off across the floor where there is none.
+Ice cannot be at a warm room's temperature, so it is followed from the moment
+it is in the world, at its melting point, and the room's own air and floor melt
+it slowly (a 200 mm cube loses about a quarter of a gram a second).
+
+| Start | After 60 s of heating | The Room tab's Heat panel |
+|---|---|---|
+| ![A 200 mm ice block on the valley's slope among blocks of other materials](docs/images/readme/ice-before.jpg) | ![The ice block much smaller, and a pool of meltwater downhill of it](docs/images/readme/ice-after.jpg) | ![The same view with the side panel: the ice block at 273 K, 5.41 kg melted, now 128 mm across and 1.93 kg, and 5.41 kg of meltwater into the water](docs/images/readme/ice-after-panel.jpg) |
+
+*The ice block in the Explorer's valley, opened on the room page
+(`/world?scene=explore`) and heated with **B** three times: 30 kW for 60 s. It
+stayed at 273 K throughout, 5.41 kg of its 7.34 kg melted -- 1.8 MJ over
+333.55 kJ/kg -- and it is now 128 mm across. Its meltwater ran downhill and
+pooled below it (lower right): 5.41 kg into the valley's water, whose ledger
+still closes.*
+
 | Capability | Status | How to try it |
 |---|---|---|
 | Heating, conduction, radiation, energy ledger | World | aim at something and press **Heat it** (B), 10 kW for 60 s; the Room tab's Heat panel shows temperatures, power and the ledger |
@@ -327,14 +347,16 @@ nothing.*
 | A heated peg or pin giving way | Chat | ask for a fixing made of a named member, then heat it (about 50 s under 2 kW) |
 | Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
 | Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away: its surface and core do not even out, and nothing reacts in it |
-| Melting and freezing (ice and water) | Code only | a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`) with no link to the world's heat; the lab panel that ran it is hidden |
+| Ice melting: it stays at 273 K while it melts, shrinks from every face, and its meltwater runs into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
+| Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`) with no link to the world's heat, whose lab panel is hidden; nothing in the world is colder than ice yet |
 | Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |
 | Circuit heat, manufacturing heat | Code only, Page | machine circuits; the manufacturing page's station heat |
 
-**Not built:** melting or boiling in the world; fires that go out; thermal
+**Not built:** freezing or boiling in the world; fires that go out; thermal
 expansion; smoke, flame gas and airflow; heat into water or into the ground (a
-burning log in the river keeps burning); friction, impact, cutting or motor work
-turning into heat; gas pressure on a container's walls.
+burning log in the river keeps burning, and ice floating in it melts only from
+the air); friction, impact, cutting or motor work turning into heat; gas
+pressure on a container's walls.
 
 ### Water
 
@@ -492,7 +514,8 @@ A lot of the physics code is research that did not become the world's path:
 - **Reference solvers**: cohesive interfaces, tetrahedral contact, a coupled
   sphere-and-mesh contact reference, continuum pressure with J2 plasticity, and
   orthotropic elasticity.
-- **The separate voxel thermal world** with melting and freezing.
+- **The separate voxel thermal world** with melting and freezing (melting,
+  since 22 September, is in the world itself).
 - **Desktop applications**: the original ball lab (`banjo_lab`), the bowl lab,
   the creator workshop and the starter game (raylib).
 
@@ -772,9 +795,10 @@ stands at 1 complete, 26 partial and 3 planned.
   menu shows 2 of 16 rooms. Breaking under load, the gas piston, fine cells for
   cutting, the plates of every material and the watershed can only be reached
   by typing an address.
-- [ ] **Melting and freezing in the world.** They exist only in the separate
-  voxel thermal simulation. Connect its phase law to the world's heat system,
-  so there is one thermal model instead of two.
+- [ ] **Freezing in the world.** Ice melts in the world now; water does not
+  freeze, and the water in rivers and pools has no temperature of its own. The
+  separate voxel thermal simulation still has its own melting and freezing:
+  bring its freezing across, or retire it, so there is one thermal model.
 - [ ] **Circuits in the world.** They run in the engine and the standalone MCP
   world, but the room refuses them until room edits can keep their state.
 - [ ] **Different cell sizes in one world.** The scene format, scene builder and
@@ -804,7 +828,7 @@ stands at 1 complete, 26 partial and 3 planned.
 
 ### 2. Physics still to build
 
-- [ ] **Heat:** melting and boiling in the world, fires that go out, thermal
+- [ ] **Heat:** freezing and boiling in the world, fires that go out, thermal
   expansion, smoke and airflow, heat into water and ground, mechanical work
   (friction, impact, cutting, motors) turning into heat, gas pressure on
   container walls.
@@ -835,9 +859,6 @@ stands at 1 complete, 26 partial and 3 planned.
   so two sides of a slot are joined through it.
 - [ ] A crack inside a body that stays whole heals on its next run. A fix is
   uncommitted on `agent/shard-rest`, waiting for the owner.
-- [ ] Three manufacturing tools reach the room's chat by mistake, because the
-  chat's tool list excludes rather than includes; the test that polices it runs
-  in no CI job. A fix is on `agent/room-chat-tools`.
 - [ ] The inventory's record of the hand can disagree with the engine after a
   put-down (`/explore` believes the engine and says so).
 - [ ] A thing of several parts set down on a slope goes down as one upright
@@ -907,8 +928,6 @@ little strength; and the uncommitted fixes on `agent/shard-rest` and
 
 ### In progress on branches
 
-- **`agent/room-chat-tools`**: keeps the three manufacturing tools out of the
-  room's chat, by rule rather than by a list, with tests that CI runs.
 - **`agent/journey-auto-placing`**: a stricter version of the browser
   journeys' put-down, which requires the see-through copy to appear by itself.
 

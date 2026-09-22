@@ -9,6 +9,8 @@
 #include "fastlattice/TileImpactScene.hpp"
 #include "thermo/ThermoWorld.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -299,6 +301,132 @@ void aBurningLogCarriedAwayTakesItsFireWithIt() {
     require(left.gained_w < 0.1 * warmed.gained_w, "the log it left is no longer being warmed");
 }
 
+// Four 100 mm cubes on the floor, glass, oak, iron and ice, each under the
+// same 2 kW for 20 s. Three warm and keep their size; the ice melts at its
+// melting point, shrinks from every face by what melted, weighs what is left,
+// and -- with no water in the room -- its meltwater runs off across the floor.
+void iceOnTheFloorShrinksAndItsWaterRunsOff() {
+    const std::vector<std::pair<std::string, double>> materials{
+        {"glass", 2500.0}, {"oak", 700.0}, {"iron", 7870.0}, {"ice", 917.0}};
+    std::string bodies;
+    for (std::size_t k = 0; k < materials.size(); ++k) {
+        if (k) bodies += ",";
+        bodies += box(materials[k].first + " cube", materials[k].first, {0.1, 0.1, 0.1},
+                      {1.0 * static_cast<double>(k), 0.05, 0.0}, false);
+    }
+    auto world = openScene(std::string(R"({"plasticity":true,"bodies":[)") + bodies + "]}", 0.02);
+    require(world->thermo() != nullptr && world->thermo()->holds("ice cube"),
+            "the ice is followed from the start, with nothing heating it");
+    const Vec3 ice_was = poseOf(*world, "ice cube").dimensions_m;
+    for (const auto &[material, density] : materials) world->heat(material + " cube", 2000.0, 20.0);
+    stepFor(*world, 21.0);
+    for (const auto &[material, density] : materials) {
+        const thermo::BodyHeat b = heatOf(*world, material + " cube");
+        const Vec3 now = poseOf(*world, material + " cube").dimensions_m;
+        if (material == "ice") continue;
+        require(!b.melting && b.melted_kg == 0.0, material + " does not melt");
+        require(b.temperature_k > 300.0, material + " warmed instead: " + std::to_string(b.temperature_k));
+        require(std::abs(now.x - 0.1) < 1e-9 && std::abs(now.y - 0.1) < 1e-9, material + " kept its size");
+    }
+    const thermo::BodyHeat ice = heatOf(*world, "ice cube");
+    const Vec3 ice_now = poseOf(*world, "ice cube").dimensions_m;
+    require(ice.melted_kg > 0.05, "the ice melted: " + std::to_string(ice.melted_kg) + " kg");
+    require(ice.temperature_k <= 273.15 + 1e-6, "and stayed at its melting point");
+    require(ice_now.x < ice_was.x - 0.002 && ice_now.y < ice_was.y - 0.002,
+            "it shrank: " + std::to_string(1000.0 * ice_now.x) + " mm from 100");
+    const double left = 917.0 * ice_was.x * ice_was.y * ice_was.z - ice.melted_kg;
+    require(std::abs(ice.mass_kg - left) < 1e-6 * left, "it weighs what is left of it");
+    require(std::abs(world->meltwaterRanOffKg() - ice.melted_kg) < 1e-6 * ice.melted_kg,
+            "with no water in the room, every kilogram of meltwater ran off");
+    require(world->meltwaterIntoWaterKg() == 0.0, "none went into water there is none of");
+    const thermo::Ledger l = world->thermo()->ledger();
+    require(std::abs(l.residualJ()) < 1e-9 * std::abs(l.storedJ()), "and the ledger closes");
+    std::cout << "    2 kW for 20 s: the ice cube melted " << ice.melted_kg << " kg and is now "
+              << 1000.0 * ice_now.x << " mm across; glass, oak and iron warmed and kept their size\n";
+}
+
+// A small cube of ice heated until it is gone leaves the world, and says it
+// melted away -- not that it burned.
+void iceThatMeltsAwayLeavesTheWorld() {
+    auto world = openScene(std::string(R"({"plasticity":true,"bodies":[)") +
+                               box("ice cube", "ice", {0.06, 0.06, 0.06}, {0, 0.03, 0}, false) + "]}",
+                           0.02);
+    const double had = 917.0 * 0.06 * 0.06 * 0.06;
+    world->heat("ice cube", 10000.0, 30.0);
+    stepFor(*world, 30.0);
+    bool there = false;
+    for (const LiveBodyPose &pose : world->poses()) there = there || pose.name == "ice cube";
+    require(!there, "the ice cube is gone from the world");
+    const std::vector<LiveBurnedAway> gone = world->burnedAway();
+    require(gone.size() == 1 && gone.front().name == "ice cube" && gone.front().gone == "melted",
+            "and it melted away");
+    require(gone.front().why.find("melted") != std::string::npos, "in those words: " + gone.front().why);
+    const double accounted = world->meltwaterRanOffKg() + gone.front().residue_kg;
+    require(std::abs(accounted - had) < 1e-6 * had,
+            "its meltwater and the last of it together are all the ice there was");
+    std::cout << "    a 60 mm cube under 10 kW: gone at " << gone.front().time_s << " s, "
+              << world->meltwaterRanOffKg() << " kg of meltwater run off and " << gone.front().residue_kg
+              << " kg left with it\n";
+}
+
+// A world saved before ice could melt (heat model version 1, whose ice had a
+// reference energy of 0) is opened now: its ice comes back at the temperature
+// it was saved at, and the ledger's unaccounted energy is what it was.
+void iceSavedBeforeMeltingComesBackAtItsTemperature() {
+    const std::string scene = std::string(R"({"plasticity":true,"bodies":[)") +
+                              box("ice cube", "ice", {0.1, 0.1, 0.1}, {0, 0.05, 0}, false,
+                                  R"(,"temperature_k":258.15)") +
+                              "]}";
+    TileImpactRequest request;
+    request.cell_size_m = 0.02;
+    request.backend = BackendKind::CpuParallel;
+    request.bodies = readSceneJson(scene);
+    readSceneSettings(scene, request);
+    auto world = LiveWorld::open(request);
+    stepFor(*world, 0.5);
+    const thermo::BodyHeat was = heatOf(*world, "ice cube");
+    require(was.temperature_k < 270.0 && !was.melting, "cold ice that has not started to melt");
+    const double residual = world->thermo()->ledger().residualJ();
+    std::string why;
+    const std::string saved = world->snapshot(why);
+    require(!saved.empty(), "the world saves: " + why);
+
+    // The same world as version 1 wrote it: no model version, and its ice's
+    // energy -- and the ledger's opening energy -- without the reference.
+    nlohmann::json doc = nlohmann::json::parse(saved);
+    require(doc["heat"]["model"]["version"] == "2", "a save says which model version wrote it");
+    doc["heat"].erase("model");
+    const thermo::Model model = thermo::demonstrationModel();
+    const std::size_t ice = model.index("ice");
+    const double u0 = model[ice].reference_energy_j_kg;
+    double taken = 0.0;
+    for (const thermo::Lump &lump : world->thermo()->state().lumps) {
+        for (nlohmann::json &entry : doc["heat"]["lumps"]) {
+            if (entry["body"] != lump.body) continue;
+            const double surface = lump.surface.kg[ice] * u0, core = lump.core.kg[ice] * u0;
+            entry["surface"]["internal_energy_j"] = entry["surface"]["internal_energy_j"].get<double>() - surface;
+            entry["core"]["internal_energy_j"] = entry["core"]["internal_energy_j"].get<double>() - core;
+            taken += surface + core;
+        }
+    }
+    require(taken > 0.0, "the save held ice to bring across");
+    nlohmann::json &ledger = doc["heat"]["network"]["ledger"];
+    ledger["initial_j"] = ledger["initial_j"].get<double>() - taken;
+
+    auto again = LiveWorld::open(request, doc.dump());
+    require(again->restored().tier == "whole", "the version-1 world opens whole: " + again->restored().why);
+    const thermo::BodyHeat now = heatOf(*again, "ice cube");
+    require(std::abs(now.temperature_k - was.temperature_k) < 1e-9 &&
+                std::abs(now.core_temperature_k - was.core_temperature_k) < 1e-9,
+            "its ice is at the temperature it was saved at: " + std::to_string(now.temperature_k) + " K, was " +
+                std::to_string(was.temperature_k));
+    require(std::abs(again->thermo()->ledger().residualJ() - residual) < 1e-6,
+            "and the ledger's unaccounted energy is what it was");
+    std::cout << "    a version-1 save's ice came back at " << now.temperature_k << " K (saved at "
+              << was.temperature_k << " K); without the migration it would read "
+              << was.temperature_k - u0 / model[ice].cv_j_kg_k << " K\n";
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -307,6 +435,9 @@ int main(int argc, char **argv) {
         {"a refused step takes its chemistry back", aRefusedStepTakesItsChemistryBack},
         {"a burning plank that breaks shares out what it held", aBurningPlankThatBreaksSharesOutWhatItHeld},
         {"a burning log carried away takes its fire with it", aBurningLogCarriedAwayTakesItsFireWithIt},
+        {"ice on the floor shrinks and its water runs off", iceOnTheFloorShrinksAndItsWaterRunsOff},
+        {"ice that melts away leaves the world", iceThatMeltsAwayLeavesTheWorld},
+        {"ice saved before melting comes back at its temperature", iceSavedBeforeMeltingComesBackAtItsTemperature},
     };
     unsigned failures = 0, ran = 0;
     for (const auto &[name, test] : tests) {

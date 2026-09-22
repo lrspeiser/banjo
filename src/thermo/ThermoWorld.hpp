@@ -119,6 +119,10 @@ struct Lump {
     // How much fuel the burning front keeps in the layer: when the layer's fuel
     // falls below this, the front advances into the core and brings its matter.
     double layer_fuel_kg{};
+    // The same for melting: how much of what melts (ice) the melting front
+    // keeps in the layer. As the layer's melts away, the core comes to the
+    // surface to take its place.
+    double layer_melt_kg{};
     double area_m2{};
     double exposed_area_m2{};
     double volume_m3{};
@@ -146,6 +150,13 @@ struct Lump {
     double heater_w{};
     double gained_w{};             // from other bodies, conduction and radiation
     double lost_w{};               // to the surroundings
+    double melt_kg_s{};            // solid melted
+    // Meltwater that has run off this body and that the host has not yet
+    // taken to put somewhere (ThermoWorld::takeMeltwater). It has left the
+    // network already -- counted as matter out when it melted -- so this is
+    // only where it went, not what it holds. In the state, so a refused step
+    // takes back the water it would have made.
+    double meltwater_kg{};
     // Set aside with its body (ThermoWorld::park): out of the world, so no heat
     // path reaches it, nothing in it reacts and no heater warms it. Kept exactly
     // as it was put away, and still the network's -- on its ledger, not left it.
@@ -257,6 +268,11 @@ struct BodyHeat {
     double lost_w{};
     bool reacting{};
     bool declared{};
+    // Melting: how fast now, and how much of what it started with has melted
+    // and run off.
+    double melt_kg_s{};
+    double melted_kg{};
+    bool melting{};
     std::vector<std::pair<std::string, double>> contents_kg;
     // Set aside (ThermoWorld::park): held as it was put away, out of the world.
     bool parked{};
@@ -316,7 +332,10 @@ public:
 
     // Every body in the world, where it is now. The first call opens the
     // ledger; later calls rework the heat paths from the new positions, and a
-    // body the network holds that is no longer there has left it.
+    // body the network holds that is no longer there has left it. A body of
+    // something that melts below the surroundings' temperature -- ice in a
+    // warm room -- joins at once, at its melting point, however far it is from
+    // anything hot: it can never be at the room's temperature.
     void refresh(const std::vector<BodyShape> &bodies, double floor_y_m);
 
     void declareContents(const ContentsDeclaration &declaration);
@@ -375,6 +394,11 @@ public:
     // Bodies whose matter has changed by more than `relative` since the host
     // last set their mass. Marks them set.
     [[nodiscard]] std::vector<std::pair<std::string, double>> massesToMirror(double relative = 1.0e-3);
+    // Meltwater that has run off each body since this was last asked, in
+    // kilograms, for the host to put where it goes -- into the room's water,
+    // or off across the floor. Asking takes it: each kilogram is handed over
+    // once. Between steps, and only after a step has been accepted.
+    [[nodiscard]] std::vector<std::pair<std::string, double>> takeMeltwater();
     // What is modelled and what is not, in words, for anyone reporting on it.
     [[nodiscard]] static std::vector<std::string> limitations();
 

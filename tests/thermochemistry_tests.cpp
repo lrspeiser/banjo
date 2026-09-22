@@ -648,6 +648,226 @@ void storedObjectsKeepTheirHeatExactly() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Melting: ice into water, by the heat that reaches it and nothing else
+// ---------------------------------------------------------------------------
+
+constexpr double kIceDensity = 917.0;
+constexpr double kMeltingK = 273.15;
+constexpr double kFusionJKg = 333.55e3;
+
+// A 200 mm cube of ice, standing clear of the floor unless placed on it.
+BodyShape iceCube(std::string name = "ice", Vec3 at = {0.0, 1.0, 0.0}, double side = 0.2) {
+    return box(std::move(name), "ice", at, {side, side, side}, kIceDensity);
+}
+
+double iceIn(const ThermoWorld &world, const std::string &body) {
+    const std::size_t ice = world.model().index("ice");
+    for (const Lump &l : world.state().lumps)
+        if (l.body == body) return l.surface.kg[ice] + l.core.kg[ice];
+    throw std::runtime_error("no lump for " + body);
+}
+
+double taken(ThermoWorld &world) {
+    double kg = 0.0;
+    for (const auto &[body, water] : world.takeMeltwater()) kg += water;
+    return kg;
+}
+
+// The latent heat is not a number added anywhere: it is what the substances'
+// reference energies say, and a transition that disagreed would be refused.
+void theLatentHeatIsTheReferenceEnergiesApart() {
+    const Model model = demonstrationModel();
+    require(model.transitions.size() == 1, "one transition: ice melting");
+    const Transition &melt = model.transitions.front();
+    near(model.latentHeatJPerKg(melt), kFusionJKg, 1e-6, "melting takes 333.55 kJ/kg at 273.15 K");
+    near(meltingPointOf(model, "ice"), kMeltingK, 0.0, "ice melts at 273.15 K");
+    require(std::isinf(meltingPointOf(model, "glass")) && std::isinf(meltingPointOf(model, "oak")) &&
+                std::isinf(meltingPointOf(model, "iron")),
+            "glass, oak and iron do not melt in this model");
+    Model wrong;
+    wrong.id = "wrong";
+    Substance solid;
+    solid.id = "solid";
+    solid.cv_j_kg_k = 2000.0;
+    Substance liquid;
+    liquid.id = "liquid";
+    liquid.phase = Phase::Liquid;
+    liquid.cv_j_kg_k = 4000.0;
+    const std::size_t s = wrong.add(solid);
+    const std::size_t l = wrong.add(liquid);
+    Transition melting;
+    melting.id = "melting";
+    melting.solid = s;
+    melting.liquid = l;
+    melting.melting_k = 300.0;
+    melting.latent_j_kg = 1.0e5;   // the references say 2000 x 300 = 6e5
+    bool refused = false;
+    try {
+        wrong.addTransition(melting);
+    } catch (const std::invalid_argument &) {
+        refused = true;
+    }
+    require(refused && wrong.transitions.empty(), "a latent heat the energies do not imply is refused");
+}
+
+// With the surroundings at the melting point, nothing but the heater reaches
+// the ice, so every joule of it melts ice: 600 kJ melts 600/333.55 kg, and
+// the ice never gets warmer than 273.15 K while it does.
+void meltingTakesTheLatentHeatAndNoMore() {
+    ThermoWorld world;
+    Ambient cold;
+    cold.temperature_k = kMeltingK;
+    world.setAmbient(cold);
+    world.refresh({iceCube()}, 0.0);
+    world.declareContents({"ice", {}, 0.0, -1.0, ""});
+    const double had = iceIn(world, "ice");
+    near(heatOf(world.bodies(), "ice").temperature_k, kMeltingK, 1e-9, "the ice starts at its melting point");
+    world.heat({"ice", 10000.0, 0.0, 60.0, "heater"});
+    double warmest = 0.0;
+    for (int i = 0; i < 60 * 240; ++i) {
+        world.advance(kDt, {});
+        const BodyHeat b = heatOf(world.bodies(), "ice");
+        warmest = std::max({warmest, b.temperature_k, b.core_temperature_k});
+    }
+    const double melted = had - iceIn(world, "ice");
+    near(melted, 600000.0 / kFusionJKg, 1e-9 * melted, "600 kJ melted exactly 600/333.55 kg of ice");
+    require(warmest <= kMeltingK + 1e-6, "the ice was never warmer than its melting point: " + std::to_string(warmest));
+    const Ledger l = world.ledger();
+    near(l.matter_out_kg, melted, 1e-9 * melted, "what melted ran off, and nothing else did");
+    near(l.heat_to_surroundings_j, 0.0, 1e-6, "surroundings at the melting point took nothing");
+    require(relativeResidual(l) < 1e-10, "the ledger closes: " + std::to_string(l.residualJ()));
+    near(l.massResidualKg(), 0.0, 1e-9, "mass closes");
+    near(taken(world), melted, 1e-9 * melted, "the host is handed every kilogram of meltwater");
+    near(taken(world), 0.0, 0.0, "and each kilogram once");
+    const BodyHeat b = heatOf(world.bodies(), "ice");
+    near(b.melted_kg, melted, 1e-9 * melted, "the report says how much has melted");
+    std::cout << "    10 kW for 60 s melted " << melted << " kg of " << had << " kg of ice, never above "
+              << warmest << " K\n";
+}
+
+// Ice in a warm room is followed from the moment it is there -- nothing hot
+// has to come near it -- at its melting point, and the room's air, sky and
+// floor melt it slowly. Glass, oak and iron beside it are at the room's
+// temperature and have no reason to join.
+void iceInAWarmRoomJoinsAtItsMeltingPointAndMelts() {
+    ThermoWorld world;
+    const std::vector<BodyShape> room{iceCube("ice", {0.0, 0.1, 0.0}),
+                                      box("glass", "glass", {3.0, 0.1, 0.0}, {0.2, 0.2, 0.2}, 2500.0),
+                                      box("oak", "oak", {6.0, 0.1, 0.0}, {0.2, 0.2, 0.2}, 700.0),
+                                      box("iron", "iron", {9.0, 0.1, 0.0}, {0.2, 0.2, 0.2}, 7870.0)};
+    world.refresh(room, 0.0);
+    require(world.holds("ice"), "the ice joined as soon as it was in the room");
+    require(!world.holds("glass") && !world.holds("oak") && !world.holds("iron"),
+            "glass, oak and iron at the room's temperature did not");
+    near(heatOf(world.bodies(), "ice").temperature_k, kMeltingK, 1e-9, "at its melting point, not the room's");
+    run(world, 120.0);
+    const BodyHeat b = heatOf(world.bodies(), "ice");
+    require(b.melting && b.melted_kg > 0.0, "the room's warmth melts it");
+    require(b.temperature_k <= kMeltingK + 1e-6, "and it stays at its melting point while it does");
+    // Air at 10 W/m2K, the sky and 25 W/m2K of floor under it, all 20 K
+    // warmer: tens of watts, so a fraction of a gram a second.
+    require(b.melt_kg_s > 5e-5 && b.melt_kg_s < 1e-3,
+            "a slow melt from the room alone: " + std::to_string(b.melt_kg_s) + " kg/s");
+    require(relativeResidual(world.ledger()) < 1e-10, "the ledger closes");
+    std::cout << "    a 200 mm cube on the floor of a 293 K room: " << 1000.0 * b.melt_kg_s << " g/s, "
+              << b.melted_kg << " kg in 120 s\n";
+}
+
+// The same heater on the same cube of glass, oak, iron and ice: the three
+// warm, and only the ice melts.
+void onlyIceMelts() {
+    const auto heated = [](const std::string &material, double density) {
+        ThermoWorld world;
+        world.refresh({box("cube", material, {0.0, 1.0, 0.0}, {0.2, 0.2, 0.2}, density)}, 0.0);
+        world.declareContents({"cube", {}, 0.0, -1.0, ""});
+        world.heat({"cube", 10000.0, 0.0, 10.0, "heater"});
+        run(world, 10.0);
+        return heatOf(world.bodies(), "cube");
+    };
+    for (const auto &[material, density] :
+         std::vector<std::pair<std::string, double>>{{"glass", 2500.0}, {"oak", 700.0}, {"iron", 7870.0}}) {
+        const BodyHeat b = heated(material, density);
+        require(!b.melting && b.melted_kg == 0.0, material + " does not melt");
+        require(b.temperature_k > 293.15 + 1.0, material + " warms instead");
+    }
+    const BodyHeat ice = heated("ice", kIceDensity);
+    require(ice.melted_kg > 0.1, "the ice melts: " + std::to_string(ice.melted_kg) + " kg");
+    require(ice.temperature_k <= kMeltingK + 1e-6, "and does not warm past its melting point");
+}
+
+// A step the rigid world refuses is taken back with everything in the network
+// -- and that includes the meltwater it would have made.
+void aRefusedStepTakesItsMeltwaterBack() {
+    ThermoWorld world;
+    world.refresh({iceCube()}, 0.0);
+    world.declareContents({"ice", {}, 0.0, -1.0, ""});
+    world.heat({"ice", 10000.0, 0.0, 60.0, "heater"});
+    run(world, 1.0);
+    const double before = taken(world);
+    require(before > 0.0, "a second of heating made meltwater");
+    const ThermoState saved = world.state();
+    world.advance(kDt, {});
+    world.restore(saved);
+    near(taken(world), 0.0, 0.0, "the refused step's meltwater went with it");
+    world.advance(kDt, {});
+    const double one = taken(world);
+    require(one > 0.0 && one < before, "the step taken again makes its own, once");
+}
+
+// The layer melts first; as it goes, the core comes to the surface to take its
+// place, so melting reaches right through the block.
+void theMeltingFrontReachesTheCore() {
+    ThermoWorld world;
+    Ambient cold;
+    cold.temperature_k = kMeltingK;
+    world.setAmbient(cold);
+    world.refresh({iceCube("ice", {0.0, 1.0, 0.0}, 0.3)}, 0.0);
+    world.declareContents({"ice", {}, 0.0, -1.0, ""});
+    const Lump start = world.state().lumps.front();
+    require(start.layer_depth_m > 0.0 && massKg(start.core) > 0.0, "a thick block of ice has a layer and a core");
+    const double layer = massKg(start.surface);
+    world.heat({"ice", 20000.0, 0.0, 120.0, "heater"});
+    run(world, 120.0);
+    const Lump &now = world.state().lumps.front();
+    const double melted = start.surface.kg[world.model().index("ice")] +
+                          start.core.kg[world.model().index("ice")] - iceIn(world, "ice");
+    require(melted > 2.0 * layer, "more melted than the layer ever held");
+    require(massKg(now.core) < massKg(start.core), "the core came to the surface as the layer melted");
+    near(melted, 20000.0 * 120.0 / kFusionJKg, 1e-9 * melted, "still exactly the heat over the latent heat");
+}
+
+// Solid ice above its melting point is not solid ice: a declaration that says
+// so is refused, and says why.
+void iceCannotBeDeclaredAboveItsMeltingPoint() {
+    ThermoWorld world;
+    world.refresh({iceCube()}, 0.0);
+    bool refused = false;
+    try {
+        world.declareContents({"ice", {}, 280.0, -1.0, ""});
+    } catch (const std::invalid_argument &error) {
+        refused = std::string(error.what()).find("melts at") != std::string::npos;
+    }
+    require(refused, "ice declared at 280 K is refused, naming its melting point");
+    world.declareContents({"ice", {}, 258.15, -1.0, ""});
+    near(heatOf(world.bodies(), "ice").temperature_k, 258.15, 1e-9, "colder ice may be declared");
+}
+
+// Breaking melting ice shares out the meltwater not yet handed over, so the
+// host still gets all of it.
+void splittingSharesTheMeltwater() {
+    ThermoWorld world;
+    world.refresh({iceCube()}, 0.0);
+    world.declareContents({"ice", {}, 0.0, -1.0, ""});
+    world.heat({"ice", 10000.0, 0.0, 60.0, "heater"});
+    run(world, 2.0);
+    double pending = 0.0;
+    for (const Lump &l : world.state().lumps) pending += l.meltwater_kg;
+    require(pending > 0.0, "meltwater waiting to be handed over");
+    world.split("ice", {{"ice piece 1", 0.7}, {"ice piece 2", 0.3}});
+    near(taken(world), pending, 1e-12 * pending, "every kilogram of it is still handed over");
+}
+
 } // namespace
 
 int main() {
@@ -671,6 +891,14 @@ int main() {
         {"a scene declares its thermochemistry", aSceneDeclaresItsThermochemistry},
         {"a stored thing keeps its heat exactly, and goes on from there once it is back",
          storedObjectsKeepTheirHeatExactly},
+        {"the latent heat is the reference energies apart", theLatentHeatIsTheReferenceEnergiesApart},
+        {"melting takes the latent heat and no more", meltingTakesTheLatentHeatAndNoMore},
+        {"ice in a warm room joins at its melting point and melts", iceInAWarmRoomJoinsAtItsMeltingPointAndMelts},
+        {"glass, oak and iron warm where only ice melts", onlyIceMelts},
+        {"a refused step takes its meltwater back", aRefusedStepTakesItsMeltwaterBack},
+        {"the melting front reaches the core", theMeltingFrontReachesTheCore},
+        {"ice cannot be declared above its melting point", iceCannotBeDeclaredAboveItsMeltingPoint},
+        {"splitting shares the meltwater", splittingSharesTheMeltwater},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

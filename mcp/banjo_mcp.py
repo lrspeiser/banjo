@@ -4934,6 +4934,13 @@ def tool_list_substances(_args: dict[str, Any]) -> dict[str, Any]:
                        "releases_mj_per_kg": round(r["heat_released_j_per_kg_at_298k"] / 1e6, 3),
                        "not_below_k": r["rate"]["minimum_temperature_k"]}
                       for r in model["reactions"]],
+        # What melts, where, and what melting it takes: no rate, just the heat.
+        "what_melts": [{"name": t["id"], "solid": t["solid"], "into": t["liquid"],
+                        "melts_at_k": t["melting_k"],
+                        "takes_kj_per_kg": round(t["latent_j_kg"] / 1000.0, 2),
+                        "the_liquid": t["liquid_goes"], "numbers_are": t["provenance"],
+                        "note": t["note"]}
+                       for t in model.get("transitions", [])],
         "what_materials_are_made_of": model["compositions"],
         # What heat does to what each material can CARRY: the law, its source,
         # what does not come back when it cools, and where it stops applying.

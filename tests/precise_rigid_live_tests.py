@@ -368,6 +368,20 @@ class NativePreciseInstallation(unittest.TestCase):
                 self.live.session.send(op=op,**kwargs)
             self.assertEqual(before,self.snap())
 
+    def test_a_room_with_an_exact_body_still_heats_what_is_made_of_cells(self):
+        # Heat skips exact bodies one by one, as breaking does: the table
+        # itself is refused (above), and the stone of cells beside it takes
+        # heat as it would in any room -- ice in the Explore valley melts with
+        # the cart standing there.
+        p=self.preview();self.commit(p)
+        reply=self.live.session.send(op='heat',target='marker stone',power_w=10000,seconds=2)
+        self.assertGreaterEqual(reply.get('heater',0),1)
+        self.live.session.send(op='step',dt=1/240,n=480)
+        report=self.live.session.send(op='thermo')['thermo']
+        stone=next(b for b in report['bodies'] if b['name']=='marker stone')
+        self.assertGreater(stone['temperature_k'],293.15+0.5)
+        self.assertFalse(any(b['name']==p['root_body'] for b in report['bodies']))
+
     def test_an_exact_body_goes_in_the_bag_and_comes_back_where_it_is_put(self):
         # Set aside as a cell body is: out of the room, saved as set aside with
         # the mass the engine measured, and back at rest where it is put.

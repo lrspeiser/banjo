@@ -1738,7 +1738,12 @@ is a log at room temperature that somebody believes is alight.
 Heat a body or a gas region from now: external work, counted as `heater_in_j`.
 Returns the heater's id. Whether it lights anything is the model's answer -- on
 the demonstration model, 10 kW for a minute lights a lone oak log and 5 kW does
-not, and two logs on a stone hearth need about 10 kW under each for 90 s.
+not, and two logs on a stone hearth need about 10 kW under each for 90 s. On
+ice it melts: 10 kW melts 30 g a second (333.55 kJ/kg), the ice stays at
+273.15 K while it has any, and it shrinks by what melted. The meltwater leaves
+the network as matter out (`matter_out_kg`); a world with water puts it in the
+column under the ice. An exact (precise rigid) body cannot be heated -- the call
+fails, naming it -- but the bodies of cells in the same room can.
 
 ### `int banjo_vent(banjo_world *world, const char *region, int open)`
 
@@ -1751,7 +1756,12 @@ Every body the network holds: `temperature_k` (the surface -- what glows and
 burns), `core_temperature_k`, `mass_kg`, `fuel_kg`, `heat_release_w`,
 `fuel_use_kg_s`, `remaining_s` (`INFINITY` when nothing burns), `heater_w`,
 `gained_w` (from other bodies), `lost_w` (to the surroundings), `reacting`,
-`declared`. A body nothing has heated is not in the network and not listed.
+`declared`. A body nothing has heated is not in the network and not listed --
+except ice in a room warmer than 273.15 K, which is followed from the start, at
+its melting point, and melts from the room's warmth. How fast a body melts and
+how much has melted are in `banjo_thermo_report`'s JSON (`melt_kg_s`,
+`melted_kg`, `melting`), not in this struct, and the model's `transitions` say
+what melts, where and for how much heat.
 
 ### `int banjo_gas_region_count(const banjo_world *world)`
 ### `int banjo_gas_regions(const banjo_world *world, banjo_gas_region *out, int max)`

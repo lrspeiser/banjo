@@ -455,6 +455,7 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         s.ledger.outflow_m3 = ledger.value("outflow_m3", 0.0);
         s.ledger.numerical_m3 = ledger.value("numerical_m3", 0.0);
         s.ledger.across_m3 = ledger.value("across_m3", 0.0);
+        s.ledger.added_m3 = ledger.value("added_m3", 0.0);
         s.ledger.impulse_in_x_n_s = ledger.value("impulse_in_x_n_s", 0.0);
         s.ledger.impulse_in_z_n_s = ledger.value("impulse_in_z_n_s", 0.0);
         s.ledger.impulse_dropped_n_s = ledger.value("impulse_dropped_n_s", 0.0);
@@ -768,6 +769,13 @@ void Environment::attach(JoltWorld &world) {
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
     if (!restored) (void)terrain_->takeDirtyChunks();
+}
+
+double Environment::addWater(double x_m, double z_m, double volume_m3) {
+    if (!water_) return 0.0;
+    const auto cell = terrain_->cellAt(x_m, z_m);
+    if (!cell) return 0.0;
+    return water_->addWater(*cell, volume_m3);
 }
 
 double Environment::rollingResistanceAt(double x_m, double z_m) const {
@@ -1235,7 +1243,7 @@ std::string Environment::reportJson(bool full) const {
                    {"speed_capped", ws.speed_capped},
                    {"ledger", {{"initial_m3", wl.initial_m3}, {"inflow_m3", wl.inflow_m3},
                                {"outflow_m3", wl.outflow_m3}, {"numerical_m3", wl.numerical_m3},
-                               {"across_m3", wl.across_m3},
+                               {"across_m3", wl.across_m3}, {"added_m3", wl.added_m3},
                                {"impulse_in_x_n_s", wl.impulse_in_x_n_s},
                                {"impulse_in_z_n_s", wl.impulse_in_z_n_s},
                                {"impulse_dropped_n_s", wl.impulse_dropped_n_s}}},
@@ -1318,8 +1326,8 @@ std::string Environment::reportJson(bool full) const {
         }
         const water::RiverNetwork::Totals t = net.totals();
         const double held = water_->volume() + net.volume();
-        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3 + t.initial_m3 +
-                                t.fed_m3 - t.out_m3 + t.numerical_m3;
+        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.added_m3 + wl.numerical_m3 +
+                                t.initial_m3 + t.fed_m3 - t.out_m3 + t.numerical_m3;
         report["watershed"] = {{"basins", basins}, {"junctions", junctions}, {"reaches", reaches},
                                {"connections", links},
                                {"network", {{"time_s", net.timeS()}, {"substeps", net.stats().substeps},
@@ -1394,7 +1402,7 @@ std::string Environment::stateJson() const {
                   {"volume_m3", water_->volume()},
                   {"ledger", {{"initial_m3", s.ledger.initial_m3}, {"inflow_m3", s.ledger.inflow_m3},
                               {"outflow_m3", s.ledger.outflow_m3}, {"numerical_m3", s.ledger.numerical_m3},
-                              {"across_m3", s.ledger.across_m3},
+                              {"across_m3", s.ledger.across_m3}, {"added_m3", s.ledger.added_m3},
                               {"impulse_in_x_n_s", s.ledger.impulse_in_x_n_s},
                               {"impulse_in_z_n_s", s.ledger.impulse_in_z_n_s},
                               {"impulse_dropped_n_s", s.ledger.impulse_dropped_n_s}}}};

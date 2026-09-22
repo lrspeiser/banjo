@@ -60,6 +60,9 @@ struct MechanicalLaw {
     // of it is taken out of the section.
     std::string load_bearing;
     double reference_fraction{1.0};
+    // What taking that matter away is called, for anyone saying so: oak's
+    // burns, ice's melts.
+    std::string gone{"burned"};
 
     // REVERSIBLE: the factor at the temperature a zone is at now. Stiffness is
     // the modulus; the strengths are the ones a failure is decided by.

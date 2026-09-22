@@ -186,6 +186,7 @@ std::string mechanicalLawsJson() {
                         {"source", law.source},
                         {"load_bearing", law.load_bearing},
                         {"reference_fraction", law.reference_fraction},
+                        {"load_bearing_gone_by", law.gone},
                         {"factor_by_temperature_k", {{"stiffness", curveOf(law.stiffness)},
                                                      {"tension", curveOf(law.tension)},
                                                      {"compression", curveOf(law.compression)},
@@ -255,6 +256,9 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"lost_w", b.lost_w},
                           {"reacting", b.reacting},
                           {"declared", b.declared},
+                          {"melt_kg_s", b.melt_kg_s},
+                          {"melted_kg", b.melted_kg},
+                          {"melting", b.melting},
                           {"contents_kg", contentsOf(b.contents_kg)}});
         // Set aside with its body (ThermoWorld::park): held as it was put away.
         if (b.parked) bodies.back()["set_aside"] = true;
@@ -357,6 +361,17 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
             for (const auto &[substance, fraction] : parts) mix[model[substance].id] = fraction;
             compositions[material] = std::move(mix);
         }
+        json transitions = json::array();
+        for (const Transition &t : model.transitions)
+            transitions.push_back({{"id", t.id},
+                                   {"solid", model[t.solid].id},
+                                   {"liquid", model[t.liquid].id},
+                                   {"melting_k", t.melting_k},
+                                   {"latent_j_kg", t.latent_j_kg},
+                                   {"liquid_goes", t.liquid_fate == Fate::Retained ? "stays in the material"
+                                                                                  : "runs off it"},
+                                   {"provenance", std::string(provenanceName(t.provenance))},
+                                   {"note", t.note}});
         report["model"] = {{"id", model.id},
                            {"version", model.version},
                            {"valid_from_k", model.minimum_temperature_k},
@@ -366,6 +381,7 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                             "reference and sensible parts of one internal energy"},
                            {"substances", std::move(substances)},
                            {"reactions", std::move(reactions)},
+                           {"transitions", std::move(transitions)},
                            {"compositions", std::move(compositions)},
                            // What heat does to what each material can carry,
                            // and where every number came from.

@@ -155,6 +155,64 @@ Measured on the demonstration model:
   11.3 kW each, ~96 min at this rate; the stone warms to 351 K, an iron kettle
   0.2 m away gains 8.5 K in four minutes, and the log across the top dries.
 
+## Ice melts
+
+*September 22, model version 2.* A **transition** in the model melts a solid
+into a liquid at one temperature (`Transition` in `thermo/Thermochemistry.hpp`).
+The demonstration model has one: ice into liquid water at 273.15 K, taking
+333.55 kJ/kg -- water's handbook melting point and latent heat of fusion at one
+atmosphere (reference-derived). The latent heat is not a number added anywhere:
+ice's reference energy is set against liquid water's (the same `moisture` oak
+holds) so that `u_liquid(Tm) - u_ice(Tm)` IS 333.55 kJ/kg, and `validate()`
+refuses a transition the two energies disagree with -- as the vapour's
+reference energy is what makes drying take the latent heat of vaporisation.
+
+Melting has no rate. After a step's heat has arrived, a zone holding ice and
+warmer than 273.15 K melts exactly `dm = C (T - Tm) / L` of it, at constant
+internal energy, which puts it back at 273.15 K; only when the ice runs out
+does the zone warm past it. The meltwater runs off at once (a block of ice
+holds no liquid): it leaves the network carrying its energy, counted as matter
+out, and waits in the lump (`meltwater_kg`) until the host takes it
+(`ThermoWorld::takeMeltwater`). The layer melts first; as it goes, the core
+comes to the surface to take its place -- the melting front, as the burning
+front brings the core's fuel.
+
+Ice cannot be at a warm room's temperature, so a body holding something that
+melts below the surroundings' temperature joins the network the moment it is
+in the world, at its melting point, and the room's air, sky and floor melt it.
+A declaration may make ice colder, and refuses to make it warmer than it melts.
+Glass, oak and iron do not melt in this model.
+
+In the live world the meltwater goes where the ice stands: into the column of
+the room's water under it (`Environment::addWater`, counted in the water's
+ledger as `added_m3`), which carries it downhill, or off across the floor in a
+room with no water. What melts leaves the body by the same machinery as what
+burns: ice has a mechanical law (`thermo/ThermalMechanics.cpp`) with no curves,
+naming ice as its own load-bearing matter, so the body shrinks from every face
+by what melted, weighs what is left, and leaves the world, "melted away", when
+nothing is.
+
+Measured (tests/thermochemistry_tests.cpp, thermo_live_tests.cpp,
+valley_live_tests.cpp):
+
+- 10 kW for 60 s on a 200 mm cube, the surroundings at the melting point:
+  1.79883 kg melted -- 600 kJ over 333.55 kJ/kg to 1e-9 -- never above 273.15 K.
+- The same cube on the floor of a 293.15 K room: 0.24 g/s from the room alone.
+- 2 kW for 20 s on four 100 mm cubes: glass, oak and iron warm and keep their
+  size; the ice melts 0.121 kg and is 95.6 mm across.
+- A 60 mm cube under 10 kW: gone at 6.6 s, 0.198 kg of meltwater run off.
+- A block floating in a closed basin, 10 kW for 30 s: 0.917 kg melted into the
+  lake, which holds exactly 0.000917 m3 more and whose ledger still closes.
+
+Not modelled: freezing (nothing in the world is colder than the ice itself),
+heat between ice and the water it floats in (the water has no temperature),
+ice's strength changing with temperature, and meltwater held on the ice.
+
+A world saved before version 2 had its ice at a reference energy of 0; opened
+now, each saved parcel's ice is brought across at the same temperature and the
+ledger is re-based by the same amount (LiveWorld's `referenceShift`). A saved
+world now says which model version wrote it.
+
 ## Gas pushes on bodies
 
 A gas region is a zero-dimensional ideal-gas mixture: what it holds, its
@@ -326,8 +384,9 @@ CMake switch with a pinned version.
 
 | file | what |
 |---|---|
-| `tests/thermochemistry_tests.cpp` | 16: the network on its own |
-| `tests/thermo_live_tests.cpp` | 4: the network in a live world |
+| `tests/thermochemistry_tests.cpp` | 26: the network on its own, 8 of them melting |
+| `tests/thermo_live_tests.cpp` | 6: the network in a live world, 2 of them ice |
+| `tests/valley_live_tests.cpp` | melting ice fills the lake: the same water counted once on each side |
 | `tests/thermo_ffi_tests.py` | 6: through the C library, from Python |
 | `tests/agent_build_tests.py` | cases and `--recipes` for `hearth` and `heated-piston`; paid on gpt-5-mini, both pass: 258,301 tokens in and 1,529 out for the two |
 | `tests/thermal_kernel_tests.cpp` | the original kernel's conservation tests, unchanged and passing |

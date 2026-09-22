@@ -75,6 +75,8 @@ struct ThermoWorld::Impl {
     std::vector<double> air;
     double air_gas_constant{};
     std::vector<bool> fuel;
+    // Per substance: the transition that melts it, or kNone.
+    std::vector<std::size_t> melts;
     std::vector<double> quoted_heat;   // per reaction, J per kg of basis at 298.15 K
     ThermoState s;
     std::vector<BodyShape> shapes;
@@ -112,6 +114,8 @@ struct ThermoWorld::Impl {
             }
         fuel.assign(model.size(), false);
         for (std::size_t i = 0; i < model.size(); ++i) fuel[i] = model.isFuel(i);
+        melts.assign(model.size(), kNone);
+        for (std::size_t t = 0; t < model.transitions.size(); ++t) melts[model.transitions[t].solid] = t;
         quoted_heat.clear();
         for (const Reaction &reaction : model.reactions)
             quoted_heat.push_back(model.heatOfReactionJPerKg(reaction, kQuotedTemperatureK));
@@ -162,6 +166,31 @@ struct ThermoWorld::Impl {
         for (std::size_t i = 0; i < p.kg.size(); ++i)
             if (fuel[i]) total += p.kg[i];
         return total;
+    }
+    // What in a parcel can melt.
+    [[nodiscard]] double meltableIn(const Parcel &p) const {
+        double total = 0.0;
+        for (std::size_t i = 0; i < p.kg.size(); ++i)
+            if (melts[i] != kNone) total += p.kg[i];
+        return total;
+    }
+    // Matter holding a solid cannot be warmer than that solid's melting point,
+    // so where nothing says otherwise it starts no warmer: ice in a warm room
+    // is at its melting point, not at the room's temperature.
+    [[nodiscard]] double startingTemperature(const std::vector<std::pair<std::size_t, double>> &fractions) const {
+        double t = ambient.temperature_k;
+        for (const auto &[substance, fraction] : fractions)
+            if (fraction > 0.0 && melts[substance] != kNone)
+                t = std::min(t, model.transitions[melts[substance]].melting_k);
+        return t;
+    }
+    // Whether a material holds something that melts below the surroundings'
+    // temperature: it can never be at the room's temperature, so it is followed
+    // from the moment it is in the world.
+    [[nodiscard]] bool meltsInTheRoom(const std::string &material) const {
+        const auto composition = model.composition_of.find(material);
+        if (composition == model.composition_of.end()) return false;
+        return startingTemperature(composition->second) < ambient.temperature_k;
     }
     [[nodiscard]] static double lumpEnergy(const Lump &l) {
         return l.surface.internal_energy_j + l.core.internal_energy_j;
@@ -234,6 +263,7 @@ struct ThermoWorld::Impl {
         }
         lump.surface = std::move(whole);
         lump.layer_fuel_kg = fuelIn(lump.surface);
+        lump.layer_melt_kg = meltableIn(lump.surface);
         lump.mirrored_mass_kg = shape.mass_kg;
         coreConductance(lump);
         return lump;
@@ -256,9 +286,61 @@ struct ThermoWorld::Impl {
         if (found == nullptr) return kNone;
         const auto composition = model.composition_of.find(found->material);
         if (composition == model.composition_of.end()) return kNone;
-        s.lumps.push_back(makeLump(*found, composition->second, ambient.temperature_k, -1.0, false));
+        s.lumps.push_back(makeLump(*found, composition->second, startingTemperature(composition->second), -1.0,
+                                   false));
         join(s.lumps.back());
         return s.lumps.size() - 1;
+    }
+
+    // What heat above a melting point does: melt. For each solid in the parcel
+    // that melts, if the parcel is warmer than its melting point, exactly as
+    // much of it melts as brings the parcel back to it -- dm = C (T - Tm) / L,
+    // at constant internal energy, because the liquid's reference energy is
+    // the solid's plus the latent heat. Released meltwater then runs off at
+    // the temperature it melted at, carrying its energy: matter out.
+    void melt(Lump &lump, Parcel &p, double dt) {
+        for (const Transition &transition : model.transitions) {
+            const double solid = p.kg[transition.solid];
+            if (!(solid > 0.0)) continue;
+            const double t = temperature(p);
+            if (!(t > transition.melting_k)) continue;
+            const double latent = model.latentHeatJPerKg(transition);
+            const double melted = std::min(solid, capacity(p) * (t - transition.melting_k) / latent);
+            if (!(melted > 0.0)) continue;
+            p.kg[transition.solid] = melted >= solid ? 0.0 : solid - melted;
+            p.kg[transition.liquid] += melted;
+            lump.melt_kg_s += melted / dt;
+            if (transition.liquid_fate != Fate::Released) continue;
+            // At the melting point unless the solid ran out first, when the
+            // last of the heat is in the water too.
+            const double leaving_k = temperature(p);
+            const double carried = melted * specificEnthalpyJKg(model[transition.liquid], leaving_k);
+            p.kg[transition.liquid] = std::max(0.0, p.kg[transition.liquid] - melted);
+            p.internal_energy_j -= carried;
+            s.ledger.matter_out_j += carried;
+            s.ledger.matter_out_kg += melted;
+            lump.meltwater_kg += melted;
+        }
+    }
+
+    // The melting front advances into the core as the layer's solid melts
+    // away, and brings whatever the core holds -- at the core's temperature.
+    void advanceMeltFront(Lump &lump) {
+        if (!(lump.layer_melt_kg > 0.0)) return;
+        const double deficit = lump.layer_melt_kg - meltableIn(lump.surface);
+        const double core_solid = meltableIn(lump.core);
+        if (!(deficit > 0.0) || !(core_solid > 0.0)) return;
+        pour(lump.surface, takeShare(lump.core, std::min(1.0, deficit / core_solid)));
+    }
+
+    void settlePhases(double dt) {
+        if (model.transitions.empty()) return;
+        for (Lump &lump : s.lumps) {
+            if (lump.parked) continue;   // set aside: time stands still for it
+            melt(lump, lump.surface, dt);
+            if (massKg(lump.core) > 0.0) melt(lump, lump.core, dt);
+            advanceMeltFront(lump);
+        }
     }
 
     [[nodiscard]] bool busy(std::size_t i) const {
@@ -726,6 +808,12 @@ void ThermoWorld::refresh(const std::vector<BodyShape> &bodies, double floor_y_m
     for (std::size_t i = 0; i < w.shapes.size(); ++i) w.shape_of.emplace(w.shapes[i].name, i);
     w.floor_y = floor_y_m;
     w.forgetMissing();
+    // Matter that melts below the surroundings' temperature -- ice in a warm
+    // room -- is never at the room's temperature, so nothing hot has to come
+    // near it for it to be followed: it joins as soon as it is in the world,
+    // at its melting point, and the room's own warmth melts it.
+    for (const BodyShape &shape : w.shapes)
+        if (w.lumpOf(shape.name) == kNone && w.meltsInTheRoom(shape.material)) (void)w.activate(shape.name);
     w.couple();
 }
 
@@ -751,9 +839,18 @@ void ThermoWorld::declareContents(const ContentsDeclaration &d) {
         require(sum > 0.0, d.body + ": contents need something in them");
         for (auto &entry : fractions) entry.second /= sum;
     }
-    const double t = d.temperature_k > 0.0 ? d.temperature_k : w.ambient.temperature_k;
+    const double t = d.temperature_k > 0.0 ? d.temperature_k : w.startingTemperature(fractions);
     require(std::isfinite(t) && t <= w.model.maximum_temperature_k,
             d.body + ": a temperature inside the model's range");
+    // Solid matter above its melting point is not solid: say how much of it is
+    // already water instead.
+    for (const auto &[substance, fraction] : fractions) {
+        if (!(fraction > 0.0) || w.melts[substance] == kNone) continue;
+        const Transition &transition = w.model.transitions[w.melts[substance]];
+        require(t <= transition.melting_k,
+                d.body + ": it holds " + w.model[substance].id + ", which melts at " +
+                    std::to_string(transition.melting_k) + " K, so it cannot be declared warmer than that");
+    }
     Lump lump = w.makeLump(*shape, fractions, t, d.layer_depth_m, true);
     if (!d.environment.empty()) {
         lump.environment = w.regionOf(d.environment);
@@ -899,7 +996,7 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         w.s.ledger.initial_mass_kg = w.s.ledger.mass_kg;
         w.s.opened = true;
     }
-    for (Lump &l : w.s.lumps) l.heat_release_w = l.fuel_use_kg_s = l.heater_w = 0.0;
+    for (Lump &l : w.s.lumps) l.heat_release_w = l.fuel_use_kg_s = l.heater_w = l.melt_kg_s = 0.0;
     for (GasRegion &r : w.s.regions) r.heater_w = r.vent_flow_kg_s = 0.0;
 
     // Boundary work: the gas pays for exactly the force that was applied, over
@@ -964,7 +1061,11 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         if (massKg(lump.core) > 0.0) w.react(lump, lump.core, false, dt_s);
         w.replenish(lump);
     }
+    // What a heater put in has melted before the heat paths see the ice, so
+    // they see it at its melting point; and what they brought melts after.
+    w.settlePhases(dt_s);
     w.exchange(dt_s);
+    w.settlePhases(dt_s);
     w.s.time_s = to;
     // The hottest each zone has been: what decides the damage that does not
     // come back when it cools (thermo/ThermalMechanics.hpp).
@@ -1015,6 +1116,10 @@ void ThermoWorld::split(const std::string &body,
         piece.surface = takeShare(parent.surface, of_remaining);
         piece.core = takeShare(parent.core, of_remaining);
         piece.layer_fuel_kg = parent.layer_fuel_kg * share;
+        piece.layer_melt_kg = parent.layer_melt_kg * share;
+        // Meltwater not yet handed over goes with the pieces, by share, so the
+        // host still puts every kilogram of it somewhere.
+        piece.meltwater_kg = parent.meltwater_kg * share;
         piece.area_m2 = parent.area_m2 * std::cbrt(share * share);
         piece.exposed_area_m2 = piece.area_m2;
         piece.volume_m3 = parent.volume_m3 * share;
@@ -1038,6 +1143,8 @@ void ThermoWorld::split(const std::string &body,
             for (std::size_t s = 0; s < piece.initial_kg.size(); ++s) into.initial_kg[s] += piece.initial_kg[s];
             into.peak_surface_k = std::max(into.peak_surface_k, piece.peak_surface_k);
             into.peak_core_k = std::max(into.peak_core_k, piece.peak_core_k);
+            into.layer_melt_kg += piece.layer_melt_kg;
+            into.meltwater_kg += piece.meltwater_kg;
             into.mirrored_mass_kg = -1.0;
         } else {
             w.s.lumps.push_back(std::move(piece));
@@ -1131,6 +1238,13 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
         heat.reacting = l.fuel_use_kg_s > 0.0 || std::abs(l.heat_release_w) > 1.0;
         heat.declared = l.declared;
         heat.parked = l.parked;
+        heat.melt_kg_s = l.melt_kg_s;
+        heat.melting = l.melt_kg_s > 0.0;
+        for (const Transition &transition : w.model.transitions) {
+            const std::size_t x = transition.solid;
+            const double had = x < l.initial_kg.size() ? l.initial_kg[x] : 0.0;
+            heat.melted_kg += std::max(0.0, had - l.surface.kg[x] - l.core.kg[x]);
+        }
         for (std::size_t i = 0; i < w.model.size(); ++i) {
             const double kg = l.surface.kg[i] + l.core.kg[i];
             if (kg > 1.0e-9) heat.contents_kg.emplace_back(w.model[i].id, kg);
@@ -1246,8 +1360,26 @@ std::vector<std::pair<std::string, double>> ThermoWorld::massesToMirror(double r
     return out;
 }
 
+std::vector<std::pair<std::string, double>> ThermoWorld::takeMeltwater() {
+    std::vector<std::pair<std::string, double>> out;
+    for (Lump &l : impl_->s.lumps) {
+        if (!(l.meltwater_kg > 0.0)) continue;
+        out.emplace_back(l.body, l.meltwater_kg);
+        l.meltwater_kg = 0.0;
+    }
+    return out;
+}
+
 std::vector<std::string> ThermoWorld::limitations() {
     return {
+        "Ice melts at 273.15 K and takes 333.55 kJ/kg to do it: while it has ice, a body's zone "
+        "is never warmer than that, and the heat that would take it higher melts exactly as much "
+        "ice as it can. The meltwater runs off at once (ice holds no liquid) and leaves the "
+        "network, carrying its energy; the host puts it in the room's water where there is any",
+        "Freezing is not modelled: nothing in the world is colder than the ice itself, and water "
+        "in the room's rivers and pools has no temperature",
+        "Ice that joins the network with nothing to say otherwise is at its melting point, since "
+        "ice cannot be at a warm room's temperature: a scene can declare it colder",
         "Constant heat capacities over the model's declared range (150-3000 K); no dissociation",
         "Every body is one lump, or one surface layer over one core when it conducts too poorly "
         "to be one temperature; there is no temperature field inside a body",
@@ -1263,14 +1395,15 @@ std::vector<std::string> ThermoWorld::limitations() {
         "Openings are incompressible orifices; choked flow is not modelled",
         "The wood model is a DECLARED SIMPLIFIED model with demonstration parameters: not "
         "validated against ventilation, moisture, geometry or heat-loss variations",
-        "Bodies shrink as they burn (thermo/ThermalMechanics.hpp MaterialField): what burned "
-        "leaves the load-bearing section, the mass, the collision shape, the drawn shape and the "
-        "inertia together, every face of the body's box alike; a body's area and volume here "
-        "follow what is left",
+        "Bodies shrink as they burn or melt (thermo/ThermalMechanics.hpp MaterialField): what "
+        "burned or melted leaves the load-bearing section, the mass, the collision shape, the drawn "
+        "shape and the inertia together, every face of the body's box alike; a body's area and "
+        "volume here follow what is left",
         "Mechanical properties follow a declared law per material (thermo/ThermalMechanics.hpp): "
         "oak by EN 1995-1-2's softwood curves, iron by EN 1993-1-2's carbon-steel curves, "
-        "concrete by EN 1992-1-2; every other material has no law, and heat does not change "
-        "what it can carry",
+        "concrete by EN 1992-1-2, and ice by a law that says only that what melts is gone (its "
+        "strength does not change with temperature here); every other material has no law, and "
+        "heat does not change what it can carry",
         "A section is at most three rings -- what burned away, the surface layer, the core -- "
         "each at one temperature: a thick member's char front is not resolved inside its core",
         "Thermal expansion is not modelled",

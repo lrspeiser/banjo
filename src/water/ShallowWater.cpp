@@ -360,6 +360,18 @@ void ShallowWater::addImpulse(std::size_t cell, double jx_n_s, double jz_n_s) {
     impulses_pending_ = true;
 }
 
+double ShallowWater::addWater(std::size_t cell, double volume_m3) {
+    if (cell >= grid_.cells() || !std::isfinite(volume_m3) || !(volume_m3 > 0.0)) return 0.0;
+    const double area = faceArea();   // what volume() counts a column by
+    // Onto whatever the column holds now, at the bed the water sees: a block
+    // resting in the column raises it, and the water goes on top.
+    eta_[cell] = std::max(eta_[cell], bed_[cell]) + volume_m3 / area;
+    ledger_.added_m3 += volume_m3;
+    markDirty(cell);
+    speed_known_ = false;
+    return volume_m3;
+}
+
 std::size_t ShallowWater::tileOfCell(std::size_t cell) const {
     const std::size_t nx = static_cast<std::size_t>(grid_.nx);
     const std::size_t t = static_cast<std::size_t>(settings_.tile);
@@ -848,7 +860,7 @@ double ShallowWater::residual() const { return residualFor(volume()); }
 
 double ShallowWater::residualFor(double volume_m3) const {
     return volume_m3 - (ledger_.initial_m3 + ledger_.inflow_m3 - ledger_.outflow_m3 +
-                        ledger_.across_m3 + ledger_.numerical_m3);
+                        ledger_.across_m3 + ledger_.added_m3 + ledger_.numerical_m3);
 }
 
 void ShallowWater::resetLedger() {

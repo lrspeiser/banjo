@@ -557,6 +557,9 @@ nlohmann::json mechanicsSummary(const LiveWorld &world) {
                           {"if_cooled", roundTo(std::min(s.tension_if_cooled, s.shear_if_cooled), 1e-3)},
                           {"char_mm", roundTo(1000.0 * s.char_m, 0.1)},
                           {"burned_mm", roundTo(1000.0 * s.consumed_m, 0.01)},
+                          // How that matter went: "burned" (oak), "melted" (ice).
+                          {"gone", banjo::thermo::lawFor(m.material) != nullptr
+                                       ? banjo::thermo::lawFor(m.material)->gone : std::string("burned")},
                           {"section_mm", nlohmann::json::array({roundTo(1000.0 * s.breadth_m, 0.1),
                                                                 roundTo(1000.0 * s.depth_m, 0.1)})},
                           {"sound_mm", nlohmann::json::array({roundTo(1000.0 * s.sound_breadth_m, 0.1),
@@ -590,7 +593,7 @@ nlohmann::json mechanicsSummary(const LiveWorld &world) {
     nlohmann::json burned = nlohmann::json::array();
     for (const LiveBurnedAway &b : world.burnedAway())
         burned.push_back({{"name", b.name}, {"t", roundTo(b.time_s, 0.01)},
-                          {"residue_kg", roundTo(b.residue_kg, 1e-3)}, {"why", b.why}});
+                          {"residue_kg", roundTo(b.residue_kg, 1e-3)}, {"why", b.why}, {"gone", b.gone}});
     nlohmann::json held = nlohmann::json::array();
     for (const LiveJoint &j : world.joints()) {
         if (j.member.empty()) continue;
@@ -1017,7 +1020,7 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
             continue;
         }
         if (bodies.size() >= 48) continue;
-        if (!b.reacting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
+        if (!b.reacting && !b.melting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
         bodies.push_back({{"name", b.body},
                           {"t_k", round(b.temperature_k, 0.1)},
                           {"core_k", round(b.core_temperature_k, 0.1)},
@@ -1028,6 +1031,12 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                                               ? nlohmann::json(round(b.remaining_s, 1.0))
                                               : nlohmann::json(nullptr)},
                           {"reacting", b.reacting}});
+        // Melting, only for what melts: how fast, in grams a second, and how
+        // much has gone since it was followed.
+        if (b.melting || b.melted_kg > 0.0) {
+            bodies.back()["melt_g_s"] = round(1000.0 * b.melt_kg_s, 0.01);
+            bodies.back()["melted_kg"] = round(b.melted_kg, 1.0e-4);
+        }
     }
     nlohmann::json regions = nlohmann::json::array();
     for (const banjo::thermo::RegionState &r : network.regions())
@@ -1300,7 +1309,7 @@ nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
         const banjo::water::Ledger &wl = w.ledger();
         const banjo::water::RiverNetwork::Totals totals = net->totals();
         const double held = volume + net->volume();
-        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3 +
+        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.added_m3 + wl.numerical_m3 +
                                 totals.initial_m3 + totals.fed_m3 - totals.out_m3 + totals.numerical_m3;
         out["basins"] = basins;
         out["junctions"] = junctions;
@@ -2214,8 +2223,15 @@ int main(int argc, char **argv) {
                                        {"why", load.why}});
                 if (!sagging.empty()) reply["overloaded"] = std::move(sagging);
                 if (const banjo::thermo::ThermoWorld *network = world->thermo();
-                    network != nullptr && network->active())
+                    network != nullptr && network->active()) {
                     reply["heat"] = heatSummary(*network);
+                    // Where the meltwater off ice has gone since the world
+                    // opened, when any has.
+                    const double into = world->meltwaterIntoWaterKg(), off = world->meltwaterRanOffKg();
+                    if (into > 0.0 || off > 0.0)
+                        reply["heat"]["meltwater"] = {{"into_water_kg", std::round(into / 1.0e-4) * 1.0e-4},
+                                                      {"ran_off_kg", std::round(off / 1.0e-4) * 1.0e-4}};
+                }
                 // And what that heat has done to what things can carry.
                 if (nlohmann::json strength = mechanicsSummary(*world); !strength.is_null())
                     reply["mechanics"] = std::move(strength);

@@ -154,7 +154,7 @@ struct Settings {
 
 // Everything that crossed the boundary of the water, in cubic metres.
 //
-//     volume - initial = inflow - outflow + across + numerical + residual
+//     volume - initial = inflow - outflow + across + added + numerical + residual
 //
 // residual is what rounding did and nothing else.
 struct Ledger {
@@ -164,6 +164,9 @@ struct Ledger {
     // Net water in across connections, from the regions on their far sides:
     // negative when more went out than came in.
     double across_m3{};
+    // Water the world put in where it stands: meltwater running off ice
+    // (addWater).
+    double added_m3{};
     // Water the arithmetic had to put back to keep a depth from going
     // negative. Reported, never hidden.
     double numerical_m3{};
@@ -266,6 +269,11 @@ public:
     // Momentum a body gave the water this step, newton seconds, horizontal.
     // Applied at the start of the next substep, to the column it was given to.
     void addImpulse(std::size_t cell, double jx_n_s, double jz_n_s);
+    // Water put into one column from the world -- meltwater off ice standing
+    // over it -- at rest, and in the ledger as added. Unlike setDepth this is
+    // a crossing, not a starting state. Returns what went in (nothing for a
+    // column off the grid or a volume that is not a volume).
+    double addWater(std::size_t cell, double volume_m3);
 
     // Exactly dt_s of world time, in as many substeps as the CFL limit needs.
     // Returns how many.

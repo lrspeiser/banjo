@@ -201,7 +201,10 @@ class StrengthThroughTheLibrary(unittest.TestCase):
                             "its lattice's bonds are weakened by the same state as its section")
             self.assertEqual(peg.revision, world.body("peg").revision)
             report = world.mechanics_report(with_laws=True)
-            self.assertEqual({law["material"] for law in report["laws"]}, {"oak", "iron", "concrete"})
+            # Ice's law has no curves: it only says that what melts is gone.
+            self.assertEqual({law["material"] for law in report["laws"]}, {"oak", "iron", "concrete", "ice"})
+            ice = next(law for law in report["laws"] if law["material"] == "ice")
+            self.assertEqual(ice["load_bearing"], "ice")
             self.assertTrue(report["limitations"])
             self.assertIn("statics", report)
             self.assertIn("burned_away", report)
