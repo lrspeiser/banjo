@@ -28,7 +28,8 @@ wheels opens its panel, On and Forward send it down the shore, and its water
 sensor stops it with its front wheels dry. A rover roams the shore by itself:
 E on it opens its program's panel, On sets it roaming, turning away from the
 water, and Off stops it. With its battery low it rests while the solar panel
-on its deck charges it from the room's sun.
+on its deck charges it from the room's sun. Under a sun with a day, the sun
+sets, the room's light goes with it, and the rover rests until morning.
 
 Each starts a playground server of its own on a free port, with the engine the
 build made (BANJO_BUILD_DIR, or build/integration/Release) and rooms in a
@@ -1078,6 +1079,73 @@ class ARoverRestsInTheSun(PageJourney):
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
                         f"Off did not reach the rover's program: {self.situation()}")
         self.no_page_errors("after the rover rested in the sun")
+
+
+class ARoverRestsThroughTheNight(PageJourney):
+    """A day for the sun (docs/machine-world.md), in the tests-day room: the
+    room's sun goes round in four minutes, and the room begins at four in the
+    afternoon. The page lights the room from where the sun is, and the Room
+    tab's clock says the hour.
+
+    Turned on, the rover roams on into the evening. The sun sets in the west,
+    its light and the sky's go with it, and the solar panel says it is night;
+    when the rover's battery is low it rests on its brakes and says it is
+    waiting for the morning, and nothing charges it in the dark."""
+
+    def test_the_sun_sets_and_it_rests_until_morning(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-day"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-day' && "
+                                      "banjoRoom.ready()", 300), "the day room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && "
+                                      "(banjoRoom.world.machines.programs || []).length === 1 && "
+                                      "banjoRoom.world.sun && banjoRoom.world.sun.day_s > 0", 60),
+                        f"the room's steps do not carry the rover's program and the sun: {self.situation()}")
+        light = self.js("banjoRoom.light()")
+        sun = light["sun"]
+        self.assertTrue(sun["day_s"] == 240.0 and 16.0 <= sun["hour"] < 17.0,
+                        f"the page does not have the room's afternoon sun: {sun}")
+        clock = lambda: self.js("document.getElementById('room-clock').textContent")
+        self.assertRegex(clock(), r"16:\d\d, the sun \d+° up \(a day is 240 s\)")
+        self.assertGreater(light["key"], 0.5, "the afternoon sun's lamp is not lit")
+        self.assertLess(light["from"][0], 0.0, "the afternoon sun does not light the room from the west")
+        program = "banjoRoom.world.machines.programs[0]"
+        store = "banjoRoom.world.machines.stores[0]"
+        x, y, z = self.at_rest("rover")
+        self.page.evaluate(f"banjoRoom.standAt({x + 0.3}, {y + 1.4}, {z - 1.9}); "
+                           f"banjoRoom.lookAt({x}, {y + 0.05}, {z}); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 10),
+                        f"the crosshair is not on the rover: {self.situation()}")
+        self.assertTrue(self.offering("Open the rover's panel"), f"E does not open its panel: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
+                        f"E did not open the rover's panel: {self.situation()}")
+        self.click("mp-on")
+        self.assertTrue(self.wait_for(f"{program}.power === true", 15),
+                        f"On did not reach the rover's program: {self.situation()}")
+        # The sun sets at six, twenty seconds of the room's time in.
+        self.assertTrue(self.wait_for("banjoRoom.world.sun.elevation_deg < 0", 240),
+                        f"the sun never set: {self.situation()}")
+        self.assertTrue(self.wait_for("banjoRoom.light().key === 0", 10), "the sun set and its lamp stayed lit")
+        self.assertRegex(clock(), r"\d\d:\d\d, night")
+        self.assertIn("nothing: it is night", self.js("document.getElementById('machine-list').innerText"))
+        self.assertTrue(self.wait_for(f"{program}.doing === 'resting'", 240),
+                        f"its battery never ran low enough to rest: {self.situation()}")
+        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
+        self.assertEqual(text("mp-condition"), "its battery is low and the sun is down, so it rests until morning")
+        self.wait_world(2.0)          # brought to rest on its brakes
+        rest = self.position("rover")
+        taken = self.js(f"{store}.taken_j")
+        self.wait_world(4.0)
+        light = self.js("banjoRoom.light()")
+        print(f"\n   resting at {clock()}: the sun {light['sun']['elevation_deg']:.0f} degrees; the sky's light "
+              f"{light['sky']:.2f}, the sun's {light['key']:.2f}", flush=True)
+        self.assertEqual(self.js(f"{store}.taken_j"), taken, "in the night its battery took something in")
+        self.assertLessEqual(light["sky"], 0.5, "the night's sky is lit as the day's")
+        self.assertLess(math.dist(self.position("rover"), rest), 0.02, "resting, it moved")
+        self.click("mp-off")
+        self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
+                        f"Off did not reach the rover's program: {self.situation()}")
+        self.no_page_errors("after the rover rested through the night")
 
 
 class AChatChangeKeepsTheHoistUp(PageJourney):

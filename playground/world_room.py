@@ -1024,6 +1024,12 @@ SCENES = {
     # rests while the solar panel on its deck charges it, and roams on. Laid
     # out by tools/build_rover_room.py; open it at /world?scene=tests-solar.
     "tests-solar": _saved_room("tests-solar"),
+    # The same rover through a night: the room's sun has a day of four minutes
+    # and the room begins at four in the afternoon. It roams on into the dark,
+    # rests when its battery is low until the morning sun has charged it, and
+    # roams on. Laid out by tools/build_rover_room.py; open it at
+    # /world?scene=tests-day.
+    "tests-day": _saved_room("tests-day"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

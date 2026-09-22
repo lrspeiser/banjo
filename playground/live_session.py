@@ -1230,13 +1230,24 @@ class Live:
     def _sun(session: "Session", sun: Any) -> dict[str, Any]:
         """The room's sun put in its sky (docs/machine-world.md, "Solar
         panels"), and said back for the page to light the room from it. A sun
-        that will not go up is said out loud, as a pin that will not hang is."""
+        that will not go up is said out loud, as a pin that will not hang is.
+
+        A sun with a day ("A day for the sun") starts at the room's hour in a
+        new world. A world opened again from its save, or carried, that already
+        has that very day keeps the hour it had got to (`keep`): its day goes
+        on, as the rest of it does, rather than starting the morning again."""
         if not isinstance(sun, dict) or not sun:
             return {}
         try:
-            answer = session.send(op="sun", elevation_deg=float(sun.get("elevation_deg", 45.0)),
-                                  azimuth_deg=float(sun.get("azimuth_deg", 0.0)),
-                                  irradiance_w_m2=float(sun.get("irradiance_w_m2", 1000.0)))
+            if "day_s" in sun:
+                answer = session.send(op="sun", day_s=float(sun["day_s"]),
+                                      noon_elevation_deg=float(sun.get("noon_elevation_deg", 60.0)),
+                                      hour=float(sun.get("hour", 8.0)),
+                                      irradiance_w_m2=float(sun.get("irradiance_w_m2", 1000.0)), keep=True)
+            else:
+                answer = session.send(op="sun", elevation_deg=float(sun.get("elevation_deg", 45.0)),
+                                      azimuth_deg=float(sun.get("azimuth_deg", 0.0)),
+                                      irradiance_w_m2=float(sun.get("irradiance_w_m2", 1000.0)))
         except Exception as error:
             return {"sun_problem": f"the sun would not go up: {error}"}
         return {"sun": answer.get("sun")} if answer.get("sun") else {}

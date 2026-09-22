@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Compose the rover rooms: a battery rover that roams a lake's shore by itself,
-and the same rover resting in the sun while its solar panel charges it.
+the same rover resting in the sun while its solar panel charges it, and the
+same rover living through a night.
 
-    BANJO_LIVE_ENGINE=.../banjo_live_world_run.exe python tools/build_rover_room.py
+    BANJO_LIVE_ENGINE=.../banjo_live_world_run.exe python tools/build_rover_room.py [room ...]
 
-Writes playground/rooms/tests-rover.json and tests-solar.json, which world_room
-serves as the `tests-rover` and `tests-solar` scenes. Open one at
-/world?scene=tests-rover, press E on the rover for its panel, and turn it on.
+Writes playground/rooms/tests-rover.json, tests-solar.json and tests-day.json
+(or only the rooms named), which world_room serves as the `tests-rover`,
+`tests-solar` and `tests-day` scenes. Open one at /world?scene=tests-rover,
+press E on the rover for its panel, and turn it on.
 
 The second step of the machine world's autonomous creature
 (docs/machine-world.md, "One autonomous creature"): wheels it steers with, and
@@ -44,12 +46,21 @@ below a quarter until the panel has charged it to three fifths: roaming draws
 more than the panel gives, so it runs down, stops where it is, rests in the sun,
 and roams on.
 
+In tests-day the sun has a day ("A day for the sun"): four minutes long, 60
+degrees up at noon, and the room begins at four in the afternoon. The rover
+roams through the evening on what its battery holds; the sun sets at six, and
+after it the panel gives nothing; when the battery is down to a quarter the
+rover rests until morning, and when the morning sun has charged it to two
+fifths, it roams on.
+
 The numbers are a demonstration machine's, declared by the room, not measured
 from a real rover. Before it writes a room, this opens it in the engine, turns
 the program on and watches: tests-rover must roam a minute, turning away again
 and again, keeping to the basin and never with a wheel in the water;
 tests-solar must run down, rest, be charged by the sun and roam on, dry, with
-every joule of its battery accounted for. Re-run it to rebuild the rooms;
+every joule of its battery accounted for; tests-day must run low after the
+sun has set, take in nothing in the night, say it waits for the morning, and
+wake only after the sun is up. Re-run it to rebuild the rooms;
 nothing is hand-edited in the JSON.
 """
 from __future__ import annotations
@@ -93,11 +104,18 @@ SUN = {"elevation_deg": 50.0, "azimuth_deg": 200.0, "irradiance_w_m2": 1000.0}
 # The panel, in the rover's own frame: the top of the glass plate on its deck.
 PANEL_AT_LOCAL_M = (0.0, 0.39, -0.05)
 PANEL = {"area_m2": 0.2, "efficiency": 0.2}
-# Each room's battery and how its program rests.
+# A sun with a day: four minutes of the world's time, so a night is two; 60
+# degrees up at noon; the room begins at four in the afternoon.
+DAY_SUN = {"day_s": 240.0, "noon_elevation_deg": 60.0, "hour": 16.0, "irradiance_w_m2": 1000.0}
+# Each room's battery and how its program rests, and a sun of its own.
 ROOM_KINDS = {
     "tests-rover": {"capacity_j": 100000.0, "charge_j": 100000.0},
     "tests-solar": {"capacity_j": 5000.0, "charge_j": 1400.0, "rest_below": 0.25, "rest_until": 0.6},
+    "tests-day": {"capacity_j": 5000.0, "charge_j": 3500.0, "rest_below": 0.25, "rest_until": 0.4,
+                  "sun": DAY_SUN},
 }
+# How long the builder watches tests-day for its night and its morning, at most.
+DAY_WATCH_S = 420.0
 ROAM_S = 60.0
 # The world page's own step (world.js LIVE_DT). At 1/120 s the caster's oak
 # wheel, light under the rover's weight, sank into the ground -- 27 mm in three
@@ -228,7 +246,7 @@ def compose(ground: dict, kind: str) -> dict:
                     "normal": facing, **PANEL}]}
     return {"algorithm": "lattice", "cell_m": CELL_M, "plasticity": "on",
             "terrain": TERRAIN,
-            "sun": dict(SUN),
+            "sun": dict(battery.get("sun", SUN)),
             "bodies": [post],
             "precise_rigid_bodies": bodies,
             "joints": pins,
@@ -243,7 +261,8 @@ def roam(engine: Path, validated: dict, kind: str) -> list[str]:
     """Open the room as the playground does, let it settle, turn the program on
     and watch it: what is wrong, or nothing. tests-rover roams a minute;
     tests-solar goes on until it has rested and roamed on again, or three
-    minutes have passed."""
+    minutes have passed; tests-day until it has rested through the night and
+    roamed on in the morning, or seven."""
     faults: list[str] = []
     wheels = ("rover: left wheel", "rover: right wheel", "rover: caster wheel")
     with tempfile.TemporaryDirectory() as tmp:
@@ -266,8 +285,12 @@ def roam(engine: Path, validated: dict, kind: str) -> list[str]:
             path, nearest, furthest, wettest, wet_at, doing_seen = 0.0, 1e9, 0.0, 0.0, "", set()
             was, wall = start, time.monotonic()
             said: dict = {}
-            seconds = ROAM_S if kind == "tests-rover" else 180.0
+            seconds = ROAM_S if kind == "tests-rover" else DAY_WATCH_S if kind == "tests-day" else 180.0
             order: list[str] = []
+            # Its day: the hour and the battery at sunset, when it began to
+            # rest and why, at sunrise, and when it woke.
+            day: dict = {}
+            sun: dict = {}
             for tick in range(int(seconds / (PER_QUARTER * DT))):   # a quarter of a second at a time
                 reply = session.send(op="step", dt=DT, n=PER_QUARTER)
                 said = next((q for q in (reply.get("machines") or {}).get("programs") or []
@@ -275,6 +298,23 @@ def roam(engine: Path, validated: dict, kind: str) -> list[str]:
                 doing_seen.add(said.get("doing", ""))
                 if not order or order[-1] != said.get("doing"):
                     order.append(said.get("doing"))
+                if kind == "tests-day":
+                    was_up, sun = sun.get("elevation_deg", 1.0) > 0.0, reply.get("sun") or sun
+                    up = sun.get("elevation_deg", 0.0) > 0.0
+                    stored = ((reply.get("machines") or {}).get("stores") or [{}])[0]
+                    at = {"t": reply.get("t", 0.0), "hour": sun.get("hour", 0.0),
+                          "charge_j": stored.get("charge_j", 0.0), "taken_j": stored.get("taken_j", 0.0)}
+                    if was_up and not up and "sunset" not in day:
+                        day["sunset"] = at
+                    if not was_up and up and "sunset" in day and "sunrise" not in day:
+                        day["sunrise"] = at
+                    if said.get("doing") == "resting" and "rested" not in day:
+                        day["rested"] = {**at, "why": said.get("why")}
+                    if "rested" in day and said.get("doing") != "resting" and "woke" not in day:
+                        day["woke"] = at
+                    if "woke" in day and said.get("doing_s", 0.0) > 5.0:
+                        seconds = (tick + 1) * PER_QUARTER * DT
+                        break
                 if (kind == "tests-solar" and said.get("rests", 0) >= 1 and said.get("doing") != "resting"
                         and said.get("doing_s", 0.0) > 5.0):
                     seconds = (tick + 1) * PER_QUARTER * DT
@@ -301,6 +341,17 @@ def roam(engine: Path, validated: dict, kind: str) -> list[str]:
                   f"panel ({panel.get('power_w', 0):.1f} W of {panel.get('sunlight_w', 0):.0f} W of sun now); run "
                   f"at {pace:.0f}x realtime (with a survey of its wheels every quarter second)")
             print(f"  it did: {', '.join(d for d in order if d)}; now \"{said.get('doing')}\": {said.get('why')}")
+            if kind == "tests-day":
+                def when(key):
+                    at = day.get(key)
+                    if not at:
+                        return f"{key}: never"
+                    hour = at["hour"] % 24.0
+                    return (f"{key} at {int(hour):02d}:{int(hour % 1 * 60):02d} (t={at['t']:.0f} s), the battery "
+                            f"{at['charge_j']:.0f} J, taken in {at['taken_j']:.0f} J")
+                print("  " + "; ".join(when(k) for k in ("sunset", "rested", "sunrise", "woke")))
+                if day.get("rested"):
+                    print(f"  resting, it said: {day['rested']['why']}")
             began = ROOM_KINDS[kind]["charge_j"]
             if abs(store.get("charge_j", 0) - (began + store.get("taken_j", 0) - store.get("given_j", 0))) > 1e-3:
                 faults.append("its battery's account does not close")
@@ -308,6 +359,19 @@ def roam(engine: Path, validated: dict, kind: str) -> list[str]:
                 faults.append("its battery took in something its panel did not give")
             if kind == "tests-solar" and (said.get("rests", 0) < 1 or said.get("doing") == "resting"):
                 faults.append(f"in {seconds:.0f} s it did not rest and roam on: {order}")
+            if kind == "tests-day":
+                missing = [k for k in ("sunset", "rested", "sunrise", "woke") if k not in day]
+                if missing:
+                    faults.append(f"in {seconds:.0f} s its day did not come round: no {', '.join(missing)}")
+                else:
+                    if not day["sunset"]["t"] < day["rested"]["t"] < day["sunrise"]["t"]:
+                        faults.append("it did not run low in the night")
+                    if abs(day["sunrise"]["taken_j"] - day["sunset"]["taken_j"]) > 1e-6:
+                        faults.append("its battery took something in during the night")
+                    if not day["woke"]["t"] > day["sunrise"]["t"]:
+                        faults.append("it woke before the sun was up")
+                    if "sun is down" not in (day["rested"].get("why") or ""):
+                        faults.append(f"resting in the night, it said: {day['rested'].get('why')}")
             if wettest > 0.003:
                 faults.append(f"it had {wettest * 1000:.0f} mm of water under its {wet_at}")
             if path < (15.0 if kind == "tests-rover" else 5.0):
@@ -331,7 +395,8 @@ def main() -> int:
     ground = read_ground(engine)
     print(f"  {ground['nx']}x{ground['nz']} at {ground['cell']} m, "
           f"{min(ground['h']):.2f} m to {max(ground['h']):.2f} m")
-    for kind in ROOM_KINDS:
+    kinds = [k for k in sys.argv[1:] if k in ROOM_KINDS] or list(ROOM_KINDS)
+    for kind in kinds:
         print(f"Laying {kind} out ...")
         spec = compose(ground, kind)
         validated = fracture_lab.validate(spec)

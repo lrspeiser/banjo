@@ -863,14 +863,35 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
             **({"programs": programs} if programs else {}), **({"panels": panels} if panels else {})}
 
 
+SUN_DAY_FIELDS = ("day_s", "noon_elevation_deg", "hour", "irradiance_w_m2")
+
+
 def normalise_sun(sun: Any) -> dict[str, Any]:
     """A room's sun (docs/machine-world.md, "Solar panels"): how high it stands,
     from 0 to 90 degrees above the horizon; its azimuth, round from +z towards
     +x; and how strongly it shines on a surface square to its beam, up to 1400
-    W/m2 (a clear day's is about 1000). It stands where it is put: there is no
-    day yet."""
+    W/m2 (a clear day's is about 1000).
+
+    Or a sun with a day ("A day for the sun"), which goes round on the world's
+    own clock: `day_s`, how many of the world's seconds a day lasts, from 10 to
+    a real day's 86,400; `noon_elevation_deg`, how high it stands at noon, from
+    1 to 90; `hour`, the time of day the room begins at, from 0 to 24; and
+    `irradiance_w_m2`, how strongly it shines when overhead. It rises due east
+    (+x), stands due south (+z) at noon and sets due west."""
     if not isinstance(sun, dict):
-        raise ValueError("sun is an object: elevation_deg, azimuth_deg and irradiance_w_m2")
+        raise ValueError("sun is an object: elevation_deg, azimuth_deg and irradiance_w_m2; "
+                         "or, for a sun with a day, day_s, noon_elevation_deg, hour and irradiance_w_m2")
+    if "day_s" in sun:
+        unknown = set(sun) - set(SUN_DAY_FIELDS)
+        if unknown:
+            raise ValueError(f"a sun with a day cannot say {sorted(unknown)}: it holds day_s, "
+                             "noon_elevation_deg, hour and irradiance_w_m2")
+        return {"day_s": _number(sun.get("day_s"), 10.0, 86400.0, "sun day_s"),
+                "noon_elevation_deg": _number(sun.get("noon_elevation_deg", 60.0), 1.0, 90.0,
+                                              "sun noon_elevation_deg"),
+                "hour": _number(sun.get("hour", 8.0), 0.0, 24.0, "sun hour") % 24.0,
+                "irradiance_w_m2": _number(sun.get("irradiance_w_m2", 1000.0), 0.0, 1400.0,
+                                           "sun irradiance_w_m2")}
     unknown = set(sun) - {"elevation_deg", "azimuth_deg", "irradiance_w_m2"}
     if unknown:
         raise ValueError(f"sun cannot say {sorted(unknown)}: it holds elevation_deg, azimuth_deg and irradiance_w_m2")

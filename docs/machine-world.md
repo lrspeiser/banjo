@@ -520,6 +520,18 @@ saved world keeps its programs.
 - A program can say `rest_below` and `rest_until`: the shares of full at which
   it stops to rest and at which it goes on.
 
+**A sun with a day** ([A day for the sun](#a-day-for-the-sun)) says its day in
+place of where it stands:
+
+```json
+"sun": {"day_s": 240, "noon_elevation_deg": 60, "hour": 16, "irradiance_w_m2": 1000}
+```
+
+- `day_s` is how many of the world's seconds a day lasts, from 10 to a real
+  day's 86,400. `noon_elevation_deg` is from 1 to 90, `hour` is the hour the
+  room begins at, 0 to 24, and `irradiance_w_m2`, 0 to 1400, is the sun's
+  overhead.
+
 The runner's `sun` operation puts the sun in the sky and says it back, with
 `toward`, the unit vector to it. `solar_panel` puts a panel on
 (`{"op": "solar_panel", "name", "body", "store": store id, "at_m", "normal",
@@ -528,6 +540,13 @@ The runner's `sun` operation puts the sun in the sky and says it back, with
 angle to the sun, whether it is in shade and by what, the sunlight on it and
 the power it gives, and its account. It also reports what each store has
 `taken_j`.
+
+With `day_s`, the runner's `sun` operation gives the sun a day
+(`{"op": "sun", "day_s", "noon_elevation_deg", "hour", "irradiance_w_m2",
+"keep"}`). With `keep`, a world that already has that very day keeps its hour,
+which is how a saved or carried world's day goes on. Every reply then carries
+the `sun`, with its `hour`, `day_s`, `noon_elevation_deg` and
+`zenith_irradiance_w_m2` as well as where it is.
 
 ## Milestone 2, its first step: a cart that stops at the water's edge
 
@@ -694,8 +713,9 @@ battery runs low, and roams on once the panel has charged it.
 
 **The sun** is the room's to declare: how high it stands, which way it lies,
 and how strongly it shines on a surface square to its beam. A clear day's is
-about 1000 W/m2. It stands where it is put: there is no day yet. The page is
-lit from where the engine has it.
+about 1000 W/m2. It stands where it is put, or it has a day and goes round
+([A day for the sun](#a-day-for-the-sun)). The page is lit from where the
+engine has it.
 
 **A solar panel** is a flat collector fixed on a part and wired to a battery.
 Each step, it puts into the battery the sunlight on its face times its
@@ -750,9 +770,84 @@ short steps. The heavier caster also turns the rover on the spot more slowly,
 Checked by `tests/solar_panel_tests.cpp`, `tests/rover_roam_tests.cpp`,
 `tests/solar_room_tests.py` and the browser journey `ARoverRestsInTheSun`.
 
-Not built yet: a day, when the sun moves and sets; a battery charged at a post
-from a panel elsewhere; heat from a panel's losses warming anything; a panel
-that turns to follow the sun.
+Not built yet: a battery charged at a post from a panel elsewhere; heat from a
+panel's losses warming anything; a panel that turns to follow the sun.
+
+## A day for the sun
+
+**The owner's choice, 2026-09-22:** the step after solar panels is a day for
+the sun. It crosses the sky and sets, panels make nothing at night, and a
+machine has to have saved enough, or rest until morning.
+
+**Status, 2026-09-22.** A room's sun can have a day. In the `tests-day` room
+the rover roams on into the evening on what its battery holds, rests when the
+battery is low, and waits in the dark for the morning sun to charge it.
+
+**The day** is the room's to declare: how long it lasts in the world's own
+seconds, how high the sun stands at noon, the hour the room begins at, and how
+strongly the sun shines when it is overhead. The sun goes round as it does at
+an equinox. It rises due east (+x), stands due south (+z) at noon and sets due
+west, 12 hours after it rose; at midnight it is as far below the horizon as it
+was above it at noon. The room's noon height stands in for its latitude. The
+hour comes from the world's clock, so the sun stops when the world is paused.
+
+- Low in the sky the sun's beam comes through more air, and less of it reaches
+  the ground. The share that does is the Meinel air-mass model, a standard
+  clear-sky estimate: 0.7 to the power of the air mass to the 0.678, where the
+  air mass is 1 overhead and 1 over the sine of the sun's height lower down.
+  With 1000 W/m2 overhead, the sun 60 degrees up gives 964 W/m2, and 3.2
+  degrees up, 117 W/m2.
+- Below the horizon it shines on nothing, and a panel says it is night.
+- A world opened again from its save keeps the hour it had got to, and so does
+  a world carried into a room the chat has changed. A room that now declares a
+  different day starts it at the room's hour.
+
+**The page** lights the room from where the sun is. The sun's lamp is as bright
+as the share of the sunlight that reaches the ground, and reddens towards the
+horizon. The sky's own light fades through twilight to a dim night light by the
+time the sun is 6 degrees below the horizon. Behind the room the sky is blue by
+day, red near the horizon and black at night; a room whose sun has no day keeps
+the black it always had. The Room tab's clock says the hour and how high the sun
+is: "16:08, the sun 24° up", or "20:44, night". This is presentation only: what
+a panel collects is the engine's, from the engine's sun.
+
+**The rover** needs no new program for the night. At night its panel gives
+nothing, so once its battery is low it rests until morning. It says why, and in
+a night the reasons come in this order:
+
+- "its battery is low and the sun is down, so it rests until morning";
+- at dawn, its deck tipped on the slope away from the sun on the horizon, "its
+  battery is low and its panel is turned away from the sun, so it rests until
+  the sun comes round to it";
+- while the low sun is behind the basin's rim, "its battery is low and its
+  panel is in the shade of the ground, so it rests until the sun reaches it";
+- and then "its battery is low, so it rests while its panel charges it".
+
+Measured in the engine:
+
+- Over a whole day of 240 s, a 0.8 m2 panel lying flat at 20% collected
+  9,252.79 J. The model's sunlight on it summed in two million steps over the
+  same day gives the same, to a ten-thousandth.
+- From five in the evening, the panel collected 67.8 J by sunset and nothing
+  in the hour after it.
+- The rover in `tests-day`, a 240 s day from four in the afternoon, with 3,500 J
+  of 5,000, as `tools/build_rover_room.py` watched it before writing the room:
+  the sun set at 18:00, 20 s in, with 2,755 J left. The rover roamed on in the
+  dark and rested at 20:34, 46 s in, at a quarter. Its battery took in nothing
+  until the sun rose at 06:00, 140 s in. It woke at 11:00, 190 s in, at two
+  fifths, having taken in 869 J in all, and roamed on, dry.
+- In the engine test of the same night, the rover moved 1.9 mm while it rested.
+
+It can be watched in the page at `/world?scene=tests-day`, a test room off the
+menu. Turned on from its panel, the rover roams into the sunset; the night
+lasts two minutes, and the rover rests within a minute of dark.
+
+Checked by `tests/sun_day_tests.cpp`, `tests/rover_roam_tests.cpp`,
+`tests/day_room_tests.py` and the browser journey `ARoverRestsThroughTheNight`.
+
+Not built yet: seasons, since every day is an equinox's; the moon; clouds; the
+day's heat warming anything; a machine that plans for the night rather than
+running until it is low.
 
 ## After the hoist
 
@@ -763,8 +858,9 @@ seen working in the page.
    driven wheels, a bump sensor, and a controller that roams, finds a charging
    post and docks. Its first steps are built: a cart whose water sensor
    stops it at a lake's edge, a rover that roams a lake's shore by itself,
-   and solar panels that charge its battery while it rests in the sun
-   (above). The owner chose solar panels over a charging post (D1).
+   solar panels that charge its battery while it rests in the sun, and a day
+   for the sun, so that it rests through the night (above). The owner chose
+   solar panels over a charging post (D1).
 3. **Repair and persistence.** Parts fail by what they do, such as a burnt
    motor or a cut wire, and can be repaired. A creature's identity is kept
    apart from its body.

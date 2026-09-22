@@ -139,7 +139,7 @@ build; the tables further down say which):
 | Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
 | Water | river and pond, floating, drag, dams, rivers beyond the valley | | waves, sediment, rain, wet ground, water putting out fire |
 | Ground | digging, heaping, slumping, a pick in soil, carrying what you dig | storing dug material (manufacturing page) | breaking rock, wet soil, tool wear |
-| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge; a rover that roams a lake's shore by itself; solar panels that charge a battery from the room's sun | electrical and thermal circuits | gears, joints that fail by bending, a sun that moves and sets |
+| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge; a rover that roams a lake's shore by itself; solar panels that charge a battery from the room's sun; a sun that crosses the sky and sets, so the rover rests through the night | electrical and thermal circuits | gears, joints that fail by bending |
 | Hands and tools | pick up, carry, place, bag, throw, bow, sword, pick; things of several parts taken up whole | | two hands, grip points |
 
 The main world is the room at `/world` ("The world"). It stands on a generated
@@ -501,6 +501,20 @@ until the sun has charged it to three fifths, then roams on. In the engine the
 panel gave 29.8 W of 148.8 W of sunlight, and what the battery held was exactly
 what it began with, plus what it took in, less what it gave.*
 
+| At sunset | At night |
+|---|---|
+| ![The rover roaming the shore under a red evening sky, the low sun glinting on the lake, its panel saying it is going forward with nothing in its way](docs/images/readme/day-sunset.jpg) | ![The rover resting on the dark shore under a black sky, its panel saying its battery is low and the sun is down, so it rests until morning](docs/images/readme/day-night.jpg) |
+
+*A day for the sun (`/world?scene=tests-day`): the room's sun goes round in
+four minutes, rising in the east, highest in the south at noon and setting in
+the west, and the room begins at four in the afternoon. Low in the sky less of
+its light gets through the air, and at night none. The page is lit from where
+the sun is, and the Room tab's clock says the hour. The rover roams on into
+the dark on what its battery holds. When the battery is down to a quarter it
+rests until morning, taking in nothing all night. In the engine the sun set
+20 s in, the rover rested at 20:34, and it woke at 11:00, once the morning sun
+had charged it to two fifths.*
+
 | Capability | Status | How to try it |
 |---|---|---|
 | Hinges, slides, rope links, pulleys, latches (fixings), springs | World | the gate, door, bell, portcullis and winch; the bow's limbs |
@@ -511,12 +525,13 @@ what it began with, plus what it took in, less what it gave.*
 | A machine that stops itself by what a sensor reads | Test room (`/world?scene=tests-cart`) | E on the cart, **On**, **Forward**: its water sensor stops it at the lake's edge |
 | A machine with a program that roams by itself | Test room (`/world?scene=tests-rover`) | E on the rover, **On**: it roams the shore, turning away from the water and from steep ground |
 | Solar panels that charge a battery from the room's sun | Test room (`/world?scene=tests-solar`) | E on the rover, **On**: it runs its battery down, rests while its panel charges it, and roams on |
+| A sun that crosses the sky and sets | Test room (`/world?scene=tests-day`) | E on the rover, **On**: it roams into the sunset, rests in the night until the morning sun has charged it, and roams on |
 | Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |
 
 **Not built:** gears; motor heat that warms anything;
 hinges with a strength; joints that fail by bending or prying; a bearing's
 strength along its axis; a bump sensor that feels a knock rather than a
-stall; a day, with a sun that moves and sets; heat from a panel's losses
+stall; seasons, clouds and the moon; heat from a panel's losses
 warming anything ([machine-world.md](docs/machine-world.md)).
 
 ### Hands, tools and handling
@@ -657,6 +672,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | `tests-cart` | 50 mm | address | a cart with a battery and a motor that drives down a shore until its water sensor stops it |
 | `tests-rover` | 50 mm | address | a rover with a motor on each back wheel and a program that roams a lake's shore by itself |
 | `tests-solar` | 50 mm | address | the rover with its battery nearly flat: it rests while the solar panel on its deck charges it |
+| `tests-day` | 50 mm | address | the rover under a sun with a four-minute day, from four in the afternoon: it rests through the night |
 | `watershed` | 40 mm | address | rivers beyond the valley; dam one and watch the reservoir fill |
 | `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
 | `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |
@@ -885,8 +901,8 @@ stands at 1 complete, 26 partial and 3 planned.
   walk (watershed stages W4 onward).
 - [ ] **Ground:** breaking rock (mining), tool wear, rotational landslides.
 - [ ] **Machines:** gears, motor heat, hinges with a strength, joints that
-  fail by bending or prying, bearings rated along their axis; a bump sensor, a
-  day for the sun, and bringing the cart and the rover into the main world.
+  fail by bending or prying, bearings rated along their axis; a bump sensor,
+  and bringing the cart and the rover into the main world.
 - [ ] **Breaking:** calibration against laboratory data, converged piece
   counts, a failure path for thin parts, keeping a crack in a body that stays
   whole.

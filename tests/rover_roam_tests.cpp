@@ -12,6 +12,10 @@
 // 5. With a solar panel on its deck and its battery low, it rests in the sun
 //    until the panel has charged it, and roams on; every joule the battery
 //    held, took in and gave is accounted for.
+// 6. Under a sun with a day, begun at four in the afternoon, it roams on into
+//    the night on what its battery holds; low, it rests where it is, and says
+//    it is waiting for the morning; nothing charges it in the dark; and when the
+//    morning sun has charged it, it roams on.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -510,6 +514,92 @@ void itRestsInTheSunAndRoamsOn() {
     require(wet <= 0.003, "and it stayed out of the water");
 }
 
+// A sun whose day is four minutes long, 60 degrees up at noon, from four in
+// the afternoon; a 5 kJ battery at 3.5 kJ; resting below a quarter until two
+// fifths.
+void itRestsThroughTheNightAndRoamsOnInTheMorning() {
+    const auto world = LiveWorld::open(shoreRoom());
+    const Pins pins = pinUp(*world, kShoreAt);
+    Machine m;
+    m.store = world->energyStore("battery", "rover", 5000.0, 3500.0, 24.0, 0.0);
+    m.left_motor = world->motor(pins.left, m.store, 20.0, 2.0 * kPi, 40.0);
+    m.right_motor = world->motor(pins.right, m.store, 20.0, 2.0 * kPi, 40.0);
+    m.left = world->control("left wheel", m.left_motor);
+    m.right = world->control("right wheel", m.right_motor);
+    const unsigned panel =
+        world->solarPanel("panel", "rover", m.store, kShoreAt + Vec3{0.0, 0.39, -0.05}, {0.0, 1.0, 0.0}, 0.2, 0.2);
+    const unsigned program = world->program("rover", "roam", m.left, m.right, "rover", 1.0, 8.0, 0.25, 0.4);
+    require(panel != 0 && program != 0, "the panel or the program would not go on");
+    for (const double side : {0.55, -0.55})
+        require(world->programSense(program, "water", "rover", kShoreAt + Vec3{side, 0.36, 1.0}, 0.003),
+                "a sensor would not fit");
+    require(world->setDay(240.0, 60.0, 16.0, 1000.0), "the day would not start");
+    for (int i = 0; i < 240; ++i) tick(*world);
+    runIt(*world, program, true, 1);
+    struct When {
+        double t{-1.0}, hour{}, charge_j{}, taken_j{};
+    };
+    When sunset, rested, sunrise, woke;
+    const auto now = [&]() {
+        const LiveEnergyStore store = world->energyStores().front();
+        return When{world->time_s(), world->sun().hour, store.charge_j, store.taken_j};
+    };
+    std::vector<std::string> said_resting;
+    double moved_while_resting = 0.0, wet = 0.0;
+    Vec3 rested_at{};
+    bool stopped = false, up = true;
+    for (int i = 0; i < 300 * 240; ++i) {
+        tick(*world);
+        const LiveProgram said = programOf(*world, program);
+        const bool is_up = world->sun().elevation_deg > 0.0;
+        if (up && !is_up && sunset.t < 0.0) sunset = now();
+        if (!up && is_up && sunset.t >= 0.0 && sunrise.t < 0.0) sunrise = now();
+        up = is_up;
+        if (said.doing == "resting") {
+            if (rested.t < 0.0) rested = now();
+            if (said_resting.empty() || said_resting.back() != said.why) said_resting.push_back(said.why);
+            // Once it has come to a stop on its brakes -- a second in -- it stays put.
+            if (said.doing_s >= 1.0 && i % 24 == 0) {
+                const Vec3 at = posed(world->poses(), "rover").position_m;
+                if (!stopped) rested_at = at;
+                stopped = true;
+                moved_while_resting = std::max(moved_while_resting, length(at - rested_at));
+            }
+        } else if (rested.t >= 0.0 && woke.t < 0.0) {
+            woke = now();
+        }
+        if (i % 24 == 23) wet = std::max(wet, wettest(*world));
+        if (woke.t >= 0.0 && said.doing_s > 5.0) break;
+    }
+    const LiveEnergyStore store = world->energyStores().front();
+    LiveSolarPanel p;
+    for (const LiveSolarPanel &each : world->solarPanels()) p = each;
+    const auto told = [](const char *what, const When &w) {
+        std::cout << "    " << what << " at " << w.hour << " o'clock (t = " << w.t << " s), the battery " << w.charge_j
+                  << " J, having taken in " << w.taken_j << " J\n";
+    };
+    told("the sun set", sunset);
+    told("it rested", rested);
+    told("the sun rose", sunrise);
+    told("it woke", woke);
+    for (const std::string &why : said_resting) std::cout << "    resting, it said: " << why << "\n";
+    std::cout << "    it moved " << moved_while_resting * 1000.0 << " mm while resting; at most " << wet * 1000.0
+              << " mm of water under a wheel\n";
+    require(sunset.t >= 0.0 && rested.t > sunset.t && sunrise.t > rested.t && woke.t > sunrise.t,
+            "the sun set, it ran low in the night and rested, the sun rose, and it woke");
+    require(!said_resting.empty() &&
+                said_resting.front() == "its battery is low and the sun is down, so it rests until morning",
+            "resting in the night, it said it waits for the morning");
+    require(sunrise.taken_j == sunset.taken_j, "nothing charged it in the dark");
+    require(rested.charge_j < 0.25 * 5000.0 + 50.0 && woke.charge_j >= 0.4 * 5000.0 - 1.0,
+            "it rested at a quarter and woke at two fifths");
+    require(moved_while_resting < 0.02, "resting, it stayed where it stopped");
+    require(std::abs(store.charge_j - (3500.0 + store.taken_j - store.given_j)) < 1e-6,
+            "what the battery holds is what it held, plus what it took in, less what it gave");
+    require(std::abs(store.taken_j - p.collected_j) < 1e-9, "and all it took in came from its panel");
+    require(wet <= 0.003, "and it stayed out of the water");
+}
+
 } // namespace
 
 int main() {
@@ -518,6 +608,7 @@ int main() {
         {"it roams the shore and never gets wet", itRoamsTheShoreAndNeverGetsWet},
         {"a saved rover roams on", aSavedRoverRoamsOn},
         {"it rests in the sun and roams on", itRestsInTheSunAndRoamsOn},
+        {"it rests through the night and roams on in the morning", itRestsThroughTheNightAndRoamsOnInTheMorning},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;

@@ -438,13 +438,21 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"rests", p.rests}};
 }
 
-// The room's sun as a host reads it: where it is in the sky, and the way to it.
+// The room's sun as a host reads it: where it is in the sky, and the way to it;
+// and, for a sun with a day, the day and the hour.
 nlohmann::json sunOf(const LiveSun &sun) {
     if (!sun.declared) return nullptr;
-    return {{"elevation_deg", tidy(sun.elevation_deg)},
-            {"azimuth_deg", tidy(sun.azimuth_deg)},
-            {"irradiance_w_m2", tidy(sun.irradiance_w_m2)},
-            {"toward", {tidy(sun.toward.x), tidy(sun.toward.y), tidy(sun.toward.z)}}};
+    nlohmann::json out = {{"elevation_deg", tidy(sun.elevation_deg)},
+                          {"azimuth_deg", tidy(sun.azimuth_deg)},
+                          {"irradiance_w_m2", tidy(sun.irradiance_w_m2)},
+                          {"toward", {tidy(sun.toward.x), tidy(sun.toward.y), tidy(sun.toward.z)}}};
+    if (sun.day_s > 0.0) {
+        out["day_s"] = tidy(sun.day_s);
+        out["noon_elevation_deg"] = tidy(sun.noon_elevation_deg);
+        out["zenith_irradiance_w_m2"] = tidy(sun.zenith_irradiance_w_m2);
+        out["hour"] = tidy(sun.hour);
+    }
+    return out;
 }
 
 // A solar panel as a host reads it (LiveSolarPanel).
@@ -2115,6 +2123,26 @@ int main(int argc, char **argv) {
                             "world: of kind \"water\", with a depth above nothing and no more than 10 m, stopping "
                             "the way 1 or -1");
                     reply["sensed"] = true;
+                } else if (op == "sun" && command.contains("day_s")) {
+                    // A sun with a day (LiveSun): how long the day is, how high
+                    // the sun stands at noon, the hour it is now and how
+                    // strongly it shines overhead. With "keep", a world that
+                    // already has this very day -- one opened again from its
+                    // save, or carried -- keeps the hour it has got to: its day
+                    // goes on rather than starting again.
+                    const double day_s = command.value("day_s", -1.0);
+                    const double noon = command.value("noon_elevation_deg", -1.0);
+                    const double irradiance = command.value("irradiance_w_m2", -1.0);
+                    const LiveSun now = world->sun();
+                    const bool kept = command.value("keep", false) && now.declared && now.day_s == day_s &&
+                                      now.noon_elevation_deg == noon && now.zenith_irradiance_w_m2 == irradiance;
+                    if (!kept && !world->setDay(day_s, noon, command.value("hour", -1.0), irradiance))
+                        throw std::invalid_argument(
+                            "a sun's day is at least 10 s long; at noon the sun stands above the horizon and no "
+                            "higher than 90 degrees; the hour is from 0 up to 24; and it shines from 0 to 1400 "
+                            "W/m2 overhead");
+                    reply["sun"] = sunOf(world->sun());
+                    reply["kept"] = kept;
                 } else if (op == "sun") {
                     // The room's sun (LiveSun): where it stands in the sky and
                     // how strongly it shines.
@@ -2433,6 +2461,9 @@ int main(int argc, char **argv) {
                 // any (machinesOf).
                 if (nlohmann::json machines = machinesOf(*world); !machines.is_null())
                     reply["machines"] = std::move(machines);
+                // A sun with a day, on every reply: it moves with the world's
+                // clock, and the host lights the room from it.
+                if (const LiveSun sun = world->sun(); sun.declared && sun.day_s > 0.0) reply["sun"] = sunOf(sun);
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

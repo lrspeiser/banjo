@@ -206,7 +206,8 @@ camera.position.set(0, EYE, 2.6);
 // Lit so that a dark rubber ball on a dark floor is still an object. The sky
 // light does most of it, because a room lit by one lamp has half of every
 // object in shadow and the shape of a thing is what you are trying to see.
-scene.add(new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 1.5));
+const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 1.5);
+scene.add(sky);
 const key = new THREE.DirectionalLight(0xfff2dd, 1.6);
 key.position.set(4, 8, 5);
 scene.add(key);
@@ -217,10 +218,28 @@ const fill = new THREE.DirectionalLight(0xffffff, 0.35);
 fill.position.set(0, 2, 8);
 scene.add(fill);
 const KEY_AT = key.position.clone();
+const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
+// The sky's light at night, and the rim's: dim, but enough to see what is in
+// the room by.
+const SKY_NIGHT = 0.4, RIM_NIGHT = 0.3;
+// The sky behind the room under a sun with a day: a day's blue with the sun
+// well up, red as it nears the horizon, and the night's black the page has
+// always had. A room without a day keeps that black.
+const NIGHT_SKY = scene.background.clone(), NIGHT_FOG = scene.fog.color.clone();
+const DAY_SKY = new THREE.Color(0x5d7f93), LOW_SKY = new THREE.Color(0x9a6444);
+const skyTint = new THREE.Color();
+let skyTinted = false;
 
 // A room with a sun (docs/machine-world.md, "Solar panels") is lit from where
 // the engine has it, so the side of a panel the light falls on is the side the
 // engine charges it from; one without keeps the lamp it had.
+//
+// A sun with a day ("A day for the sun") goes down. Its lamp is as bright as
+// the sunlight the engine has reaching the ground against what it gives
+// overhead, so it reddens into nothing at sunset; the sky's light goes on for
+// a while after, as twilight does, falling to a night's by the time the sun is
+// six degrees under the horizon. Presentation only: what a panel collects is
+// the engine's, from the engine's sun.
 function lightFromSun(sun) {
   world.sun = sun || null;
   if (sun && Array.isArray(sun.toward) && sun.toward[1] > 0) {
@@ -228,6 +247,38 @@ function lightFromSun(sun) {
   } else {
     key.position.copy(KEY_AT);
   }
+  if (sun && sun.day_s > 0) {
+    const share = sun.zenith_irradiance_w_m2 > 0
+      ? Math.min(1, Math.max(0, sun.irradiance_w_m2 / sun.zenith_irradiance_w_m2)) : 0;
+    const dusk = Math.min(1, Math.max(0, (sun.elevation_deg + 6) / 12));
+    key.intensity = sun.toward[1] > 0 ? KEY_LIGHT * share : 0;
+    key.color.setRGB(1, 0.62 + 0.33 * share, 0.45 + 0.42 * share);
+    sky.intensity = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
+    rim.intensity = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    skyTint.copy(LOW_SKY).lerp(DAY_SKY, Math.min(1, Math.max(0, sun.elevation_deg / 20)));
+    scene.background.copy(NIGHT_SKY).lerp(skyTint, dusk);
+    scene.fog.color.copy(NIGHT_FOG).lerp(skyTint, dusk);
+    skyTinted = true;
+  } else {
+    key.intensity = KEY_LIGHT;
+    key.color.setHex(0xfff2dd);
+    sky.intensity = SKY_LIGHT;
+    rim.intensity = RIM_LIGHT;
+    if (skyTinted) {
+      scene.background.copy(NIGHT_SKY);
+      scene.fog.color.copy(NIGHT_FOG);
+      skyTinted = false;
+    }
+  }
+}
+
+// The time of day under a sun with a day, as a clock and where the sun is:
+// "14:05, the sun 38° up", or "21:40, night". Nothing for a sun without one.
+function dayWords(sun) {
+  if (!sun || !(sun.day_s > 0)) return "";
+  const minutes = Math.floor(sun.hour * 60) % 1440;
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return sun.elevation_deg > 0 ? `${clock}, the sun ${Math.round(sun.elevation_deg)}° up` : `${clock}, night`;
 }
 const expedition = expeditionUI({
   scene, camera, sun: key,
@@ -1205,6 +1256,7 @@ function drawMachines(block) {
   for (const panel of (block && block.panels) || []) {
     const lit = panel.shaded ? `in the shade of ${panel.shaded_by}`
       : panel.sunlight_w > 0 ? `${Math.round(panel.power_w)} W from ${Math.round(panel.sunlight_w)} W of sun on it`
+      : world.sun && world.sun.day_s > 0 && world.sun.elevation_deg <= 0 ? "nothing: it is night"
       : world.sun && world.sun.irradiance_w_m2 > 0 ? "facing away from the sun" : "no sun";
     row(`panel ${panel.id}`, `${panel.name} on ${panel.body}`, `${lit} · has given ${joules(panel.collected_j)}`);
   }
@@ -5261,6 +5313,8 @@ async function tick() {
     tools.follow(state);
     previewShot();
     followMachines(state.machines);
+    // A sun with a day moves with every step the engine takes.
+    if (state.sun) lightFromSun(state.sun);
     drawRopes();
     followJoints();
     // Strength before heat, so the panel drawHeat fills in says both.
@@ -5328,7 +5382,9 @@ async function tick() {
     if (here < 150) world.warnedFull = false;
     world.clock = state.t;
     expedition.update(state.gameplay);
-    $("room-clock").textContent = `The room's clock: ${state.t.toFixed(1)} s · ${steps} steps a frame`;
+    const day = dayWords(world.sun);
+    $("room-clock").textContent = `The room's clock: ${state.t.toFixed(1)} s · ${steps} steps a frame`
+      + (day ? ` · ${day} (a day is ${Math.round(world.sun.day_s)} s)` : "");
     $("panel-state").textContent = world.held ? `Holding ${heldName()}.` : "Live.";
     // After the line above, not before it: a draw has something better to say
     // than "holding", and saying it first only to be overwritten is how it
@@ -6395,6 +6451,9 @@ window.banjoRoom = {
   // Each sensor's bead as drawn: where, and whether it is showing water seen.
   sensorMarks: () => [...sensorMarks].map(([key, m]) => ({
     key, at: m.bead.position.toArray(), sees: m.bead.material === SENSOR_SEES })),
+  // The room's light as drawn: the sun's lamp, how bright and from where, the
+  // sky's, and the sun the engine last said.
+  light: () => ({ key: key.intensity, from: key.position.toArray(), sky: sky.intensity, sun: world.sun }),
   held: () => world.held && ({
     name: world.held.name, distance: world.held.distance, loose: !!world.held.loose,
     turnable: !!world.held.turn, wish: world.held.turn ? world.held.turn.asked.toArray() : null,

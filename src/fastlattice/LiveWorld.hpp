@@ -430,14 +430,28 @@ struct LiveEnergyStore {
 
 // The room's sun (docs/machine-world.md, "Solar panels"): where it stands in
 // the sky and how strongly it shines on a surface square to its beam. A room
-// declares it; a room that does not has none, and its panels make nothing. It
-// stands where it is put: there is no day yet.
+// declares it; a room that does not has none, and its panels make nothing.
+//
+// It stands where it is put, or it has a day ("A day for the sun"): it rises
+// due east (+x), is highest due south (+z) at noon, and sets due west, as at an
+// equinox, going round once in `day_s` of the world's own seconds. Its beam is
+// weaker through the thicker air it comes through low in the sky (the Meinel
+// air-mass model: 0.7 to the power of the air mass to the 0.678, scaled so that
+// overhead it is what the room declared); below the horizon, at night, it
+// shines on nothing.
 struct LiveSun {
     bool declared{};
-    double elevation_deg{};       // above the horizon
+    double elevation_deg{};       // above the horizon; below it, negative
     double azimuth_deg{};         // round from +z towards +x
-    double irradiance_w_m2{};     // on a surface square to its beam
+    double irradiance_w_m2{};     // on a surface square to its beam, now
     Vec3 toward{0.0, 1.0, 0.0};   // unit vector from the ground towards it
+    // Its day, when it has one: how long it is in the world's seconds (0: the
+    // sun stands still), how high the sun stands at noon, the hour it was at
+    // the world's time zero, and the hour now, 0 to 24; and its beam overhead.
+    double day_s{};
+    double noon_elevation_deg{};
+    double hour_at_start{}, hour{};
+    double zenith_irradiance_w_m2{};
 };
 
 // A solar panel (docs/machine-world.md, "Solar panels"): a flat collector fixed
@@ -1544,6 +1558,12 @@ public:
     // surface square to its beam, from 0 to 1400 (a clear day's is about 1000).
     // False, with nothing changed, for numbers that are not a sun's.
     bool setSun(double elevation_deg, double azimuth_deg, double irradiance_w_m2);
+    // Or a sun with a day (LiveSun): going round once in `day_s` of the world's
+    // own seconds (at least 10), `noon_elevation_deg` up at noon (above 0, at
+    // most 90), at `hour` o'clock now (0 to 24), shining `irradiance_w_m2`
+    // overhead (0 to 1400). False, with nothing changed, for numbers that are
+    // not a day's.
+    bool setDay(double day_s, double noon_elevation_deg, double hour, double irradiance_w_m2);
     [[nodiscard]] LiveSun sun() const;
     // A solar panel (LiveSolarPanel) on the named part, wired to `store`: its
     // middle at a point given where it is now in the world, its face looking

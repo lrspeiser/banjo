@@ -1590,6 +1590,35 @@ struct LiveWorld::Impl {
     LiveSun sun;
     std::vector<LiveSolarPanel> panels;
     unsigned next_panel{1};
+    // Where a sun with a day stands at the world's time now: its hour angle from
+    // the hour, and from that and the latitude its noon height means, its way
+    // across the sky -- east at six, south at noon, west at six -- and its beam
+    // through the air it comes through. A sun without a day stays where it is.
+    void advanceSun() {
+        if (!sun.declared || !(sun.day_s > 0.0)) return;
+        constexpr double kPi = 3.14159265358979323846;
+        constexpr double kRadPerDeg = kPi / 180.0;
+        sun.hour = std::fmod(sun.hour_at_start + 24.0 * time_s / sun.day_s, 24.0);
+        if (sun.hour < 0.0) sun.hour += 24.0;
+        const double h = (sun.hour - 12.0) * 15.0 * kRadPerDeg;       // the hour angle, 0 at noon
+        const double latitude = (90.0 - sun.noon_elevation_deg) * kRadPerDeg;
+        // East, up and north, the world's +x, +y and -z.
+        const double east = -std::sin(h);
+        const double up = std::cos(latitude) * std::cos(h);
+        const double north = -std::sin(latitude) * std::cos(h);
+        sun.toward = Vec3{east, up, -north};
+        sun.elevation_deg = std::asin(std::clamp(up, -1.0, 1.0)) / kRadPerDeg;
+        sun.azimuth_deg = std::atan2(sun.toward.x, sun.toward.z) / kRadPerDeg;
+        if (sun.azimuth_deg < 0.0) sun.azimuth_deg += 360.0;
+        if (up > 0.0) {
+            // The air mass, as flat layers of air: 1 overhead, 1/sin of the
+            // elevation lower down; the Meinel model's 38 at the horizon.
+            const double air = std::min(1.0 / up, 38.0);
+            sun.irradiance_w_m2 = sun.zenith_irradiance_w_m2 * std::pow(0.7, std::pow(air, 0.678) - 1.0);
+        } else {
+            sun.irradiance_w_m2 = 0.0;
+        }
+    }
     // After a kept step: where each panel is and which way it faces, the
     // sunlight on it, and what it put into its store -- after the motors have
     // drawn what the step cost them, so the step's charge is what they had.
@@ -1605,7 +1634,7 @@ struct LiveWorld::Impl {
             const RigidSnapshot at = world->snapshot(body_of[found->second]);
             panel.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(panel.at_local_m);
             panel.normal = at.orientation_world.rotate(panel.normal_local);
-            if (!sun.declared) continue;
+            if (!sun.declared || sun.toward.y < 0.0) continue;   // none, or below the horizon
             panel.cos_incidence = std::max(0.0, dot(panel.normal, sun.toward));
             if (!(panel.cos_incidence > 0.0)) continue;
             // Anything between it and the sun: a thing, or the ground itself.
@@ -1721,6 +1750,30 @@ struct LiveWorld::Impl {
                 return store != nullptr && panel.store == store->id && panel.power_w > 0.0;
             });
         };
+        // Why it rests: its panel charging it; or, with a panel and the sun
+        // down, the night, which only the morning ends; or its panel in the
+        // shade of something, or turned away from the sun, which a sun with a
+        // day comes round to; or nothing at all.
+        const auto resting = [&]() -> std::string {
+            if (charging()) return "its battery is low, so it rests while its panel charges it";
+            const LiveSolarPanel *mine = nullptr;
+            for (const LiveSolarPanel &panel : panels)
+                if (store != nullptr && panel.store == store->id) {
+                    mine = &panel;
+                    break;
+                }
+            if (mine != nullptr && sun.declared && sun.day_s > 0.0 && sun.toward.y <= 0.0)
+                return "its battery is low and the sun is down, so it rests until morning";
+            if (mine != nullptr && mine->shaded)
+                return "its battery is low and its panel is in the shade of " + mine->shaded_by +
+                       ", so it rests until the sun reaches it";
+            if (mine != nullptr && sun.declared && sun.irradiance_w_m2 > 0.0 && !(mine->cos_incidence > 0.0))
+                return sun.day_s > 0.0 ? "its battery is low and its panel is turned away from the sun, so it rests "
+                                         "until the sun comes round to it"
+                                       : "its battery is low and its panel is turned away from the sun, so nothing "
+                                         "is charging it";
+            return "its battery is low, and nothing is charging it";
+        };
         const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
         if (!s.power) {
             if (s.doing != "stopped") into("stopped", "off");
@@ -1728,12 +1781,10 @@ struct LiveWorld::Impl {
             into("going forward", "nothing in its way");
         } else if (s.doing == "resting") {
             if (s.charge_share >= s.rest_until) into("going forward", "its battery is charged again");
-            else s.why = charging() ? "its battery is low, so it rests while its panel charges it"
-                                    : "its battery is low, and nothing is charging it";
+            else s.why = resting();
         } else if (low) {
             // Whatever it is doing: it stops where it is, on its brakes.
-            into("resting", charging() ? "its battery is low, so it rests while its panel charges it"
-                                       : "its battery is low, and nothing is charging it");
+            into("resting", resting());
             ++s.rests;
         } else if (s.doing == "going forward") {
             if (water_left && water_right) {
@@ -4484,9 +4535,19 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // store came back and the host still declares it the same way.
     if (doc.contains("sun")) {
         const nlohmann::json &sun = doc.at("sun");
-        if (!live->setSun(numberFrom(sun.at("elevation_deg")), numberFrom(sun.at("azimuth_deg")),
-                          numberFrom(sun.at("irradiance_w_m2"))))
+        if (sun.contains("day_s")) {
+            // Its day as it was; where it stands follows from the world's clock,
+            // once that is back (below).
+            if (!live->setDay(numberFrom(sun.at("day_s")), numberFrom(sun.at("noon_elevation_deg")), 0.0,
+                              numberFrom(sun.at("irradiance_w_m2"))))
+                throw std::invalid_argument("a saved sun's day is not one this engine can keep");
+            impl.sun.hour_at_start = numberFrom(sun.at("hour_at_start"));
+            if (!std::isfinite(impl.sun.hour_at_start))
+                throw std::invalid_argument("a saved sun's hour is not a number");
+        } else if (!live->setSun(numberFrom(sun.at("elevation_deg")), numberFrom(sun.at("azimuth_deg")),
+                                 numberFrom(sun.at("irradiance_w_m2")))) {
             throw std::invalid_argument("a saved sun is not one this engine can put in the sky");
+        }
     }
     for (const nlohmann::json &o : doc.value("solar_panels", nlohmann::json::array())) {
         LiveSolarPanel panel;
@@ -4545,6 +4606,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // The clock and the counters, so what comes next is named and numbered
     // after what there is.
     impl.time_s = numberFrom(doc.at("t_s"));
+    impl.advanceSun();   // a sun with a day stands where the world's clock puts it
     impl.steps_taken = doc.at("steps").get<std::uint64_t>();
     impl.last_dt_s = numberFrom(doc.at("last_dt_s"));
     impl.foresee_horizon_s = numberFrom(doc.at("foresee_horizon_s"));
@@ -4956,6 +5018,7 @@ void LiveWorld::step(double dt_s) {
             return;
         }
         impl_->time_s += dt_s;
+        impl_->advanceSun();
         impl_->rememberJointAngles(*impl_->world);
         // What each motor did, once the step is kept: a refused step takes
         // nothing from a store.
@@ -4998,6 +5061,7 @@ void LiveWorld::step(double dt_s) {
     (void)judgeStep();
     advanceGas();
     impl_->time_s += dt_s;
+    impl_->advanceSun();
     impl_->rememberJointAngles(*impl_->world);
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
@@ -5998,12 +6062,32 @@ bool LiveWorld::setSun(double elevation_deg, double azimuth_deg, double irradian
         return false;
     constexpr double kRadPerDeg = 3.14159265358979323846 / 180.0;
     LiveSun &sun = impl_->sun;
+    sun = LiveSun{};   // standing still: no day
     sun.declared = true;
     sun.elevation_deg = elevation_deg;
     sun.azimuth_deg = azimuth_deg;
     sun.irradiance_w_m2 = irradiance_w_m2;
+    sun.zenith_irradiance_w_m2 = irradiance_w_m2;
     const double el = elevation_deg * kRadPerDeg, az = azimuth_deg * kRadPerDeg;
     sun.toward = Vec3{std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
+    return true;
+}
+
+bool LiveWorld::setDay(double day_s, double noon_elevation_deg, double hour, double irradiance_w_m2) {
+    if (!std::isfinite(day_s) || !std::isfinite(noon_elevation_deg) || !std::isfinite(hour) ||
+        !std::isfinite(irradiance_w_m2) || day_s < 10.0 || !(noon_elevation_deg > 0.0) || noon_elevation_deg > 90.0 ||
+        hour < 0.0 || hour >= 24.0 || irradiance_w_m2 < 0.0 || irradiance_w_m2 > 1400.0)
+        return false;
+    LiveSun &sun = impl_->sun;
+    sun = LiveSun{};
+    sun.declared = true;
+    sun.day_s = day_s;
+    sun.noon_elevation_deg = noon_elevation_deg;
+    sun.zenith_irradiance_w_m2 = irradiance_w_m2;
+    // The hour it was when the world's clock stood at zero, so that it is
+    // `hour` now.
+    sun.hour_at_start = hour - 24.0 * impl_->time_s / day_s;
+    impl_->advanceSun();
     return true;
 }
 
@@ -13832,7 +13916,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
     // The room's sun, and each solar panel with its account. Only a world with
     // either says anything of them.
-    if (I.sun.declared)
+    if (I.sun.declared && I.sun.day_s > 0.0)
+        doc["sun"] = {{"day_s", savedNumber(I.sun.day_s)},
+                      {"noon_elevation_deg", savedNumber(I.sun.noon_elevation_deg)},
+                      {"hour_at_start", savedNumber(I.sun.hour_at_start)},
+                      {"irradiance_w_m2", savedNumber(I.sun.zenith_irradiance_w_m2)}};
+    else if (I.sun.declared)
         doc["sun"] = {{"elevation_deg", savedNumber(I.sun.elevation_deg)},
                       {"azimuth_deg", savedNumber(I.sun.azimuth_deg)},
                       {"irradiance_w_m2", savedNumber(I.sun.irradiance_w_m2)}};

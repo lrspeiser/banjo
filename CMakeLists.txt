@@ -1173,6 +1173,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_solar_panel_tests)
             add_test(NAME banjo_solar_panel_tests COMMAND banjo_solar_panel_tests)
 
+            # A day for the sun: it rises east, stands south at noon and sets
+            # west on the world's own clock; its beam thins low in the sky; at
+            # night a panel makes nothing; a saved world keeps its hour.
+            add_executable(banjo_sun_day_tests tests/sun_day_tests.cpp)
+            target_link_libraries(banjo_sun_day_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_sun_day_tests)
+            add_test(NAME banjo_sun_day_tests COMMAND banjo_sun_day_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows
@@ -1476,4 +1484,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_SOLAR_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/solar_room_tests.py -v)
     set_tests_properties(banjo_solar_room_tests PROPERTIES TIMEOUT 180)
+    # And a day for the sun: the room's day checked, carried and saved, and the
+    # tests-day room's rover resting through the night until the morning.
+    add_test(NAME banjo_day_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_DAY_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/day_room_tests.py -v)
+    set_tests_properties(banjo_day_room_tests PROPERTIES TIMEOUT 180)
 endif()
