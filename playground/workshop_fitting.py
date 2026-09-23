@@ -34,6 +34,7 @@ from typing import Any
 from mcp import workshop_components
 from mcp import workshop_construction as construction
 from mcp.workshop import WirePart, strut as workshop_strut
+from mcp import workshop_machines
 import workshop_articulation
 
 SCHEMA = "banjo.workshop-validity.v1"
@@ -118,6 +119,53 @@ def concepts(design: Any) -> list[dict[str, Any]]:
                           "all bound" if not unbound else
                           "these say nothing about which part: " + ", ".join(unbound)
                           + " (set interaction_point_components)")})
+
+    # What drives it, if anything does. A motor on a joint that cannot turn, or
+    # drawing on a store that is not there, is named rather than invented: the
+    # world would take the declaration and the thing would simply never move.
+    machines = workshop_machines.of(design)
+    if machines:
+        names = set(touching)
+        turning_pairs = {tuple(sorted((j["a"], j["b"]))) for j in bearings}
+        stores = {s["name"] for s in machines.get("stores") or []}
+        controls = {c["name"] for c in machines.get("controls") or []}
+        wrong: list[str] = []
+        for motor in machines.get("motors") or []:
+            pair = tuple(sorted(motor["turns"]))
+            if not set(pair) <= names:
+                wrong.append(f"{motor['name']} drives {' and '.join(pair)}, which is not here")
+            elif pair not in turning_pairs:
+                wrong.append(f"{motor['name']} drives {' and '.join(pair)}, which are bonded solid, "
+                             "not on a bearing")
+            if motor["store"] not in stores:
+                wrong.append(f"{motor['name']} draws on {motor['store']}, which is not a store here")
+        for store in machines.get("stores") or []:
+            if store["in"] not in names:
+                wrong.append(f"{store['name']} sits in {store['in']}, which is not here")
+        for panel in machines.get("panels") or []:
+            if panel["on"] not in names:
+                wrong.append(f"{panel['name']} sits on {panel['on']}, which is not here")
+            if panel["store"] not in stores:
+                wrong.append(f"{panel['name']} charges {panel['store']}, which is not a store here")
+        for control in machines.get("controls") or []:
+            if tuple(sorted(control["turns"])) not in turning_pairs:
+                wrong.append(f"{control['name']} works a joint that does not turn")
+        for program in machines.get("programs") or []:
+            for side in ("left", "right"):
+                if program[side] not in controls:
+                    wrong.append(f"the program's {side} is {program[side]}, which is not a control here")
+        said.append({"concept": "what drives it is wired to what is there",
+                     "ok": not wrong,
+                     "says": workshop_machines.described(design)["says"] if not wrong
+                             else "; ".join(wrong[:3])})
+
+        driven = any(machines.get("motors"))
+        said.append({"concept": "if it is powered, something can move it",
+                     "ok": not machines.get("programs") or driven,
+                     "says": ("it runs a program but no motor drives anything"
+                              if machines.get("programs") and not driven else
+                              "nothing is powered" if not driven else
+                              f"{len(machines['motors'])} motor(s) drive it")})
 
     open_joints = [j for j in joints if j.get("open")]
     said.append({"concept": "no joint hangs open",
@@ -315,6 +363,10 @@ def _shaft_stubs(base: Any, design: Any, overrides: dict[str, Any], cell_m: floa
                             family=shaft.family)
             overrides_now = construction.add_part(current, overrides_now, part=stub,
                                                   joint={"to": mount_name, "kind": "bearing"})
+            # A motor drives a pin, and this mount's pin is now the stub rather
+            # than the shaft that ran through it. Anything wired to that pin
+            # follows the redraw, or it would drive a part that no longer exists.
+            overrides_now = _repoint_machines(overrides_now, mount_name, shaft_name, stub.name)
             current = _built(base, overrides_now)
             if rider is not None:
                 overrides_now = construction.set_joint(current, overrides_now, a=stub.name,
@@ -431,6 +483,23 @@ def _snap_to_the_grid(base: Any, design: Any, overrides: dict[str, Any], cell_m:
     if not said:
         return overrides, []
     return _readopt(base, patch), said
+
+
+def _repoint_machines(overrides: dict[str, Any], mount: str, shaft: str, stub: str) -> dict[str, Any]:
+    """Move whatever drove (mount, shaft) onto (mount, stub)."""
+    record = overrides.get(workshop_machines.MACHINES_KEY)
+    if not record:
+        return overrides
+    moved = deepcopy(record)
+    changed = False
+    for key in ("motors", "controls"):
+        for row in moved.get(key) or []:
+            if set(row.get("turns") or []) == {mount, shaft}:
+                row["turns"] = [mount, stub]
+                changed = True
+    if not changed:
+        return overrides
+    return {**overrides, workshop_machines.MACHINES_KEY: moved}
 
 
 def _strutlike(part: WirePart, joined: set[str]) -> bool:

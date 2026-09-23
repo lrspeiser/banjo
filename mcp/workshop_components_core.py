@@ -14,6 +14,7 @@ from typing import Any
 from mcp.workshop import WorkshopDesign, WirePart, _component_counts, assemble
 from mcp import workshop_construction
 from mcp.workshop_construction import CONSTRUCTION_KEY
+from mcp.workshop_machines import MACHINES_KEY
 
 OVERRIDE_SCHEMA = "banjo.workshop-component-overrides.v1"
 STRUT_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "axle", "handle"}
@@ -39,6 +40,13 @@ def checked_overrides(value: Any) -> dict[str, dict[str, Any]]:
             # Parts put in, parts taken off and declared joints travel with the
             # per-part edits, so every path that carries one carries the other.
             block = workshop_construction.checked(patch)
+            if block: out[name] = block
+            continue
+        if name == MACHINES_KEY:
+            # What drives it rides along the same way: a design that is carried,
+            # saved or reopened keeps its stores, motors, panels and program.
+            from mcp import workshop_machines
+            block = workshop_machines.checked(patch)
             if block: out[name] = block
             continue
         if not isinstance(name, str) or not name or len(name) > 120 or not isinstance(patch, dict):
@@ -74,7 +82,7 @@ def _changed(part: WirePart, patch: dict[str, Any]) -> WirePart:
 def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
     patches = checked_overrides(overrides)
     built = workshop_construction.apply(design.parts, patches.get(CONSTRUCTION_KEY) or {})
-    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY})
+    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY, MACHINES_KEY})
     if missing: raise ValueError("component override names part(s) not in this design: " + ", ".join(missing))
     parts = [_changed(part, patches.get(part.name, {})) for part in built]
     lineage = {**deepcopy(design.lineage), "component_overrides": deepcopy(patches)}

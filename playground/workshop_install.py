@@ -31,8 +31,8 @@ import precise_rigid
 import workshop_sparse_trial as sparse
 import workshop_articulation
 import workshop_library
-from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_visual,
-                 workshop_matter_metrics, workshop_rigid)
+from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_machines,
+                 workshop_visual, workshop_matter_metrics, workshop_rigid)
 
 SCHEMA = "banjo.workshop-install.v1"
 MAX_PREVIEWS = 8
@@ -366,6 +366,50 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
             raise ValueError("Staging changed existing thermal ledger history")
 
 
+#: What the world reports about the machines in it, in the SNAPSHOT's own words
+#: rather than the room file's -- a store is "energy_stores" here and "stores"
+#: there. An installation may bring its own; it may not touch any already there.
+MACHINE_KEYS = ("energy_stores", "motors", "controls", "programs", "solar_panels")
+
+
+def _machine_bodies(row):
+    """Which bodies one machine row names."""
+    named = []
+    for key in ("body", "on"):
+        value = row.get(key) if isinstance(row, dict) else None
+        if isinstance(value, str):
+            named.append(value)
+        elif isinstance(value, (list, tuple)):
+            named += [str(v) for v in value if isinstance(v, str)]
+    return named
+
+
+def _appended_machines(before, after, added):
+    """Old machines exactly as they were, new ones only on the new bodies.
+
+    A room may already hold a hoist or a rover. Installing a driven cart adds
+    stores, motors and controls of its own, so the snapshot legitimately grows
+    -- but nothing that was already running may move, and nothing new may reach
+    for a body that was there before.
+    """
+    for key in MACHINE_KEYS:
+        old = before.get(key) or []
+        current = after.get(key) or []
+        if not isinstance(current, list) or not isinstance(old, list):
+            continue
+        if len(current) < len(old) or current[:len(old)] != old:
+            raise ValueError(f"Staging changed existing {key}; installation refused")
+        for row in current[len(old):]:
+            # A readout need not name its bodies -- the engine fills a motor's
+            # "on" from the joints, which travel only when their set changes, so
+            # a snapshot can leave it empty. What it DOES name must be new; that
+            # it names nothing is not evidence of anything.
+            reached = set(_machine_bodies(row))
+            if reached and not reached <= set(added):
+                raise ValueError(f"An added {key[:-1]} reaches a body that was already there; "
+                                 "installation refused")
+
+
 def _appended_joints(before, after, added, definitions):
     """Verify old constraint history and the declared new-body hinge frames."""
     old, current = before.get("joints", []), after.get("joints", [])
@@ -437,11 +481,22 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     for part in before["parts"]:
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
-    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints", "material_geometry"}
+    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints",
+                  "material_geometry", *MACHINE_KEYS}
     _appended_joints(before, after, added, added_joints)
+    _appended_machines(before, after, added)
     for key in set(before) | set(after):
-        if key not in exceptions and before.get(key) != after.get(key):
-            raise ValueError(f"Staging changed existing {key}; installation refused")
+        if key in exceptions:
+            continue
+        was, now = before.get(key), after.get(key)
+        if was == now:
+            continue
+        # The world numbers what it makes, so bringing a motor or a store moves
+        # that counter on. It may go forward and never back: a counter that fell
+        # would mean an id about to be handed out twice.
+        if str(key).startswith("next") and type(was) is int and type(now) is int and now >= was:
+            continue
+        raise ValueError(f"Staging changed existing {key}; installation refused")
     bg, ag = before.get("material_geometry"), after.get("material_geometry")
     if bg is not None or ag is not None:
         if not isinstance(bg, dict) or not isinstance(ag, dict):
@@ -648,6 +703,17 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     for field, extra in (("bodies", artifact["bodies"]), ("joints", artifact["joints"]),
                          ("interfaces", artifact["interfaces"]), ("actions", actions), ("interaction_points", points)):
         spec[field] = (spec.get(field) or []) + extra
+    # What drives it, named by component on the bench and by body in the room.
+    # A room may already hold machines, so each kind is added to rather than
+    # replaced -- installing a cart must not retire somebody else's hoist.
+    made = workshop_machines.installed(design, artifact["component_to_body"])
+    if made:
+        machines = deepcopy(spec.get("machines") or {})
+        for kind, rows in made.items():
+            if kind == "schema":
+                continue
+            machines[kind] = (machines.get(kind) or []) + rows
+        spec["machines"] = machines
     fracture_lab.validate(spec)
     roots = {g["root_body"] for g in artifact["groups"]}
     staged, _ = _stage(app, live, old, spec, saved, artifact, roots, shift)

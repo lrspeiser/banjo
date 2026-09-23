@@ -20,7 +20,7 @@ import re
 from typing import Any
 from urllib import error, request
 
-from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, interaction_points
+from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, workshop_machines, interaction_points
 from mcp.product_contract import compile_contract
 from mcp.workshop import WirePart, assemble, assembly
 from mcp.workshop_statics import declared_statics
@@ -85,6 +85,14 @@ Important behavior:
   anything meant to turn on another part (a wheel on its mount, a door leaf on
   its post, a pulley on its pin) and 'fixed' for anything bonded solid. Build
   the concept first and do not agonise over millimetres.
+- MAKING IT GO: add_power_part puts a store, motor, panel or control on the
+  design and set_program says what it does on its own. A motor names the two
+  components its pin joins and that pin MUST be a bearing -- a bond cannot
+  turn -- and it draws on a store you have already added. A panel sits on a
+  component and faces the way that component faces. Build the machine the same
+  way you build the shape: say what is there, then let check_validity tell you
+  whether it is wired to anything real. It names a motor driving a bonded
+  joint, or drawing on a store that is not there, rather than quietly fixing it.
 - THEN CALL check_validity. The room carries matter on a 40 mm cell grid, and
   sizes that read well to a person are usually not sizes the grid can hold. It
   redraws what it must and tells you every change: a part thinner than two cells
@@ -267,6 +275,43 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "metalness": {"type": "number", "minimum": 0, "maximum": 1},
                             "bend_m": {"type": "number", "minimum": -5, "maximum": 5},
                             "physical": {"type": "boolean"}}}},
+        {"type": "function", "name": "add_power_part",
+         "description": "Put a store, motor, panel or control on the design. A MOTOR names the two "
+                        "components its pin joins, exactly as a wheel and the mount it turns in -- it "
+                        "must be a bearing, because a bond cannot turn -- and the store it draws on. A "
+                        "STORE sits in a component and holds joules. A PANEL sits on a component, faces "
+                        "the way that component faces, and charges a store. A CONTROL names a pin so a "
+                        "program can work it. Nothing is guessed: naming a joint that does not turn, or "
+                        "a store that is not there, comes back refused.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["store", "motor", "panel", "control"]},
+                            "name": {"type": "string"},
+                            "in": {"type": "string", "description": "for a store: the component it sits in"},
+                            "on": {"type": "string", "description": "for a panel: the component it sits on"},
+                            "turns": {"type": "array", "items": {"type": "string"}, "minItems": 2,
+                                      "maxItems": 2,
+                                      "description": "for a motor or control: the two components its pin joins"},
+                            "store": {"type": "string", "description": "for a motor or panel: the store it uses"},
+                            "capacity_j": {"type": "number"}, "charge_j": {"type": "number"},
+                            "voltage_v": {"type": "number"},
+                            "stall_torque_n_m": {"type": "number"}, "no_load_rpm": {"type": "number"},
+                            "brake_torque_n_m": {"type": "number"},
+                            "area_m2": {"type": "number"}, "efficiency": {"type": "number"}}}},
+        {"type": "function", "name": "set_program",
+         "description": "What the machine does on its own. 'drive' runs until something stops it; 'roam' "
+                        "wanders and turns away from water. left and right name controls. climb_deg is "
+                        "the steepest ground it will take, rest_below the share of charge it stops at and "
+                        "rest_until the share it sets off again at. A product runs one program.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["kind", "left", "right"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["roam", "drive"]},
+                            "left": {"type": "string"}, "right": {"type": "string"},
+                            "setting": {"type": "number", "minimum": 0, "maximum": 1},
+                            "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
+                            "rest_below": {"type": "number", "minimum": 0, "maximum": 1},
+                            "rest_until": {"type": "number", "minimum": 0, "maximum": 1}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -455,6 +500,31 @@ class _State:
                 "note": ("This changed the matter, so every measurement and bench result "
                          "taken before it is stale." if physical else
                          "Appearance only: the mass, the joints and the bench results are unchanged."),
+            })
+
+        if tool in ("add_power_part", "set_program"):
+            record = dict(workshop_machines.of_overrides(self.overrides) or {})
+            for key in ("stores", "motors", "panels", "controls", "programs"):
+                record[key] = list(record.get(key) or [])
+            if tool == "add_power_part":
+                kind = str(args.get("kind") or "")
+                fields = {k: v for k, v in args.items() if k != "kind" and v is not None}
+                record[{"store": "stores", "motor": "motors",
+                        "panel": "panels", "control": "controls"}[kind]].append(fields)
+                said = f"added a {kind}"
+            else:
+                record["programs"] = [{k: v for k, v in args.items() if v is not None}]
+                said = f"it runs a {args.get('kind')} program"
+            checked = workshop_machines.checked(record)
+            self.overrides = {**self.overrides, workshop_machines.MACHINES_KEY: checked}
+            self.design = workshop_components.apply_overrides(self.base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append("power")
+            described = workshop_machines.described(self.design)
+            return self.record(tool, {
+                "summary": f"{said}; it now has {described['says']}",
+                "machines": {k: v for k, v in described.items() if k != "says"},
+                "note": "Whether it is wired to anything real is check_validity's answer, not this one.",
             })
 
         if tool == "check_validity":

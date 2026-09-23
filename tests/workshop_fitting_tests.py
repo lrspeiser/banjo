@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "playground"))
 from mcp.workshop import WorkshopDesign, WirePart, assemble  # noqa: E402
 from mcp import workshop_components  # noqa: E402
 from mcp import workshop_construction as construction  # noqa: E402
+from mcp import workshop_machines  # noqa: E402
 import workshop_articulation  # noqa: E402
 import workshop_fitting  # noqa: E402
 
@@ -319,6 +320,139 @@ class DressingAProductWithoutChangingIt(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             self.state.execute("set_skin", {"selector": {"names": ["deck"]}})
         self.assertIn("say what to change", str(caught.exception))
+
+
+class AProductThatDrivesItself(unittest.TestCase):
+    """Stores, motors, panels and a program, declared on the bench.
+
+    The world has carried all of this since the rover, but only a hand-written
+    room file could declare it. A motor names the two components its pin joins,
+    the way the room names a motor by the two things its pin joins.
+    """
+
+    def driven_cart(self, motor_on=("bearing-mount-11", "axle-1"), store="battery"):
+        base = assemble("cart", design_id="c", parameters={
+            "primary_use_component": "handle",
+            "interaction_point_components": {"deck": "deck", "grip": "handle", "use": "handle"}})
+        record = {
+            "stores": [{"name": "battery", "in": "deck", "capacity_j": 5000,
+                        "charge_j": 1400, "voltage_v": 24}],
+            "motors": [{"name": "left motor", "turns": list(motor_on), "store": store,
+                        "stall_torque_n_m": 20, "no_load_rpm": 60, "brake_torque_n_m": 40}],
+        }
+        return base, {workshop_machines.MACHINES_KEY: record}
+
+    def test_a_motor_on_a_bearing_with_a_store_is_a_machine(self):
+        base, overrides = self.driven_cart()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        self.assertTrue(answer["ok"], answer.get("why"))
+        wired = next(c for c in answer["concepts"] if "drives it" in c["concept"])
+        self.assertTrue(wired["ok"])
+        self.assertIn("1 motor", wired["says"])
+
+    def test_a_motor_on_a_bond_is_refused_by_name(self):
+        base, overrides = self.driven_cart(motor_on=("deck", "handle"))
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        self.assertFalse(answer["ok"])
+        self.assertEqual("concepts", answer["stage"])
+        self.assertIn("bonded solid", answer["says"])
+
+    def test_a_motor_drawing_on_no_store_is_refused_by_name(self):
+        base, overrides = self.driven_cart(store="flywheel")
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        self.assertFalse(answer["ok"])
+        self.assertIn("flywheel", answer["says"])
+
+    def test_the_motor_follows_the_shaft_when_it_is_redrawn_as_stubs(self):
+        base, overrides = self.driven_cart()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        after = workshop_machines.of_overrides(answer["overrides"])
+        turns = after["motors"][0]["turns"]
+        self.assertNotIn("axle-1", turns, "the through-axle is gone; the pin is the stub")
+        self.assertTrue([t for t in turns if t.startswith("axle-1-stub")])
+        fitted = workshop_components.apply_overrides(base, answer["overrides"])
+        here = {p.name for p in fitted.parts}
+        for component in turns:
+            self.assertIn(component, here, "a motor must drive a part that exists")
+
+    def test_it_comes_out_as_the_room_spells_a_machine(self):
+        base, overrides = self.driven_cart()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        fitted = workshop_components.apply_overrides(base, answer["overrides"])
+        made = compiled(base, answer, "cart")
+        room = workshop_machines.installed(fitted, made["component_to_body"])
+        bodies = {g["root_body"] for g in made["groups"]}
+        self.assertEqual(1, len(room["stores"]))
+        self.assertIn(room["stores"][0]["body"], bodies)
+        self.assertEqual(1, len(room["motors"]))
+        motor = room["motors"][0]
+        # The room names a motor by the two things its pin joins.
+        self.assertEqual(2, len(motor["on"]))
+        self.assertTrue(set(motor["on"]) <= bodies)
+        self.assertNotEqual(motor["on"][0], motor["on"][1], "a pin joins two different bodies")
+        self.assertEqual("battery", motor["store"])
+        self.assertEqual(20.0, motor["stall_torque_n_m"])
+
+    def test_a_program_needs_controls_that_are_there(self):
+        base, overrides = self.driven_cart()
+        record = dict(workshop_machines.of_overrides(overrides))
+        record["programs"] = [{"kind": "roam", "left": "left wheel", "right": "right wheel"}]
+        answer = workshop_fitting.check_validity(
+            base, {workshop_machines.MACHINES_KEY: record}, cell_m=CELL, root="cart")
+        self.assertFalse(answer["ok"])
+        self.assertIn("not a control here", answer["says"])
+
+    def test_a_store_cannot_hold_more_than_it_can(self):
+        with self.assertRaises(ValueError) as caught:
+            workshop_machines.checked({"stores": [{"name": "battery", "in": "deck",
+                                                   "capacity_j": 100, "charge_j": 500}]})
+        self.assertIn("holds more than it can", str(caught.exception))
+
+
+class TheChatCanMakeItGo(unittest.TestCase):
+    def setUp(self):
+        import tempfile, types
+        import workshop_chat
+        self.tmp = tempfile.TemporaryDirectory()
+        runs = Path(self.tmp.name) / "runs"
+        runs.mkdir(parents=True)
+        app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
+        design = assemble("cart", design_id="c")
+        candidate = design.wireframe()
+        candidate["component_overrides"] = {}
+        self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_tools_put_a_battery_and_a_motor_on_it(self):
+        self.state.execute("add_power_part", {"kind": "store", "name": "battery", "in": "deck",
+                                              "capacity_j": 5000, "charge_j": 1400, "voltage_v": 24})
+        out = self.state.execute("add_power_part", {
+            "kind": "motor", "name": "left motor", "turns": ["bearing-mount-11", "axle-1"],
+            "store": "battery", "stall_torque_n_m": 20, "no_load_rpm": 60})
+        self.assertIn("1 store", out["summary"])
+        self.assertIn("1 motor", out["summary"])
+        record = workshop_machines.of_overrides(self.state.overrides)
+        self.assertEqual("battery", record["motors"][0]["store"])
+
+    def test_a_program_is_one_and_says_what_it_does(self):
+        self.state.execute("add_power_part", {"kind": "control", "name": "left wheel",
+                                              "turns": ["bearing-mount-11", "axle-1"]})
+        self.state.execute("add_power_part", {"kind": "control", "name": "right wheel",
+                                              "turns": ["bearing-mount-12", "axle-1"]})
+        out = self.state.execute("set_program", {"kind": "roam", "left": "left wheel",
+                                                 "right": "right wheel", "rest_below": 0.25,
+                                                 "rest_until": 0.6})
+        self.assertIn("roam program", out["summary"])
+        record = workshop_machines.of_overrides(self.state.overrides)
+        self.assertEqual(1, len(record["programs"]))
+
+    def test_it_refuses_a_machine_that_cannot_be_written_down(self):
+        with self.assertRaises(ValueError):
+            self.state.execute("add_power_part", {"kind": "motor", "turns": ["deck", "deck"],
+                                                  "store": "battery", "stall_torque_n_m": 20,
+                                                  "no_load_rpm": 60})
 
 
 class WhatItRefusesToInvent(unittest.TestCase):
