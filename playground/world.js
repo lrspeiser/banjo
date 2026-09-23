@@ -1911,7 +1911,13 @@ async function sweepPiece(name) {
                                               largest_cells: DEBRIS_CELLS }));
   const haul = got.collected || [];
   if (!haul.length) {
-    lastAction(`${titled(name)} is too big a piece to carry off: put it down instead.`, "refused");
+    // Nothing came: either it is too big a piece to walk off with, or it was
+    // collected a moment ago as you walked and this side of the wire has not
+    // caught up. Weight tells them apart, and the sweep has already said what
+    // it took, so the second case says nothing.
+    const still = world.bodies.get(name);
+    if (still && still.mass > 3.0)
+      lastAction(`${titled(name)} is too big a piece to carry off: put it down instead.`, "refused");
     return false;
   }
   const much = haul.map((lot) => `${grams(lot.kg)} of ${lot.material.replace(/_/g, " ")}`).join(", ");
@@ -2171,11 +2177,18 @@ async function toTheBag() {
   // is nothing like that here" makes a person doubt the key.
   if (!world.held && !world.bodies.has(name)) return;
   const said = world.held ? titled(heldName()) : titled(name);
-  const answer = await inventoryChange(world.held && recordHolds(name) ? "stow" : "take", name);
-  // A broken piece is not a thing the record can keep -- it has no name of its
-  // own to come back under -- but it is material, and material goes into what
-  // you carry. So the same key sweeps it up instead of refusing.
-  if (answer && !answer.ok && answer.unknown) await sweepPiece(name);
+  // Asked quietly: the record answers "there is nothing like that here" for
+  // every broken piece, which is not the thing to say to a person -- and by
+  // the time the key arrives the piece may already be in what you carry,
+  // collected as you walked.
+  const answer = await inventoryChange(world.held && recordHolds(name) ? "stow" : "take", name, { quiet: true });
+  if (answer && !answer.ok) {
+    // A broken piece is not a thing the record can keep -- it has no name of
+    // its own to come back under -- but it is material, and material goes into
+    // what you carry. So the same key sweeps it up instead of refusing.
+    if (answer.unknown) await sweepPiece(name);
+    else lastAction(answer.why, "refused");
+  }
 }
 
 // 1-9: that slot of the bag into the hand -- and, with the thing from that slot

@@ -223,6 +223,12 @@ class PageJourney(unittest.TestCase):
     def press_e(self):
         self.press_key("KeyE", "e")
 
+    def when_idle(self, timeout_s=15.0):
+        """Wait until the page has no request in flight. A key pressed while
+        one is answers "your hand is busy", which is the room being careful
+        rather than the key being wrong."""
+        return self.wait_for("!banjoRoom.world.acting && !banjoRoom.world.busy", timeout_s)
+
     def position(self, name):
         q = json.dumps(name)
         return self.js(f"banjoRoom.world.bodies.get({q}) ? "
@@ -1269,6 +1275,7 @@ class BrokenPiecesComeWithYou(PageJourney):
         offered = self.js("banjoRoom.details().rows.map((r) => r[1]).join(' / ')")
         self.assertIn("sweep it up into what you carry", offered)
         before = dict(self.js(self.STOCK)).get("oak", 0.0)
+        self.when_idle()
         self.press_key("KeyQ", "q")
         self.assertTrue(self.wait_for(f"!banjoRoom.held() && Object.fromEntries({self.STOCK}).oak > {before}", 20),
                         f"the piece did not go into what you carry: {self.situation()}")
@@ -1314,6 +1321,7 @@ class WhatIsOfferedIsDone(PageJourney):
             if not self.offers_the_bag():
                 continue
             self.page.evaluate("banjoRoom.world.last = null; true")
+            self.when_idle()
             self.press_key("KeyQ", "q")
             tried += 1
             said = None
