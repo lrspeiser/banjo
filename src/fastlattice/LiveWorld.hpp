@@ -1291,8 +1291,14 @@ public:
     // This is also how a room that shatters stays inside the body budget, which
     // is what breaking depends on: sweeping the floor is the natural way to
     // keep the world small enough to keep working.
+    //
+    // `except` is a body that is not to be swept whatever else is true: the
+    // page can hold a loose thing with a grip of its own, which this side of
+    // the wire knows nothing about, and sweeping the floor while walking took
+    // that thing out of the person's hand.
     [[nodiscard]] std::vector<LiveCollected> collect(const Vec3 &at, double radius_m,
-                                                     std::size_t largest_cells = 64);
+                                                     std::size_t largest_cells = 64,
+                                                     const std::string &except = {});
     void forgetDelays();
     // How far ahead to look for a collision that will need the lattice. Zero
     // turns the looking off. A ray per moving body is cheap -- 0.02 ms -- but

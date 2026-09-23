@@ -1231,6 +1231,24 @@ class BrokenPiecesComeWithYou(PageJourney):
         self.assertTrue(self.wait_for(f"{self.LOOSE}.length > 4", 120), "the plank never broke into pieces")
         return self.js(self.LOOSE)
 
+    def when_settled(self, timeout_s=60.0):
+        """Wait until the room has stopped breaking things.
+
+        A piece that has just landed can be queued for a run of its own, and a
+        piece taken up while that run is going is replaced by its pieces a
+        moment later -- the hand is then empty for a reason that has nothing to
+        do with what was pressed."""
+        self.wait_for("!banjoRoom.world.workingOn", timeout_s)
+        settled = ("(() => { const n = banjoRoom.world.bodies.size;"
+                   " const same = window.__wasBodies === n; window.__wasBodies = n;"
+                   " return same && !banjoRoom.world.workingOn; })()")
+        self.page.evaluate("window.__wasBodies = -1; true")
+        for _ in range(3):
+            if not self.wait_for(settled, timeout_s):
+                return False
+            self.wait_world(0.6)
+        return True
+
     def test_walking_over_them_collects_them(self):
         self.pieces_in_the_room()
         # Let them come to rest first: for the first seconds the pieces are
@@ -1259,14 +1277,29 @@ class BrokenPiecesComeWithYou(PageJourney):
         self.no_page_errors("after walking over the pieces")
 
     def test_a_piece_in_the_hand_goes_into_what_you_carry(self):
-        loose = self.pieces_in_the_room()
+        self.pieces_in_the_room()
+        # Out of a room that has finished breaking: a piece picked up while the
+        # room is still working one out can be replaced by its own pieces while
+        # it is in the hand.
+        self.when_settled()
+        loose = self.js(self.LOOSE)
         # Stand back from one, further than the sweep reaches, or it is
-        # collected before the hand gets to it.
-        name, at = loose[0]
-        self.page.evaluate(f"banjoRoom.standAt({at[0] + 2.0}, {at[1] + 1.62}, {at[2] - 2.0}); "
-                           f"banjoRoom.lookAt({at[0]}, {at[1]}, {at[2]}); true")
-        if not self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {json.dumps(name)}", 15):
-            self.skipTest("could not get the crosshair onto a piece from outside the sweep")
+        # collected before the hand gets to it. Any of them will do, so each is
+        # tried from either side until the crosshair is on one: a piece can be
+        # behind another from one angle, and one that cannot be looked at is
+        # not what this journey is about.
+        name = None
+        for candidate, at in loose[:8]:
+            for aside in (2.0, -2.0):
+                self.page.evaluate(f"banjoRoom.standAt({at[0] + aside}, {at[1] + 1.62}, {at[2] - 2.0}); "
+                                   f"banjoRoom.lookAt({at[0]}, {at[1]}, {at[2]}); true")
+                if self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === "
+                                 f"{json.dumps(candidate)}", 5):
+                    name = candidate
+                    break
+            if name:
+                break
+        self.assertIsNotNone(name, f"the crosshair reached none of the pieces: {self.situation()}")
         self.press_e()
         self.assertTrue(self.wait_for(f"banjoRoom.held() && banjoRoom.held().name === {json.dumps(name)}", 15),
                         f"E did not take hold of the piece: {self.situation()}")

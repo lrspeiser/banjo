@@ -12,7 +12,9 @@
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
 //        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
-//        {"op":"collect","at":[0,1.6,0],"radius_m":1.2}   sweep up the pieces
+//        {"op":"collect","at":[0,1.6,0],"radius_m":1.2,"except":"shard 3"}
+//                                            sweep up the pieces, but never the
+//                                            one named (what a hand holds)
 //        {"op":"foresee","horizon_s":2.5}   how far ahead to start runs (0 = off)
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //        {"op":"hinge","a":"post","b":"gate","at":[0,1.2,0],"axis":[0,1,0],
@@ -1713,7 +1715,8 @@ int main(int argc, char **argv) {
                     // so sweeping the floor is also how the room keeps working.
                     const std::vector<LiveCollected> haul = world->collect(
                         readVec(command, "at"), command.value("radius_m", 1.0),
-                        static_cast<std::size_t>(command.value("largest_cells", 64)));
+                        static_cast<std::size_t>(command.value("largest_cells", 64)),
+                        command.value("except", std::string{}));
                     nlohmann::json got = nlohmann::json::array();
                     for (const LiveCollected &what : haul)
                         got.push_back({{"material", what.material},

@@ -1889,9 +1889,14 @@ async function sweep() {
   // Swept from where you stand, and up to the height of your hands, so the
   // sphere the engine clears is the one around your feet.
   const stand = feet();
+  // Never what the hand is holding. The engine skips the body IT holds, and a
+  // loose thing is held by this page's own grip instead -- so without saying
+  // which, walking with a piece in hand swept that piece out of your own hand
+  // and left the page holding a name with no body behind it.
   return takeHaul(await act("collect", { at: [stand.x, stand.y + 0.5, stand.z],
                                          radius_m: REACH_M + 0.5,
-                                         largest_cells: DEBRIS_CELLS }));
+                                         largest_cells: DEBRIS_CELLS,
+                                         except: world.held ? world.held.name : "" }));
 }
 
 // Material has weight, and a person can carry so much of it: past the limit
@@ -5366,6 +5371,11 @@ async function tick() {
       const swept = await sweep();
       if (swept.collected && swept.collected.length) tellLater();
     }
+    // A thing that is no longer in the world cannot be in your hand. Burned
+    // away, swept up by somebody else, taken by the room: whatever became of
+    // it, holding its name leaves every key working on nothing, and the panel
+    // describing a thing that is not there.
+    if (world.held && !world.bodies.has(world.held.name) && !world.acting) forgetHold();
 
     // Something is about to break. The engine has taken the step back and is
     // waiting to be told what to do, and until it is told, time does not move.

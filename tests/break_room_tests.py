@@ -103,6 +103,46 @@ class BreakingIt(unittest.TestCase):
         self.assertEqual(cost["broken_bonds"],
                          cost["tensile_bonds"] + cost["compressive_bonds"] + cost["shear_bonds"])
 
+    def test_no_piece_comes_back_wound_up(self):
+        """A break a run works out is written into the world's own matter, so a
+        bond it removed stays removed.
+
+        It did not use to be. The pieces were told apart by which cells ended
+        up connected, and a bond removed INSIDE a piece was forgotten -- it
+        came back alive the next time that piece went into a run, stretched
+        across the gap its going had opened. One plank piece came back into its
+        next run holding 31,167 J of stretch, seventy times the energy of the
+        ball that broke the plank, and came apart into 83 pieces from a landing
+        that had 13 J of motion in it.
+
+        So every break after the first is asked two things: that the run it
+        began carried no meaningful stretch into it, and that it did not remove
+        more energy than the run had."""
+        self.break_the_plank()
+        # The pieces land and are offered in their turn, as the page takes them
+        # up: a raw session breaks nothing it is not asked to.
+        seen = []
+        for _ in range(400):
+            reply = self.live.session.send(op="step", dt=DT, n=12)
+            for name in reply.get("breakable") or []:
+                broke = self.live.session.send(op="fracture", name=name, wait=True)
+                cost = broke.get("cost") or {}
+                if not cost.get("broken_bonds"):
+                    continue
+                seen.append(cost)
+                print(f"    {name}: went in holding {cost.get('available_elastic_j', 0):.2f} J of "
+                      f"stretch and {cost.get('available_kinetic_j', 0):.1f} J of motion, took "
+                      f"{cost.get('removed_energy_j', 0):.2f} J into {broke.get('pieces')} pieces",
+                      flush=True)
+            if len(seen) >= 3:
+                break
+        self.assertTrue(seen, "nothing broke again after the plank")
+        for cost in seen:
+            self.assertLess(cost["available_elastic_j"], 10.0,
+                            "a piece went into a run holding stretch nothing put there")
+            self.assertLessEqual(cost["removed_energy_j"], cost["available_energy_j"],
+                                 "a break took more energy out than the run had in it")
+
     def test_a_room_without_the_law_is_charged_by_its_cell_size_instead(self):
         spec = break_room()
         spec.pop("failure_law", None)

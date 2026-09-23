@@ -179,9 +179,42 @@ room's own break is the same 7 pieces, 419 bonds, 4.47 J over 152 cm2; and a
 to the last digit as before ([materials](api/materials.md)), because a ball that
 size carries far more than its own crack costs.
 What it did not fix either: the plank piece that the 33 kg ball drives into the
-ground at 10.2 m/s still comes apart into 83 pieces. That contact can pay for
-its crack nine times over, so the trigger is right to admit it; 83 pieces from
-one landing is the run's own over-fragmentation, and it belongs to item 2 below.
+ground at 10.2 m/s still came apart into 83 pieces. That contact can pay for its
+crack nine times over, so the trigger is right to admit it -- and the reason for
+the 83 turned out to be nothing to do with breaking at all. It is point 7.
+
+**7. A break the world did not remember, and the energy that made.** A run
+works on an island, which is a copy of the matter it covers. Its removals were
+written back into that copy and never into the world's own matter: the pieces
+were told apart by which cells ended up connected to which, and that was the
+whole record a break left. So a bond removed INSIDE a piece -- one whose going
+left the piece in one piece -- was forgotten, and came back alive the next time
+that piece went into a run, stretched across the gap its going had opened.
+
+Measured in `tests-break`, on the piece the ball drives into the ground:
+
+| | before | after |
+|---|---:|---:|
+| stretch it goes into its next run holding | **31,167 J** | 0.2 J |
+| motion it goes in with | 13 J | 13 J |
+| motion it comes out with | 167 J | 13 J |
+| what the break took | 58 J | 1.07 J |
+| pieces | 83 | **18** |
+| bodies in the room at rest | 89 | 27 |
+
+31 kJ is seventy times the energy of the 33 kg ball that broke the plank in the
+first place. One bond of that piece joined two cells 35.2 mm apart that want to
+be 20.0 mm -- a 76% stretch, 13.9 kJ in that one bond -- and 59 of its 1,442
+bonds were over a tenth of a percent stretched. The run that made the piece was
+innocent: it ended holding 0.6 J of stretch, having started with none. The
+energy appeared between one run handing the piece back and the next run picking
+it up, and it came back out as speed.
+
+A run's bond states are now carried into the world's matter for every body that
+was admitted to break, one way only: a run may remove a bond, and may not bring
+back one that an earlier run removed. What that means for the world is that
+damage stays done -- a thing that has been cracked is cracked when you hit it
+again.
 
 ## What this does not show
 

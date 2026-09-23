@@ -7405,7 +7405,8 @@ void LiveWorld::restackQueue(const std::vector<std::string> &before) {
 // is the useful form: nobody wants forty entries called "glass plate 20mm
 // piece 31", they want to know they now have 400 grams of glass.
 std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
-                                              std::size_t largest_cells) {
+                                              std::size_t largest_cells,
+                                              const std::string &except) {
     std::vector<LiveCollected> haul;
     if (!(radius_m > 0.0)) return haul;
     const double reach = radius_m * radius_m;
@@ -7429,6 +7430,8 @@ std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
         // still the object it was. Only what came off something is debris.
         if (body.anchored || !body.fragment) continue;
         if (i == impl_->holding || spoken_for.count(i)) continue;
+        // Held by the person, in a hand this side does not keep: not debris.
+        if (!except.empty() && body.name == except) continue;
         if (i >= impl_->nodes_of.size() || impl_->nodes_of[i].size() > largest_cells) continue;
         if (!impl_->world->contains(impl_->body_of[i])) continue;
         // From where the body IS, not from where `described` remembers it.
@@ -8544,6 +8547,34 @@ std::size_t LiveWorld::applyPending() {
         if (parent_bond < impl_->plastic_extension_m.size()) {
             impl_->plastic_extension_m[parent_bond] = island_state.plastic_extension[k];
             impl_->plastic_strain_m[parent_bond] = island_state.plastic_strain[k];
+        }
+        // And the damage, including a bond the run removed. This is the world's
+        // own record of its matter, and until now nothing wrote a break into
+        // it: a run's removals lived in the island, which is a copy, and the
+        // pieces were told apart by which cells ended up connected. A bond
+        // removed INSIDE a piece -- one whose going left the piece in one
+        // piece -- was therefore forgotten, and came back alive the next time
+        // that piece went into a run, stretched across the gap its going had
+        // opened.
+        //
+        // Measured in tests-break before this line existed: an oak plank piece
+        // came back with 59 of its 1,442 bonds alive and over a tenth of a
+        // percent stretched, one of them joining two cells 35.2 mm apart that
+        // want to be 20.0 mm. That piece entered its next run holding 31,167 J
+        // of stretch -- seventy times the energy of the ball that broke the
+        // plank -- and came out of it moving with 167 J having gone in with 13,
+        // in 83 pieces. Energy out of nothing, and a shattering to go with it.
+        if (parent_bond < impl_->setup->matter.bonds.size() && o < island.matter.bonds.size()) {
+            const ActiveBondState &ran = island.matter.bonds[o];
+            ActiveBondState &world = impl_->setup->matter.bonds[parent_bond];
+            world.damage = ran.damage;
+            world.peak_tensile_stretch = ran.peak_tensile_stretch;
+            world.peak_compressive_strain = ran.peak_compressive_strain;
+            world.peak_shear_strain = ran.peak_shear_strain;
+            world.failure_mode = ran.failure_mode;
+            // One way only: this run can remove a bond, and cannot bring one
+            // back that an earlier run removed.
+            if (!ran.alive) world.alive = false;
         }
         const double set_here = std::abs(island_state.plastic_extension[k]);
         if (set_here > dent_m) {
