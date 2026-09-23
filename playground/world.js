@@ -2165,6 +2165,11 @@ async function toTheBag() {
   const name = world.held ? world.held.name
     : on ? (tools.profileOf(on) ? tools.profileOf(on).tool : on) : null;
   if (!name) { lastAction("Look at what to put in your bag, or hold it, first.", "refused"); return; }
+  // The pieces you walk over are collected as you walk, so the one the panel
+  // offered can be in what you carry by the time the key arrives. That is not
+  // a refusal -- the sweep already said what it took -- and answering "there
+  // is nothing like that here" makes a person doubt the key.
+  if (!world.held && !world.bodies.has(name)) return;
   const said = world.held ? titled(heldName()) : titled(name);
   const answer = await inventoryChange(world.held && recordHolds(name) ? "stow" : "take", name);
   // A broken piece is not a thing the record can keep -- it has no name of its

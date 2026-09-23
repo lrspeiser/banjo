@@ -1210,9 +1210,18 @@ class BrokenPiecesComeWithYou(PageJourney):
     STOCK = "[...banjoRoom.world.stock].map(([what, have]) => [what, have.kg])"
 
     def pieces_in_the_room(self):
+        """A room whose plank is whole, and then the pieces it breaks into.
+
+        Started again rather than rejoined: the journeys that use this room
+        share one world, and the first of them to walk through the pieces
+        leaves the next with a floor that has already been swept. That
+        failed about one run in three, and never the same test twice."""
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-break"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-break' && "
                                       "banjoRoom.ready()", 300), "the breaking room did not open")
+        self.page.evaluate("document.getElementById('reset').click(); true")
+        self.assertTrue(self.wait_for("banjoRoom.ready() && banjoRoom.status().time_s < 2", 120),
+                        "the room did not start again")
         self.assertTrue(self.wait_for(f"{self.LOOSE}.length > 4", 120), "the plank never broke into pieces")
         return self.js(self.LOOSE)
 
@@ -1321,6 +1330,10 @@ class WhatIsOfferedIsDone(PageJourney):
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-break"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-break' && "
                                       "banjoRoom.ready()", 300), "the breaking room did not open")
+        # Started again: the journeys that use this room share one world.
+        self.page.evaluate("document.getElementById('reset').click(); true")
+        self.assertTrue(self.wait_for("banjoRoom.ready() && banjoRoom.status().time_s < 2", 120),
+                        "the room did not start again")
         self.assertTrue(self.wait_for("[...banjoRoom.world.bodies].filter(([n, e]) => e.shape === 'hull')"
                                       ".length > 4", 120), "the plank never broke into pieces")
         self.wait_world(3.0)
