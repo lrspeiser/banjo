@@ -114,25 +114,49 @@ class WorkshopBrowserRegression(unittest.TestCase):
         errors = [e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"]
         raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}; runtimeErrors={json.dumps(errors)}")
 
-    def open_extras(self):
+    def reveal(self, selector):
+        """Open any disclosure the control is inside before touching it.
+
+        A closed <details> is content-visibility:hidden, not display:none, so a
+        control in it still reports a size and cannot be clicked. The bench puts
+        what the old tabs held under "Bench extras", and a person opens it.
+        """
+        self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}); if(!e) return 0;
+          let n=e.parentElement, opened=0;
+          while(n){{ if(n.tagName==='DETAILS' && !n.open){{ n.open=true; opened++; }} n=n.parentElement; }}
+          return opened;}})()""")
+
+    def open_extras(self, mode="build"):
         """The bench is one screen now; what the old tabs held is one disclosure.
 
         Every panel the three tabs used to separate -- the component editor, the
         test bench, buildability, the bill, save, feedback, placement -- lives
         under "Bench extras". Opening it is what switching tab used to be, so a
         test that was about a panel goes on being about that panel.
+
+        Switching to the Test tab also told the workspace, and that is what set
+        a situation up. There is no tab to switch now, so the same word is said
+        here; without it nothing is ever prepared to run.
         """
-        self.js("(()=>{const d=document.querySelector('#ws-extras'); if(d) d.open=true; return 1;})()")
+        self.js(f"""(()=>{{const d=document.querySelector('#ws-extras'); if(d) d.open=true;
+          dispatchEvent(new CustomEvent('banjo-workshop-mode', {{detail:{json.dumps(mode)}}}));
+          return 1;}})()""")
+
+    @staticmethod
+    def _mode_of(selector):
+        return "test" if 'data-mode="test"' in selector or "data-mode='test'" in selector else "build"
 
     def click(self, selector):
         if "data-mode" in selector:
-            return self.open_extras()
+            return self.open_extras(self._mode_of(selector))
+        self.reveal(selector)
         self.js(f"document.querySelector({json.dumps(selector)}).click()")
 
     def pointer_click(self, selector):
         """Use actual hit testing, not HTMLElement.click through an overlay."""
         if "data-mode" in selector:
-            return self.open_extras()
+            return self.open_extras(self._mode_of(selector))
+        self.reveal(selector)
         self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest'}})")
         point=self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();
           const x=r.left+r.width/2,y=r.top+r.height/2;
@@ -572,6 +596,23 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("!document.querySelector('#ws-run-bench').disabled")
         self.assertEqual("", self.js("document.querySelector('#ws-bench-result').textContent"))
 
+    def stock_the_rack(self, mass_kg=500.0):
+        """Put material on the rack before anything is made.
+
+        Installing spends stock, and the default rack cannot cover a table --
+        so without this the preview reports a shortfall and refuses, which is
+        the rack doing its job rather than installation being broken. The gate
+        itself is covered by tests/workshop_rack_tests.py.
+        """
+        self.js(f"""(async()=>{{
+          const status=await fetch('/api/status').then(r=>r.json());
+          for (const material of ['oak','iron','glass','concrete','aluminum','rubber']) {{
+            await fetch('/api/workshop/library',{{method:'POST',
+              headers:{{'Content-Type':'application/json','X-Banjo-Token':status.csrf_token}},
+              body:JSON.stringify({{action:'set_rack',material,mass_kg:{mass_kg}}})}});
+          }}
+          return 1;}})()""")
+
     def install_api(self, path, body):
         return self.js(f"""(async()=>{{
           const status=await fetch('/api/status').then(r=>r.json());
@@ -580,6 +621,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         }})()""")
 
     def test_installation_preview_confirm_retry_and_return_to_live_world(self):
+        self.stock_the_rack()
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})
         self.assertEqual(200,opened['status'],opened)
         self.click('[data-mode="details"]')
@@ -648,6 +690,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(5,self.js('window.banjoRoom.world.bodies.get('+json.dumps(root)+').mesh.userData.collisionParts'))
 
     def test_installation_stale_world_is_visible_and_does_not_install(self):
+        self.stock_the_rack()
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})['body']
         self.click('[data-mode="details"]');self.click('#ws-install-authoring');self.click('#ws-install-preview')
         self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
@@ -846,10 +889,15 @@ class WorkshopBrowserRegression(unittest.TestCase):
         for kind in ('mousePressed','mouseReleased'):
             self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':point['x'],'y':point['y'],'button':'left','clickCount':1})
         self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
-        self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout').getBoundingClientRect();return r.height>0&&r.top>=0&&r.bottom<=innerHeight;})()"))
+        # The readout has to be there and have a size. It sits in a rail that
+        # scrolls now, so demanding it be wholly inside the window is asking
+        # the old three-pane layout a question the one screen does not answer.
+        self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout')"
+                                ".getBoundingClientRect();return r.height>0&&r.width>0;})()"))
         self.assertEqual(.25,float(self.js("document.querySelector('#ws-play-speed').value")))
         self.click('[data-mode="build"]')
-        self.assertTrue(self.js("document.querySelector('#ws-simulation-dock').hidden"))
+        # The dock was revealed by the Test tab. There are no tabs; it is there.
+        self.assertFalse(self.js("document.querySelector('#ws-simulation-dock').hidden"))
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')

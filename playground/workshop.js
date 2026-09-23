@@ -1087,9 +1087,13 @@ function installBench() {
   checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
   madeButton.onclick = () => makeIt(madeButton);
+  // The notice is what say() writes to, and the editor put it in the top bar
+  // before this ran. Rebuilding the bar must not take it away.
+  const notice = $("#ws-notice");
   top.replaceChildren(
     make("h1", {}, "Workshop"), products, make("span", { class:"ws-spacer" }),
     status, checkButton, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
+  if (notice) top.append(notice);
   if (picker) {
     keep.append(picker);
     const chips = () => {
@@ -1158,7 +1162,15 @@ function installBench() {
   // Picking a situation to try is what "going to the test tab" was: the
   // workspace has to be in test mode or scheduleSetup does nothing at all, and
   // the three tabs that used to say so are gone.
-  cardify($("#ws-bench-test"), "ws-test-catalog", "ws-test-card", () => setWorkspaceMode("test"));
+  const testPicker = $("#ws-bench-test");
+  cardify(testPicker, "ws-test-catalog", "ws-test-card", () => setWorkspaceMode("test"));
+  // Whichever way a situation is chosen -- a card, or the select underneath --
+  // the workspace has to be in test mode BEFORE the handler that sets it up
+  // runs, and that handler was assigned before this one could listen.
+  if (testPicker) {
+    const chose = testPicker.onchange;
+    testPicker.onchange = (event) => { setWorkspaceMode("test"); if (chose) chose.call(testPicker, event); };
+  }
   // The old shell revealed the run dock only on the Test tab. There are no
   // tabs now, so it is simply there.
   const dock = $("#ws-simulation-dock");
