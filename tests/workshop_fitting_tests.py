@@ -393,6 +393,56 @@ class AProductThatDrivesItself(unittest.TestCase):
         self.assertEqual("battery", motor["store"])
         self.assertEqual(20.0, motor["stall_torque_n_m"])
 
+    def test_a_motor_nobody_could_work_is_given_a_control_on_its_own_pin(self):
+        """Declaring a motor is declaring the handle that works it.
+
+        Every command in the world reaches a motor through a control on the
+        motor's pin, so a motor without one can never be told anything. The
+        person said what drives the cart; the control is the consequence.
+        """
+        base, overrides = self.driven_cart()
+        self.assertEqual([], workshop_machines.of_overrides(overrides).get("controls", []),
+                         "the design starts with no control, as a person would leave it")
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        self.assertTrue(answer["ok"], answer.get("says"))
+
+        after = workshop_machines.of_overrides(answer["overrides"])
+        self.assertEqual(1, len(after["controls"]))
+        control, motor = after["controls"][0], after["motors"][0]
+        self.assertEqual(sorted(motor["turns"]), sorted(control["turns"]),
+                         "the control works the pin the motor turns")
+        self.assertEqual(motor["name"], control["name"], "and says which motor it works")
+
+        # The person is told, rather than finding a part they did not draw.
+        mine = [c for c in answer["changes"] if c["rule"] == "a control for each motor"]
+        self.assertEqual(1, len(mine))
+        self.assertIn("left motor", mine[0]["says"])
+
+    def test_a_control_the_design_already_names_is_left_alone(self):
+        base, overrides = self.driven_cart()
+        record = dict(workshop_machines.of_overrides(overrides))
+        record["controls"] = [{"name": "left wheel", "turns": ["bearing-mount-11", "axle-1"]}]
+        answer = workshop_fitting.check_validity(
+            base, {workshop_machines.MACHINES_KEY: record}, cell_m=CELL, root="cart")
+        self.assertTrue(answer["ok"], answer.get("says"))
+        after = workshop_machines.of_overrides(answer["overrides"])
+        self.assertEqual(["left wheel"], [c["name"] for c in after["controls"]],
+                         "the person's own control stands; none is added beside it")
+        self.assertEqual([], [c for c in answer["changes"] if c["rule"] == "a control for each motor"])
+
+    def test_the_added_control_reaches_the_room_as_two_bodies(self):
+        base, overrides = self.driven_cart()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="cart")
+        fitted = workshop_components.apply_overrides(base, answer["overrides"])
+        made = compiled(base, answer, "cart")
+        room = workshop_machines.installed(fitted, made["component_to_body"])
+        bodies = {g["root_body"] for g in made["groups"]}
+        self.assertEqual(1, len(room["controls"]))
+        worked = room["controls"][0]["on"]
+        self.assertTrue(set(worked) <= bodies)
+        self.assertEqual(sorted(worked), sorted(room["motors"][0]["on"]),
+                         "the room sees a control on the very pin its motor drives")
+
     def test_a_program_needs_controls_that_are_there(self):
         base, overrides = self.driven_cart()
         record = dict(workshop_machines.of_overrides(overrides))

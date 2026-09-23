@@ -239,6 +239,24 @@ def _why_not(design: Any, overrides: dict[str, Any], cell_m: float, root: str) -
         workshop_articulation.compile_design(design, overrides, cell_m=cell_m, root=root)
     except ValueError as problem:
         return str(problem)
+    return _unworkable(overrides)
+
+
+def _unworkable(overrides: dict[str, Any]) -> str | None:
+    """It compiles, and nothing in the world could ever tell it to go.
+
+    Every command reaches a motor through a CONTROL on the motor's own pin:
+    the page's panel, the room's chat and the API all operate a control or a
+    program, and a program works controls by name (playground/server.py,
+    ``operate_machine``). Nothing anywhere commands a motor itself. So a motor
+    with no control on its pin is metal that can never be told anything -- the
+    room takes it, the cart sits there, and no message says why.
+    """
+    record = workshop_machines.of_overrides(overrides)
+    worked = {tuple(sorted(c["turns"])) for c in record.get("controls") or []}
+    for motor in record.get("motors") or []:
+        if tuple(sorted(motor["turns"])) not in worked:
+            return f"{motor['name']} has nothing to work it"
     return None
 
 
@@ -582,6 +600,44 @@ def _rebuild_struts(base: Any, design: Any, overrides: dict[str, Any], cell_m: f
     return _readopt(base, patch), said
 
 
+def _a_control_for_each_motor(base: Any, design: Any, overrides: dict[str, Any], cell_m: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Each motor gets the handle the world needs to work it.
+
+    The person said what drives the thing; this is the mechanical consequence
+    of saying it. A control is not a new idea about the machine -- it is the
+    named handle for the pin the motor is already on -- so it is added rather
+    than asked for, and named after the motor so the panel says which one it
+    works. A design that already names a control on that pin keeps it.
+    """
+    record = workshop_machines.of_overrides(overrides)
+    motors = record.get("motors") or []
+    if not motors:
+        return overrides, []
+    worked = {tuple(sorted(c["turns"])) for c in record.get("controls") or []}
+    taken = {c["name"] for c in record.get("controls") or []}
+    added: list[dict[str, Any]] = []
+    said: list[dict[str, Any]] = []
+    for motor in motors:
+        pin = tuple(sorted(motor["turns"]))
+        if pin in worked:
+            continue
+        name = motor["name"]
+        while name in taken:
+            name += " control"
+        worked.add(pin)
+        taken.add(name)
+        added.append({"name": name, "turns": list(motor["turns"])})
+        said.append({"rule": "a control for each motor", "part": name,
+                     "says": f"nothing could work {motor['name']}, because every command in the "
+                             f"world reaches a motor through a control on its pin; one named "
+                             f"{name!r} now works it, so the machine can be turned on"})
+    if not added:
+        return overrides, []
+    record = dict(record)
+    record["controls"] = list(record.get("controls") or []) + added
+    return {**overrides, workshop_machines.MACHINES_KEY: workshop_machines.checked(record)}, said
+
+
 RULES = (
     ("retain its own occupied cells", _grow_to_whole_cells),
     ("absent from the compiled occupied cells", _snap_to_the_grid),
@@ -593,6 +649,7 @@ RULES = (
     ("Moving groups overlap", _shaft_stubs),
     ("is claimed by both", _shaft_stubs),
     ("mixed-material interface", _one_material_to_a_group),
+    ("has nothing to work it", _a_control_for_each_motor),
 )
 
 
