@@ -635,12 +635,21 @@ breakable: the parts that turn are separate bodies, and each of them can dent,
 crack and shatter like anything else in the world.
 
 **It is not written against any particular object.** The rules know about
-cells, bearings, materials and struts, and nothing about carts. A door — two
-posts, a lintel and a leaf, with one bearing — is refused as drawn and comes
-out as a 103 kg frame and a 23.3 kg leaf on one hinge. A well pulley built
-through the same tools an AI model is given — two posts, a headstock, a drum,
-a rope and a bucket — comes out as a 36.6 kg headstock and a 33.2 kg drum,
-rope and bucket turning on it. Neither was tuned for
+cells, bearings, materials and struts, and nothing about carts:
+
+| built from components | comes out as |
+| --- | --- |
+| a cart: deck, mounts, axles, four wheels, handle arms and a handle | four 5.02 kg wheels on four hinges to a 47.4 kg frame |
+| a door: two posts, a lintel, a leaf on one bearing | a 103 kg frame and a 23.3 kg leaf on one hinge |
+| a well pulley: two posts, a headstock, a drum, a rope, a bucket | a 36.6 kg headstock and a 33.2 kg drum, rope and bucket turning on it |
+| a mace: a haft and an iron head that turns on it | a 2.87 kg haft and a 4.03 kg head on one hinge |
+
+Only the cart was tuned for. The well pulley was built through the same four
+tools an AI model is given, and it turned up a refusal the cart never hit. The
+mace turned up a better one: every other machine braces against a frame, and a
+hand-held one has none — so the part it says you take hold of *is* the frame,
+and the check now reads "you hold the haft, so that is the frame". Without
+that it is refused for being all moving parts
 (`tests/workshop_fitting_tests.py`).
 
 **The tools a model is given** are `add_part`, `remove_part`, `set_joint` and

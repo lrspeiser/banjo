@@ -57,7 +57,6 @@ def compiled(base, answer, root):
 
 class TheCart(unittest.TestCase):
     def setUp(self):
-        # A cart is worked by its handle; a machine has to say which part that is.
         # A cart is worked by its handle, and every place you touch it names a
         # part: the world hands you a component, not an assembly.
         self.design = assemble("cart", design_id="c", parameters={
@@ -228,6 +227,98 @@ class AWellPulleyBuiltThroughTheChatsTools(unittest.TestCase):
         self.assertEqual(2, len(made["groups"]))
         # Drum, rope and bucket move together; the two posts and the headstock do not.
         self.assertTrue(all(g["mass_kg"] > 0 for g in made["groups"]))
+
+
+class AMaceHasNoFrameButYourHand(unittest.TestCase):
+    """A head turning on a haft, and nothing else standing still.
+
+    Every other machine here braces against a frame. A hand-held one braces
+    against the person, so the part it says you take hold of IS the frame --
+    without that, a mace is refused for being all moving parts.
+    """
+
+    def mace(self):
+        base = WorkshopDesign(
+            design_id="mace", purpose="a mace whose head turns on its haft",
+            parts=[block("haft", "handle", (0.05, 0.62, 0.05), (0.0, 0.31, 0.0))],
+            kind="custom",
+            parameters={"primary_use_component": "haft",
+                        "interaction_point_components": {"grip": "haft", "use": "head"}})
+        overrides = construction.add_part(
+            base, {}, part=block("head", "wheel", (0.11, 0.11, 0.11), (0.0, 0.675, 0.0), "iron"),
+            joint={"to": "haft", "kind": "bearing"})
+        return base, overrides
+
+    def test_the_part_you_hold_counts_as_the_frame(self):
+        base, overrides = self.mace()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="mace")
+        self.assertTrue(answer["ok"], answer.get("why"))
+        frame = next(c for c in answer["concepts"]
+                     if c["concept"].startswith("something stands still"))
+        self.assertTrue(frame["ok"])
+        self.assertIn("you hold the haft", frame["says"])
+
+    def test_it_comes_out_as_a_head_turning_on_a_haft(self):
+        base, overrides = self.mace()
+        answer = workshop_fitting.check_validity(base, overrides, cell_m=CELL, root="mace")
+        made = compiled(base, answer, "mace")
+        self.assertEqual(2, len(made["groups"]))
+        self.assertEqual(1, len(made["joints"]))
+        self.assertEqual("hinge", made["joints"][0]["kind"])
+
+    def test_without_saying_what_you_hold_it_is_all_moving_parts(self):
+        base, overrides = self.mace()
+        bare = WorkshopDesign(design_id=base.design_id, purpose=base.purpose,
+                              parts=list(base.parts), kind="custom", parameters={})
+        answer = workshop_fitting.check_validity(bare, overrides, cell_m=CELL, root="mace")
+        self.assertFalse(answer["ok"])
+        self.assertEqual("concepts", answer["stage"])
+        self.assertIn("all moving parts", answer["says"])
+
+
+class DressingAProductWithoutChangingIt(unittest.TestCase):
+    """set_skin is how a thing looks. What it IS must not move underneath it."""
+
+    def setUp(self):
+        import tempfile, types
+        import workshop_chat
+        self.tmp = tempfile.TemporaryDirectory()
+        runs = Path(self.tmp.name) / "runs"
+        runs.mkdir(parents=True)
+        app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
+        design = assemble("cart", design_id="c")
+        candidate = design.wireframe()
+        candidate["component_overrides"] = {}
+        self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_skin_changes_the_look_and_not_the_mass(self):
+        before = self.state.design.measure()["mass_kg"]
+        out = self.state.execute("set_skin", {"selector": {"roles": ["wheel"]},
+                                              "profile": "round", "color": "#3b2d1f",
+                                              "roughness": 0.35})
+        self.assertEqual(4, len(out["components"]))
+        self.assertIn("Appearance only", out["note"])
+        self.assertAlmostEqual(before, self.state.design.measure()["mass_kg"], places=6)
+
+    def test_it_is_kept_on_the_design_where_the_page_reads_it(self):
+        self.state.execute("set_skin", {"selector": {"names": ["deck"]}, "color": "walnut"})
+        skin = (self.state.overrides.get("deck") or {}).get("skin") or {}
+        self.assertEqual("walnut", skin.get("color"))
+        self.assertFalse(skin.get("physical"), "dressing a thing must not change its matter")
+
+    def test_changing_the_shape_for_real_says_the_measurements_are_stale(self):
+        out = self.state.execute("set_skin", {"selector": {"names": ["deck"]},
+                                              "profile": "curve", "bend_m": 0.1,
+                                              "physical": True})
+        self.assertIn("stale", out["note"])
+
+    def test_it_refuses_to_guess_what_to_change(self):
+        with self.assertRaises(ValueError) as caught:
+            self.state.execute("set_skin", {"selector": {"names": ["deck"]}})
+        self.assertIn("say what to change", str(caught.exception))
 
 
 class WhatItRefusesToInvent(unittest.TestCase):

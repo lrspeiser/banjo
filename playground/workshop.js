@@ -1028,6 +1028,50 @@ function renderHeldTo() {
   }
 }
 
+// One card per option of a native select, kept in step with it. The select
+// stays the source of truth and is hidden, so anything that reads or sets its
+// value goes on working.
+function cardify(select, rootId, cardClass, onPick) {
+  if (!select) return null;
+  const root = make("div", { id: rootId, class: rootId });
+  const render = () => {
+    root.replaceChildren();
+    for (const option of [...select.options]) {
+      const card = make("button", { type:"button", class: cardClass });
+      card.dataset.value = option.value;
+      card.append(make("strong", {}, option.textContent || option.value));
+      if (option.title) card.title = option.title;
+      card.setAttribute("aria-current", option.value === select.value ? "true" : "false");
+      card.onclick = () => {
+        // Anything the pick has to settle first -- the workspace mode, say --
+        // runs before the change, because the change acts on it.
+        if (onPick) onPick(option.value);
+        select.value = option.value;
+        select.dispatchEvent(new Event("change", { bubbles:true }));
+      };
+      root.append(card);
+    }
+  };
+  const mark = () => {
+    for (const card of [...root.children]) {
+      card.setAttribute("aria-current", card.dataset.value === select.value ? "true" : "false");
+    }
+  };
+  render();
+  select.addEventListener("change", mark);
+  new MutationObserver(render).observe(select, { childList:true, subtree:true });
+  select.closest("label")?.classList.add("ws-native-picker-hidden");
+  (select.closest("label") || select).before(root);
+  return root;
+}
+
+// The workspace was told which of three tabs was showing. One screen has no
+// tabs, so the same word is said when the thing that used to need it happens.
+function setWorkspaceMode(mode) {
+  if (workspace.mode === mode) return;
+  dispatchEvent(new CustomEvent("banjo-workshop-mode", { detail: mode }));
+}
+
 function installBench() {
   const root = $("#design-workshop");
   const top = $(".ws-top"), left = $(".ws-left"), right = $(".ws-right"), viewport = $(".ws-viewport");
@@ -1054,7 +1098,11 @@ function installBench() {
         const chip = make("button", { type:"button", class:"ws-chip" }, option.textContent || option.value);
         chip.dataset.value = option.value;
         chip.setAttribute("aria-current", option.value === picker.value ? "true" : "false");
-        chip.onclick = () => { picker.value = option.value; picker.dispatchEvent(new Event("change", { bubbles:true })); };
+        chip.onclick = () => {
+          setWorkspaceMode("build");
+          picker.value = option.value;
+          picker.dispatchEvent(new Event("change", { bubbles:true }));
+        };
         products.append(chip);
       }
     };
@@ -1103,6 +1151,20 @@ function installBench() {
   for (const node of rightKeep) extras.append(node);
   for (const node of leftKeep) if (node !== parts) extras.append(node);
   if (chatForm) chatHome.append(chatForm);
+
+  // The bench tests stay cards rather than a dropdown: what each one does to
+  // the thing is worth reading before you pick it. This used to live in the
+  // page's inline shell, which the one-screen bench replaced.
+  // Picking a situation to try is what "going to the test tab" was: the
+  // workspace has to be in test mode or scheduleSetup does nothing at all, and
+  // the three tabs that used to say so are gone.
+  cardify($("#ws-bench-test"), "ws-test-catalog", "ws-test-card", () => setWorkspaceMode("test"));
+  // The old shell revealed the run dock only on the Test tab. There are no
+  // tabs now, so it is simply there.
+  const dock = $("#ws-simulation-dock");
+  if (dock) dock.hidden = false;
+  // Closing the bench puts the product back in front of you.
+  extras.addEventListener("toggle", () => { if (!extras.open) setWorkspaceMode("build"); });
 
   // Wire and Skin are the product. Matter, physics, collision and relations
   // describe how it is compiled, which is bench plumbing, not editing a thing.

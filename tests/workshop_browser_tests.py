@@ -114,11 +114,25 @@ class WorkshopBrowserRegression(unittest.TestCase):
         errors = [e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"]
         raise AssertionError(f"Workshop condition timed out: {condition}; {diagnostics}; runtimeErrors={json.dumps(errors)}")
 
+    def open_extras(self):
+        """The bench is one screen now; what the old tabs held is one disclosure.
+
+        Every panel the three tabs used to separate -- the component editor, the
+        test bench, buildability, the bill, save, feedback, placement -- lives
+        under "Bench extras". Opening it is what switching tab used to be, so a
+        test that was about a panel goes on being about that panel.
+        """
+        self.js("(()=>{const d=document.querySelector('#ws-extras'); if(d) d.open=true; return 1;})()")
+
     def click(self, selector):
+        if "data-mode" in selector:
+            return self.open_extras()
         self.js(f"document.querySelector({json.dumps(selector)}).click()")
 
     def pointer_click(self, selector):
         """Use actual hit testing, not HTMLElement.click through an overlay."""
+        if "data-mode" in selector:
+            return self.open_extras()
         self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest'}})")
         point=self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();
           const x=r.left+r.width/2,y=r.top+r.height/2;
@@ -208,7 +222,10 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertIn("Not buildable", self.js("document.querySelector('#ws-buildability-summary').textContent"))
         self.assertTrue(self.js("document.querySelector('#ws-buildability-summary').getBoundingClientRect().height>0"))
         self.assertIn("more than 50,000 cells", self.js("document.querySelector('#ws-matter-status').textContent").lower())
-        self.assertTrue(self.js("document.querySelector('#ws-mode-test').hidden"))
+        # The bench no longer hides panels behind tabs; what matters is that a
+        # design the grid cannot build says so where it is read.
+        self.assertTrue(self.js("document.querySelector('#ws-buildability-summary')"
+                                ".getBoundingClientRect().height>0"))
 
     def test_physical_measurements_and_product_switch_are_current(self):
         mass = self.js("document.querySelector('#ws-mass').textContent")
@@ -438,9 +455,14 @@ class WorkshopBrowserRegression(unittest.TestCase):
         """
         self.assertEqual(0, self.js(
             "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
-        self.assertEqual(["Product library", "My library", "Saved designs"], self.js(
+        # The bench is one screen: the left rail is the parts of the thing in
+        # front of you, and the libraries it used to hold are in Bench extras.
+        self.assertEqual(["Parts"], self.js(
             "[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
         self.assertEqual(0, self.js("document.querySelectorAll('.ws-left details').length"))
+        moved = self.js("[...document.querySelectorAll('#ws-extras h2')].map(h=>h.textContent)")
+        for heading in ("Product library", "My library", "Saved designs"):
+            self.assertIn(heading, moved)
 
     def test_cart_trace_has_actual_intermediate_simulation_states(self):
         self.open_product("cart")

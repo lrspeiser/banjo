@@ -76,11 +76,17 @@ def concepts(design: Any) -> list[dict[str, Any]]:
                          "all borne" if not unborne else
                          ", ".join(unborne) + " turns on nothing"})
 
+    # Something has to stand still for the rest to move against -- but on a
+    # hand-held thing that something is the person. A mace is a head turning on
+    # a haft and nothing else: the haft is the frame because you are holding it.
+    operated_part = str((design.parameters or {}).get("primary_use_component") or "")
     still = [name for name in names if name not in turning]
+    held_is_the_frame = bool(operated_part) and operated_part in turning
     said.append({"concept": "something stands still for the rest to move against",
-                 "ok": bool(still) or not bearings,
-                 "says": "nothing is fixed; it is all moving parts" if not still and bearings
-                         else f"{len(still)} part(s) make the frame"})
+                 "ok": bool(still) or held_is_the_frame or not bearings,
+                 "says": (f"{len(still)} part(s) make the frame" if still else
+                          f"you hold the {operated_part}, so that is the frame" if held_is_the_frame
+                          else "nothing is fixed; it is all moving parts")})
 
     said.append({"concept": "a joint holds two parts that are both here",
                  "ok": all(j["a"] in touching and j["b"] in touching for j in joints),
@@ -89,7 +95,7 @@ def concepts(design: Any) -> list[dict[str, Any]]:
     # A machine that goes into the world has to say what a person does with it:
     # which component they take hold of. That is a concept, not a drawing, so it
     # is named here rather than guessed at during installation.
-    operated = str((design.parameters or {}).get("primary_use_component") or "")
+    operated = operated_part
     said.append({"concept": "it says which part you take hold of",
                  "ok": not bearings or (operated in touching),
                  "says": (f"you work it by its {operated}" if operated in touching else

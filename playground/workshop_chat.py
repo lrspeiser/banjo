@@ -71,6 +71,13 @@ Important behavior:
   rack holds; only making it draws stock. Report a shortfall in the material
   and the kilograms, and never shrink or re-material a design to fit the rack
   unless the person asks for that.
+- HOW IT LOOKS is set_skin, and it is separate from what it is. Profile,
+  colour, roughness and metalness dress a component without touching its mass,
+  its joints or anything the bench measured. Reach for it when someone wants a
+  thing to look better rather than work differently, and name real components
+  or a role rather than reskinning everything by reflex. Only pass physical
+  true when they want the SHAPE changed, and tell them it makes earlier
+  measurements stale.
 - BUILDING SOMETHING FROM PARTS: add_part puts a component in and fastens it,
   set_joint changes how two parts are fastened, remove_part takes one out. A
   part must TOUCH what it fastens to -- place it face to face against that part,
@@ -242,6 +249,24 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "parameters": {"type": "object", "additionalProperties": False, "required": ["a", "b"],
                         "properties": {"a": {"type": "string"}, "b": {"type": "string"},
                                        "kind": {"type": "string", "enum": ["fixed", "bearing"]}}}},
+        {"type": "function", "name": "set_skin",
+         "description": "Change how chosen components LOOK: their shape profile, colour and finish. "
+                        "profile 'design' keeps the built shape, 'block' squares it off, 'round' turns it "
+                        "on its long axis, and 'curve' bends it by bend_m. colour is a CSS colour. "
+                        "roughness 0 is a mirror and 1 is matt; metalness 1 reads as bare metal. "
+                        "By default this is appearance only and changes nothing physical -- the mass, the "
+                        "joints and the bench results all stay as they were. Pass physical true ONLY when "
+                        "the person wants the shape itself changed, and say so when you do, because it "
+                        "makes every earlier measurement stale.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["selector"],
+                        "properties": {
+                            "selector": selector,
+                            "profile": {"type": "string", "enum": ["design", "block", "round", "curve"]},
+                            "color": {"type": "string", "maxLength": 32},
+                            "roughness": {"type": "number", "minimum": 0, "maximum": 1},
+                            "metalness": {"type": "number", "minimum": 0, "maximum": 1},
+                            "bend_m": {"type": "number", "minimum": -5, "maximum": 5},
+                            "physical": {"type": "boolean"}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -404,6 +429,33 @@ class _State:
             return self.record(tool, {
                 "summary": (f"{a} and {b} are now {kind}" if kind else f"unfastened {a} from {b}"),
                 "joints": workshop_construction.joints(self.design)})
+
+        if tool == "set_skin":
+            from mcp import workshop_visual
+            names = _selector_names(self.design, args.get("selector"), self.selected_name)
+            fields = {k: args[k] for k in ("profile", "color", "roughness", "metalness", "bend_m", "physical")
+                      if args.get(k) is not None}
+            if not fields:
+                raise ValueError("say what to change about the skin: profile, color, roughness, "
+                                 "metalness, bend_m or physical")
+            for name in names:
+                patch = dict(self.overrides.get(name) or {})
+                skin = dict(patch.get("skin") or {})
+                skin.update(fields)
+                patch["skin"] = workshop_visual.checked_skin(skin)
+                self.overrides = {**self.overrides, name: patch}
+            self.design = workshop_components.apply_overrides(self.base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append("skin:" + ",".join(names))
+            physical = bool(fields.get("physical"))
+            return self.record(tool, {
+                "summary": f"reskinned {len(names)} component(s): "
+                           + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())),
+                "components": names, "skin": fields,
+                "note": ("This changed the matter, so every measurement and bench result "
+                         "taken before it is stale." if physical else
+                         "Appearance only: the mass, the joints and the bench results are unchanged."),
+            })
 
         if tool == "check_validity":
             answer = workshop_fitting.check_validity(self.base, self.overrides, cell_m=0.04,

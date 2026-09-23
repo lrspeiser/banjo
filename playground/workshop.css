@@ -193,30 +193,22 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 @keyframes ws-spin { to {transform:rotate(360deg);} }
 .ws-advanced { margin:.6rem 0;padding:.5rem;border:1px solid #354252;border-radius:.4rem; }
 .ws-advanced summary { cursor:pointer;font-size:.8rem; }
-#design-workshop[data-mode="test"] .ws-grid { grid-template-columns:minmax(300px,1fr) 320px; }
-#design-workshop[data-mode="test"] .ws-left { display:none; }
-#design-workshop[data-mode="test"] .ws-viewport { grid-column:1;grid-row:1; }
-#design-workshop[data-mode="test"] .ws-right { grid-column:2;grid-row:1; }
-#design-workshop[data-mode="test"] .ws-right > :not(#ws-mode-test) { display:none; }
-#design-workshop[data-mode="test"] .ws-viewbar button[data-view] { display:none; }
-#design-workshop[data-mode="test"] .ws-viewbar { display:none; }
-#design-workshop[data-mode="test"] #ws-test-bench > h3 { margin-top:0; }
-#design-workshop[data-mode="test"] .ws-test-intro { margin-top:0; }
+
+
+
 #ws-test-catalog { display:grid;grid-template-columns:1fr;gap:.4rem; }
 #ws-test-catalog .ws-test-card { padding:.65rem; }
 @media (max-width:1050px) and (min-width:701px) {
   .ws-grid {grid-template-columns:180px minmax(230px,1fr) 290px;grid-template-rows:1fr;}
   .ws-left {grid-column:1;grid-row:1;} .ws-viewport {grid-column:2;grid-row:1;} .ws-right {grid-column:3;grid-row:1;}
-  #design-workshop[data-mode="test"] .ws-grid {grid-template-columns:minmax(300px,1fr) 290px;}
 }
 @media (max-width:700px) {
   body.workshop-mode {overflow:auto;}
   #design-workshop {position:absolute;min-height:100vh;height:auto;}
-  .ws-grid,#design-workshop[data-mode="test"] .ws-grid {display:flex;flex-direction:column;overflow:visible;}
+  .ws-grid {display:flex;flex-direction:column;overflow:visible;}
   .ws-viewport {flex:none;order:1;height:70vh;min-height:450px;}
   .ws-left {order:3;flex:none;} .ws-right {order:2;flex:none;overflow:visible;}
-  #design-workshop[data-mode="test"] .ws-viewport {height:78vh;min-height:490px;}
-  .ws-top {padding:.6rem;gap:.45rem;}
+.ws-top {padding:.6rem;gap:.45rem;}
   .ws-top .ws-status {display:none;}
   .ws-workspace-tabs {width:100%;justify-content:center;}
   .ws-workspace-tabs button {flex:1;}
@@ -264,3 +256,16 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-viewbar-extra{position:static;display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0 .6rem}
 #ws-chat-home{flex:1 1 auto;min-height:13rem}
 #ws-held-box{max-height:45%;overflow:auto}
+/* The right rail scrolls as one column: Bench extras is long, and a control
+   inside it has to be reachable, not clipped by the rail's own height. */
+.ws-right{overflow-y:auto;overflow-x:hidden}
+#ws-chat-home{flex:0 0 auto;min-height:13rem;overflow:visible}
+#ws-held-box{flex:0 0 auto;max-height:none;overflow:visible}
+#ws-extras{flex:0 0 auto}
+/* The bench fills the window and the rails scroll inside it: with the whole
+   page free to grow, a control in Bench extras sits thousands of pixels down
+   and nothing can scroll it into reach. */
+/* The rack runs along the bottom, so the screen is three rows now: the
+   top bar, the panes, and the rack. It was two, and a third child of a
+   two-row grid overflows the screen and takes the rails with it. */
+#design-workshop:not([hidden]) { grid-template-rows:auto 1fr auto; }
