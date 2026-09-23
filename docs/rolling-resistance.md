@@ -33,6 +33,32 @@ On a slope of angle `theta` the couple can stop the ball's rolling only while
 slope gentler than `atan(c)` stays, and on a steeper one it rolls at
 `5/7 g (sin theta - c cos theta)`.
 
+## What about a piece that is not round?
+
+Nothing here acts on one, and after this it does not need to. The reasoning was
+that "a broken piece is a hull whose rolling is its own shape's business: it has
+to lift itself over each edge", and that is true -- but it was not happening,
+for a reason that had nothing to do with rolling.
+
+A piece was being made **six thousand times harder to turn than its own
+matter**. Jolt diagonalises the inertia it is handed and substitutes a unit
+sphere for anything below its epsilon, and a 20 mm chip is far below it: one
+asking for 3.73e-7 kg m2 was made with 0.00224. So nothing could stop such a
+piece turning, and it rolled on for ever. Measured on a chip set going at
+0.49 m/s and 42 rad/s across concrete: **4.2 m in ten seconds**, keeping three
+quarters of its speed. With its own inertia: **21 mm**, by climbing its own
+corners exactly as the reasoning said it would.
+
+Two other things were measured and rule themselves out:
+
+- Rolling resistance for every body, not only round ones, does fire once the
+  contacts are kept for it -- but oak on concrete is c = 0.002 + 0.001, which
+  took 0.06 mJ a second off 1.3 mJ of motion. A ball's coefficient is not what
+  stops a tumbling chip.
+- A shape's own share of the coefficient -- `(1 - e^2) * rise / chord` from the
+  lift over its corners -- does stop it, in about the same distance. With the
+  inertia right it is not needed, so it is not in the engine.
+
 ## What the engine does (src/rigid/JoltWorld.cpp)
 
 Before every step, for each round body that ended the last step touching

@@ -8813,6 +8813,25 @@ std::size_t LiveWorld::applyPending() {
         const MaterialDefinition &material = dominant < setup.part_definitions.size()
                                                  ? setup.part_definitions[dominant]
                                                  : setup.tile_material;
+        // What it slides and bounces on, as every other way of making a body
+        // works it out: the piece's material against the ground's. Only the
+        // rolling share was set here, so every piece of every break in the
+        // world went into Jolt with friction 0 and no bounce at all -- and
+        // Jolt takes the pair's friction as the root of the two, so nothing a
+        // piece touched had any either. Measured in tests-break before this:
+        // thirteen of twenty-five pieces were still going 30 s after the break,
+        // sliding flat at 46 cm/s and losing nothing but the 0.02/s damping.
+        //
+        // This is not the whole of "little pieces roll forever" (the owner,
+        // 2026-09-22). What is left after it rolls rather than slides: a 20 mm
+        // chip measured at 42 rad/s of spin while travelling 0.49 m/s, where
+        // rolling without slipping would be 49 -- and friction does no work on
+        // a rolling contact. Only rolling resistance can stop that, and the
+        // engine gives it to round bodies alone (docs/rolling-resistance.md).
+        const CombinedContactMaterial against_ground = combineContactMaterials(
+            compileContactMaterial(material), compileContactMaterial(setup.ground_material));
+        fragment.friction = against_ground.dynamic_friction;
+        fragment.restitution = against_ground.restitution;
         fragment.rolling_resistance = compileContactMaterial(material).rolling_resistance;
         LiveBodyPose piece{};
         // A piece that is still all of its parent kept its parent; only a piece

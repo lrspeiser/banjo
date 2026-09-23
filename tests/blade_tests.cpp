@@ -355,10 +355,18 @@ void aPressCutsOnlyWhenItPushesHarderThanTheMaterial() {
               << "\"\n";
     require(piecesOf(poses, "batten") == 2, "an 800 N press did not cut through");
     require(!cuts.empty() && cuts.front().kind == "press", "a slow push was not called a press");
-    // Separation comes when the last bond across the kerf goes, up to half a
-    // cell before the edge has swept the whole section: 20 mm deep in 10 mm
-    // cells is at least three quarters of it.
-    require(work > 0.70 * 15000.0 * section && work < 1.15 * 15000.0 * section,
+    // Separation comes when the last bond across the kerf goes, before the
+    // edge has swept the whole section: 20 mm deep in 10 mm cells, so about
+    // three quarters of it, and measured 0.699 (4.19 J of the 6 J the section
+    // costs).
+    //
+    // The bound was 0.70, which the measurement then sat a fifth of a percent
+    // under. What moved it: a piece is no longer made six thousand times harder
+    // to turn than its matter (JoltWorld::addFragments), so the two halves turn
+    // apart as the last bond goes rather than hanging on it, and the cut is
+    // over a little sooner. Two thirds of the section is the honest floor for
+    // "it paid for what it cut".
+    require(work > 0.65 * 15000.0 * section && work < 1.15 * 15000.0 * section,
             "cutting through did not cost R times the section it separated");
 }
 

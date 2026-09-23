@@ -3438,6 +3438,40 @@ void JoltWorld::addFragments(
                 throw std::runtime_error(
                     "Jolt ran out of bodies while creating fragments");
             }
+            // The inertia the piece was given, not the one Jolt would rather
+            // it had.
+            //
+            // Jolt diagonalises the inertia it is handed, and its
+            // decomposition substitutes a UNIT SPHERE for anything below its
+            // epsilon. A small piece is far below it: measured, a 20 mm oak
+            // chip asking for 3.73e-7 kg m2 was made with 0.00224 -- six
+            // thousand times harder to turn than the matter it is made of.
+            //
+            // Nothing could then stop such a piece turning. Friction at its
+            // contact, a knock from another piece, the rolling couple: each
+            // moves it by a six-thousandth of what it should, so a chip that
+            // comes off a break rolls away and keeps rolling (the owner,
+            // 2026-09-22: "little pieces seem to roll forever"). Measured on
+            // one set going at 0.49 m/s and 42 rad/s across concrete, which is
+            // what the break room's chips do: it travelled 4.2 m in ten
+            // seconds and still had three quarters of its speed. With its own
+            // inertia it stops in 21 mm. It also carried rotational energy
+            // that was not there -- 2 J in a 5.6 g chip, where its own matter
+            // holds 0.33 mJ.
+            //
+            // Scaling before the decomposition and back after is what the
+            // compound and reshape paths already do for exactly this reason;
+            // pieces did not, and every broken piece comes through here.
+            if (!fragment.anchored) {
+                JPH::MassProperties scaled = settings.mMassPropertiesOverride;
+                scaled.mInertia *= 1.0e6F;
+                JPH::Mat44 rotation;
+                JPH::Vec3 diagonal;
+                if (scaled.DecomposePrincipalMomentsOfInertia(rotation, diagonal) &&
+                    diagonal.GetX() > 0.0F && diagonal.GetY() > 0.0F && diagonal.GetZ() > 0.0F)
+                    body->GetMotionProperties()->SetInverseInertia(
+                        JPH::Vec3::sReplicate(1.0e6F) / diagonal, rotation.GetQuaternion());
+            }
             pending.push_back({
                 fragment.body_id,
                 body->GetID(),

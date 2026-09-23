@@ -193,6 +193,104 @@ void theFallbackIsTheShapeTheCellsMake() {
                       "it landed on is not the sheet's cells either");
 }
 
+// ---------------------------------------------------------------------------
+// A piece is as hard to turn as its matter, and a chip set rolling stops.
+// ---------------------------------------------------------------------------
+//
+// Jolt diagonalises the inertia it is handed and substitutes a unit sphere for
+// anything below its epsilon, which a 20 mm chip is far below: a piece asking
+// for 3.73e-7 kg m2 was made with 0.00224, six thousand times harder to turn.
+// Nothing could stop such a piece turning -- friction at its contact, a knock,
+// the rolling couple, all six thousand times too weak against it -- so chips
+// off a break rolled away and kept rolling (the owner, 2026-09-22).
+//
+// Measured before the fix: the chip below travelled 4.2 m in ten seconds and
+// still had three quarters of its speed. Bounce made no difference to that
+// (0, 0.43, 0.8 all the same), and neither did rounding its corners from 2 mm
+// to 0.2 mm, nor the solver's penetration slop. It was never the shape.
+
+// One 20 mm oak cell, as a break makes them.
+RigidFragmentDescription oakChip(MatterBodyId id, double spin_rad_s) {
+    RigidFragmentDescription piece{};
+    piece.body_id = id;
+    piece.mass_properties.mass_kg = 0.0056;
+    piece.mass_properties.center_of_mass_world_m = Vec3{0.0, 0.0102, 0.0};
+    piece.mass_properties.linear_velocity_m_s = Vec3{0.49, 0.0, 0.0};
+    // Rolling about the axis across its travel, the way the room's chips turn:
+    // 42 rad/s against 49 for rolling without slipping, measured in tests-break.
+    piece.mass_properties.angular_velocity_rad_s = Vec3{0.0, 0.0, -spin_rad_s};
+    const double side = 0.020;
+    const double inertia = piece.mass_properties.mass_kg * side * side / 6.0;
+    piece.mass_properties.inertia_world_kg_m2 =
+        Mat3{{{{{inertia, 0.0, 0.0}}, {{0.0, inertia, 0.0}}, {{0.0, 0.0, inertia}}}}};
+    piece.voxel_size_m = side;
+    for (int i = 0; i < 8; ++i)
+        piece.collision_points_local_m.push_back(Vec3{(i & 1) ? 0.01 : -0.01,
+                                                      (i & 2) ? 0.01 : -0.01,
+                                                      (i & 4) ? 0.01 : -0.01});
+    piece.voxel_centers_local_m.push_back(Vec3{0.0, 0.0, 0.0});
+    piece.source_node_count = 1;
+    // Oak on concrete, as the live world works it out.
+    piece.friction = 0.510;
+    piece.restitution = 0.432;
+    piece.rolling_resistance = 0.002;
+    return piece;
+}
+
+MaterialDefinition concreteFloor() {
+    MaterialDefinition floor;
+    floor.name = "concrete floor";
+    floor.density_kg_m3 = 2400.0;
+    floor.young_modulus_pa = 30.0e9;
+    floor.poisson_ratio = 0.2;
+    floor.static_friction = 0.70;
+    floor.dynamic_friction = 0.60;
+    floor.friction = 0.60;
+    floor.contact_damping_ratio = 0.30;
+    floor.derive_restitution_from_damping = true;
+    return floor;
+}
+
+void aPieceIsAsHardToTurnAsItsMatter() {
+    JoltWorld world;
+    world.setGravity({0.0, -9.80665, 0.0});
+    const RigidFragmentDescription piece = oakChip(2101, 0.0);
+    world.addFragments({piece});
+    const double asked = piece.mass_properties.inertia_world_kg_m2.m[2][2];
+    const double has = world.inertiaAbout(2101, Vec3{0.0, 0.0, 1.0});
+    std::cout << "  a 5.6 g chip: asked for " << asked << " kg m2, made with " << has << "\n";
+    require(has < 1.2 * asked && has > 0.8 * asked,
+            "a piece was made far harder or easier to turn than its own matter");
+}
+
+void aChipSetRollingComesToRest() {
+    JoltWorld world;
+    world.setGravity({0.0, -9.80665, 0.0});
+    const MaterialDefinition floor = concreteFloor();
+    world.addSupportSurface({.frame = makeSupportPlane({0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}),
+                             .material = floor,
+                             .half_length_tangent_m = 50.0,
+                             .half_length_bitangent_m = 50.0,
+                             .thickness_m = 0.5});
+    world.addFragments({oakChip(2102, 42.0)});
+    const double dt = 1.0 / 120.0;
+    double went = 0.0;
+    Vec3 was = world.snapshot(2102).center_of_mass_world_m;
+    for (int step = 0; step < 1200; ++step) {
+        world.step(dt);
+        const RigidSnapshot now = world.snapshot(2102);
+        const double dx = now.center_of_mass_world_m.x - was.x;
+        const double dz = now.center_of_mass_world_m.z - was.z;
+        went += std::sqrt(dx * dx + dz * dz);
+        was = now.center_of_mass_world_m;
+    }
+    const RigidSnapshot end = world.snapshot(2102);
+    std::cout << "  a chip rolling at 0.49 m/s and 42 rad/s went " << 1000.0 * went
+              << " mm and ended at " << length(end.linear_velocity_m_s) << " m/s\n";
+    require(length(end.linear_velocity_m_s) < 0.01, "a chip set rolling was still going after ten seconds");
+    require(went < 0.5, "a chip set rolling on concrete went more than half a metre");
+}
+
 } // namespace
 
 int main() {
@@ -205,6 +303,10 @@ int main() {
         std::cout << "[PASS] a piece with nothing to fall back to still says so\n";
         theFallbackIsTheShapeTheCellsMake();
         std::cout << "[PASS] the fallback is the shape the cells make\n";
+        aPieceIsAsHardToTurnAsItsMatter();
+        std::cout << "[PASS] a piece is as hard to turn as its own matter\n";
+        aChipSetRollingComesToRest();
+        std::cout << "[PASS] a chip set rolling across concrete comes to rest\n";
     } catch (const std::exception &error) {
         std::cout << "degenerate fragment tests failed: " << error.what() << std::endl;
         return 1;

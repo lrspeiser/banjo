@@ -2210,9 +2210,29 @@ void aWorldSavedComesBackAsItStood() {
     stepAnswering(*back, 240);
     const std::vector<LiveBodyPose> live_after = live->poses(), back_after = back->poses();
     for (const std::string &name : still) {
-        require(length(named(back_after, name).position_m - named(back_before, name).position_m) < 1e-9,
+        // What "stays put" is worth: the room opened again does what the live
+        // one does, and neither shifts by anything you could see.
+        //
+        // It used to be a nanometre in each room, which only ever held because
+        // a piece was being made six thousand times harder to turn than its own
+        // matter (JoltWorld::addFragments). With its real inertia a pile of
+        // ninety pane pieces settles a little when it is stepped on: measured,
+        // `pane piece 67` moves 159 nm and `pane piece 89` 733 micrometres, and
+        // the room opened again does the same to within 22 um.
+        //
+        // That last number is the save's own doing: poses are written rounded
+        // to 10 um, so the reopened room starts that far off and a settling
+        // pile parts from there. A nanometre was never a claim this test could
+        // make (the valley moves metres for a nanometre of start). What it can
+        // claim is that reopening changes nothing you could see, and that
+        // nothing at rest walks off.
+        const Vec3 moved_back = named(back_after, name).position_m - named(back_before, name).position_m;
+        const Vec3 moved_live = named(live_after, name).position_m - named(live_before, name).position_m;
+        require(length(moved_back - moved_live) < 1e-4,
+                "the " + name + " was at rest and the room opened again did not do what the live one did");
+        require(length(moved_back) < 2e-3,
                 "the " + name + " was at rest and moved in the room opened again");
-        require(length(named(live_after, name).position_m - named(live_before, name).position_m) < 1e-9,
+        require(length(moved_live) < 2e-3,
                 "the " + name + " was at rest and moved in the room");
     }
     std::cout << "  stepped on for 1 s: the " << still.size() << " at rest stayed put in both\n";
