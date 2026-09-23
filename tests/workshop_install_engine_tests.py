@@ -151,6 +151,12 @@ class NativeInstallation(unittest.TestCase):
         self.room=world_room.Room('yard');self.room.inventory=inventory.Inventory()
         self.app=SimpleNamespace(live=self.live,live_holder='world',room=self.room,engine_path=ENGINE,
           runs_path=root/'runs',store=room_store.RoomStore(root/'rooms'))
+        # Making a thing spends stock. This suite is about native geometry, mass
+        # and heat, not about material, so the rack is filled before it starts;
+        # the gate itself is covered by tests/workshop_rack_tests.py.
+        import workshop_library
+        for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber'):
+            workshop_library.set_rack(self.app, _material, 500.0)
         self.open()
 
     def open(self,spec=None):
@@ -187,7 +193,13 @@ class NativeInstallation(unittest.TestCase):
                 self.assertEqual('installed',result['status']);self.assertTrue(old._closed)
                 self.assertEqual(record,self.room.inventory.record())
                 install._preserved(before,self.snap(),result['root_body'])
-                self.assertTrue(result['engine_grid_verified']);self.assertFalse(result['resources_charged'])
+                self.assertTrue(result['engine_grid_verified'])
+                # Making a thing spends stock now: the rack is charged, and the
+                # receipt says what left it. The bag is still untouched, which is
+                # what the inventory check above is for.
+                self.assertTrue(result['resources_charged'])
+                self.assertTrue(result['materials_taken'])
+                self.assertEqual({material}, {row['material'] for row in result['materials_taken']})
                 loaded=self.app.store.load('yard');self.assertEqual(self.room.spec,loaded.spec)
                 self.assertEqual(self.snap(),loaded.world_record)
                 # Installed solid is actually in the running engine, not just

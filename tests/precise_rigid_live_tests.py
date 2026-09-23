@@ -253,6 +253,12 @@ class NativePreciseInstallation(unittest.TestCase):
         self.app=SimpleNamespace(live=self.live,live_holder='world',room=self.room,engine_path=ENGINE,
             runs_path=root/'runs',store=room_store.RoomStore(root/'rooms'))
         self.live.open(self.app,{'spec':self.room.spec})
+        # Making a thing spends stock. These suites are about native geometry and
+        # mass, not about material, so the rack is filled before they start; the
+        # gate itself is covered by tests/workshop_rack_tests.py.
+        import workshop_library
+        for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber'):
+            workshop_library.set_rack(self.app, _material, 500.0)
     def snap(self):return install._snapshot(self.live)
     def preview(self, material='oak', x=3.123):
         ctx=install.context(self.app,{})
