@@ -33,7 +33,7 @@ from typing import Any
 
 from mcp import workshop_components
 from mcp import workshop_construction as construction
-from mcp.workshop import WirePart
+from mcp.workshop import WirePart, strut as workshop_strut
 import workshop_articulation
 
 SCHEMA = "banjo.workshop-validity.v1"
@@ -400,9 +400,91 @@ def _snap_to_the_grid(base: Any, design: Any, overrides: dict[str, Any], cell_m:
     return _readopt(base, patch), said
 
 
+def _strutlike(part: WirePart, joined: set[str]) -> bool:
+    """A member that spans two things: long, slender, and fastened at both ends."""
+    if len(joined) != 2:
+        return False
+    sizes = sorted(part.size_m)
+    return sizes[2] > 2.5 * max(sizes[1], 1e-9)
+
+
+def _ends(part: WirePart) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    matrix = construction.rotation_matrix(part.rotation_deg)
+    local = max(range(3), key=lambda i: part.size_m[i])
+    column = construction._column(matrix, local)
+    half = part.size_m[local] / 2.0
+    lo = tuple(part.center_m[i] - column[i] * half for i in range(3))
+    hi = tuple(part.center_m[i] + column[i] * half for i in range(3))
+    return lo, hi
+
+
+def _rebuild_struts(base: Any, design: Any, overrides: dict[str, Any], cell_m: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A strut is its two anchors, so after a redraw it is rebuilt between them.
+
+    Everything else here resizes a part where it stands. That cannot work for a
+    member that spans two things: the moment either end moves, a resized strut
+    is the wrong length and pointing the wrong way, and the joints at both ends
+    hang open. The template builds these from their endpoints, and so does this.
+    """
+    was = _built(base, _readopt(base, {}))
+    original = {p.name: p for p in was.parts}
+    _, touching_then = _graph(was)
+    now = {p.name: p for p in design.parts}
+    _, touching_now = _graph(design)
+    open_pairs = {tuple(sorted((j["a"], j["b"]))) for j in construction.joints(design) if j.get("open")}
+    if not open_pairs:
+        return overrides, []
+
+    patch = {k: deepcopy(v) for k, v in overrides.items()}
+    said: list[dict[str, Any]] = []
+    for name, part in original.items():
+        mates = touching_then.get(name, set())
+        if not _strutlike(part, mates) or name not in now:
+            continue
+        if not any(tuple(sorted((name, mate))) in open_pairs for mate in mates):
+            continue
+        anchors = []
+        lo, hi = _ends(part)
+        for mate in sorted(mates):
+            other_then, other_now = original.get(mate), now.get(mate)
+            if other_then is None or other_now is None:
+                break
+            end = min((lo, hi), key=lambda e: sum((e[i] - other_then.center_m[i]) ** 2 for i in range(3)))
+            # Where it holds the other part, as a fraction of that part rather
+            # than in metres: an end on the deck's top face has to stay on the
+            # top face when the deck is drawn thicker, not end up buried in it.
+            local = construction.to_local(other_then, end)
+            share = [local[i] / max(other_then.size_m[i] / 2.0, 1e-9) for i in range(3)]
+            moved = [share[i] * other_now.size_m[i] / 2.0 for i in range(3)]
+            anchors.append(construction.to_product(other_now, moved))
+        if len(anchors) != 2:
+            continue
+        here = now[name]
+        section = sorted(here.size_m)[:2]
+        try:
+            rebuilt = workshop_strut(name=name, role=here.role, from_m=anchors[0], to_m=anchors[1],
+                                     section_m=(section[1], section[0]), material=here.material,
+                                     shape=here.shape, family=here.family)
+        except ValueError:
+            continue
+        patch.setdefault(name, {})
+        patch[name]["size_m"] = list(rebuilt.size_m)
+        patch[name]["center_m"] = list(rebuilt.center_m)
+        patch[name]["rotation_deg"] = list(rebuilt.rotation_deg)
+        said.append({"rule": "a strut is rebuilt between its anchors", "part": name,
+                     "says": f"{name} spans two things that the redraw moved; rebuilt between "
+                             f"where it holds them now, at "
+                             f"{round(max(rebuilt.size_m) * 1000)} mm long"})
+    if not said:
+        return overrides, []
+    return _readopt(base, patch), said
+
+
 RULES = (
     ("retain its own occupied cells", _grow_to_whole_cells),
     ("absent from the compiled occupied cells", _snap_to_the_grid),
+    ("authored joint is open", _rebuild_struts),
+    ("no longer touch", _rebuild_struts),
     ("Moving groups overlap", _shaft_stubs),
     ("is claimed by both", _shaft_stubs),
     ("mixed-material interface", _one_material_to_a_group),
