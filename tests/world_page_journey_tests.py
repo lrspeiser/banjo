@@ -1025,7 +1025,14 @@ class ARoverRoamsTheShore(PageJourney):
         self.assertGreater(path, 10.0, "it did not roam")
         self.assertGreaterEqual(said["turns"], 1, f"it never turned away from anything: {seen}")
         self.assertLessEqual(wet, 0.003, "a wheel went into the water")
-        self.assertIn(text("mp-condition"), (said["why"], "nothing in its way"))
+        # The panel says why, and it is still roaming: the reason it gave a
+        # moment ago is not the reason now. Ask the page to compare the two
+        # itself, so both come from one instant instead of two round-trips apart.
+        agrees = (f"document.getElementById('mp-condition').textContent === "
+                  f"({program}.power ? ({program}.why || 'nothing in its way') : 'off')")
+        self.assertTrue(self.wait_for(agrees, 10),
+                        f"the panel does not say the program's own reason: it shows "
+                        f"{text('mp-condition')!r} for a program that says {self.js(program + '.why')!r}")
         self.click("mp-off")
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
                         f"Off did not reach the rover's program: {self.situation()}")
