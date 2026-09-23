@@ -220,7 +220,8 @@ public:
                 control.no_failure_steps, control.energy_flat_steps,
                 status_.last_energy_gain_step, control.calm_steps,
                 status_.last_damage_gain_step, status_.max_damage,
-                control.calm_damage_margin);
+                control.calm_damage_margin, status_.removed_energy_j,
+                control.removable_energy_j);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;

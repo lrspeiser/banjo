@@ -290,7 +290,13 @@ function breakCost(cost) {
     + ` over ${(cost.crack_area_m2 * 1e4).toFixed(0)} cm² of new crack:`
     + ` ${each(cost.crack_energy_j_m2)} J/m², where ${material} itself takes`
     + ` ${each(cost.declared_energy_j_m2)} J/m² and this room charges`
-    + ` ${each(cost.law_energy_j_m2)} (${cost.failure_law}).`;
+    + ` ${each(cost.law_energy_j_m2)} (${cost.failure_law}).`
+    // A break can only spend what the blow and the thing itself brought. When
+    // that runs out the break stops there, and saying so is the difference
+    // between "it came apart this far" and "it came apart".
+    + (cost.spent_it_all
+        ? ` That was everything it had to spend (${each(cost.available_energy_j)} J), so it stopped there.`
+        : "");
 }
 
 // The time of day under a sun with a day, as a clock and where the sun is:

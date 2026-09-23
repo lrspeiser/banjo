@@ -284,6 +284,15 @@ struct LiveBreakCost {
     // material's strength, whatever law is in force.
     std::size_t tensile_bonds{}, compressive_bonds{}, shear_bonds{};
     double removed_energy_j{};
+    // What the run had to spend, and whether it spent all of it: the island's
+    // kinetic energy plus the elastic energy its bonds already held, when the
+    // run began. A break cannot honestly take more energy out of the world than
+    // the thing breaking and whatever struck it brought in, and before this
+    // ceiling existed one did -- a 0.93 kg plank piece carrying 48 J was turned
+    // into 83 pieces by a run that removed 58 (docs/what-a-break-costs.md).
+    double available_energy_j{};
+    double available_kinetic_j{}, available_elastic_j{};
+    bool spent_it_all{};
     double crack_area_m2{};
     double crack_energy_j_m2{};  // removed_energy_j / crack_area_m2, when there is area
     double declared_energy_j_m2{};   // the material's own fracture energy

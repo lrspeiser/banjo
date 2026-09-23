@@ -292,6 +292,7 @@ struct LiveWorld::Pending {
     LatticeState state{};
     std::unique_ptr<LatticeBackend> backend;
     RunControl control{};
+    double entry_kinetic_j{}, entry_elastic_j{};
     SphereState<double> parked{};
     RunStatus status{};
     std::size_t which{};
@@ -8330,6 +8331,18 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         backend->upload(island_state, settings, parked);
     }
     RunControl control{};
+    // What this run has to spend. A break may not take more energy out of the
+    // world than the island brought into it: the kinetic energy of its cells
+    // and the elastic energy its bonds already hold, both read off the state
+    // the run is about to start from. No number anyone picked comes into it.
+    //
+    // It is an upper bound and not a tight one -- an island drifting past
+    // something carries kinetic energy that no contact of its could ever turn
+    // into cracks -- which is the right way round: the ceiling never invents
+    // damage, it only refuses to keep paying for it.
+    job.entry_kinetic_j = latticeStateKineticEnergy(island_state);
+    job.entry_elastic_j = latticeStateElasticEnergy(island_state);
+    control.removable_energy_j = job.entry_kinetic_j + job.entry_elastic_j;
     // The window has to cover the rigid step that was taken back BEFORE it can
     // cover the impact: the world is one step short of contact, so a ball at
     // 5 m/s is still up to a step's travel away when the lattice starts. A 3 ms
@@ -8995,6 +9008,13 @@ std::size_t LiveWorld::applyPending() {
         cost.compressive_bonds = modes.compressive;
         cost.shear_bonds = modes.shear;
         cost.removed_energy_j = status.removed_energy_j;
+        cost.available_energy_j = job.control.removable_energy_j;
+        cost.available_kinetic_j = job.entry_kinetic_j;
+        cost.available_elastic_j = job.entry_elastic_j;
+        // Exit reason 6: the run stopped because what the island brought in was
+        // spent. Whatever was still damaged stays damaged and can go in a later
+        // blow that pays for it.
+        cost.spent_it_all = status.exit_reason == 6U;
         cost.crack_area_m2 = g.crossings_100 > 0.0
             ? static_cast<double>(status.broken_bonds) * impl_->request.cell_size_m *
                   impl_->request.cell_size_m / g.crossings_100

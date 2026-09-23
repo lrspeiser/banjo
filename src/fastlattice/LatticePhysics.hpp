@@ -1459,7 +1459,13 @@ BANJO_HD void nodeVelocityUpdate(const LatticeArrays<Real> &L, const StepSetting
 // When the lattice phase may stop, shared by both backends. 0 continue,
 // 1 cascade quiet (no failure for quiet_steps after at least one failure and
 // min_steps in total), 2 nothing has failed by no_failure_steps, 4 the removed
-// energy has stopped growing, 5 nothing is anywhere near failing.
+// energy has stopped growing, 5 nothing is anywhere near failing, 6 the energy
+// the island brought into the run is spent.
+//
+// Reason 6 is a conservation rule, not a performance one, and it answers to no
+// step count: a run may not remove more bond energy than the island had to
+// give. It is checked first for that reason, and before min_steps, because a
+// run that has already overspent should not go on because it is young.
 //
 // Reason 5 is the cheap exit for a scene that never breaks, and those are most
 // of them: a ball rolling down a ramp, a stack standing there. Measured on a
@@ -1493,7 +1499,10 @@ BANJO_HD unsigned latticeExitReason(unsigned long long completed, unsigned broke
                                     unsigned long long last_energy_gain_step,
                                     unsigned long long calm_steps,
                                     unsigned long long last_damage_gain_step,
-                                    double max_damage, double calm_damage_margin) {
+                                    double max_damage, double calm_damage_margin,
+                                    double removed_energy_j = 0.0,
+                                    double removable_energy_j = 0.0) {
+    if (removable_energy_j > 0.0 && removed_energy_j >= removable_energy_j) return 6U;
     if (broken > 0U && quiet_steps > 0ULL && completed >= min_steps &&
         completed > last_failure_step && completed - last_failure_step > quiet_steps)
         return 1U;

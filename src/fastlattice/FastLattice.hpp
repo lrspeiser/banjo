@@ -89,6 +89,21 @@ struct RunControl {
     // 0 disables. This is what saves a scene that was never going to break.
     std::uint64_t calm_steps{};
     double calm_damage_margin{0.5};
+    // Stop once the bonds removed have taken this much energy out of the run.
+    // 0 (the default) disables it and nothing is capped.
+    //
+    // A break cannot honestly take more energy out of the world than the thing
+    // breaking and whatever struck it brought into the run. Measured in the
+    // break room before this existed: a 0.93 kg plank piece hit the ground at
+    // 10.2 m/s, carrying 48 J, and the run removed 58 J of bond energy while
+    // turning it into 83 pieces (docs/what-a-break-costs.md). The ceiling is
+    // the island's own kinetic and stored elastic energy, so it needs no
+    // number anyone picked; the caller works it out and passes it in.
+    //
+    // It is checked after a substep, like every other stop, so a run can
+    // overspend by at most what one substep removes. What it cannot do is go
+    // on spending.
+    double removable_energy_j{};
     // Capture node displacements and bond state every this many substeps
     // (state before the substep). 0 disables.
     std::uint64_t capture_stride{};
@@ -127,7 +142,8 @@ struct RunStatus {
     double striker_dissipated_j{};
     bool energy_audited{};
     // 0 none/max_steps of the last call, 1 cascade quiet, 2 no failure by the
-    // deadline, 3 max_steps reached.
+    // deadline, 3 max_steps reached, 4 removed energy flat, 5 nothing near
+    // failing, 6 the energy the island had is spent.
     unsigned exit_reason{};
     unsigned launches{};
     double kernel_seconds{};   // CUDA event time over all launches
