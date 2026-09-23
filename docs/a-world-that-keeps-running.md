@@ -302,6 +302,36 @@ scenery, never what is in a hand, and never a body that an unfinished fracture
 still holds an index to, which would either resurrect a body that is gone or
 write a piece back onto somebody else's slot.
 
+### Three ways it did not happen (2026-09-22)
+
+The owner walked through a room of broken pieces, and nothing came with them.
+Three things were wrong at once, and each of them looked like the feature
+simply not being there.
+
+**The reach was measured from the camera.** The camera is the person's eyes,
+1.62 m up, so a shard lying against their boots is 1.6 m from it and nothing on
+the floor was ever inside the 1.2 m reach. The sweep could only fire while
+crouching -- which is why it looked right in a close-up screenshot and did
+nothing to a standing person. It is measured from the feet now: flat distance
+within reach, and anything from the floor to shoulder height, so a piece on a
+bench beside you counts too.
+
+**It stopped while the hand held anything.** So picking up one piece -- to put
+it away, which is what a person does first -- switched off the collecting of
+all the others. The engine already leaves whatever a hand holds where it is,
+so the gate bought nothing.
+
+**Debris meant 64 cells.** That is a fragment for one hand, and a plank broken
+in seven leaves 784 g pieces of about 130 cells: exactly the pieces somebody
+wants, and both routes refused them -- the sweep passed over them, and the bag
+said "only whole things go in the bag" while the panel went on offering it. The
+ceiling is 512 cells now, about 3 kg of oak or 10 kg of glass at 20 mm cells,
+and what a person can carry is the limit that decides the rest.
+
+A broken piece has no name of its own to come back under, so it cannot be an
+item in the record. It is material: the same key that bags a thing sweeps a
+piece into what you carry, and the panel says so.
+
 Three things this needed:
 
 **`described` is not where a body is.** It carries the pose a body was *built*

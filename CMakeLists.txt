@@ -1508,4 +1508,13 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_BREAK_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/break_room_tests.py -v)
     set_tests_properties(banjo_break_room_tests PROPERTIES TIMEOUT 180)
+    # And every room the server serves: each one opens, steps and keeps up
+    # with realtime, which is how a room that rotted is found before a
+    # person clicks on it.
+    add_test(NAME banjo_every_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROOMS_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/every_room_tests.py -v)
+    set_tests_properties(banjo_every_room_tests PROPERTIES TIMEOUT 300)
 endif()

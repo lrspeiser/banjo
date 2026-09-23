@@ -1826,11 +1826,17 @@ function followJoints() {
   }
 }
 
-// How close you have to be, and how big a thing can be and still be debris.
-// A cell is 20 mm, so 64 cells is a fragment you could hold in one hand; a
-// plate that broke in half is not something you pocket by walking past it.
+// How close you have to be, and how big a piece can be and still be something
+// you walk off with.
+//
+// 64 cells was a fragment you could hold in one hand, and it left the pieces
+// people actually want lying there: a plank broken in seven leaves 784 g
+// pieces of about 130 cells, so walking over them did nothing and asking for
+// one was refused (the owner, 2026-09-22). 512 cells is a piece you could
+// carry in two hands -- at 20 mm cells, about 3 kg of oak, 10 kg of glass --
+// and what you can actually carry is the limit that decides the rest.
 const REACH_M = 1.2;
-const DEBRIS_CELLS = 64;
+const DEBRIS_CELLS = 512;
 
 // Walking over the pieces picks them up.
 //
@@ -1845,19 +1851,75 @@ const DEBRIS_CELLS = 64;
 // worth a round trip. Asking every tick regardless would be thirty requests a
 // second to be told "nothing", which is the cost that trimming the step reply
 // just removed.
-function debrisUnderfoot() {
+// Where the person stands, which is not where they look from: the camera is at
+// eye height, so a shard lying against your boots is 1.6 m from the camera and
+// was never "within reach" of it. Measured from the eye, the sweep could only
+// ever fire while crouching (the owner, 2026-09-22: walking near pieces did
+// nothing).
+function feet() {
   const p = camera.position;
-  for (const entry of world.bodies.values()) {
-    if (entry.shape !== "hull" || entry.anchored) continue;
-    if (entry.mesh.position.distanceTo(p) <= REACH_M) return true;
+  return { x: p.x, y: p.y - EYE, z: p.z };
+}
+
+function debrisUnderfoot() {
+  const stand = feet();
+  // Whatever the hand holds stays in it -- the engine leaves it alone
+  // (LiveWorld::collect) -- so a piece carried in the hand is not a reason to
+  // ask. Anything else loose within reach of where you stand is.
+  const inHand = world.held && world.held.name;
+  for (const [name, entry] of world.bodies) {
+    if (entry.shape !== "hull" || entry.anchored || name === inHand) continue;
+    const at = entry.mesh.position;
+    // Flat distance, and anything from the floor to shoulder height: a piece
+    // on a bench beside you is as reachable as one on the ground.
+    if (Math.hypot(at.x - stand.x, at.z - stand.z) > REACH_M) continue;
+    if (at.y > stand.y - 0.5 && at.y < stand.y + 1.5) return true;
   }
   return false;
 }
 
 async function sweep() {
-  const p = camera.position;
-  const got = await act("collect", { at: [p.x, p.y, p.z], radius_m: REACH_M,
-                                     largest_cells: DEBRIS_CELLS });
+  if (handsFull()) return {};
+  // Swept from where you stand, and up to the height of your hands, so the
+  // sphere the engine clears is the one around your feet.
+  const stand = feet();
+  return takeHaul(await act("collect", { at: [stand.x, stand.y + 0.5, stand.z],
+                                         radius_m: REACH_M + 0.5,
+                                         largest_cells: DEBRIS_CELLS }));
+}
+
+// Material has weight, and a person can carry so much of it: past the limit
+// the world stops filling your arms as you walk (the load is what the Bag tab
+// shows, and what slows you down).
+function handsFull() {
+  return !!world.carryLimitKg && carriedKg() >= world.carryLimitKg;
+}
+
+// One piece, swept from where it lies: what Q does with a broken piece, which
+// is material rather than a thing the bag can keep. The hand lets go of it
+// first, because the engine leaves whatever a hand holds where it is.
+async function sweepPiece(name) {
+  const entry = world.bodies.get(name);
+  if (!entry) return false;
+  if (world.held && world.held.name === name) await dropIt(true);
+  const p = (world.bodies.get(name) || entry).mesh.position;
+  if (handsFull()) {
+    lastAction(`You are carrying all you can: ${Math.round(carriedKg())} kg.`, "refused");
+    return false;
+  }
+  const got = takeHaul(await act("collect", { at: [p.x, p.y, p.z], radius_m: 0.6,
+                                              largest_cells: DEBRIS_CELLS }));
+  const haul = got.collected || [];
+  if (!haul.length) {
+    lastAction(`${titled(name)} is too big a piece to carry off: put it down instead.`, "refused");
+    return false;
+  }
+  const much = haul.map((lot) => `${grams(lot.kg)} of ${lot.material.replace(/_/g, " ")}`).join(", ");
+  lastAction(`Swept up ${much}.`);
+  return true;
+}
+
+function takeHaul(got) {
   const haul = got.collected || [];
   if (haul.length) {
     for (const lot of haul) {
@@ -2105,8 +2167,10 @@ async function toTheBag() {
   if (!name) { lastAction("Look at what to put in your bag, or hold it, first.", "refused"); return; }
   const said = world.held ? titled(heldName()) : titled(name);
   const answer = await inventoryChange(world.held && recordHolds(name) ? "stow" : "take", name);
-  if (answer && !answer.ok && answer.unknown)
-    lastAction(`${said} is a broken piece: only whole things go in the bag.`, "refused");
+  // A broken piece is not a thing the record can keep -- it has no name of its
+  // own to come back under -- but it is material, and material goes into what
+  // you carry. So the same key sweeps it up instead of refusing.
+  if (answer && !answer.ok && answer.unknown) await sweepPiece(name);
 }
 
 // 1-9: that slot of the bag into the hand -- and, with the thing from that slot
@@ -2493,7 +2557,12 @@ function detailsModel() {
       rows.push([["Mouse wheel"], world.placing.turnable ? "turn it" : "it goes down the way it is held"],
                 [["Esc"], "stop placing: it stays in your hand"]);
     }
-    if (ours || held.throwable || held.pick || held.blade) rows.push([[k("stow")], "put it in your bag"]);
+    // A broken piece has no name of its own to come back under, so the bag
+    // takes it as the material it is made of: the same key, said as what it
+    // does.
+    if (ours || held.throwable || held.pick || held.blade)
+      rows.push([[k("stow")], entry && entry.shape === "hull" ? "sweep it up into what you carry"
+                                                             : "put it in your bag"]);
     if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
     // Placing: what the copy is doing is the only help -- not a throw's preview,
     // nor the wheel as it is when only holding.
@@ -2509,7 +2578,8 @@ function detailsModel() {
     model.facts = factsOf(name, entry, world.aim.distance_m);
     choiceRows();
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
-      rows.push([[k("stow")], "put it in your bag"]);
+      rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"
+                                                     : "put it in your bag"]);
     rows.push([[k("heat")], "heat it"]);
   } else if (world.groundAim) {
     const underfoot = groundMadeOf(world.groundAim);
@@ -5262,10 +5332,13 @@ async function tick() {
     // What the springs hold after this step, before anything below reads them.
     takeElastics(state.elastics);
 
-    // Anything loose underfoot comes with you. Done after the step so it acts
-    // on where things have just landed, and before draw so the pieces it takes
-    // are moved into the fade rather than deleted outright.
-    if (!world.held && debrisUnderfoot()) {
+    // Anything loose underfoot comes with you, whatever the hand is holding:
+    // the engine leaves the held thing where it is, and stopping the sweep
+    // while you carry something meant that picking up one piece switched off
+    // the collecting of all the others (the owner, 2026-09-22). Done after the
+    // step so it acts on where things have just landed, and before draw so the
+    // pieces it takes are moved into the fade rather than deleted outright.
+    if (debrisUnderfoot()) {
       const swept = await sweep();
       if (swept.collected && swept.collected.length) tellLater();
     }

@@ -210,12 +210,18 @@ class PageJourney(unittest.TestCase):
             time.sleep(0.2)
         return False
 
-    def press_e(self):
+    def press_key(self, code, key):
+        """One key, pressed as a person presses it. The page listens for real
+        key events, so nothing here reaches into its handlers."""
         for kind in ("keyDown", "keyUp"):
             self.page.send("Input.dispatchKeyEvent", {
-                "type": kind, "key": "e", "code": "KeyE", "windowsVirtualKeyCode": 69,
-                "nativeVirtualKeyCode": 69, **({"text": "e", "unmodifiedText": "e"} if kind == "keyDown" else {})})
+                "type": kind, "key": key, "code": code,
+                "windowsVirtualKeyCode": ord(key.upper()), "nativeVirtualKeyCode": ord(key.upper()),
+                **({"text": key, "unmodifiedText": key} if kind == "keyDown" else {})})
             time.sleep(0.05)
+
+    def press_e(self):
+        self.press_key("KeyE", "e")
 
     def position(self, name):
         q = json.dumps(name)
@@ -1126,8 +1132,17 @@ class ARoverRestsThroughTheNight(PageJourney):
         self.assertTrue(self.wait_for("banjoRoom.world.sun.elevation_deg < 0", 240),
                         f"the sun never set: {self.situation()}")
         self.assertTrue(self.wait_for("banjoRoom.light().key === 0", 10), "the sun set and its lamp stayed lit")
-        self.assertRegex(clock(), r"\d\d:\d\d, night")
-        self.assertIn("nothing: it is night", self.js("document.getElementById('machine-list').innerText"))
+        # The clock and the Machines list are drawn from the sun the page had
+        # at the start of the step, so they are one frame behind it. At CI's
+        # seven frames a second that frame is 150 ms, and demanding the words
+        # on the first read failed there while passing at 60 fps here.
+        self.assertTrue(self.wait_for("/\\d\\d:\\d\\d, night/.test("
+                                      "document.getElementById('room-clock').textContent)", 20),
+                        f"the clock does not say it is night: {clock()}")
+        self.assertTrue(self.wait_for("document.getElementById('machine-list').innerText"
+                                      ".includes('nothing: it is night')", 20),
+                        "the panel does not say it is getting nothing: "
+                        + self.js("document.getElementById('machine-list').innerText")[:200])
         self.assertTrue(self.wait_for(f"{program}.doing === 'resting'", 240),
                         f"its battery never ran low enough to rest: {self.situation()}")
         text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
@@ -1175,6 +1190,146 @@ class ABreakSaysWhatItCost(PageJourney):
         self.assertIn("where oak itself takes 1,000 J/m", said)
         self.assertIn("this room charges 1,000 (energy-scaled)", said)
         self.no_page_errors("after the plank broke")
+
+
+class BrokenPiecesComeWithYou(PageJourney):
+    """Walking near broken pieces collects them, and a piece in the hand goes
+    into what you carry (the owner, 2026-09-22: "when I walk near broken pieces
+    it should just collect them automatically into my inventory").
+
+    Two things were wrong, and this pins both. The reach was measured from the
+    camera, which sits at eye height, so a shard against your boots was 1.6 m
+    away and nothing was ever within the 1.2 m reach: the sweep could only fire
+    while crouching. And a piece in the hand was refused the bag -- "only whole
+    things go in the bag", because a broken piece has no name of its own to
+    come back under -- while the panel went on offering it. A piece is material
+    now, and material goes into what you carry."""
+
+    LOOSE = ("[...banjoRoom.world.bodies].filter(([n, e]) => e.shape === 'hull' && !e.anchored)"
+             ".map(([n, e]) => [n, e.mesh.position.toArray()])")
+    STOCK = "[...banjoRoom.world.stock].map(([what, have]) => [what, have.kg])"
+
+    def pieces_in_the_room(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-break"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-break' && "
+                                      "banjoRoom.ready()", 300), "the breaking room did not open")
+        self.assertTrue(self.wait_for(f"{self.LOOSE}.length > 4", 120), "the plank never broke into pieces")
+        return self.js(self.LOOSE)
+
+    def test_walking_over_them_collects_them(self):
+        self.pieces_in_the_room()
+        # Let them come to rest first: for the first seconds the pieces are
+        # still falling and breaking again, and a position read then is not
+        # where the piece will be by the time anyone stands on it.
+        self.wait_world(3.0)
+        loose = self.js(self.LOOSE)
+        held_before = dict(self.js(self.STOCK)).get("oak", 0.0)
+        # Standing on both feet, as a person does: eye height above the floor
+        # the pieces are lying on. Before the fix this was the whole bug --
+        # the reach was measured from the camera, so from standing height
+        # nothing on the floor was ever within it.
+        name, at = loose[0]
+        self.page.evaluate(f"banjoRoom.standAt({at[0]}, {at[1] + 1.62}, {at[2]}); true")
+        # What you carry is the claim, and it can only grow by collecting:
+        # naming pieces instead made this flake, because a piece also leaves
+        # the floor by breaking again.
+        grew = f"Object.fromEntries({self.STOCK}).oak > {held_before} + 0.001"
+        self.assertTrue(self.wait_for(grew, 45),
+                        f"standing among the pieces collected nothing: {self.situation()}")
+        stock = dict(self.js(self.STOCK))
+        print(f"\n   standing among them, without walking: "
+              + ", ".join(f"{kg * 1000:.0f} g of {what}" for what, kg in stock.items())
+              + f" (was {held_before * 1000:.0f} g of oak)", flush=True)
+        self.assertIn("oak", self.js("document.getElementById('inv-carrying').innerText"))
+        self.no_page_errors("after walking over the pieces")
+
+    def test_a_piece_in_the_hand_goes_into_what_you_carry(self):
+        loose = self.pieces_in_the_room()
+        # Stand back from one, further than the sweep reaches, or it is
+        # collected before the hand gets to it.
+        name, at = loose[0]
+        self.page.evaluate(f"banjoRoom.standAt({at[0] + 2.0}, {at[1] + 1.62}, {at[2] - 2.0}); "
+                           f"banjoRoom.lookAt({at[0]}, {at[1]}, {at[2]}); true")
+        if not self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {json.dumps(name)}", 15):
+            self.skipTest("could not get the crosshair onto a piece from outside the sweep")
+        self.press_e()
+        self.assertTrue(self.wait_for(f"banjoRoom.held() && banjoRoom.held().name === {json.dumps(name)}", 15),
+                        f"E did not take hold of the piece: {self.situation()}")
+        # The panel says what the key really does with a piece, and then it
+        # does it.
+        offered = self.js("banjoRoom.details().rows.map((r) => r[1]).join(' / ')")
+        self.assertIn("sweep it up into what you carry", offered)
+        before = dict(self.js(self.STOCK)).get("oak", 0.0)
+        self.press_key("KeyQ", "q")
+        self.assertTrue(self.wait_for(f"!banjoRoom.held() && Object.fromEntries({self.STOCK}).oak > {before}", 20),
+                        f"the piece did not go into what you carry: {self.situation()}")
+        said = self.js("document.getElementById('details-last-text').textContent")
+        print(f"\n   with a piece in hand, Q said: {said}", flush=True)
+        self.assertNotIn("only whole things", said)
+        self.no_page_errors("after collecting a broken piece")
+
+
+class WhatIsOfferedIsDone(PageJourney):
+    """What the panel offers, the room does.
+
+    The panel lists what a key will do with the thing you are looking at or
+    holding, and the room can still refuse it: a broken piece was offered "put
+    it in your bag" and answered "only whole things go in the bag" (the owner,
+    2026-09-22). An offer that is refused is worse than no offer, because the
+    person cannot tell a rule from a fault.
+
+    So: in a room of authored things and one of broken pieces, take each thing
+    the bag key is offered for, press it, and read what the room said back.
+    Nothing is allowed to come back as a refusal."""
+
+    # world.last is what the panel's Last line shows, with the tone the page
+    # gave it: "did" or "refused".
+    LAST = "banjoRoom.world.last || null"
+
+    def offers_the_bag(self):
+        return "put it in your bag" in self.js(
+            "banjoRoom.details().rows.map((r) => r[1]).join(' / ')") or "sweep it up into what you carry" in self.js(
+            "banjoRoom.details().rows.map((r) => r[1]).join(' / ')")
+
+    def try_the_bag(self, name, targets):
+        """Aim at each target, and where the bag key is offered, press it."""
+        tried, refused = 0, []
+        for target in targets:
+            where = self.position(target)
+            if not where:
+                continue
+            self.page.evaluate(f"banjoRoom.standAt({where[0] + 1.6}, {where[1] + 1.62}, {where[2] - 1.6}); "
+                               f"banjoRoom.lookAt({where[0]}, {where[1]}, {where[2]}); true")
+            if not self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {json.dumps(target)}", 8):
+                continue
+            if not self.offers_the_bag():
+                continue
+            self.page.evaluate("banjoRoom.world.last = null; true")
+            self.press_key("KeyQ", "q")
+            tried += 1
+            said = None
+            for _ in range(40):
+                said = self.js(self.LAST)
+                if said:
+                    break
+                time.sleep(0.2)
+            if said and said.get("tone") == "refused":
+                refused.append(f"{target}: {said.get('text')}")
+        return tried, refused
+
+    def test_the_bag_key_is_never_offered_and_then_refused(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-break"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-break' && "
+                                      "banjoRoom.ready()", 300), "the breaking room did not open")
+        self.assertTrue(self.wait_for("[...banjoRoom.world.bodies].filter(([n, e]) => e.shape === 'hull')"
+                                      ".length > 4", 120), "the plank never broke into pieces")
+        self.wait_world(3.0)
+        pieces = self.js("[...banjoRoom.world.bodies].filter(([n, e]) => e.shape === 'hull' && !e.anchored)"
+                         ".map(([n]) => n).slice(0, 5)")
+        tried, refused = self.try_the_bag("tests-break", pieces)
+        print(f"\n   broken pieces: the bag key was offered for {tried} of them", flush=True)
+        self.assertEqual([], refused, "offered, then refused")
+        self.no_page_errors("after trying the bag on broken pieces")
 
 
 class AChatChangeKeepsTheHoistUp(PageJourney):
