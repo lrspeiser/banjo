@@ -1018,6 +1018,17 @@ stands at 1 complete, 26 partial and 3 planned.
 - [ ] **Page controls for what only the chat or the protocol can do:** gas
   vents, filling and cutting ground, the river's flow, heat-weakened fixings,
   the rolling and material reports.
+- [ ] **Something in the world that fills the rack.** A design is priced against
+  what the workshop holds and making it spends that stock, but no chopping,
+  quarrying or reclaiming puts anything back: the rack is stocked by hand on the
+  bench.
+- [ ] **Take a made thing back apart.** A machine installs as separate bodies
+  that keep their joints, and the world can break it; but there is no intake
+  that carries one back into the Workshop, opens it as its components and
+  returns its material to the rack.
+- [ ] **Let a template say what you take hold of.** A machine has to name the
+  component you work it by, and bind each place you touch it, before the world
+  will take it. The templates declare neither, so both are set through the chat.
 - [ ] **Manufacturing and storage in the world page** rather than on
   `/fabrication` alone.
 - [ ] **Show the lab's hidden experiments or remove them.** The server still
