@@ -134,6 +134,93 @@ class ADoorNobodyTunedFor(unittest.TestCase):
                       "re-adopting after a redraw must not turn the hinge back into a bond")
 
 
+class AWellPulleyBuiltThroughTheChatsTools(unittest.TestCase):
+    """Every step here is a tool call the model could make, with its arguments.
+
+    Nothing touches the fitter or the construction library directly, so this
+    covers the hooks as well as the redraws: if the pulley comes out as a drum
+    turning on a headstock, a model with these tools can build a machine.
+    """
+
+    CALLS = [
+        ("add_part", {"name": "post-right", "role": "post", "size_m": [0.11, 2.2, 0.11],
+                      "center_m": [0.45, 1.1, 0.0], "material": "oak"}),
+        ("add_part", {"name": "headstock", "role": "beam", "size_m": [1.01, 0.11, 0.11],
+                      "center_m": [0.0, 2.255, 0.0], "material": "oak",
+                      "fasten_to": "post-left", "kind": "fixed"}),
+        ("set_joint", {"a": "headstock", "b": "post-right", "kind": "fixed"}),
+        ("add_part", {"name": "drum", "role": "drum", "size_m": [0.18, 0.26, 0.26],
+                      "center_m": [0.0, 2.07, 0.0], "material": "oak",
+                      "fasten_to": "headstock", "kind": "bearing"}),
+        ("add_part", {"name": "rope", "role": "rope", "size_m": [0.05, 1.2, 0.05],
+                      "center_m": [0.0, 1.34, 0.13], "material": "oak",
+                      "fasten_to": "drum", "kind": "fixed"}),
+        ("add_part", {"name": "bucket", "role": "panel", "size_m": [0.28, 0.3, 0.28],
+                      "center_m": [0.0, 0.59, 0.13], "material": "oak",
+                      "fasten_to": "rope", "kind": "fixed"}),
+    ]
+
+    def setUp(self):
+        import tempfile, types
+        import workshop_chat
+        self.tmp = tempfile.TemporaryDirectory()
+        runs = Path(self.tmp.name) / "runs"
+        runs.mkdir(parents=True)
+        app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
+        first = {"name": "post-left", "role": "post", "shape": "box", "family": "post",
+                 "size_m": [0.11, 2.2, 0.11], "center_m": [-0.45, 1.1, 0.0],
+                 "rotation_deg": [0.0, 0.0, 0.0], "material": "oak"}
+        overrides = {construction.CONSTRUCTION_KEY:
+                     construction.checked({"added": [first], "joints_authored": True})}
+        base = assemble("custom", design_id="well-pulley", purpose="draw water from a well")
+        candidate = workshop_components.apply_overrides(base, overrides).wireframe()
+        candidate["component_overrides"] = overrides
+        self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def build(self):
+        for tool, args in self.CALLS:
+            self.state.execute(tool, args)
+        return self.state
+
+    def test_the_tools_build_it_one_part_at_a_time(self):
+        state = self.build()
+        self.assertEqual(6, len(state.design.parts))
+        joints = construction.joints(state.design)
+        self.assertEqual(5, len(joints))
+        self.assertEqual(1, sum(1 for j in joints if j["kind"] == "bearing"))
+
+    def test_a_part_that_does_not_touch_is_refused_with_the_reason(self):
+        import workshop_chat  # noqa: F401
+        with self.assertRaises(ValueError) as caught:
+            self.state.execute("add_part", {"name": "floating", "role": "beam",
+                                            "size_m": [0.1, 0.1, 0.1], "center_m": [5.0, 5.0, 5.0],
+                                            "fasten_to": "post-left", "kind": "fixed"})
+        self.assertIn("does not touch", str(caught.exception))
+
+    def test_check_validity_through_the_tool_makes_it_turn(self):
+        state = self.build()
+        answer = state.execute("check_validity", {})
+        self.assertTrue(answer["ok"], answer.get("why"))
+        self.assertTrue(answer["changes"])
+        made = workshop_articulation.compile_design(
+            state.design, state.overrides, cell_m=CELL, root="well-pulley")
+        self.assertEqual(2, len(made["groups"]), "a headstock, and a drum that turns on it")
+        self.assertEqual(1, len(made["joints"]))
+        self.assertEqual("hinge", made["joints"][0]["kind"])
+
+    def test_the_bucket_hangs_on_the_turning_side(self):
+        state = self.build()
+        state.execute("check_validity", {})
+        made = workshop_articulation.compile_design(
+            state.design, state.overrides, cell_m=CELL, root="well-pulley")
+        self.assertEqual(2, len(made["groups"]))
+        # Drum, rope and bucket move together; the two posts and the headstock do not.
+        self.assertTrue(all(g["mass_kg"] > 0 for g in made["groups"]))
+
+
 class WhatItRefusesToInvent(unittest.TestCase):
     def test_a_part_fastened_to_nothing_is_refused(self):
         base = WorkshopDesign(design_id="loose", purpose="two things near each other",

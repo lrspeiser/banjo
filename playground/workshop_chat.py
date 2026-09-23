@@ -20,10 +20,11 @@ import re
 from typing import Any
 from urllib import error, request
 
-from mcp import engine_materials, workshop_components, workshop_graph, interaction_points
+from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, interaction_points
 from mcp.product_contract import compile_contract
-from mcp.workshop import assemble, assembly
+from mcp.workshop import WirePart, assemble, assembly
 from mcp.workshop_statics import declared_statics
+import workshop_fitting
 import workshop_library
 
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
@@ -70,6 +71,26 @@ Important behavior:
   rack holds; only making it draws stock. Report a shortfall in the material
   and the kilograms, and never shrink or re-material a design to fit the rack
   unless the person asks for that.
+- BUILDING SOMETHING FROM PARTS: add_part puts a component in and fastens it,
+  set_joint changes how two parts are fastened, remove_part takes one out. A
+  part must TOUCH what it fastens to -- place it face to face against that part,
+  because a gap is refused and the message tells you so. Use 'bearing' for
+  anything meant to turn on another part (a wheel on its mount, a door leaf on
+  its post, a pulley on its pin) and 'fixed' for anything bonded solid. Build
+  the concept first and do not agonise over millimetres.
+- THEN CALL check_validity. The room carries matter on a 40 mm cell grid, and
+  sizes that read well to a person are usually not sizes the grid can hold. It
+  redraws what it must and tells you every change: a part thinner than two cells
+  is drawn thicker, faces are snapped to cell boundaries, a shaft that runs
+  THROUGH its mounts becomes a stub per bearing (no lattice body can carry a
+  hole for another to turn inside -- this is true at every cell size), a moving
+  group is made of one material, and a strut is rebuilt between its anchors.
+- What check_validity will NOT do is invent a concept that is missing. A part
+  fastened to nothing, or a wheel with nothing to turn on, comes back refused
+  with the reason. Fix the assembly and call it again; never talk around it.
+- Never say a thing turns, swings, rolls or works until check_validity has said
+  ok. Before that you know what was drawn, not what the room can carry. When it
+  has redrawn something, tell the person what changed and why, in its words.
 - Edits are deterministic tools. Do not fabricate geometry or silently change
   unrelated components.
 - If the request is ambiguous in a way that materially changes the object, ask
@@ -190,6 +211,48 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         {"type": "function", "name": "inspect_physics",
          "description": "Inspect mass/balance/support, analytical static-load evidence, ProductGraph relationships and the reduced PhysicsContract.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
+        {"type": "function", "name": "add_part",
+         "description": "Put one new component into the design and fasten it. size_m is [width, height, depth] "
+                        "in metres and center_m is its middle in the design frame. It must TOUCH the part it "
+                        "fastens to -- move it against that part first, face to face; a gap is refused. "
+                        "kind is 'fixed' for a part bonded solid, or 'bearing' for one that turns on the other "
+                        "(a wheel, a door leaf, a pulley). Do not fret about the millimetres: call "
+                        "check_validity when the assembly is complete and it redraws whatever the room's cell "
+                        "grid cannot carry.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["name", "role", "size_m", "center_m"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "role": {"type": "string",
+                                     "description": "what it is: post, beam, brace, panel, surface, top, leg, "
+                                                    "wheel, axle, bearing_mount, handle, drum, rope"},
+                            "size_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                            "center_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                            "material": {"type": "string", "enum": list(materials)},
+                            "fasten_to": {"type": "string", "description": "the part it is fastened to"},
+                            "kind": {"type": "string", "enum": ["fixed", "bearing"]}}}},
+        {"type": "function", "name": "remove_part",
+         "description": "Take one component out of the design, with whatever fastened it.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["name"],
+                        "properties": {"name": {"type": "string"}}}},
+        {"type": "function", "name": "set_joint",
+         "description": "Fasten two parts that touch, change how they are fastened, or unfasten them. "
+                        "kind 'fixed' bonds them solid, 'bearing' lets one turn on the other, and leaving kind "
+                        "out unfastens them.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["a", "b"],
+                        "properties": {"a": {"type": "string"}, "b": {"type": "string"},
+                                       "kind": {"type": "string", "enum": ["fixed", "bearing"]}}}},
+        {"type": "function", "name": "check_validity",
+         "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
+                        "It checks the concepts first -- every part fastened, every wheel with something to "
+                        "turn on, something standing still for the rest to move against -- and refuses, "
+                        "naming what is missing, rather than inventing it. Then it redraws: nothing thinner "
+                        "than two cells, every face on a cell boundary, a shaft that runs through its mounts "
+                        "becomes a stub per bearing, one material to a moving group, and a strut rebuilt "
+                        "between its anchors. It returns every change and why. Call this whenever the person "
+                        "asks whether something works, before saying a design is finished, and always before "
+                        "claiming anything about it turning, swinging or rolling.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": [], "properties": {}}},
         {"type": "function", "name": "what_it_needs",
          "description": "What making the current design would take in materials, what the rack holds, and what is short. "
                         "Call this whenever the person asks what a design needs, what else they need, whether they can "
@@ -234,7 +297,14 @@ class _State:
         self.selected_name = selected_name
         self.materials = materials
         self.library = library
-        self.design, self.overrides = workshop_components.design_from_spec(_spec(candidate))
+        spec = _spec(candidate)
+        self.design, self.overrides = workshop_components.design_from_spec(spec)
+        # The template the overrides sit on. Every redraw is the template plus
+        # one set of overrides, never a patch on top of a patched design.
+        self.base = assemble(str(spec.get("kind") or ""),
+                             design_id=str(spec.get("design_id") or spec.get("kind") or "design"),
+                             purpose=(str(spec["purpose"]) if spec.get("purpose") else None),
+                             parameters=spec.get("parameters") or {})
         self.changed: list[str] = []
         self.trace: list[dict[str, Any]] = []
 
@@ -292,6 +362,66 @@ class _State:
                 "physics_contract": contract,
                 "declared_tests": deepcopy(self.design.tests),
             })
+
+        if tool == "add_part":
+            size = [float(v) for v in (args.get("size_m") or [])]
+            centre = [float(v) for v in (args.get("center_m") or [])]
+            if len(size) != 3 or len(centre) != 3:
+                raise ValueError("size_m and center_m are each three numbers, in metres")
+            role = str(args.get("role") or "beam")
+            new = WirePart(name=str(args.get("name") or ""), role=role, size_m=tuple(size),
+                           center_m=tuple(centre), material=str(args.get("material") or "oak"),
+                           rotation_deg=(0.0, 0.0, 0.0), shape="box", family=role)
+            joint = None
+            if args.get("fasten_to"):
+                joint = {"to": str(args["fasten_to"]), "kind": str(args.get("kind") or "fixed")}
+            self.overrides = workshop_construction.add_part(self.design, self.overrides,
+                                                            part=new, joint=joint)
+            self.design = workshop_components.apply_overrides(self.base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append(f"added:{new.name}")
+            return self.record(tool, {
+                "summary": f"added {new.name}" + (f", {joint['kind']} to {joint['to']}" if joint else ", unfastened"),
+                "part": _part_doc(new), "parts_now": len(self.design.parts)})
+
+        if tool == "remove_part":
+            name = str(args.get("name") or "")
+            self.overrides = workshop_construction.remove_part(self.design, self.overrides, name)
+            self.design = workshop_components.apply_overrides(self.base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append(f"removed:{name}")
+            return self.record(tool, {"summary": f"took {name} out",
+                                      "parts_now": len(self.design.parts)})
+
+        if tool == "set_joint":
+            a, b = str(args.get("a") or ""), str(args.get("b") or "")
+            kind = args.get("kind")
+            self.overrides = workshop_construction.set_joint(
+                self.design, self.overrides, a=a, b=b, kind=(str(kind) if kind else None))
+            self.design = workshop_components.apply_overrides(self.base, self.overrides)
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append(f"joint:{a}-{b}")
+            return self.record(tool, {
+                "summary": (f"{a} and {b} are now {kind}" if kind else f"unfastened {a} from {b}"),
+                "joints": workshop_construction.joints(self.design)})
+
+        if tool == "check_validity":
+            answer = workshop_fitting.check_validity(self.base, self.overrides, cell_m=0.04,
+                                                     root=str(self.design.design_id or "assembly"))
+            if answer["ok"] and answer["changes"]:
+                self.overrides = answer["overrides"]
+                self.design = workshop_components.apply_overrides(self.base, self.overrides)
+                _refresh(self.app, self.candidate, self.design, self.overrides)
+                self.changed.append("redrawn")
+            return self.record(tool, {
+                "summary": answer["says"][:400], "ok": answer["ok"], "stage": answer["stage"],
+                "concepts": answer["concepts"],
+                "changes": [{"rule": c["rule"], "part": c["part"], "says": c["says"]}
+                            for c in answer["changes"]],
+                "why": answer.get("why", ""),
+                "note": ("It is a machine and the room can carry it." if answer["ok"] else
+                         "It is not ready. Say what is missing; do not claim it works."),
+            }, ok=answer["ok"])
 
         if tool == "what_it_needs":
             needs = workshop_library.what_it_needs(self.app, self.design)

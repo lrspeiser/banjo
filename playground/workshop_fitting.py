@@ -483,6 +483,9 @@ def _rebuild_struts(base: Any, design: Any, overrides: dict[str, Any], cell_m: f
 RULES = (
     ("retain its own occupied cells", _grow_to_whole_cells),
     ("absent from the compiled occupied cells", _snap_to_the_grid),
+    # Two parts bonded solid whose faces fall inside cells end up not sharing a
+    # cell face at all, and the group they make is in pieces.
+    ("disconnected native cells", _snap_to_the_grid),
     ("authored joint is open", _rebuild_struts),
     ("no longer touch", _rebuild_struts),
     ("Moving groups overlap", _shaft_stubs),
