@@ -109,8 +109,10 @@ every other.
 
 **4. The law decides what it takes to break a thing, not only what it costs.**
 The same oak plank on the same piers, struck by the same ball: under the
-energy-scaled law it is admitted for breaking above 2.7 m/s, and under the
-strain-threshold law above 11.0 m/s. The admission bound is a stress-wave
+energy-scaled law it is admitted for breaking above 3.1 m/s, and under the
+strain-threshold law above 11.0 m/s (2.7 and 11.0 before the crack bound in
+point 6 below; the stress bound is still the harder of the two under the strain
+law). The admission bound is a stress-wave
 argument built on the smallest strain at which a bond is removed
 (`src/fastlattice/Refracture.hpp`), and the two laws set that strain differently
 -- so which law a room runs changes whether a blow breaks anything at all. A
@@ -124,6 +126,62 @@ removed -- from a ball whose whole fall carried about a joule. That is the
 at-rest energy gain the [convergence study](convergence-study-checkpoint.md)
 records (up to 1.28e9 J from a lattice at rest), now visible in the world
 rather than in a sweep, because every break says what it cost.
+
+**6. A thing's bar for breaking now depends on how big it is.** Before a
+break can cost anything it has to be allowed, and the trigger that allows it
+asked two questions (`src/fastlattice/Refracture.hpp`): can the stress wave the
+contact sends into the piece reach the strain at which some bond is removed, and
+is the contact carrying at least one bond's worth of energy. Neither question
+has a size in it. Every piece of oak in the world therefore had the same bar --
+2.7 m/s struck by that iron ball -- whether it was the whole plank or a chip
+off one, which is why a room full of debris went on breaking as it landed.
+
+Coming apart is not removing one bond, though. It is opening a crack across the
+piece, and the material says what that costs: its fracture energy Gc, in joules
+per square metre of new crack. The cheapest way to separate a piece is across
+its thinnest part, so a contact that cannot pay
+
+    Gc x (the thinnest slice of cells through the piece)
+
+cannot break it, whatever else is true. That is Griffith's statement of the same
+idea as the one-bond bound, taken against the whole crack instead of one bond of
+it, and it is now the third thing the trigger asks. Measured by
+`banjo_refracture_tests` from oak's own catalogue number, 1,000 J/m2, at 20 mm
+cells, landing on something much stiffer so the piece's own mass is what the
+pair has:
+
+| oak cube | thinnest slice | a crack costs | its mass | so it needs |
+|---|---:|---:|---:|---:|
+| 40 mm | 16 cm2 | 1.6 J | 0.045 kg | **8.5 m/s** |
+| 60 mm | 36 cm2 | 3.6 J | 0.151 kg | **6.9 m/s** |
+| 80 mm | 64 cm2 | 6.4 J | 0.358 kg | **6.0 m/s** |
+| 120 mm | 144 cm2 | 14.4 J | 1.210 kg | **4.9 m/s** |
+
+Small things are harder to break, which is the everyday fact the old trigger did
+not have: the crack a piece has to open shrinks as the square of its size while
+what it carries shrinks as the cube. In `tests-break` the plank's bar went from
+2.7 to 3.1 m/s, one of the seven pieces it broke into asks 3.4 m/s, and a piece
+of that piece asks 8.5 m/s -- the ground hit it at 11.5 m/s and it held.
+
+What the bound is not: it is necessary, not sufficient -- the lattice still
+decides, and a piece above its bar often holds. It is a lower bound on the crack
+as well, because the thinnest slice is the cheapest cut there could be, so
+chipping a cell off a corner is still admitted. It uses the material's declared
+Gc, not the charge the room's law makes for a crack: under the strain-threshold
+law that charge is 148,500 J/m2 for oak at these cells, a property of the grid,
+and gating admission on it would stop the world breaking anything at all. And a
+material that declares no fracture energy is not bounded by it.
+
+What it did not change: all 96 cases of the material ladder
+(`docs/evidence/material-qa-baseline.json`) stay inside their bands; the break
+room's own break is the same 7 pieces, 419 bonds, 4.47 J over 152 cm2; and a
+100 mm ball of all eight materials dropped on concrete is quoted the same bars
+to the last digit as before ([materials](api/materials.md)), because a ball that
+size carries far more than its own crack costs.
+What it did not fix either: the plank piece that the 33 kg ball drives into the
+ground at 10.2 m/s still comes apart into 83 pieces. That contact can pay for
+its crack nine times over, so the trigger is right to admit it; 83 pieces from
+one landing is the run's own over-fragmentation, and it belongs to item 2 below.
 
 ## What this does not show
 
@@ -158,9 +216,9 @@ rather than in a sweep, because every break says what it cost.
 
 `/world?scene=tests-break` is an oak plank bridged between two iron piers with
 a 200 mm iron ball a metre and a half above it. Nothing to do: the ball lands at
-5.2 m/s, above the 2.7 m/s the plank can take, and the room says
+5.2 m/s, above the 3.1 m/s the plank can take, and the room says
 
-> ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 2.7 m/s). It
+> ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 3.1 m/s). It
 > broke into 7 pieces. It cost 4.47 J over 152 cm2 of new crack: 294 J/m2,
 > where oak itself takes 1,000 J/m2 and this room charges 1,000 (energy-scaled).
 
@@ -170,7 +228,8 @@ and the 6,364 above will show up.
 
 Oak rather than glass, because glass is admitted for breaking at 0.2 m/s here:
 its pieces break again as they fall and land, and the cascade buries the number
-the room is for.
+the room is for. Glass declares 8 J/m2, so the crack bound barely moves it; oak
+declares 1,000 and iron 100,000, and those are the materials it changes.
 
 ## Running it again
 

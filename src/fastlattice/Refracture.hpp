@@ -89,6 +89,36 @@ namespace banjo::fastlattice {
 //     is necessary as well. It is what rejects a chip: a light fragment can
 //     arrive at any speed and still not carry one bond's worth of energy.
 //
+// (c) CRACK ENERGY. One bond is a very small thing to pay for, and (b) on its
+//     own admitted almost everything: a room of broken pieces went on breaking
+//     as the pieces landed, which pinned the pair being worked out again and
+//     again and left the thing that struck them frozen for seconds
+//     (docs/what-a-break-costs.md, and the owner watching it, 2026-09-22).
+//
+//     Coming apart is not removing one bond. It is opening a crack across some
+//     section of the fragment, and the material declares what that costs: its
+//     fracture energy Gc, in joules per square metre of new crack. The cheapest
+//     separation is the one that crosses the thinnest part, so with A_min the
+//     area of the thinnest slice of the fragment (the thinnest layer of cells
+//     across any of the three grid axes),
+//
+//         0.5 * mu * v^2 >= Gc * A_min
+//
+//     is necessary too. It is the Griffith statement of the same idea as (b),
+//     against the whole crack rather than one bond of it.
+//
+//     Two things this is NOT. It is not the lattice's own charge for a crack,
+//     which under the strain-threshold law is a property of the cell size
+//     rather than of the material (148,500 J/m2 for oak at 20 mm cells against
+//     oak's own 1,000): gating admission on that would stop the world breaking
+//     anything. And it is not a claim that a fragment breaks when it has the
+//     energy -- it is the same kind of necessary bound as (a) and (b), and the
+//     lattice still decides.
+//
+//     A material that declares no fracture energy, and a fragment whose cell
+//     size is not known to the caller, are not bounded by (c) at all: it is
+//     skipped rather than guessed at.
+//
 // Both are bounds, not predictions. The trigger never decides that a fragment
 // breaks; it decides whether the fragment is worth asking the lattice about,
 // and the lattice -- the same criterion, at every substep -- decides the rest.
@@ -106,6 +136,12 @@ namespace banjo::fastlattice {
 struct FragmentFractureLimits {
     double minimum_removal_stretch{};      // s_min over live bonds and modes
     double minimum_removal_energy_j{};     // U_min over live bonds
+    // The thinnest slice of the fragment across a grid axis, and what a crack
+    // of that area costs the material (Gc * A_min). Zero for a fragment whose
+    // material declares no fracture energy, or that was built without a cell
+    // size: bound (c) is then skipped.
+    double narrowest_section_m2{};
+    double crack_energy_j{};
     // The strain at which this material stops springing back: sigma_y / E.
     // Zero for a brittle material, which has no yield point and goes from
     // elastic straight to broken.
@@ -128,6 +164,7 @@ enum class RefractureVerdict : std::uint8_t {
     NoLiveBond = 1,       // a single cell, or a fragment whose bonds are all gone
     BelowStressBound = 2, // (a) fails: no bond can reach its threshold
     BelowEnergyBound = 3, // (b) fails: the pair cannot pay for one bond
+    BelowCrackEnergy = 4, // (c) fails: the pair cannot pay for a crack across it
 };
 
 struct RefractureAdmission {
@@ -135,6 +172,12 @@ struct RefractureAdmission {
     double threshold_speed_m_s{};    // v*
     double estimated_peak_stretch{}; // 2 * eps_0
     double available_energy_j{};
+    // What a crack across the thinnest part of the fragment costs, and the
+    // speed at which this pair would carry that much. Both zero when the
+    // fragment carries no fracture energy to charge; the speed alone is zero
+    // (not known) for a contact that carries no energy to measure against.
+    double crack_energy_j{};
+    double crack_speed_m_s{};
     // The same bound taken against the yield stretch instead of the removal
     // stretch: below this speed nothing can take a permanent set. Infinite for
     // a material with no yield point.
@@ -162,7 +205,17 @@ struct RefractureAdmission {
 // `yield_strength_pa` of zero means a brittle material with no yield point.
 [[nodiscard]] FragmentFractureLimits fragmentFractureLimits(
     const ActiveMatter &matter, std::span<const std::uint32_t> node_indices,
-    double density_kg_m3, double young_modulus_pa, double yield_strength_pa = 0.0);
+    double density_kg_m3, double young_modulus_pa, double yield_strength_pa = 0.0,
+    double fracture_energy_j_m2 = 0.0, double cell_size_m = 0.0);
+
+// The area of the thinnest slice of a fragment, across whichever of the three
+// axes is thinnest: a lower bound on the crack that has to open for it to come
+// apart. The slices are cut by where the cells rest, in one frame for the whole
+// fragment, so a thing merged out of several parts is sliced as it stands. An
+// axis the fragment is one cell thick in is not a way to cut it and is not
+// counted; a single cell has no way to come apart and gives zero.
+[[nodiscard]] double narrowestSection(
+    const ActiveMatter &matter, std::span<const std::uint32_t> node_indices, double cell_size_m);
 
 // ---------------------------------------------------------------------------
 // 2. The return path

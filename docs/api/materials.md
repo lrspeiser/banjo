@@ -100,8 +100,9 @@ A fall of *h* metres arrives at `sqrt(2 × 9.81 × h)` m/s:
 | 5.0 m | 9.9 m/s |
 | 10 m | 14.0 m/s |
 
-Mass does nothing at all. Measured, onto the same pane, from the same 1.0 m
-fall:
+Mass does nothing to the pulse, and the pulse is what the main bar is made of
+(it counts for the crack bound below, which for glass is a hundredth of a
+joule). Measured, onto the same pane, from the same 1.0 m fall:
 
 | ball | mass | hit at | needs | result |
 |---|---|---|---|---|
@@ -112,9 +113,8 @@ fall:
 
 ### Thickness changes the outcome, not the bar
 
-A 20 mm and an 80 mm glass plate are admitted at the same 4.5 m/s, because the
-admission bound is about the transmitted pulse and does not depend on geometry.
-What thickness changes is what the lattice then does:
+A 20 mm and an 80 mm glass plate are admitted at the same 4.5 m/s. What
+thickness changes is what the lattice then does:
 
 | plate | same ball, same drop |
 |---|---|
@@ -123,6 +123,34 @@ What thickness changes is what the lattice then does:
 
 20 mm is also the thinnest anything can be at a 20 mm cell. **Real window glass
 is 4–6 mm and is not reachable** without a finer grid, which costs about `h^-4`.
+
+### Small pieces are harder to break than big ones
+
+The bar has a second part, and this one does depend on size. Breaking a thing
+means opening a crack across it, and a material charges for a crack by area:
+oak 1,000 joules a square metre, iron 100,000, glass 8. So the blow has to be
+carrying at least that much for the thinnest way through the piece -- and as a
+piece gets smaller, the crack it has to open shrinks as the square of its size
+while what the piece carries shrinks as the cube. Oak cubes, landing on
+something much stiffer than they are:
+
+| oak cube | a crack across it costs | needs |
+|---|---:|---:|
+| 40 mm | 1.6 J | 8.5 m/s |
+| 60 mm | 3.6 J | 6.9 m/s |
+| 80 mm | 6.4 J | 6.0 m/s |
+| 120 mm | 14.4 J | 4.9 m/s |
+
+It is small pieces this changes, and only small ones. Every bar in the table at
+the top of this page was measured again after it: a 100 mm ball of all eight
+materials dropped on concrete gives 14.2 / 35.6 for iron, 26.4 / 47.8 for
+aluminium, 10.4 / 13.7 for oak, 29.0 / 100.7 for rubber, 8.7 for glass, 264.8
+for ceramic, 0.7 for concrete and 2.3 for ice — the same numbers to the last
+digit. A ball that size carries far more than its own crack costs. What it
+changes is the pieces such a ball breaks into, which is the reason a chip does
+not shatter again every time it lands.
+
+Whichever of the two parts is harder is the bar the room quotes you.
 
 ### Keep concrete and ice small
 

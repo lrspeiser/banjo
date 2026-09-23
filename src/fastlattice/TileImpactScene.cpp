@@ -1204,7 +1204,9 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             if (r.refracture)
                 piece.limits = fragmentFractureLimits(setup.matter, piece.nodes,
                                                       setup.tile_material.density_kg_m3,
-                                                      setup.tile_material.young_modulus_pa);
+                                                      setup.tile_material.young_modulus_pa, 0.0,
+                                                      setup.tile_material.fracture_energy_j_m2,
+                                                      r.cell_size_m);
             pieces.push_back(std::move(piece));
             ++fragment_index;
         }
@@ -1507,6 +1509,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             case RefractureVerdict::NoLiveBond: ++report.rejected_no_bond; continue;
             case RefractureVerdict::BelowStressBound: ++report.rejected_stress; continue;
             case RefractureVerdict::BelowEnergyBound: ++report.rejected_energy; continue;
+            case RefractureVerdict::BelowCrackEnergy: ++report.rejected_crack; continue;
             case RefractureVerdict::Admitted: break;
             }
             const double margin = admission.estimated_peak_stretch /
@@ -1912,7 +1915,9 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
                 }
                 piece.limits = fragmentFractureLimits(setup.matter, piece.nodes,
                                                       setup.tile_material.density_kg_m3,
-                                                      setup.tile_material.young_modulus_pa);
+                                                      setup.tile_material.young_modulus_pa, 0.0,
+                                                      setup.tile_material.fracture_energy_j_m2,
+                                                      r.cell_size_m);
                 kept.push_back(std::move(piece));
                 ++fragment_index;
             }
@@ -2149,7 +2154,7 @@ Json refractureJson(const RefractureReport &f) {
         {"contacts_tested", f.contacts_tested}, {"admitted", f.admitted},
         {"rejected", {
             {"no_live_bond", f.rejected_no_bond}, {"below_stress_bound", f.rejected_stress},
-            {"below_energy_bound", f.rejected_energy},
+            {"below_energy_bound", f.rejected_energy}, {"below_crack_energy", f.rejected_crack},
             {"max_closing_speed_m_s", f.max_closing_speed_m_s},
             {"max_closing_speed_any_m_s", f.max_closing_speed_any_m_s},
             {"max_margin", f.max_margin}}},

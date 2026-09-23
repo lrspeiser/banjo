@@ -1,10 +1,12 @@
 #include "fastlattice/Refracture.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 namespace banjo::fastlattice {
 namespace {
@@ -133,13 +135,93 @@ RefractureAdmission admitRefracture(
         out.verdict = RefractureVerdict::BelowEnergyBound;
         return out;
     }
+    // (c) A crack across the thinnest part of it costs the material's own
+    // fracture energy, and the pair has to be carrying that much.
+    out.crack_energy_j = fragment.crack_energy_j;
+    if (fragment.crack_energy_j > 0.0) {
+        // The speed this pair would need to carry it: the energy goes as the
+        // square of the closing speed at a fixed reduced mass. A pair that
+        // carries no energy at all says nothing about what speed would be
+        // enough -- the reduced mass is what the energy would have told us --
+        // so that contact leaves the quoted threshold alone rather than
+        // quoting an infinity.
+        if (available_normal_energy_j > 0.0 && closing_speed_m_s > 0.0) {
+            out.crack_speed_m_s =
+                closing_speed_m_s * std::sqrt(fragment.crack_energy_j / available_normal_energy_j);
+            out.threshold_speed_m_s = std::max(out.threshold_speed_m_s, out.crack_speed_m_s);
+        }
+        if (!(available_normal_energy_j >= fragment.crack_energy_j)) {
+            out.verdict = RefractureVerdict::BelowCrackEnergy;
+            return out;
+        }
+    }
     out.verdict = RefractureVerdict::Admitted;
     return out;
 }
 
+double narrowestSection(
+    const ActiveMatter &matter, std::span<const std::uint32_t> node_indices, double cell_size_m) {
+    if (matter.asset == nullptr || node_indices.empty() || !(cell_size_m > 0.0)) return 0.0;
+    // Sliced by where the cells REST, not by the grid coordinate each one was
+    // born with: a thing merged out of several parts keeps each part's own
+    // grid, all of them starting near zero, so counting by grid would stack a
+    // cart's wheels on top of its bed and call the pile a cross-section
+    // (`LatticeMerge.cpp` bakes the placement into the position and leaves the
+    // grid alone). The rest positions are in one frame for the whole thing.
+    const auto restOf = [&matter](std::uint32_t node) {
+        const Vec3 p = matter.asset->nodes[node].local_position_m;
+        return std::array<double, 3>{p.x, p.y, p.z};
+    };
+    std::array<double, 3> low{};
+    bool any = false;
+    for (const std::uint32_t node : node_indices) {
+        if (node >= matter.asset->nodes.size()) continue;
+        const std::array<double, 3> at = restOf(node);
+        for (int axis = 0; axis < 3; ++axis)
+            if (!any || at[axis] < low[axis]) low[axis] = at[axis];
+        any = true;
+    }
+    if (!any) return 0.0;
+    // Which slice a cell is in, counted from the lowest one: cells of one part
+    // sit a whole number of cells apart, so this is exact for them, and a part
+    // placed off the grid only ever spreads its cells over more slices than it
+    // has -- which makes the bound weaker, never stricter than the truth.
+    const auto sliceOf = [&](const std::array<double, 3> &at, int axis) {
+        const double from_low = (at[axis] - low[axis]) / cell_size_m;
+        return static_cast<std::size_t>(std::llround(std::max(0.0, from_low)));
+    };
+    std::array<std::size_t, 3> span{1, 1, 1};
+    for (const std::uint32_t node : node_indices) {
+        if (node >= matter.asset->nodes.size()) continue;
+        const std::array<double, 3> at = restOf(node);
+        for (int axis = 0; axis < 3; ++axis) span[axis] = std::max(span[axis], sliceOf(at, axis) + 1);
+    }
+    // How many of its cells lie in each slice, along each axis.
+    std::array<std::vector<std::size_t>, 3> slices;
+    for (int axis = 0; axis < 3; ++axis) slices[axis].assign(span[axis], 0);
+    for (const std::uint32_t node : node_indices) {
+        if (node >= matter.asset->nodes.size()) continue;
+        const std::array<double, 3> at = restOf(node);
+        for (int axis = 0; axis < 3; ++axis) ++slices[axis][sliceOf(at, axis)];
+    }
+    std::size_t thinnest = 0;
+    for (const auto &axis : slices) {
+        // One slice thick in this direction: a plane across it does not divide
+        // it, so this axis is not a way to cut the fragment.
+        if (axis.size() < 2) continue;
+        for (const std::size_t cells : axis) {
+            // An empty slice is a gap in the fragment, not a section of it.
+            if (cells == 0) continue;
+            if (thinnest == 0 || cells < thinnest) thinnest = cells;
+        }
+    }
+    return static_cast<double>(thinnest) * cell_size_m * cell_size_m;
+}
+
 FragmentFractureLimits fragmentFractureLimits(
     const ActiveMatter &matter, std::span<const std::uint32_t> node_indices,
-    double density_kg_m3, double young_modulus_pa, double yield_strength_pa) {
+    double density_kg_m3, double young_modulus_pa, double yield_strength_pa,
+    double fracture_energy_j_m2, double cell_size_m) {
     FragmentFractureLimits limits{};
     limits.cells = node_indices.size();
     // sigma_y / E, the same number the plastic law uses for its yield
@@ -174,6 +256,11 @@ FragmentFractureLimits fragmentFractureLimits(
         }
     }
     if (!std::isfinite(limits.minimum_removal_energy_j)) limits.minimum_removal_energy_j = 0.0;
+    // What it would cost to crack it across its thinnest part (bound (c)).
+    limits.narrowest_section_m2 = narrowestSection(matter, node_indices, cell_size_m);
+    limits.crack_energy_j = std::isfinite(fracture_energy_j_m2) && fracture_energy_j_m2 > 0.0
+        ? fracture_energy_j_m2 * limits.narrowest_section_m2
+        : 0.0;
     return limits;
 }
 

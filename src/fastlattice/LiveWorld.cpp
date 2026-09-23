@@ -3374,7 +3374,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.limits_of.push_back(fragmentFractureLimits(
             setup.matter, component.node_indices,
             definition->density_kg_m3, definition->young_modulus_pa,
-            definition->yield_strength_pa));
+            definition->yield_strength_pa, definition->fracture_energy_j_m2,
+            impl.request.cell_size_m));
         impl.impedance_of.push_back(
             acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
         // Kept so a piece can say what it weighs. Its cells are its volume, and
@@ -3547,7 +3548,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             for (std::size_t k = 0; k < nodes.size(); ++k) impl.cell_offset_m[nodes[k]] = offsets[k];
             impl.limits_of.push_back(fragmentFractureLimits(setup.matter, nodes, definition->density_kg_m3,
                                                             definition->young_modulus_pa,
-                                                            definition->yield_strength_pa));
+                                                            definition->yield_strength_pa,
+                                                            definition->fracture_energy_j_m2,
+                                                            impl.request.cell_size_m));
             impl.impedance_of.push_back(acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
             impl.density_of.push_back(definition->density_kg_m3);
             impl.tensile_of.push_back(definition->tensile_strength_pa);
@@ -8908,7 +8911,8 @@ std::size_t LiveWorld::applyPending() {
         piece.color_rgba = parent.color_rgba;
         impl_->limits_of.push_back(fragmentFractureLimits(
             setup.matter, parent_nodes, material.density_kg_m3, material.young_modulus_pa,
-            material.yield_strength_pa));
+            material.yield_strength_pa, material.fracture_energy_j_m2,
+            impl_->request.cell_size_m));
         impl_->impedance_of.push_back(
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         impl_->density_of.push_back(material.density_kg_m3);
@@ -10167,7 +10171,8 @@ void LiveWorld::refreshHeatedBonds(std::size_t body, const thermo::MaterialField
     if (!changed) {
         if (record.limits_heated) {
             I.limits_of[body] = fragmentFractureLimits(setup.matter, nodes, made_of.density_kg_m3,
-                                                       made_of.young_modulus_pa, made_of.yield_strength_pa);
+                                                       made_of.young_modulus_pa, made_of.yield_strength_pa,
+                                                       made_of.fracture_energy_j_m2, I.request.cell_size_m);
             if (body < I.impedance_of.size())
                 I.impedance_of[body] = acousticImpedance(made_of.density_kg_m3, made_of.young_modulus_pa);
             record.limits_heated = false;
@@ -10514,7 +10519,8 @@ std::size_t LiveWorld::reformFromCells(std::size_t which) {
             piece.revision = (record ? record->revision : parent.revision) + 1;
         }
         I.limits_of.push_back(fragmentFractureLimits(setup.matter, parent_nodes, material.density_kg_m3,
-                                                     material.young_modulus_pa, material.yield_strength_pa));
+                                                     material.young_modulus_pa, material.yield_strength_pa,
+                                                     material.fracture_energy_j_m2, I.request.cell_size_m));
         I.impedance_of.push_back(acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         I.density_of.push_back(material.density_kg_m3);
         I.tensile_of.push_back(material.tensile_strength_pa);
@@ -13157,7 +13163,9 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
         I.limits_of.push_back(fragmentFractureLimits(setup.matter, parent_nodes,
                                                      material->density_kg_m3,
                                                      material->young_modulus_pa,
-                                                     material->yield_strength_pa));
+                                                     material->yield_strength_pa,
+                                                     material->fracture_energy_j_m2,
+                                                     I.request.cell_size_m));
         I.impedance_of.push_back(acousticImpedance(material->density_kg_m3, material->young_modulus_pa));
         I.density_of.push_back(material->density_kg_m3);
         I.tensile_of.push_back(material->tensile_strength_pa);

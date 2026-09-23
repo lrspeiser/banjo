@@ -3,7 +3,9 @@
 // 1. The trigger IS its derivation: the admission speed is
 //    s_min * c * (z_o + z_f) / (2 z_o) to the last bits, for glass, oak and
 //    iron against iron and against concrete; a fragment with no live bond is
-//    refused; the energy bound refuses a chip.
+//    refused; the energy bound refuses a chip; and a contact that cannot pay
+//    the material's own fracture energy over the thinnest way through the
+//    piece is refused too.
 // 2. The return path carries the state: broken bonds stay broken, damage and
 //    permanent extension come back, and the reference frame it re-enters on is
 //    a RIGID placement -- every bond's stretch and the fragment's stored
@@ -206,6 +208,80 @@ struct BrokenTile {
         pose.angular_velocity_rad_s = {0.9, -1.4, 2.2};
     }
 };
+
+// ---------------------------------------------------------------------------
+// 1b. A crack costs what the material says a crack costs.
+// ---------------------------------------------------------------------------
+void aCrackCostsWhatTheMaterialSays() {
+    const double cell = 0.02;
+    const unsigned horizon = 2;
+    // 6 x 2 x 4 cells. Sliced across x the layers are 2 x 4 = 8 cells, across y
+    // 6 x 4 = 24, across z 6 x 2 = 12: the thinnest way through it is 8 cells.
+    Tile tile(MaterialPreset::Oak, {6 * cell, 2 * cell, 4 * cell}, cell, horizon);
+    std::vector<std::uint32_t> all(tile.matter.nodes.size());
+    for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<std::uint32_t>(i);
+    const double thinnest = narrowestSection(tile.matter, all, cell);
+    require(std::abs(thinnest - 8.0 * cell * cell) <= 1e-15,
+            "the thinnest way through a 6 x 2 x 4 block is its 8-cell face");
+
+    const FragmentFractureLimits limits = fragmentFractureLimits(
+        tile.matter, all, tile.material.density_kg_m3, tile.material.young_modulus_pa, 0.0,
+        tile.material.fracture_energy_j_m2, cell);
+    const double expected_cost = tile.material.fracture_energy_j_m2 * thinnest;
+    require(std::abs(limits.crack_energy_j - expected_cost) <= 1e-12 * expected_cost,
+            "what a crack costs is the material's fracture energy over that face");
+
+    const MaterialDefinition iron = makeReferenceMaterial(MaterialPreset::Iron, 17);
+    const double z_iron = std::sqrt(iron.density_kg_m3 * iron.young_modulus_pa);
+    // Fast enough for the stress bound, and carrying more than one bond's worth
+    // of energy: what is left to ask is whether it can pay for the crack.
+    const double fast = 10.0 * admitRefracture(limits, z_iron, 1.0, 1.0).threshold_speed_m_s;
+    require(limits.minimum_removal_energy_j < expected_cost,
+            "one bond is a smaller thing to pay for than a crack across the whole face");
+    const RefractureAdmission short_of_it = admitRefracture(limits, z_iron, fast, expected_cost * (1.0 - 1e-9));
+    require(short_of_it.verdict == RefractureVerdict::BelowCrackEnergy,
+            "a hair short of the crack's cost is refused");
+    require(admitRefracture(limits, z_iron, fast, expected_cost).admitted(),
+            "the crack's cost exactly is enough to be asked");
+    // The quoted threshold is the speed THIS pair would have to arrive at.
+    const double carried = 4.0 * expected_cost;
+    const RefractureAdmission over = admitRefracture(limits, z_iron, fast, carried);
+    require(std::abs(over.crack_speed_m_s - 0.5 * fast) <= 1e-9 * fast,
+            "four times the energy it needs is twice the speed it needs");
+    require(over.threshold_speed_m_s >= over.crack_speed_m_s,
+            "the quoted threshold is the harder of the two bounds");
+
+    // A material that declares no fracture energy is not bounded by (c) at all.
+    const FragmentFractureLimits unpriced = fragmentFractureLimits(
+        tile.matter, all, tile.material.density_kg_m3, tile.material.young_modulus_pa, 0.0, 0.0, cell);
+    require(unpriced.crack_energy_j == 0.0, "no declared fracture energy, no crack bound");
+    require(admitRefracture(unpriced, z_iron, fast, unpriced.minimum_removal_energy_j).admitted(),
+            "without a declared fracture energy the old two bounds are the whole trigger");
+
+    // Smaller pieces of the same stuff need faster hits: the crack they have to
+    // open shrinks as the square of their size, and what they carry as the cube.
+    std::cout << "  oak, cells across the thinnest face -> what a crack costs\n";
+    double last_speed = 0.0;
+    for (const int across : {2, 3, 4, 6}) {
+        Tile block(MaterialPreset::Oak, {across * cell, across * cell, across * cell}, cell, horizon);
+        std::vector<std::uint32_t> cells(block.matter.nodes.size());
+        for (std::size_t i = 0; i < cells.size(); ++i) cells[i] = static_cast<std::uint32_t>(i);
+        const FragmentFractureLimits block_limits = fragmentFractureLimits(
+            block.matter, cells, block.material.density_kg_m3, block.material.young_modulus_pa, 0.0,
+            block.material.fracture_energy_j_m2, cell);
+        // Landing on something much stiffer, so the piece itself is the pair's
+        // reduced mass: v = sqrt(2 Gc A / m).
+        double mass = 0.0;
+        for (const auto &node : block.matter.nodes) mass += node.mass_kg;
+        const double needs = std::sqrt(2.0 * block_limits.crack_energy_j / mass);
+        std::cout << "    " << across << " cells across: " << block_limits.crack_energy_j << " J over "
+                  << block_limits.narrowest_section_m2 * 1.0e4 << " cm2, so " << needs
+                  << " m/s for a piece of " << mass << " kg\n";
+        require(needs < last_speed || last_speed == 0.0,
+                "a smaller piece of the same material needs a faster hit to come apart");
+        last_speed = needs;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 2. The return path carries the state, and re-enters on a rigid frame.
@@ -564,6 +640,8 @@ int main() {
     try {
         theTriggerIsItsDerivation();
         std::cout << "[PASS] the trigger is its derivation, for glass, oak and iron\n";
+        aCrackCostsWhatTheMaterialSays();
+        std::cout << "[PASS] a contact that cannot pay for a crack across the piece is refused\n";
         theReturnPathCarriesTheState();
         std::cout << "[PASS] a fragment comes back with its damage, its broken bonds and its permanent extension\n";
         theRoundTripConserves();

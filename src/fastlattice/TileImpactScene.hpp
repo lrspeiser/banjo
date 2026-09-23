@@ -451,7 +451,7 @@ struct RefractureReport {
     bool enabled{};
     // Every contact the trigger saw, and where each went.
     std::size_t contacts_tested{}, admitted{};
-    std::size_t rejected_no_bond{}, rejected_stress{}, rejected_energy{};
+    std::size_t rejected_no_bond{}, rejected_stress{}, rejected_energy{}, rejected_crack{};
     // The hardest contact the trigger ever saw on a fragment that still has
     // bonds, and how close it came to the bound: a refusal is then a number,
     // not a silence. `max_margin` is the estimated peak stretch over the

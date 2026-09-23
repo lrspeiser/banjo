@@ -1174,7 +1174,7 @@ class ABreakSaysWhatItCost(PageJourney):
     an oak plank bridged between two iron piers, and a 200 mm iron ball a metre
     and a half above it.
 
-    Nothing to do. The ball lands at about 5 m/s, above the 2.7 m/s the plank
+    Nothing to do. The ball lands at about 5 m/s, above the 3.1 m/s the plank
     can take, and the room says what the break took: the energy that left with
     the bonds the lattice removed, over the crack they stand for, against what
     oak itself takes to crack and what this room charges. It is the one room

@@ -199,7 +199,7 @@ a metre and a half onto the middle of the plank. The picture on the right is
 held at the instant the room reported the break, before the pieces fell and
 broke again. The room's own account of it:*
 
-> ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 2.7 m/s). It
+> ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 3.1 m/s). It
 > broke into 7 pieces. It cost 4.47 J over 152 cm² of new crack: 294 J/m²,
 > where oak itself takes 1,000 J/m² and this room charges 1,000
 > (energy-scaled).

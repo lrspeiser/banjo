@@ -1000,7 +1000,7 @@ def breaking() -> dict[str, Any]:
     J/m2 at these 20 mm cells, and half that again if the cells were halved.
 
     Nothing to do here but watch. The ball lands at about 5 m/s, above the
-    2.7 m/s the plank can take, and the room says what the break cost: the
+    3.1 m/s the plank can take, and the room says what the break cost: the
     energy that left with the bonds the lattice removed, over the crack they
     stand for, against what oak itself takes. Measured: 7 pieces, 419 bonds,
     4.5 J over 152 cm2 -- 294 J/m2, where the charge was 1,000. What leaves is
