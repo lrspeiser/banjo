@@ -194,6 +194,21 @@ def library(app: Any = None, body: Any = None,
             return {"schema": WORKSHOP_SCHEMA,
                     "rack": workshop_library.set_rack(
                         app, str(body.get("material") or ""), float(body.get("mass_kg")))}
+        if action == "check_validity":
+            import workshop_fitting
+            kind = _kind(body, "custom")
+            base = assemble(kind, design_id=str(body.get("design_id") or kind),
+                            purpose=(str(body["purpose"]) if body.get("purpose") else None),
+                            parameters=_parameters(body))
+            answer = workshop_fitting.check_validity(
+                base, workshop_components.checked_overrides(body.get("component_overrides")),
+                cell_m=float(body.get("cell_size_m") or 0.04), root=str(body.get("design_id") or kind))
+            out = {"schema": WORKSHOP_SCHEMA, "validity": {k: v for k, v in answer.items()
+                                                           if k != "overrides"}}
+            if answer["ok"]:
+                out["candidate"] = _candidate(app, workshop_components.apply_overrides(base, answer["overrides"]),
+                                              assembly(kind), answer["overrides"])
+            return out
         if action == "needs":
             design, _ = workshop_components.design_from_spec(body)
             return {"schema": WORKSHOP_SCHEMA, "needs": workshop_library.what_it_needs(app, design),

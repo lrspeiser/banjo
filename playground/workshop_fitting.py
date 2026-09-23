@@ -86,6 +86,33 @@ def concepts(design: Any) -> list[dict[str, Any]]:
                  "ok": all(j["a"] in touching and j["b"] in touching for j in joints),
                  "says": f"{len(joints)} joint(s), {len(bearings)} of them turning"})
 
+    # A machine that goes into the world has to say what a person does with it:
+    # which component they take hold of. That is a concept, not a drawing, so it
+    # is named here rather than guessed at during installation.
+    operated = str((design.parameters or {}).get("primary_use_component") or "")
+    said.append({"concept": "it says which part you take hold of",
+                 "ok": not bearings or (operated in touching),
+                 "says": (f"you work it by its {operated}" if operated in touching else
+                          "nothing turns, so there is nothing to work" if not bearings else
+                          "it has moving parts but does not say which one you take hold of "
+                          "(set primary_use_component)")})
+
+    # And where a person touches it: each declared interaction point has to name
+    # a component the world can hand them, or the thing arrives unusable.
+    try:
+        from mcp import interaction_points as _points
+        points = {p["id"] for p in _points.for_design(design)}
+    except Exception:  # a design with no points declared at all
+        points = set()
+    bound = (design.parameters or {}).get("interaction_point_components") or {}
+    unbound = sorted(points - {k for k, v in bound.items() if v in touching})
+    said.append({"concept": "every place you touch it names a part",
+                 "ok": not bearings or not unbound,
+                 "says": ("nothing turns, so it is handled as one thing" if not bearings else
+                          "all bound" if not unbound else
+                          "these say nothing about which part: " + ", ".join(unbound)
+                          + " (set interaction_point_components)")})
+
     open_joints = [j for j in joints if j.get("open")]
     said.append({"concept": "no joint hangs open",
                  "ok": not open_joints,

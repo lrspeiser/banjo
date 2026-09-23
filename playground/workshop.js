@@ -934,6 +934,27 @@ function setMakeStatus(message, bad) {
 
 // Make it: the one act that spends. Preview is free and runs whatever the rack
 // holds, so a short rack is reported here rather than refused in the engine.
+// Check Validity: does it hold together as a machine, and can the room carry it
+// as drawn? It redraws whatever the cell grid cannot hold and says every change.
+async function checkValidity(button) {
+  button.disabled = true;
+  try {
+    setMakeStatus("Checking it over…", false);
+    const answer = await api("/api/workshop/library", Object.assign({ action:"check_validity" }, candidateBody()));
+    const said = answer.validity || {};
+    if (!said.ok) { setMakeStatus(said.says || "It cannot be drawn to work.", true); return; }
+    if (answer.candidate) {
+      bench.candidates = [answer.candidate]; bench.selected = 0; bench.revision++;
+      invalidateMatter(); invalidateInstallation(); show();
+    }
+    setMakeStatus(said.says || "It works as drawn.", false);
+  } catch (error) {
+    setMakeStatus(String(error.message || error), true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // Where a made thing is set down. The room refuses ground another body already
 // claims, so walk along the row until one is free rather than reporting a
 // collision the person did not ask about.
@@ -1018,11 +1039,13 @@ function installBench() {
   const keep = make("div", { id:"ws-hidden-controls", hidden:true });
   const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
   const status = make("p", { id:"ws-make-status", role:"status", "aria-live":"polite" });
+  const checkButton = make("button", { id:"ws-check", type:"button", class:"ws-action" }, "Check it");
+  checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
   madeButton.onclick = () => makeIt(madeButton);
   top.replaceChildren(
     make("h1", {}, "Workshop"), products, make("span", { class:"ws-spacer" }),
-    status, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
+    status, checkButton, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
   if (picker) {
     keep.append(picker);
     const chips = () => {

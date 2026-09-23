@@ -575,6 +575,87 @@ strength along its axis; a bump sensor that feels a knock rather than a
 stall; seasons, clouds and the moon; heat from a panel's losses
 warming anything ([machine-world.md](docs/machine-world.md)).
 
+### Making a machine out of components
+
+Everything above is matter the world already holds. This is how a new machine
+gets into it: you put components together, say how they are fastened, and the
+Workshop redraws whatever the room cannot carry until the thing works.
+
+**1. Lay the parts out.** Open the Workshop, pick what you are working on, and
+drag *Apart* to pull it into its components. The left rail lists every one with
+its material and its mass; **Held to** on the right lists what the design says
+it must survive, each marked `run it` until it has been.
+
+![The parts of a cart laid out on the Workshop bench](docs/images/readme/workshop-parts.jpg)
+
+**2. Ask whether it is a machine.** *Check it* answers two different questions.
+First, are the concepts there — is every part fastened to another, does every
+wheel have something to turn on, does something stand still for the rest to
+move against, does it say which part you take hold of? A missing concept is
+reported and never guessed at, because guessing there would be designing on
+your behalf:
+
+![Check it refusing to guess what the cart is worked by](docs/images/readme/workshop-check.jpg)
+
+Second, once the concepts hold, can the room carry it as drawn? Usually not.
+The world keeps matter on a 40 mm cell grid, and sizes that read well to a
+person are rarely sizes the grid can hold. So it redraws, and says every change
+it made and why:
+
+| the redraw | why |
+| --- | --- |
+| nothing thinner than two cells | a part thinner than a cell shares that cell with whatever else reaches into it, and the grid hands the cell to one of them |
+| every face on a cell boundary | a face inside a cell leaves a part with no cells unarguably its own, and two parts bonded solid never share a cell face |
+| a shaft through its mounts becomes a stub per bearing | no lattice body can carry a hole for another body to turn inside — this is true at 40, 20 and 10 mm alike, so the grid-legal bearing is a stub butted to its mount |
+| one material to a moving group | the compiler carries a group as one body, and a body is one material |
+| a strut is rebuilt between its anchors | a member that spans two things is its two anchors; the moment either end moves, a resized strut is the wrong length and pointing the wrong way |
+
+The cart takes 37 of these. Its through-axles come out as four stubs, each
+butted to its own mount and carrying its own wheel — which is how the rover's
+wheels are built in the world already.
+
+**3. Find out what it would take.** The rack along the bottom holds what the
+workshop has, per material, in kilograms. Every design says what making it
+would take against what is there, and what is short. A design is drawn,
+measured and tried on the bench whatever the rack holds; only *making* it draws
+stock:
+
+![The rack, and what a design is short of](docs/images/readme/workshop-rack.jpg)
+
+**4. Make it.** *Make it* finds ground nothing else has claimed, takes the
+material out of the rack — all of it or none — and installs the machine. It
+arrives as separate bodies that keep their joints, and the room describes it in
+its own words: **turns on a pin**, with *take hold of it and work it by hand*,
+*turn it all the way*, *turn it half way*.
+
+![A cart made from components, standing in the yard and turning on its pins](docs/images/readme/world-machine.jpg)
+
+Because it is lattice matter throughout rather than one rigid lump, it is still
+breakable: the parts that turn are separate bodies, and each of them can dent,
+crack and shatter like anything else in the world.
+
+**It is not written against any particular object.** The rules know about
+cells, bearings, materials and struts, and nothing about carts. A door — two
+posts, a lintel and a leaf, with one bearing — is refused as drawn and comes
+out as a 103 kg frame and a 23.3 kg leaf on one hinge. A well pulley built
+through the same tools an AI model is given — two posts, a headstock, a drum,
+a rope and a bucket — comes out as a 36.6 kg headstock and a 33.2 kg drum,
+rope and bucket turning on it. Neither was tuned for
+(`tests/workshop_fitting_tests.py`).
+
+**The tools a model is given** are `add_part`, `remove_part`, `set_joint` and
+`check_validity`. It is told to build the concept and not to agonise over
+millimetres, and never to say a thing turns, swings or rolls until
+`check_validity` has said so — before that it knows what was drawn, not what
+the room can carry.
+
+**Not built:** nothing in the world puts material back into the rack — no
+chopping, quarrying or reclaiming, so the rack is stocked by hand on the bench.
+A machine still has to name the component you take hold of and bind each place
+you touch it; the templates do not declare their own, so that is set through
+the chat. Taking a made product back apart into its components happens in the
+world's physics, by breaking it; the Workshop has no intake that reclaims one.
+
 ### Hands, tools and handling
 
 Every control is a bounded hand, never a velocity: 800 N of pull, 60 N m of

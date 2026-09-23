@@ -32,7 +32,9 @@ def door_and_frame():
     """Two posts, a lintel across them, and a leaf hung on the left post."""
     base = WorkshopDesign(design_id="door", purpose="a door that swings in its frame",
                           parts=[block("post-left", "post", (0.09, 2.03, 0.09), (-0.52, 1.015, 0.0))],
-                          kind="custom")
+                          kind="custom", parameters={
+                              "primary_use_component": "door",
+                              "interaction_point_components": {"grip": "door", "use": "door"}})
     overrides = construction.add_part(
         base, {}, part=block("post-right", "post", (0.09, 2.03, 0.09), (0.52, 1.015, 0.0)))
     built = workshop_components.apply_overrides(base, overrides)
@@ -55,7 +57,12 @@ def compiled(base, answer, root):
 
 class TheCart(unittest.TestCase):
     def setUp(self):
-        self.design = assemble("cart", design_id="c")
+        # A cart is worked by its handle; a machine has to say which part that is.
+        # A cart is worked by its handle, and every place you touch it names a
+        # part: the world hands you a component, not an assembly.
+        self.design = assemble("cart", design_id="c", parameters={
+            "primary_use_component": "handle",
+            "interaction_point_components": {"deck": "deck", "grip": "handle", "use": "handle"}})
 
     def test_it_will_not_compile_as_the_template_draws_it(self):
         overrides = workshop_fitting._readopt(self.design, {})
@@ -172,7 +179,9 @@ class AWellPulleyBuiltThroughTheChatsTools(unittest.TestCase):
                  "rotation_deg": [0.0, 0.0, 0.0], "material": "oak"}
         overrides = {construction.CONSTRUCTION_KEY:
                      construction.checked({"added": [first], "joints_authored": True})}
-        base = assemble("custom", design_id="well-pulley", purpose="draw water from a well")
+        base = assemble("custom", design_id="well-pulley", purpose="draw water from a well",
+                        parameters={"primary_use_component": "drum",
+                                    "interaction_point_components": {"grip": "drum", "use": "drum"}})
         candidate = workshop_components.apply_overrides(base, overrides).wireframe()
         candidate["component_overrides"] = overrides
         self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
