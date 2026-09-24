@@ -453,6 +453,16 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
             app, design, cell_size_m=cell, duration_s=duration, record_trace=body.get("record_trace", True))
     if body.get("bench_test") is not None:
         answer["bench"] = workshop_bench.run(app, design, body.get("bench_test"))
+    if body.get("try_in_a_room") is not None:
+        # The Workshop's little world: ground, gravity and a sky, and the thing
+        # installed into it the way the world installs it.
+        import workshop_test_room
+        how = body["try_in_a_room"] if isinstance(body["try_in_a_room"], dict) else {}
+        answer["room"] = workshop_test_room.try_it(
+            app, {"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
+                  "parameters": dict(design.parameters), "component_overrides": overrides},
+            seconds=float(how.get("seconds", 10.0)), sun=how.get("sun"), day=how.get("day"),
+            items=how.get("items") or (), turn_on=bool(how.get("turn_on", True)))
     return answer
 
 

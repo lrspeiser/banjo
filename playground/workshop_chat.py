@@ -25,6 +25,7 @@ from mcp.product_contract import compile_contract
 from mcp.workshop import WirePart, assemble, assembly
 from mcp.workshop_statics import declared_statics
 import workshop_fitting
+import workshop_test_room as test_room
 import workshop_library
 
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
@@ -366,6 +367,31 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "close_m": {"type": "number", "minimum": 0.01, "maximum": 100},
                             "pose": {"type": "string"},
                             "pose_deg": {"type": "number", "minimum": -360, "maximum": 360}}}},
+        {"type": "function", "name": "try_it_in_a_room",
+         "description": "Make the design in a little room with real ground, gravity and a sky, let it run, and "
+                        "say what happened. It is the world's own physics and the world's own way of making a "
+                        "thing, so what it does here is what it will do out there. Put the sun where you like -- "
+                        "leave it out for noon, or give a day with an hour for the afternoon or the dark -- and "
+                        "stand other things in the room to test it against. Call this to answer whether "
+                        "something WORKS, rather than guessing from its shape. Call check_validity first.",
+         "parameters": {"type": "object", "additionalProperties": False, "properties": {
+                            "seconds": {"type": "number", "minimum": 0.5, "maximum": 120,
+                                        "description": "how long to let it run"},
+                            "day": {"type": "object", "additionalProperties": False,
+                                    "description": "a sky with a day it crosses; hour 23 is the dark",
+                                    "properties": {"day_s": {"type": "number"},
+                                                   "noon_elevation_deg": {"type": "number"},
+                                                   "hour": {"type": "number", "minimum": 0, "maximum": 23.99},
+                                                   "irradiance_w_m2": {"type": "number"}}},
+                            "items": {"type": "array", "maxItems": 6, "description": "what else stands in the room",
+                                      "items": {"type": "object", "additionalProperties": False,
+                                                "required": ["what"],
+                                                "properties": {"what": {"type": "string",
+                                                                        "enum": sorted(test_room.THINGS)},
+                                                               "at_m": {"type": "array", "items": {"type": "number"},
+                                                                        "minItems": 2, "maxItems": 2}}}},
+                            "turn_on": {"type": "boolean",
+                                        "description": "set its program running, if it has one (default true)"}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -581,6 +607,18 @@ class _State:
                 "machines": {k: v for k, v in described.items() if k != "says"},
                 "note": "Whether it is wired to anything real is check_validity's answer, not this one.",
             })
+
+        if tool == "try_it_in_a_room":
+            answer = test_room.try_it(
+                self.app, {"kind": self.design.kind, "design_id": self.design.design_id,
+                           "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
+                           "component_overrides": self.overrides},
+                seconds=float(args.get("seconds", 10.0)), day=args.get("day"),
+                items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)))
+            return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
+                                      "sky": answer["sky"], "made": answer["made"],
+                                      "stores": answer["ended"]["stores"], "panels": answer["ended"]["panels"],
+                                      "programs": answer["ended"]["programs"]})
 
         if tool == "check_validity":
             answer = workshop_fitting.check_validity(self.base, self.overrides, cell_m=0.04,

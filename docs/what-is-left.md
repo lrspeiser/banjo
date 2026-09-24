@@ -85,16 +85,31 @@ work is what the Workshop cannot yet do, then the deleting.
    and is not fine for anything the bench draws. This is the same root as the
    swivel that would not turn.
 
-2. **Test it in a little room, not a rig.** The bench trial already runs the
-   same engine as the world (`workshop_sparse_trial.py:410`,
-   `live_session.Session`) -- but the scene it hands it has no ground, no
-   terrain and no gravity to fall onto: it is a static-load rig that sets a
-   weight on top (`prototype_scene`, `:183`). Replace it with a small real room:
-   the same spec a world room has, the same materials underfoot, time stopped
-   until you press go.
+2. **Test it in a little room, not a rig.** **Done**
+   (`playground/workshop_test_room.py`). A test room is a room of the same shape
+   a world room is: flat ground of real soil, gravity, and a sky with the sun
+   somewhere in it or below it. Testing a thing is **installing** it through
+   `workshop_install`, the same call the world makes -- same compiler, same
+   seating on the ground, same battery, motors and program. There is no second
+   physics and no second way of making a thing.
 
-3. **Put other things in the test room.** From the library, by hand or by the
-   model, so a thing can be tested against what it will meet.
+   Measured, on one design made both ways: **the bench took in 431.1 J and the
+   world took in 431.1 J.** At noon its panel gives 43.08 W; at eleven at night
+   the sun is 60 degrees below the horizon, the panel gives 0.00 W and the
+   battery does not move by a millionth of a joule. It stands on ground 400 mm
+   up and drifts 4 mm in five seconds.
+
+   Reachable three ways: `workshop_test_room.try_it`, `try_in_a_room` on the
+   plan route, and `try_it_in_a_room` as a chat tool, so the model can answer
+   "does it work?" by running it rather than by looking at its shape. Trying
+   costs nothing -- the room keeps a scratch rack of its own, because being
+   refused a test for want of stock is backwards. Making it in the WORLD still
+   spends the world's rack.
+
+3. **Put other things in the test room.** **Done.** A small catalogue -- a
+   stool, a plank, an iron ball, a concrete post -- placed by name and a
+   position, by the person or by the model. Measured: a stool in the room
+   changes nothing about the machine (431 J either way).
 
 ### Then the deleting
 
