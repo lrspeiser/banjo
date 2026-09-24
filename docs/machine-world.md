@@ -801,8 +801,16 @@ it goes to is and which way that is off its nose (`toward_m`, `bearing_deg`),
 where its pose pin has got to (`pose_at_deg`), and how fast the machine itself
 is going across the ground (`speed_m_s`).
 
+**In the world**: `/world?scene=tests-sit`, flat ground with the robot and a
+stool 3.8 m off and 23 degrees to its left. E on any part of the robot opens its
+program's panel, which offers On and Off as a roaming machine's does. Laid out,
+and watched sitting down before it is written, by `tools/build_sit_room.py`; in
+the room it takes 12.5 s, stops 0.51 m from the stool's middle and 3.4 degrees
+off square, and rests its torso 24 mm above the seat and 142 mm in from its
+middle, moving the stool 18 mm.
+
 Checked by `tests/rover_roam_tests.cpp` ("it goes to the stool and sits on it")
-and `tests/rover_room_tests.py`.
+and `tests/rover_room_tests.py` (`SittingDown`).
 
 Not built yet: nothing draws a sit program's panel differently from a roaming
 one, and the robot is a test machine rather than one the Workshop bench has

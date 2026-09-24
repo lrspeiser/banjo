@@ -1067,6 +1067,11 @@ SCENES = {
     # roams on. Laid out by tools/build_rover_room.py; open it at
     # /world?scene=tests-day.
     "tests-day": _saved_room("tests-day"),
+    # A robot told where a stool is, which goes to it and puts its torso down on
+    # it. Nothing tells it how to get there. Laid out, and watched sitting down
+    # before it is written, by tools/build_sit_room.py; open it at
+    # /world?scene=tests-sit. Off the menu, like the others.
+    "tests-sit": _saved_room("tests-sit"),
     # What a break costs (docs/what-a-break-costs.md): an oak plank on piers, a
     # ball dropped on it, and the room's own account of what breaking it cost.
     # The one room that runs the energy-scaled failure law.
