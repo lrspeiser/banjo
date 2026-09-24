@@ -942,7 +942,7 @@ def _panels(given: Any, stores: list[dict[str, Any]], named: set[str]) -> list[d
     return out
 
 
-PROGRAM_KINDS = ("roam",)
+PROGRAM_KINDS = ("roam", "sit")
 
 
 def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> list[dict[str, Any]]:
@@ -951,7 +951,14 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
     wheels, named as the room names them, on the part both turn on, with its
     sensors -- a "roam" program drives a cart about, turning away from the water
     its sensors see. The engine works out which way is forward and which side
-    each sensor is on from where things are."""
+    each sensor is on from where things are.
+
+    A "sit" program goes to a thing instead: it names what it goes to (`toward`,
+    a body in the room), how near it wants to be (`close_m`, between the two
+    bodies' middles across the ground), and the controller it works when it gets
+    there and the angle it turns that pin to (`pose` and `pose_deg`). It is told
+    where the thing is; how it gets there, and what happens when it leans on it,
+    are the world's answer."""
     if given in (None, []):
         return []
     if not isinstance(given, list) or len(given) > 16:
@@ -961,16 +968,18 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
-                                  "rest_below", "rest_until"}
+                                  "rest_below", "rest_until", "toward", "close_m", "pose", "pose_deg"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power, sensors, rest_below and rest_until")
+                             f"setting, climb_deg, power, sensors, rest_below, rest_until, and for a 'sit' program "
+                             f"toward, close_m, pose and pose_deg")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
         kind = program.get("kind", "roam")
         if kind not in PROGRAM_KINDS:
-            raise ValueError(f"program {name!r} is of kind {kind!r}; the only kind there is yet is 'roam'")
+            raise ValueError(f"program {name!r} is of kind {kind!r}; the kinds there are are "
+                             f"{' and '.join(repr(k) for k in PROGRAM_KINDS)}")
         body = str(program.get("body", ""))
         wheels = []
         for side in ("left", "right"):
@@ -999,6 +1008,33 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
             made["rest_below"] = below
             made["rest_until"] = _number(program.get("rest_until", min(1.0, below + 0.5)), below + 0.001, 1.0,
                                          f"program {name!r} rest_until")
+        # What a "sit" program goes to and holds there: the thing by name, how
+        # near it comes to it, and the controller and angle of its pose.
+        if kind == "sit":
+            toward = str(program.get("toward", ""))
+            if toward not in named:
+                raise ValueError(f"program {name!r} goes toward {toward!r}, and there is no such thing in the room")
+            if toward == body:
+                raise ValueError(f"program {name!r} goes toward itself")
+            made["toward"] = toward
+            made["close_m"] = _number(program.get("close_m", 1.0), 0.01, 100.0, f"program {name!r} close_m")
+            if program.get("pose"):
+                holder = next((c for c in controls if c["name"] == str(program["pose"])), None)
+                if holder is None:
+                    raise ValueError(f"program {name!r} holds its pose with the controller {program['pose']!r}, "
+                                     f"and there is none")
+                if holder["name"] in (made["left"], made["right"]):
+                    raise ValueError(f"program {name!r}: {holder['name']!r} is one of its wheels, so it cannot "
+                                     f"hold a pose with it")
+                if "top_out_mm" in holder:
+                    raise ValueError(f"program {name!r}: {holder['name']!r} works a hoist, not a shaft")
+                made["pose"] = holder["name"]
+                made["pose_deg"] = _number(program.get("pose_deg", 90.0), -360.0, 360.0,
+                                           f"program {name!r} pose_deg")
+            if made.get("rest_below"):
+                raise ValueError(f"program {name!r} is on its way somewhere, so it does not rest")
+        elif any(k in program for k in ("toward", "close_m", "pose", "pose_deg")):
+            raise ValueError(f"program {name!r} is a {kind!r} program, so it has nothing to go toward and no pose")
         sensors = _sensors(program.get("sensors"), name, named, stops=False)
         if sensors:
             made["sensors"] = sensors

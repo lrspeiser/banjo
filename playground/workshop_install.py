@@ -825,8 +825,10 @@ def _named_apart(made, spec):
     needs a name of its own", once the first one's battery was in there.
 
     The second one is "battery 2", and what named the first by name -- a motor
-    drawing on it, a panel charging it, a program working a control -- follows
-    the rename.
+    drawing on it, a panel charging it, a program working a wheel's controller
+    or the one it holds its pose with -- follows the rename. What a "sit"
+    program goes TOWARD is not renamed: that is the room's name for something
+    else, already there.
     """
     taken = {str(row["name"]) for rows in (spec.get("machines") or {}).values()
              if isinstance(rows, list) for row in rows
@@ -851,7 +853,7 @@ def _named_apart(made, spec):
             if row.get("store") in renamed:
                 row["store"] = renamed[row["store"]]
     for program in made.get("programs") or []:
-        for side in ("left", "right"):
+        for side in ("left", "right", "pose"):
             if program.get(side) in renamed:
                 program[side] = renamed[program[side]]
 

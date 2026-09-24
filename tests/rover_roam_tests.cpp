@@ -16,6 +16,12 @@
 //    the night on what its battery holds; low, it rests where it is, and says
 //    it is waiting for the morning; nothing charges it in the dark; and when the
 //    morning sun has charged it, it roams on.
+//
+// And a robot of the same parts, drawn short so that it can turn: told to go to
+// a stool and put its torso down on it, it comes round onto the stool, drives
+// at it, stops within reach and lowers the torso until the seat stops it --
+// short of the angle it was reaching for, because the stool is carrying it --
+// and holds there.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -600,6 +606,205 @@ void itRestsThroughTheNightAndRoamsOnInTheMorning() {
     require(wet <= 0.003, "and it stayed out of the water");
 }
 
+// A robot that goes somewhere and sits down.
+//
+// Not the rover: the rover cannot hold a line after a turn. Its caster is
+// 0.70 m in front of the axle its wheels turn about, so coming round on the
+// spot swings the caster through a wide circle and leaves it lying across the
+// way the machine then wants to go; driving off, it scrubs round and pulls the
+// machine about 20 degrees off for every metre travelled. Measured that way, a
+// rover told to go to a stool 3.8 m away zigzagged for 40 s and arrived 30
+// degrees off, its torso coming down beside the stool rather than on it.
+//
+// So the robot is the same machine drawn short: a driven wheel on each side and
+// one small caster, 0.27 m in front of the axle instead of 0.70 m, so it
+// swings through a quarter of the circle and scrubs with a quarter of the arm.
+// Three points on the ground, and no more: a caster at each end was built and
+// measured first, and it could not turn at all -- four points on a rigid deck
+// are one too many, the casters took the weight, and the driven wheels span at
+// their unloaded speed while the robot stood still. Everything else is the
+// rover's: a wheel on each side driven by a motor of its own, oak on iron
+// stubs, and a battery in the deck.
+//
+// Its torso is an oak bar 500 mm long standing up from a pin on a mast at the
+// front of the deck, which a motor of its own swings forward and down. Nothing
+// about it is a person; it is the simplest thing a machine can have that it can
+// put down on something else. The mast holds the pin 600 mm up, above the
+// 450 mm seat it is going to reach, because a torso swinging up from below the
+// seat catches its near edge: measured, it stopped 15 mm off that edge with its
+// far end still 127 mm above the seat, and called itself sat down. Swinging
+// from above, the bar comes down onto the seat with the rest of it in the air.
+std::string robotScene(Vec3 at) {
+    const nlohmann::json chassis = body(
+        "robot", "oak", at,
+        nlohmann::json::array({box("deck", {0.40, 0.06, 0.50}, {0.0, 0.29, -0.05}),
+                               box("left mount", {0.03, 0.16, 0.03}, {0.175, 0.20, -0.20}),
+                               box("right mount", {0.03, 0.16, 0.03}, {-0.175, 0.20, -0.20}),
+                               box("caster mount", {0.08, 0.03, 0.08}, {0.0, 0.245, 0.15}),
+                               box("mast", {0.10, 0.29, 0.10}, {0.0, 0.465, 0.15})}));
+    const auto wheel = [&](const std::string &name, double side) {
+        return body(name, "oak", at,
+                    nlohmann::json::array({roundAcross("stub", 0.03, 0.18, {side * 0.24, 0.16, -0.20}, "iron"),
+                                           roundAcross("wheel", 0.32, 0.06, {side * 0.33, 0.16, -0.20})}));
+    };
+    // The caster: a fork on a swivel under the front of the deck, its 100 mm
+    // iron wheel trailing 35 mm behind the swivel, so it follows.
+    const nlohmann::json caster =
+        body("robot: caster", "iron", at,
+             nlohmann::json::array({box("top", {0.06, 0.02, 0.06}, {0.0, 0.215, 0.15}),
+                                    box("left cheek", {0.010, 0.17, 0.04}, {0.026, 0.125, 0.115}),
+                                    box("right cheek", {0.010, 0.17, 0.04}, {-0.026, 0.125, 0.115}),
+                                    roundAcross("pin", 0.010, 0.062, {0.0, 0.05, 0.115})}));
+    const nlohmann::json caster_wheel =
+        body("robot: caster wheel", "iron", at,
+             nlohmann::json::array({roundAcross("wheel", 0.10, 0.03, {0.0, 0.05, 0.115})}));
+    return nlohmann::json::array({chassis, wheel("robot: left wheel", 1.0), wheel("robot: right wheel", -1.0),
+                                  caster, caster_wheel,
+                                  body("robot: torso", "oak", at,
+                                       nlohmann::json::array({box("bar", {0.10, 0.50, 0.05}, {0.0, 0.85, 0.15})}))})
+        .dump();
+}
+
+struct Robot {
+    std::unique_ptr<LiveWorld> world;
+    unsigned store{}, left{}, right{}, torso{}, program{};
+};
+// Every pin the robot stands on, and the machine that works it: a 24 V battery
+// in the deck, a motor on each wheel as the rover has, and a slow strong motor
+// on the torso's pin -- 20 N m at stall and 5.7 turns a minute unloaded, so the
+// torso takes seconds to come down rather than slamming.
+Robot robotIn(const TileImpactRequest &room, Vec3 at) {
+    Robot r;
+    r.world = LiveWorld::open(room);
+    LiveWorld &w = *r.world;
+    const unsigned left_pin = w.hinge("robot", "robot: left wheel", at + Vec3{0.175, 0.16, -0.20}, {1.0, 0.0, 0.0});
+    const unsigned right_pin = w.hinge("robot", "robot: right wheel", at + Vec3{-0.175, 0.16, -0.20}, {1.0, 0.0, 0.0});
+    const unsigned hip = w.hinge("robot", "robot: torso", at + Vec3{0.0, 0.60, 0.15}, {1.0, 0.0, 0.0});
+    const unsigned swivel = w.hinge("robot", "robot: caster", at + Vec3{0.0, 0.22, 0.15}, {0.0, 1.0, 0.0});
+    const unsigned axle = w.hinge("robot: caster", "robot: caster wheel", at + Vec3{0.0, 0.05, 0.115}, {1.0, 0.0, 0.0});
+    if (!left_pin || !right_pin || !hip || !swivel || !axle)
+        throw std::runtime_error("the robot could not be pinned");
+    r.store = w.energyStore("battery", "robot", 100000.0, 100000.0, 24.0, 0.0);
+    r.left = w.control("left wheel", w.motor(left_pin, r.store, 20.0, 2.0 * kPi, 40.0));
+    r.right = w.control("right wheel", w.motor(right_pin, r.store, 20.0, 2.0 * kPi, 40.0));
+    r.torso = w.control("torso", w.motor(hip, r.store, 20.0, 0.6, 40.0));
+    if (!r.store || !r.left || !r.right || !r.torso) throw std::runtime_error("the robot's machine would not fit");
+    for (int i = 0; i < 240; ++i) tick(w);   // settle onto its casters
+    return r;
+}
+
+// A stool: a 450 mm oak seat on four legs, its top 450 mm up, standing free --
+// nothing holds it down, so leaning on it is a thing that can go wrong.
+nlohmann::json stoolAt(Vec3 at) {
+    nlohmann::json parts = nlohmann::json::array({box("seat", {0.45, 0.04, 0.45}, {0.0, 0.43, 0.0})});
+    for (const double x : {0.18, -0.18})
+        for (const double z : {0.18, -0.18})
+            parts.push_back(box("leg " + std::to_string(parts.size()), {0.05, 0.41, 0.05}, {x, 0.205, z}));
+    return body("stool", "oak", at, std::move(parts));
+}
+
+// The robot at the origin facing +z, 2 cm above the floor, with a stool 3.5 m
+// ahead of it and 1.5 m to its left -- 23 degrees off its nose, so it has to
+// come round before it can drive at it.
+const Vec3 kRobotAt{0.0, 0.02, 0.0};
+const Vec3 kStoolAt{1.5, 0.0, 3.5};
+TileImpactRequest roomWithAStool() {
+    TileImpactRequest request = flatRoom();
+    nlohmann::json bodies = nlohmann::json::parse(robotScene(kRobotAt));
+    bodies.push_back(stoolAt(kStoolAt));
+    request.precise_rigid_scene_json = bodies.dump();
+    return request;
+}
+
+// Where the far end of the torso has got to: 500 mm along the bar from its pin.
+Vec3 endOfTheTorso(const LiveWorld &world) {
+    const LiveBodyPose at = posed(world.poses(), "robot: torso");
+    const Quat facing{at.orientation_wxyz[0], at.orientation_wxyz[1], at.orientation_wxyz[2],
+                      at.orientation_wxyz[3]};
+    return at.position_m + facing.rotate(Vec3{0.0, 0.25, 0.0});
+}
+
+// It comes round onto the stool, drives at it, and puts its torso down on it.
+//
+// It is told where the stool is, how near it wants to be, and the angle it
+// would turn its torso to. Everything else is the world's: it turns until its
+// nose is on the stool, drives at it, stops within 0.78 m of its middle, and
+// then swings its torso forward -- and the torso comes to rest on the seat
+// short of the angle it was reaching for, because the stool is in the way.
+// That is the sit: the stool carries it.
+void itGoesToTheStoolAndSitsOnIt() {
+    Robot r = robotIn(roomWithAStool(), kRobotAt);
+    LiveWorld &world = *r.world;
+
+    LiveWorld::SitOrders orders;
+    orders.toward = "stool";
+    orders.close_m = 0.68;
+    orders.pose = r.torso;
+    orders.pose_deg = 125.0;   // past the seat: the seat is what stops it
+    r.program = world.program("robot", "sit", r.left, r.right, "robot", 0.6, 8.0, 0.0, 0.0, orders);
+    require(r.program != 0, "the sit program would not go on");
+    if (r.program == 0) return;
+    require(world.program("twin", "sit", r.left, r.right, "robot", 0.6, 8.0, 0.25, 0.6, orders) == 0,
+            "a sit program is not given a rest: it is on its way somewhere");
+    {
+        LiveWorld::SitOrders nowhere = orders;
+        nowhere.toward = "a stool that is not there";
+        require(world.program("lost", "sit", r.left, r.right, "robot", 0.6, 8.0, 0.0, 0.0, nowhere) == 0,
+                "a sit program goes to something that is in the world");
+    }
+    const LiveProgram start = programOf(world, r.program);
+    require(start.doing == "stopped" && !start.power, "a program starts off: " + start.doing);
+    require(std::abs(start.bearing_deg - 23.2) < 1.5 && std::abs(start.toward_m - 3.81) < 0.06,
+            "it reads the stool 3.81 m off and 23 degrees to its left: " + std::to_string(start.toward_m) + " m, " +
+                std::to_string(start.bearing_deg) + " degrees");
+
+    runIt(world, r.program, true, 1);
+    std::vector<std::string> order;
+    const Vec3 stool_was = posed(world.poses(), "stool").position_m;
+    double took_s = 0.0;
+    for (int i = 0; i < 60 * 240; ++i) {
+        tick(world);
+        const LiveProgram now = programOf(world, r.program);
+        if (order.empty() || order.back() != now.doing) order.push_back(now.doing);
+        took_s = (i + 1) * kDt;
+        if (now.doing == "sitting" && now.doing_s > 3.0) break;
+    }
+    const LiveProgram said = programOf(world, r.program);
+    std::string went;
+    for (const std::string &each : order) went += (went.empty() ? "" : " -> ") + each;
+    const Vec3 stool_now = posed(world.poses(), "stool").position_m;
+    const Vec3 tip = endOfTheTorso(world);
+    const double above = tip.y - (kStoolAt.y + 0.45);
+    const double in_from = length(Vec3{tip.x - stool_now.x, 0.0, tip.z - stool_now.z});
+    std::cout << "    " << went << "\n";
+    std::cout << "    in " << took_s << " s it stopped " << said.toward_m << " m from the stool's middle, "
+              << said.bearing_deg << " degrees off square, its torso at " << said.pose_at_deg << " of the "
+              << said.pose_deg << " degrees it reached for\n";
+    std::cout << "    the end of the torso is " << above * 1000.0 << " mm above the seat and " << in_from * 1000.0
+              << " mm in from its middle; the stool moved " << length(stool_now - stool_was) * 1000.0 << " mm\n";
+    std::cout << "    it says: " << said.why << "\n";
+
+    require(said.doing == "sitting", "it ends up sitting: " + said.doing + " (" + said.why + ")");
+    require(order.size() >= 3 && order.front().rfind("turning", 0) == 0,
+            "it turned to the stool before it drove at it: " + went);
+    require(std::find(order.begin(), order.end(), std::string("going to it")) != order.end(),
+            "and drove at it: " + went);
+    require(said.toward_m <= 0.75, "it stopped within reach of the stool: " + std::to_string(said.toward_m) + " m");
+    require(said.pose_at_deg < said.pose_deg - 5.0,
+            "the seat stopped its torso short of the angle it reached for: " + std::to_string(said.pose_at_deg));
+    require(std::abs(above) < 0.06, "the end of the torso is on the seat: " + std::to_string(above * 1000.0) + " mm");
+    require(in_from < 0.225, "and within the seat, not over its edge: " + std::to_string(in_from * 1000.0) + " mm");
+    require(length(stool_now - stool_was) < 0.15, "and the stool is still where it stood");
+
+    // It holds: three more seconds and nothing has moved.
+    const Vec3 held = endOfTheTorso(world);
+    for (int i = 0; i < 3 * 240; ++i) tick(world);
+    const double drift = length(endOfTheTorso(world) - held);
+    std::cout << "    three seconds on, the end of the torso has moved " << drift * 1000.0 << " mm\n";
+    require(drift < 0.01, "it stays where it came to rest: " + std::to_string(drift * 1000.0) + " mm");
+    for (const LiveJoint &joint : world.joints()) require(joint.attached, "a pin let go");
+}
+
 } // namespace
 
 int main() {
@@ -609,6 +814,7 @@ int main() {
         {"a saved rover roams on", aSavedRoverRoamsOn},
         {"it rests in the sun and roams on", itRestsInTheSunAndRoamsOn},
         {"it rests through the night and roams on in the morning", itRestsThroughTheNightAndRoamsOnInTheMorning},
+        {"it goes to the stool and sits on it", itGoesToTheStoolAndSitsOnIt},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;

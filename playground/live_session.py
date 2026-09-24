@@ -1197,13 +1197,23 @@ class Live:
                 problems.append(f"the program {name} has no controller for its "
                                 f"{'left' if left is None else 'right'} wheel")
                 continue
+            # A "sit" program also says what it goes to, how near it wants to
+            # be, and the controller and angle of the pose it holds there.
+            pose = control_ids.get(str(program.get("pose"))) if program.get("pose") else None
+            if program.get("pose") and pose is None:
+                problems.append(f"the program {name} has no controller to hold its pose with")
+                continue
             try:
                 answer = session.send(op="program", name=name, kind=str(program.get("kind", "roam")),
                                       left=left, right=right, body=str(program.get("body", "")),
                                       setting=float(program.get("setting", 1.0)),
                                       climb_deg=float(program.get("climb_deg", 8.0)),
                                       rest_below=float(program.get("rest_below", 0.0)),
-                                      rest_until=float(program.get("rest_until", 0.0)))
+                                      rest_until=float(program.get("rest_until", 0.0)),
+                                      toward=str(program.get("toward", "")),
+                                      close_m=float(program.get("close_m", 0.0)),
+                                      pose=int(pose or 0),
+                                      pose_deg=float(program.get("pose_deg", 0.0)))
             except Exception as error:
                 problems.append(f"the program {name} would not go on: {error}")
                 continue

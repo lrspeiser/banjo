@@ -59,7 +59,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 fracture_lab.validate(room)
 
-        refused(lambda m, p: p.update(kind="hunt"), "only kind there is yet is 'roam'")
+        refused(lambda m, p: p.update(kind="hunt"), "the kinds there are are 'roam' and 'sit'")
         refused(lambda m, p: p.update(left="front wheel"), "there is none")
         refused(lambda m, p: p.update(right="left wheel"), "are one")
         refused(lambda m, p: p.update(body="post"), "does not turn a wheel on 'post'")
@@ -69,6 +69,53 @@ class TheRoomDeclaresIt(unittest.TestCase):
         refused(lambda m, p: p["sensors"][0].update(stops=1), "cannot say")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p), name="twin")), "worked by another program")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p))), "a name of its own")
+
+    def test_a_sit_program_says_what_it_goes_to_and_the_pose_it_holds(self):
+        """A "sit" program goes to a thing already in the room and holds a pose
+        when it gets there. Here the rover is told to go to its own marker
+        stone, holding its left wheel's shaft at a quarter turn -- a silly pose
+        for a wheel, and exactly the shape of the thing: a controller that is
+        neither wheel, turned to an angle, once it is there."""
+        room = rover_room()
+        program = room["machines"]["programs"][0]
+        program.update(kind="sit", toward="post", close_m=1.5, pose="left wheel", pose_deg=90.0)
+        program.pop("sensors", None)
+        with self.assertRaisesRegex(ValueError, "is one of its wheels"):
+            fracture_lab.validate(deepcopy(room))
+
+        # A controller of its own to hold the pose with: the rover has none, so
+        # one is declared on the caster's swivel.
+        room["machines"]["motors"].append({"on": ["rover", "rover: caster"], "store": "rover battery",
+                                           "stall_torque_n_m": 4.0, "no_load_rpm": 30.0,
+                                           "brake_torque_n_m": 8.0})
+        room["machines"]["controls"].append({"name": "swivel", "on": ["rover", "rover: caster"]})
+        program["pose"] = "swivel"
+        [said] = fracture_lab.validate(room)["machines"]["programs"]
+        self.assertEqual({"name": "rover", "kind": "sit", "left": "left wheel", "right": "right wheel",
+                          "body": "rover", "setting": 1.0, "climb_deg": 8.0, "power": False,
+                          "toward": "post", "close_m": 1.5, "pose": "swivel", "pose_deg": 90.0}, said)
+
+    def test_a_sit_program_the_engine_could_not_run_is_refused_here(self):
+        def refused(change, message):
+            room = rover_room()
+            program = room["machines"]["programs"][0]
+            program.update(kind="sit", toward="post", close_m=1.5)
+            program.pop("sensors", None)
+            change(room["machines"], program)
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                fracture_lab.validate(room)
+
+        refused(lambda m, p: p.update(toward="a stone that is not there"), "no such thing in the room")
+        refused(lambda m, p: p.update(toward="rover"), "goes toward itself")
+        refused(lambda m, p: p.update(close_m=0.0), "close_m")
+        refused(lambda m, p: p.update(pose="a controller that is not there"), "and there is none")
+        refused(lambda m, p: p.update(rest_below=0.25), "does not rest")
+
+    def test_only_a_sit_program_says_where_it_is_going(self):
+        room = rover_room()
+        room["machines"]["programs"][0]["toward"] = "post"
+        with self.assertRaisesRegex(ValueError, "nothing to go toward"):
+            fracture_lab.validate(room)
 
     def test_a_room_without_programs_says_nothing_of_them(self):
         room = rover_room()

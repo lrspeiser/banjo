@@ -21,7 +21,7 @@ from typing import Any
 
 MACHINES_KEY = "@machines"
 SCHEMA = "banjo.workshop-machines.v1"
-PROGRAM_KINDS = ("roam", "drive")
+PROGRAM_KINDS = ("roam", "drive", "sit")
 MAX_EACH = 32
 
 
@@ -126,6 +126,14 @@ def checked(value: Any) -> dict[str, Any]:
                    "left": _name(row.get("left"), "a program's left control"),
                    "right": _name(row.get("right"), "a program's right control"),
                    "setting": _number(row.get("setting"), "setting", 0.0, 1.0, default=1.0)}
+        # A "sit" program goes to a thing already standing in the world, by the
+        # name the room calls it, so the bench takes that name as given.
+        if kind == "sit":
+            program["toward"] = _name(row.get("toward"), "what a sit program goes to")
+            program["close_m"] = _number(row.get("close_m"), "close_m", 0.01, 100.0, default=1.0)
+            if row.get("pose"):
+                program["pose"] = _name(row.get("pose"), "a program's pose control")
+                program["pose_deg"] = _number(row.get("pose_deg"), "pose_deg", -360.0, 360.0, default=90.0)
         if row.get("climb_deg") is not None:
             program["climb_deg"] = _number(row.get("climb_deg"), "climb_deg", 0.0, 89.0)
         if row.get("rest_below") is not None:

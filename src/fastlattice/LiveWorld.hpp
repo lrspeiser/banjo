@@ -660,7 +660,8 @@ struct LiveControl {
 
 // A machine's program (docs/machine-world.md, "One autonomous creature"): what
 // works a machine's controllers the way a person works their panels, from what
-// its sensors read -- the machine deciding for itself. The one kind so far is
+// its sensors read -- the machine deciding for itself. There are two kinds.
+//
 // "roam", for a cart with a driven wheel on either side and a caster: it goes
 // forward; where a water sensor sees water ahead on one side it turns away on
 // the spot, the wheel on that side driving and the other backing; where the
@@ -670,10 +671,21 @@ struct LiveControl {
 // goes on like that until it is
 // turned off, and then stops on its brakes. Nothing is scripted by place: it
 // knows only what its sensors and its own slope tell it.
+//
+// "sit", for the same cart with something to go to: it turns until its nose is
+// on the thing it was told to go to, drives at it, turns again where it has
+// drifted off the line, and where its wheels make no progress it backs off and
+// tries again; within `close_m` of it, it stops on its brakes and works the
+// controller of its `pose` to `pose_deg`, and holds there. It is told WHERE the
+// thing is -- it can see it, as a person across a room can -- and nothing else:
+// how it gets there, whether it arrives, and what happens when it leans on the
+// thing are the world's answer. It reaches for its pose until it gets there,
+// until the pin stops for want of progress -- it has come to rest on something
+// -- or until it has tried for long enough, and then it holds what it has.
 struct LiveProgram {
     unsigned id{};
     std::string name;             // the machine's, as the host calls it
-    std::string kind;             // "roam"
+    std::string kind;             // "roam" or "sit"
     unsigned left{}, right{};     // the controllers of its left and right wheels (LiveControl)
     std::string body;             // the part both wheels turn on: its chassis, whose slope it reads
     double setting{1.0};          // the drive setting it tells its wheels, 0 to 1
@@ -683,13 +695,24 @@ struct LiveProgram {
     // `rest_until`, charged by whatever charges it: a solar panel in the sun.
     // Zero for a machine that never rests.
     double rest_below{}, rest_until{};
+    // What a "sit" program is told besides, and nothing a "roam" one has: the
+    // body it goes to; how near that body's middle its own chassis's middle
+    // comes, across the ground, before it calls itself there; the controller it
+    // works once it is there (0 for none: then it only goes and stops); and the
+    // angle it turns that controller's pin to, degrees from where the pin was
+    // made.
+    std::string toward;
+    double close_m{};
+    unsigned pose{};
+    double pose_deg{};
     std::vector<LiveSensor> sensors;
     // What it was told, and by whom: on or off.
     bool power{};
     std::string sender;
     std::uint64_t seq{};
-    // What it is doing -- "going forward", "backing off", "turning left",
-    // "turning right", "resting", "stopped" -- and why, as the last kept step left it; how
+    // What it is doing -- "going forward", "going to it", "backing off",
+    // "turning left", "turning right", "resting", "settling", "sitting",
+    // "stopped" -- and why, as the last kept step left it; how
     // long it has been doing it and how far it has turned in it; how many times
     // it has turned away from something since it was made; and the slope it
     // faces, nose up, and the one across it, its left side up, in degrees.
@@ -703,6 +726,13 @@ struct LiveProgram {
     // times it has stopped to rest.
     double charge_share{};
     unsigned rests{};
+    // A "sit" program, as the last kept step left it: how far away what it goes
+    // to is, across the ground, from its chassis's middle to that body's; which
+    // way that is off its nose, its own left counting positive, degrees; where
+    // its pose pin has got to, degrees from where the pin was made; and how
+    // fast the machine itself is going across the ground -- which is not what
+    // its wheels read, because a wheel held on its brake can skid.
+    double toward_m{}, bearing_deg{}, pose_at_deg{}, speed_m_s{};
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -1579,7 +1609,18 @@ public:
     // setting outside 0 to 1.
     std::string operate(unsigned control, const ControlCommand &command);
     [[nodiscard]] std::vector<LiveControl> controls() const;
-    // A program for a machine (LiveProgram): of `kind` ("roam"), working the
+    // What a "sit" program is told besides, and a "roam" one may not be told at
+    // all: the body it goes to, how near that body's middle its chassis's comes
+    // before it is there, the controller it works when it gets there (0 for
+    // none), and the angle it turns that pin to.
+    struct SitOrders {
+        std::string toward;
+        double close_m{};
+        unsigned pose{};
+        double pose_deg{};
+    };
+    // A program for a machine (LiveProgram): of `kind` ("roam" or "sit"),
+    // working the
     // controllers of its `left` and `right` wheels -- each a shaft's, on a pin
     // through `body`, the part both turn on -- at the drive `setting`, turning
     // back from ground nose-up steeper than `climb_deg`. Which way is forward
@@ -1590,9 +1631,16 @@ public:
     // the kind is not one it knows, or the numbers are not a program's -- a
     // rest_until at or below a rest_below above 0, or either above 1. It starts
     // off, and does nothing to its wheels until it is turned on.
+    //
+    // A "sit" program also needs a `toward` that is a body in the world and not
+    // its own chassis, a `close_m` above 0 and no more than 100, and -- where
+    // it has one -- a `pose` controller that is there, is neither wheel's, works
+    // a shaft rather than a hoist, is worked by no other program, and is turned
+    // to a `pose_deg` within a turn either way. It does not rest: it is going
+    // somewhere, so a rest_below with it is refused rather than ignored.
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting = 1.0, double climb_deg = 8.0,
-                     double rest_below = 0.0, double rest_until = 0.0);
+                     double rest_below = 0.0, double rest_until = 0.0, const SitOrders &sit = {});
     // A sensor on a program's machine, as sense() puts one on a controller's:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out

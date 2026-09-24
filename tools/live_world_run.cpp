@@ -405,7 +405,7 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
 nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json parts = nlohmann::json::array();
     for (const nlohmann::json &c : controls) {
-        if (c.at("id") != p.left && c.at("id") != p.right) continue;
+        if (c.at("id") != p.left && c.at("id") != p.right && c.at("id") != p.pose) continue;
         for (const nlohmann::json &part : c.at("parts"))
             if (std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
     }
@@ -437,7 +437,17 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
-            {"rests", p.rests}};
+            {"rests", p.rests},
+            // A "sit" program: what it goes to, how near it wants to be and how
+            // near it is, which way that is off its nose, and the pose it holds.
+            {"toward", p.toward},
+            {"close_m", tidy(p.close_m)},
+            {"toward_m", tidy(p.toward_m)},
+            {"bearing_deg", tidy(p.bearing_deg)},
+            {"pose", p.pose},
+            {"pose_deg", tidy(p.pose_deg)},
+            {"pose_at_deg", tidy(p.pose_at_deg)},
+            {"speed_m_s", tidy(p.speed_m_s)}};
 }
 
 // What a break cost, as a host reads it (LiveBreakCost): the bonds the lattice
@@ -2203,21 +2213,31 @@ int main(int argc, char **argv) {
                             "above 0 and at most 1");
                     reply["solar_panel"] = made;
                 } else if (op == "program") {
-                    // A program for a machine (LiveProgram): of a kind ("roam"),
-                    // working the controllers of its left and right wheels, on a
-                    // body both turn on; it starts off.
+                    // A program for a machine (LiveProgram): of a kind ("roam"
+                    // or "sit"), working the controllers of its left and right
+                    // wheels, on a body both turn on; it starts off. A "sit"
+                    // one also says what it goes to, how near it wants to be,
+                    // and the controller and angle of the pose it holds there.
+                    LiveWorld::SitOrders sit;
+                    sit.toward = command.value("toward", std::string{});
+                    sit.close_m = command.value("close_m", 0.0);
+                    sit.pose = command.value("pose", 0U);
+                    sit.pose_deg = command.value("pose_deg", 0.0);
                     const unsigned made = world->program(
                         command.value("name", std::string{}), command.value("kind", std::string{}),
                         command.at("left").get<unsigned>(), command.at("right").get<unsigned>(),
                         command.value("body", std::string{}), command.value("setting", 1.0),
                         command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
-                        command.value("rest_until", 0.0));
+                        command.value("rest_until", 0.0), sit);
                     if (made == 0)
                         throw std::invalid_argument(
-                            "a program is of kind \"roam\", on two shafts' controllers that no program works yet, "
+                            "a program is of kind \"roam\" or \"sit\", on two shafts' controllers that no program "
+                            "works yet, "
                             "each on a pin through the body it names, with a setting above 0 and no more than 1, "
                             "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
-                            "more than 1");
+                            "more than 1; a \"sit\" one goes toward another body in the world, within a close_m "
+                            "above 0 and up to 100, holding a pose controller that is there and is neither wheel's "
+                            "at a pose_deg within a turn either way, and it does not rest");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,

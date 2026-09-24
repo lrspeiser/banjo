@@ -1006,6 +1006,10 @@ struct LiveWorld::Impl {
         double turn_least_deg{};
         double heading_rad{};
         int then_turn{1};
+        // A "sit" program stopping: whether it drives at what it goes to once it
+        // has stopped, rather than turning again -- it has turned as long as it
+        // is going to.
+        bool go_after_stop{};
         std::uint64_t told{};
     };
     std::vector<Program> programs;
@@ -1687,17 +1691,45 @@ struct LiveWorld::Impl {
         readSensorList(p.said.sensors);
         if (const LiveEnergyStore *store = storeOfProgram(p); store != nullptr && store->capacity_j > 0.0)
             p.said.charge_share = store->charge_j / store->capacity_j;
+        // Where its pose pin has got to: the pin itself, not what its motor was
+        // told, because what the pin did is the world's answer and not the
+        // machine's.
+        if (p.said.pose != 0) {
+            const Control *c = controlById(p.said.pose);
+            const Motor *m = c != nullptr ? motorById(c->said.motor) : nullptr;
+            const SceneJoint *pin = m != nullptr ? motorPin(m->said.joint) : nullptr;
+            if (pin != nullptr && pin->rigid != 0 && world->hasJoint(pin->rigid))
+                p.said.pose_at_deg = world->jointState(pin->rigid).at * kDegPerRad;
+        }
         const auto found = index_of.find(p.said.body);
         if (found == index_of.end() || !inWorld(found->second)) return;
         const RigidSnapshot at = world->snapshot(body_of[found->second]);
+        p.said.speed_m_s = length(Vec3{at.linear_velocity_m_s.x, 0.0, at.linear_velocity_m_s.z});
         const Vec3 forward = at.orientation_world.rotate(p.forward_local);
         const Vec3 left = at.orientation_world.rotate(p.left_local);
         p.said.pitch_deg = std::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
         p.said.roll_deg = std::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
         p.heading_rad = std::atan2(forward.x, forward.z);
+        // How far what it goes to is, and which way off its nose: both across
+        // the ground, because a machine on wheels goes across the ground. A
+        // thing that is not there any more stays at the last reading it had,
+        // and the program is left going at where it was.
+        if (p.said.toward.empty()) return;
+        const auto goal = index_of.find(p.said.toward);
+        if (goal == index_of.end() || !inWorld(goal->second)) return;
+        Vec3 to = world->snapshot(body_of[goal->second]).center_of_mass_world_m - at.center_of_mass_world_m;
+        to.y = 0.0;
+        Vec3 nose = forward;
+        nose.y = 0.0;
+        p.said.toward_m = length(to);
+        if (!(p.said.toward_m > 1e-6) || length(nose) < 1e-6) return;
+        nose = normalized(nose);
+        const Vec3 beside = cross(Vec3{0.0, 1.0, 0.0}, nose);   // its left, across the ground
+        p.said.bearing_deg = std::atan2(dot(to, beside), dot(to, nose)) * kDegPerRad;
     }
     // What a program's machine does next, from what the last kept step left it
-    // reading, and what its wheels are told for it. "roam": going forward, from
+    // reading, and what its wheels are told for it. A "sit" program decides for
+    // itself (decideSit); the rest of this is "roam": going forward, from
     // water seen ahead it backs off for kBackOffS and then turns away on the
     // spot, from the side that saw it -- one way and the other in turn when
     // both did -- the wheel on that side driving and the other backing. It
@@ -1711,6 +1743,10 @@ struct LiveWorld::Impl {
     // way ahead -- or kTurnMostS has passed, when it goes on regardless. Before
     // every step; nothing is timed here (settlePrograms).
     void decideProgram(Program &p) {
+        if (p.said.kind == "sit") {
+            decideSit(p);
+            return;
+        }
         constexpr double kBackOffS = 1.2;
         constexpr double kTurnMostS = 6.0;
         constexpr double kSideTurnDeg = 50.0;
@@ -1823,21 +1859,175 @@ struct LiveWorld::Impl {
             else if (s.doing_s >= kTurnMostS)
                 into("going forward", "it could not turn clear in time, so it goes on");
         }
-        int l = 0, r = 0;   // stopped, or resting: held on their brakes
-        if (s.doing == "going forward") l = r = 1;
-        else if (s.doing == "backing off") l = r = -1;
-        else if (s.doing == "turning left") l = -1, r = 1;
-        else if (s.doing == "turning right") l = 1, r = -1;
-        // Each wheel told only what it is not doing already: one that stopped
-        // for want of progress stays stopped, told the same, and the program
-        // reads that and backs off.
+        tellWheels(p, *left, *right);
+    }
+    // What its wheels are told for what it is doing: forward, backing, or one
+    // each way on the spot; stopped, resting, settling or sitting, they are
+    // held on their brakes. Each is told only what it is not doing already, so
+    // that one which stopped for want of progress stays stopped, told the
+    // same, and the program reads that and backs off.
+    void tellWheels(Program &p, Control &left, Control &right, int l, int r) {
+        const LiveProgram &s = p.said;
         const auto tellWheel = [&](Control &c, int direction) {
             const LiveControl &now = c.said;
             if (now.power == s.power && now.direction == direction && now.setting == s.setting) return;
             tell(c, s.power, direction, s.setting, "program " + s.name, ++p.told);
         };
-        tellWheel(*left, l);
-        tellWheel(*right, r);
+        tellWheel(left, l);
+        tellWheel(right, r);
+    }
+    void tellWheels(Program &p, Control &left, Control &right) {
+        const std::string &doing = p.said.doing;
+        int l = 0, r = 0;
+        if (doing == "going forward" || doing == "going to it") l = r = 1;
+        else if (doing == "backing off") l = r = -1;
+        else if (doing == "turning left") l = -1, r = 1;
+        else if (doing == "turning right") l = 1, r = -1;
+        tellWheels(p, left, right, l, r);
+    }
+    // What a "sit" program's machine does next. It goes to the thing it was
+    // told to go to and then holds the pose it was told to hold: it turns on
+    // the spot until its nose is on the line to it, drives at it, turns again
+    // where it has drifted off that line, and where its wheels make no progress
+    // it backs off and tries again -- the same backing off roam does, and for
+    // the same reason, that a turn on the spot swings its front round into
+    // whatever stopped it. Within `close_m` it stops on its brakes and reaches
+    // for its pose, and holds what it has when it gets there, when the pin
+    // stops for want of progress -- it has come to rest on something -- or when
+    // it has tried for kSettleMostS.
+    //
+    // It is told where the thing is and nothing else. Whether it arrives, what
+    // it hits on the way, and what happens when it leans on the thing are the
+    // world's answer: the program only ever tells motors what to try.
+    void decideSit(Program &p) {
+        constexpr double kBackOffS = 1.2;
+        constexpr double kTurnMostS = 6.0;
+        constexpr double kStopMostS = 3.0;
+        constexpr double kStoppedRpm = 2.0;
+        constexpr double kStoppedM_S = 0.01;
+        constexpr double kStuckTurningS = 2.0;   // turning this long and hardly round: back off and try again
+        constexpr double kCameRoundDeg = 5.0;
+        constexpr double kCasterS = 2.5;         // driving this long, it lets its caster straighten first
+        constexpr double kOnItDeg = 3.0;        // how square on a turn on the spot leaves it
+        constexpr double kAimedDeg = 8.0;       // near enough the line to drive, and to stay driving
+        constexpr double kPoseCloseDeg = 3.0;
+        constexpr double kSettleMostS = 20.0;
+        LiveProgram &s = p.said;
+        Control *left = controlById(s.left);
+        Control *right = controlById(s.right);
+        if (left == nullptr || right == nullptr) {
+            s.doing = "stopped";
+            s.why = "its wheels' controllers are gone";
+            return;
+        }
+        Control *pose = s.pose != 0 ? controlById(s.pose) : nullptr;
+        const auto into = [&](const char *doing, std::string why) {
+            s.doing = doing;
+            s.why = std::move(why);
+            s.doing_s = 0.0;
+            s.turned_deg = 0.0;
+        };
+        const auto stalled = [](const Control &c) {
+            return c.tripped && c.said.condition.rfind("stalled", 0) == 0;
+        };
+        const bool there = s.toward_m > 0.0 && s.toward_m <= s.close_m;
+        // Which way its pose pin has to turn to reach the angle it was told,
+        // and whether it is there: zero once it is within kPoseCloseDeg.
+        const double to_pose = s.pose_deg - s.pose_at_deg;
+        const int reach = std::abs(to_pose) <= kPoseCloseDeg ? 0 : (to_pose > 0.0 ? 1 : -1);
+        const auto turnToward = [&](std::string why) {
+            into(s.bearing_deg > 0.0 ? "turning left" : "turning right", std::move(why));
+            p.turn_sign = s.bearing_deg > 0.0 ? 1 : -1;
+            ++s.turns;
+        };
+        // What it does from a standstill: settle where it is, if it is there and
+        // square on to it; come round onto it, if it is not; or drive at it.
+        // Coming round is the only way it can turn (see below), so it is what it
+        // does both on the way and on arriving crooked.
+        const auto fromRest = [&]() {
+            // Having turned as long as it is going to, it takes what it has.
+            const bool aimed = std::abs(s.bearing_deg) <= kAimedDeg || p.go_after_stop;
+            const bool forced = p.go_after_stop;
+            p.go_after_stop = false;
+            if (there && aimed)
+                into("settling", forced ? "it is there, as square on to it as it could come" : "it is there");
+            else if (!aimed) turnToward("it is not facing what it goes to");
+            else into("going to it", "what it goes to is ahead");
+        };
+        // A wheel told to turn the other way stops first -- a motor is not
+        // slammed into reverse while its shaft spins -- so a machine that went
+        // straight from driving into a turn would coast on, one wheel waiting
+        // to stop and the other still pushing, and sail past the thing it was
+        // going to. It measured 35 seconds of driving straight past a stool
+        // 1.3 m away, the program saying "turning left" the whole time. So it
+        // stops before it changes what its wheels are doing.
+        //
+        // And it waits for the MACHINE to stop, not its wheels. Wheels on their
+        // brakes read nothing while the machine slides on, and a machine still
+        // rolling cannot turn at all: its caster is trailing straight, which
+        // holds the front from swinging, so one wheel grips and drives it on at
+        // its own rolling speed while the other skids backwards. That locks
+        // in -- it measured 35 s of it -- because going on is what keeps the
+        // caster straight.
+        const auto stopped = [&]() {
+            return s.speed_m_s < kStoppedM_S && std::abs(left->said.speed_rpm) < kStoppedRpm &&
+                   std::abs(right->said.speed_rpm) < kStoppedRpm;
+        };
+        if (!s.power) {
+            if (s.doing != "stopped") into("stopped", "off");
+        } else if (s.doing == "sitting") {
+            // It has arrived and settled: it holds, and says nothing new.
+        } else if (s.doing == "stopped" || s.doing == "going forward" || s.doing == "resting") {
+            // Started, or handed a state a roaming machine left behind.
+            fromRest();
+        } else if (s.doing == "stopping") {
+            if (stopped() || s.doing_s >= kStopMostS) fromRest();
+        } else if (s.doing == "settling") {
+            if (pose == nullptr || reach == 0)
+                into("sitting", pose == nullptr ? "it is there" : "it is holding the pose it was told to hold");
+            else if (stalled(*pose))
+                into("sitting", "it came to rest on something before it reached its pose, so it holds there");
+            else if (s.doing_s >= kSettleMostS)
+                into("sitting", "it could not reach its pose in time, so it holds where it got to");
+        } else if (s.doing == "going to it") {
+            if (there) into("stopping", "it is there");
+            else if (stalled(*left) || stalled(*right)) into("backing off", "its wheels made no progress");
+            else if (std::abs(s.bearing_deg) > kAimedDeg && s.doing_s >= kCasterS)
+                into("stopping", "it has drifted off the line to it");
+        } else if (s.doing == "backing off") {
+            if (s.doing_s >= kBackOffS || stalled(*left) || stalled(*right)) turnToward(s.why);
+        } else if (s.doing == "turning left" || s.doing == "turning right") {
+            if (std::abs(s.bearing_deg) <= kOnItDeg) into("stopping", "it is facing what it goes to");
+            else if (s.doing_s >= kStuckTurningS && s.turned_deg < kCameRoundDeg)
+                into("backing off", "it could not come round where it stood");
+            else if (s.doing_s >= kTurnMostS) {
+                p.go_after_stop = true;
+                into("stopping", "it could not come round in time");
+            }
+        }
+        // It aims from a standstill and then drives straight, and cannot steer
+        // while it rolls. Two ways of steering were built and measured and
+        // neither works on this machine. Easing the inner wheel's drive does
+        // nothing, because a drive setting is an effort and not a speed and a
+        // rolling machine carries its wheels along whatever they are told: the
+        // inner wheel turned 22.6 rpm on a seventh of the voltage while the
+        // outer turned 22.4 on all of it. Braking the inner wheel does not turn
+        // it either -- the outer wheel skids instead, and the machine crawls at
+        // 40 mm a second and holds its heading to a fifth of a degree a second.
+        // So it stops, comes round on the spot, where it turns 23 degrees a
+        // second, and goes again; the caster scrub that follows a turn pulls it
+        // about 5 degrees a second off the line, and kAimedDeg is how far it
+        // lets that go before it stops and aims again.
+        tellWheels(p, *left, *right);
+        // Its pose pin: reaching for the angle while it settles, held on its
+        // brake at every other time -- so that what it carries stays where it
+        // is while it drives, and stays where it got to once it is sitting.
+        if (pose != nullptr) {
+            const int direction = s.doing == "settling" ? reach : 0;
+            const LiveControl &now = pose->said;
+            if (!(now.power == s.power && now.direction == direction && now.setting == s.setting))
+                tell(*pose, s.power, direction, s.setting, "program " + s.name, ++p.told);
+        }
     }
     void preparePrograms() {
         for (Program &p : programs) decideProgram(p);
@@ -4487,7 +4677,11 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.body = o.at("body").get<std::string>();
         p.said.setting = std::clamp(numberFrom(o.at("setting")), 0.0, 1.0);
         p.said.climb_deg = numberFrom(o.at("climb_deg"));
-        if (p.said.kind != "roam")
+        p.said.toward = o.value("toward", std::string{});
+        p.said.close_m = o.contains("close_m") ? numberFrom(o.at("close_m")) : 0.0;
+        p.said.pose = o.value("pose", 0U);
+        p.said.pose_deg = o.contains("pose_deg") ? numberFrom(o.at("pose_deg")) : 0.0;
+        if (p.said.kind != "roam" && p.said.kind != "sit")
             throw std::invalid_argument("a saved program is not of a kind this engine knows");
         for (const nlohmann::json &q : o.at("sensors")) {
             LiveSensor sensor;
@@ -4518,15 +4712,22 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
+        p.go_after_stop = o.value("go_after_stop", false);
         p.told = o.at("told").get<std::uint64_t>();
         if (carrying) {
             const bool declared = kept(asked.programs, p.said.id);
             const bool wheels = impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
-            if (!declared || !wheels) {
+            // A "sit" program also needs what it goes to and, where it has one,
+            // the controller it holds its pose with: without either it is a
+            // machine told to go to nothing.
+            const bool goal = p.said.toward.empty() || back(p.said.toward);
+            const bool holder = p.said.pose == 0 || impl.controlById(p.said.pose) != nullptr;
+            if (!declared || !wheels || !goal || !holder) {
                 if (declared)
-                    lost.push_back("the program of " + p.said.name +
-                                   ": its wheels' controllers did not come back as they were, so it is as the "
-                                   "room declares it");
+                    lost.push_back("the program of " + p.said.name + ": " +
+                                   (wheels && holder ? "what it goes to did not come back as it was"
+                                                     : "its controllers did not come back as they were") +
+                                   ", so it is as the room declares it");
                 continue;
             }
             ++said.carried.programs;
@@ -5940,9 +6141,9 @@ std::vector<LiveControl> LiveWorld::controls() const {
 
 unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                             const std::string &body, double setting, double climb_deg, double rest_below,
-                            double rest_until) {
+                            double rest_until, const SitOrders &sit) {
     Impl &I = *impl_;
-    if (kind != "roam" || left == right) return 0;
+    if ((kind != "roam" && kind != "sit") || left == right) return 0;
     if (!(setting > 0.0 && setting <= 1.0) || !(climb_deg > 0.0 && climb_deg < 60.0)) return 0;
     if (!(rest_below >= 0.0 && rest_below < 1.0) || (rest_below > 0.0 && !(rest_until > rest_below && rest_until <= 1.0)))
         return 0;
@@ -5951,6 +6152,24 @@ unsigned LiveWorld::program(const std::string &name, const std::string &kind, un
     if (l == nullptr || r == nullptr || l->said.rope != 0 || r->said.rope != 0) return 0;
     for (const Impl::Program &p : I.programs)
         if (p.said.left == left || p.said.right == left || p.said.left == right || p.said.right == right) return 0;
+    // What a "sit" program goes to and holds, and what a "roam" one may not be
+    // told. It does not rest: it is on its way somewhere, and a machine that
+    // stopped to rest halfway would have to be told what that means.
+    if (kind == "sit") {
+        if (rest_below > 0.0) return 0;
+        if (!std::isfinite(sit.close_m) || !(sit.close_m > 0.0 && sit.close_m <= 100.0)) return 0;
+        if (!std::isfinite(sit.pose_deg) || std::abs(sit.pose_deg) > 360.0) return 0;
+        const auto goal = I.index_of.find(sit.toward);
+        if (sit.toward.empty() || sit.toward == body || goal == I.index_of.end() || !I.inWorld(goal->second)) return 0;
+        if (sit.pose != 0) {
+            const Impl::Control *c = I.controlById(sit.pose);
+            if (c == nullptr || c->said.rope != 0 || sit.pose == left || sit.pose == right) return 0;
+            for (const Impl::Program &p : I.programs)
+                if (p.said.pose == sit.pose || p.said.left == sit.pose || p.said.right == sit.pose) return 0;
+        }
+    } else if (!sit.toward.empty() || sit.close_m != 0.0 || sit.pose != 0 || sit.pose_deg != 0.0) {
+        return 0;
+    }
     // Each wheel: the other thing on its motor's pin through `body`.
     const auto wheelOf = [&](const Impl::Control &c) -> std::string {
         const Impl::Motor *m = I.motorById(c.said.motor);
@@ -5989,6 +6208,10 @@ unsigned LiveWorld::program(const std::string &name, const std::string &kind, un
     p.said.climb_deg = climb_deg;
     p.said.rest_below = rest_below;
     p.said.rest_until = rest_below > 0.0 ? rest_until : 0.0;
+    p.said.toward = sit.toward;
+    p.said.close_m = sit.close_m;
+    p.said.pose = sit.pose;
+    p.said.pose_deg = sit.pose_deg;
     I.readProgram(p);
     I.programs.push_back(std::move(p));
     return I.programs.back().said.id;
@@ -14023,6 +14246,10 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"body", p.said.body},
                                 {"setting", savedNumber(p.said.setting)},
                                 {"climb_deg", savedNumber(p.said.climb_deg)},
+                                {"toward", p.said.toward},
+                                {"close_m", savedNumber(p.said.close_m)},
+                                {"pose", p.said.pose},
+                                {"pose_deg", savedNumber(p.said.pose_deg)},
                                 {"sensors", std::move(sensors)},
                                 {"forward_local", savedVec(p.forward_local)},
                                 {"left_local", savedVec(p.left_local)},
@@ -14041,6 +14268,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},
+                                {"go_after_stop", p.go_after_stop},
                                 {"told", p.told}});
         }
         doc["programs"] = std::move(programs);

@@ -312,18 +312,26 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "area_m2": {"type": "number"}, "efficiency": {"type": "number"}}}},
         {"type": "function", "name": "set_program",
          "description": "What the machine does on its own. 'drive' runs until something stops it; 'roam' "
-                        "wanders and turns away from water. left and right name controls. climb_deg is "
+                        "wanders and turns away from water; 'sit' goes to a thing already standing in the "
+                        "world and holds a pose there. left and right name controls. climb_deg is "
                         "the steepest ground it will take, rest_below the share of charge it stops at and "
-                        "rest_until the share it sets off again at. A product runs one program.",
+                        "rest_until the share it sets off again at. For 'sit': toward is the world's name "
+                        "for the thing it goes to, close_m how near its middle comes to that thing's middle "
+                        "across the ground, and pose/pose_deg the control it works when it gets there and "
+                        "the angle it turns that pin to. A product runs one program.",
          "parameters": {"type": "object", "additionalProperties": False,
                         "required": ["kind", "left", "right"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam", "drive"]},
+                            "kind": {"type": "string", "enum": ["roam", "drive", "sit"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
                             "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
                             "rest_below": {"type": "number", "minimum": 0, "maximum": 1},
-                            "rest_until": {"type": "number", "minimum": 0, "maximum": 1}}}},
+                            "rest_until": {"type": "number", "minimum": 0, "maximum": 1},
+                            "toward": {"type": "string"},
+                            "close_m": {"type": "number", "minimum": 0.01, "maximum": 100},
+                            "pose": {"type": "string"},
+                            "pose_deg": {"type": "number", "minimum": -360, "maximum": 360}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "

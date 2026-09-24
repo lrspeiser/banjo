@@ -700,7 +700,113 @@ browser journey `ARoverRoamsTheShore`.
 
 Not built yet: a bump sensor that feels a knock rather than a stall, and
 finding a charging post and docking at it, which waits on decision D1. The
-C API, the Python binding and the chat's tools do not carry programs yet.
+C API and the Python binding do not carry programs yet; the chat's tools carry
+them as far as the bench (`set_program`).
+
+## Milestone 2, its third step: a robot that goes somewhere and sits down
+
+**Status, 2026-09-24.** A robot is told where a stool is. It comes round onto
+it, drives at it, stops within reach, lowers its torso, and the seat stops the
+torso short of the angle it was reaching for -- because the stool is carrying
+it. It holds there. Nothing about the path is scripted: it is told where the
+thing is, as a person across a room can see a chair, and everything after that
+is the world's answer.
+
+Measured: it crosses 3.8 m in 16.8 s, stops 0.62 m from the stool's middle and
+3.5 degrees off square, and its torso comes to rest 24 mm above the seat and
+45 mm in from its middle. Three seconds later it has not moved by a thousandth
+of a millimetre, and the stool has moved 0.006 mm.
+
+**The program**, `"sit"`, is the second kind. It is told four things besides
+what a roaming program is told: the body it goes to (`toward`), how near that
+body's middle its own chassis's middle comes before it is there (`close_m`),
+the controller it works when it gets there (`pose`) and the angle it turns that
+pin to (`pose_deg`, from where the pin was made). Then:
+
+- It turns on the spot until its nose is within 3 degrees of the line to the
+  thing, stops, and drives at it.
+- Driving, it lets itself drift 8 degrees off that line before it stops and
+  comes round again -- but not within the first 2.5 s of a leg, which is how
+  long its caster takes to straighten.
+- Where its wheels make no progress it backs off for 1.2 s and comes round;
+  where it has turned for 2 s without coming round it backs off and tries
+  again; where it has turned for 6 s it gives up and drives at the thing as it
+  is.
+- Within `close_m` it stops on its brakes and works its pose controller toward
+  `pose_deg`. It holds what it has when it gets there, when the pin stops for
+  want of progress -- it has come to rest on something -- or after 20 s.
+- Sitting, everything is held on its brakes. Turned off, it stops.
+
+**It stops before it changes what its wheels are doing**, and waits for the
+MACHINE to stop, not its wheels. Three things were built and measured on the
+way to that, and each is why a line of it is there:
+
+- A wheel told to turn the other way stops first: a motor is not slammed into
+  reverse while its shaft spins. A machine that went straight from driving into
+  a turn coasted on with one wheel waiting to stop and the other still pushing,
+  and drove 35 s straight past a stool 1.3 m away while the program said
+  "turning left".
+- Wheels on their brakes read nothing while the machine slides on, so waiting
+  for the wheels is not waiting for the machine. And a machine still rolling
+  cannot turn at all: its caster is trailing straight, which holds the front
+  from swinging, so one wheel grips and drives it on at its own rolling speed
+  while the other skids backwards. That state sustains itself, because going on
+  is what keeps the caster straight.
+- It cannot steer while it rolls, and does not try. Easing the inner wheel's
+  drive does nothing: a drive setting is an effort, not a speed, and a rolling
+  machine carries its wheels along whatever they are told -- the inner wheel
+  turned 22.6 rpm on a seventh of the voltage while the outer turned 22.4 on
+  all of it. Braking the inner wheel does not turn it either: the outer wheel
+  skids instead, and the machine crawls at 40 mm a second holding its heading
+  to a fifth of a degree a second. A turn on the spot from a standstill does
+  work, at 23 degrees a second.
+
+**The robot** is the rover's parts drawn short, because the rover cannot hold a
+line after a turn. The rover's caster is 0.70 m in front of the axle its wheels
+turn about, so coming round swings the caster through a wide circle and leaves
+it lying across the way the machine then wants to go; driving off, it scrubs
+round and pulls the machine about 20 degrees off for every metre travelled. A
+rover told to go to a stool 3.8 m away zigzagged for 40 s and arrived 30
+degrees off, its torso coming down beside the stool rather than on it.
+
+So the robot's caster is 0.27 m in front of its axle -- a quarter of the arm,
+so a quarter of the scrub. Three points on the ground and no more: a caster at
+each end was built and measured first, and it could not turn at all. Four
+points on a rigid deck are one too many; the casters took the weight, and the
+driven wheels span at their unloaded speed while the robot stood still.
+
+**Its torso** is an oak bar 500 mm long on a pin on a mast, 600 mm up. The mast
+is there because a torso swinging up from below the seat catches its near edge:
+measured, it stopped 15 mm off that edge with its far end still 127 mm above
+the seat, and called itself sat down. A bar rising from a pin below the seat can
+never land its end on the seat -- every part of it between the pin and the end
+is lower than the end. Swinging down from above, it comes down onto the seat
+with the rest of it in the air.
+
+**What a room declares** is the program with its four extra words:
+
+```json
+{"name": "robot", "kind": "sit", "left": "left wheel", "right": "right wheel",
+ "body": "robot", "toward": "stool", "close_m": 0.68,
+ "pose": "torso", "pose_deg": 125.0}
+```
+
+`toward` is the room's own name for something already standing in it, which is
+why the bench takes it as given: a design does not know what a room contains.
+A `"sit"` program does not rest -- it is on its way somewhere -- so a
+`rest_below` with it is refused rather than ignored.
+
+**What it reports**, besides what a roaming program reports: how far away what
+it goes to is and which way that is off its nose (`toward_m`, `bearing_deg`),
+where its pose pin has got to (`pose_at_deg`), and how fast the machine itself
+is going across the ground (`speed_m_s`).
+
+Checked by `tests/rover_roam_tests.cpp` ("it goes to the stool and sits on it")
+and `tests/rover_room_tests.py`.
+
+Not built yet: nothing draws a sit program's panel differently from a roaming
+one, and the robot is a test machine rather than one the Workshop bench has
+drawn.
 
 ## Solar panels
 
@@ -858,8 +964,9 @@ seen working in the page.
    driven wheels, a bump sensor, and a controller that roams, finds a charging
    post and docks. Its first steps are built: a cart whose water sensor
    stops it at a lake's edge, a rover that roams a lake's shore by itself,
-   solar panels that charge its battery while it rests in the sun, and a day
-   for the sun, so that it rests through the night (above). The owner chose
+   solar panels that charge its battery while it rests in the sun, a day
+   for the sun, so that it rests through the night, and a robot told to go to a
+   stool that goes and sits on it (above). The owner chose
    solar panels over a charging post (D1).
 3. **Repair and persistence.** Parts fail by what they do, such as a burnt
    motor or a cut wire, and can be repaired. A creature's identity is kept
