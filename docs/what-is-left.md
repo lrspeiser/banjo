@@ -28,7 +28,41 @@ These work and are watchable. `python playground/server.py --port <p> --engine
 
 ## Next
 
-1. **The chat-built robot cannot turn.** Nine tool calls build it, the bench
+1. **Every object should say what you do with it, and show you before it does
+   it.** The owner, watching a bowling scene where nothing moved: does the ball
+   have a primary action of "Roll"? Does clicking it and pressing the action key
+   show a ghost of where it is going before you let go? The parts exist and do
+   not meet:
+   - The chat has `define_interaction_points` (grip, use, surface, container, in
+     design-local metres) and `program_use` (one labelled action on Left mouse /
+     J). Interaction points are gated -- a design that leaves one unbound is
+     refused. A primary use is NOT gated: `core_use.DEFAULT` is
+     `{"label": "Inspect"}`, so anything the model does not program becomes a
+     thing you can only look at, silently.
+   - The verbs are four: `inspect`, `strike`, `push_forward`, `place`. There is
+     no roll, throw, pull, lift or turn. A bowling ball's best available action
+     is `push_forward`, capped at 1.5 m/s over 1.5 m. "Roll it down the lane"
+     cannot be said.
+   - The previews are real, and are wired to gestures rather than to declared
+     actions. A held thing's ghost (green fits, amber tips, red will not) shows
+     where it comes to rest when PLACING. The aim arc is an engine prediction,
+     not a drawn parabola -- the page calls `preview_flight` with the actual
+     stroke and draws what comes back, including what it hits -- but only when
+     THROWING or drawing a bow. An object whose declared action is "Roll" gets
+     neither.
+
+   What to build: one vocabulary of bounded physical gestures the model
+   designates per object; a preview for every one of them, out of the same
+   `preview_flight` machinery, driven by the declared action rather than by
+   which of two gestures the page happens to be in; and a concept check that
+   says "it says what you do with it" the way the bench already says "it says
+   which part you take hold of". Keep the rule that is already right: a use is a
+   bounded gesture the hand performs, never a prescribed body velocity. This is
+   the same shape as a behaviour (docs/how-robots-think.md) -- a named action,
+   bounded steps, written by the model, previewed before it commits, proved by a
+   trial -- and should be one mechanism, not two.
+
+2. **The chat-built robot cannot turn.** Nine tool calls build it, the bench
    takes it as drawn, it compiles into six bodies on five pins and the Workshop
    installs it as a machine -- but on the ground it drives and will not come
    round, so it never reaches the stool. The hand-built one does. First thing to
@@ -36,18 +70,23 @@ These work and are watchable. `python playground/server.py --port <p> --engine
    face to face with the deck it hangs from and the two faces rub, where the
    hand-built caster hangs from a pin with clearance. The compiler already
    speaks of "explicit clearance".
-2. **Ask the model to design it.** The nine calls above are the ones a model
+
+3. **Ask the model to design it.** The nine calls above are the ones a model
    could make, and they are written by hand. Nothing has yet asked the chat for
    a robot and watched what it draws.
-3. **Behaviours written down as data, not code** (docs/how-robots-think.md).
+
+4. **Behaviours written down as data, not code** (docs/how-robots-think.md).
    Start by re-expressing "roam" and "sit" in that form and checking the engine
    tests pass with the same numbers. If they cannot be expressed, the vocabulary
    is wrong, and that is worth knowing on the first day.
-4. **A behaviour's trial**: the room, the start, and what must be true at the
+
+5. **A behaviour's trial**: the room, the start, and what must be true at the
    end. `tools/build_sit_room.py` already does this by hand; make it the shape.
-5. **The chat writes a behaviour**, and it passes its trial before it is
+
+6. **The chat writes a behaviour**, and it passes its trial before it is
    offered.
-6. **A library and a price for behaviours**: shared between machines, and a room
+
+7. **A library and a price for behaviours**: shared between machines, and a room
    that would miss the realtime gate refused with the number.
 
 ## Waiting on the owner
@@ -83,6 +122,11 @@ From docs/how-robots-think.md:
 - **A machine with a program owns its wheels.** An off program still tells them
   every step, so a person cannot drive a programmed machine by hand. Deliberate,
   but it should be said in the panel rather than discovered.
+- **A lab scene and a world object are different things.** The bowling job
+  (`?job=e72b...`) went through the fracture lab: 12 bare bodies, 13,872 cells at
+  30 mm, "nothing is moving", 2.99x of realtime against the 1.1x limit. A lab
+  scene has no interaction points by construction -- it is for measuring what
+  breaks. Nothing says so when you build one expecting to play with it.
 - **The rover journey flakes.** One CI red that passed on a re-run and was shown
   not to be the change under it.
 - **`agent/fracture-truth` is not merged.** Five commits: the bench round trip,
