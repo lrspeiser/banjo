@@ -167,6 +167,8 @@ jobs:
             python3 tests/workshop_bench_engine_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
             python3 tests/workshop_install_engine_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \
+            python3 tests/workshop_test_room_tests.py -v
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \

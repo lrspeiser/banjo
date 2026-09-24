@@ -27,12 +27,14 @@ import json
 import math
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "playground"))
 
+import fracture_lab  # noqa: E402
 import live_session  # noqa: E402
 
 ENGINE = next((p for p in [
@@ -1148,6 +1150,125 @@ class TheTestRoomIsAHoist(unittest.TestCase):
         self.assertEqual([a["label"] for a in spec["actions"]], ["Wind it up", "Stop", "Let it down"])
         self.assertEqual([s["do"] for a in spec["actions"] for s in a["steps"]], ["drive"] * 3)
 
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class WhichEndOfAMotorTurns(unittest.TestCase):
+    """A motor pushes on both of the things it joins, and the easier one moves.
+
+    The owner asked it plainly: when we run a motor, does it understand the
+    weight of each part, so that the lighter part moves and the heavier one does
+    not? A hinge motor puts equal and opposite torques on the two bodies it
+    joins, so the answer should be yes -- and it should be governed by how hard
+    each is to TURN, which is not the same as how heavy it is. These measure it
+    on two blocks on one pin, high above the ground where nothing else touches
+    them.
+    """
+
+    DT = 1 / 240
+    UP = 6.0
+    DENSITY = {"oak": 700.0, "iron": 7800.0}
+
+    def blocks(self, a, b, *, on_the_ground=False):
+        (a_material, a_size), (b_material, b_size) = a, b
+        half = a_size[0] / 2
+        up = (0.4 + a_size[1] / 2 + 0.002) if on_the_ground else self.UP
+
+        def block(name, material, size, x):
+            return {"name": name, "material": material, "position_m": [x, up, 0.0],
+                    "orientation_wxyz": [1.0, 0.0, 0.0, 0.0],
+                    "parts": [{"name": "block", "dimensions_m": list(size),
+                               "center_local_m": [0.0, 0.0, 0.0]}]}
+
+        return fracture_lab.validate({
+            "algorithm": "lattice", "cell_m": 0.05, "plasticity": "on",
+            "terrain": {"generate": {"kind": "flat", "nx": 32, "nz": 32, "cell_m": 0.25,
+                                     "soil_m": 0.4, "sand_m": 0.0}},
+            "bodies": [{"name": "marker", "shape": "box", "material": "concrete", "anchored": True,
+                        "size_mm": [150.0, 150.0, 150.0], "center_mm": [6000.0, 475.0, -6000.0]}],
+            "precise_rigid_bodies": [block("A", a_material, a_size, 0.0),
+                                     block("B", b_material, b_size, half + b_size[0] / 2)],
+            "joints": [{"kind": "hinge", "a": "A", "b": "B",
+                        "at_mm": [half * 1000.0, up * 1000.0, 0.0], "axis": [0.0, 0.0, 1.0],
+                        "lower_deg": -180.0, "upper_deg": 180.0, "friction_n_m": 0.0}],
+            "machines": {
+                "stores": [{"name": "battery", "body": "A", "capacity_j": 1e6, "charge_j": 1e6,
+                            "voltage_v": 24.0}],
+                "motors": [{"on": ["A", "B"], "store": "battery", "stall_torque_n_m": 40.0,
+                            "no_load_rpm": 30.0, "brake_torque_n_m": 0.0}],
+                "controls": [{"name": "hinge", "on": ["A", "B"]}]}})
+
+    def turned(self, spec, seconds=0.4):
+        """How far each block came round about the pin, degrees."""
+        def spin(q):
+            w, x, y, z = q
+            return math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session = live_session.Session(ENGINE, spec, Path(tmp))
+            try:
+                pins = spec["joints"]
+                live_session.Live._hang(session, pins)
+                made: dict = {}
+                live_session.Live._power(session, spec["machines"], pins, made=made)
+                poses = {b["name"]: b for b in session.send(op="poses")["bodies"]}
+                was = {n: spin(poses[n]["orientation_wxyz"]) for n in ("A", "B")}
+                session.send(op="operate", control=made["controls"]["hinge"], sender="test", seq=1,
+                             power=True, direction=1, setting=1.0)
+                session.send(op="step", dt=self.DT, n=int(seconds / self.DT))
+                poses = {b["name"]: b for b in session.send(op="poses")["bodies"]}
+                now = {n: spin(poses[n]["orientation_wxyz"]) for n in ("A", "B")}
+            finally:
+                session.close()
+        return {n: (now[n] - was[n] + 540) % 360 - 180 for n in ("A", "B")}
+
+    def moment(self, material, size):
+        mass = self.DENSITY[material] * size[0] * size[1] * size[2]
+        return mass, mass * (size[0] ** 2 + size[1] ** 2) / 12.0
+
+    def test_the_light_end_swings_and_the_heavy_end_hardly_moves(self):
+        heavy, light = ("iron", (0.4, 0.4, 0.4)), ("oak", (0.2, 0.2, 0.2))
+        came = self.turned(self.blocks(heavy, light))
+        mass_a, moment_a = self.moment(*heavy)
+        mass_b, moment_b = self.moment(*light)
+        print(f"\n    {mass_a:.0f} kg of iron turned {came['A']:+.2f} deg and {mass_b:.1f} kg of oak "
+              f"{came['B']:+.2f} deg: the light end went {abs(came['B'] / came['A']):.0f}x as far")
+        self.assertLess(abs(came["A"]), 2.0)
+        self.assertGreater(came["B"], 50.0)
+        self.assertGreater(abs(came["B"] / came["A"]), 20.0)
+        self.assertGreater(moment_a / moment_b, 20.0)
+
+    def test_it_is_how_hard_it_is_to_turn_and_not_how_heavy_it_is(self):
+        """The heavier block turns FURTHER when it is the smaller one.
+
+        62 kg of iron 200 mm across is easier to bring round than 45 kg of oak
+        400 mm across, because a moment goes as the square of the size. A motor
+        that only knew mass would have this backwards.
+        """
+        big, small = ("oak", (0.4, 0.4, 0.4)), ("iron", (0.2, 0.2, 0.2))
+        came = self.turned(self.blocks(big, small))
+        mass_a, moment_a = self.moment(*big)
+        mass_b, moment_b = self.moment(*small)
+        self.assertGreater(mass_b, mass_a, "the small block is the heavier one")
+        self.assertLess(moment_b, moment_a, "and still the easier one to turn")
+        print(f"    {mass_b:.0f} kg of iron turned {came['B']:+.2f} deg where {mass_a:.0f} kg of oak turned "
+              f"{came['A']:+.2f}: heavier, smaller, and it moved further")
+        self.assertGreater(abs(came["B"]), abs(came["A"]))
+
+    def test_two_of_exactly_the_same_turn_equally_and_oppositely(self):
+        same = ("oak", (0.3, 0.3, 0.3))
+        came = self.turned(self.blocks(same, same))
+        print(f"    two of the same turned {came['A']:+.2f} and {came['B']:+.2f} deg")
+        self.assertAlmostEqual(came["A"], -came["B"], delta=0.05)
+        self.assertGreater(abs(came["A"]), 10.0)
+
+    def test_the_ground_holds_the_heavy_end_and_the_light_one_takes_it_all(self):
+        """A machine: the motor turns the wheel, not the cart."""
+        came = self.turned(self.blocks(("iron", (0.4, 0.4, 0.4)), ("oak", (0.2, 0.2, 0.2)),
+                                       on_the_ground=True))
+        print(f"    standing on the ground, the heavy end turned {came['A']:+.2f} deg and the light one "
+              f"{came['B']:+.2f}")
+        self.assertLess(abs(came["A"]), 0.5)
+        self.assertGreater(came["B"], 40.0)
 
 if __name__ == "__main__":
     unittest.main()
