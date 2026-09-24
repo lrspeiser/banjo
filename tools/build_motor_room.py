@@ -50,6 +50,12 @@ ROOMS = ROOT / "playground" / "rooms"
 CELL_M = 0.05
 GROUND_M = 0.4
 CLEAR_M = 0.04
+#: What a bearing costs to turn. The pedestal's is small, so that it holds the
+#: base up without holding it still and the split stays the thing on show; the
+#: motored one is a working bearing, so that switching the motor off lets the
+#: turntable run down instead of coasting for ever.
+PEDESTAL_FRICTION_N_M = 0.05
+BEARING_FRICTION_N_M = 0.5
 POST_TOP_M = 1.0      # the pedestal's top: about waist height        # the top hangs clear of the base: a bearing is not a rub
 DT = 1 / 240
 WATCH_S = 4.0
@@ -104,11 +110,11 @@ def compose() -> dict:
         joints.append({"kind": "hinge", "a": f"{tag}: post", "b": base,
                        "at_mm": [x * 1000.0, (POST_TOP_M + CLEAR_M / 2) * 1000.0, 0.0],
                        "axis": [0.0, 1.0, 0.0], "lower_deg": -180.0, "upper_deg": 180.0,
-                       "friction_n_m": 0.0})
+                       "friction_n_m": PEDESTAL_FRICTION_N_M})
         joints.append({"kind": "hinge", "a": base, "b": top,
                        "at_mm": [x * 1000.0, (base_y + bt / 2 + CLEAR_M / 2) * 1000.0, 0.0],
                        "axis": [0.0, 1.0, 0.0], "lower_deg": -180.0, "upper_deg": 180.0,
-                       "friction_n_m": 0.0})
+                       "friction_n_m": BEARING_FRICTION_N_M})
         stores.append({"name": f"{tag} battery", "body": base, "capacity_j": 1000000.0,
                        "charge_j": 1000000.0, "voltage_v": 24.0})
         motors.append({"on": [base, top], "store": f"{tag} battery", "stall_torque_n_m": 40.0,
@@ -185,6 +191,35 @@ def watch(engine: Path, validated: dict) -> list[str]:
                     if not 0.5 * station["share"] <= share <= 2.0 * station["share"]:
                         faults.append(f"{tag}: the ends split the turn {share:.1f} to 1, and their moments "
                                       f"say {station['share']:.1f} to 1")
+            # Switched off, a real bearing brings it to rest. Every pin in every
+            # machine room in this repo is frictionless, so nothing a motor
+            # turns has ever stopped by itself; these have working bearings.
+            for station in STATIONS:
+                session.send(op="operate", control=made["controls"][station["name"]],
+                             sender="builder", seq=2, power=False, direction=0, setting=1.0)
+            # How far each still turns in a quarter of a second, until none of
+            # them turns as much as a degree: a pose says where a thing is, not
+            # how fast it is going, so this is measured from the angle itself.
+            ran_down, went_on = 0.0, {}
+            for _ in range(int(60.0 / (24 * DT))):
+                session.send(op="step", dt=DT, n=24)
+                ran_down += 24 * DT
+                poses = {b["name"]: b for b in session.send(op="poses")["bodies"]}
+                fastest = 0.0
+                for name in was:
+                    now = _spin(poses[name]["orientation_wxyz"])
+                    step = (now - was[name] + 540) % 360 - 180
+                    was[name] = now
+                    went_on.setdefault(name, 0.0)
+                    went_on[name] += step
+                    fastest = max(fastest, abs(step))
+                if fastest < 1.0:
+                    break
+            print(f"  switched off, everything came to rest in {ran_down:.1f} s, "
+                  + ", ".join(f"{st['name']} turning {went_on[st['name'] + ': top']:+.0f} deg more"
+                              for st in STATIONS))
+            if ran_down >= 59.0:
+                faults.append("switched off, it was still turning after a minute: the bearings do nothing")
         finally:
             session.close()
     return faults
