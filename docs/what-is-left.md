@@ -26,6 +26,88 @@ These work and are watchable. `python playground/server.py --port <p> --engine
   then ask the world which design made it: it hands back the recipe, and the
   bench loads it.
 
+## The two places
+
+The owner, 2026-09-24: "I don't want 10 different places. I want the main world
+and a workshop/lab where time freezes and you can craft items and test them and
+so forth. Remove all other code paths and consolidate everything in these two."
+
+Today there are **7 pages and 22 scenes**. `/` is the fracture lab (where a
+bowling scene of 12 bare bodies ran and nothing moved), `/world` is the world,
+`/explore`, `/qa`, `/mechanics-qa`, `/tool-qa` and `/fabrication` are five more.
+Of the scenes, `world.html` offers two on its menu and the other twenty are
+reachable only by typing a URL.
+
+The target is two:
+
+- **The world** -- `/world`. One place you walk around in.
+- **The Workshop** -- `/world?workshop=1`. Time frozen. Craft a thing, finalize
+  it, test it in a little room that behaves exactly as the world does, and take
+  it out to the world.
+
+**The Workshop is already a mode of the world page** (`world.html:28`, body
+class `workshop-mode`), so two places is structurally most of the way there. The
+work is what the Workshop cannot yet do, then the deleting.
+
+### What the Workshop cannot do yet, in the order to fix it
+
+1. **Finalize a thing so its small parts survive.** The lattice paths cannot
+   carry a part thinner than two cells -- 80 mm at the bench's 40 mm grid, 100 mm
+   in a 50 mm room. The exact path has a floor of **1 mm**
+   (`mcp/workshop_rigid.py:19`), and the rover in the world proves it: 12 mm
+   caster cheeks and a 12 mm pin, live, at a 50 mm cell size
+   (`tools/build_rover_room.py:167`).
+
+   The compiler that does this properly already exists and **nothing in the
+   server can reach it**: `playground/rigid_assembly.py:94` makes an exact
+   compound per fixed group with real hinge pins, each part its own material and
+   its own rotation. The one the Workshop *can* reach, `compile_rigid`, demands
+   a single material, axis-aligned parts and no mechanisms -- useless for a
+   machine. Its only callers today are `tools/build_cart_room.py` and a test.
+
+   So: **wire `rigid_assembly` in as the Workshop's finalize step.** Voxels
+   while you draw and while you break things; exact bodies when you make it.
+
+2. **Test it in a little room, not a rig.** The bench trial already runs the
+   same engine as the world (`workshop_sparse_trial.py:410`,
+   `live_session.Session`) -- but the scene it hands it has no ground, no
+   terrain and no gravity to fall onto: it is a static-load rig that sets a
+   weight on top (`prototype_scene`, `:183`). Replace it with a small real room:
+   the same spec a world room has, the same materials underfoot, time stopped
+   until you press go.
+
+3. **Put other things in the test room.** From the library, by hand or by the
+   model, so a thing can be tested against what it will meet.
+
+### Then the deleting
+
+Pages to go, with what has to move first:
+
+| goes | first |
+|---|---|
+| `/` + `app.js`, `style.css`, `scene.js`, `/api/fracture*` | `tests/playground_tests.py:740` asserts they serve. **`playground/fracture_lab.py` STAYS** -- despite the name it is the spec admission gate for the world and the Workshop both, with 45 importers. Only the panel is the lab. It wants an honest name. |
+| `/explore` | nothing links to it; only an uncI'd test uses it |
+| `/qa`, `/mechanics-qa`, `/tool-qa` | the **pages** only. `material_qa.py` is the shared run manager for all three plus fabrication and physics trials; `mechanics_qa.binary()` is imported by two others. CI runs their headless twins under `scripts/`, and `node --check` on two of their .js files. |
+| `/fabrication` | `fabrication_room.py` is a **world** capability (finite stock, gated at `server.py:1234`). The Workshop already has the rack; fold it in. |
+
+Scenes to go: `explore`, `armoury`, `watershed`, `clearing`, `courtyard`, and
+the duplicate keys `yard` and `valley` (same builders as `fabrication` and
+`expedition`; `workshop.js:105` links to `yard` and must move first).
+
+The `tests-*` scenes are the proofs, and six of them are driven by
+`world_page_journey_tests.py` in CI. **They should become saved setups in the
+Workshop's test room rather than places you visit** -- which is exactly what a
+test room with items in it is. Nothing is lost and the proofs keep running.
+
+Capabilities that live ONLY in something being removed, and where they go:
+
+- the **energy-scaled failure law** runs in one room only (`tests-break`). It is
+  the honest one; it should be a bench setting.
+- **finite-stock fabrication** transactions -> the Workshop's rack.
+- the **30-capability table** -> the Workshop, or dropped.
+- **tool-qa's recorded product-use trials** and **mechanics-qa's fixture-vs-user
+  separation** -> the Workshop's test room is the natural home for both.
+
 ## Next
 
 1. **Every object should say what you do with it, and show you before it does
