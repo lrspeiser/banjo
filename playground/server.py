@@ -1330,6 +1330,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/world/workshop/"):
                 operations = {"/api/world/workshop/context": workshop_install.context,
                               "/api/world/workshop/preview": workshop_install.preview,
+                              # Which design made this body, so a thing standing
+                              # in the world can be opened on the bench again.
+                              "/api/world/workshop/what_made": workshop_install.what_made,
                               "/api/world/workshop/commit": workshop_install.commit}
                 if path in operations:
                     try:

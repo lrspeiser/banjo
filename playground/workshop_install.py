@@ -121,7 +121,70 @@ def context(app: Any, body: Any) -> dict[str, Any]:
     with _world(app) as (room, live, old):
         return {"schema": SCHEMA, "scene": room.scene, "session": old.id,
                 "cell_size_m": float(old.spec["cell_m"]), "mode": "authoring",
+                "made_here": made_here(app),
                 "limits": "Single-material monolithic prototypes on native ground; no inventory or fabrication-energy charge; not strength certified."}
+
+
+def made_here(app: Any) -> list[dict[str, Any]]:
+    """Everything in this room the Workshop made, and how to open it again.
+
+    One row per installation the room still remembers, newest last: which
+    bodies it put there, and the recipe that drew them. A row without a recipe
+    is one installed before the room kept them -- it can still be pointed at,
+    and says so by having none.
+    """
+    room = getattr(app, "room", None)
+    rows: list[dict[str, Any]] = []
+    for receipt in (getattr(room, "workshop_installs", None) or []):
+        if not isinstance(receipt, dict) or receipt.get("status") != "installed":
+            continue
+        bodies = sorted({str(name) for name in
+                         (list(receipt.get("root_bodies") or []) +
+                          list((receipt.get("component_to_body") or {}).values()) +
+                          ([receipt["root_body"]] if receipt.get("root_body") else []))})
+        if not bodies:
+            continue
+        rows.append({"design_id": receipt.get("design_id"), "bodies": bodies,
+                     "mass_kg": receipt.get("mass_kg"),
+                     "recipe": deepcopy(receipt["recipe"]) if receipt.get("recipe") else None})
+    return rows
+
+
+def what_made(app: Any, body: Any) -> dict[str, Any]:
+    """The design that made this body, for opening it on the bench again."""
+    body = _object(body, {"body"})
+    name = str(body.get("body") or "")
+    if not name:
+        raise ValueError("Name the body to look up")
+    for row in reversed(made_here(app)):
+        if name in row["bodies"]:
+            if row["recipe"] is None:
+                raise ValueError(f"{name} was made before the room kept recipes, so there is nothing to open")
+            return {"schema": SCHEMA, "body": name, "design_id": row["design_id"],
+                    "bodies": row["bodies"], "recipe": row["recipe"]}
+    raise ValueError(f"Nothing the Workshop made in this room is called {name!r}")
+
+
+def recipe_of(design: Any, overrides: Any) -> dict[str, Any]:
+    """The design in the form the library saves and the bench loads."""
+    return {"schema": "banjo.workshop-assembly-recipe.v1", "kind": design.kind,
+            "design_id": design.design_id, "purpose": design.purpose,
+            "parameters": dict(design.parameters), "component_overrides": deepcopy(dict(overrides or {}))}
+
+
+def _kept(app: Any, answer: dict[str, Any], design: Any, overrides: Any) -> dict[str, Any]:
+    """Remember, with this preview, the design that drew it.
+
+    A room kept which design an installation came from (`design_id`) and which
+    body each component became, but never the design, so a thing standing in
+    the world could not be opened on the bench that made it. It rides with the
+    preview and is written into the receipt at commit, where the room keeps it
+    for good.
+    """
+    held = _preview_cache(app).get(answer.get("preview_id"))
+    if held is not None:
+        held["recipe"] = recipe_of(design, overrides)
+    return answer
 
 
 def _bounds(cells, h):
@@ -496,6 +559,13 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         # would mean an id about to be handed out twice.
         if str(key).startswith("next") and type(was) is int and type(now) is int and now >= was:
             continue
+        # And a counter can begin here. A room with no panel in it has no panel
+        # counter at all, so installing the first solar thing the bench ever
+        # drew did not move a counter -- it made one -- and that was refused as
+        # a change to existing state ("Staging changed existing next_panel").
+        # Starting at nothing and counting up is the same thing as counting up.
+        if str(key).startswith("next") and was is None and type(now) is int and now >= 0:
+            continue
         raise ValueError(f"Staging changed existing {key}; installation refused")
     bg, ag = before.get("material_geometry"), after.get("material_geometry")
     if bg is not None or ag is not None:
@@ -593,10 +663,12 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
         models = workshop_rigid.requested_models(design, overrides)
         if models == {"rigid"}:
-            return _with_needs(app, design, _preview_rigid(app, room, live, old, design, overrides, pos))
+            return _with_needs(app, design, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
+                                                  design, overrides))
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if workshop_articulation.has_bearings(design):
-            return _with_needs(app, design, _preview_articulated(app, room, live, old, design, overrides, pos, body["candidate"]))
+            return _with_needs(app, design, _kept(app, _preview_articulated(
+                app, room, live, old, design, overrides, pos, body["candidate"]), design, overrides))
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])
@@ -678,7 +750,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
                         "spec": spec, "matter": matter, "root": root, "shift": shift,
                         "candidate_hash": _hash(body["candidate"])}
-        return _with_needs(app, design, answer)
+        return _with_needs(app, design, _kept(app, answer, design, overrides))
 
 
 
@@ -707,6 +779,9 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     # A room may already hold machines, so each kind is added to rather than
     # replaced -- installing a cart must not retire somebody else's hoist.
     made = workshop_machines.installed(design, artifact["component_to_body"])
+    for panel in made.get("panels") or []:
+        panel["at_mm"], panel["normal"] = _lies_on_top_of(artifact, shift, h, panel["body"])
+    _named_apart(made, room.spec)
     if made:
         machines = deepcopy(spec.get("machines") or {})
         for kind, rows in made.items():
@@ -739,6 +814,72 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
                     "spec":spec, "matter":artifact, "root":roots, "shift":shift,
                     "candidate_hash":_hash(candidate)}
     return answer
+
+
+def _named_apart(made, spec):
+    """A machine keeps the name it was given, unless the room has it already.
+
+    The bench names things for the person looking at one design: "battery",
+    "left motor", "solar panel". A room holds everything at once, and asks for
+    a name of its own -- so making a second cart failed outright, "store 1
+    needs a name of its own", once the first one's battery was in there.
+
+    The second one is "battery 2", and what named the first by name -- a motor
+    drawing on it, a panel charging it, a program working a control -- follows
+    the rename.
+    """
+    taken = {str(row["name"]) for rows in (spec.get("machines") or {}).values()
+             if isinstance(rows, list) for row in rows
+             if isinstance(row, dict) and row.get("name")}
+    renamed: dict[str, str] = {}
+    for kind in ("stores", "controls", "motors", "panels", "programs"):
+        for row in made.get(kind) or []:
+            was = str(row.get("name") or "")
+            if not was:
+                continue
+            now, n = was, 2
+            while now in taken:
+                now, n = f"{was} {n}", n + 1
+            if now != was:
+                renamed[was] = now
+                row["name"] = now
+            taken.add(now)
+    if not renamed:
+        return
+    for kind in ("motors", "panels"):
+        for row in made.get(kind) or []:
+            if row.get("store") in renamed:
+                row["store"] = renamed[row["store"]]
+    for program in made.get("programs") or []:
+        for side in ("left", "right"):
+            if program.get(side) in renamed:
+                program[side] = renamed[program[side]]
+
+
+def _lies_on_top_of(artifact, shift, h, body_name):
+    """Where a panel on this body sits, and which way it looks.
+
+    The bench says a panel is ON a component, because that is what a person is
+    looking at; a room asks for a place and a facing, as the rover's own panel
+    has (tools/build_rover_room.py). So it lies in the middle of that body's top
+    face, looking up -- an installed product is set down without turning, so its
+    up is the world's up.
+
+    Nothing did this before, and the room refused every one of them: "panel
+    'solar panel' needs at_mm and normal as three numbers each". A design could
+    declare a panel and could never be made.
+    """
+    cells: set = set()
+    for group in artifact["groups"]:
+        if group["root_body"] == body_name:
+            cells |= sparse._grid_set(group["matter"])
+    if not cells:
+        raise ValueError(f"a panel is on {body_name!r}, which has no matter of its own to sit on")
+    placed = [tuple(g[a] + shift[a] for a in range(3)) for g in cells]
+    across = [((min(p[a] for p in placed) + max(p[a] for p in placed) + 1) * 0.5 * h) for a in (0, 2)]
+    top = (max(p[1] for p in placed) + 1) * h
+    return ([round(across[0] * 1000.0, 1), round(top * 1000.0, 1), round(across[1] * 1000.0, 1)],
+            [0.0, 1.0, 0.0])
 
 
 def _preview_rigid(app, room, live, old, design, overrides, pos):
@@ -905,6 +1046,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                     _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer)
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
                        "session": staged.session.id, "source_session": old.id, "replayed": False}
+            if plan.get("recipe") is not None:
+                receipt["recipe"] = deepcopy(plan["recipe"])
             if thermal_transfer is not None:
                 receipt["thermal_transfers" if isinstance(thermal_transfer,list) else "thermal_transfer"] = thermal_transfer
             receipt.pop("expires_in_s", None)
