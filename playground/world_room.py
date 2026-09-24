@@ -1067,6 +1067,12 @@ SCENES = {
     # roams on. Laid out by tools/build_rover_room.py; open it at
     # /world?scene=tests-day.
     "tests-day": _saved_room("tests-day"),
+    # Three turntables that answer one question: when a motor runs, which end of
+    # it turns? A block on a free pin above a pedestal, with a second block and a
+    # motor above that, so both ends are free and the only thing deciding is how
+    # hard each is to turn. Laid out, and each one watched turning before it is
+    # written, by tools/build_motor_room.py; open it at /world?scene=tests-motor.
+    "tests-motor": _saved_room("tests-motor"),
     # A robot told where a stool is, which goes to it and puts its torso down on
     # it. Nothing tells it how to get there. Laid out, and watched sitting down
     # before it is written, by tools/build_sit_room.py; open it at

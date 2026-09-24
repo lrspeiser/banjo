@@ -1,0 +1,457 @@
+{
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    -3000.0,
+    500.0,
+    0.0
+   ],
+   "material": "concrete",
+   "name": "heavy base: post",
+   "shape": "box",
+   "size_mm": [
+    200.0,
+    1000.0,
+    200.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    0.0,
+    500.0,
+    0.0
+   ],
+   "material": "concrete",
+   "name": "heavy top: post",
+   "shape": "box",
+   "size_mm": [
+    200.0,
+    1000.0,
+    200.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    3000.0,
+    500.0,
+    0.0
+   ],
+   "material": "concrete",
+   "name": "same both: post",
+   "shape": "box",
+   "size_mm": [
+    200.0,
+    1000.0,
+    200.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    8000.0,
+    475.00000000000006,
+    -8000.0
+   ],
+   "material": "concrete",
+   "name": "marker",
+   "shape": "box",
+   "size_mm": [
+    150.0,
+    150.0,
+    150.0
+   ]
+  }
+ ],
+ "cell_m": 0.05,
+ "joints": [
+  {
+   "a": "heavy base: post",
+   "at_mm": [
+    -3000.0,
+    1020.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "heavy base: base",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "heavy base: base",
+   "at_mm": [
+    -3000.0,
+    1460.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "heavy base: top",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "heavy top: post",
+   "at_mm": [
+    0.0,
+    1020.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "heavy top: base",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "heavy top: base",
+   "at_mm": [
+    0.0,
+    1460.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "heavy top: top",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "same both: post",
+   "at_mm": [
+    3000.0,
+    1020.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "same both: base",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "same both: base",
+   "at_mm": [
+    3000.0,
+    1460.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "same both: top",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  }
+ ],
+ "machines": {
+  "controls": [
+   {
+    "name": "heavy base",
+    "on": [
+     "heavy base: base",
+     "heavy base: top"
+    ]
+   },
+   {
+    "name": "heavy top",
+    "on": [
+     "heavy top: base",
+     "heavy top: top"
+    ]
+   },
+   {
+    "name": "same both",
+    "on": [
+     "same both: base",
+     "same both: top"
+    ]
+   }
+  ],
+  "motors": [
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 30.0,
+    "on": [
+     "heavy base: base",
+     "heavy base: top"
+    ],
+    "stall_torque_n_m": 40.0,
+    "store": "heavy base battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 30.0,
+    "on": [
+     "heavy top: base",
+     "heavy top: top"
+    ],
+    "stall_torque_n_m": 40.0,
+    "store": "heavy top battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 30.0,
+    "on": [
+     "same both: base",
+     "same both: top"
+    ],
+    "stall_torque_n_m": 40.0,
+    "store": "same both battery"
+   }
+  ],
+  "stores": [
+   {
+    "body": "heavy base: base",
+    "capacity_j": 1000000.0,
+    "charge_j": 1000000.0,
+    "name": "heavy base battery",
+    "voltage_v": 24.0
+   },
+   {
+    "body": "heavy top: base",
+    "capacity_j": 1000000.0,
+    "charge_j": 1000000.0,
+    "name": "heavy top battery",
+    "voltage_v": 24.0
+   },
+   {
+    "body": "same both: base",
+    "capacity_j": 1000000.0,
+    "charge_j": 1000000.0,
+    "name": "same both battery",
+    "voltage_v": 24.0
+   }
+  ]
+ },
+ "plasticity": "on",
+ "precise_rigid_bodies": [
+  {
+   "material": "iron",
+   "name": "heavy base: base",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5,
+      0.4,
+      0.5
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    -3.0,
+    1.24,
+    0.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "heavy base: top",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.25,
+      0.25
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    -3.0,
+    1.605,
+    0.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "heavy top: base",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.6,
+      0.4,
+      0.6
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    0.0,
+    1.24,
+    0.0
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "heavy top: top",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.25,
+      0.25
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    0.0,
+    1.605,
+    0.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "same both: base",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.4,
+      0.4
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    3.0,
+    1.24,
+    0.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "same both: top",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.4,
+      0.4
+     ],
+     "name": "block"
+    }
+   ],
+   "position_m": [
+    3.0,
+    1.68,
+    0.0
+   ]
+  }
+ ],
+ "terrain": {
+  "generate": {
+   "cell_m": 0.25,
+   "kind": "flat",
+   "nx": 96,
+   "nz": 96,
+   "sand_m": 0.0,
+   "soil_m": 0.4
+  }
+ }
+}

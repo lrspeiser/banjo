@@ -15,6 +15,13 @@ These work and are watchable. `python playground/server.py --port <p> --engine
 - **A robot goes to a stool and sits on it** -- `/world?scene=tests-sit`. Look
   at the robot, E for its panel, On. 12.5 s, stops 0.51 m from the stool's
   middle and 3.4 degrees off square, its torso resting 24 mm above the seat.
+- **Which end of a motor turns** -- `/world?scene=tests-motor`. Three
+  turntables, each a block on a free pin above a pedestal with a second block
+  and a motor above it, so BOTH ends are free and the only thing deciding is how
+  hard each is to turn. E on one, On. Measured: 287.8x the turn to the light end
+  where its moment is 285.3x smaller; 4.7x where it is 4.8x; and two of the same
+  going -356.15 and +356.15 degrees. The middle one is the point -- its top is
+  the HEAVIER of the two and still the one that comes round.
 - **What a break costs** -- `/world?scene=tests-break`. Drop the ball on the
   plank; every break reports what it cost.
 - **A rover that roams by itself** -- `/world?scene=tests-rover`, and the same
