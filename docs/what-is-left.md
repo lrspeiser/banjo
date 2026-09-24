@@ -147,6 +147,16 @@ Capabilities that live ONLY in something being removed, and where they go:
 - **tool-qa's recorded product-use trials** and **mechanics-qa's fixture-vs-user
   separation** -> the Workshop's test room is the natural home for both.
 
+## The Workshop
+
+A deep survey of the bench is in [workshop-deep-dive.md](workshop-deep-dive.md):
+about sixty items, grouped by whether they block changing a design, testing it
+or saving it. The short of it: the Workshop is not short of capability, it is
+short of arrangement, memory and consequences. Some fifty working controls sit
+inside one collapsed panel; there is no undo and no readable history; no test
+result is ever stored; and pass-or-fail reaches exactly one test with four
+criteria.
+
 ## Next
 
 1. **Every object should say what you do with it, and show you before it does
