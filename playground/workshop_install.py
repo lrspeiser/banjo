@@ -28,6 +28,7 @@ import live_session
 import world_access
 import world_room
 import precise_rigid
+import rigid_assembly
 import workshop_sparse_trial as sparse
 import workshop_articulation
 import workshop_library
@@ -609,6 +610,11 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
             _preserved(snapshot, saved, roots, added_joints=matter["joints"])
             for group in matter["groups"]:
                 sparse.verify_engine_matter(saved, group["matter"], group["root_body"], placement_grid=shift)
+        elif matter.get("schema") == rigid_assembly.SCHEMA:
+            # A finalized machine: exact bodies on real pins, nothing to verify
+            # against the cell grid because nothing of it was ever cells.
+            _preserved(snapshot, saved, {body["name"] for body in matter["bodies"]},
+                       added_joints=matter["joints"])
         elif matter.get("schema") == workshop_rigid.SCHEMA:
             _preserved(snapshot, saved, root)
             precise_rigid.verify(saved, matter, root)
@@ -662,6 +668,13 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
         models = workshop_rigid.requested_models(design, overrides)
+        if models == {"rigid"} and workshop_articulation.has_bearings(design):
+            # Finalized, and it has something that turns: exact bodies on real
+            # pins. compile_rigid makes one compound of one material and cannot
+            # carry a mechanism at all, so this is the only way a machine is
+            # made of its own parts at their own size.
+            return _with_needs(app, design, _kept(app, _preview_exact(app, room, live, old, design, overrides,
+                                                                      pos, body["candidate"]), design, overrides))
         if models == {"rigid"}:
             return _with_needs(app, design, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
                                                   design, overrides))
@@ -881,6 +894,115 @@ def _lies_on_top_of(artifact, shift, h, body_name):
     across = [((min(p[a] for p in placed) + max(p[a] for p in placed) + 1) * 0.5 * h) for a in (0, 2)]
     top = (max(p[1] for p in placed) + 1) * h
     return ([round(across[0] * 1000.0, 1), round(top * 1000.0, 1), round(across[1] * 1000.0, 1)],
+            [0.0, 1.0, 0.0])
+
+
+def _preview_exact(app, room, live, old, design, overrides, pos, candidate):
+    """A finalized machine: its own parts at their own size, on real pins.
+
+    The lattice paths cannot carry a part thinner than two cells -- 80 mm at the
+    bench's grid, 100 mm in a 50 mm room -- because a thinner one is lost
+    between its neighbours. Finalized, the same design is compiled to exact
+    compounds instead: one per group of parts fixed together, each part its true
+    shape, rotation and material, with a floor of 1 mm, and each bearing a real
+    hinge between two of them. That is what the rover in the world is made of,
+    and why its caster's cheeks can be 12 mm in a room of 50 mm cells.
+
+    Nothing is voxelised, so nothing here can break by fracture: a blow that
+    would break a lattice body against one of these is declined and said so.
+    """
+    prefix = "workshop-" + uuid.uuid4().hex[:16]
+    artifact = rigid_assembly.compile_design(design, overrides, root=prefix)
+    saved = _snapshot(live)
+    if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
+        raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not "
+                         "declare support")
+    # Set down where it was asked for, then lifted so its lowest part stands
+    # 2 mm clear of the ground under its whole footprint: the owner's rule that
+    # nothing starts below the ground.
+    at = [float(pos[0]), 0.0, float(pos[1])]
+    flat = rigid_assembly.placed(artifact, at)
+    lift = 0.002
+    for low, lo, hi in rigid_assembly.footprint(flat):
+        lift = max(lift, _terrain_floor(old, ([lo[0], low, lo[1]], [hi[0], low, hi[1]])) + .002 - low)
+    at[1] = lift
+    placed = rigid_assembly.placed(artifact, at)
+    bodies, pins = rigid_assembly.scene_bodies(placed), rigid_assembly.scene_joints(placed)
+
+    spec = deepcopy(room.spec)
+    spec["precise_rigid_bodies"] = (spec.get("precise_rigid_bodies") or []) + bodies
+    spec["joints"] = (spec.get("joints") or []) + pins
+    from mcp import core_use, interaction_points
+    root = artifact["component_to_body"][design.parameters["primary_use_component"]]
+    where = next(b for b in placed["bodies"] if b["name"] == root)
+    spec["actions"] = (spec.get("actions") or []) + [core_use.installed(design, root)]
+    spec["interaction_points"] = (spec.get("interaction_points") or []) + [
+        interaction_points.installed(design, root, where["_centre_m"])]
+    made = workshop_machines.installed(design, artifact["component_to_body"])
+    for panel in made.get("panels") or []:
+        panel["at_mm"], panel["normal"] = _on_top_of_an_exact_body(placed, panel["body"])
+    _named_apart(made, room.spec)
+    if made:
+        machines = deepcopy(spec.get("machines") or {})
+        for kind, rows in made.items():
+            if kind == "schema":
+                continue
+            machines[kind] = (machines.get(kind) or []) + rows
+        spec["machines"] = machines
+
+    # Admission before anything is staged, and nothing may be put where
+    # something already stands.
+    normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
+    spec["precise_rigid_bodies"] = normalised
+    mine = normalised[-len(bodies):]
+    lows = [precise_rigid.bounds(b["parts"], b["position_m"], b["orientation_wxyz"]) for b in mine]
+    bounds = ([min(b[0][a] for b in lows) for a in range(3)], [max(b[1][a] for b in lows) for a in range(3)])
+    for existing in saved["bodies"]:
+        if "parked" in existing:
+            continue
+        lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
+        if all(bounds[0][a] < hi[a]+.001 and bounds[1][a] > lo[a]-.001 for a in range(3)):
+            raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
+    fracture_lab.validate(spec)
+    roots = {b["name"] for b in bodies}
+    # Staged and cached as PLACED: its pins are where the engine will have
+    # them, not where the design drew them, or the check that nothing moved an
+    # added hinge compares two different frames.
+    staged, _ = _stage(app, live, old, spec, saved, placed, roots, None)
+    staged.session.close()
+    token = uuid.uuid4().hex
+    answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
+              "scene": room.scene, "session": old.id, "mode": "authoring", "root_body": root,
+              "root_bodies": sorted(roots), "component_to_body": artifact["component_to_body"],
+              "source_joints": artifact["source_joints"], "design_id": design.design_id,
+              "mechanical_model": precise_rigid.MODEL, "cell_size_m": float(old.spec["cell_m"]),
+              "cells": 0, "collision_boxes": sum(len(b["parts"]) for b in mine),
+              "mass_kg": sum(rigid_assembly._mass(p) for p in design.parts),
+              "requested_position_m": pos, "placement_grid": None,
+              "applied_translation_m": list(at), "bounds_m": bounds,
+              "engine_grid_verified": False, "native_precise_geometry_verified": True,
+              "existing_state_preserved": True, "resources_charged": False, "strength_certified": False,
+              "expires_in_s": PREVIEW_TTL_S,
+              "limits": "Finalized: exact parts on ideal pins, nothing voxelised. It cannot break by fracture, "
+                        "and bearing strength, wear and friction are uncalibrated."}
+    cache = _preview_cache(app)
+    while len(cache) >= MAX_PREVIEWS:
+        del cache[next(iter(cache))]
+    cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
+                    "source_hash": _hash([saved, room.spec, _inventory(room)]),
+                    "spec": spec, "matter": placed, "root": roots, "shift": None,
+                    "candidate_hash": _hash(candidate)}
+    return answer
+
+
+def _on_top_of_an_exact_body(placed, body_name):
+    """Where a panel on this body sits, and which way it looks: the middle of
+    its top face, looking up, as _lies_on_top_of does for a lattice one."""
+    body = next((b for b in placed["bodies"] if b["name"] == body_name), None)
+    if body is None:
+        raise ValueError(f"a panel is on {body_name!r}, which this design does not make")
+    lo, hi = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+    return ([round((lo[0]+hi[0]) * 500.0, 1), round(hi[1] * 1000.0, 1), round((lo[2]+hi[2]) * 500.0, 1)],
             [0.0, 1.0, 0.0])
 
 

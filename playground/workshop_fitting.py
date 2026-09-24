@@ -259,6 +259,15 @@ def _compiled(design: Any, overrides: dict[str, Any], cell_m: float, root: str) 
     it. Every piece of furniture on the bench was refused that way.
     """
     if workshop_rigid.requested_models(design, overrides) == {"rigid"}:
+        # Finalized: its own parts at their own size. Nothing of it is cells, so
+        # none of the grid's rules apply to it and none of the redraws fire --
+        # which is the point of finalizing. A machine goes through the assembly
+        # compiler, which can carry several materials, turned parts and real
+        # pins; anything simpler is one exact compound.
+        if workshop_articulation.has_bearings(design):
+            import rigid_assembly
+            rigid_assembly.compile_design(design, overrides, root=root)
+            return
         workshop_rigid.compile_rigid(design, overrides)
         return
     if workshop_articulation.has_bearings(design):

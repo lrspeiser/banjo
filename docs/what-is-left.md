@@ -65,8 +65,25 @@ work is what the Workshop cannot yet do, then the deleting.
    a single material, axis-aligned parts and no mechanisms -- useless for a
    machine. Its only callers today are `tools/build_cart_room.py` and a test.
 
-   So: **wire `rigid_assembly` in as the Workshop's finalize step.** Voxels
-   while you draw and while you break things; exact bodies when you make it.
+   **Done.** `rigid_assembly` is wired in: a design whose parts are all declared
+   rigid, and which has something that turns, is compiled to exact bodies on
+   real pins and installed that way. Measured: a 12 mm iron pin is drawn 80 mm
+   as cells, and 12 mm finalized -- in a body of oak, which the one-compound
+   compiler cannot do at all. Two things had to give way for it: the exact
+   compiler only knew shaft-in-bore bearings, where the bench can only draw a
+   butt joint, so it now takes a contact face's normal as the axis the way the
+   construction library already does; and staging had to learn that a finalized
+   machine has no cells to check against the grid.
+
+   **What is NOT done:** a finalized machine stands still and stable, but under
+   motor load it eventually throws itself across the room. Every bearing the
+   bench can draw is between two parts that TOUCH -- that is the bench's rule
+   for fastening -- and as exact bodies those faces are in contact while the
+   pin drives them. Nothing in the engine stops two bodies joined by a pin from
+   colliding with each other (no group filter in `src/rigid/JoltWorld.cpp`),
+   which is fine for the rover, whose parts were drawn with clearance by hand,
+   and is not fine for anything the bench draws. This is the same root as the
+   swivel that would not turn.
 
 2. **Test it in a little room, not a rig.** The bench trial already runs the
    same engine as the world (`workshop_sparse_trial.py:410`,

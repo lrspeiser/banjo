@@ -706,6 +706,78 @@ class ARobotBuiltThroughTheChatsTools(unittest.TestCase):
         first = sorted(set(made["component_to_body"].values()))[0]
         self.assertEqual(made["component_to_body"]["caster fork"], first)
         self.assertNotEqual(first, program["body"])
+    def finalized(self):
+        """Every part made of itself rather than of cells."""
+        for part in self.state.design.parts:
+            row = dict(self.state.overrides.get(part.name) or {})
+            row["mechanics"] = {"model": "rigid"}
+            self.state.overrides[part.name] = row
+        self.state.design = workshop_components.apply_overrides(self.state.base, self.state.overrides)
+        return self.state
+
+    def test_a_small_part_is_grown_to_the_grid_as_cells_and_kept_when_finalized(self):
+        """The owner's requirement: draw it in cells, then finalize it so the
+        parts too small for cells survive.
+
+        A 12 mm pin cannot be made of 40 mm cells -- a part thinner than two of
+        them is lost between its neighbours -- so the bench grows it to 80 mm,
+        which is a different object than the one asked for. Finalized, none of
+        the grid's rules apply, and it is a 12 mm pin.
+        """
+        self.state.execute("add_part", {"name": "pin", "role": "axle", "size_m": [0.012, 0.012, 0.06],
+                                        "center_m": [0.0, 0.234, -0.27], "material": "iron",
+                                        "fasten_to": "deck", "kind": "fixed"})
+
+        def thickness():
+            return next(p.size_m[0] for p in self.state.design.parts if p.name == "pin")
+
+        self.assertAlmostEqual(0.012, thickness())
+
+        # As cells: grown to two of them, and it says so.
+        answer = self.state.execute("check_validity", {})
+        self.assertTrue(answer["ok"], answer.get("summary"))
+        grown = thickness()
+        self.assertAlmostEqual(CELL * 2, grown, places=6)
+        self.assertTrue(any(c["part"] == "pin" for c in answer["changes"]), answer["changes"])
+        print(f"\n    as cells, a 12 mm pin is drawn {grown * 1000:.0f} mm")
+
+    def test_finalized_it_compiles_a_twelve_millimetre_part_as_it_was_drawn(self):
+        self.state.execute("add_part", {"name": "pin", "role": "axle", "size_m": [0.012, 0.012, 0.06],
+                                        "center_m": [0.0, 0.234, -0.27], "material": "iron",
+                                        "fasten_to": "deck", "kind": "fixed"})
+        self.finalized()
+        answer = self.state.execute("check_validity", {})
+        self.assertTrue(answer["ok"], answer.get("summary"))
+        self.assertEqual([], answer["changes"], "a finalized design is not redrawn to the grid")
+        pin = next(p for p in self.state.design.parts if p.name == "pin")
+        self.assertAlmostEqual(0.012, pin.size_m[0])
+
+        import rigid_assembly
+        made = rigid_assembly.compile_design(self.state.design, self.state.overrides, root="robot")
+        frame = next(b for b in made["bodies"] if "pin" in b["_components"])
+        drawn = next(q for q in frame["parts"] if q["name"] == "pin")
+        self.assertAlmostEqual(12.0, drawn["dimensions_m"][0] * 1000.0, places=6)
+        # And it is iron in an oak body: a finalized group carries a part of its
+        # own material, which the one-compound compiler cannot do at all.
+        self.assertEqual("iron", drawn["material"])
+        self.assertEqual("oak", frame["material"])
+        print(f"    finalized, it is {drawn['dimensions_m'][0] * 1000:.0f} mm of "
+              f"{drawn['material']} in a body of {frame['material']}")
+
+    def test_finalized_it_is_exact_bodies_on_real_pins(self):
+        self.finalized()
+        self.assertTrue(self.state.execute("check_validity", {})["ok"])
+        import rigid_assembly
+        made = rigid_assembly.compile_design(self.state.design, self.state.overrides, root="robot")
+        self.assertEqual(6, len(made["bodies"]))
+        self.assertEqual(5, len(made["joints"]))
+        where = made["component_to_body"]
+        swivel = next(j for j in made["joints"]
+                      if {j["a"], j["b"]} == {where["deck"], where["caster fork"]})
+        # The same rule the cells follow: a joint on a flat face turns about
+        # that face. Without it no bench design could have a swivel here at all,
+        # because only a real axle in a bore was allowed to be a pin.
+        self.assertEqual([0.0, 1.0, 0.0], [abs(round(v, 9)) for v in swivel["axis"]])
 
 if __name__ == "__main__":
     unittest.main()
