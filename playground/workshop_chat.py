@@ -32,6 +32,18 @@ MAX_HISTORY = 20
 MAX_MESSAGE_CHARS = 48_000
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_CALLS = 24
+# Room for one turn: the reasoning AND the answer, because the provider counts
+# both against this. At 1400 -- what this was -- a turn that thought about a
+# design, called a tool and then had to say something ran out before it said
+# it, and the model's reply came back empty with status "incomplete". The page
+# then showed the fallback line, "I inspected the design but made no changes",
+# for a turn where the model had been cut off mid-thought: the owner asked for
+# a shed, answered the questions it put, and was told nothing had changed.
+#
+# Every other model caller here already gives more: the room chat that builds
+# things in the world 12,000 (scene_chat.py), the trial planner 6,000, the
+# room's own helper 3,500. This is the same class of work as the first.
+MAX_OUTPUT_TOKENS = 12000
 
 SYSTEM = """You are the Banjo Workshop design assistant.
 
@@ -653,6 +665,15 @@ class _State:
         raise ValueError(f"unknown Workshop chat tool {tool!r}")
 
 
+def _cut_short(response: dict[str, Any]) -> str:
+    """Why a reply came back with no words, when the provider says why."""
+    if str(response.get("status") or "") != "incomplete":
+        return ""
+    why = str((response.get("incomplete_details") or {}).get("reason") or "")
+    return " (the reply hit its length limit)" if why == "max_output_tokens" else \
+           (f" ({why})" if why else "")
+
+
 def _extract_text(response: dict[str, Any]) -> str:
     texts = []
     for output in response.get("output") or []:
@@ -707,7 +728,7 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
         "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-        "max_output_tokens": 1400, "reasoning": {"effort": "medium"},
+        "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
         "instructions": instructions, "input": inputs,
         "tools": tools, "tool_choice": "auto",
     }
@@ -717,7 +738,21 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         calls = [output for output in response.get("output") or [] if output.get("type") == "function_call"]
         if not calls:
             text = _extract_text(response)
-            return text or ("Updated the Workshop design." if state.changed else "I inspected the design but made no changes.")
+            if text:
+                return text
+            # No words came back. Say which of the two silences it was rather
+            # than reporting a verdict the model never reached: a reply the
+            # provider marked incomplete is one that ran out of room, and
+            # telling a person "no changes" for that is telling them something
+            # untrue about their own design.
+            cut = _cut_short(response)
+            if cut:
+                return ("I ran out of room before I could answer" + cut +
+                        (". What I did change is in the design." if state.changed
+                         else ". Nothing in the design was changed. Ask again, more narrowly,"
+                              " and I will have room to finish."))
+            return "Updated the Workshop design." if state.changed else \
+                   "I inspected the design but made no changes." 
         outputs = []
         for call in calls:
             calls_used += 1
@@ -745,7 +780,7 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         inputs = inputs + _carry(response) + outputs
         payload = {
             "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-            "max_output_tokens": 1400, "reasoning": {"effort": "medium"},
+            "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
             "instructions": instructions,
             "input": inputs, "tools": tools, "tool_choice": "auto",
         }

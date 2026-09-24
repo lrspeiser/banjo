@@ -4,7 +4,9 @@ from pathlib import Path
 import sys
 import tempfile
 import types
+import pathlib
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,6 +145,56 @@ class ConversationalWorkshop(unittest.TestCase):
             old = before[leg["name"]]
             self.assertGreater(leg["size_m"][1], old[1])
             self.assertLess(leg["size_m"][0], old[0])
+
+
+class AReplyThatRanOutOfRoom(unittest.TestCase):
+    """A turn the model never finished is not "no changes".
+
+    The owner asked the Workshop for a shed, answered the three questions it
+    put, and was told "I inspected the design but made no changes." The model
+    had not decided that. Its reply came back with no words and the provider's
+    status "incomplete" -- 1400 output tokens, shared with medium-effort
+    reasoning, is not enough for a turn that thinks, calls a tool and then has
+    to speak -- and that sentence was what the page showed when there were no
+    words to show.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = types.SimpleNamespace(workshop_store=pathlib.Path(self.tmp.name) / "workshop",
+                                         api_key="k", model="gpt-5-mini")
+
+    def _answer(self, reply, changed_tool=None):
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        replies = []
+        if changed_tool:
+            replies.append({"id": "r1", "output": [
+                {"type": "function_call", "call_id": "c1", "name": changed_tool[0],
+                 "arguments": changed_tool[1]}]})
+        replies.append(reply)
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            return workshop_chat.propose(
+                self.app, message="make a small shed with a door", selected_part=None,
+                candidate=candidate, materials=["oak"], library=[], history=[])
+
+    def test_it_says_it_ran_out_rather_than_saying_nothing_changed(self):
+        said = self._answer({"id": "r1", "status": "incomplete",
+                             "incomplete_details": {"reason": "max_output_tokens"},
+                             "output": []})["reply"]
+        print(f"\n    cut off: {said}", flush=True)
+        self.assertIn("ran out of room", said)
+        self.assertNotIn("made no changes", said)
+
+    def test_a_finished_reply_with_no_words_still_says_nothing_changed(self):
+        said = self._answer({"id": "r1", "status": "completed", "output": []})["reply"]
+        self.assertIn("made no changes", said)
+
+    def test_the_room_it_is_given_matches_the_work_it_does(self):
+        # The room chat that builds things in the world is given 12,000 output
+        # tokens; this does the same class of work on a design.
+        self.assertGreaterEqual(workshop_chat.MAX_OUTPUT_TOKENS, 8000)
 
 
 class ChatSurface(unittest.TestCase):
