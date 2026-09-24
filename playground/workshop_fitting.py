@@ -31,11 +31,13 @@ from copy import deepcopy
 import math
 from typing import Any
 
+from mcp import engine_materials
 from mcp import workshop_components
 from mcp import workshop_construction as construction
 from mcp.workshop import WirePart, strut as workshop_strut
-from mcp import workshop_machines
+from mcp import workshop_machines, workshop_matter_metrics, workshop_rigid, workshop_visual
 import workshop_articulation
+import workshop_sparse_trial as sparse
 
 SCHEMA = "banjo.workshop-validity.v1"
 MIN_CELLS = 2
@@ -236,10 +238,65 @@ def _built(base: Any, overrides: dict[str, Any]) -> Any:
 
 def _why_not(design: Any, overrides: dict[str, Any], cell_m: float, root: str) -> str | None:
     try:
-        workshop_articulation.compile_design(design, overrides, cell_m=cell_m, root=root)
+        _compiled(design, overrides, cell_m, root)
     except ValueError as problem:
         return str(problem)
     return _unworkable(overrides)
+
+
+def _compiled(design: Any, overrides: dict[str, Any], cell_m: float, root: str) -> None:
+    """Draw it the way the world would, and let that say what is wrong.
+
+    Which way depends on what it is, exactly as installation chooses
+    (``workshop_install.preview``): a thing declared rigid is compiled rigid, a
+    thing with a bearing goes through the articulated compiler, and everything
+    else -- a table, a stool, a shelf -- is one piece of matter.
+
+    Everything used to go through the articulated compiler, whose first
+    question is whether there is a bearing to turn on. So "Check it" answered a
+    table with "Articulated construction needs an authored bearing", which is
+    true of no table ever made, and there was nothing the person could do about
+    it. Every piece of furniture on the bench was refused that way.
+    """
+    if workshop_rigid.requested_models(design, overrides) == {"rigid"}:
+        workshop_rigid.compile_rigid(design, overrides)
+        return
+    if workshop_articulation.has_bearings(design):
+        workshop_articulation.compile_design(design, overrides, cell_m=cell_m, root=root)
+        return
+    _one_piece_of_matter(design, overrides, cell_m)
+
+
+def _one_piece_of_matter(design: Any, overrides: dict[str, Any], cell_m: float) -> None:
+    """Nothing on it turns, so what it has to be is one connected solid.
+
+    The same three things installation asks of it, asked here instead of after
+    the person has pressed Make it: that it has matter at all, that its parts
+    touch, and that it is one material -- the room cannot fuse two without an
+    interface saying how they meet.
+    """
+    workshop_rigid.require_lattice(design, "Check it")
+    matter = workshop_visual.matter_document(design, overrides, cell_size_m=cell_m, exterior_only=False)
+    if not sparse._grid_set(matter):
+        raise ValueError("Nothing in it has any matter at this cell size")
+    measured = workshop_matter_metrics.measure(
+        matter, expected_components=[p.name for p in design.parts])["measured"]
+    missing = measured.get("missing_components") or []
+    if missing:
+        # The same condition the articulated compiler refuses, said in its
+        # words on purpose: a part too thin for the grid leaves no cells of its
+        # own. RULES answers those words by growing it to whole cells, and the
+        # remedy for one is the remedy for the other.
+        raise ValueError("Every component must retain its own occupied cells; nothing is drawn for " +
+                         ", ".join(missing) + " at this cell size")
+    islands = measured.get("islands") or []
+    if len(islands) != 1:
+        apart = [", ".join(i.get("components") or []) or "part of it" for i in islands]
+        raise ValueError(f"It is drawn in {len(islands)} pieces that do not touch: " + "; ".join(apart))
+    materials = sorted({engine_materials.canonical(c["material"]) for c in matter["cells"]})
+    if len(materials) != 1:
+        raise ValueError("It is drawn in " + " and ".join(materials) +
+                         ", and nothing here says how the two meet")
 
 
 def _unworkable(overrides: dict[str, Any]) -> str | None:

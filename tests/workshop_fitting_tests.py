@@ -530,5 +530,41 @@ class WhatItRefusesToInvent(unittest.TestCase):
         self.assertIn("turns on nothing", turning["says"])
 
 
+class AThingWithNothingThatTurns(unittest.TestCase):
+    """A table is not asked for a bearing.
+
+    Check Validity compiled every design through the ARTICULATED compiler,
+    whose first question is whether there is a bearing to turn on. So every
+    piece of furniture on the bench -- table, stool, bench, chair, shelf --
+    was answered "Articulated construction needs an authored bearing", which
+    is true of no table ever made and left the person nothing to do about it.
+
+    It now compiles a design the way installation does: rigid if it is
+    declared rigid, articulated if it has a bearing, and otherwise as one
+    connected solid.
+    """
+
+    def test_a_table_works_as_drawn(self):
+        answer = workshop_fitting.check_validity(assemble("table", design_id="t"), {}, cell_m=CELL)
+        print(f"\n    a table: {answer['says']}", flush=True)
+        self.assertTrue(answer["ok"], answer.get("why"))
+        self.assertNotIn("bearing", (answer.get("why") or ""))
+
+    def test_a_stool_too_thin_for_the_grid_is_redrawn_rather_than_refused(self):
+        # A stool's top is 40 mm, which is one cell of the room's 40 mm grid
+        # and so leaves no cells of its own. That is the same condition the
+        # articulated compiler refuses, and the same redraw answers it.
+        answer = workshop_fitting.check_validity(assemble("stool", design_id="s"), {}, cell_m=CELL)
+        print(f"    a stool: {answer['says'][:120]}", flush=True)
+        self.assertTrue(answer["ok"], answer.get("why"))
+        self.assertTrue(answer["changes"], "the stool was passed without redrawing anything")
+
+    def test_what_it_says_about_furniture_is_about_furniture(self):
+        # Whatever the answer, it is never about bearings: there are none.
+        for kind in ("table", "stool", "bench", "chair", "shelf-unit"):
+            answer = workshop_fitting.check_validity(assemble(kind, design_id=kind[0]), {}, cell_m=CELL)
+            self.assertNotIn("bearing", answer["says"], f"{kind} was asked about a bearing")
+
+
 if __name__ == "__main__":
     unittest.main()
