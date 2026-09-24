@@ -212,5 +212,26 @@ def installed(design: Any, component_to_body: dict[str, str]) -> dict[str, Any]:
     if record.get("programs"):
         program = dict(record["programs"][0])
         out["programs"] = [{**program, "name": program.get("name") or design.design_id,
-                            "body": next(iter(sorted(set(component_to_body.values()))))}]
+                            "body": _what_both_wheels_turn_on(out, program, component_to_body)}]
     return out
+
+
+def _what_both_wheels_turn_on(made: dict[str, Any], program: dict[str, Any],
+                              component_to_body: dict[str, str]) -> str:
+    """The body a program's two wheels turn on: its chassis.
+
+    Every product used to be one body with things turning on it, so the first
+    body by name was the only body there could be. A robot is not: this one
+    comes out as six -- a frame, two driven wheels, a caster's fork, the wheel
+    on that fork, and a torso -- and the first by name was the caster's fork, so
+    the program was told to read its slope and its heading off a part that
+    swivels. It is the body both wheels' controllers have in common, and the
+    guess is kept only for a machine whose controllers say nothing.
+    """
+    on = {c["name"]: c["on"] for c in made.get("controls") or []}
+    left, right = on.get(str(program.get("left"))), on.get(str(program.get("right")))
+    if left and right:
+        both = [name for name in left if name in right]
+        if len(both) == 1:
+            return both[0]
+    return next(iter(sorted(set(component_to_body.values()))))

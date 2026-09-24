@@ -566,5 +566,146 @@ class AThingWithNothingThatTurns(unittest.TestCase):
             self.assertNotIn("bearing", answer["says"], f"{kind} was asked about a bearing")
 
 
+class ARobotBuiltThroughTheChatsTools(unittest.TestCase):
+    """A machine on wheels, built from nothing one part at a time.
+
+    Every call here is one the model could make. It matters because of what it
+    asks of the bench that nothing had asked before: a part that is ROUND, a
+    swivel whose pin stands upright, and a chain of two bearings -- the deck
+    carries a caster's fork, and the fork carries the wheel. Every design the
+    bench had compiled until now was a single level of things turning on one
+    frame.
+
+    A bearing turns about the face its two parts meet on, which is the whole
+    trick: a wheel against the side of its mount turns about the axis across the
+    machine, and a fork under the flat of the deck swivels about the upright.
+    """
+
+    CALLS = [
+        ("add_part", {"name": "left mount", "role": "bearing_mount", "size_m": [0.08, 0.16, 0.08],
+                      "center_m": [0.20, 0.16, -0.24], "material": "oak",
+                      "fasten_to": "deck", "kind": "fixed"}),
+        ("add_part", {"name": "right mount", "role": "bearing_mount", "size_m": [0.08, 0.16, 0.08],
+                      "center_m": [-0.20, 0.16, -0.24], "material": "oak",
+                      "fasten_to": "deck", "kind": "fixed"}),
+        ("add_part", {"name": "mast", "role": "post", "size_m": [0.08, 0.28, 0.08],
+                      "center_m": [0.0, 0.46, 0.08], "material": "oak",
+                      "fasten_to": "deck", "kind": "fixed"}),
+        ("add_part", {"name": "left wheel", "role": "wheel", "size_m": [0.08, 0.32, 0.32],
+                      "center_m": [0.28, 0.16, -0.24], "material": "oak", "round_along": "x",
+                      "fasten_to": "left mount", "kind": "bearing"}),
+        ("add_part", {"name": "right wheel", "role": "wheel", "size_m": [0.08, 0.32, 0.32],
+                      "center_m": [-0.28, 0.16, -0.24], "material": "oak", "round_along": "x",
+                      "fasten_to": "right mount", "kind": "bearing"}),
+        ("add_part", {"name": "caster fork", "role": "post", "size_m": [0.08, 0.12, 0.08],
+                      "center_m": [0.0, 0.18, 0.08], "material": "oak",
+                      "fasten_to": "deck", "kind": "bearing"}),
+        ("add_part", {"name": "caster wheel", "role": "wheel", "size_m": [0.08, 0.16, 0.16],
+                      "center_m": [0.08, 0.08, 0.08], "material": "oak", "round_along": "x",
+                      "fasten_to": "caster fork", "kind": "bearing"}),
+        ("add_part", {"name": "torso", "role": "beam", "size_m": [0.08, 0.48, 0.08],
+                      "center_m": [0.08, 0.80, 0.08], "material": "oak",
+                      "fasten_to": "mast", "kind": "bearing"}),
+    ]
+    DECK = {"name": "deck", "role": "surface", "shape": "box", "family": "surface",
+            "size_m": [0.48, 0.08, 0.48], "center_m": [0.0, 0.28, -0.12],
+            "rotation_deg": [0.0, 0.0, 0.0], "material": "oak"}
+    MACHINES = {
+        "stores": [{"name": "battery", "in": "deck", "capacity_j": 100000.0,
+                    "charge_j": 100000.0, "voltage_v": 24.0}],
+        "motors": [{"name": "left motor", "turns": ["left mount", "left wheel"], "store": "battery",
+                    "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0},
+                   {"name": "right motor", "turns": ["right mount", "right wheel"], "store": "battery",
+                    "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0},
+                   {"name": "hip motor", "turns": ["mast", "torso"], "store": "battery",
+                    "stall_torque_n_m": 20.0, "no_load_rpm": 5.73, "brake_torque_n_m": 40.0}],
+        "controls": [{"name": "left wheel", "turns": ["left mount", "left wheel"]},
+                     {"name": "right wheel", "turns": ["right mount", "right wheel"]},
+                     {"name": "torso", "turns": ["mast", "torso"]}],
+        "programs": [{"kind": "sit", "left": "left wheel", "right": "right wheel", "setting": 1.0,
+                      "toward": "stool", "close_m": 0.6, "pose": "torso", "pose_deg": 125.0}],
+    }
+
+    def setUp(self):
+        import tempfile, types
+        import workshop_chat
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        runs = Path(self.tmp.name) / "runs"
+        runs.mkdir(parents=True)
+        app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
+        overrides = {construction.CONSTRUCTION_KEY:
+                     construction.checked({"added": [self.DECK], "joints_authored": True})}
+        base = assemble("custom", design_id="sitting-robot", purpose="go to a thing and sit down on it",
+                        parameters={"primary_use_component": "deck",
+                                    "interaction_point_components": {"deck": "deck", "grip": "deck",
+                                                                     "use": "deck"}})
+        candidate = workshop_components.apply_overrides(base, overrides).wireframe()
+        candidate["component_overrides"] = overrides
+        self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
+        for tool, args in self.CALLS:
+            self.state.execute(tool, args)
+
+    def compiled(self):
+        answer = self.state.execute("check_validity", {})
+        self.assertTrue(answer["ok"], answer.get("summary"))
+        # Drawn on the grid it is checked against, it needs no redrawing at all.
+        self.assertEqual([], answer["changes"], answer.get("summary"))
+        return workshop_articulation.compile_design(self.state.design, self.state.overrides,
+                                                    cell_m=CELL, root="robot")
+
+    def test_a_round_part_is_a_cylinder_lying_the_way_it_was_asked_for(self):
+        by_name = {p.name: p for p in self.state.design.parts}
+        self.assertEqual("box", by_name["deck"].shape)
+        wheel = by_name["left wheel"]
+        self.assertEqual("cylinder", wheel.shape)
+        # Drawn about its own y and turned onto x, the axis across the machine.
+        self.assertEqual((0.32, 0.08, 0.32), tuple(wheel.size_m))
+        self.assertEqual((0.0, 0.0, 90.0), tuple(wheel.rotation_deg))
+
+    def test_a_round_part_that_is_not_round_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "as wide as it is deep"):
+            self.state.execute("add_part", {"name": "squashed", "role": "wheel",
+                                            "size_m": [0.08, 0.32, 0.24], "center_m": [0.28, 0.16, 0.0],
+                                            "round_along": "x", "fasten_to": "deck", "kind": "bearing"})
+
+    def test_it_compiles_into_a_frame_two_wheels_a_caster_and_a_torso(self):
+        made = self.compiled()
+        by_body = {g["root_body"]: set(g["components"]) for g in made["groups"]}
+        self.assertEqual(6, len(by_body))
+        self.assertIn({"deck", "left mount", "right mount", "mast"}, list(by_body.values()))
+        self.assertEqual(5, len(made["joints"]))
+        for joint in made["joints"]:
+            self.assertEqual("hinge", joint["kind"])
+
+    def test_the_caster_swivels_upright_and_its_wheel_turns_on_the_fork(self):
+        made = self.compiled()
+        where = made["component_to_body"]
+        fork, wheel = where["caster fork"], where["caster wheel"]
+        swivel = next(j for j in made["joints"] if {j["a"], j["b"]} == {where["deck"], fork})
+        axle = next(j for j in made["joints"] if {j["a"], j["b"]} == {fork, wheel})
+        # A joint turns about the face its parts meet on: the fork is under the
+        # flat of the deck, so it swivels upright; its wheel is against the
+        # fork's side, so it rolls.
+        self.assertEqual([0.0, 1.0, 0.0], [abs(v) for v in swivel["axis"]])
+        self.assertEqual([1.0, 0.0, 0.0], [abs(v) for v in axle["axis"]])
+        # And the fork is a middle link: it carries a joint on each side of it.
+        self.assertEqual(2, sum(1 for j in made["joints"] if fork in (j["a"], j["b"])))
+
+    def test_its_program_reads_the_frame_and_not_whatever_body_is_first(self):
+        from mcp import workshop_machines
+        made = self.compiled()
+        record = workshop_machines.checked(self.MACHINES)
+        design = self.state.design
+        design.lineage["component_overrides"][workshop_machines.MACHINES_KEY] = record
+        installed = workshop_machines.installed(design, made["component_to_body"])
+        [program] = installed["programs"]
+        self.assertEqual(made["component_to_body"]["deck"], program["body"])
+        # Which is NOT the first body by name: that is the caster's fork, and a
+        # program told to read its slope off a part that swivels reads nonsense.
+        first = sorted(set(made["component_to_body"].values()))[0]
+        self.assertEqual(made["component_to_body"]["caster fork"], first)
+        self.assertNotEqual(first, program["body"])
+
 if __name__ == "__main__":
     unittest.main()

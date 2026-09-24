@@ -167,6 +167,33 @@ def _refresh(app: Any, candidate: dict[str, Any], design: Any,
     candidate.update(wire)
 
 
+def _round_along(axis: Any, size: list[float]) -> tuple[str, tuple[float, float, float], list[float]]:
+    """A round part, said the way a person says it.
+
+    The chat gives every part the box it fills, which is what a person sees. A
+    cylinder is drawn in its own frame instead -- diameter, length, diameter,
+    about its own y -- and turned onto the axis it lies along, so this does that
+    turning rather than asking the model for three Euler angles. Without it the
+    chat could only make boxes, and a robot it designed had square wheels: the
+    library has carried cylinders all along (workshop_construction.checked) and
+    only this tool could not say one.
+    """
+    if not axis:
+        return "box", (0.0, 0.0, 0.0), size
+    along = str(axis).lower()
+    if along not in ("x", "y", "z"):
+        raise ValueError("round_along is x, y or z: the axis the cylinder lies along")
+    a = "xyz".index(along)
+    across = [size[i] for i in range(3) if i != a]
+    if abs(across[0] - across[1]) > 1e-9:
+        raise ValueError(f"a part round along {along} is as wide as it is deep across that axis, and this one "
+                         f"is {across[0] * 1000:.0f} mm by {across[1] * 1000:.0f} mm")
+    # Its own frame: as round as it is across, as long as it is along.
+    drawn = [across[0], size[a], across[0]]
+    turn = {"x": (0.0, 0.0, 90.0), "y": (0.0, 0.0, 0.0), "z": (90.0, 0.0, 0.0)}[along]
+    return "cylinder", turn, drawn
+
+
 def _part_doc(part: Any) -> dict[str, Any]:
     return {
         "name": part.name, "role": part.role, "family": part.family,
@@ -243,7 +270,11 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                         "in metres and center_m is its middle in the design frame. It must TOUCH the part it "
                         "fastens to -- move it against that part first, face to face; a gap is refused. "
                         "kind is 'fixed' for a part bonded solid, or 'bearing' for one that turns on the other "
-                        "(a wheel, a door leaf, a pulley). Do not fret about the millimetres: call "
+                        "(a wheel, a door leaf, a pulley). round_along makes it a cylinder lying along that "
+                        "axis -- a wheel that rolls forward is round along x, the axis across the machine. A "
+                        "bearing turns about the face the two parts meet on, so a wheel goes against the side "
+                        "of its mount and a thing that swivels goes under a flat face. Do not fret about the "
+                        "millimetres: call "
                         "check_validity when the assembly is complete and it redraws whatever the room's cell "
                         "grid cannot carry.",
          "parameters": {"type": "object", "additionalProperties": False,
@@ -257,7 +288,10 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "center_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                             "material": {"type": "string", "enum": list(materials)},
                             "fasten_to": {"type": "string", "description": "the part it is fastened to"},
-                            "kind": {"type": "string", "enum": ["fixed", "bearing"]}}}},
+                            "kind": {"type": "string", "enum": ["fixed", "bearing"]},
+                            "round_along": {"type": "string", "enum": ["x", "y", "z"],
+                                            "description": "leave it out for a box; give the axis it is round "
+                                                           "about to make it a cylinder"}}}},
         {"type": "function", "name": "remove_part",
          "description": "Take one component out of the design, with whatever fastened it.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["name"],
@@ -459,9 +493,10 @@ class _State:
             if len(size) != 3 or len(centre) != 3:
                 raise ValueError("size_m and center_m are each three numbers, in metres")
             role = str(args.get("role") or "beam")
+            shape, turn, size = _round_along(args.get("round_along"), size)
             new = WirePart(name=str(args.get("name") or ""), role=role, size_m=tuple(size),
                            center_m=tuple(centre), material=str(args.get("material") or "oak"),
-                           rotation_deg=(0.0, 0.0, 0.0), shape="box", family=role)
+                           rotation_deg=turn, shape=shape, family=role)
             joint = None
             if args.get("fasten_to"):
                 joint = {"to": str(args["fasten_to"]), "kind": str(args.get("kind") or "fixed")}
