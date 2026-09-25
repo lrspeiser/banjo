@@ -35,7 +35,11 @@ WORK_J_PER_KG = 50.0
 DIG_S_PER_KG = 0.25
 DIG_WIDTH_M = 0.5
 DIG_DEPTH_M = 0.15
-DIG_AHEAD_M = 0.8
+# Where the scoop bites, ahead of the machine's centre: clear of a caster at
+# its front, which swings into a hole dug closer when the machine turns to
+# leave (measured on the page: a rover turning in place at its own hole for
+# a minute).
+DIG_AHEAD_M = 1.3
 DUMP_RADIUS_M = 0.6
 
 

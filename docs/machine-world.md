@@ -892,8 +892,9 @@ battery is.
 
 **Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
 whose volume goes into the ground's one carried account. The `dig` tool
-takes one scoop of the ground 0.8 m ahead of the machine (0.5 m wide, 0.15 m
-deep), moves what came out from the carried account into the machine's
+takes one scoop of the ground 1.3 m ahead of the machine's centre (0.5 m
+wide, 0.15 m deep; closer, its caster swung into the hole when it turned to
+leave), moves what came out from the carried account into the machine's
 hopper with the engine's `ground_withdraw`, so the ground's ledger stays
 whole and the person's carrying is untouched, cuts the scoop to what the
 hopper has room for and puts the rest back where it came from, draws the
@@ -913,8 +914,9 @@ knows nothing of digging: it issues the step's tool, waits until the world
 says the step is done -- the machine arrived (its `approaching` ask ended
 waiting), its hopper is full, its hopper is empty -- and goes on to the
 next, round again at the end; a `go_to` that runs out of time is tried
-again from where it stands, three times. The dig routine is four steps: go
-to the dig site; dig until full; go to the depot; dump. It is declared on a
+again from where it stands, three times. The dig routine is five steps: go
+to the dig site; dig until full; back off from the hole; go to the depot;
+dump. It is declared on a
 program in the room's spec and checked by the validator:
 
 ```

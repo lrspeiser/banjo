@@ -20,8 +20,8 @@ by the dig tool out of the ground's carried volume and emptied by the dump
 tool back onto the ground, so the ground's ledger stays whole. The hopper is
 not saved with the world yet: a restart empties it.
 
-The dig routine: go to the dig site; dig until the hopper is full; go to the
-depot; dump; again. Rest is the program's own: below its rest_below it stops
+The dig routine: go to the dig site; dig until the hopper is full; back off
+from the hole; go to the depot; dump; again. Rest is the program's own: below its rest_below it stops
 where it is until charged, and the routine waits with it.
 """
 from __future__ import annotations
@@ -45,6 +45,8 @@ ROUTINES: dict[str, dict[str, Any]] = {
         "steps": [
             {"do": "go_to", "args": {"place": "dig site"}, "until": "arrived", "retries": 3},
             {"do": "dig", "args": {}, "until": "load_full", "repeat": True},
+            # Away from its own hole before it turns for the depot.
+            {"do": "back_off", "args": {"for_s": 1.5}, "until": "asked_done"},
             {"do": "go_to", "args": {"place": "depot"}, "until": "arrived", "retries": 3},
             {"do": "dump", "args": {}, "until": "load_empty"},
         ],

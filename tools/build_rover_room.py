@@ -309,7 +309,7 @@ def dig(engine: Path, validated: dict) -> list[str]:
                     water = (session.send(op="survey", at=[w[0], w[2]]).get("survey") or {}).get("water")
                     if water and water.get("depth_m", 0.0) > wettest:
                         wettest, wet_at = water["depth_m"], f"{name} while {said.get('doing')} ({said.get('why')})"
-                if routine.trips >= 1 and routine.step % 4 == 1:
+                if routine.trips >= 1 and routine.step % len(routine.spec["steps"]) == 1:
                     seconds = (tick + 1) * PER_QUARTER * DT
                     break
             pace = seconds / (time.monotonic() - wall)

@@ -569,7 +569,7 @@ class TheSensesAndTheTools(unittest.TestCase):
         ops = [c["op"] for c in ask.sent]
         self.assertEqual(["survey", "dig", "ground_withdraw", "draw", "behave"], ops)
         dug = next(c for c in ask.sent if c["op"] == "dig")
-        self.assertEqual(([0.0, 0.8], 0.5, 0.15), (dug["from"], dug["width_m"], dug["depth_m"]))
+        self.assertEqual(([0.0, 1.3], 0.5, 0.15), (dug["from"], dug["width_m"], dug["depth_m"]))
         self.assertEqual({"op": "ground_withdraw", "sand_m3": 0.0, "soil_m3": 0.0075},
                          next(c for c in ask.sent if c["op"] == "ground_withdraw"))
         self.assertEqual(600.0, next(c for c in ask.sent if c["op"] == "draw")["joules"], "12 kg at 50 J/kg")
@@ -621,8 +621,14 @@ class TheSensesAndTheTools(unittest.TestCase):
         ctx.program["asked"] = None
         self.assertIsNone(routine.tick(ctx), "full: the dig step ends")
         did = routine.tick(ctx)
-        self.assertEqual("asked to go to depot, and stop a metre off", did["did"])
+        self.assertEqual("asked to be backing off for 1.5 s", did["did"], "away from its own hole first")
         self.assertIsNone(routine.summary()["paused_by"])
+        ctx.program["asked"] = {"doing": "backing off", "by": "routine"}
+        self.assertIsNone(routine.tick(ctx))
+        ctx.program["asked"] = None
+        self.assertIsNone(routine.tick(ctx), "backed off: the step ends")
+        did = routine.tick(ctx)
+        self.assertEqual("asked to go to depot, and stop a metre off", did["did"])
         # Off: nothing.
         ctx.program["power"] = False
         self.assertIsNone(routine.tick(ctx))
@@ -696,7 +702,7 @@ class InTheDigRoom(unittest.TestCase):
         print(f"\n    the dig routine: {summary['load']}; notes: {' | '.join(summary['notes'])}")
         self.assertTrue(delivered, f"in 300 s it did not deliver a load: {summary}")
         self.assertGreater(brain.routine.delivered_kg, 20.0)
-        self.assertIn("step 3 done: it arrived", summary["notes"], "the load went to the depot, not just anywhere")
+        self.assertIn("step 4 done: it arrived", summary["notes"], "the load went to the depot, not just anywhere")
         carried = self.live.session.send(op="ground_work").get("carried") or {}
         self.assertLess(float(carried.get("total_kg") or 0.0), 0.5, "the ground's account is whole after the dump")
         store = self.live.session.send(op="step", dt=DT, n=1)["machines"]["stores"][0]
