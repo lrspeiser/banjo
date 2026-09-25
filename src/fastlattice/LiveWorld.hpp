@@ -703,6 +703,22 @@ struct LiveProgram {
     // times it has stopped to rest.
     double charge_share{};
     unsigned rests{};
+    // What it was asked to do instead of deciding for itself (LiveWorld::behave):
+    // by a person at its panel, or by whatever thinks for it on what it meets.
+    // `asked` is "going forward", "backing off", "turning left", "turning
+    // right", "waiting" (held on its brakes, still on), "facing" (turning on
+    // the spot until its front is towards `asked_toward_m`, then waiting) or
+    // "approaching" (facing, then going forward until it is within a metre of
+    // it, then waiting); "" when nothing is asked and it decides for itself.
+    // It does what it was asked for `asked_for_s` seconds -- 0 for until it is
+    // asked otherwise -- and then goes on as it would have. Its battery low,
+    // or turned off, it drops what it was asked: those come first.
+    std::string asked;
+    std::string asked_why;        // why, in a person's words, shown as its `why`
+    std::string asked_by;         // who asked
+    double asked_for_s{};
+    double asked_s{};             // how long it has been doing what it was asked
+    Vec3 asked_toward_m{};        // where it faces or approaches, for those two
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -1608,6 +1624,22 @@ public:
     // "applied" or "stale", as operate() says; anything else is why it is not
     // a command.
     std::string run(unsigned program, const ProgramCommand &command);
+    // What a program is asked to do for a while instead of deciding for itself
+    // (LiveProgram::asked): `doing` is one of the things it can be asked, or ""
+    // to ask nothing more and let it decide again; `for_s` from 0 (until asked
+    // otherwise) to 60; `toward` where "facing" and "approaching" look, in the
+    // world; `why` in a person's words, 200 characters at most. Stale as run()
+    // says. It answers at once: what it now does is said before the next step.
+    struct ProgramAsk {
+        std::string sender;
+        std::uint64_t seq{};
+        std::string doing;
+        std::string why;
+        double for_s{};
+        bool has_toward{};
+        Vec3 toward_m{};
+    };
+    std::string behave(unsigned program, const ProgramAsk &ask);
     [[nodiscard]] std::vector<LiveProgram> programs() const;
     // The room's sun (LiveSun): `elevation_deg` above the horizon, from 0 to 90,
     // `azimuth_deg` round from +z towards +x, shining `irradiance_w_m2` on a

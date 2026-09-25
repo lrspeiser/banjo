@@ -437,7 +437,14 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
-            {"rests", p.rests}};
+            {"rests", p.rests},
+            // What it was asked to do for a while, or null when it decides
+            // for itself (LiveWorld::behave).
+            {"asked", p.asked.empty() ? nlohmann::json{}
+                                      : nlohmann::json{{"doing", p.asked}, {"why", p.asked_why}, {"by", p.asked_by},
+                                                       {"for_s", tidy(p.asked_for_s)}, {"s", tidy(p.asked_s)},
+                                                       {"toward_m", {tidy(p.asked_toward_m.x), tidy(p.asked_toward_m.y),
+                                                                     tidy(p.asked_toward_m.z)}}}}};
 }
 
 // What a break cost, as a host reads it (LiveBreakCost): the bonds the lattice
@@ -2230,6 +2237,31 @@ int main(int argc, char **argv) {
                     const std::string answer = world->run(id, told);
                     if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
                     reply["ran"] = answer;
+                    const nlohmann::json machines = machinesOf(*world);
+                    if (machines.is_object() && machines.contains("programs"))
+                        for (const nlohmann::json &each : machines.at("programs"))
+                            if (each.at("id") == id) reply["program"] = each;
+                } else if (op == "behave") {
+                    // A program asked to do something for a while instead of
+                    // deciding for itself (LiveWorld::behave): {program, sender,
+                    // seq, doing, why, for_s, toward: [x, y, z]}; answered as
+                    // run is, with the program as it now stands.
+                    LiveWorld::ProgramAsk ask;
+                    ask.sender = command.value("sender", std::string{});
+                    ask.seq = command.value("seq", std::uint64_t{0});
+                    ask.doing = command.value("doing", std::string{});
+                    ask.why = command.value("why", std::string{});
+                    ask.for_s = command.value("for_s", 0.0);
+                    if (command.contains("toward") && command.at("toward").is_array() &&
+                        command.at("toward").size() == 3) {
+                        const nlohmann::json &t = command.at("toward");
+                        ask.has_toward = true;
+                        ask.toward_m = Vec3{t.at(0).get<double>(), t.at(1).get<double>(), t.at(2).get<double>()};
+                    }
+                    const unsigned id = command.at("program").get<unsigned>();
+                    const std::string answer = world->behave(id, ask);
+                    if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
+                    reply["asked"] = answer;
                     const nlohmann::json machines = machinesOf(*world);
                     if (machines.is_object() && machines.contains("programs"))
                         for (const nlohmann::json &each : machines.at("programs"))

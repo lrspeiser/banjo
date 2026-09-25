@@ -16,6 +16,13 @@
 //    the night on what its battery holds; low, it rests where it is, and says
 //    it is waiting for the morning; nothing charges it in the dark; and when the
 //    morning sun has charged it, it roams on.
+// 7. Asked to do something for a while (behave) -- by a person at its panel,
+//    or by whatever thinks for it -- it does that instead of deciding for
+//    itself, and goes on as it would have when the while is up: asked to back
+//    off it backs off; asked to wait it holds still, on, until asked otherwise;
+//    asked to face a point it turns on the spot until its front is towards it
+//    and waits there; a stale ask changes nothing; turned off it drops the
+//    ask; and a saved world gives it back doing what it was asked, as far in.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -602,6 +609,125 @@ void itRestsThroughTheNightAndRoamsOnInTheMorning() {
 
 } // namespace
 
+void askIt(LiveWorld &world, unsigned program, const std::string &doing, double for_s, std::uint64_t seq,
+           const std::string &why = "the test asked", const Vec3 *toward = nullptr) {
+    LiveWorld::ProgramAsk ask;
+    ask.sender = "test";
+    ask.seq = seq;
+    ask.doing = doing;
+    ask.why = why;
+    ask.for_s = for_s;
+    if (toward != nullptr) {
+        ask.has_toward = true;
+        ask.toward_m = *toward;
+    }
+    const std::string said = world.behave(program, ask);
+    if (said != "applied") throw std::runtime_error("the program did not take the ask: " + said);
+}
+
+void itDoesWhatItIsAskedForAWhile() {
+    Rover r = roverOnTheShore();
+    LiveWorld &world = *r.world;
+    runIt(world, r.program, true, 1);
+    for (int i = 0; i < 240; ++i) tick(world);
+    require(programOf(world, r.program).doing == "going forward", "it goes forward on its own");
+    // Asked to back off for two and a half seconds: it backs off -- against
+    // the way it was going, once its wheels have stopped turning forward --
+    // says why it was asked, and when the while is up it goes forward again
+    // on its own.
+    Vec3 was = posed(world.poses(), "rover").position_m;
+    Vec3 going = posed(world.poses(), "rover").velocity_m_s;
+    going.y = 0.0;
+    require(length(going) > 0.1, "it was going somewhere: " + std::to_string(length(going)) + " m/s");
+    going = normalized(going);
+    askIt(world, r.program, "backing off", 2.5, 2, "something is in its way");
+    LiveProgram said = programOf(world, r.program);
+    require(said.doing == "backing off" && said.why == "something is in its way" && said.asked == "backing off" &&
+                said.asked_by == "test",
+            "asked to back off, it backs off and says why: " + said.doing + ", " + said.why);
+    for (int i = 0; i < 240; ++i) tick(world);
+    was = posed(world.poses(), "rover").position_m;
+    for (int i = 0; i < 240; ++i) tick(world);
+    const double along = dot(posed(world.poses(), "rover").position_m - was, going);
+    std::cout << "    asked to back off: in its second second it went " << along << " m along the way it was going\n";
+    require(along < -0.05, "in its second second it has backed off: " + std::to_string(along) + " m");
+    require(programOf(world, r.program).doing == "backing off", "and is still backing off");
+    for (int i = 0; i < 240; ++i) tick(world);
+    said = programOf(world, r.program);
+    require(said.doing == "going forward" && said.asked.empty() && said.why.find("goes on") != std::string::npos,
+            "the second up, it goes on as it would have: " + said.doing + ", " + said.why);
+    // A stale ask changes nothing.
+    LiveWorld::ProgramAsk stale;
+    stale.sender = "test";
+    stale.seq = 2;
+    stale.doing = "waiting";
+    require(world.behave(r.program, stale) == "stale", "an ask no newer than the last from its sender is stale");
+    require(programOf(world, r.program).doing == "going forward", "and changes nothing");
+    // Asked to wait until asked otherwise: it holds still, on, for as long as
+    // that is; asked nothing more, it goes on.
+    askIt(world, r.program, "waiting", 0.0, 3, "the person is talking to it");
+    for (int i = 0; i < 480; ++i) tick(world);
+    was = posed(world.poses(), "rover").position_m;
+    for (int i = 0; i < 480; ++i) tick(world);
+    said = programOf(world, r.program);
+    require(said.doing == "waiting" && said.power && said.asked_s > 3.9,
+            "asked to wait, it is still waiting four seconds on: " + said.doing);
+    require(length(posed(world.poses(), "rover").position_m - was) < 0.02, "and holds still");
+    askIt(world, r.program, "", 0.0, 4);
+    require(programOf(world, r.program).doing == "going forward" && programOf(world, r.program).asked.empty(),
+            "asked nothing more, it goes on");
+    // Asked to face a point behind it -- back the way it came -- it turns on
+    // the spot until its front is towards it, then waits, facing it. Where its
+    // front is comes from the way it was going, not the body's own axes.
+    for (int i = 0; i < 240; ++i) tick(world);
+    const LiveBodyPose here = posed(world.poses(), "rover");
+    going = here.velocity_m_s;
+    going.y = 0.0;
+    require(length(going) > 0.1, "it was going somewhere again");
+    going = normalized(going);
+    const Vec3 behind = here.position_m - 3.0 * going;
+    askIt(world, r.program, "facing", 0.0, 5, "the person came to talk to it", &behind);
+    said = programOf(world, r.program);
+    require(said.doing == "turning left" || said.doing == "turning right",
+            "asked to face what is behind it, it turns on the spot: " + said.doing);
+    double turned_s = 0.0;
+    for (int i = 0; i < 16 * 240; ++i) {
+        tick(world);
+        turned_s += kDt;
+        if (programOf(world, r.program).doing == "waiting") break;
+    }
+    said = programOf(world, r.program);
+    // Facing it: let go forward for a moment, it would go towards it.
+    const LiveBodyPose faced = posed(world.poses(), "rover");
+    const Vec3 to = normalized(Vec3{behind.x - faced.position_m.x, 0.0, behind.z - faced.position_m.z});
+    std::cout << "    asked to face a point behind it: " << said.doing << " after " << turned_s << " s\n";
+    require(said.doing == "waiting", "and waits facing it: " + said.doing);
+    askIt(world, r.program, "going forward", 1.0, 6);
+    for (int i = 0; i < 240; ++i) tick(world);
+    const Vec3 went = posed(world.poses(), "rover").position_m - faced.position_m;
+    const double towards = length(went) > 1e-6 ? dot(normalized(went), to) : 0.0;
+    std::cout << "    then going forward for a second, it went " << length(went) << " m, cos " << towards
+              << " to the point\n";
+    require(towards > 0.9, "and going forward from there it goes towards it");
+    // A saved world gives it back doing what it was asked, as far in.
+    askIt(world, r.program, "backing off", 5.0, 7, "saved while backing off");
+    for (int i = 0; i < 240; ++i) tick(world);
+    std::string why;
+    const std::string saved = world.snapshot(why);
+    require(!saved.empty(), "the world would not save: " + why);
+    if (!saved.empty()) {
+        const auto again = LiveWorld::open(shoreRoom(), saved);
+        const LiveProgram is = programOf(*again, r.program);
+        require(is.asked == "backing off" && is.asked_by == "test" && is.asked_for_s == 5.0 && is.asked_s > 0.9 &&
+                    is.doing == "backing off" && is.why == "saved while backing off",
+                "opened again, it is doing what it was asked, as far in: " + is.doing + ", " + is.asked);
+    }
+    // Turned off, it drops what it was asked.
+    runIt(world, r.program, false, 8);
+    said = programOf(world, r.program);
+    require(said.doing == "stopped" && said.asked.empty(), "turned off, it drops the ask");
+}
+
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
@@ -609,6 +735,7 @@ int main() {
         {"a saved rover roams on", aSavedRoverRoamsOn},
         {"it rests in the sun and roams on", itRestsInTheSunAndRoamsOn},
         {"it rests through the night and roams on in the morning", itRestsThroughTheNightAndRoamsOnInTheMorning},
+        {"it does what it is asked for a while", itDoesWhatItIsAskedForAWhile},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;

@@ -1711,6 +1711,7 @@ struct LiveWorld::Impl {
     // way ahead -- or kTurnMostS has passed, when it goes on regardless. Before
     // every step; nothing is timed here (settlePrograms).
     void decideProgram(Program &p) {
+        constexpr double kPi = 3.14159265358979323846;
         constexpr double kBackOffS = 1.2;
         constexpr double kTurnMostS = 6.0;
         constexpr double kSideTurnDeg = 50.0;
@@ -1778,9 +1779,67 @@ struct LiveWorld::Impl {
             return "its battery is low, and nothing is charging it";
         };
         const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
-        if (!s.power) {
+        // Asked to do something (LiveWorld::behave): that, until it has done it
+        // for as long as it was asked, and then on as it would have. Turned
+        // off or run low it drops the ask: it cannot do it anyway.
+        const auto askDone = [&](const char *why) {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+            into("going forward", why);
+        };
+        if (!s.asked.empty() && (!s.power || low)) {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+        }
+        if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
+            askDone("it has done what it was asked, and goes on");
+        } else if (!s.asked.empty()) {
+            constexpr double kFacedDeg = 6.0;
+            constexpr double kNearM = 1.0;
+            // The same ask again is the same doing: doing_s and turned_deg run on.
+            const auto stay = [&](const char *doing) {
+                if (s.doing != doing) into(doing, s.asked_why);
+                else s.why = s.asked_why;
+            };
+            if (s.asked == "facing" || s.asked == "approaching") {
+                // Which way, and how far, its front is from where it was asked
+                // to look: positive is to its left, as heading is measured.
+                const auto found = index_of.find(s.body);
+                Vec3 at{};
+                if (found != index_of.end() && inWorld(found->second))
+                    at = world->snapshot(body_of[found->second]).center_of_mass_world_m;
+                const double dx = s.asked_toward_m.x - at.x, dz = s.asked_toward_m.z - at.z;
+                const double away = std::sqrt(dx * dx + dz * dz);
+                double off = std::atan2(dx, dz) - p.heading_rad;
+                while (off > kPi) off -= 2.0 * kPi;
+                while (off < -kPi) off += 2.0 * kPi;
+                const double off_deg = off * 180.0 / kPi;
+                if (s.asked == "approaching" && away <= kNearM) stay("waiting");
+                else if (std::abs(off_deg) > kFacedDeg && !(s.asked == "approaching" && s.doing == "going forward" &&
+                                                            std::abs(off_deg) < 3.0 * kFacedDeg)) {
+                    const char *doing = off_deg > 0.0 ? "turning left" : "turning right";
+                    if (s.doing != doing) {
+                        into(doing, s.asked_why);
+                        p.turn_sign = off_deg > 0.0 ? 1 : -1;
+                        p.turn_least_deg = std::abs(off_deg);
+                    } else {
+                        s.why = s.asked_why;
+                    }
+                } else if (s.asked == "approaching") {
+                    stay("going forward");
+                } else {
+                    stay("waiting");
+                }
+            } else {
+                stay(s.asked.c_str());
+            }
+        } else if (!s.power) {
             if (s.doing != "stopped") into("stopped", "off");
-        } else if (s.doing == "stopped") {
+        } else if (s.doing == "stopped" || s.doing == "waiting") {
             into("going forward", "nothing in its way");
         } else if (s.doing == "resting") {
             if (s.charge_share >= s.rest_until) into("going forward", "its battery is charged again");
@@ -1823,7 +1882,7 @@ struct LiveWorld::Impl {
             else if (s.doing_s >= kTurnMostS)
                 into("going forward", "it could not turn clear in time, so it goes on");
         }
-        int l = 0, r = 0;   // stopped, or resting: held on their brakes
+        int l = 0, r = 0;   // stopped, resting or waiting: held on their brakes
         if (s.doing == "going forward") l = r = 1;
         else if (s.doing == "backing off") l = r = -1;
         else if (s.doing == "turning left") l = -1, r = 1;
@@ -1852,6 +1911,7 @@ struct LiveWorld::Impl {
             readProgram(p);
             if (!p.said.power) continue;
             p.said.doing_s += dt_s;
+            if (!p.said.asked.empty()) p.said.asked_s += dt_s;
             if (p.said.doing == "turning left" || p.said.doing == "turning right") {
                 double turned = p.heading_rad - was;
                 while (turned > kPi) turned -= 2.0 * kPi;
@@ -4515,6 +4575,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.rest_below = o.contains("rest_below") ? numberFrom(o.at("rest_below")) : 0.0;
         p.said.rest_until = o.contains("rest_until") ? numberFrom(o.at("rest_until")) : 0.0;
         p.said.rests = o.value("rests", 0U);
+        p.said.asked = o.value("asked", std::string{});
+        p.said.asked_why = o.value("asked_why", std::string{});
+        p.said.asked_by = o.value("asked_by", std::string{});
+        p.said.asked_for_s = o.contains("asked_for_s") ? numberFrom(o.at("asked_for_s")) : 0.0;
+        p.said.asked_s = o.contains("asked_s") ? numberFrom(o.at("asked_s")) : 0.0;
+        if (o.contains("asked_toward_m")) p.said.asked_toward_m = vecFrom(o.at("asked_toward_m"));
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
@@ -6051,6 +6117,51 @@ std::string LiveWorld::run(unsigned program, const ProgramCommand &command) {
     p->said.sender = command.sender;
     p->said.seq = command.seq;
     // What it will do, said at once, and its wheels told.
+    impl_->decideProgram(*p);
+    return "applied";
+}
+
+std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
+    Impl::Program *p = nullptr;
+    for (Impl::Program &each : impl_->programs)
+        if (each.said.id == program) p = &each;
+    if (p == nullptr) return "there is no program " + std::to_string(program);
+    if (ask.sender.size() > 64) return "a sender's name is 64 characters at most";
+    static const char *const kAsks[] = {"going forward", "backing off", "turning left", "turning right",
+                                        "waiting",       "facing",      "approaching",  ""};
+    if (std::find(std::begin(kAsks), std::end(kAsks), ask.doing) == std::end(kAsks))
+        return "a program can be asked to be going forward, backing off, turning left, turning right, waiting, "
+               "facing or approaching, or asked nothing (\"\")";
+    if (!std::isfinite(ask.for_s) || ask.for_s < 0.0 || ask.for_s > 60.0)
+        return "a program is asked for from 0 s (until asked otherwise) to 60 s";
+    if (ask.why.size() > 200) return "why it was asked is 200 characters at most";
+    const bool needs_toward = ask.doing == "facing" || ask.doing == "approaching";
+    if (needs_toward && (!ask.has_toward || !std::isfinite(ask.toward_m.x) || !std::isfinite(ask.toward_m.z)))
+        return "facing and approaching need a point in the world to look toward";
+    if (ask.seq != 0) {
+        for (std::size_t i = 0; i < p->seen.size(); ++i) {
+            if (p->seen[i].first != ask.sender) continue;
+            if (ask.seq <= p->seen[i].second) return "stale";
+            p->seen.erase(p->seen.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+        p->seen.emplace_back(ask.sender, ask.seq);
+        constexpr std::size_t kSendersKept = 8;
+        if (p->seen.size() > kSendersKept) p->seen.erase(p->seen.begin());
+    }
+    LiveProgram &s = p->said;
+    s.asked = ask.doing;
+    s.asked_why = ask.doing.empty() ? std::string{} : ask.why.empty() ? "it was asked to" : ask.why;
+    s.asked_by = ask.doing.empty() ? std::string{} : ask.sender;
+    s.asked_for_s = ask.doing.empty() ? 0.0 : ask.for_s;
+    s.asked_s = 0.0;
+    s.asked_toward_m = needs_toward ? ask.toward_m : Vec3{};
+    if (ask.doing.empty() && s.power && s.doing != "resting") {
+        // Asked nothing more: it decides again from going forward, as it does
+        // from stopped, rather than from whatever it was asked last.
+        s.doing = "stopped";
+    }
+    impl_->readProgram(*p);
     impl_->decideProgram(*p);
     return "applied";
 }
@@ -14038,6 +14149,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"rest_below", savedNumber(p.said.rest_below)},
                                 {"rest_until", savedNumber(p.said.rest_until)},
                                 {"rests", p.said.rests},
+                                {"asked", p.said.asked},
+                                {"asked_why", p.said.asked_why},
+                                {"asked_by", p.said.asked_by},
+                                {"asked_for_s", savedNumber(p.said.asked_for_s)},
+                                {"asked_s", savedNumber(p.said.asked_s)},
+                                {"asked_toward_m", savedVec(p.said.asked_toward_m)},
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},
