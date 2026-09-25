@@ -42,6 +42,12 @@ log = logging.getLogger(__name__)
 #: id, this is written as the turn goes, and the page reads it back.
 _PROGRESS: dict[str, dict[str, Any]] = {}
 _PROGRESS_LOCK = threading.Lock()
+#: How many times one tool may be refused before this turn stops calling it,
+#: and how many refusals in all before the turn gives up and answers with what
+#: it has. A turn that has been told the same thing twice has been told.
+REFUSALS_A_TOOL = 3
+REFUSALS_A_TURN = 8
+
 #: How many turns are remembered, and for how long. A turn is small; this is
 #: only here so that a long session does not grow without end.
 PROGRESS_KEPT = 32
@@ -139,14 +145,19 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
-- Define the finished product\'s key interaction points with define_interaction_points:
-  grip/use plus real receiving surfaces or cargo interiors. Positions are in the
-  design frame; receiving position is on the floor and size_m is usable space.
-  Update these points when geometry changes. Metadata never creates a cavity.
-- Every finished product needs a primary_use program. Call program_use to write
-  its purpose-specific core action when creating or completing it; it is stored
-  with the design, exposed in ProductGraph controls and carried into the world.
-  Never claim a product is operational if its intended action is unsupported.
+- define_interaction_points says where a finished product is taken hold of and
+  what it receives: grip/use points, plus real receiving surfaces or cargo
+  interiors. Positions are in the design frame; a receiving position is on the
+  floor and size_m is the usable space above it. Metadata never creates a
+  cavity. ONLY when the person is making or finishing a product, when they ask
+  for it, or when GEOMETRY you just changed has moved the points -- a change of
+  material has moved nothing.
+- A finished product needs a primary_use program, written with program_use when
+  it is being MADE or FINISHED, or when the person asks what it does. It is
+  stored with the design, exposed in ProductGraph controls and carried into the
+  world. Never claim a product is operational if its intended action is
+  unsupported. Do not write one as a bonus on top of an edit that had nothing to
+  do with what the thing is for.
 - MAKE YOUR BEST GUESS AND GO. Do not ask before you start. Every round trip
   to ask something costs the person a wait as long as the work itself, and
   anything you do can be taken back -- take_it_back undoes it, and they know
@@ -161,6 +172,16 @@ Important behavior:
   Put what you would do first. Calling it ends your turn.
 - NEVER END A TURN WITH AN OPEN QUESTION IN PROSE. If you want a decision, that
   is what ask_the_person is for.
+- DO WHAT WAS ASKED AND STOP. Asked to change a material, change the material.
+  Do not also declare where the thing is held, write it a use, give it a skin
+  or run a test nobody mentioned. Measured: "make the table out of glass" was
+  done at the second round trip, in 13 seconds, and then spent 129 more on
+  interaction points and a usage program that nobody had asked for and that
+  were refused 27 times between them.
+- A REFUSAL IS INFORMATION, NOT A SETBACK. Read what it says and change that,
+  or leave the tool alone and say what you could not do. Calling it again the
+  same way gets the same answer and costs the person another wait. After a few
+  refusals of one tool this bench stops running it for the rest of the turn.
 - ONLY OFFER WHAT THIS BENCH CAN DO. Every alternative you name has to be one
   you could carry out with the tools you have, on the next turn, without asking
   anybody for anything. A part is one of the materials in the material enum,
@@ -721,6 +742,8 @@ class _State:
         self.app = app
         #: Which turn this is, so what it does can be watched while it happens.
         self.turn = turn
+        #: How many times each tool has refused in this turn.
+        self.refused: dict[str, int] = {}
         self.candidate = candidate
         self.selected_name = selected_name
         self.materials = materials
@@ -1204,10 +1227,37 @@ def _carry(response: dict[str, Any]) -> list[dict[str, Any]]:
             if item.get("type") in {"function_call", "message"}]
 
 
+def _what_it_is_looking_at(state: _State) -> str:
+    """The design as it stands, so a simple edit needs no round trip to learn it.
+
+    Every turn used to open by calling inspect_design, because the request said
+    nothing about what was on the bench. Two to three seconds to be told five
+    part names. They fit in a dozen lines.
+    """
+    measured = state.design.measure()
+    rows = [f"ON THE BENCH: a {state.design.kind} called {state.design.design_id}, "
+            f"{len(state.design.parts)} parts, {measured.get('mass_kg')} kg"
+            + (f", for: {state.design.purpose}" if state.design.purpose else ""),
+            f"SELECTED IN THE UI: {state.selected_name or 'nothing'}",
+            "PARTS (name, what it is, what it is made of, size in mm, middle in mm):"]
+    for part in state.design.parts:
+        rows.append("  {}, {}, {}, {}, {}".format(
+            part.name, part.role, part.material,
+            "x".join(f"{v * 1000:.0f}" for v in part.size_m),
+            " ".join(f"{v * 1000:.0f}" for v in part.center_m)))
+    rows.append("This is the design as it stands. Inspect further only when you need "
+                "something that is not here -- physics, joints, the library, the rack.")
+    return "\n".join(rows)
+
+
 def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str, str]]) -> str:
-    selected = state.selected_name or "none"
-    instructions = SYSTEM + f"\nCURRENT UI SELECTION: {selected}\nCURRENT ASSEMBLY: {state.design.kind}\n"
+    # The instructions and the tools are the same bytes every turn, so they stay
+    # cached; everything that varies goes after them, in `input`. They used to
+    # end with the selection and the assembly kind, which put two changing lines
+    # in front of 5,400 tokens of tool schema.
+    instructions = SYSTEM
     inputs: list[dict[str, Any]] = list(history)
+    inputs.append({"role": "user", "content": _what_it_is_looking_at(state)})
     inputs.append({"role": "user", "content": message})
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
@@ -1245,6 +1295,21 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
                 return _wrap_up(app, state, instructions, inputs + _carry(response),
                                 f"after {calls_used - 1} tool calls")
             name = str(call.get("name") or "")
+            # Measured on "make the table out of glass": 142 seconds, 34 round
+            # trips, and the edit itself was done at round 2. The other 129
+            # seconds were three refusals repeated NINE TIMES EACH -- program_use
+            # told "inspect cannot say ['distance_m', 'speed_m_s']" nine times,
+            # and asked again with the same two fields nine times. Being told
+            # the same thing twice and trying again is not a model problem this
+            # end can argue with; it is a loop that lets it.
+            already = state.refused.get(name, 0)
+            if already >= REFUSALS_A_TOOL:
+                outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
+                                "output": json.dumps({"ok": False, "error": (
+                                    f"{name} has been refused {already} times this turn and was "
+                                    "not run again. Leave it alone, finish anything else you "
+                                    "meant to do, and say plainly what you could not do.")})})
+                continue
             try:
                 args = json.loads(call.get("arguments") or "{}")
                 if not isinstance(args, dict): raise ValueError("tool arguments must be an object")
@@ -1256,7 +1321,18 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
                     return str(state.asking["question"])
             except Exception as problem:
                 state.trace.append({"tool": name or "unknown", "ok": False, "summary": str(problem)[:500]})
+                state.refused[name] = state.refused.get(name, 0) + 1
+                again = state.refused[name]
                 output = {"ok": False, "error": str(problem)}
+                if again >= 2:
+                    output["stop"] = (f"That is {again} refusals from {name} in this turn. Read the "
+                                      "message and change what it names, or leave the tool alone: "
+                                      "asking again the same way will be refused again.")
+                if sum(state.refused.values()) >= REFUSALS_A_TURN:
+                    outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
+                                    "output": json.dumps(output, allow_nan=False)})
+                    return _wrap_up(app, state, instructions, inputs + _carry(response) + outputs,
+                                    f"after {sum(state.refused.values())} refused tool calls")
             outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
                             "output": json.dumps(output, allow_nan=False)})
         # Carry the turn forward in `input` rather than pointing at a stored

@@ -303,6 +303,62 @@ class AQuestionComesWithAnswers(unittest.TestCase):
         rule = workshop_chat.SYSTEM
         self.assertIn("NEVER END A TURN WITH AN OPEN QUESTION IN PROSE", rule)
 
+    def test_it_is_handed_the_design_rather_than_made_to_ask(self):
+        """Every turn used to open by calling inspect_design, because the
+        request said nothing about what was on the bench: two to three seconds
+        to be told five part names that fit in a dozen lines.
+        """
+        state = workshop_chat._State(self.app, self.a_table(), "leg-1",
+                                     ["oak", "glass"], [])
+        looking = workshop_chat._what_it_is_looking_at(state)
+        self.assertIn("ON THE BENCH: a table", looking)
+        self.assertIn("SELECTED IN THE UI: leg-1", looking)
+        for part in ("top", "leg-1", "leg-2", "leg-3", "leg-4"):
+            self.assertIn(part, looking)
+        # What each part is made of, or it still has to ask to change a material.
+        self.assertIn("oak", looking)
+        # Short enough to be worth it: this is a saving of a round trip, not a
+        # swap of one cost for another.
+        self.assertLess(len(looking), 2000, looking)
+
+    def test_what_changes_comes_after_what_does_not(self):
+        """A cached prefix ends at the first byte that differs.
+
+        The selection and the assembly kind were the tail of `instructions`,
+        which put two lines that change every turn in front of 5,400 tokens of
+        tool schema. They belong in `input`, after everything fixed.
+        """
+        self.assertNotIn("CURRENT UI SELECTION", workshop_chat.SYSTEM)
+        self.assertNotIn("CURRENT ASSEMBLY", workshop_chat.SYSTEM)
+
+    def test_a_tool_refused_over_and_over_is_stopped(self):
+        """Measured on "make the table out of glass": 142 seconds, 34 round
+        trips, and the edit was done at round 2. The other 129 seconds were
+        three refusals repeated NINE TIMES EACH -- told "inspect cannot say
+        ['distance_m', 'speed_m_s']" nine times and asking again the same way
+        nine times. A loop that allows that is the bug.
+        """
+        state = workshop_chat._State(self.app, self.a_table(), None, ["oak"], [])
+        self.assertEqual({}, state.refused)
+        self.assertGreaterEqual(workshop_chat.REFUSALS_A_TOOL, 2)
+        self.assertGreater(workshop_chat.REFUSALS_A_TURN, workshop_chat.REFUSALS_A_TOOL)
+        rule = workshop_chat.SYSTEM
+        self.assertIn("A REFUSAL IS INFORMATION", rule)
+        self.assertIn("DO WHAT WAS ASKED AND STOP", rule)
+
+    def test_a_refusal_says_what_to_do_about_it(self):
+        """"inspect cannot say ['distance_m', 'speed_m_s']" names the fault and
+        leaves the fix to be guessed. It was guessed wrong nine times."""
+        from mcp import core_use, interaction_points
+        with self.assertRaises(ValueError) as caught:
+            core_use.checked_step({"do": "inspect", "distance_m": 0.2, "speed_m_s": 1.0})
+        self.assertIn("leave distance_m and speed_m_s out", str(caught.exception))
+        self.assertIn('{"do": "inspect"}', str(caught.exception))
+        with self.assertRaises(ValueError) as caught:
+            interaction_points.checked([{"id": "hold", "kind": "grip", "position_m": [0, 0, 0],
+                                         "size_m": [0.1, 0.1, 0.1]}])
+        self.assertIn("leave size_m out", str(caught.exception))
+
     def test_nothing_in_the_rules_tells_it_to_ask_first(self):
         """Told to make a table out of glass it did it, then asked three
         questions -- because the rules said both things.

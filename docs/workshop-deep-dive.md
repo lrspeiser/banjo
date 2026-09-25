@@ -284,6 +284,58 @@ plainly, with what was done about it.
 Both are pinned by tests on the prompt itself, including one that fails if any
 rule tells it to ask when the request is ambiguous.
 
+## 1d3. Where a turn's time actually goes: 142 seconds to 6
+
+**Fixed (2026-09-25).** The owner: *"if I want to change a table to glass, that
+should theoretically happen fast."* Measured against the real model, "make the
+table out of glass" took **142.4 seconds, 34 round trips and 32 tool calls**,
+and the physics work in it was **0.0 seconds**. The edit itself -- one
+`edit_components` call -- was finished at round 2, thirteen seconds in.
+
+The other 129 seconds were three refusals, repeated nine times each:
+
+| | |
+|---|---|
+| 9x | `program_use: inspect cannot say ['distance_m', 'speed_m_s']` |
+| 9x | `program_use: place cannot say ['distance_m', 'speed_m_s']` |
+| 9x | `define_interaction_points: only receiving points have size_m or max_mass_kg` |
+
+Twenty-seven of thirty tool calls failed, all for three reasons, each of which
+it had already been told. Nobody had asked for interaction points or a usage
+program in the first place.
+
+Three causes, and none of them is the model being slow.
+
+1. **The rules told it to do the extra work.** "Every finished product needs a
+   primary_use program... when creating or completing it" and "update these
+   points when geometry changes" -- read as applying to a material change. They
+   are scoped now: when a product is being MADE or FINISHED, when the person
+   asks, or when the geometry you just changed moved the points. A material
+   change moves nothing. (The third contradiction of this shape in two days;
+   see 1d2.)
+2. **The loop let it repeat a refused call.** Being told the same thing twice
+   and asking again is a loop that allows it, not an argument this end can win.
+   A tool refused three times is not run again this turn, a turn with eight
+   refusals wraps up with what it has, and the second refusal says so.
+3. **Nothing told it what it was looking at.** Every turn opened with
+   `inspect_design`, because the request never said what was on the bench. The
+   design now arrives with the message: what it is, what it weighs, and every
+   part with its role, material, size and middle. Twelve lines, and it saves a
+   round trip on every single turn.
+
+A fourth, smaller: the only lines of `instructions` that changed per turn --
+the UI selection and the assembly kind -- sat in front of 5,400 tokens of tool
+schema. A cached prefix ends at the first byte that differs, so what changes
+now goes last, in `input`.
+
+**Measured after: 5.7 to 7.9 seconds, 2 round trips, 1 tool call, nothing
+refused.** The same table, the same model, the same request. Harder requests
+scale the same way: four legs resized and weighed is 21 to 30 seconds over
+3 to 4 round trips.
+
+What is left is nearly all the model thinking, which is the floor: the work
+under it is still 0.0 seconds.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot
