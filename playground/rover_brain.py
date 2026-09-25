@@ -155,9 +155,12 @@ class JevClient:
     def ask(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps({"model": self.model, "state": state, "questions": questions},
                           allow_nan=False).encode()
+        # A user agent: a gateway behind Cloudflare (thejevai.com) answers
+        # Python's default one 403 before the request reaches anything.
         req = request.Request(self.url, data=body, method="POST",
                               headers={"Authorization": "Bearer " + self.api_key,
-                                       "Content-Type": "application/json"})
+                                       "Content-Type": "application/json", "Accept": "application/json",
+                                       "User-Agent": "banjo-playground/1.0"})
         try:
             with request.urlopen(req, timeout=self.timeout_s) as response:
                 raw = response.read(1024 * 1024 + 1)
