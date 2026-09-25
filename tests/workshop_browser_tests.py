@@ -124,8 +124,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         what the old tabs held under "Bench extras", and a person opens it.
         """
         self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}); if(!e) return 0;
-          let n=e.parentElement, opened=0;
-          while(n){{ if(n.tagName==='DETAILS' && !n.open){{ n.open=true; opened++; }} n=n.parentElement; }}
+          let n=e.parentElement, opened=0, step=null;
+          while(n){{ if(n.tagName==='DETAILS' && !n.open){{ n.open=true; opened++; }}
+                     if(n.classList && n.classList.contains('ws-step-pane') && n.hidden) step=n.dataset.mode;
+                     n=n.parentElement; }}
+          // A control in another step is reached by going to that step, which
+          // is what a person does; the bench shows one step at a time.
+          if(step) dispatchEvent(new CustomEvent('banjo-workshop-mode',{{detail:step}}));
           return opened;}})()""")
 
     def open_extras(self, mode="build"):
@@ -146,7 +151,16 @@ class WorkshopBrowserRegression(unittest.TestCase):
 
     @staticmethod
     def _mode_of(selector):
-        return "test" if 'data-mode="test"' in selector or "data-mode='test'" in selector else "build"
+        """Which step of the bench a [data-mode=...] selector asks for.
+
+        There are four now -- start, build, test, details -- and they are the
+        same words the workspace has always been told. This used to fold every
+        one that was not "test" into "build", so asking for Keep got Change.
+        """
+        for mode in ("start", "build", "test", "details"):
+            if f'data-mode="{mode}"' in selector or f"data-mode='{mode}'" in selector:
+                return mode
+        return "build"
 
     def click(self, selector):
         if "data-mode" in selector:
@@ -159,10 +173,15 @@ class WorkshopBrowserRegression(unittest.TestCase):
         if "data-mode" in selector:
             return self.open_extras(self._mode_of(selector))
         self.reveal(selector)
-        self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest'}})")
+        # 'center', not 'nearest': a control sitting on the pane's bottom edge
+        # is scrolled far enough to be hit, not just far enough to be inside.
+        self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'center'}})")
         point=self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();
           const x=r.left+r.width/2,y=r.top+r.height/2;
-          return {{x,y,visible:r.width>0&&r.height>0,hit:e.contains(document.elementFromPoint(x,y))}};}})()""")
+          const over=document.elementFromPoint(x,y);
+          return {{x,y,visible:r.width>0&&r.height>0,hit:e.contains(over),
+                   over:over?over.tagName+(over.id?'#'+over.id:'')+(over.className?'.'+String(over.className).split(' ')[0]:''):null,
+                   inner:[innerWidth,innerHeight]}};}})()""")
         self.assertTrue(point["visible"] and point["hit"], f"Hidden/obscured control {selector}: {point}")
         for event in ("mousePressed","mouseReleased"):
             self.page.send("Input.dispatchMouseEvent",{"type":event,"x":point["x"],"y":point["y"],"button":"left","clickCount":1})
@@ -491,12 +510,44 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # and about fifty working controls were never found. There is no such
         # drawer now.
         self.assertEqual(0, self.js("document.querySelectorAll('#ws-extras').length"))
-        named = self.js("[...document.querySelectorAll('.ws-right > .ws-group > h2,"
-                        " .ws-right > .ws-group > summary')].map(h=>h.textContent)")
-        for heading in ("The part you picked", "Try it", "Materials and making it",
-                        "Save and reopen", "What you changed", "How it measures up",
-                        "How the bench works"):
-            self.assertIn(heading, named)
+        # And it is not six open sections either. The owner, looking at those:
+        # "there are so many buttons and fields I don't have a clue where to
+        # begin on it." Four steps, one showing, with the chat above them.
+        self.assertEqual(["Ask", "Change", "Try", "Keep"],
+                         self.js("[...document.querySelectorAll('.ws-step-tab')].map(b=>b.textContent)"))
+        self.assertEqual(1, self.js("document.querySelectorAll('.ws-step-pane:not([hidden])').length"),
+                         "one step at a time")
+        self.assertEqual("build", self.js("document.querySelector('.ws-step-tab[aria-selected=true]').dataset.mode"))
+        # The chat is above the steps, because it is another way of doing any
+        # of them rather than a fifth thing to do.
+        self.assertEqual(["ws-chat-home", "ws-held-box"], self.js(
+            "[...document.querySelector('.ws-right').children].slice(0,2).map(e=>e.id)"))
+        named = self.js("[...document.querySelectorAll('.ws-right > .ws-group > summary')].map(h=>h.textContent)")
+        self.assertEqual(["How it measures up", "How the bench works"], named)
+
+    def test_each_step_holds_what_that_step_is_for(self):
+        """Saving used to sit under the test bench, because an unnamed field
+        follows the last heading and the heading before it was the bench's."""
+        where = lambda sel: self.js(
+            f"document.querySelector({json.dumps(sel)}).closest('.ws-step-pane')?.dataset.mode")
+        self.assertEqual("start", where("#ws-product-catalog"))
+        self.assertEqual("start", where("#ws-user-library"))
+        self.assertEqual("start", where("#ws-saved-designs"))
+        self.assertEqual("build", where("#ws-component-editor"))
+        self.assertEqual("build", where("#ws-history"))
+        self.assertEqual("test", where("#ws-test-catalog"))
+        self.assertEqual("details", where("#ws-bom-box"))
+        self.assertEqual("details", where("#ws-install-box"))
+        self.assertEqual("details", where("#ws-save-name"))
+        self.assertEqual("details", where("#ws-save-design"))
+
+    def test_picking_a_part_takes_you_to_the_step_that_changes_it(self):
+        self.click('[data-mode="test"]')
+        self.assertEqual("test", self.js("document.querySelector('.ws-step-tab[aria-selected=true]').dataset.mode"))
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
+        self.wait("document.querySelector('.ws-step-tab[aria-selected=true]').dataset.mode==='build'")
+        self.assertFalse(self.js("document.querySelector('#ws-step-build').hidden"))
+        self.assertIn("leg-1", self.js("document.querySelector('#ws-selected-part').textContent"))
 
     def test_an_edit_can_be_taken_back_and_what_you_did_is_listed(self):
         """There was no undo. None.
@@ -542,13 +593,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js("window.confirm=()=>true")
         self.js(f"{mine % repr('A better name')}.querySelector('.ws-keep-bin').click()")
         self.wait(f"!{mine % repr('A better name')}")
-        # And the things that were buried are inside them, on screen.
+        # Everything you can OPEN is one step: the products to start from, your
+        # own parts, and what you saved.
         for heading in ("Product library", "My library", "Saved designs"):
             self.assertIn(heading, self.js(
-                "[...document.querySelectorAll('#ws-group-save h2, #ws-group-save h3')]"
+                "[...document.querySelectorAll('#ws-step-start h2, #ws-step-start h3')]"
                 ".map(h=>h.textContent)"))
-        # The four a person reaches for are open; only the two that describe how
-        # the bench works are shut.
+        # Only the two that describe the bench rather than the work are drawers.
         self.assertEqual(["ws-group-measure", "ws-group-plumbing"],
                          self.js("[...document.querySelectorAll('.ws-right > details.ws-group')]"
                                  ".map(d=>d.id)"))

@@ -101,6 +101,33 @@ The cheapest work in the whole list.
   no custom entry, so building part by part is only reachable through the chat.
   (`mcp/workshop.py:791-794`)
 
+## 1a. Where to begin
+
+**Done (2026-09-24).** The right pane has been wrong twice in one day. It was
+one shut drawer called "Bench extras" holding about fifty working controls, and
+nobody ever opened it. Un-burying it made six named sections, all open, and the
+owner said: *"there are so many buttons and fields in the right nav of the
+workshop I don't have a clue where to begin on it."*
+
+Both are the same fault, and it was never that the controls were visible: there
+was no ORDER OF WORK, so every control looked equally like the next thing to do.
+
+The pane is four steps now and you see one: **Ask** what to make, **Change** it,
+**Try** it, **Keep** it. The chat sits above them, because it is another way of
+doing any of the four rather than a fifth step. Inside Change, the two things a
+person reaches for are out and the other six are drawers with the names they
+already had.
+
+Measured, on opening the bench: **113 controls on screen before, 30 after** --
+28 in Change and the chat's two. Nothing was deleted and nothing went behind an
+unnamed lid; every drawer says what is in it.
+
+The step names are what a person is doing; the keys under them are the modes
+the workspace has always used (`start`, `build`, `test`, `details`), so the
+viewport and the test scheduler go on hearing what they listened for. Picking a
+part -- in the list or in the view -- takes you to Change, and picking a test
+takes you to Try, so you are never left looking at the wrong pane.
+
 ## 2. Test it
 
 **Done (2026-09-24).** There were three testing systems and they did not agree;

@@ -290,3 +290,22 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-keep-small{border:1px solid #3d4958;background:#0d141c;color:#b7c2d0;border-radius:.35rem;
   padding:.18rem .45rem;font:inherit;font-size:.68rem;cursor:pointer}
 .ws-keep-bin:hover{border-color:#d96f6f;color:#efa6a6}
+/* One step at a time. The chat is above them, because it is another way of
+   doing any of the four rather than a fifth thing to do. */
+.ws-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:.3rem;margin:.9rem 0 .2rem;
+  border-top:1px solid #27313d;padding:.7rem 0 .5rem;
+  /* Sticky: a step's content is taller than the pane, and the four steps are
+     the one thing you must be able to reach wherever you have scrolled to. */
+  position:sticky;top:-.85rem;background:#111821;z-index:3}
+.ws-step-tab{border:1px solid #394757;background:#111923;color:#b9c6d3;border-radius:.45rem;
+  padding:.45rem .3rem;cursor:pointer;font:inherit;font-size:.78rem}
+.ws-step-tab:hover{border-color:#65778b}
+.ws-step-tab[aria-selected="true"]{background:#dce7f5;color:#111820;border-color:#dce7f5;font-weight:700}
+.ws-step-pane[hidden]{display:none!important}
+.ws-step-about{margin:.5rem 0 .2rem;font-size:.74rem;color:#8fa3b8;line-height:1.4}
+.ws-step-pane>section:first-of-type{margin-top:.2rem}
+/* A named drawer inside a step. Nothing is swept into it that the summary
+   does not say is in it. */
+.ws-fold{margin-top:.7rem;border-top:1px solid #27313d;padding-top:.5rem}
+.ws-fold>summary{cursor:pointer;color:#8fa3b8;font-size:.64rem;letter-spacing:.16em;
+  text-transform:uppercase;font-weight:700;list-style:revert}

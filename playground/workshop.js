@@ -671,6 +671,7 @@ function pickPart(event) {
   const hit = raycaster.intersectObjects(group.children, false)
     .find((item) => hitPartName(item));
   if (build.placing) { placeAtHit(hit); return; }
+  setWorkspaceMode("build");
   bench.selectedPart = hitPartName(hit);
   bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
   // A new spot: the last push's colours no longer describe what is selected.
@@ -1131,11 +1132,45 @@ function cardify(select, rootId, cardClass, onPick) {
   return root;
 }
 
-// The workspace was told which of three tabs was showing. One screen has no
-// tabs, so the same word is said when the thing that used to need it happens.
+// Which step of the work is showing. The word is the same one the workspace
+// has always been told -- the viewport and the test scheduler listen for it --
+// and now it also decides which step of the right pane you can see.
 function setWorkspaceMode(mode) {
   if (workspace.mode === mode) return;
   dispatchEvent(new CustomEvent("banjo-workshop-mode", { detail: mode }));
+}
+
+// A run of nodes under a heading becomes a drawer with that heading's name.
+// The headings were already there; all this does is decide which of them a
+// person has to open. Everything stays reachable and stays where it was.
+function foldSections(root, keepOpen) {
+  if (!root) return;
+  const open = new Set(keepOpen.map((name) => name.toLowerCase()));
+  const runs = [];
+  for (const node of [...root.children]) {
+    if (/^H[1-6]$/.test(node.tagName)) runs.push({ heading: node, under: [] });
+    else if (runs.length) runs.at(-1).under.push(node);
+  }
+  for (const run of runs) {
+    const said = (run.heading.textContent || "").trim();
+    if (open.has(said.toLowerCase()) || !run.under.length) continue;
+    const box = make("details", { class:"ws-group ws-drawer ws-fold" });
+    box.append(make("summary", {}, said));
+    run.heading.replaceWith(box);
+    for (const node of run.under) box.append(node);
+  }
+}
+
+// Show one step and no other. Called on every mode change, including the ones
+// the page makes for you: picking a part takes you to Change, picking a test
+// takes you to Try, so you are never left looking at the wrong pane.
+function showStep(mode) {
+  for (const pane of document.querySelectorAll(".ws-step-pane")) {
+    pane.hidden = pane.dataset.mode !== mode;
+  }
+  for (const tab of document.querySelectorAll(".ws-step-tab")) {
+    tab.setAttribute("aria-selected", String(tab.dataset.mode === mode));
+  }
 }
 
 function installBench() {
@@ -1207,39 +1242,57 @@ function installBench() {
   bar.append(views, apartLabel);
   viewport.append(bar);
 
-  // Right: the chat, what it is held to, and then the bench itself in named
-  // sections. Everything below used to be swept into one collapsed <details>
-  // called "Bench extras" whose summary was grey 0.74rem text. Fifty working
-  // controls lived in there -- every way of saving, every way of testing and
-  // every way of editing a part -- and nobody opened it. The bench was not
-  // short of what it could do; it was short of anywhere to see it.
+  // Right: the chat, always, and under it one step of the work at a time.
+  //
+  // This pane has been wrong twice. It was one shut drawer called "Bench
+  // extras" holding about fifty working controls, and nobody ever opened it.
+  // Then it was six named sections, all open, and the owner said: "there are
+  // so many buttons and fields I don't have a clue where to begin". Both are
+  // the same fault. The controls were never the problem; there was no ORDER
+  // OF WORK, so every one of them looked equally like the next thing to do.
+  //
+  // Four steps, and you see one: Ask what to make, Change it, Try it, Keep it.
+  // Nothing is deleted and nothing is hidden behind an unnamed lid -- the step
+  // you are not in is a click away and says what it holds. The chat sits above
+  // them because it is another way of doing any of the four, not a fifth step.
   const chatForm = $("#ws-component-chat");
   const chatHome = make("section", { id:"ws-chat-home" });
   chatHome.append(make("h2", {}, "Chat"));
   const heldBox = make("section", { id:"ws-held-box" });
   heldBox.append(make("h2", {}, "Held to"), make("div", { id:"ws-held" }));
 
-  // The four that a person reaches for are sections, open. The two that
-  // describe how the bench works are drawers, shut.
-  const group = (id, title) => {
-    const box = make("section", { id, class:"ws-group" });
-    box.append(make("h2", {}, title));
-    return box;
-  };
+  // The step names are what a person is doing, not what the code calls it; the
+  // mode keys underneath are the ones the workspace has always used, so the
+  // viewport and the test scheduler go on hearing what they listened for.
+  const STEPS = [
+    { mode:"start", name:"Ask", about:"Which product to start from, your own parts, and anything you saved." },
+    { mode:"build", name:"Change", about:"The part you picked, building part by part, and taking a change back." },
+    { mode:"test", name:"Try", about:"Put it in a little world with ground and a sky, and do something to it." },
+    { mode:"details", name:"Keep", about:"What it is made of, making it in the world, and saving it." },
+  ];
+  const strip = make("div", { class:"ws-steps", role:"tablist", "aria-label":"What you are doing" });
+  const groups = {};
+  for (const step of STEPS) {
+    const tab = make("button", { type:"button", class:"ws-step-tab", role:"tab",
+                                 "data-mode":step.mode, "aria-selected":String(step.mode === workspace.mode) }, step.name);
+    tab.onclick = () => setWorkspaceMode(step.mode);
+    strip.append(tab);
+    const pane = make("section", { id:`ws-step-${step.mode}`, class:"ws-step-pane", role:"tabpanel",
+                                   "data-mode":step.mode });
+    pane.hidden = step.mode !== workspace.mode;
+    pane.append(make("p", { class:"ws-step-about" }, step.about));
+    groups[step.mode] = pane;
+  }
+  // Two drawers under the steps, shut, because they describe the bench rather
+  // than being a step of the work.
   const drawer = (id, title) => {
     const box = make("details", { id, class:"ws-group ws-drawer" });
     box.append(make("summary", {}, title));
     return box;
   };
-  const groups = {
-    part: group("ws-group-part", "The part you picked"),
-    test: group("ws-group-test", "Try it"),
-    make: group("ws-group-make", "Materials and making it"),
-    save: group("ws-group-save", "Save and reopen"),
-    history: group("ws-group-history", "What you changed"),
-    measure: drawer("ws-group-measure", "How it measures up"),
-    plumbing: drawer("ws-group-plumbing", "How the bench works"),
-  };
+  groups.measure = drawer("ws-group-measure", "How it measures up");
+  groups.plumbing = drawer("ws-group-plumbing", "How the bench works");
+
   // Undo, and a list of what you did to get here. Every edit went through
   // took() and nothing kept the state before it, so a wrong material on all
   // eight parts was a wrong material on all eight parts for good.
@@ -1249,22 +1302,27 @@ function installBench() {
   forward.onclick = () => stepHistory(1);
   const historyRow = make("div", { class:"ws-row" });
   historyRow.append(back, forward);
-  groups.history.append(historyRow, make("div", { id:"ws-history" }));
+  const historyBox = make("section", { id:"ws-group-history", class:"ws-group" });
+  historyBox.append(make("h2", {}, "What you changed"), historyRow, make("div", { id:"ws-history" }));
+
   // Where each thing goes. Some of what was swept in is anonymous -- a heading,
   // then the fields under it -- so an unnamed node joins whatever the last
   // heading joined.
   const BY_ID = {
-    "ws-component-editor":"part", "ws-test-bench":"test",
-    "ws-bom-box":"make", "ws-install-box":"make",
-    "ws-product-library-box":"save", "ws-personal-library-box":"save", "ws-saved-designs":"save",
+    "ws-component-editor":"build", "ws-test-bench":"test",
+    "ws-bom-box":"details", "ws-install-box":"details",
+    "ws-product-library-box":"start", "ws-personal-library-box":"start", "ws-saved-designs":"start",
     "ws-name":"measure", "ws-purpose":"measure", "ws-checks":"measure",
     "ws-buildability":"measure", "ws-measurement-basis":"measure",
     "ws-materialize":"plumbing", "ws-plan":"plumbing",
   };
   const BY_HEADING = {
-    "save design":"save", "saved designs":"save", "my library":"save", "product library":"save",
+    // "Save design" and its name field sat under the test bench, because the
+    // heading before them was the test bench's and an unnamed node follows the
+    // last heading. Saving is Keep.
+    "save design":"details", "saved designs":"start", "my library":"start", "product library":"start",
     "cheap checks":"measure", "feedback":"plumbing", "materialization":"plumbing",
-    "how it compiles":"plumbing", "test bench":"test", "materials":"make",
+    "how it compiles":"plumbing", "test bench":"test", "materials":"details",
   };
   let following = "plumbing";
   const placeIn = (node) => {
@@ -1282,11 +1340,28 @@ function installBench() {
     return following;
   };
   const rightKeep = [...right.children];
-  right.replaceChildren(chatHome, heldBox, groups.part, groups.test, groups.make, groups.save,
-                        groups.history, groups.measure, groups.plumbing);
+  right.replaceChildren(chatHome, heldBox, strip, groups.start, groups.build, groups.test,
+                        groups.details, groups.measure, groups.plumbing);
   for (const node of [...rightKeep, ...leftKeep.filter((n) => n !== parts)]) {
     const where = placeIn(node);
     if (where) groups[where].append(node); else node.remove();
+  }
+  groups.build.append(historyBox);
+  // Change was still 47 controls, which is most of the fault all over again in
+  // one step. Inside it, the two things a person reaches for -- the part they
+  // picked and adding a part -- stay out, and the other six become drawers
+  // with the names they already had. Nothing moves and nothing is lost; a
+  // drawer says what is in it, which "Bench extras" never did.
+  foldSections($("#ws-component-editor"), ["selected component", "build part by part"]);
+  foldSections($("#ws-build-box"), ["build part by part"]);
+  foldSections($("#ws-push-box"), []);
+  showStep(workspace.mode);
+  // Saving is Keep, and it did not land there on its own: the name field and
+  // the Save button are unnamed nodes, and an unnamed node follows the last
+  // heading it saw, which in the pane they came from was the test bench's.
+  for (const control of ["#ws-save-name", "#ws-save-design"]) {
+    const node = $(control)?.closest("label, .ws-row");
+    if (node) groups.details.append(node);
   }
   if (chatForm) chatHome.append(chatForm);
 
@@ -2040,6 +2115,7 @@ async function previewSetup(sequence) {
 }
 addEventListener("banjo-workshop-mode",event=>{
   workspace.mode=event.detail;workspace.sequence++;benchTestRequest++;clearTimeout(workspace.timer);
+  showStep(workspace.mode);
   if(workspace.mode==="test") {
     workspace.inspecting++;bench.libraryInspection=null;bench.isolated=null;
     bench.clip.enabled=false;$("#ws-clip-enabled").checked=false;renderer.clippingPlanes=[];
@@ -2198,7 +2274,7 @@ function show(reframe = true) {
   draw(candidate); if (reframe) frameCandidate();
   const m = currentMeasurements(candidate); headline(candidate, m);
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } setWorkspaceMode("build"); bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
   if(bench.libraryInspection) {
     $("#ws-selected-part").textContent="Inspecting a saved component. Your product has not changed.";
