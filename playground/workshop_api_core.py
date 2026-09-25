@@ -407,7 +407,7 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
-    design, _ = workshop_components.design_from_spec(
+    design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": str(body.get("design_id") or kind), "parameters": _parameters(body),
          "component_overrides": body.get("component_overrides") or {}})
     try:
@@ -452,7 +452,10 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         answer["trial"] = workshop_trials.run_declared_static_load(
             app, design, cell_size_m=cell, duration_s=duration, record_trace=body.get("record_trace", True))
     if body.get("bench_test") is not None:
-        answer["bench"] = workshop_bench.run(app, design, body.get("bench_test"))
+        answer["bench"] = workshop_bench.run(
+            app, design, body.get("bench_test"),
+            candidate={"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
+                       "parameters": dict(design.parameters), "component_overrides": overrides})
     if body.get("try_in_a_room") is not None:
         # The Workshop's little world: ground, gravity and a sky, and the thing
         # installed into it the way the world installs it.
@@ -462,7 +465,10 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
             app, {"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
                   "parameters": dict(design.parameters), "component_overrides": overrides},
             seconds=float(how.get("seconds", 10.0)), sun=how.get("sun"), day=how.get("day"),
-            items=how.get("items") or (), turn_on=bool(how.get("turn_on", True)))
+            items=how.get("items") or (), turn_on=bool(how.get("turn_on", True)),
+            load_kg=float(how.get("load_kg") or 0.0), on=str(how.get("on") or "top"),
+            drop_m=float(how.get("drop_m") or 0.0), slide_m_s=float(how.get("slide_m_s") or 0.0),
+            strike=how.get("strike"), record=bool(how.get("record", True)))
     return answer
 
 

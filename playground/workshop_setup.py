@@ -17,12 +17,55 @@ import workshop_sparse_trial as sparse
 from mcp import workshop_matter_metrics, workshop_rigid
 
 
-def preview(app: Any, design, request: Any) -> dict[str, Any]:
+def _little_world(app: Any, candidate: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """The little world at t=0: the thing made, the test set up on it, nothing stepped.
+
+    This costs what making the thing costs, because it IS making the thing. It
+    is worth that: the setup a person looks at before pressing run is the room
+    the run happens in, down to where the weight hangs and how far up the block
+    is aimed, rather than a drawing of a different scene.
+    """
+    import workshop_bench
+    import workshop_test_room as little
+    if candidate is None:
+        raise ValueError("Trying a thing in a little world needs the design it is made from")
+    how = workshop_bench._how(config)
+    with little.Bench(app, sun=how.get("sun"), day=how.get("day"), items=how.get("items") or ()) as room:
+        made = room.make(candidate)
+        did = room.set_up(load_kg=how["load_kg"], on=how["on"], drop_m=how["drop_m"],
+                          slide_m_s=how["slide_m_s"], strike=how["strike"])
+        poses = room.live.session.send(op="poses")
+        frame = workshop_recording.frame(poses)
+        if not frame or not frame["bodies"]:
+            raise ValueError("The little world came up with nothing standing in it")
+        frame["t_s"] = 0.0
+        frame["bodies"] = [b for b in frame["bodies"] if little._worth_watching(b)]
+        said = [f"{made.get('mass_kg', 0):.1f} kg on {little.GROUND_M * 1000:.0f} mm of ground"]
+        if did.get("drop_m"):
+            said.append(f"held {did['drop_m']:.2f} m up")
+        if did.get("load_kg"):
+            said.append(f"{did['load_kg']:g} kg hanging over its {did.get('on') or 'top'}")
+        if did.get("slide_m_s"):
+            said.append(f"starting at {did['slide_m_s']:g} m/s")
+        if did.get("strike"):
+            said.append(f"a {did['strike']['kg']:g} kg block aimed at it")
+        geometry = {k: v for k, v in little._geometry(poses, float(room.room.spec["cell_m"])).items()
+                    if not k.startswith(little.MARKER + "#")}
+        return {"schema": "banjo.workshop-setup.v1", "phase": "setup", "test": "try_in_a_room",
+                "frames": [frame], "geometry": geometry,
+                "requested": dict(config), "geometry_basis": "native-test-setup",
+                "native_verified": True, "physics_advanced": False, "ground_m": little.GROUND_M,
+                "summary": ", ".join(said) + ". Nothing has moved yet."}
+
+
+def preview(app: Any, design, request: Any, *, candidate: Any = None) -> dict[str, Any]:
     if not isinstance(request, dict) or set(request) - {"test", "config"}:
         raise ValueError("bench_preview requires test and config only")
     test, config = str(request.get("test") or ""), request.get("config", {})
     if not isinstance(config, dict):
         raise ValueError("bench_preview.config must be an object")
+    if test == "try_in_a_room":
+        return _little_world(app, candidate, config)
     if test == "rigid_motion":
         artifact = workshop_rigid.compile_rigid(design)
         package = workshop_rigid.package(artifact, drop_height_m=motion.number(config,"drop_height_m",.2,0,2),

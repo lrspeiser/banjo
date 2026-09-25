@@ -441,6 +441,27 @@ function playbackBodyGeometry(body) {
   if (body.shape === "sphere" || body.shape === 1) return new THREE.SphereGeometry(d[0] / 2, 18, 12);
   return new THREE.BoxGeometry(Math.max(0.000001, d[0]), Math.max(0.000001, d[1]), Math.max(0.000001, d[2]));
 }
+// An exact compound is its parts, each about the body's centre of mass and each
+// turned by its own rotation. Drawn as one box the whole way round it, a chair
+// is a crate and a mace is a crate: the shape IS the answer in a rigid test.
+function playbackCompound(parts, fallbackMaterial) {
+  const compound = new THREE.Group();
+  for (const part of parts) {
+    const d = part.dimensions_m || [0.01, 0.01, 0.01];
+    const geometry = part.shape === "cylinder"
+      ? new THREE.CylinderGeometry(d[0] / 2, d[0] / 2, d[1], 16)
+      : new THREE.BoxGeometry(Math.max(1e-6, d[0]), Math.max(1e-6, d[1]), Math.max(1e-6, d[2]));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: materialColor(part.material || fallbackMaterial), roughness: 0.62 }));
+    mesh.position.set(...(part.center_local_m || [0, 0, 0]));
+    const q = part.rotation_wxyz || [1, 0, 0, 0]; mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+    compound.add(mesh);
+  }
+  return compound;
+}
+function disposeCompound(node) {
+  node.traverse?.((child) => { if (child.isMesh) { child.geometry.dispose(); disposeMaterial(child.material); } });
+}
 let drawnRecording = null;
 const playbackMeshes = new Map();
 let physicsMeshBuilds = 0;
@@ -458,10 +479,13 @@ function drawPlayback() {
     const signature = JSON.stringify([body.revision || 0, exact, body.shape, body.dimensions_m, body.material]);
     let entry = playbackMeshes.get(body.name);
     if (!entry || entry.signature !== signature) {
-      if (entry) { group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); }
+      if (entry) { group.remove(entry.mesh); disposeCompound(entry.mesh); entry.mesh.geometry?.dispose(); disposeMaterial(entry.mesh.material); }
       const material = new THREE.MeshStandardMaterial({color:materialColor(body.material), roughness:0.62});
       let mesh;
-      if (exact) {
+      if (exact && geometry.parts) {
+        mesh = playbackCompound(geometry.parts, body.material);
+        disposeMaterial(material);
+      } else if (exact) {
         const cell = geometry.cell_size_m;
         mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell,cell,cell), material, geometry.offsets_m.length);
         const matrix = new THREE.Matrix4();
@@ -484,7 +508,7 @@ function drawPlayback() {
     }
   }
   for (const [name,entry] of playbackMeshes) if (!present.has(name)) {
-    group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
+    group.remove(entry.mesh); disposeCompound(entry.mesh); entry.mesh.geometry?.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
   }
   if (followsMatter(recording)) followCentre = matterCentre(recording, frame) || followCentre;
   stage.dataset.physicsTime = String(frame.t_s);
@@ -510,6 +534,8 @@ function drawPlayback() {
   }
   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
     ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
+    : recording.geometry_basis === "recorded-native-shapes"
+    ? "A little world with real ground under it. Every body as the engine's own shape: its cells where it is cells, its exact parts where it is exact, and every piece as the cells the engine left it. Showing the computed experiment, not a live connection to the outside world."
     : `${recording.geometry_basis === "verified-native-cells-and-native-pieces" ? "Exact Matter cells, and every piece as the cells the engine left it. " : recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
 }
 // A thing dropped from 4 m, or knocked across the floor in pieces, is a speck if
@@ -517,11 +543,15 @@ function drawPlayback() {
 // starts and the view then goes with the matter: every body weighed by the
 // cells it is drawn with, so it stays on the bulk of the wreck and lets a
 // one-cell shard fly out of shot.
-const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces";
+const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces"
+  || recording?.geometry_basis === "recorded-native-shapes";
 let followCentre = null, followClock = 0;
 function matterCentre(recording, frame) {
   const sum = new THREE.Vector3(); let weight = 0;
   for (const body of frame?.bodies || []) {
+    // The ground and anything driven into it are scenery: 16 m of ground at the
+    // origin would drag the view off whatever is being watched.
+    if (body.anchored) continue;
     const cells = recording.geometry?.[body.name]?.offsets_m?.length || 1;
     sum.x += cells*body.position_m[0]; sum.y += cells*body.position_m[1]; sum.z += cells*body.position_m[2]; weight += cells;
   }
@@ -537,15 +567,20 @@ function followMatter(now) {
 function frameSimulation(recording) {
   const bounds = new THREE.Box3();
   for (const frame of followsMatter(recording) ? recording.frames.slice(0,1) : recording.frames) for (const body of frame.bodies || []) {
+    // 16 m of ground would make everything standing on it a speck.
+    if (body.anchored) continue;
     const radius = .5*Math.hypot(...(body.dimensions_m || [.05,.05,.05]));
     const point = new THREE.Vector3(...body.position_m);
     bounds.expandByPoint(point.clone().addScalar(radius)); bounds.expandByPoint(point.clone().addScalar(-radius));
   }
-  if(recording.phase==="setup" && !bounds.isEmpty()) bounds.expandByPoint(new THREE.Vector3((bounds.min.x+bounds.max.x)/2,0,(bounds.min.z+bounds.max.z)/2));
+  const floor = Number(recording.ground_m) || 0;
+  if(recording.phase==="setup" && !bounds.isEmpty()) bounds.expandByPoint(new THREE.Vector3((bounds.min.x+bounds.max.x)/2,floor,(bounds.min.z+bounds.max.z)/2));
   if (!bounds.isEmpty()) { bounds.getCenter(target); reach = Math.max(.3,bounds.getSize(new THREE.Vector3()).length()/2); frameCandidate(); }
   followCentre = followsMatter(recording) ? matterCentre(recording, recording.frames[0]) : null;
   if (followCentre) { target.copy(followCentre); placeCamera(); }
-  grid.position.y = 0;
+  // The little world's ground stands at the depth of its soil, so the grid goes
+  // where the ground actually is rather than through the middle of it.
+  grid.position.y = floor;
 }
 
 function draw(candidate) {
@@ -1471,8 +1506,10 @@ function scheduleBuildability() {
 function benchDefinition(name = bench.selectedBenchTest) { return bench.benchTests.find((item) => item.test === name) || null; }
 function renderBenchCatalog() {
   // Analysis/reference tools remain callable by specialist APIs, not presented as product simulations.
+  // "any" is the little world: it installs whatever the design compiles to, so
+  // it is offered for a design of cells and a design of exact bodies alike.
   bench.benchTests = bench.benchTests.filter(t => t.category === "simulation" && t.subject === "selected-product"
-    && (t.required_model || "lattice") === (chosen()?.mechanical_model || "lattice"));
+    && (t.required_model === "any" || (t.required_model || "lattice") === (chosen()?.mechanical_model || "lattice")));
   const picker = $("#ws-bench-test"); picker.replaceChildren();
   for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, test.name));
   if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) bench.selectedBenchTest = bench.benchTests[0]?.test || null;
@@ -1537,7 +1574,7 @@ function benchConfig() {
     else out[control.name] = input.value;
   }
   out.record_trace = true; // Visible runs require actual simulation states.
-  if (definition.test !== "rigid_motion") {
+  if (definition.test !== "rigid_motion" && definition.test !== "try_in_a_room") {
     if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
     if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
   }
@@ -1631,7 +1668,29 @@ function renderJointScreen(card, screen) {
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
-  if (result.test === "rigid_motion") {
+  if (result.test === "try_in_a_room") {
+    // The little world says what it did and what became of the thing. Turning
+    // is its own line: a stool that settled 3 mm and a stool lying on its side
+    // have both "moved" about nothing.
+    const m = result.measured || {}, broke = m.broke || [], dented = m.dented || [];
+    const what = m.fell_over ? "It went over" : broke.length ? `${broke.length} of it broke`
+      : dented.length ? `${dented.length} of it is dented` : "It stayed up";
+    card.append(make("strong", { id:"ws-room-outcome", "data-outcome": m.fell_over ? "fell" : broke.length ? "broke" : dented.length ? "dented" : "stood",
+                                 "data-broke": String(broke.length), "data-dented": String(dented.length) }, what),
+      make("p", { id:"ws-room-says" }, result.says || ""),
+      make("p", {}, `Moved ${m.moved_m == null ? "—" : `${(Number(m.moved_m) * 1000).toFixed(0)} mm`} · turned ${Number(m.turned_deg || 0).toFixed(1)}° · ${Number(m.ran_for_s || 0).toFixed(1)} s in the room`));
+    for (const store of m.stores || []) card.append(make("p", {}, `${store.name}: ${Number(store.charge_j).toFixed(0)} J`));
+    for (const panel of m.panels || []) card.append(make("p", {}, `${panel.name}: ${Number(panel.power_w).toFixed(1)} W`));
+    for (const program of m.programs || []) card.append(make("p", {}, `${program.name} is ${program.doing}: ${program.why}`));
+    for (const run of m.failures || []) card.append(make("p", {}, `${run.name} ${run.outcome} into ${run.pieces} at ${Number(run.at_s).toFixed(2)} s`));
+    const verdict = result.acceptance || {}, status = verdict.status || "not-declared";
+    card.append(make("strong", { id:"ws-acceptance-status", "data-status":status },
+      `Declared limits: ${status === "not-declared" ? "not evaluated (no limits declared)" : status}`));
+    for (const check of verdict.checks || []) {
+      if (check.status === "passed") continue;
+      card.append(make("p", {}, `${check.metric}: ${check.measured == null ? "not measured" : check.measured}; ${check.operator} ${check.limit}${check.unit ? ` ${check.unit}` : ""} (${check.status}).`));
+    }
+  } else if (result.test === "rigid_motion") {
     const m = result.measured || {};
     card.append(make("strong", {}, "Native precise rigid motion — not a strength test"),
       make("p", {}, `${m.collision_boxes} exact boxes · ${m.stored_cells} lattice cells · ${Number(m.mass_kg).toFixed(3)} kg`),

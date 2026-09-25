@@ -391,7 +391,27 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                                "at_m": {"type": "array", "items": {"type": "number"},
                                                                         "minItems": 2, "maxItems": 2}}}},
                             "turn_on": {"type": "boolean",
-                                        "description": "set its program running, if it has one (default true)"}}}},
+                                        "description": "set its program running, if it has one (default true)"},
+                            # What to DO to it, once it is standing there. Leave
+                            # them all out and it simply stands, which answers
+                            # whether it stands.
+                            "load_kg": {"type": "number", "minimum": 0, "maximum": test_room.MAX_LOAD_KG,
+                                        "description": "set an iron weight of this many kilograms on it"},
+                            "on": {"type": "string",
+                                   "description": "the name of the part to set the weight on; the whole thing by default"},
+                            "drop_m": {"type": "number", "minimum": 0, "maximum": test_room.MAX_DROP_M,
+                                       "description": "let it go from this far above where it stands"},
+                            "slide_m_s": {"type": "number", "minimum": -test_room.MAX_SPEED_M_S,
+                                          "maximum": test_room.MAX_SPEED_M_S,
+                                          "description": "start it moving along +X at this speed"},
+                            "strike": {"type": "object", "additionalProperties": False,
+                                       "description": "throw an iron block at it",
+                                       "properties": {"kg": {"type": "number", "minimum": 0.1,
+                                                             "maximum": test_room.MAX_STRIKER_KG},
+                                                      "speed_m_s": {"type": "number", "minimum": 0.1,
+                                                                    "maximum": test_room.MAX_SPEED_M_S},
+                                                      "height_fraction": {"type": "number", "minimum": 0,
+                                                                          "maximum": 1}}}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -614,9 +634,14 @@ class _State:
                            "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
                            "component_overrides": self.overrides},
                 seconds=float(args.get("seconds", 10.0)), day=args.get("day"),
-                items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)))
+                items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)),
+                load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
+                drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
+                strike=args.get("strike"), record=False)
             return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
-                                      "sky": answer["sky"], "made": answer["made"],
+                                      "did": answer["did"], "sky": answer["sky"], "made": answer["made"],
+                                      "broke": answer["broke"], "dented": answer["dented"],
+                                      "fell_over": answer["fell_over"],
                                       "stores": answer["ended"]["stores"], "panels": answer["ended"]["panels"],
                                       "programs": answer["ended"]["programs"]})
 

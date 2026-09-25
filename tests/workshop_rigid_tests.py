@@ -138,13 +138,18 @@ class PreciseCompiler(unittest.TestCase):
             workshop_sparse_trial.prototype_scene(design(), load_kg=25)
 
     def test_bench_catalog_separates_mechanical_models(self):
+        # rigid_motion was the only test a design of exact bodies could be
+        # given, and it had no ground either. The little world takes a design
+        # of either model -- it installs whatever the compiler drew -- so it is
+        # the one entry marked "any", and rigid_motion is retired behind it.
         for kind in ("table", "bench"):
             tests = workshop_bench.catalog(kind)
             rigid_tests = [t for t in tests if t.get("required_model") == "rigid"]
             self.assertEqual(["rigid_motion"], [t["test"] for t in rigid_tests])
-            self.assertEqual("simulation", rigid_tests[0]["category"])
-            self.assertEqual("selected-product", rigid_tests[0]["subject"])
-            self.assertTrue(all(t["required_model"] == "lattice" for t in tests if t["test"] != "rigid_motion"))
+            self.assertEqual("retired", rigid_tests[0]["category"])
+            self.assertEqual(["try_in_a_room"], [t["test"] for t in tests if t.get("required_model") == "any"])
+            self.assertTrue(all(t["required_model"] == "lattice"
+                                for t in tests if t["test"] not in ("rigid_motion", "try_in_a_room")))
         for kind in ("cart", "kettle", "shelf-unit"):
             self.assertFalse(any(t["test"] == "rigid_motion" for t in workshop_bench.catalog(kind)))
 

@@ -103,43 +103,61 @@ The cheapest work in the whole list.
 
 ## 2. Test it
 
-There are **three** testing systems and they do not agree.
+**Done (2026-09-24).** There were three testing systems and they did not agree;
+there is one now. `try_in_a_room` makes the design in a room with 400 mm of
+soil under it, gravity and a sky, through `workshop_install` -- the world's own
+installer -- and then does to it whatever you ask: a weight set on it, a drop,
+a slide, a block thrown at it, in any combination. `declared_static_load`,
+`drop_product`, `slide_product`, `impact_product` and `rigid_motion` are marked
+retired and are offered to nobody.
 
-| | ground? | mechanisms? | what it gives |
-|---|---|---|---|
-| `run_static_load` ("Run simulation") | no | **refused** | fracture, displacement, pass/fail |
-| drop / slide / strike catalogue | a floor | table and bench only | playback, fracture |
-| the test room (new today) | **real terrain + sun** | yes | position, speed, battery, program |
+What that fixed, and what came out of doing it:
 
-- **2.1 Make the test room the one test.** It is the only one with ground,
-  gravity and a sky, and the only one that uses the real installer, so it is the
-  only one that answers for the world. Everything below is what it still lacks.
-- **2.2 It cannot apply a load.** A chair rated for 120 kg can be installed in
-  it and not sat on. (`workshop_test_room.py:80-91`)
-- **2.3 It does not read orientation**, only position and speed -- so **you
-  cannot tell whether a thing fell over**, which is the one trial every piece of
-  furniture declares. (`workshop_test_room.py:234-237`)
-- **2.4 It reports no fracture.** It never reads `breakable`, so "it broke" and
-  "it moved" are indistinguishable.
-- **2.5 It has no playback.** Every other engine test wraps the session in
-  `workshop_recording`; this one does not, so there is no timeline to scrub.
-- **2.6 It verifies no geometry.** The sparse trial checks every cell against
-  the engine; the test room takes the install on trust.
-- **2.7 Pass or fail reaches one test with four criteria** -- displacement,
-  rotation, fracture count, actual load -- and only on `declared_static_load`.
-  (`workshop_acceptance.py:13-18`, `workshop_bench.py:104-105`)
-- **2.8 The `tip` trials every assembly declares are never run.** Both filters
-  keep only `static_load`. (`mcp/workshop.py:744-745`,
+- **2.1 The test room is the one test.** Done.
+- **2.2 It can apply a load.** Done -- and the weight is a body, not a declared
+  force: an iron cube of the mass asked for, let go a millimetre above it, that
+  presses through real contact and can slide off.
+- **2.3 It reads orientation.** Done: every body reports `turn_deg` from where
+  it was put down, and past 45 degrees the answer is "it went over".
+- **2.4 It reports fracture.** Done -- and doing it found a real error in the
+  reading. The engine names what MIGHT give way in `breakable`; the failure run
+  then says `held`, `dented` or `broke`. Counting every run as a break called a
+  concrete table under 400 kg "broken" when it had held. `broke` now holds only
+  the runs where the body came apart.
+- **2.5 It has playback.** Done, at 30 frames a second, with each body drawn as
+  the engine's own shape -- its cells where it is cells, its exact parts where
+  it is exact, every piece as the cells the engine left it.
+- **2.6 It verifies no geometry.** Still true. The install is taken on trust;
+  the sparse trial's cell-by-cell check against the engine has no equivalent
+  here.
+- **2.7 Pass or fail** now reaches the one test, against three things it
+  actually measures: how far it moved, how far it turned, and how many of it
+  broke. Opt-in, and `not-declared` otherwise.
+- **2.8 The `tip` trials every assembly declares are never run.** Still true.
+  Both filters keep only `static_load`. (`mcp/workshop.py:744-745`,
   `workshop_statics.py:143-152`)
-- **2.9 No test result is ever stored.** You cannot ask "did this pass last
-  time" or compare two revisions. The only durable trace of testing is a 1-5
-  rating in `feedback.jsonl`.
+- **2.9 No test result is ever stored.** Still true.
 - **2.10 The general physics-trial engine cannot be pointed at a design.**
-  `mcp/physics_trial_tools.py` takes a hand-authored document and there is no
-  design-to-trial adapter anywhere.
-- **2.11 There is no machine panel at the bench.** The world has On/Off,
-  Lower/Stop/Raise, a drive setting and four read-outs (`world.html:25`); the
-  Workshop has nothing, so a robot cannot be worked by hand where it is built.
+  Still true.
+- **2.11 There is no machine panel at the bench.** Still true.
+
+And one thing that was not on the list, which doing this exposed:
+
+- **2.12 Most archetypes cannot be MADE at all**, so they cannot be tested. A
+  `cart` and a `kettle` are refused by the installation adapter ("only fixed
+  structural solids ... articulated machines and containers need their own
+  interfaces"); a `chair`, a `stool` and a `shelf-unit` come out of their own
+  templates with "disconnected or missing physical components" and never
+  compile. Only `table`, `bench` and things drawn part by part through the chat
+  install. The old catalogue hid this by offering those kinds no test at all.
+
+Two measured differences from the rigs this replaced, both of them the world
+being the world:
+
+- Glass dropped 4 m onto 400 mm of soil does not break. On the old rig's hard
+  floor it did, at 8.85 m/s against a threshold of 8.70. Soil is softer than a
+  plate, and soil is what it will stand on.
+- The whole browser suite runs in 51 seconds instead of 337.
 
 ## 3. Save it
 

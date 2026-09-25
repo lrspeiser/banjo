@@ -180,5 +180,115 @@ class ALittleWorldAtTheBench(unittest.TestCase):
         self.assertGreater(said["ended"]["stores"][0]["charge_j"],
                            said["began"]["stores"][0]["charge_j"])
 
+
+TABLE = {"kind": "table", "design_id": "bench-table", "purpose": "be stood on",
+         "parameters": {}, "component_overrides": {}}
+
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class TheFourWaysOfTryingAThing(unittest.TestCase):
+    """A weight on it, a drop, a slide and a blow -- all in the one room.
+
+    These were four separate rigs, none of which had any ground under them.
+    They are settings now, and the thing they are done to is standing in a
+    world, so what they measure is what it would do out there.
+    """
+
+    def setUp(self):
+        self.app = SimpleNamespace(engine_path=ENGINE, workshop_owner_id="owner")
+
+    def test_nothing_happens_to_a_thing_nothing_is_done_to(self):
+        said = bench.try_it(self.app, TABLE, seconds=2.0)
+        deck = said["ended"]["bodies"][said["made"]["root_body"]]
+        print(f"\n    left alone: {said['says']}")
+        self.assertEqual({}, said["did"])
+        self.assertEqual([], said["broke"])
+        self.assertFalse(said["fell_over"])
+        self.assertLess(deck["turn_deg"], 1.0, "standing still is not turning")
+        self.assertNotIn("the weight", said["ended"]["bodies"])
+        self.assertNotIn("the striker", said["ended"]["bodies"])
+
+    def test_a_weight_is_a_body_that_falls_onto_it_and_stays_there(self):
+        """Not a declared downward force: a block of iron, with contact under it.
+
+        A force would go on pushing at full strength through a collapse and
+        never fall off the side. This is 120 kg of iron, and where it ends up
+        is the answer.
+        """
+        said = bench.try_it(self.app, TABLE, seconds=2.0, load_kg=120.0)
+        weight = said["ended"]["bodies"]["the weight"]
+        deck = said["ended"]["bodies"][said["made"]["root_body"]]
+        side = said["did"]["weight_side_m"]
+        print(f"    {said['says']}")
+        print(f"      the {120:g} kg weight is a {side * 1000:.0f} mm iron cube, resting at "
+              f"{weight['at_m'][1]:.3f} m with the top of the table at {deck['at_m'][1]:.3f} m")
+        self.assertGreater(weight["at_m"][1], bench.GROUND_M + side, "it is up on the table, not on the floor")
+        self.assertLess(weight["speed_m_s"], 0.05, "it came to rest on it")
+        self.assertEqual([], said["broke"], "a 27 kg oak table holds 120 kg")
+
+    def test_dropped_it_falls_the_distance_asked_and_lands(self):
+        said = bench.try_it(self.app, TABLE, seconds=2.0, drop_m=1.0)
+        deck, was = said["ended"]["bodies"][said["made"]["root_body"]], said["began"]["bodies"][said["made"]["root_body"]]
+        standing = bench.try_it(self.app, TABLE, seconds=2.0, record=False)
+        rest = standing["ended"]["bodies"][standing["made"]["root_body"]]["at_m"][1]
+        print(f"    {said['says']}")
+        print(f"      it started {was['at_m'][1] - rest:.2f} m above where it rests and came back to "
+              f"{deck['at_m'][1]:.3f} m against {rest:.3f} m standing")
+        self.assertAlmostEqual(1.0, was["at_m"][1] - rest, delta=0.06)
+        self.assertAlmostEqual(rest, deck["at_m"][1], delta=0.05, msg="it landed where it stands")
+        # And it was in the air on the way. A metre takes 0.45 s to fall, so a
+        # quarter of a second in it is still falling and well off the ground.
+        began = said["playback"]["frames"][0]["t_s"]
+        middle = min(said["playback"]["frames"], key=lambda f: abs(f["t_s"] - began - 0.25))
+        flying = next(b for b in middle["bodies"] if b["name"] == said["made"]["root_body"])
+        print(f"      a quarter of a second in it was {flying['position_m'][1] - rest:.2f} m up")
+        self.assertGreater(flying["position_m"][1], rest + 0.4)
+
+    def test_slid_it_runs_on_and_friction_stops_it(self):
+        said = bench.try_it(self.app, TABLE, seconds=3.0, slide_m_s=3.0)
+        deck, was = said["ended"]["bodies"][said["made"]["root_body"]], said["began"]["bodies"][said["made"]["root_body"]]
+        went = deck["at_m"][0] - was["at_m"][0]
+        print(f"    {said['says']}")
+        print(f"      started at 3 m/s, ran {went:.2f} m and is doing {deck['speed_m_s']:.3f} m/s")
+        self.assertGreater(went, 0.15, "it moved along the ground")
+        self.assertLess(deck["speed_m_s"], 0.3, "the ground slowed it down")
+
+    def test_hit_hard_enough_it_breaks_and_every_piece_is_drawn(self):
+        said = bench.try_it(self.app, TABLE, seconds=2.0, strike={"kg": 40.0, "speed_m_s": 12.0})
+        print(f"    {said['says']}")
+        self.assertTrue(said["broke"], "40 kg of iron at 12 m/s breaks an oak table")
+        self.assertGreaterEqual(said["broke"][0]["pieces"], 2)
+        self.assertEqual("broke", said["broke"][0]["outcome"])
+        last = said["playback"]["frames"][-1]
+        pieces = [b["name"] for b in last["bodies"] if "piece" in b["name"]]
+        self.assertGreaterEqual(len(pieces), 2)
+        for name in pieces:
+            self.assertIn(f"{name}#0", said["playback"]["geometry"],
+                          "a piece with no shape recorded would be drawn as a box")
+
+    def test_the_recording_is_watchable_and_says_where_the_ground_is(self):
+        said = bench.try_it(self.app, TABLE, seconds=2.0, drop_m=0.5)
+        play = said["playback"]
+        gaps = [b["t_s"] - a["t_s"] for a, b in zip(play["frames"], play["frames"][1:])]
+        print(f"    {len(play['frames'])} frames over {play['duration_s']:.2f} s, "
+              f"the longest gap {max(gaps) * 1000:.0f} ms")
+        self.assertGreater(len(play["frames"]), 30, "four frames a second is not watchable")
+        self.assertLess(max(gaps), 0.1)
+        # Where the floor goes, for whoever draws it.
+        self.assertAlmostEqual(bench.GROUND_M, play["ground_m"])
+        self.assertAlmostEqual(bench.GROUND_ACROSS_M, play["ground_across_m"])
+        for frame in play["frames"]:
+            self.assertNotIn(bench.MARKER, [b["name"] for b in frame["bodies"]],
+                             "the compiler's own sizing block is not part of anybody's test")
+        self.assertTrue(all(not k.startswith(bench.MARKER + "#") for k in play["geometry"]))
+
+    def test_a_bench_refuses_what_is_not_a_bench_test(self):
+        for how, why in ((dict(drop_m=50.0), "5 m"), (dict(slide_m_s=90.0), "30 m/s"),
+                         (dict(load_kg=9000.0), "2000 kg"),
+                         (dict(strike={"kg": 9000.0, "speed_m_s": 1.0}), "500 kg")):
+            with self.assertRaises(ValueError) as caught:
+                bench.try_it(self.app, TABLE, seconds=1.0, **how)
+            self.assertIn(why, str(caught.exception))
+
 if __name__ == "__main__":
     unittest.main()

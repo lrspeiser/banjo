@@ -114,13 +114,20 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
     return _decorate(_core.more_like_this(app, body), body if isinstance(body, dict) else {})
 
 
+def _candidate(design, overrides) -> dict[str, Any]:
+    """The design as the installer takes it: what the little world is made from."""
+    return {"kind": str(design.kind), "design_id": design.design_id, "purpose": design.purpose,
+            "parameters": dict(design.parameters), "component_overrides": overrides or {}}
+
+
 def plan(app: Any, body: Any) -> dict[str, Any]:
     request = body if isinstance(body, dict) else {}
     if "bench_preview" in request:
         import workshop_setup
-        design, _ = workshop_components.design_from_spec(request)
+        design, overrides = workshop_components.design_from_spec(request)
         return {"schema": _core.WORKSHOP_SCHEMA,
-                "bench_preview": workshop_setup.preview(app, design, request["bench_preview"])}
+                "bench_preview": workshop_setup.preview(app, design, request["bench_preview"],
+                                                        candidate=_candidate(design, overrides))}
     answer = _core.plan(app, body)
     design, overrides = workshop_components.design_from_spec(request)
     models = workshop_rigid.requested_models(design, overrides)

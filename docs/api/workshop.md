@@ -439,6 +439,59 @@ adapter exists. Do not treat those primitive descriptions as a tested build.
 See [the checkpoint](../workshop-consistency-checkpoint.md) for verification
 and remaining boundaries.
 
+## One test: `try_in_a_room`
+
+The bench offers one simulation. It makes the design in a small world -- flat
+ground of 400 mm of soil 16 m across, gravity, and a sky with the sun somewhere
+in it -- by calling `workshop_install`, the same code the world installs with,
+and then does to it whatever the config asks. The room is thrown away
+afterwards and the live world is never touched.
+
+```json
+{"kind":"table","bench_test":{"test":"try_in_a_room",
+ "config":{"seconds":6,"load_kg":120,"drop_m":0,"slide_m_s":0,
+           "strike_kg":0,"strike_speed_m_s":8,"strike_height_fraction":1,
+           "hour":12,"turn_on":true,
+           "evaluate_limits":false,"max_moved_m":0.01,
+           "max_turned_deg":5,"max_breaks":0}}}
+```
+
+* `load_kg` sets an iron cube of that mass on it, on the part named by `on`
+  (API only) or on the whole thing. It is a body, not a declared force: it
+  falls the last millimetre, presses with its own weight through real contact,
+  and can slide off.
+* `drop_m` lets it go from that far above where it stands.
+* `slide_m_s` starts it moving along +X; the ground's friction is what stops it.
+* `strike_kg` throws an iron cube at it at `strike_speed_m_s`, aimed at
+  `strike_height_fraction` of its height (0 feet, 1 top).
+* `hour` moves the sun; 12 is noon, 23 is the dark.
+* `turn_on` starts the thing's own program, if it has one.
+
+The result carries `measured` -- `moved_m`, `turned_deg`, `fell_over`,
+`broke`, `dented`, `failures`, `stores`, `panels`, `programs` -- and a
+`playback` timeline at 30 frames a second with each body's own engine geometry.
+`broke` holds only the failure runs where the body actually came apart;
+`failures` holds every run the engine asked for, because being overloaded is
+not the same as breaking.
+
+Offered for the kinds the installer can actually make: `table`, `bench`, and
+anything drawn part by part through the chat (`custom`). A `cart` and a
+`kettle` are refused by the installation adapter, and a `chair`, `stool` or
+`shelf-unit` never compiles out of its template at all.
+
+`evaluate_limits` opts in to a verdict against `max_moved_m`, `max_turned_deg`
+and `max_breaks`; without it the result is `not-declared` and no pass is
+claimed.
+
+## The retired rigs
+
+`declared_static_load`, `drop_product`, `slide_product`, `impact_product` and
+`rigid_motion` floated the design's cells in a spec with no ground under them.
+Every one of them is a setting of `try_in_a_room` now. They are marked
+`category: retired` with `superseded_by: try_in_a_room`, are not offered in the
+Test tab, and still run from the API so their own tests hold them to what they
+measured. What follows describes those.
+
 ## Explicit static-load acceptance limits
 
 `bench_test.acceptance_limits` (or `bench_test.config.acceptance_limits`, usable
