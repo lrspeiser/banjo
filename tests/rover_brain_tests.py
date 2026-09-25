@@ -27,7 +27,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tests")]
-import live_session, room_store, rover_brain, rover_talk, world_room   # noqa: E402
+import live_session, machine_routine, machine_senses, machine_tools, room_store, rover_brain, rover_talk, world_room   # noqa: E402
 import scripted_jev_server   # noqa: E402
 
 ENGINE = Path(os.environ["BANJO_LIVE_ENGINE"]).resolve() if os.environ.get("BANJO_LIVE_ENGINE") else None
@@ -107,36 +107,43 @@ class WhatHappensToIt(unittest.TestCase):
 class WhatIsMadeOfJevsAnswer(unittest.TestCase):
     def test_a_confident_pick_is_an_ask_and_an_unsure_one_is_not(self):
         sure = rover_brain.decide(jev_says("back_off", 0.81)(None, rover_brain.QUESTIONS), "water ahead on its left")
-        self.assertEqual({"doing": "backing off", "for_s": 1.5,
-                          "why": "Jev said back off (81% sure) when water ahead on its left"}, sure["ask"])
+        self.assertEqual({"tool": "back_off", "args": {},
+                          "why": "Jev said back off (81% sure) when water ahead on its left"}, sure["call"])
         self.assertEqual(("back_off", 0.81, 0.1, "fine"), (sure["pick"], sure["confidence"], sure["stuck"], sure["battery"]))
-        unsure = rover_brain.decide(jev_says("wait", 0.4)(None, rover_brain.QUESTIONS), "x")
-        self.assertIsNone(unsure["ask"])
+        unsure = rover_brain.decide(jev_says("hold_still", 0.4)(None, rover_brain.QUESTIONS), "x")
+        self.assertIsNone(unsure["call"])
         self.assertIn("too unsure", unsure["said"])
         odd = rover_brain.decide({"next": {"choice": "fly", "confidence": 0.99}}, "x")
-        self.assertIsNone(odd["ask"])
-        self.assertIn("no pick it knows", odd["said"])
+        self.assertIsNone(odd["call"])
+        self.assertIn("no tool it has", odd["said"])
 
-    def test_the_questions_are_made_from_the_kind_of_program(self):
+    def test_the_questions_are_the_tools_whoever_answers(self):
         questions = rover_brain.questions_for("roam")
-        self.assertEqual(["go_on", "back_off", "turn_left", "turn_right", "wait"], list(questions["next"]["criteria"]))
+        self.assertEqual([t["name"] for t in machine_tools.catalogue()], list(questions["next"]["criteria"]))
+        self.assertIn("dig", questions["next"]["criteria"])
         self.assertEqual({"next", "stuck", "battery"}, set(questions))
-        self.assertIn("rover", questions["next"]["instructions"])
+        self.assertIn("a lake", questions["next"]["instructions"])
         # An unknown kind is asked as a rover is, rather than nothing.
         self.assertEqual(questions, rover_brain.questions_for("hunt"))
 
-    def test_the_state_jev_reads_is_the_machine_and_what_struck_it(self):
+    def test_the_state_a_decider_reads_is_the_senses(self):
         machines = {"controls": [{"id": 1, "condition": "", "speed_rpm": 40.0, "power": True, "direction": 1,
                                   "setting": 1.0}, {"id": 2, "condition": ""}]}
-        state = rover_brain.state_of(sees(a_program(), -1), machines,
-                                     [{"struck": "rover: left wheel", "by": "stone", "closing_speed_m_s": 0.5},
-                                      {"struck": "pane", "by": "ball", "closing_speed_m_s": 9.0}], "stone struck it", [])
+        ctx = machine_senses.Context(program=sees(a_program(), -1), machines=machines,
+                                     impacts=[{"struck": "rover: left wheel", "by": "stone", "closing_speed_m_s": 0.5},
+                                              {"struck": "pane", "by": "ball", "closing_speed_m_s": 9.0}])
+        state = rover_brain.state_of(ctx, "stone struck it", [])
         self.assertEqual("stone struck it", state["event"])
-        self.assertEqual(("roam", "going forward"), (state["machine"]["kind"], state["machine"]["doing"]))
+        s = state["senses"]
+        self.assertEqual(set(machine_senses.SENSES), set(s), "every sense reads, engine or none")
+        self.assertEqual("going forward", s["position"]["doing"])
         self.assertEqual([{"side": "left", "water_under_it_mm": 0, "sees_water": False},
-                          {"side": "right", "water_under_it_mm": 12, "sees_water": True}], state["machine"]["water_sensors"])
-        self.assertEqual(40.0, state["machine"]["wheels"][0]["speed_rpm"])
-        self.assertEqual(["stone"], [s["by"] for s in state["struck"]])
+                          {"side": "right", "water_under_it_mm": 12, "sees_water": True}], s["water"]["sensors"])
+        self.assertIsNone(s["water"]["nearest_water"], "no engine to survey: nothing is invented")
+        self.assertEqual(40.0, s["wheels"]["wheels"][0]["speed_rpm"])
+        self.assertEqual(["stone"], [h["by"] for h in s["struck"]["hits"]])
+        self.assertEqual({"declared": False}, s["sun"])
+        self.assertEqual({"carries": False}, s["load"])
 
 
 class TheBrainOffTheStep(unittest.TestCase):
@@ -164,17 +171,18 @@ class TheBrainOffTheStep(unittest.TestCase):
         self.wait_for(brain)
         self.assertEqual(1, len(ask.asked))
         sent = []
-        app = SimpleNamespace(live=SimpleNamespace(act=lambda body: (sent.append(body), {"asked": "applied"})[1]))
+        app = SimpleNamespace(live=SimpleNamespace(
+            act=lambda body: (sent.append(body), {"program": {"doing": "turning right", "why": "x"}})[1]))
         brains = rover_brain.Brains(lambda: None)
         brains.brains["rover"] = brain
         brains.before(app, {"op": "poses"})
         self.assertEqual([], sent, "only a step applies what was decided")
         brains.before(app, {"session": "s", "op": "step"})
-        self.assertEqual([{"session": "s", "op": "behave", "program": 1, "sender": "jev", "seq": 1,
+        self.assertEqual([{"session": "s", "op": "behave", "program": 1, "sender": "jev",
                            "doing": "turning right", "for_s": 2.5,
                            "why": "Jev said turn right (70% sure) when water ahead on its left"}], sent)
         [decision] = brain.decisions
-        self.assertEqual(("applied", "turn_right"), (decision["applied"], decision["pick"]))
+        self.assertEqual(("asked to be turning right for 2.5 s", "turn_right"), (decision["applied"], decision["pick"]))
         answer = {}
         brains.attach({"op": "step"}, answer)
         self.assertEqual("rover", answer["brains"][0]["name"])
@@ -192,7 +200,7 @@ class TheBrainOffTheStep(unittest.TestCase):
         brain.observe(sees(a_program(), -1), None, [], 0.1, ask=broken)
         self.wait_for(brain)
         decision = brain.take()
-        self.assertIsNone(decision["ask"])
+        self.assertIsNone(decision["call"])
         self.assertIn("HTTP 529", decision["said"])
 
     def test_without_a_key_the_mode_is_reflex_and_jev_cannot_be_pressed(self):
@@ -247,7 +255,7 @@ class TheModelAsADecider(unittest.TestCase):
     def test_the_schema_admits_only_the_answers_asked_for(self):
         schema = rover_brain.answer_schema(rover_brain.questions_for("roam"))
         self.assertEqual(["next", "stuck", "battery"], schema["required"])
-        self.assertEqual(["go_on", "back_off", "turn_left", "turn_right", "wait"],
+        self.assertEqual([t["name"] for t in machine_tools.catalogue()],
                          schema["properties"]["next"]["properties"]["choice"]["enum"])
         self.assertEqual(["0", "1", "2"], schema["properties"]["battery"]["properties"]["probabilities"]["required"])
         self.assertFalse(schema["additionalProperties"])
@@ -258,8 +266,8 @@ class TheModelAsADecider(unittest.TestCase):
         self.assertNotIn("reasoning", rover_brain.OpenAIDecider("k", "gpt-4.1-mini").payload("s", rover_brain.QUESTIONS))
 
     def test_its_answers_come_back_in_jevs_shape(self):
-        raw = {"next": {"choice": "go_on", "probabilities": {"go_on": 0.1, "back_off": 0.7, "turn_left": 0.1,
-                                                              "turn_right": 0.1, "wait": 0.0}},
+        raw = {"next": {"choice": "go_forward", "probabilities": {"go_forward": 0.1, "back_off": 0.7, "turn_left": 0.1,
+                                                                   "turn_right": 0.1, "hold_still": 0.0}},
                "stuck": {"noul": 0.2},
                "battery": {"probabilities": {"0": 0.2, "1": 0.8, "2": 0.0}}}
         answers = rover_brain.answers_from(raw, rover_brain.questions_for("roam"))
@@ -269,7 +277,7 @@ class TheModelAsADecider(unittest.TestCase):
         self.assertEqual((0.8, 0.8), (answers["battery"]["score"], answers["battery"]["confidence"]))
         self.assertTrue(answers["battery"]["legend"]["1"].startswith("low"))
         decision = rover_brain.decide(answers, "water ahead on its left", "roam", "OpenAI (gpt-5-mini)")
-        self.assertEqual("backing off", decision["ask"]["doing"])
+        self.assertEqual("back_off", decision["call"]["tool"])
         self.assertEqual("OpenAI (gpt-5-mini): back off (70% sure) when water ahead on its left", decision["said"])
         self.assertEqual("low", decision["battery"])
 
@@ -388,23 +396,24 @@ class InTheRealEngine(unittest.TestCase):
         asked_by_jev = None
         for _ in range(12):                       # up to a minute of roaming
             self.step_as_the_page_does(5.0)
-            if any(d.get("applied") == "applied" for d in brain.decisions):
+            if any(d.get("applied", "").startswith("asked") for d in brain.decisions):
                 break
         self.assertTrue(self.ask.asked, "something happened to it in a minute of roaming")
         events = [d["event"] for d in brain.decisions]
         print(f"\n    Jev was asked {len(self.ask.asked)} times: {events}")
-        applied = [d for d in brain.decisions if d.get("applied") == "applied"]
+        applied = [d for d in brain.decisions if d.get("applied", "").startswith("asked")]
         self.assertTrue(applied, f"a pick was done: {list(brain.decisions)}")
         self.assertTrue(all(d["pick"] == "back_off" for d in applied))
         # What Jev read was the rover, with the event named.
         state, questions = self.ask.asked[0]
-        self.assertEqual("roam", state["machine"]["kind"])
         self.assertIn(state["event"], events)
+        self.assertIn("nearest_water", state["senses"]["water"], "the senses were read with the engine at hand")
+        self.assertIn("downhill_bearing_deg", state["senses"]["slope"])
         self.assertEqual({"next", "stuck", "battery"}, set(questions))
         # The program said Jev asked it, and, the while up, its reflexes had it
         # back: no ask stands two seconds on.
         program = self.program()
-        seen_jev = any("Jev said back off" in d["ask"]["why"] for d in applied)
+        seen_jev = any("Jev said back off" in d["call"]["why"] for d in applied)
         self.assertTrue(seen_jev)
         self.step_as_the_page_does(2.5)
         program = self.program()
@@ -467,6 +476,237 @@ class InTheRealEngine(unittest.TestCase):
             rover_talk.talk(self.app, {"program": "toaster", "open": True})
 
 
+class TheSensesAndTheTools(unittest.TestCase):
+    """What a machine can sense and do, read and done through a stand-in
+    engine that answers surveys and takes asks."""
+
+    def engine(self, water_at=None, heights=None):
+        sent = []
+
+        def ask(**command):
+            sent.append(command)
+            op = command.get("op")
+            if op == "survey":
+                x, z = command["at"]
+                h = (heights or (lambda x, z: 0.0))(x, z)
+                wet = water_at is not None and math.hypot(x - water_at[0], z - water_at[1]) < 1.5
+                return {"survey": {"on_the_ground": True, "ground_m": h, "surface": "soil", "sand_m": 0.0,
+                                   "soil_m": 0.6, "slope_deg": 0.0,
+                                   "water": {"depth_m": 0.2} if wet else None}}
+            if op == "sun":
+                return {"sun": {"elevation_deg": 50.0, "azimuth_deg": 200.0, "irradiance_w_m2": 1000.0}}
+            if op == "behave":
+                return {"asked": "applied", "program": {"doing": command["doing"] or "going forward", "why": command["why"]}}
+            if op == "dig":
+                return {"dug": {"kg": 12.0, "sand_m3": 0.0, "soil_m3": 0.0075}}
+            if op in ("ground_withdraw", "ground_return", "deposit", "draw"):
+                return {"ok": True, "drawn": command.get("joules")}
+            return {}
+        ask.sent = sent
+        return ask
+
+    def context(self, ask, **changes):
+        program = a_program(at_m=[0.0, 0.3, 0.0], heading_deg=0.0, **changes)
+        machines = {"controls": [{"id": 1, "motor": 11, "condition": ""}, {"id": 2, "motor": 12, "condition": ""}],
+                    "motors": [{"id": 11, "store": 21}, {"id": 12, "store": 21}],
+                    "stores": [{"id": 21, "capacity_j": 100000.0, "charge_j": 80000.0}],
+                    "panels": [{"store": 21, "power_w": 12.5}]}
+        return machine_senses.Context(program=program, machines=machines, ask=ask,
+                                      bodies=[{"name": "boulder", "material": "granite", "position_m": [3.0, 0.5, 3.0],
+                                               "velocity_m_s": [0, 0, 0]}])
+
+    def test_directions_are_from_its_front_positive_to_its_left(self):
+        self.assertEqual(90.0, machine_senses.relative_bearing(0.0, 1.0, 0.0), "+x is to the left of +z")
+        self.assertEqual(-90.0, machine_senses.relative_bearing(0.0, -1.0, 0.0))
+        self.assertEqual(180.0, machine_senses.relative_bearing(0.0, 0.0, -1.0))
+        self.assertEqual(0.0, machine_senses.relative_bearing(90.0, 1.0, 0.0), "facing +x, +x is ahead")
+        self.assertEqual([0.0, 3.0], machine_senses.point_ahead(self.context(self.engine()), 3.0))
+
+    def test_it_senses_the_water_the_slope_the_sun_and_what_is_near(self):
+        ctx = self.context(self.engine(water_at=(0.0, 3.0), heights=lambda x, z: -0.2 * z))
+        s = machine_senses.read(ctx)
+        self.assertEqual({"distance_m": 3.0, "bearing_deg": 0.0, "depth_m": 0.2}, s["water"]["nearest_water"])
+        self.assertNotIn(0.0, s["water"]["dry_bearings_deg"], "ahead is wet three metres out")
+        self.assertEqual(0.0, s["slope"]["downhill_bearing_deg"], "the ground falls towards +z: downhill is ahead")
+        self.assertAlmostEqual(180.0, abs(s["slope"]["uphill_bearing_deg"]))
+        self.assertLess(s["slope"]["ahead_rises_deg"], 0.0)
+        self.assertEqual((True, -160.0, True), (s["sun"]["declared"], s["sun"]["bearing_deg"], s["sun"]["daylight"]))
+        self.assertEqual((0.8, 12.5), (s["battery"]["share_of_full"], s["battery"]["charging_w"]))
+        [near] = s["nearby"]["things"]
+        self.assertEqual(("boulder", 4.24, 45.0), (near["name"], near["distance_m"], near["bearing_deg"]))
+        self.assertEqual({"present": False}, s["person"])
+        ctx.person = {"standing_m": [-2.0, 0.0, 0.0]}
+        self.assertEqual({"present": True, "distance_m": 2.0, "bearing_deg": -90.0}, machine_senses.sense_person(ctx))
+        # Every sense has words for whoever is told what a machine can sense.
+        self.assertTrue(all(c["description"] for c in machine_senses.catalogue()))
+
+    def test_the_tools_ask_the_program_and_say_what_they_did(self):
+        ask = self.engine()
+        ctx = self.context(ask)
+        ctx.routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 40.0,
+                                                        "places": {"depot": [-3.0, 0.0], "dig site": [0.0, 4.0]}})
+        did = machine_tools.run(ctx, machine_tools.Call("go_to", {"place": "dig site"}, "routine", "its routine"))
+        self.assertEqual("asked to go to dig site, and stop a metre off", did["did"])
+        self.assertEqual({"session": None, "op": "behave", "program": 1, "sender": "routine", "doing": "approaching",
+                          "for_s": 60.0, "why": "its routine", "toward": [0.0, 0.3, 4.0]},
+                         {**ask.sent[-1], "session": None})
+        did = machine_tools.run(ctx, machine_tools.Call("face", {"bearing_deg": 90.0, "distance_m": 2.0}, "talk"))
+        self.assertEqual([2.0, 0.3, 0.0], ask.sent[-1]["toward"])
+        did = machine_tools.run(ctx, machine_tools.Call("go_to", {"place": "moon"}, "talk"))
+        self.assertTrue(did["failed"])
+        self.assertIn("knows no place called 'moon'", did["did"])
+        did = machine_tools.run(ctx, machine_tools.Call("fly", {}, "talk"))
+        self.assertTrue(did["failed"])
+        # Every tool a decider may pick has words and a schema for its arguments.
+        self.assertTrue(all(t["description"] and isinstance(t["params"], dict) for t in machine_tools.catalogue()))
+
+    def test_a_scoop_goes_into_the_hopper_out_of_the_ground_and_costs_the_battery(self):
+        ask = self.engine()
+        ctx = self.context(ask)
+        ctx.routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 30.0, "work_j_per_kg": 50.0,
+                                                        "places": {"depot": [-3.0, 0.0], "dig site": [0.0, 4.0]}})
+        did = machine_tools.run(ctx, machine_tools.Call("dig", {}, "routine"))
+        ops = [c["op"] for c in ask.sent]
+        self.assertEqual(["survey", "dig", "ground_withdraw", "draw", "behave"], ops)
+        dug = next(c for c in ask.sent if c["op"] == "dig")
+        self.assertEqual(([0.0, 0.8], 0.5, 0.15), (dug["from"], dug["width_m"], dug["depth_m"]))
+        self.assertEqual({"op": "ground_withdraw", "sand_m3": 0.0, "soil_m3": 0.0075},
+                         next(c for c in ask.sent if c["op"] == "ground_withdraw"))
+        self.assertEqual(600.0, next(c for c in ask.sent if c["op"] == "draw")["joules"], "12 kg at 50 J/kg")
+        self.assertEqual(3.0, next(c for c in ask.sent if c["op"] == "behave")["for_s"], "a scoop takes its time")
+        self.assertEqual((12.0, False), (ctx.routine.kg, ctx.routine.load_full()))
+        self.assertEqual(600, did["drawn_j"])
+        # Two more and it is full: the third scoop is cut to what fits, the
+        # rest put back where it came from.
+        machine_tools.run(ctx, machine_tools.Call("dig", {}, "routine"))
+        machine_tools.run(ctx, machine_tools.Call("dig", {}, "routine"))
+        self.assertEqual(30.0, ctx.routine.kg)
+        self.assertTrue(ctx.routine.load_full())
+        self.assertIn("deposit", [c["op"] for c in ask.sent[-6:]], "what did not fit went back")
+        did = machine_tools.run(ctx, machine_tools.Call("dig", {}, "routine"))
+        self.assertEqual("dug nothing: its hopper is full", did["did"])
+        did = machine_tools.run(ctx, machine_tools.Call("dump", {}, "routine"))
+        self.assertEqual("dumped 30.0 kg on the ground ahead", did["did"])
+        self.assertEqual(["ground_return", "deposit", "behave"], [c["op"] for c in ask.sent[-3:]])
+        self.assertEqual((0.0, 30.0, 1), (ctx.routine.kg, ctx.routine.delivered_kg, ctx.routine.trips))
+
+    def test_the_routine_runs_its_steps_and_waits_while_someone_else_has_it(self):
+        ask = self.engine()
+        routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 24.0,
+                                                    "places": {"dig site": [0.0, 4.0], "depot": [-3.0, 0.0]}})
+        ctx = self.context(ask)
+        ctx.routine = routine
+        self.assertEqual((1, "go_to dig site"), (routine.summary()["step"], routine.summary()["doing"]))
+        did = routine.tick(ctx)
+        self.assertEqual("asked to go to dig site, and stop a metre off", did["did"])
+        # Still on its way: nothing more is asked.
+        ctx.program["asked"] = {"doing": "approaching", "by": "routine"}
+        self.assertIsNone(routine.tick(ctx))
+        # Arrived: the next step, a scoop, and another when the first is done.
+        ctx.program["doing"] = "waiting"
+        self.assertIsNone(routine.tick(ctx))
+        self.assertEqual(2, routine.summary()["step"])
+        ctx.program["asked"] = None
+        ctx.program["doing"] = "going forward"
+        self.assertTrue(routine.tick(ctx)["did"].startswith("dug 12.0 kg"))
+        ctx.program["asked"] = {"doing": "waiting", "by": "routine"}
+        self.assertIsNone(routine.tick(ctx), "the scoop is still being taken")
+        ctx.program["asked"] = None
+        self.assertTrue(routine.tick(ctx)["did"].startswith("dug 12.0 kg"))
+        self.assertTrue(routine.load_full())
+        # Someone else has it: the routine waits, and takes its step up again after.
+        ctx.program["asked"] = {"doing": "waiting", "by": "talk"}
+        self.assertIsNone(routine.tick(ctx))
+        self.assertEqual("talk", routine.summary()["paused_by"])
+        ctx.program["asked"] = None
+        self.assertIsNone(routine.tick(ctx), "full: the dig step ends")
+        did = routine.tick(ctx)
+        self.assertEqual("asked to go to depot, and stop a metre off", did["did"])
+        self.assertIsNone(routine.summary()["paused_by"])
+        # Off: nothing.
+        ctx.program["power"] = False
+        self.assertIsNone(routine.tick(ctx))
+
+    def test_a_room_declares_a_routine_and_the_validator_keeps_it(self):
+        import fracture_lab
+        room = world_room.SCENES["tests-rover"]()
+        program = room["machines"]["programs"][0]
+        program["routine"] = {"kind": "dig", "places": {"dig site": [2, -6.5], "depot": [-2.5, -9.5]}, "hopper_kg": 40}
+        kept = fracture_lab.validate(room)["machines"]["programs"][0]["routine"]
+        self.assertEqual({"kind": "dig", "places": {"dig site": [2.0, -6.5], "depot": [-2.5, -9.5]}, "hopper_kg": 40.0}, kept)
+        self.assertEqual(kept, machine_routine.declared_for(fracture_lab.validate(room), "rover"))
+        for change, message in ((lambda r: r.update(kind="fly"), "kinds there are"),
+                                (lambda r: r.pop("hopper_kg"), "needs a hopper"),
+                                (lambda r: r["places"].pop("depot"), "lacks"),
+                                (lambda r: r.update(speed=2), "cannot say")):
+            routine = {"kind": "dig", "places": {"dig site": [2, -6.5], "depot": [-2.5, -9.5]}, "hopper_kg": 40}
+            change(routine)
+            program["routine"] = routine
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                fracture_lab.validate(room)
+
+
+class InTheDigRoom(unittest.TestCase):
+    """The tests-dig room: the rover's routine over its program, as the
+    server runs it before each step the page takes -- it digs, carries and
+    dumps, with the ground's account and its battery's both whole."""
+
+    def setUp(self):
+        if ENGINE is None:
+            self.skipTest("BANJO_LIVE_ENGINE is not set")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.live = live_session.Live()
+        self.addCleanup(self.live.shutdown)
+        self.room = world_room.Room("tests-dig")
+        self.brains = rover_brain.Brains(lambda: None)
+        self.app = SimpleNamespace(live=self.live, live_holder="world", room=self.room, engine_path=ENGINE,
+                                   runs_path=root / "runs", store=room_store.RoomStore(root / "rooms"),
+                                   brains=self.brains, api_key="", model="",
+                                   on_live_reply=lambda session, reply: self.brains.listen(session, reply))
+        self.opened = self.live.open(self.app, {"spec": self.room.spec})
+        self.brains.opened(self.room.spec)
+        self.session_id = self.live.session.id
+
+    def program(self, reply=None):
+        reply = reply or self.live.session.send(op="step", dt=DT, n=1)
+        return next(p for p in reply["machines"]["programs"] if p["name"] == "rover")
+
+    def run_as_the_page_does(self, seconds, until=None):
+        # At the page's own step, 1/240 s: at 1/120 the caster sinks and the
+        # rover crawls (tools/build_rover_room.py).
+        for _ in range(int(seconds * 4)):
+            body = {"session": self.session_id, "op": "step", "dt": 1 / 240, "n": 60}
+            self.brains.before(self.app, body)
+            answer = self.live.act(body)
+            self.brains.attach(body, answer)
+            if until is not None and until():
+                return True
+        return False
+
+    def test_it_digs_carries_and_dumps_by_its_routine(self):
+        self.live.session.send(op="step", dt=DT, n=240)
+        said = self.live.session.send(op="run", program=self.program()["id"], sender="test", seq=1, power=True)
+        self.assertTrue(said["program"]["power"])
+        brain = self.brains.of("rover")
+        self.assertEqual(("dig", 40.0), (brain.routine.kind, brain.routine.hopper_kg))
+        delivered = self.run_as_the_page_does(300.0, until=lambda: brain.routine.trips >= 1)
+        summary = brain.routine.summary()
+        print(f"\n    the dig routine: {summary['load']}; notes: {' | '.join(summary['notes'])}")
+        self.assertTrue(delivered, f"in 300 s it did not deliver a load: {summary}")
+        self.assertGreater(brain.routine.delivered_kg, 20.0)
+        self.assertIn("step 3 done: it arrived", summary["notes"], "the load went to the depot, not just anywhere")
+        carried = self.live.session.send(op="ground_work").get("carried") or {}
+        self.assertLess(float(carried.get("total_kg") or 0.0), 0.5, "the ground's account is whole after the dump")
+        store = self.live.session.send(op="step", dt=DT, n=1)["machines"]["stores"][0]
+        self.assertGreater(store["given_j"], brain.routine.delivered_kg * 50.0, "the scoop's work was drawn")
+        self.assertAlmostEqual(store["charge_j"], 100000.0 + store["taken_j"] - store["given_j"], places=2)
+        # The page hears of the routine with the brain.
+        self.assertEqual(1, summary["load"]["trips"])
+        self.assertIn("step", summary)
+
+
 class TheScriptedServer(unittest.TestCase):
     """The stand-in speaks the API the client speaks."""
 
@@ -476,10 +716,10 @@ class TheScriptedServer(unittest.TestCase):
         thread.start()
         self.addCleanup(httpd.shutdown)
         client = rover_brain.JevClient("scripted", url=f"http://127.0.0.1:{httpd.server_port}/v1/systemone")
-        answers = client.ask(rover_brain.state_of(sees(a_program(), 1), None, [], "water ahead on its left", []),
-                             rover_brain.questions_for("roam"))
+        ctx = machine_senses.Context(program=sees(a_program(), 1))
+        answers = client.ask(rover_brain.state_of(ctx, "water ahead on its left", []), rover_brain.questions_for("roam"))
         decision = rover_brain.decide(answers, "water ahead on its left")
-        self.assertEqual("backing off", decision["ask"]["doing"])
+        self.assertEqual("back_off", decision["call"]["tool"])
         self.assertEqual(("come_here", 0.9, "jev"), rover_talk.classify(client, "come over here"))
 
 

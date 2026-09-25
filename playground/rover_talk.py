@@ -22,6 +22,7 @@ import time
 from typing import Any
 from urllib import error, request
 
+import machine_tools as tools
 import rover_brain
 
 INTENTS = {
@@ -30,6 +31,8 @@ INTENTS = {
     "come_here": "Come here, come to me, come over, approach me, come closer.",
     "turn_around": "Turn around, turn round, about face, turn back, go the other way.",
     "back_off": "Back off, back up, reverse, go back a bit, get away from that.",
+    "dig": "Dig here, take a scoop, dig for something, get some sand or soil.",
+    "dump": "Dump it, empty your hopper, drop the load, put it down here.",
     "status": "What are you doing, where are you, how is your battery, what do your sensors see, report.",
     "why": "Why did you stop, why did you turn, why are you doing that, what happened, explain.",
     "other": "Anything else: a question about the world, chit-chat, an instruction it cannot take.",
@@ -49,6 +52,8 @@ PLAIN = [
     ("come_here", r"\b(come|approach|closer|over here|to me)\b"),
     ("turn_around", r"\b(turn (a)?round|turn around|about face|other way|turn back)\b"),
     ("back_off", r"\b(back (off|up|away)|reverse|get away)\b"),
+    ("dump", r"\b(dump|empty|drop (it|the load)|unload)\b"),
+    ("dig", r"\b(dig|scoop|shovel)\b"),
     ("go_on", r"\b(go on|carry on|continue|resume|go roam|back to work|get going|off you go|bye|goodbye)\b"),
     ("status", r"\b(what are you|where are you|how is|how'?s|battery|sensors?|report|status|doing)\b"),
 ]
@@ -134,6 +139,19 @@ def _ask(app: Any, program: dict[str, Any], brain: rover_brain.Brain, doing: str
     return said.get("program") or program
 
 
+def _use(app: Any, program: dict[str, Any], brain: rover_brain.Brain, body: dict[str, Any], tool: str,
+         args: dict[str, Any], why: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """One of the machine's tools, used for the person (machine_tools): what
+    it did, and the program as it now stands."""
+    brain.before = program
+    brain.person = body.get("person") if isinstance(body.get("person"), dict) else brain.person
+    session_id = app.live.session.id
+    ctx = brain.context(lambda **command: app.live.act({"session": session_id, **command}))
+    did = tools.run(ctx, tools.Call(tool, args, "talk", why))
+    now = _program(app, {"program": program.get("name")})
+    return did, now
+
+
 def _model_answer(app: Any, said: str, program: dict[str, Any]) -> str:
     """The chat's model, in the rover's voice, from its state alone."""
     api_key, model = getattr(app, "api_key", ""), getattr(app, "model", "")
@@ -200,7 +218,7 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
     elif body.get("close"):
         asked = program.get("asked") if isinstance(program.get("asked"), dict) else None
         if asked and asked.get("by") == "talk":
-            program = _ask(app, program, brain, "", 0.0, "")
+            did, program = _use(app, program, brain, body, "carry_on", {}, "")
         reply = "Going on." if program.get("power") else "Still off."
         say(name, reply, closed=True)
     else:
@@ -212,23 +230,29 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
         if not program.get("power") and intent not in ("status", "why", "other"):
             reply = "I am switched off, so I cannot. Switch me on first."
         elif intent == "stop":
-            program = _ask(app, program, brain, "waiting", 0.0, "the person told it to stop")
+            did, program = _use(app, program, brain, body, "hold_still", {"for_s": 0.0}, "the person told it to stop")
             reply = "Stopping. I will hold here until you say."
         elif intent == "go_on":
-            program = _ask(app, program, brain, "", 0.0, "")
+            did, program = _use(app, program, brain, body, "carry_on", {}, "")
             reply = "Going on with my rounds."
         elif intent == "come_here":
             if standing is None:
                 reply = "I do not know where you are standing."
             else:
-                program = _ask(app, program, brain, "approaching", 30.0, "the person asked it to come", standing)
+                did, program = _use(app, program, brain, body, "go_to", {"place": "person", "for_s": 30.0},
+                                    "the person asked it to come")
                 reply = "Coming to you. I will stop a metre off."
         elif intent == "turn_around":
-            program = _ask(app, program, brain, "turning left", 5.0, "the person asked it to turn round")
+            did, program = _use(app, program, brain, body, "turn_left", {"for_s": 5.0},
+                                "the person asked it to turn round")
             reply = "Turning round."
         elif intent == "back_off":
-            program = _ask(app, program, brain, "backing off", 2.5, "the person asked it to back off")
+            did, program = _use(app, program, brain, body, "back_off", {"for_s": 2.5},
+                                "the person asked it to back off")
             reply = "Backing off."
+        elif intent in ("dig", "dump"):
+            did, program = _use(app, program, brain, body, intent, {}, f"the person asked it to {intent}")
+            reply = did.get("did", "").capitalize() + "."
         elif intent in ("status", "why"):
             reply = describe(program)
             last = next((d for d in reversed(brain.decisions) if d.get("said")), None)

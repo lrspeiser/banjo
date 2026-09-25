@@ -961,10 +961,10 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
-                                  "rest_below", "rest_until"}
+                                  "rest_below", "rest_until", "routine"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power, sensors, rest_below and rest_until")
+                             f"setting, climb_deg, power, sensors, rest_below, rest_until and routine")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
@@ -1002,8 +1002,55 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         sensors = _sensors(program.get("sensors"), name, named, stops=False)
         if sensors:
             made["sensors"] = sensors
+        if program.get("routine") is not None:
+            made["routine"] = _routine(program["routine"], name)
         out.append(made)
     return out
+
+
+def _routine(given: Any, name: str) -> dict[str, Any]:
+    """What a machine does on its own (docs/machine-world.md, "A machine's
+    senses and its tools"; machine_routine.ROUTINES): its kind, the places it
+    knows by name in the room's metres, what its hopper carries, and what a
+    scoop's work costs its battery. The engine is not told any of it; the
+    playground runs it over the program."""
+    import machine_routine
+    if not isinstance(given, dict):
+        raise ValueError(f"program {name!r} routine is an object: kind, places, hopper_kg, work_j_per_kg")
+    unknown = set(given) - {"kind", "places", "hopper_kg", "work_j_per_kg"}
+    if unknown:
+        raise ValueError(f"program {name!r} routine cannot say {sorted(unknown)}: it holds kind, places, "
+                         f"hopper_kg and work_j_per_kg")
+    kind = str(given.get("kind") or "roam")
+    spec = machine_routine.ROUTINES.get(kind)
+    if spec is None:
+        raise ValueError(f"program {name!r} routine is of kind {kind!r}; the kinds there are: "
+                         f"{', '.join(sorted(machine_routine.ROUTINES))}")
+    places_given = given.get("places") or {}
+    if not isinstance(places_given, dict) or len(places_given) > 16:
+        raise ValueError(f"program {name!r} routine places is a map of at most 16 names to [x, z]")
+    places: dict[str, list[float]] = {}
+    for place, xz in places_given.items():
+        place = " ".join(str(place).split())[:40]
+        if not place or not isinstance(xz, (list, tuple)) or len(xz) != 2:
+            raise ValueError(f"program {name!r} routine place {place!r} is [x, z] in metres")
+        places[place] = [_number(xz[0], -1000.0, 1000.0, f"routine place {place!r} x"),
+                         _number(xz[1], -1000.0, 1000.0, f"routine place {place!r} z")]
+    missing = [p for p in spec["places"] if p not in places]
+    if missing:
+        raise ValueError(f"program {name!r} routine {kind!r} needs the places {spec['places']}; "
+                         f"it lacks {missing}")
+    made: dict[str, Any] = {"kind": kind}
+    if places:
+        made["places"] = places
+    if "hopper_kg" in spec["needs"] and not given.get("hopper_kg"):
+        raise ValueError(f"program {name!r} routine {kind!r} needs a hopper: hopper_kg above 0")
+    if given.get("hopper_kg") is not None:
+        made["hopper_kg"] = _number(given["hopper_kg"], 0.1, 1000.0, f"program {name!r} routine hopper_kg")
+    if given.get("work_j_per_kg") is not None:
+        made["work_j_per_kg"] = _number(given["work_j_per_kg"], 0.0, 10000.0,
+                                        f"program {name!r} routine work_j_per_kg")
+    return made
 
 
 def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list[dict[str, Any]]:

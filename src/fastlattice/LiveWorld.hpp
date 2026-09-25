@@ -699,6 +699,11 @@ struct LiveProgram {
     double turned_deg{};
     unsigned turns{};
     double pitch_deg{}, roll_deg{};
+    // Where its chassis is and which way its front faces, as the last kept
+    // step left it: the heading is degrees round from the world's +z towards
+    // +x, the way a compass reads with +z as north.
+    Vec3 at_m{};
+    double heading_deg{};
     // Its battery's share of full, as the last kept step left it, and how many
     // times it has stopped to rest.
     double charge_share{};
@@ -1556,6 +1561,12 @@ public:
     // its size as the setting -- so the controller's limits still hold.
     bool driveMotor(unsigned motor, double command, bool brake = false);
     [[nodiscard]] std::vector<LiveEnergyStore> energyStores() const;
+    // Energy taken from a store for work the world does not otherwise account
+    // for -- a machine's scoop biting the ground, say -- by whatever does the
+    // work: joules out of its charge and onto its given_j, so its ledger
+    // stays whole. "drawn", or why not: no such store, not a number, or more
+    // than it holds (then nothing is taken).
+    std::string drawEnergy(unsigned store, double joules);
     [[nodiscard]] std::vector<LiveMotor> motors() const;
     // Attach a bounded DC/thermal circuit to one existing store and ALL its
     // motors. Additive only: inspection/reopening cannot reset state.

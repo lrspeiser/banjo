@@ -1476,6 +1476,7 @@ function showMachinePanel() {
   panelRows(false);
   $("mp-brain").hidden = true;
   $("mp-decided").hidden = true;
+  $("mp-routine").hidden = true;
   $("mp-talk").hidden = true;
   if (!$("mp-chat").hidden) closeTalk(true);
   const hoist = c.kind === "hoist";
@@ -1595,6 +1596,7 @@ function showBrain(p) {
     ? `Ask ${labels.openai || "the chat's model"} what to do at each thing that happens to it`
     : "OPENAI_API_KEY is not in the local .env, so the model cannot be asked";
   const who = labels[mode] || (mode === "jev" ? "Jev" : "the model");
+  showRoutine(brain && brain.routine);
   const last = brain && brain.decisions && brain.decisions.length ? brain.decisions[brain.decisions.length - 1] : null;
   const decided = $("mp-decided");
   if (brain && brain.thinking) { decided.textContent = `Asking ${who} about: ${brain.thinking}…`; decided.hidden = false; }
@@ -1604,6 +1606,20 @@ function showBrain(p) {
   decided.classList.toggle("attention", !!(brain && brain.thinking));
   $("mp-talk").hidden = !$("mp-chat").hidden;
   if (!$("mp-chat").hidden && machinePanel.talkingTo !== p.name) closeTalk(false);
+}
+
+// Its routine (docs/machine-world.md, "A machine's senses and its tools"):
+// what it does on its own, which step it is on, what it carries, and who has
+// it instead when it waits.
+function showRoutine(r) {
+  const line = $("mp-routine");
+  if (!r || !r.of) { line.hidden = true; return; }
+  const load = r.load ? ` · hopper ${Math.round(r.load.kg)} of ${Math.round(r.load.capacity_kg)} kg` +
+    (r.load.trips ? `, ${r.load.trips} load${r.load.trips === 1 ? "" : "s"} delivered (${Math.round(r.load.delivered_kg)} kg)` : "") : "";
+  const paused = r.paused_by ? ` · waiting: ${r.paused_by} has it` : "";
+  const note = r.notes && r.notes.length ? ` · ${r.notes[r.notes.length - 1]}` : "";
+  line.textContent = `Routine: ${r.kind}, step ${r.step} of ${r.of} (${r.doing})${load}${paused}${note}`;
+  line.hidden = false;
 }
 
 async function setBrain(mode) {
@@ -5477,6 +5493,9 @@ async function tick() {
     const ask = { dt: LIVE_DT, n: steps, moved };
     if (hand) ask.hand = hand;
     if (hand_q) ask.hand_q = hand_q;
+    // Where the person stands, for the machines' senses: a machine told to
+    // come to them, or asked what to do with someone close, reads it.
+    if (world.machines && world.machines.programs && world.machines.programs.length) ask.person = whereIAm();
     let state = await act("step", ask);
     // The pins too: they only come with a step when their set changes, and
     // the change may have been in the reply that was lost.

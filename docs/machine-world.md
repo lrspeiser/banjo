@@ -849,6 +849,111 @@ Not built yet: seasons, since every day is an equinox's; the moon; clouds; the
 day's heat warming anything; a machine that plans for the night rather than
 running until it is low.
 
+## A machine's senses and its tools
+
+**Status, 2026-09-25.** A machine knows the world only through its senses,
+and whatever thinks for it works it only through its tools. The two are
+registries in the playground, `machine_senses.SENSES` and
+`machine_tools.TOOLS`, and everything above the engine's reflexes reads the
+one and calls the other: the routine a machine follows on its own, Jev or
+the chat's model picking what to do when something happens, a person
+talking to it. Nothing in that layer is a rover's; a new sense or tool is
+one entry, and a new kind of machine is what the engine reports of it plus
+a routine.
+
+**The senses**, each one named reading, with directions in degrees from the
+machine's front (positive to its left) and distances in metres, so every
+reader means the same thing by "turn left 40": `position` (where it is,
+its heading, its speed, what its program is doing and why); `slope` (its
+own tilt, and which way is downhill and uphill round it and how steep, from
+the ground surveyed on rings at 1.5, 3 and 6 m); `ground` (the surface
+under it and its layers); `water` (its sensors, the nearest water round it
+and which bearings are dry); `sun` (where it stands, its bearing from the
+machine's front, whether it is day, the hour); `battery` (share of full,
+joules, what charges it); `wheels`; `load` (its hopper); `places` (how far
+and which way each place it knows lies); `nearby` (things within eight
+metres); `person`; `struck`. The engine reports the program's position and
+heading now (`at_m`, `heading_deg`), so no reader does quaternion
+arithmetic. Senses that survey the ground or ask for the sun are read on
+demand, when something happens or a person asks, never every step.
+
+**The tools**, each one named action with a description a model can read,
+a schema for its arguments, and what to fill them with when whoever picks it
+gives none (Jev picks a name and nothing more): `go_forward`, `back_off`,
+`turn_left`, `turn_right`, `hold_still`, `face` and `go_to` (a place it
+knows by name, the person, a point, or a bearing and distance), `dig`,
+`dump`, and `carry_on` (nothing more is asked: its routine and its reflexes
+have it back). The going tools are asks on the program (`behave`); a tool
+answers what it did, in words, and never invents an outcome -- what the
+machine then does is the world's answer, read back through the senses. A
+decider is asked which tool, among these names with these descriptions as
+the criteria, and the same call asks whether it is stuck and how urgent its
+battery is.
+
+**Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
+whose volume goes into the ground's one carried account. The `dig` tool
+takes one scoop of the ground 0.8 m ahead of the machine (0.5 m wide, 0.15 m
+deep), moves what came out from the carried account into the machine's
+hopper with the engine's `ground_withdraw`, so the ground's ledger stays
+whole and the person's carrying is untouched, cuts the scoop to what the
+hopper has room for and puts the rest back where it came from, draws the
+scoop's work from the machine's battery (the new `draw` op:
+`LiveWorld::drawEnergy`, joules off its charge and onto its `given_j`, so
+its account closes), and holds the machine still for as long as the scoop
+takes. The work is DECLARED, not derived: `work_j_per_kg` on the routine, 50
+J/kg by default (lifting a kilogram half a metre is 5 J; breaking it out is
+several times that, docs/ground-work.md measures the hand's tools); so is
+the time, a quarter second a kilogram. `dump` returns the hopper to the
+carried account and heaps it on the ground ahead. The hopper is not saved
+with the world: a restart empties it.
+
+**A routine** is a list of steps, each one tool call with its arguments and
+what ends it, run by one generic runner (`machine_routine.Routine`) that
+knows nothing of digging: it issues the step's tool, waits until the world
+says the step is done -- the machine arrived (its `approaching` ask ended
+waiting), its hopper is full, its hopper is empty -- and goes on to the
+next, round again at the end; a `go_to` that runs out of time is tried
+again from where it stands, three times. The dig routine is four steps: go
+to the dig site; dig until full; go to the depot; dump. It is declared on a
+program in the room's spec and checked by the validator:
+
+```
+"routine": {"kind": "dig", "places": {"dig site": [2.0, -6.5], "depot": [-2.5, -9.5]},
+            "hopper_kg": 40, "work_j_per_kg": 50}
+```
+
+The runner ticks before each step the page takes (`Brains.before`), on the
+program's last reported state. While someone else has the machine -- a
+decider on something that happened, a person talking to it, its own
+program resting for want of charge -- the routine waits and says who has
+it, and takes its step up again after. **An ask never drives it into the
+water**: asked to go somewhere and its sensors seeing water, its reflexes
+have it -- backing off, turning away -- until it has been going forward
+clear for two seconds, and then the ask has it back (the program's
+`interrupted`); turned back three times, it gives the ask up and says the
+water was in the way, so an ask pointed into the lake ends dry rather than
+with the machine turning on the spot at the shore. Measured in
+`tools/build_rover_room.py` for `/world?scene=tests-dig`: the rover went to
+its dig site, took 40 kg in one scoop drawing 2,000 J, carried it to the
+depot, dumped it and went back for more, in 122 s of the world at 24x
+realtime, dry, with the ground's carried account at 0.00 kg after the dump
+and its battery's account closed.
+
+**On the panel** a machine with a routine says which step it is on, what
+its hopper holds, how many loads it has delivered, and who has it when it
+waits. Talking to it, "dig" and "dump" are tools too.
+
+Checked by `tests/rover_roam_tests.cpp` and `tests/rover_brain_tests.py`
+(the senses and tools on a stand-in engine, the routine's steps and waits,
+the validator, and the tests-dig room in the real engine).
+
+Not built yet: a hopper saved with the world; a scoop that is a tool point
+on the machine driven into the ground by its motors, so the work is
+measured rather than declared (a tool point needs a lattice body, and the
+rover is exact bodies); a decider that fills a tool's arguments (a point, a
+bearing) rather than picking a name; and resources beyond the ground's
+sand and soil.
+
 ## What the rover decides by itself, and who it asks
 
 **Status, 2026-09-25.** The rover's reflexes still drive it: the engine's
@@ -897,11 +1002,11 @@ route), so the page's frame rate never waits on the network. The server
 hears every reply of the room for it (`app.reply_listeners`). Nothing is
 asked while the person is talking to it.
 
-**What Jev is asked is a table by the kind of program** (`rover_brain.KINDS`):
-what the machine is in words, what can be picked for it and what its program
-is asked for each, and the other questions worth asking in the same call.
-Another kind of machine -- one that digs, say -- is an entry there and a
-program kind in the engine; nothing else in the layer knows what a rover is.
+**What a decider is asked is the machine's tools** (`machine_tools.TOOLS`,
+above): a choice among their names with their descriptions as the
+criteria, and the state it reads is the machine's senses. Nothing in the
+layer knows what a rover is; `rover_brain.KINDS` holds only the words for
+what each kind of program's machine is, for the question's preamble.
 
 **Or the chat's model.** The same typed questions can be put to the room's
 OpenAI model instead (`OpenAIDecider`): the Responses API with a strict JSON

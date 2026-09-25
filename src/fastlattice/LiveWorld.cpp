@@ -1007,6 +1007,14 @@ struct LiveWorld::Impl {
         double heading_rad{};
         int then_turn{1};
         std::uint64_t told{};
+        // Asked to drive somewhere and its sensors saw water: its reflexes
+        // have it -- backing off, turning away -- until it is going forward
+        // clear again, and then the ask has it back. An ask never drives it
+        // into the water.
+        bool interrupted{};
+        // How many times its reflexes have taken it since it was last asked:
+        // three, and it gives the ask up, since the water is in the way.
+        unsigned interruptions{};
     };
     std::vector<Program> programs;
     unsigned next_program{1};
@@ -1695,6 +1703,9 @@ struct LiveWorld::Impl {
         p.said.pitch_deg = std::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
         p.said.roll_deg = std::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
         p.heading_rad = std::atan2(forward.x, forward.z);
+        p.said.at_m = at.center_of_mass_world_m;
+        p.said.heading_deg = p.heading_rad * kDegPerRad;
+        if (p.said.heading_deg < 0.0) p.said.heading_deg += 360.0;
     }
     // What a program's machine does next, from what the last kept step left it
     // reading, and what its wheels are told for it. "roam": going forward, from
@@ -1795,9 +1806,41 @@ struct LiveWorld::Impl {
             s.asked_by.clear();
             s.asked_for_s = s.asked_s = 0.0;
         }
-        if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
+        const bool driving_ask = s.asked == "going forward" || s.asked == "approaching" || s.asked == "facing";
+        constexpr double kClearBeforeAskS = 2.0;
+        constexpr unsigned kInterruptionsMost = 3;
+        if (!s.asked.empty() && !p.interrupted && driving_ask && (water_left || water_right)) {
+            // As the roaming reflex meets water: back off first, whatever it
+            // was doing -- a turn on the spot where it saw the water swings
+            // the caster in -- and then turn away from the side that saw it.
+            p.interrupted = true;
+            ++p.interruptions;
+            // And turn well away -- the ask was driving it AT the water, so
+            // a glancing turn leaves a wheel at the edge.
+            if (water_left && water_right) {
+                into("backing off", "water ahead: its reflexes have it");
+                p.then_turn = alternate;
+            } else if (water_left) {
+                into("backing off", "water ahead on its left: its reflexes have it");
+                p.then_turn = -1;
+            } else {
+                into("backing off", "water ahead on its right: its reflexes have it");
+                p.then_turn = 1;
+            }
+            p.turn_least_deg = kBackedTurnDeg;
+        }
+        // The ask has it back only after a couple of seconds of clear going:
+        // turned back towards the water at once, it would turn on the spot at
+        // the shore and its caster would go in.
+        if (p.interrupted && (s.asked.empty() || (s.doing == "going forward" && !water_left && !water_right &&
+                                                  s.doing_s >= kClearBeforeAskS)))
+            p.interrupted = false;
+        if (!s.asked.empty() && !p.interrupted && p.interruptions >= kInterruptionsMost) {
+            p.interruptions = 0;
+            askDone("the water was in the way of what it was asked, so it gave it up and goes on");
+        } else if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
             askDone("it has done what it was asked, and goes on");
-        } else if (!s.asked.empty()) {
+        } else if (!s.asked.empty() && !p.interrupted) {
             constexpr double kFacedDeg = 6.0;
             constexpr double kNearM = 1.0;
             // The same ask again is the same doing: doing_s and turned_deg run on.
@@ -1840,7 +1883,7 @@ struct LiveWorld::Impl {
         } else if (!s.power) {
             if (s.doing != "stopped") into("stopped", "off");
         } else if (s.doing == "stopped" || s.doing == "waiting") {
-            into("going forward", "nothing in its way");
+            into("going forward", p.interrupted ? "its reflexes have it: water ahead" : "nothing in its way");
         } else if (s.doing == "resting") {
             if (s.charge_share >= s.rest_until) into("going forward", "its battery is charged again");
             else s.why = resting();
@@ -1870,7 +1913,10 @@ struct LiveWorld::Impl {
                 turn(s.roll_deg > 0.0 ? -1 : 1, kClimbTurnDeg, "the ground here is steeper than it climbs");
             }
         } else if (s.doing == "backing off") {
-            if (s.doing_s >= kBackOffS || stalled(*left) || stalled(*right)) {
+            // Taken from an ask that was driving it at the water, it backs
+            // off twice as far before it turns: it may be at the very edge.
+            const double back_off_s = p.interrupted ? 2.0 * kBackOffS : kBackOffS;
+            if (s.doing_s >= back_off_s || stalled(*left) || stalled(*right)) {
                 const std::string why = s.why;
                 turn(p.then_turn, p.turn_least_deg, why);
             }
@@ -4585,6 +4631,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
         p.told = o.at("told").get<std::uint64_t>();
+        p.interrupted = o.value("interrupted", false);
+        p.interruptions = o.value("interruptions", 0U);
         if (carrying) {
             const bool declared = kept(asked.programs, p.said.id);
             const bool wheels = impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
@@ -5884,6 +5932,16 @@ bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
 
 std::vector<LiveEnergyStore> LiveWorld::energyStores() const { return impl_->energy_stores; }
 
+std::string LiveWorld::drawEnergy(unsigned store, double joules) {
+    LiveEnergyStore *s = impl_->energyStoreById(store);
+    if (s == nullptr) return "there is no store " + std::to_string(store);
+    if (!std::isfinite(joules) || joules < 0.0) return "joules drawn are a number from 0";
+    if (joules > s->charge_j + 1e-9) return "the store holds less than that";
+    s->charge_j = std::max(0.0, s->charge_j - joules);
+    s->given_j += joules;
+    return "drawn";
+}
+
 unsigned LiveWorld::circuit(const std::string &declaration) {
     auto c = machines::Circuit::read(nlohmann::json::parse(declaration));
     impl_->attachCircuit(std::move(c));
@@ -6150,6 +6208,8 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
         if (p->seen.size() > kSendersKept) p->seen.erase(p->seen.begin());
     }
     LiveProgram &s = p->said;
+    p->interruptions = 0;
+    p->interrupted = false;
     s.asked = ask.doing;
     s.asked_why = ask.doing.empty() ? std::string{} : ask.why.empty() ? "it was asked to" : ask.why;
     s.asked_by = ask.doing.empty() ? std::string{} : ask.sender;
@@ -14158,7 +14218,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},
-                                {"told", p.told}});
+                                {"told", p.told},
+                                {"interrupted", p.interrupted},
+                                {"interruptions", p.interruptions}});
         }
         doc["programs"] = std::move(programs);
         doc["next_program"] = I.next_program;

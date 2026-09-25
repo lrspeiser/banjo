@@ -281,6 +281,7 @@ kbd {
 .mp-brain .mp-seg { grid-template-columns: 1.2fr 1fr 1fr; }
 /* A display of their own would beat the hidden attribute's; hidden wins. */
 .mp-brain[hidden], .mp-chat[hidden], .mp-decided[hidden], #mp-talk[hidden] { display: none; }
+.mp-routine { color: var(--ink); }
 .mp-decided { margin: 0; color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
 .mp-decided.attention { color: var(--ink); }
 #mp-talk { width: 100%; }

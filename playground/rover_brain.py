@@ -39,6 +39,10 @@ import time
 from typing import Any, Callable
 from urllib import error, request
 
+import machine_routine as routines
+import machine_senses as senses
+import machine_tools as tools
+
 _log = logging.getLogger("banjo")
 
 JEV_URL = "https://api.typesafe.ai/v1/systemone"
@@ -51,76 +55,61 @@ CONFIDENCE_LEAST = 0.55
 AGAIN_S = 3.0
 DECISIONS_KEPT = 12
 
-# What Jev is asked, by the KIND of program (LiveProgram::kind): what the
-# machine is, in words; what Jev can pick for it, and what the program is
-# asked for each pick -- what to do, for how long, and the words the panel and
-# the chat use; and the other questions worth asking of it in the same call.
-# A new kind of machine -- one that digs, say -- is a new entry here, with the
-# asks its program takes: nothing else in this file knows what a rover is.
-KINDS: dict[str, dict[str, Any]] = {
-    "roam": {
-        "what": ("a small battery rover with a driven wheel on each side and a caster in front, roaming a "
-                 "lake's shore on its own"),
-        "picks": {
-            "go_on": ("going forward", 2.0, "keep going",
-                      "Keep going forward: the way ahead is clear and nothing just went wrong."),
-            "back_off": ("backing off", 1.5, "back off",
-                         "Reverse for a moment: something is ahead or in its way, or it just struck something "
-                         "or its wheels stalled."),
-            "turn_left": ("turning left", 2.5, "turn left",
-                          "Turn on the spot to its left: the trouble (water, a slope, a thing) is on its right "
-                          "or straight ahead and its left is the clear side."),
-            "turn_right": ("turning right", 2.5, "turn right",
-                           "Turn on the spot to its right: the trouble is on its left or straight ahead and "
-                           "its right is the clear side."),
-            "wait": ("waiting", 3.0, "hold still",
-                     "Hold still on its brakes: it is unclear what is happening, a person is close to it, or "
-                     "moving at all would make things worse."),
-        },
-        "also": {
-            "stuck": {
-                "type": "noul",
-                "instructions": "The machine is stuck: its wheels make no progress, or it keeps turning away "
-                                "from the same thing over and over without getting anywhere.",
-                "criteria": {"true": "It is making no progress, or the same trouble keeps coming back.",
-                             "false": "It is getting about, and this is a new situation."},
-            },
-            "battery": {
-                "type": "score",
-                "instructions": "How urgently the machine needs to rest and charge, from its battery's share "
-                                "of full and whether it is charging.",
-                # A score's criteria are its levels in order, low to high (2 to
-                # 10); the answer's legend maps each level's number back to
-                # its words.
-                "criteria": ["fine: plenty of charge, no need to think about it",
-                             "low: getting low, it should not go far from where it can charge",
-                             "urgent: nearly flat, it should rest now"],
-            },
-        },
+# What is asked when something happens, whoever answers: which of the
+# machine's TOOLS (machine_tools) it should use next -- a choice among their
+# names, with their descriptions as the criteria -- and, in the same call,
+# whether it is stuck and how urgent its battery is. The state it reads is
+# its SENSES (machine_senses). Nothing here is a rover's: KINDS says only what
+# each kind of program's machine is, in words, for the question's preamble.
+KINDS: dict[str, str] = {
+    "roam": "a small battery machine with a driven wheel on each side and a caster in front, working on its "
+            "own by a lake",
+}
+ALSO_QUESTIONS: dict[str, Any] = {
+    "stuck": {
+        "type": "noul",
+        "instructions": "The machine is stuck: its wheels make no progress, or it keeps turning away from the "
+                        "same thing over and over without getting anywhere.",
+        "criteria": {"true": "It is making no progress, or the same trouble keeps coming back.",
+                     "false": "It is getting about, and this is a new situation."},
+    },
+    "battery": {
+        "type": "score",
+        "instructions": "How urgently the machine needs to rest and charge, from its battery's share of full "
+                        "and whether it is charging.",
+        # A score's criteria are its levels in order, low to high (2 to 10); the
+        # answer's legend maps each level's number back to its words.
+        "criteria": ["fine: plenty of charge, no need to think about it",
+                     "low: getting low, it should not go far from where it can charge",
+                     "urgent: nearly flat, it should rest now"],
     },
 }
 
 
-def kind_of(kind: str) -> dict[str, Any]:
+def kind_of(kind: str) -> str:
     return KINDS.get(kind) or KINDS["roam"]
 
 
 def questions_for(kind: str) -> dict[str, Any]:
-    """The questions Jev is asked of a machine of this kind, in one call."""
-    k = kind_of(kind)
+    """The questions asked of a machine of this kind, in one call: which tool
+    next, from the tools a decider may pick; and the rest."""
+    criteria = {t["name"]: t["description"] for t in tools.catalogue(for_deciders=True)}
     return {
         "next": {
             "type": "choice",
-            "instructions": (f"The machine is {k['what']}. `event` is what just happened to it; `machine` is "
-                             "how it stands now. Pick what it should do for the next two seconds or so."),
-            "criteria": {pick: words[3] for pick, words in k["picks"].items()},
+            "instructions": (f"The machine is {kind_of(kind)}. `event` is what just happened to it; `senses` is "
+                             "everything it can sense now, with directions in degrees from its front (positive "
+                             "to its left) and distances in metres; `routine` is what it was doing on its own. "
+                             "Pick the one tool it should use next, for the next few seconds; carry_on leaves "
+                             "it to its routine and its reflexes."),
+            "criteria": criteria,
         },
-        **k["also"],
+        **ALSO_QUESTIONS,
     }
 
 
-# Kept for the tests and the docs: the rover's picks.
-PICKS = {pick: words[:3] for pick, words in KINDS["roam"]["picks"].items()}
+# Kept for the tests and the docs: the tools a decider may pick, by name.
+PICKS = {t["name"]: t["description"] for t in tools.catalogue(for_deciders=True)}
 QUESTIONS = questions_for("roam")
 
 
@@ -353,90 +342,28 @@ def deciders_from(candidates: list[Path] | None = None) -> tuple[dict[str, Any],
 
 # ---- what the rover is, in words Jev reads ---------------------------------
 
-def _side(sensor: dict[str, Any]) -> str:
-    side = sensor.get("side", 0)
-    return "left" if side > 0 else "right" if side < 0 else "middle"
-
-
-def state_of(program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
-             event: str, recent: list[dict[str, Any]]) -> dict[str, Any]:
-    """The rover as Jev is told it: the program as the engine reports it, its
-    wheels' controllers, what just struck it, and what was decided lately.
-    Curated, not the whole step: Jev reads 32k tokens and is paid by the one."""
-    controls = {c.get("id"): c for c in (machines or {}).get("controls") or []}
-    wheels = []
-    for side, ident in (("left", program.get("left")), ("right", program.get("right"))):
-        c = controls.get(ident) or {}
-        wheels.append({"side": side, "condition": c.get("condition", ""), "speed_rpm": c.get("speed_rpm", 0.0),
-                       "told": {"power": c.get("power"), "direction": c.get("direction"),
-                                "setting": c.get("setting")}})
-    parts = set(program.get("parts") or [])
-    struck = [{"struck": i.get("struck"), "by": i.get("by"), "closing_speed_m_s": i.get("closing_speed_m_s"),
-               "energy_j": i.get("energy_j")}
-              for i in impacts if i.get("struck") in parts or i.get("by") in parts]
+def state_of(ctx: senses.Context, event: str, recent: list[dict[str, Any]]) -> dict[str, Any]:
+    """The machine as a decider is told it: what happened, everything it
+    senses, its routine, and the last few decisions. Curated by the senses,
+    not the whole step: a decider reads a bounded state and is paid by the
+    token."""
     return {
         "event": event,
-        "machine": {
-            "kind": program.get("kind"),
-            "name": program.get("name"),
-            "doing": program.get("doing"),
-            "why": program.get("why"),
-            "doing_for_s": program.get("doing_s"),
-            "slope": {"nose_up_deg": program.get("pitch_deg"), "left_side_up_deg": program.get("roll_deg"),
-                      "climbs_up_to_deg": program.get("climb_deg")},
-            "battery": {"share_of_full": program.get("charge_share"), "rests_below": program.get("rest_below"),
-                        "times_rested": program.get("rests")},
-            "times_turned_away": program.get("turns"),
-            "water_sensors": [{"side": _side(s), "water_under_it_mm": round(1000.0 * float(s.get("reading_m") or 0.0)),
-                               "sees_water": bool(s.get("sees"))} for s in program.get("sensors") or []],
-            "wheels": wheels,
-            "asked": program.get("asked"),
-        },
-        "struck": struck[:6],
-        "recent_decisions": recent[-4:],
+        "senses": senses.read(ctx),
+        "routine": ctx.routine.summary() if ctx.routine is not None else None,
+        "recent_decisions": [{"event": d.get("event"), "tool": d.get("pick"), "confidence": d.get("confidence"),
+                              "did": d.get("applied")} for d in recent[-4:]],
     }
 
 
-def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dict[str, Any] | None,
-               impacts: list[dict[str, Any]]) -> list[str]:
-    """What happened to the rover between two readings of its program, in the
-    words its panel uses. Nothing while it is off or asked by someone."""
-    if not now.get("power"):
-        return []
-    out: list[str] = []
-    parts = set(now.get("parts") or [])
-    for i in impacts:
-        if i.get("struck") in parts and i.get("by") not in parts:
-            out.append(f"{i.get('by')} struck it at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
-        elif i.get("by") in parts and i.get("struck") not in parts:
-            out.append(f"it ran into {i.get('struck')} at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
-    if now.get("asked"):
-        return out
-    was = before or {}
-    seen_was = {_side(s) for s in was.get("sensors") or [] if s.get("sees")}
-    for s in now.get("sensors") or []:
-        if s.get("sees") and _side(s) not in seen_was:
-            out.append(f"water ahead on its {_side(s)}")
-    controls = {c.get("id"): c for c in (machines or {}).get("controls") or []}
-    for side, ident in (("left", now.get("left")), ("right", now.get("right"))):
-        condition = str((controls.get(ident) or {}).get("condition") or "")
-        if condition.startswith("stalled") and was.get("doing") == "going forward":
-            out.append(f"its {side} wheel stalled")
-    why, why_was = str(now.get("why") or ""), str(was.get("why") or "")
-    if why != why_was and why.startswith("the ground here is steeper"):
-        out.append("the ground ahead is steeper than it climbs")
-    below = float(now.get("rest_below") or 0.0)
-    share, share_was = float(now.get("charge_share") or 0.0), float(was.get("charge_share") or 1.0)
-    if below > 0.0 and share < below + 0.1 <= share_was:
-        out.append(f"its battery is getting low: {round(100 * share)}%")
-    return out
+situations = senses.situations
+_side = senses._side
 
 
 def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "Jev") -> dict[str, Any]:
-    """Jev's answers as a decision: what to ask the program, or nothing, and
-    what the panel says of it. A choice under CONFIDENCE_LEAST is left to the
-    reflexes; a score or a noul the answer lacks is simply not said."""
-    picks = kind_of(kind)["picks"]
+    """The answers as a decision: which tool to call, or none, and what the
+    panel says of it. A choice under CONFIDENCE_LEAST is left to the reflexes
+    and the routine; a score or a noul the answer lacks is simply not said."""
     choice = answers.get("next") if isinstance(answers.get("next"), dict) else {}
     pick = str(choice.get("choice") or "")
     confidence = float(choice.get("confidence") or 0.0)
@@ -448,17 +375,18 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "
                                                                         "").split(":")[0] or None
                            if battery else None,
                            "probabilities": choice.get("probabilities")}
-    if pick not in picks:
-        out["ask"] = None
-        out["said"] = f"{who} gave no pick it knows ({pick or 'nothing'}); its reflexes have it"
+    tool = tools.TOOLS.get(pick)
+    if tool is None or not tool.for_deciders:
+        out["call"] = None
+        out["said"] = f"{who} gave no tool it has ({pick or 'nothing'}); its reflexes have it"
         return out
-    doing, for_s, words = picks[pick][:3]
+    words = pick.replace("_", " ")
     if confidence < CONFIDENCE_LEAST:
-        out["ask"] = None
+        out["call"] = None
         out["said"] = f"{who} would {words} ({round(100 * confidence)}% sure): too unsure, so its reflexes have it"
         return out
-    out["ask"] = {"doing": doing, "for_s": for_s,
-                  "why": f"{who} said {words} ({round(100 * confidence)}% sure) when {event}"[:200]}
+    out["call"] = {"tool": pick, "args": {},
+                   "why": f"{who} said {words} ({round(100 * confidence)}% sure) when {event}"[:200]}
     out["said"] = f"{who}: {words} ({round(100 * confidence)}% sure) when {event}"
     return out
 
@@ -467,9 +395,10 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "
 
 class Brain:
     """What thinks for one program, by its name (a program's id changes when
-    the room is opened again; its name does not)."""
+    the room is opened again; its name does not): its routine, the deciders
+    it can ask, and what it decided lately."""
 
-    def __init__(self, name: str, deciders: Any, mode: str):
+    def __init__(self, name: str, deciders: Any, mode: str, declared: dict[str, Any] | None = None):
         self.name = name
         # A single Jev client, or None, is taken as the deciders it amounts to.
         if deciders is None:
@@ -478,7 +407,13 @@ class Brain:
             deciders = {getattr(deciders, "kind", "jev"): deciders}
         self.deciders: dict[str, Any] = deciders
         self.mode = mode if mode == "reflex" or mode in deciders else "reflex"
+        self.routine = routines.Routine(name, declared)
         self.before: dict[str, Any] | None = None
+        self.machines: dict[str, Any] | None = None
+        self.bodies: list[dict[str, Any]] | None = None
+        self.impacts: list[dict[str, Any]] = []
+        self.t = 0.0
+        self.person: dict[str, Any] | None = None
         self.asked_at: dict[str, float] = {}       # event text -> world time it was asked at
         self.decisions: deque[dict[str, Any]] = deque(maxlen=DECISIONS_KEPT)
         self.talk: deque[dict[str, Any]] = deque(maxlen=24)
@@ -501,10 +436,19 @@ class Brain:
     def who(self) -> str:
         return getattr(self.client, "label", "Jev") if self.client is not None else "its reflexes"
 
+    def context(self, ask: Callable[..., dict[str, Any]] | None) -> senses.Context:
+        """Its senses' view of the world as the last step left it."""
+        return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
+                              routine=self.routine, person=self.person, impacts=self.impacts, t=self.t)
+
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
-                t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None) -> None:
+                t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
+                bodies: list[dict[str, Any]] | None = None,
+                engine: Callable[..., dict[str, Any]] | None = None) -> None:
         events = situations(self.before, program, machines, impacts)
-        self.before = program
+        self.before, self.machines, self.impacts, self.t = program, machines, impacts, t
+        if bodies is not None:
+            self.bodies = bodies
         if self.mode == "reflex" or self.client is None or not events:
             return
         asked_by = (program.get("asked") or {}).get("by") if isinstance(program.get("asked"), dict) else None
@@ -520,7 +464,9 @@ class Brain:
             for e in fresh:
                 self.asked_at[e] = t
             self.thinking = event
-        state = state_of(program, machines, impacts, event, [d for d in self.decisions if d.get("said")])
+        # The senses are read now, on this thread, with the engine at hand:
+        # the question goes on another, with the state in hand.
+        state = state_of(self.context(engine), event, [d for d in self.decisions if d.get("said")])
         kind = str(program.get("kind") or "roam")
         thread = threading.Thread(target=self._think, args=(state, event, kind, ask or self.client.ask, self.who),
                                   daemon=True, name=f"banjo-brain-{self.name}")
@@ -533,7 +479,7 @@ class Brain:
             answers = ask(state, questions_for(kind))
             decision = decide(answers, event, kind, who)
         except Exception as failed:               # a fault upstream never stops the room
-            decision = {"event": event, "pick": None, "confidence": 0.0, "ask": None,
+            decision = {"event": event, "pick": None, "confidence": 0.0, "call": None,
                         "said": f"{who} was not asked to the end ({str(failed)[:80]}); its reflexes have it"}
             _log.warning("banjo: the brain of %s failed: %s", self.name, str(failed)[:160])
         decision["took_ms"] = round(1000.0 * (time.monotonic() - began))
@@ -559,13 +505,15 @@ class Brain:
         return {"name": self.name, "mode": self.mode,
                 "configured": {m: (m in self.deciders) for m in MODES if m != "reflex"},
                 "labels": {m: getattr(d, "label", m) for m, d in self.deciders.items()},
-                "thinking": self.thinking, "decisions": list(self.decisions)[-6:]}
+                "thinking": self.thinking, "decisions": list(self.decisions)[-6:],
+                "routine": self.routine.summary()}
 
 
 class Brains:
-    """All the programs' brains in the one open room, and the two seams the
-    server uses: every reply of the room comes through listen(), and before()
-    is called before each step the page takes, to apply what was decided."""
+    """All the programs' brains in the one open room, and the seams the server
+    uses: every reply of the room comes through listen(); before() is called
+    before each step the page takes, to apply what was decided and to move
+    each routine on; attach() tells the page what changed."""
 
     def __init__(self, deciders: Callable[[], Any]):
         # deciders() gives (the deciders by mode, the default mode), as
@@ -573,6 +521,8 @@ class Brains:
         self._deciders = deciders
         self.brains: dict[str, Brain] = {}
         self.modes: dict[str, str] = {}            # kept across rooms, by name
+        self.spec: dict[str, Any] | None = None    # the room's, for what each program's routine is
+        self.person: dict[str, Any] | None = None  # where the person last said they stood
 
     def _made(self) -> tuple[Any, str]:
         made = self._deciders()
@@ -584,48 +534,69 @@ class Brains:
         brain = self.brains.get(name)
         if brain is None:
             deciders, default = self._made()
-            brain = self.brains[name] = Brain(name, deciders, self.modes.get(name, default))
+            brain = self.brains[name] = Brain(name, deciders, self.modes.get(name, default),
+                                              routines.declared_for(self.spec, name))
         return brain
 
-    def opened(self) -> None:
+    def opened(self, spec: dict[str, Any] | None = None) -> None:
         """A room opened: what was observed of the last one is forgotten, the
-        modes are kept."""
+        modes are kept, and the room's spec says what each routine is."""
         for name, brain in self.brains.items():
             self.modes[name] = brain.mode
         self.brains.clear()
+        self.spec = spec
+
+    def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
+        return lambda **command: app.live.act({"session": session_id, **command})
 
     def listen(self, session: Any, reply: Any) -> None:
-        """The reply listener (app.reply_listeners): every step's programs."""
+        """The reply listener (app.reply_listeners): every step's programs,
+        with the room's machines, bodies and knocks."""
         if not isinstance(reply, dict):
             return
         machines = reply.get("machines")
         if not isinstance(machines, dict) or not machines.get("programs"):
             return
         impacts = [i for i in (reply.get("impacts") or []) if isinstance(i, dict)]
+        bodies = reply.get("bodies") if isinstance(reply.get("bodies"), list) else None
         t = float(reply.get("t") or 0.0)
+        # The engine, for the senses read when something happens: the
+        # session's own send, which this listener is already inside of (its
+        # lock is reentrant), so a survey costs one line each.
+        engine = getattr(session, "send", None)
         for program in machines["programs"]:
             if isinstance(program, dict) and program.get("name"):
-                self.of(str(program["name"])).observe(program, machines, impacts, t)
+                brain = self.of(str(program["name"]))
+                brain.person = self.person
+                brain.observe(program, machines, impacts, t, bodies=bodies, engine=engine)
 
     def before(self, app: Any, body: Any) -> None:
-        """Before a step the page takes: what Jev decided goes to the program."""
+        """Before a step the page takes: what was decided goes to the tools,
+        and each routine takes its next step if it is its turn."""
         if not isinstance(body, dict) or body.get("op") != "step":
             return
+        if isinstance(body.get("person"), dict):
+            self.person = body["person"]
+        ask = self._ask(app, body.get("session"))
         for brain in list(self.brains.values()):
+            brain.person = self.person
+            ctx = brain.context(ask)
             decision = brain.take()
-            if decision is None:
-                continue
-            ask, applied = decision.get("ask"), None
-            program = brain.before or {}
-            if ask and program.get("id") is not None and brain.mode != "reflex":
-                brain.seq += 1
+            if decision is not None:
+                call, applied = decision.get("call"), None
+                if call and (brain.before or {}).get("id") is not None and brain.mode != "reflex":
+                    did = tools.run(ctx, tools.Call(call["tool"], call.get("args") or {}, brain.mode, call.get("why", "")))
+                    applied = "not applied: " + did["did"] if did.get("failed") else did.get("did", "applied")
+                brain.record(decision, applied)
+            if (brain.before or {}).get("id") is not None:
                 try:
-                    said = app.live.act({"session": body.get("session"), "op": "behave", "program": program["id"],
-                                         "sender": brain.mode, "seq": brain.seq, **ask})
-                    applied = str(said.get("asked"))
-                except Exception as failed:
-                    applied = f"not applied: {str(failed)[:120]}"
-            brain.record(decision, applied)
+                    did = brain.routine.tick(ctx)
+                except Exception as failed:       # a routine that fails never stops the room
+                    _log.exception("banjo: the routine of %s failed", brain.name)
+                    did = {"did": f"failed: {str(failed)[:120]}", "failed": True}
+                if did is not None:
+                    brain.changed = True
+                    _log.info("banjo: the routine of %s: %s", brain.name, did.get("did"))
 
     def attach(self, body: Any, answer: Any) -> None:
         """On a step's answer, the brains the page has not heard the latest of."""

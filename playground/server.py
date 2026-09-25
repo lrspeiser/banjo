@@ -1489,7 +1489,7 @@ class Handler(BaseHTTPRequestHandler):
                 # The conversation so far in this room, so the page shows it again
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
-                app.brains.opened()
+                app.brains.opened(room.spec)
                 opened["brains"]=app.brains.summaries()
                 return self.send(opened)
             if path=="/api/world/ask":

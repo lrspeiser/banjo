@@ -434,6 +434,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"turns", p.turns},
             {"pitch_deg", tidy(p.pitch_deg)},
             {"roll_deg", tidy(p.roll_deg)},
+            {"at_m", {tidy(p.at_m.x), tidy(p.at_m.y), tidy(p.at_m.z)}},
+            {"heading_deg", tidy(p.heading_deg)},
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
@@ -2120,6 +2122,18 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true},
                         {"circuits", nlohmann::json::parse(world->circuits())}}.dump() << std::endl;
                     continue;
+                } else if (op == "draw") {
+                    // Energy taken from a store for work the world does not
+                    // otherwise account for (LiveWorld::drawEnergy): {store,
+                    // joules}; answered with the store as it now stands.
+                    const unsigned id = command.at("store").get<unsigned>();
+                    const std::string answer = world->drawEnergy(id, command.value("joules", 0.0));
+                    if (answer != "drawn") throw std::invalid_argument(answer);
+                    reply["drawn"] = command.value("joules", 0.0);
+                    const nlohmann::json machines = machinesOf(*world);
+                    if (machines.is_object() && machines.contains("stores"))
+                        for (const nlohmann::json &each : machines.at("stores"))
+                            if (each.at("id") == id) reply["store"] = each;
                 } else if (op == "drive") {
                     // What a motor is told: a command from -1 to 1, and its brake.
                     if (!world->driveMotor(command.at("motor").get<unsigned>(), command.value("command", 0.0),

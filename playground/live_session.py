@@ -1789,6 +1789,32 @@ class Live:
                                 soil_m3=soil, from_carried=True)
         if op == "survey":
             return session.send(op="survey", at=xz("at"))
+        if op == "sun":
+            # The room's sun as it stands, whether or not it has a day.
+            return session.send(op="sun")
+        if op == "draw":
+            # Energy taken from a store for work the world does not otherwise
+            # account for: a machine's scoop biting the ground, declared by
+            # its routine (machine_tools). {store, joules}, answered with the
+            # store as it now stands.
+            try:
+                store, joules = int(body.get("store")), float(body.get("joules", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError("draw needs a store's number and joules") from None
+            if not (math.isfinite(joules) and 0.0 <= joules <= 1.0e7):
+                raise LiveError("joules drawn are from 0 to 10 MJ")
+            return session.send(op="draw", store=store, joules=joules)
+        if op in ("ground_withdraw", "ground_return"):
+            # Ground carried moved out into a packet, or a packet's worth put
+            # back into what is carried: how a machine's hopper is kept apart
+            # from what the person carries (machine_tools).
+            try:
+                sand, soil = float(body.get("sand_m3", 0.0)), float(body.get("soil_m3", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError(f"{op} needs sand_m3 and soil_m3") from None
+            if not all(math.isfinite(v) and 0.0 <= v <= 100.0 for v in (sand, soil)):
+                raise LiveError("a packet holds from 0 to 100 cubic metres of each")
+            return session.send(op=op, sand_m3=sand, soil_m3=soil)
         if op in ("environment", "environment_state", "terrain"):
             return session.send(op=op, full=bool(body.get("full", False)))
         if op == "discharge":

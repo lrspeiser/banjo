@@ -1057,6 +1057,11 @@ SCENES = {
     # Laid out, and let roam before it is written, by tools/build_rover_room.py;
     # open it at /world?scene=tests-rover. Off the menu, like the others.
     "tests-rover": _saved_room("tests-rover"),
+    # The same rover with a hopper and a routine: it digs at its dig site
+    # until its hopper is full, carries the load to its depot, dumps it and
+    # goes back for more, by the playground's routine over its program. Laid
+    # out by tools/build_rover_room.py; open it at /world?scene=tests-dig.
+    "tests-dig": _saved_room("tests-dig"),
     # The same rover with its battery nearly flat, under the sun: it runs down,
     # rests while the solar panel on its deck charges it, and roams on. Laid
     # out by tools/build_rover_room.py; open it at /world?scene=tests-solar.
