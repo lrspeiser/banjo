@@ -903,10 +903,27 @@ is asked for each, and the other questions worth asking in the same call.
 Another kind of machine -- one that digs, say -- is an entry there and a
 program kind in the engine; nothing else in the layer knows what a rover is.
 
+**Or the chat's model.** The same typed questions can be put to the room's
+OpenAI model instead (`OpenAIDecider`): the Responses API with a strict JSON
+schema built from the questions, so it can answer nothing but probabilities
+over the options and levels, at its lightest reasoning (`minimal`), since a
+pick among five things needs no long thought. Its answers are read into
+Jev's shape -- the choice is the most probable option and the confidence is
+that probability; a score is the probability-weighted level -- so the rest of
+the layer does not know which decided. Measured 2026-09-25 on the rover
+state with water seen on its left: gpt-5-mini picked turn right at 95% in
+2.3 s, and sorted "come over here please" as come here in 1.7 s; gpt-5-nano
+answered in 1.1 s but called a 70% battery low and the rover stuck, so
+gpt-5-mini is the default (`OPENAI_DECIDER_MODEL` and
+`OPENAI_DECIDER_EFFORT` in `.env` change it). Slower than Jev's tenth of a
+second, and paid by the token; fine for events a few seconds apart.
+
 **On the panel** a machine with a program says who decides for it -- its
-reflexes, or Jev -- and what was decided last, with Jev's confidence. Jev
-is the default when a key is configured; without one the switch cannot be
-pressed and says why.
+reflexes, Jev, or the model -- and what was decided last, with the
+decider's confidence. `BANJO_DECIDER` in `.env` (jev, openai or reflex)
+says which decides when a room opens; without it, Jev when it has a key,
+else the model, else the reflexes. A decider without its key cannot be
+pressed, and its button says why.
 
 **The key.** `TYPESAFE_API_KEY` in the local `.env` (the same files the
 OpenAI key is read from) turns it on; `JEV_API_URL` there names another
@@ -963,9 +980,10 @@ facing them, and nothing that happened to it meanwhile was put to Jev; told
 closed, it went on. A machine that is off says so and does nothing.
 
 `POST /api/world/rover/talk {program, open | said | close, person}` and
-`POST /api/world/rover/brain {program, mode}` are the two routes, on the
-room the page has open; the step reply carries `brains` whenever one has
-changed.
+`POST /api/world/rover/brain {program, mode}` (reflex, jev or openai) are
+the two routes, on the room the page has open; the step reply carries
+`brains` whenever one has changed. What a person says is sorted by
+whichever decider is on, or by whichever has a key when the reflexes are.
 
 ## After the hoist
 

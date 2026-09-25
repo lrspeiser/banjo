@@ -287,7 +287,7 @@ class Playground:
         self.on_live_reply = lambda session, reply: heard(self, session, reply)
         # What thinks for each machine's program on what it meets, and hears
         # every reply of the room for it (rover_brain).
-        self.brains = rover_brain.Brains(lambda: rover_brain.client_from(_environment_files()))
+        self.brains = rover_brain.Brains(lambda: rover_brain.deciders_from(_environment_files()))
         self.reply_listeners.append(self.brains.listen)
 
     def log_event(self, job_id, event, **fields):

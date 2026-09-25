@@ -1577,21 +1577,29 @@ function showProgramPanel(p) {
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
 }
 
-// Who decides for this program, and what was decided last. Without a Jev key
-// the switch is shown pressed to its reflexes and Jev cannot be pressed.
+// Who decides for this program -- its reflexes, Jev, or the chat's OpenAI
+// model -- and what was decided last. A decider without its key in the local
+// .env cannot be pressed, and its button says why.
 function showBrain(p) {
   const brain = world.brains.get(p.name) || null;
-  const jev = !!brain && brain.mode === "jev";
+  const mode = brain ? brain.mode : "reflex";
+  const configured = (brain && brain.configured) || {};
+  const labels = (brain && brain.labels) || {};
   $("mp-brain").hidden = false;
-  setPressed("mp-brain-reflex", !jev);
-  setPressed("mp-brain-jev", jev, !brain || !brain.configured);
-  $("mp-brain-jev").title = brain && !brain.configured
-    ? "TYPESAFE_API_KEY is not in the local .env, so Jev cannot be asked" : "Ask Jev what to do at each thing that happens to it";
+  setPressed("mp-brain-reflex", mode === "reflex");
+  setPressed("mp-brain-jev", mode === "jev", !configured.jev);
+  setPressed("mp-brain-openai", mode === "openai", !configured.openai);
+  $("mp-brain-jev").title = configured.jev ? "Ask Jev what to do at each thing that happens to it"
+    : "TYPESAFE_API_KEY is not in the local .env, so Jev cannot be asked";
+  $("mp-brain-openai").title = configured.openai
+    ? `Ask ${labels.openai || "the chat's model"} what to do at each thing that happens to it`
+    : "OPENAI_API_KEY is not in the local .env, so the model cannot be asked";
+  const who = labels[mode] || (mode === "jev" ? "Jev" : "the model");
   const last = brain && brain.decisions && brain.decisions.length ? brain.decisions[brain.decisions.length - 1] : null;
   const decided = $("mp-decided");
-  if (brain && brain.thinking) { decided.textContent = `Asking Jev about: ${brain.thinking}…`; decided.hidden = false; }
-  else if (jev && last) { decided.textContent = last.said + (last.applied === "applied" ? "" : last.applied ? ` (${last.applied})` : ""); decided.hidden = false; }
-  else if (jev) { decided.textContent = "Jev has not been asked anything yet: nothing has happened to it."; decided.hidden = false; }
+  if (brain && brain.thinking) { decided.textContent = `Asking ${who} about: ${brain.thinking}…`; decided.hidden = false; }
+  else if (mode !== "reflex" && last) { decided.textContent = last.said + (last.applied === "applied" ? "" : last.applied ? ` (${last.applied})` : ""); decided.hidden = false; }
+  else if (mode !== "reflex") { decided.textContent = `${who} has not been asked anything yet: nothing has happened to it.`; decided.hidden = false; }
   else { decided.hidden = true; }
   decided.classList.toggle("attention", !!(brain && brain.thinking));
   $("mp-talk").hidden = !$("mp-chat").hidden;
@@ -1604,8 +1612,8 @@ async function setBrain(mode) {
   try {
     const brain = await api("/api/world/rover/brain", { session: world.session, program: c.name, mode });
     followBrains([brain]);
-    machinePanel.said = mode === "jev" ? "Jev decides for it now, at each thing that happens to it."
-      : "Its reflexes alone decide for it now.";
+    machinePanel.said = mode === "reflex" ? "Its reflexes alone decide for it now."
+      : `${(brain.labels || {})[mode] || mode} decides for it now, at each thing that happens to it.`;
     machinePanel.stale = false;
   } catch (error) {
     machinePanel.stale = true;
@@ -1615,6 +1623,7 @@ async function setBrain(mode) {
 }
 $("mp-brain-reflex").addEventListener("click", () => setBrain("reflex"));
 $("mp-brain-jev").addEventListener("click", () => setBrain("jev"));
+$("mp-brain-openai").addEventListener("click", () => setBrain("openai"));
 
 // Talking to it (docs/machine-world.md, "Talking to the rover"): opened, it
 // stops and turns to face the person; what they type is sorted and done, and

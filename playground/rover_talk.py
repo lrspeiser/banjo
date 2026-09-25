@@ -63,9 +63,10 @@ def classify(client: rover_brain.JevClient | None, said: str) -> tuple[str, floa
             answers = client.ask({"said": said}, INTENT_QUESTIONS)
             choice = answers.get("intent") if isinstance(answers.get("intent"), dict) else {}
             intent, confidence = str(choice.get("choice") or "other"), float(choice.get("confidence") or 0.0)
+            who = getattr(client, "kind", "jev")
             if intent in INTENTS and confidence >= INTENT_LEAST:
-                return intent, confidence, "jev"
-            return "other", confidence, "jev"
+                return intent, confidence, who
+            return "other", confidence, who
         except Exception:
             pass                                   # fall back to plain words
     lowered = said.lower()
@@ -207,7 +208,7 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
         if not said:
             raise ValueError("say something: {said: ...}")
         say("you", said)
-        intent, confidence, sorted_by = classify(brain.client, said)
+        intent, confidence, sorted_by = classify(brain.decider(), said)
         if not program.get("power") and intent not in ("status", "why", "other"):
             reply = "I am switched off, so I cannot. Switch me on first."
         elif intent == "stop":

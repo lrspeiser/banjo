@@ -13,6 +13,7 @@ network: Jev is a function, or the scripted server in tests/scripted_jev_server.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import math
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tests")]
@@ -198,15 +200,107 @@ class TheBrainOffTheStep(unittest.TestCase):
         self.assertEqual("reflex", brains.of("rover").mode)
         with self.assertRaisesRegex(ValueError, "TYPESAFE_API_KEY"):
             brains.request({"program": "rover", "mode": "jev"})
+        with self.assertRaisesRegex(ValueError, "OPENAI_API_KEY"):
+            brains.request({"program": "rover", "mode": "openai"})
         with self.assertRaisesRegex(ValueError, "reflex"):
             brains.request({"program": "rover", "mode": "sideways"})
-        self.assertEqual("reflex", brains.request({"program": "rover"})["mode"])
+        summary = brains.request({"program": "rover"})
+        self.assertEqual(("reflex", {"jev": False, "openai": False}), (summary["mode"], summary["configured"]))
         # With one, Jev is the default, and a mode set is kept for the next room.
         keyed = rover_brain.Brains(lambda: rover_brain.JevClient("k"))
-        self.assertEqual("jev", keyed.of("rover")["mode"] if isinstance(keyed.of("rover"), dict) else keyed.of("rover").mode)
+        self.assertEqual("jev", keyed.of("rover").mode)
         keyed.request({"program": "rover", "mode": "reflex"})
         keyed.opened()
         self.assertEqual("reflex", keyed.of("rover").mode)
+
+    def test_who_decides_comes_from_what_is_configured(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = Path(folder) / ".env"
+            for name in ("TYPESAFE_API_KEY", "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_DECIDER_MODEL",
+                         "OPENAI_DECIDER_EFFORT", "BANJO_DECIDER", "JEV_API_URL"):
+                os.environ.pop(name, None)
+            env.write_text("OPENAI_API_KEY=k1\nOPENAI_MODEL=gpt-5-mini\n", encoding="utf-8")
+            deciders, default = rover_brain.deciders_from([env])
+            self.assertEqual((["openai"], "openai"), (sorted(deciders), default))
+            self.assertEqual(("gpt-5-mini", "minimal", "OpenAI (gpt-5-mini)"),
+                             (deciders["openai"].model, deciders["openai"].effort, deciders["openai"].label))
+            env.write_text("OPENAI_API_KEY=k1\nOPENAI_DECIDER_MODEL=gpt-5-nano\nTYPESAFE_API_KEY=k2\n", encoding="utf-8")
+            deciders, default = rover_brain.deciders_from([env])
+            self.assertEqual((["jev", "openai"], "jev", "gpt-5-nano"),
+                             (sorted(deciders), default, deciders["openai"].model))
+            env.write_text("OPENAI_API_KEY=k1\nTYPESAFE_API_KEY=k2\nBANJO_DECIDER=openai\n", encoding="utf-8")
+            self.assertEqual("openai", rover_brain.deciders_from([env])[1])
+            env.write_text("TYPESAFE_API_KEY=k2\nBANJO_DECIDER=openai\n", encoding="utf-8")
+            self.assertEqual("jev", rover_brain.deciders_from([env])[1], "a decider without a key is not the default")
+        brains = rover_brain.Brains(lambda: ({"openai": rover_brain.OpenAIDecider("k", "gpt-5-mini")}, "openai"))
+        brain = brains.of("rover")
+        self.assertEqual(("openai", "OpenAI (gpt-5-mini)"), (brain.mode, brain.who))
+        self.assertIs(brain.decider(), brain.deciders["openai"])
+        brains.request({"program": "rover", "mode": "reflex"})
+        self.assertEqual("its reflexes", brain.who)
+        self.assertIs(brain.decider(), brain.deciders["openai"], "what a person says is still sorted by whoever is there")
+
+
+class TheModelAsADecider(unittest.TestCase):
+    """The chat's model asked the same typed questions, answering in Jev's shape."""
+
+    def test_the_schema_admits_only_the_answers_asked_for(self):
+        schema = rover_brain.answer_schema(rover_brain.questions_for("roam"))
+        self.assertEqual(["next", "stuck", "battery"], schema["required"])
+        self.assertEqual(["go_on", "back_off", "turn_left", "turn_right", "wait"],
+                         schema["properties"]["next"]["properties"]["choice"]["enum"])
+        self.assertEqual(["0", "1", "2"], schema["properties"]["battery"]["properties"]["probabilities"]["required"])
+        self.assertFalse(schema["additionalProperties"])
+        payload = rover_brain.OpenAIDecider("k", "gpt-5-mini").payload({"event": "x"}, rover_brain.QUESTIONS)
+        self.assertEqual({"effort": "minimal"}, payload["reasoning"])
+        self.assertEqual("json_schema", payload["text"]["format"]["type"])
+        self.assertTrue(payload["text"]["format"]["strict"])
+        self.assertNotIn("reasoning", rover_brain.OpenAIDecider("k", "gpt-4.1-mini").payload("s", rover_brain.QUESTIONS))
+
+    def test_its_answers_come_back_in_jevs_shape(self):
+        raw = {"next": {"choice": "go_on", "probabilities": {"go_on": 0.1, "back_off": 0.7, "turn_left": 0.1,
+                                                              "turn_right": 0.1, "wait": 0.0}},
+               "stuck": {"noul": 0.2},
+               "battery": {"probabilities": {"0": 0.2, "1": 0.8, "2": 0.0}}}
+        answers = rover_brain.answers_from(raw, rover_brain.questions_for("roam"))
+        # The choice is the most probable option, whatever the model named.
+        self.assertEqual(("back_off", 0.7), (answers["next"]["choice"], answers["next"]["confidence"]))
+        self.assertEqual(0.2, answers["stuck"]["noul"])
+        self.assertEqual((0.8, 0.8), (answers["battery"]["score"], answers["battery"]["confidence"]))
+        self.assertTrue(answers["battery"]["legend"]["1"].startswith("low"))
+        decision = rover_brain.decide(answers, "water ahead on its left", "roam", "OpenAI (gpt-5-mini)")
+        self.assertEqual("backing off", decision["ask"]["doing"])
+        self.assertEqual("OpenAI (gpt-5-mini): back off (70% sure) when water ahead on its left", decision["said"])
+        self.assertEqual("low", decision["battery"])
+
+    def test_the_model_is_called_and_read_through_the_responses_api(self):
+        seen = {}
+
+        class Reply:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1):
+                return json.dumps({"status": "completed", "output": [
+                    {"type": "reasoning"},
+                    {"type": "message", "content": [{"type": "output_text", "text": json.dumps(
+                        {"intent": {"choice": "come_here", "probabilities": {"stop": 0.05, "come_here": 0.9}}})}]}]}).encode()
+
+        def fake_urlopen(req, timeout=0):
+            seen["url"], seen["auth"] = req.full_url, req.get_header("Authorization")
+            seen["body"] = json.loads(req.data)
+            return Reply()
+        questions = {"intent": {"type": "choice", "instructions": "what do they mean",
+                                "criteria": {"stop": "stop", "come_here": "come"}}}
+        with patch.object(rover_brain.request, "urlopen", fake_urlopen):
+            answers = rover_brain.OpenAIDecider("sk-test", "gpt-5-mini").ask({"said": "come over"}, questions)
+        self.assertEqual("https://api.openai.com/v1/responses", seen["url"])
+        self.assertEqual("Bearer sk-test", seen["auth"])
+        self.assertIn("come over", seen["body"]["input"])
+        self.assertEqual(("come_here", 0.9474), (answers["intent"]["choice"], answers["intent"]["confidence"]))
+        # And the talk sorts what a person says through it the same way.
+        with patch.object(rover_brain.request, "urlopen", fake_urlopen):
+            sorted_as = rover_talk.classify(rover_brain.OpenAIDecider("sk-test", "gpt-5-mini"), "come over")
+        self.assertEqual(("come_here", 0.9474, "openai"), sorted_as)
 
 
 class TalkingToIt(unittest.TestCase):
