@@ -132,6 +132,14 @@ Important behavior:
 - DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
   throws a block at its SIDE, along the floor, and is not what anyone means by
   "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
+- WRITE THE ROOM when none of those is the test. try_it_in_a_room takes `add`:
+  anything you can describe standing in the world beside the thing -- a ramp
+  tilted 20 degrees, a ball already rolling at 3 m/s, a wall driven into the
+  ground for it to hit. Say what it is made of, how big, where, which way up
+  and how fast it is already going. HEIGHT IS MEASURED FROM THE GROUND, so 0 is
+  resting on it. Build the test you were actually asked for rather than the
+  nearest of the four settings: "roll a ball down a ramp into its leg" is a
+  ramp and a ball, not a thrown block.
 - MAKING IT GO: add_power_part puts a store, motor, panel or control on the
   design and set_program says what it does on its own. A motor names the two
   components its pin joins and that pin MUST be a bearing -- a bond cannot
@@ -417,7 +425,32 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                    "noon_elevation_deg": {"type": "number"},
                                                    "hour": {"type": "number", "minimum": 0, "maximum": 23.99},
                                                    "irradiance_w_m2": {"type": "number"}}},
-                            "items": {"type": "array", "maxItems": 6, "description": "what else stands in the room",
+                            "add": {"type": "array", "maxItems": 12,
+                                    "description": "things YOU write into the room, beside the design",
+                                    "items": {"type": "object", "additionalProperties": False,
+                                              "required": ["size_m", "at_m"],
+                                              "properties": {
+                                                  "name": {"type": "string",
+                                                           "description": "what to call it, e.g. 'the ramp'"},
+                                                  "shape": {"type": "string",
+                                                            "enum": ["box", "sphere", "cylinder"]},
+                                                  "material": {"type": "string",
+                                                               "enum": ["oak", "iron", "concrete", "glass"]},
+                                                  "size_m": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                             "items": {"type": "number"},
+                                                             "description": "x, y, z in metres; a cylinder is [across, along, across]"},
+                                                  "at_m": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                           "items": {"type": "number"},
+                                                           "description": "x, HEIGHT ABOVE THE GROUND, z. 0 is resting on it."},
+                                                  "tilt_deg": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                               "items": {"type": "number"},
+                                                               "description": "degrees about x, y, z; a tilted thing is an exact body"},
+                                                  "moving_m_s": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                                 "items": {"type": "number"},
+                                                                 "description": "how fast it is already going"},
+                                                  "fixed": {"type": "boolean",
+                                                            "description": "driven into the ground; cannot move or be tilted"}}}},
+                            "items": {"type": "array", "maxItems": 6, "description": "four things it already knows how to make",
                                       "items": {"type": "object", "additionalProperties": False,
                                                 "required": ["what"],
                                                 "properties": {"what": {"type": "string",
@@ -801,7 +834,8 @@ class _State:
                            "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
                            "component_overrides": self.overrides},
                 seconds=float(args.get("seconds", 10.0)), day=args.get("day"),
-                items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)),
+                items=args.get("items") or (), add=args.get("add") or (),
+                turn_on=bool(args.get("turn_on", True)),
                 load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
                 from_m=float(args.get("from_m") or 0.0),
                 drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
@@ -815,6 +849,10 @@ class _State:
             self.showing = answer.get("playback")
             return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
                                       "did": answer["did"], "sky": answer["sky"], "made": answer["made"],
+                                      "in_the_room": answer["in_the_room"],
+                                      "where_everything_ended": {
+                                          name: body["at_m"] for name, body in
+                                          list(answer["ended"]["bodies"].items())[:24]},
                                       "broke": answer["broke"], "dented": answer["dented"],
                                       "fell_over": answer["fell_over"],
                                       "stores": answer["ended"]["stores"], "panels": answer["ended"]["panels"],

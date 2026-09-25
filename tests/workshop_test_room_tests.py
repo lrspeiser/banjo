@@ -310,6 +310,101 @@ class TheFourWaysOfTryingAThing(unittest.TestCase):
                              "the compiler's own sizing block is not part of anybody's test")
         self.assertTrue(all(not k.startswith(bench.MARKER + "#") for k in play["geometry"]))
 
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class ARoomSomebodyWrote(unittest.TestCase):
+    """The owner: "why can't the llm write bits of code to run tests? does it
+    need to always be prebuilt?"
+
+    It did. There were four settings -- a weight, a drop, a slide, a thrown
+    block -- and a question outside those four could not be asked at all. Now
+    the room takes things written into it: what they are made of, how big,
+    where, which way up and how fast they are already going.
+    """
+
+    def setUp(self):
+        self.app = SimpleNamespace(engine_path=ENGINE, workshop_owner_id="owner")
+
+    def test_a_ball_rolls_down_a_ramp_the_model_wrote_and_hits_the_thing(self):
+        ramp = {"name": "the ramp", "material": "oak", "size_m": [1.6, 0.06, 0.5],
+                "at_m": [-1.6, 0.42, 0.0], "tilt_deg": [0.0, 0.0, 20.0]}
+        ball = {"name": "the ball", "shape": "sphere", "material": "iron",
+                "size_m": [0.18, 0.18, 0.18], "at_m": [-2.2, 0.75, 0.0],
+                "moving_m_s": [0.6, 0.0, 0.0]}
+        said = bench.try_it(self.app, TABLE, seconds=4.0, add=[ramp, ball])
+        where = said["ended"]["bodies"]
+        began = said["began"]["bodies"]
+        print("\n    " + said["says"])
+        print(f"      the ball went from x={began['the ball']['at_m'][0]:.2f} "
+              f"to x={where['the ball']['at_m'][0]:.2f}, "
+              f"y={began['the ball']['at_m'][1]:.2f} -> {where['the ball']['at_m'][1]:.2f}")
+        self.assertIn("the ramp", where)
+        self.assertIn("the ball", where)
+        self.assertIn("the ramp", said["in_the_room"])
+        # It went downhill and along, which is what a ramp is for.
+        self.assertGreater(where["the ball"]["at_m"][0], began["the ball"]["at_m"][0] + 0.3)
+        self.assertLess(where["the ball"]["at_m"][1], began["the ball"]["at_m"][1])
+        # And it is in the room as a real body, not a number in a config.
+        self.assertIn("the ramp", said["says"])
+
+    def test_a_wall_driven_into_the_ground_does_not_move_when_it_is_hit(self):
+        wall = {"name": "the wall", "material": "concrete", "size_m": [0.2, 1.2, 1.6],
+                "at_m": [1.4, 0.0, 0.0], "fixed": True}
+        said = bench.try_it(self.app, TABLE, seconds=2.0, slide_m_s=4.0, add=[wall],
+                            record=False)
+        wall_now = said["ended"]["bodies"]["the wall"]
+        print("    " + said["says"])
+        self.assertEqual(0.0, wall_now["speed_m_s"], "driven in, it cannot be shoved")
+        self.assertAlmostEqual(1.4, wall_now["at_m"][0], places=2)
+
+    def test_height_is_measured_from_the_ground_not_from_zero(self):
+        """0.4 m of soil is not a number anybody should have to know."""
+        resting = {"name": "a block", "material": "oak", "size_m": [0.2, 0.2, 0.2],
+                   "at_m": [2.0, 0.1, 0.0]}
+        said = bench.try_it(self.app, TABLE, seconds=1.0, add=[resting], record=False)
+        block = said["began"]["bodies"]["a block"]
+        self.assertAlmostEqual(bench.GROUND_M + 0.1, block["at_m"][1], places=3)
+
+    def test_what_it_refuses_says_why(self):
+        for thing, because in (
+            ({"name": "x", "size_m": [0.2, 0.2, 0.2], "at_m": [0, -1, 0]}, "ABOVE the ground"),
+            ({"name": "x", "size_m": [0.2, 0.2, 0.2], "at_m": [0, 0, 0], "material": "cheese"}, "made of one of"),
+            ({"name": "x", "size_m": [0.001, 0.2, 0.2], "at_m": [0, 0, 0]}, "every side is"),
+            ({"name": "x", "size_m": [0.2, 0.2, 0.2], "at_m": [40, 0, 0]}, "ground is 16 m across"),
+            ({"name": "x", "shape": "sphere", "size_m": [0.2, 0.3, 0.2], "at_m": [0, 0, 0]}, "same across"),
+            ({"name": "x", "size_m": [0.2, 0.2, 0.2], "at_m": [0, 0, 0], "colour": "red"}, "has no"),
+            ({"name": "x", "size_m": [0.2, 0.2, 0.2], "at_m": [0, 0, 0],
+              "tilt_deg": [0, 0, 10], "fixed": True}, "cannot be driven into the ground"),
+        ):
+            with self.assertRaises(ValueError) as caught:
+                bench.spec(add=[thing])
+            self.assertIn(because, str(caught.exception))
+        # And two things cannot share a name, or nothing can be told apart.
+        one = {"name": "twin", "size_m": [0.2, 0.2, 0.2], "at_m": [0, 0, 0]}
+        with self.assertRaises(ValueError) as caught:
+            bench.spec(add=[one, dict(one, at_m=[1, 0, 0])])
+        self.assertIn("both called", str(caught.exception))
+        with self.assertRaises(ValueError) as caught:
+            bench.spec(add=[dict(one, name=f"thing {i}") for i in range(bench.MAX_AUTHORED + 1)])
+        self.assertIn("up to 12", str(caught.exception))
+
+    def test_a_tilt_is_a_real_turn_and_it_is_z_first(self):
+        """The same order the engine builds rotation_deg in (Rx . Ry . Rz)."""
+        flat = bench._turned(None)
+        self.assertEqual([1.0, 0.0, 0.0, 0.0], flat)
+        quarter = bench._turned([0.0, 0.0, 90.0])
+        self.assertAlmostEqual(0.70710678, quarter[0], places=6)
+        self.assertAlmostEqual(0.70710678, quarter[3], places=6)
+        # Two turns about different axes do not commute, and the order is the
+        # engine's: z is applied first, so it is the rightmost factor. A quarter
+        # about z then a quarter about x is qx . qz, which is this and not its
+        # mirror -- the y term is negative, and the other order makes it
+        # positive.
+        both = bench._turned([90.0, 0.0, 90.0])
+        self.assertAlmostEqual(1.0, sum(v * v for v in both), places=9)
+        for wanted, got in zip([0.5, 0.5, -0.5, 0.5], both):
+            self.assertAlmostEqual(wanted, got, places=6, msg=both)
+
+
     def test_a_bench_refuses_what_is_not_a_bench_test(self):
         for how, why in ((dict(drop_m=50.0), "5 m"), (dict(slide_m_s=90.0), "30 m/s"),
                          (dict(load_kg=9000.0), "2000 kg"),

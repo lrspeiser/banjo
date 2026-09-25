@@ -171,6 +171,40 @@ Still only reachable by the page or the API:
   rack row from the chat.
 - **Saved test presets**, which have no home now the picker is off the bench.
 
+## 1c. The model writes the room
+
+**Done (2026-09-24).** The owner: *"why can't the llm write bits of code to run
+tests? does it need to always be prebuilt?"*
+
+It did. `try_it_in_a_room` had four settings -- a weight, a drop, a slide, a
+thrown block -- and a question outside those four could not be asked at all.
+"Roll a ball down a ramp into its leg" came out as a block thrown sideways,
+because that was the nearest thing the vocabulary had.
+
+It takes `add` now: up to twelve things the model writes into the room, each
+one what somebody would say out loud -- what it is made of, how big, where,
+which way up, how fast it is already going, and whether it is driven into the
+ground. **Height is measured from the ground**, so 0 is resting on it; 400 mm
+of soil is not a number anybody should have to know. Anything tilted becomes an
+exact body, because a lattice body is a box on the cell grid and cannot be
+turned.
+
+It is DATA, not code. Every field is checked against a bound before the room
+opens and a refusal says which thing and why -- "the ground is 16 m across, so
+it has to stand within 7.5 m of the middle" -- so a scene the model got wrong
+comes back as something it can fix rather than a crash. Nothing is executed.
+
+Measured: a 180 mm iron ball let go at the top of a 20-degree oak ramp rolls
+from x=-2.20 to x=-0.65 and falls from 1.15 m to 0.49 m in four seconds, and
+the table it reaches moves 41 mm.
+
+**Real code is a separate question.** A short Python script driving the room
+step by step -- loops, conditions, measuring between steps -- is strictly more
+powerful, and it is arbitrary code running on the server that holds the world
+and the API key. It needs a separate process with no filesystem, no network and
+a time and memory cap. That is its own piece of work and the owner has parked
+it behind this one.
+
 ## 2. Test it
 
 **Done (2026-09-24).** There were three testing systems and they did not agree;

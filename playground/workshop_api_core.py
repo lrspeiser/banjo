@@ -541,7 +541,8 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
             app, {"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
                   "parameters": dict(design.parameters), "component_overrides": overrides},
             seconds=float(how.get("seconds", 10.0)), sun=how.get("sun"), day=how.get("day"),
-            items=how.get("items") or (), turn_on=bool(how.get("turn_on", True)),
+            items=how.get("items") or (), add=how.get("add") or (),
+            turn_on=bool(how.get("turn_on", True)),
             load_kg=float(how.get("load_kg") or 0.0), on=str(how.get("on") or "top"),
             drop_m=float(how.get("drop_m") or 0.0), slide_m_s=float(how.get("slide_m_s") or 0.0),
             strike=how.get("strike"), record=bool(how.get("record", True)))

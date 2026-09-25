@@ -122,12 +122,123 @@ THINGS = {
 }
 
 
+#: What a thing written into the room may be made of. Four, because a tilted
+#: thing has to be an exact body and an exact body takes only these; keeping the
+#: list the same either way means a ramp and a block can be the same material.
+AUTHORED_MATERIALS = ("oak", "iron", "concrete", "glass")
+#: How many things may be written into one room, and how big each may be.
+MAX_AUTHORED = 12
+MIN_AUTHORED_M = 0.01
+MAX_AUTHORED_M = 6.0
+AUTHORED_SHAPES = ("box", "sphere", "cylinder")
+
+
+def _turned(tilt_deg: Any) -> list[float]:
+    """A quaternion from degrees about x, y and z, applied z first.
+
+    The same order the engine builds rotation_deg in (Rx . Ry . Rz), so a thing
+    written here and a thing written in a room spec tilt the same way.
+    """
+    if not tilt_deg:
+        return [1.0, 0.0, 0.0, 0.0]
+    if not isinstance(tilt_deg, (list, tuple)) or len(tilt_deg) != 3:
+        raise ValueError("tilt_deg is three numbers: degrees about x, y and z")
+    out = [1.0, 0.0, 0.0, 0.0]
+    for axis, degrees in reversed(list(enumerate(tilt_deg))):
+        half = math.radians(float(degrees)) / 2.0
+        turn = [math.cos(half), 0.0, 0.0, 0.0]
+        turn[axis + 1] = math.sin(half)
+        w1, x1, y1, z1 = turn
+        w2, x2, y2, z2 = out
+        out = [w1*w2 - x1*x2 - y1*y2 - z1*z2,
+               w1*x2 + x1*w2 + y1*z2 - z1*y2,
+               w1*y2 - x1*z2 + y1*w2 + z1*x2,
+               w1*z2 + x1*y2 - y1*x2 + z1*w2]
+    length = math.sqrt(sum(v * v for v in out)) or 1.0
+    return [v / length for v in out]
+
+
+def written(thing: Any, index: int) -> tuple[str, dict[str, Any]]:
+    """One thing the model wrote, as a body the room will take.
+
+    The vocabulary is what somebody would say out loud: what it is made of, how
+    big, where, which way up, how fast it is already going, and whether it is
+    driven into the ground. Height is measured FROM THE GROUND, because flat
+    ground stands at the depth of its soil and 0.4 is not a number anyone
+    should have to know.
+
+    Anything tilted is an exact body, because a lattice body is a box on the
+    cell grid and cannot be turned. Everything else is cells, which is what the
+    rest of the room is made of.
+    """
+    if not isinstance(thing, dict):
+        raise ValueError("each thing written into the room is an object")
+    unknown = set(thing) - {"name", "shape", "material", "size_m", "at_m", "tilt_deg",
+                            "moving_m_s", "fixed"}
+    if unknown:
+        raise ValueError(f"a thing in the room has no {sorted(unknown)}; it has "
+                         "name, shape, material, size_m, at_m, tilt_deg, moving_m_s, fixed")
+    name = " ".join(str(thing.get("name") or f"thing {index + 1}").split())[:80]
+    shape = str(thing.get("shape") or "box")
+    if shape not in AUTHORED_SHAPES:
+        raise ValueError(f"shape is one of {list(AUTHORED_SHAPES)}")
+    material = str(thing.get("material") or "oak")
+    if material not in AUTHORED_MATERIALS:
+        raise ValueError(f"a thing written into the room is made of one of {list(AUTHORED_MATERIALS)}")
+    size = thing.get("size_m")
+    if not isinstance(size, (list, tuple)) or len(size) != 3:
+        raise ValueError(f"{name}: size_m is three numbers in metres")
+    size = [float(v) for v in size]
+    if not all(MIN_AUTHORED_M <= v <= MAX_AUTHORED_M for v in size):
+        raise ValueError(f"{name}: every side is {MIN_AUTHORED_M * 1000:.0f} mm to "
+                         f"{MAX_AUTHORED_M:g} m; you asked for {size}")
+    if shape == "sphere" and (max(size) - min(size)) > 1e-9:
+        raise ValueError(f"{name}: a sphere is the same across every way")
+    if shape == "cylinder" and abs(size[0] - size[2]) > 1e-9:
+        raise ValueError(f"{name}: a cylinder is [across, along, across] about its own y")
+    at = thing.get("at_m")
+    if not isinstance(at, (list, tuple)) or len(at) != 3:
+        raise ValueError(f"{name}: at_m is [x, height above the ground, z] in metres")
+    at = [float(v) for v in at]
+    if at[1] < 0.0:
+        raise ValueError(f"{name}: at_m's middle number is the height ABOVE the ground, "
+                         "so it cannot be negative")
+    if max(abs(at[0]), abs(at[2])) > GROUND_ACROSS_M / 2.0 - 0.5:
+        raise ValueError(f"{name}: the ground is {GROUND_ACROSS_M:g} m across, so it has to "
+                         f"stand within {GROUND_ACROSS_M / 2.0 - 0.5:g} m of the middle")
+    centre = [at[0], GROUND_M + at[1], at[2]]
+    speed = thing.get("moving_m_s") or [0.0, 0.0, 0.0]
+    if not isinstance(speed, (list, tuple)) or len(speed) != 3:
+        raise ValueError(f"{name}: moving_m_s is three numbers in metres a second")
+    speed = [float(v) for v in speed]
+    if max(abs(v) for v in speed) > MAX_SPEED_M_S:
+        raise ValueError(f"{name}: a bench starts a thing at up to {MAX_SPEED_M_S:g} m/s")
+    fixed = bool(thing.get("fixed"))
+    tilt = thing.get("tilt_deg")
+    if tilt or shape == "cylinder":
+        if fixed:
+            raise ValueError(f"{name}: an exact body cannot be driven into the ground; "
+                             "leave the tilt off to fix it, or let it rest where it lands")
+        body = {"name": name, "material": material,
+                "position_m": [round(v, 6) for v in centre],
+                "orientation_wxyz": _turned(tilt),
+                "velocity_m_s": speed,
+                "parts": [{"name": name, "dimensions_m": size, "center_local_m": [0.0, 0.0, 0.0],
+                           **({"shape": "cylinder"} if shape == "cylinder" else {})}]}
+        return ("precise_rigid_bodies", body)
+    body = _box(name, material, size, centre, anchored=fixed,
+                shape="sphere" if shape == "sphere" else "box")
+    if any(speed):
+        body["velocity_m_s"] = speed
+    return ("bodies", body)
+
+
 def things() -> list[dict[str, str]]:
     """What can be put in the room, for a person or the model to choose from."""
     return [{"what": name, "says": says} for name, (says, _) in sorted(THINGS.items())]
 
 
-def spec(*, sun: Any = None, day: Any = None, items: Any = ()) -> dict[str, Any]:
+def spec(*, sun: Any = None, day: Any = None, items: Any = (), add: Any = ()) -> dict[str, Any]:
     """A little room: flat ground of real soil, gravity, a sky, and what you put in it.
 
     `sun` puts it at a fixed place -- elevation, azimuth and irradiance -- and
@@ -152,6 +263,16 @@ def spec(*, sun: Any = None, day: Any = None, items: Any = ()) -> dict[str, Any]
                        "irradiance_w_m2": float(day.get("irradiance_w_m2", 1000.0))}
     else:
         room["sun"] = dict(sun or NOON)
+    add = list(add or ())
+    if len(add) > MAX_AUTHORED:
+        raise ValueError(f"a room takes up to {MAX_AUTHORED} things written into it")
+    seen = {"marker"}
+    for i, thing in enumerate(add):
+        where, body = written(thing, i)
+        if body["name"] in seen:
+            raise ValueError(f"two things in the room are both called {body['name']!r}")
+        seen.add(body["name"])
+        room.setdefault(where, []).append(body)
     for i, item in enumerate(items or ()):
         what = str(item.get("what") or "")
         if what not in THINGS:
@@ -304,12 +425,13 @@ class Bench:
     bench is for.
     """
 
-    def __init__(self, app: Any, *, sun: Any = None, day: Any = None, items: Any = ()):
+    def __init__(self, app: Any, *, sun: Any = None, day: Any = None, items: Any = (),
+                 add: Any = ()):
         self._held = tempfile.TemporaryDirectory()
         root = Path(self._held.name)
         self.live = live_session.Live()
         self.room = world_room.Room("bench-test")
-        self.room.spec = spec(sun=sun, day=day, items=items)
+        self.room.spec = spec(sun=sun, day=day, items=items, add=add)
         self.room.inventory = inventory.Inventory()
         self.app = SimpleNamespace(live=self.live, live_holder="world", room=self.room,
                                    engine_path=getattr(app, "engine_path"),
@@ -404,6 +526,9 @@ class Bench:
         if not self.its_bodies:
             raise ValueError("make something before setting a test up on it")
         did: dict[str, Any] = {}
+        beside = [n for n in _named(self.room.spec) if n not in self.its_bodies and n != MARKER]
+        if beside:
+            did["written"] = ", ".join(sorted(beside))
         spec_now = deepcopy(self.room.spec)
         here = _named(spec_now)
         exact = self.is_exact()
@@ -600,7 +725,7 @@ class Bench:
 
 
 def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: Any = None, day: Any = None,
-           items: Any = (), at_m=(0.0, 0.0), turn_on: bool = True, load_kg: float = 0.0,
+           items: Any = (), add: Any = (), at_m=(0.0, 0.0), turn_on: bool = True, load_kg: float = 0.0,
            on: str = "top", from_m: float = 0.0, drop_m: float = 0.0, slide_m_s: float = 0.0,
            strike: Any = None, record: bool = True) -> dict[str, Any]:
     """Make the thing in a little room, do a thing to it, and say what happened.
@@ -621,7 +746,7 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
     seconds = float(seconds)
     if not 0.0 < seconds <= 120.0:
         raise ValueError("a test runs for up to 120 seconds")
-    with Bench(app, sun=sun, day=day, items=items) as room:
+    with Bench(app, sun=sun, day=day, items=items, add=add) as room:
         made = room.make(candidate, at_m=at_m)
         did = room.set_up(load_kg=load_kg, on=on, from_m=from_m, drop_m=drop_m,
                           slide_m_s=slide_m_s, strike=strike)
@@ -638,7 +763,9 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
         answer = {"schema": SCHEMA, "made": {k: made.get(k) for k in
                                              ("root_body", "root_bodies", "mass_kg", "cells", "design_id")},
                   "ran_for_s": round(seconds, 3), "turned_on": bool(turned_on), "did": did,
-                  "sky": ended["sun"], "in_the_room": [t["what"] for t in (items or ())] if items else [],
+                  "sky": ended["sun"],
+                  "in_the_room": ([t["what"] for t in (items or ())]
+                                  + [written(t, i)[1]["name"] for i, t in enumerate(add or ())]),
                   "broke": room.broke(), "dented": room.dented(),
                   "failures": list(room.failures), "fell_over": bool(fell),
                   "began": began, "ended": ended,
@@ -664,6 +791,8 @@ def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
                     else f"{did['load_kg']:g} kg set on its {did.get('on') or 'top'}")
     if did.get("strike"):
         said.append(f"hit by {did['strike']['kg']:g} kg at {did['strike']['speed_m_s']:g} m/s")
+    if did.get("written"):
+        said.append(f"in a room with {did['written']} in it")
     deck = made.get("root_body")
     body = ended["bodies"].get(deck or "")
     if body:
