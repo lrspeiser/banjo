@@ -303,6 +303,34 @@ class AQuestionComesWithAnswers(unittest.TestCase):
         rule = workshop_chat.SYSTEM
         self.assertIn("NEVER END A TURN WITH AN OPEN QUESTION IN PROSE", rule)
 
+    def test_nothing_in_the_rules_tells_it_to_ask_first(self):
+        """Told to make a table out of glass it did it, then asked three
+        questions -- because the rules said both things.
+
+        "MAKE YOUR BEST GUESS AND GO" was near the top and "if the request is
+        ambiguous in a way that materially changes the object, ask a concise
+        question instead of making up a choice" was a hundred lines below it,
+        left over from before. It obeyed the older one. Two rules that
+        contradict each other are worse than either, because which one wins is
+        not something anybody decided.
+        """
+        rule = workshop_chat.SYSTEM
+        self.assertIn("MAKE YOUR BEST GUESS AND GO", rule)
+        self.assertNotIn("ask a concise question", rule)
+        self.assertNotRegex(rule, r"(?i)ambiguous[^.]*\bask\b")
+
+    def test_it_may_only_offer_what_this_bench_can_make(self):
+        """The same turn offered nine choices, and not one of them exists:
+        tempered against annealed glass, laminated build-ups, glass-fibre legs
+        with metal cores, structural adhesive, metal brackets. There are eight
+        materials and a part is one of them, solid through. Prose that sounds
+        like expertise and cannot be acted on is worse than no prose.
+        """
+        rule = workshop_chat.SYSTEM
+        self.assertIn("ONLY OFFER WHAT THIS BENCH CAN DO", rule)
+        for cannot in ("tempering", "laminating", "adhesive", "bracket"):
+            self.assertIn(cannot, rule, f"the rule should name {cannot} as something it cannot do")
+
     def test_asking_ends_the_turn_and_carries_the_options(self):
         answer, called = self.asked(
             '{"question":"How much stronger?","options":['

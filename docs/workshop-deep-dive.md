@@ -251,6 +251,39 @@ it really weighs when that differs.
 the box, so two short messages in a tall log were two tall bubbles of mostly
 nothing. `align-content:start` and `align-self:start`.
 
+## 1d2. Two rules that fought, and a menu of things nobody can make
+
+**Fixed (2026-09-25).** Told *"make the table out of glass"* the chat did it --
+all five parts, and the mass went 27.60 -> 98.58 kg, a ratio of 3.5717 against
+glass over oak's 3.5714, which is only what you get if every part changed. Then
+it asked three questions in prose, in nine numbered options.
+
+Two separate faults.
+
+**The rules contradicted each other.** "MAKE YOUR BEST GUESS AND GO" was near
+the top and, a hundred lines below it, left over from before: *"If the request
+is ambiguous in a way that materially changes the object, ask a concise
+question instead of making up a choice."* It obeyed the older one. Which rule
+wins in a contradiction is not something anybody decided, so the old line is
+gone: ambiguity now means pick, do it, and say in one line what you picked --
+"glass everywhere, top and legs; say the word if you meant the top only".
+
+**The options did not exist.** Tempered against annealed glass, laminated
+build-ups, glass-fibre legs with metal cores, structural adhesive, metal
+brackets, an apron. This bench has eight materials, and a part is one of them,
+solid through, at a size and a place; a joint is a declared fastening and
+nothing else. Prose that sounds like expertise and cannot be acted on is worse
+than no prose, because a person cannot tell which is which. Every alternative
+it names must now be one it could carry out on the next turn with the tools it
+has.
+
+It also carried *"I attempted to set a usage program but that call failed"*
+along in a list of results as though it were an outcome. A failed call is said
+plainly, with what was done about it.
+
+Both are pinned by tests on the prompt itself, including one that fails if any
+rule tells it to ask when the request is ambiguous.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot
