@@ -226,6 +226,34 @@ class TheFourWaysOfTryingAThing(unittest.TestCase):
         self.assertLess(weight["speed_m_s"], 0.05, "it came to rest on it")
         self.assertEqual([], said["broke"], "a 27 kg oak table holds 120 kg")
 
+    def test_a_weight_can_be_DROPPED_on_it_rather_than_only_set_on_it(self):
+        """The one thing the room could not do.
+
+        The owner asked the chat to "drop a 20 kg iron block on the bench" and
+        watched it thrown at the side instead. Nothing here could drop a thing
+        ONTO a thing: `drop_m` lets go of the THING, `strike` throws a block
+        along the floor, and a weight was placed a millimetre above it. So the
+        only body that ever arrived with any speed arrived sideways.
+        """
+        said = bench.try_it(self.app, TABLE, seconds=2.0, load_kg=20.0, from_m=2.0)
+        weight = said["ended"]["bodies"]["the weight"]
+        began = said["began"]["bodies"]["the weight"]
+        print("\n    " + said["says"])
+        print(f"      it was let go at {began['at_m'][1]:.2f} m and ended at {weight['at_m'][1]:.2f} m, "
+              f"{abs(weight['at_m'][0]):.3f} m off the middle")
+        self.assertEqual(2.0, said["did"]["dropped_on_from_m"])
+        # It came from ABOVE: it started two metres over the table and it is
+        # over the middle, not out to one side of it.
+        self.assertGreater(began["at_m"][1], 3.0)
+        self.assertLess(abs(weight["at_m"][0]), 0.35, "it landed on it, not beside it")
+        self.assertLess(abs(weight["at_m"][2]), 0.35)
+        self.assertGreater(weight["at_m"][1], bench.GROUND_M + 0.3, "it is on the table, not the floor")
+        # And a weight with no height is still a weight SET on it, arriving
+        # with nothing: the millimetre it falls is not a drop.
+        gently = bench.try_it(self.app, TABLE, seconds=1.5, load_kg=20.0, record=False)
+        self.assertNotIn("dropped_on_from_m", gently["did"])
+        self.assertLess(gently["began"]["bodies"]["the weight"]["at_m"][1], 1.4)
+
     def test_dropped_it_falls_the_distance_asked_and_lands(self):
         said = bench.try_it(self.app, TABLE, seconds=2.0, drop_m=1.0)
         deck, was = said["ended"]["bodies"][said["made"]["root_body"]], said["began"]["bodies"][said["made"]["root_body"]]

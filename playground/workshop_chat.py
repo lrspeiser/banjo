@@ -122,6 +122,16 @@ Important behavior:
   anything meant to turn on another part (a wheel on its mount, a door leaf on
   its post, a pulley on its pin) and 'fixed' for anything bonded solid. Build
   the concept first and do not agonise over millimetres.
+- KEEPING IT: save_design writes the design down under a name you choose, and
+  saving the same name again is a new revision of it rather than a second
+  thing. list_saved_designs says what is there, and open_saved_design brings
+  one back -- which REPLACES what is on the bench, so ask first unless they
+  said to. take_it_back undoes the last change, or several. These were panels
+  on the page once; they are yours now, so a person who asks you to "save this
+  as the tall one" gets it saved rather than pointed at a control.
+- DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
+  throws a block at its SIDE, along the floor, and is not what anyone means by
+  "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
 - MAKING IT GO: add_power_part puts a store, motor, panel or control on the
   design and set_program says what it does on its own. A motor names the two
   components its pin joins and that pin MUST be a bearing -- a bond cannot
@@ -423,6 +433,10 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                         "description": "set an iron weight of this many kilograms on it"},
                             "on": {"type": "string",
                                    "description": "the name of the part to set the weight on; the whole thing by default"},
+                            "from_m": {"type": "number", "minimum": 0, "maximum": 5,
+                                       "description": "DROP that weight on it from this height instead of "
+                                                      "setting it there. This is how you drop something ON "
+                                                      "a thing; `strike` throws a block at its SIDE."},
                             "drop_m": {"type": "number", "minimum": 0, "maximum": test_room.MAX_DROP_M,
                                        "description": "let it go from this far above where it stands"},
                             "slide_m_s": {"type": "number", "minimum": -test_room.MAX_SPEED_M_S,
@@ -436,6 +450,28 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                                     "maximum": test_room.MAX_SPEED_M_S},
                                                       "height_fraction": {"type": "number", "minimum": 0,
                                                                           "maximum": 1}}}}}},
+        {"type": "function", "name": "save_design",
+         "description": "Write the design down under a name. Saving the same design again is a new "
+                        "revision of it, not a second one. Use the name the person used.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["name"],
+                        "properties": {"name": {"type": "string",
+                                                "description": "what to call it, in their words"}}}},
+        {"type": "function", "name": "list_saved_designs",
+         "description": "What has been saved, newest first: the name, what it is, how many times it "
+                        "was saved and its id. Call this before opening one by name.",
+         "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
+        {"type": "function", "name": "open_saved_design",
+         "description": "Bring a saved design back onto the bench. This REPLACES what is there now, "
+                        "so say what you are about to lose unless they already said to.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["design_id"],
+                        "properties": {"design_id": {"type": "string",
+                                                     "description": "from list_saved_designs"}}}},
+        {"type": "function", "name": "take_it_back",
+         "description": "Undo the last change to the design, or several. The bench remembers every "
+                        "state of this session, so this reaches back past your own turn.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "properties": {"steps": {"type": "integer", "minimum": 1, "maximum": 20,
+                                                 "description": "how many changes to take back (1)"}}}},
         {"type": "function", "name": "ask_the_person",
          "description": "Ask the person a question you cannot answer yourself, with concrete "
                         "answers they can click. ALWAYS use this instead of asking in prose. "
@@ -526,6 +562,8 @@ class _State:
         self.asking: dict[str, Any] | None = None
         #: A run for the person to watch, if the turn tried the thing out.
         self.showing: dict[str, Any] | None = None
+        #: How many changes the page is being asked to take back.
+        self.undo: int = 0
 
     def current_spec(self) -> dict[str, Any]:
         return {"kind": self.design.kind, "design_id": self.design.design_id,
@@ -538,6 +576,61 @@ class _State:
         return result
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool == "save_design":
+            import workshop_store
+            from workshop_api_core import _store
+            name = " ".join(str(args.get("name") or "").split())[:160]
+            if not name:
+                raise ValueError("a saved design needs a name")
+            record = workshop_store.save(_store(self.app), self.design,
+                                         label=name, world_revision=None)
+            return self.record(tool, {
+                "summary": f"saved as {record['label']!r} ({record['design_id']}), "
+                           f"revision {record['revision']}",
+                "design_id": record["design_id"], "revision": record["revision"],
+                "label": record["label"]})
+
+        if tool == "list_saved_designs":
+            import workshop_store
+            from workshop_api_core import _store
+            rows = workshop_store.list_saved(_store(self.app), limit=40)
+            return self.record(tool, {
+                "summary": f"{len(rows)} saved" if rows else "nothing has been saved yet",
+                "saved": [{"design_id": r.get("design_id"), "name": r.get("label"),
+                           "kind": r.get("kind"), "times_saved": r.get("revision"),
+                           "saved_at": r.get("saved_at")} for r in rows]})
+
+        if tool == "open_saved_design":
+            import workshop_store
+            from workshop_api_core import _store
+            design_id = str(args.get("design_id") or "")
+            record, design = workshop_store.load(_store(self.app), design_id)
+            # The candidate the API owns is replaced in place, the same way an
+            # edit replaces it, so the page draws what came back without any
+            # second route through the server.
+            self.design = design
+            self.overrides = workshop_components.checked_overrides(
+                record.get("component_overrides") or design.lineage.get("component_overrides") or {})
+            self.base = assemble(str(record["kind"]), design_id=str(record["design_id"]),
+                                 purpose=(str(record.get("purpose")) if record.get("purpose") else None),
+                                 parameters=dict(record.get("parameters") or {}))
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed = [part.name for part in self.design.parts]
+            return self.record(tool, {
+                "summary": f"opened {record.get('label') or design_id}: "
+                           f"{len(self.design.parts)} parts",
+                "design_id": design_id, "name": record.get("label"), "kind": record["kind"]})
+
+        if tool == "take_it_back":
+            # The bench keeps every state of the session and this turn does not,
+            # so the page does the undoing. What comes back here is the
+            # instruction; the page carries it out when the turn lands.
+            steps = max(1, min(20, int(args.get("steps") or 1)))
+            self.undo = steps
+            return self.record(tool, {
+                "summary": f"taking back the last {steps} change" + ("" if steps == 1 else "s"),
+                "steps": steps})
+
         if tool == "ask_the_person":
             # A question is not work done to the design, so it ends the turn
             # rather than going round the loop again. What it leaves behind is
@@ -710,6 +803,7 @@ class _State:
                 seconds=float(args.get("seconds", 10.0)), day=args.get("day"),
                 items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)),
                 load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
+                from_m=float(args.get("from_m") or 0.0),
                 drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
                 strike=args.get("strike"), record=True)
             # The person watches it. "Ask me to drop a bowling ball on the item"
@@ -1107,6 +1201,9 @@ def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
         # A run to watch, if it tried the thing out. The page plays it over the
         # object and offers the way back to the build.
         "showing": state.showing,
+        # Changes to take back. The page holds the session's history, so it is
+        # the page that walks back through it.
+        "undo": state.undo,
         # The richer agent already applied its bounded edits to candidate. The
         # outer Workshop API sees `none` and simply returns that final candidate.
         "action": "none", "scope": "this", "material": None, "library_item_id": None,

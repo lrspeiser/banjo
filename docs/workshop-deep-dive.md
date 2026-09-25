@@ -154,21 +154,22 @@ it from 2 m and show me what happens" -- and each one is a real turn. When the
 chat tries the thing out, the run is played **over the object**, with one
 button back to the build.
 
-**What a person can no longer reach, and what it needs.** The panels are still
-built and still wired -- the page reads values out of them and the browser
-tests hold the bench to them -- but they are not on the screen. Nothing was
-deleted, and the chat cannot yet do these:
+**What a person can no longer reach.** The panels are still built and still
+wired -- the page reads values out of them and the browser tests hold the bench
+to them -- but they are not on the screen. Nothing was deleted.
 
-- **Save a design, or open one you saved.** There is no chat tool for either.
-  This is the first thing to add.
-- **The library**: saving a component, reusing one by name is possible
-  (`reuse_library_component`), but browsing is not.
+Saving, opening and undo were the three that mattered, and the chat has them
+now: `save_design`, `list_saved_designs`, `open_saved_design` and
+`take_it_back`. Undo is the page's, because the page holds the session's
+history; the tool returns the instruction and the page walks back through it.
+
+Still only reachable by the page or the API:
+
+- **The library**: reusing a saved component by name works
+  (`reuse_library_component`), but browsing does not.
 - **The rack**: `what_it_needs` reports what is short, but nothing can SET a
   rack row from the chat.
-- **Undo.** The undo built this morning is in the hidden pane.
-- **The bench tests' own controls.** Trying a thing is `try_it_in_a_room`
-  through the chat, which covers all of it; the picker and its fields are not
-  needed, but the saved test presets have no other home.
+- **Saved test presets**, which have no home now the picker is off the bench.
 
 ## 2. Test it
 

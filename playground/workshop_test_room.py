@@ -71,9 +71,10 @@ MAX_LOAD_KG = 2000.0
 MAX_DROP_M = 5.0
 MAX_SPEED_M_S = 30.0
 MAX_STRIKER_KG = 500.0
-#: How far above the thing a weight is let go. It has to be clear of it -- two
-#: bodies started overlapping are a shove, not a load -- and it has to be as
-#: small as that allows, because whatever it falls through it arrives with.
+#: How far above the thing a weight is let go when you do not say. It has to be
+#: clear of it -- two bodies started overlapping are a shove, not a load -- and
+#: it has to be as small as that allows, because whatever it falls through it
+#: arrives with. Say `from_m` and it is a thing DROPPED on it instead.
 WEIGHT_GAP_M = 0.001
 #: Turned further than this from how it was put down, a thing is not standing
 #: any more. Two right angles would be upside down; half of one is already over.
@@ -390,8 +391,8 @@ class Bench:
         here = _named(self.room.spec)
         return any(here[n][0] == "precise_rigid_bodies" for n in self.its_bodies if n in here)
 
-    def set_up(self, *, load_kg: float = 0.0, on: str = "top", drop_m: float = 0.0,
-               slide_m_s: float = 0.0, strike: Any = None) -> dict[str, Any]:
+    def set_up(self, *, load_kg: float = 0.0, on: str = "top", from_m: float = 0.0,
+               drop_m: float = 0.0, slide_m_s: float = 0.0, strike: Any = None) -> dict[str, Any]:
         """Do to the thing what the test says, and open the room again on it.
 
         Everything a bench does to a thing is a change to where it starts, how
@@ -430,15 +431,24 @@ class Bench:
             did["slide_m_s"] = slide_m_s
 
         load_kg = float(load_kg or 0.0)
+        from_m = float(from_m or 0.0)
+        if not 0.0 <= from_m <= MAX_DROP_M:
+            raise ValueError(f"a bench drops a thing on it from 0 to {MAX_DROP_M:g} m")
         if load_kg:
             if not 0.0 < load_kg <= MAX_LOAD_KG:
                 raise ValueError(f"a bench sets up to {MAX_LOAD_KG:g} kg on a thing")
             over = self.its_box(str(on or "").strip())
-            where, weight = _weight("the weight", load_kg, over, WEIGHT_GAP_M, exact)
+            # Set ON it, or DROPPED on it. There was no way to drop a thing onto
+            # a thing at all: the only body that arrived with any speed was the
+            # thrown block, which flies sideways, so "drop a 20 kg iron block on
+            # it" came out as a 20 kg block thrown at its side.
+            where, weight = _weight("the weight", load_kg, over, from_m or WEIGHT_GAP_M, exact)
             spec_now.setdefault(where, []).append(weight)
             did["load_kg"] = load_kg
             did["on"] = str(on or "top")
             did["weight_side_m"] = round(_iron_cube_m(load_kg), 4)
+            if from_m:
+                did["dropped_on_from_m"] = from_m
 
         if strike:
             how = strike if isinstance(strike, dict) else {}
@@ -591,8 +601,8 @@ class Bench:
 
 def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: Any = None, day: Any = None,
            items: Any = (), at_m=(0.0, 0.0), turn_on: bool = True, load_kg: float = 0.0,
-           on: str = "top", drop_m: float = 0.0, slide_m_s: float = 0.0, strike: Any = None,
-           record: bool = True) -> dict[str, Any]:
+           on: str = "top", from_m: float = 0.0, drop_m: float = 0.0, slide_m_s: float = 0.0,
+           strike: Any = None, record: bool = True) -> dict[str, Any]:
     """Make the thing in a little room, do a thing to it, and say what happened.
 
     One call: open the room, install the design into it the way the world
@@ -602,16 +612,19 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
     world's session.
 
     The test is whichever of these you ask for, and they compose: `load_kg` on
-    its `on` (a part's name, or the whole thing), `drop_m` to let it go from,
-    `slide_m_s` to start it moving at, and `strike` to throw a block at it.
-    Ask for none of them and it simply stands there, which is its own test.
+    its `on` (a part's name, or the whole thing), and `from_m` to DROP that
+    weight on it from a height rather than set it there; `drop_m` to let the
+    THING go from a height; `slide_m_s` to start it moving at; and `strike` to
+    throw a block at its side. Ask for none of them and it simply stands there,
+    which is its own test.
     """
     seconds = float(seconds)
     if not 0.0 < seconds <= 120.0:
         raise ValueError("a test runs for up to 120 seconds")
     with Bench(app, sun=sun, day=day, items=items) as room:
         made = room.make(candidate, at_m=at_m)
-        did = room.set_up(load_kg=load_kg, on=on, drop_m=drop_m, slide_m_s=slide_m_s, strike=strike)
+        did = room.set_up(load_kg=load_kg, on=on, from_m=from_m, drop_m=drop_m,
+                          slide_m_s=slide_m_s, strike=strike)
         if record:
             room.watch()
         room.remember_poses()
@@ -646,7 +659,9 @@ def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
     if did.get("slide_m_s"):
         said.append(f"started sliding at {did['slide_m_s']:.1f} m/s")
     if did.get("load_kg"):
-        said.append(f"{did['load_kg']:g} kg set on its {did.get('on') or 'top'}")
+        said.append(f"{did['load_kg']:g} kg dropped on its {did.get('on') or 'top'} "
+                    f"from {did['dropped_on_from_m']:.2f} m" if did.get("dropped_on_from_m")
+                    else f"{did['load_kg']:g} kg set on its {did.get('on') or 'top'}")
     if did.get("strike"):
         said.append(f"hit by {did['strike']['kg']:g} kg at {did['strike']['speed_m_s']:g} m/s")
     deck = made.get("root_body")

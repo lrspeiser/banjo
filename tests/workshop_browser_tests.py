@@ -555,7 +555,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(["Wire", "Skin"],
                          self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
                                  " > button[data-view]')].map(b=>b.textContent)"))
-        self.assertEqual(["3/4", "X", "Y", "Z"],
+        self.assertEqual(["3/4", "Front", "Side", "Top"],
                          self.js("[...document.querySelectorAll('#ws-points-of-view button')]"
                                  ".map(b=>b.dataset.pointOfView)"))
         # Which product is a dropdown on that bar, not seven chips above it.
@@ -565,6 +565,30 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # table is not on the page.
         self.assertTrue(self.js("Boolean(document.querySelector('#ws-view-context')"
                                 "?.closest('#ws-hidden-controls'))"))
+
+    def test_each_point_of_view_moves_the_camera(self):
+        """They did nothing at all, and were called X, Y and Z.
+
+        The wiring for Wire and Skin runs over every button in the bar at load
+        time, and the points of view had already been put there -- so clicking
+        "Top" ran the representation handler with no representation, set the
+        drawing to undefined and moved no camera. The owner: "what does x y z
+        do, I don't see it changing anything."
+        """
+        where = lambda: self.js("document.querySelector('#workshop-stage').pagePointOf([0.55,0.75,0.3])")
+        seen = {}
+        for name in ("3/4", "Front", "Side", "Top"):
+            self.click(f'[data-point-of-view="{name}"]')
+            self.wait(f"document.querySelector('[data-point-of-view=\"{name}\"]')"
+                      f".getAttribute('aria-current')==='true'")
+            seen[name] = [round(v) for v in where()]
+        # Four places to stand, four different pictures.
+        self.assertEqual(4, len({tuple(v) for v in seen.values()}), seen)
+        # Looking down, a point 0.3 m in front of the middle is ABOVE one
+        # 0.3 m behind it on the screen; looking from the front it is not.
+        self.assertLess(seen["Top"][1], seen["Front"][1], seen)
+        # And the drawing is untouched: a point of view is not a representation.
+        self.assertEqual("skin", self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
 
     def test_the_chat_offers_things_to_ask_for(self):
         """A blank box is the hardest question on the page.

@@ -354,6 +354,112 @@ class AQuestionComesWithAnswers(unittest.TestCase):
         self.assertIsNone(answer["asking"])
 
 
+class KeepingItThroughTheChat(unittest.TestCase):
+    """Saving, opening and taking back, now that the panels are off the bench.
+
+    The owner took the right-hand pane off the page. Everything it could do
+    that the chat could not was a thing a person had lost, so these are the
+    three that mattered.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = pathlib.Path(self.tmp.name)
+        self.app = types.SimpleNamespace(workshop_store=root / "workshop", api_key="k",
+                                         model="gpt-5-mini", workshop_owner_id="owner")
+        self.app.workshop_store.mkdir(parents=True)
+
+    @staticmethod
+    def a_table(kind="table"):
+        candidate = assemble(kind, design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def turn(self, calls, candidate=None, message="do it"):
+        """One turn whose tool calls are `calls`, then a word."""
+        replies = [{"id": f"r{i}", "output": [
+            {"type": "function_call", "call_id": f"c{i}", "name": name, "arguments": arguments}]}
+            for i, (name, arguments) in enumerate(calls)]
+        replies.append({"id": "last", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "Done."}]}]})
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            return workshop_chat.propose(
+                self.app, message=message, selected_part=None,
+                candidate=candidate if candidate is not None else self.a_table(),
+                materials=["oak", "iron"], library=[], history=[])
+
+    def test_the_three_tools_are_offered(self):
+        names = {tool["name"] for tool in workshop_chat._tool_definitions(["oak"])}
+        self.assertTrue({"save_design", "list_saved_designs", "open_saved_design",
+                         "take_it_back"} <= names)
+        self.assertIn("KEEPING IT: save_design", workshop_chat.SYSTEM)
+
+    def test_it_saves_under_the_name_the_person_used(self):
+        answer = self.turn([("save_design", '{"name":"The tall one"}')])
+        saved = [row for row in answer["tool_trace"] if row["tool"] == "save_design"]
+        self.assertEqual(1, len(saved))
+        self.assertTrue(saved[0]["ok"], saved[0])
+        self.assertIn("The tall one", saved[0]["summary"])
+        # And it is really on disk, under that name.
+        import workshop_store
+        from workshop_api_core import _store
+        rows = workshop_store.list_saved(_store(self.app))
+        self.assertEqual(["The tall one"], [r["label"] for r in rows])
+        self.assertEqual(1, rows[0]["revision"])
+
+    def test_saving_it_again_is_a_revision_not_a_second_thing(self):
+        self.turn([("save_design", '{"name":"The tall one"}')])
+        self.turn([("save_design", '{"name":"The tall one"}')])
+        import workshop_store
+        from workshop_api_core import _store
+        rows = workshop_store.list_saved(_store(self.app))
+        self.assertEqual(1, len(rows))
+        self.assertEqual(2, rows[0]["revision"])
+
+    def test_a_save_with_no_name_is_refused(self):
+        answer = self.turn([("save_design", '{"name":"   "}')])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "save_design"]
+        self.assertFalse(refused[0]["ok"])
+        self.assertIn("needs a name", refused[0]["summary"])
+
+    def test_what_is_saved_can_be_listed_and_opened_back_onto_the_bench(self):
+        # A bench is saved under one name, then a table is on the bench.
+        bench = self.a_table("bench")
+        self.turn([("save_design", '{"name":"My bench"}')], candidate=bench)
+        listed = self.turn([("list_saved_designs", "{}")])
+        rows = [row for row in listed["tool_trace"] if row["tool"] == "list_saved_designs"]
+        self.assertIn("1 saved", rows[0]["summary"])
+
+        table = self.a_table()
+        was = [dict(part) for part in table["parts"]]
+        answer = self.turn([("open_saved_design", '{"design_id":"chat-candidate"}')],
+                           candidate=table)
+        opened = [row for row in answer["tool_trace"] if row["tool"] == "open_saved_design"]
+        self.assertTrue(opened[0]["ok"], opened[0])
+        # It REPLACED what was on the bench: the candidate the API owns is the
+        # saved one now, parts and all. A bench and a table both have five
+        # parts, so the count proves nothing; the sizes do.
+        self.assertEqual("bench", table["kind"])
+        self.assertNotEqual(was, table["parts"])
+        self.assertIn("My bench", opened[0]["summary"])
+        self.assertEqual({p["name"] for p in table["parts"]}, set(answer["changed"]))
+
+    def test_opening_something_that_was_never_saved_is_refused(self):
+        answer = self.turn([("open_saved_design", '{"design_id":"no-such-design"}')])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "open_saved_design"]
+        self.assertFalse(refused[0]["ok"])
+
+    def test_taking_it_back_asks_the_page_because_the_page_holds_the_history(self):
+        answer = self.turn([("take_it_back", '{"steps":2}')])
+        self.assertEqual(2, answer["undo"])
+        took = [row for row in answer["tool_trace"] if row["tool"] == "take_it_back"]
+        self.assertIn("last 2 changes", took[0]["summary"])
+        # One is the default, and a turn that does not ask for it says zero.
+        self.assertEqual(1, self.turn([("take_it_back", "{}")])["undo"])
+        self.assertEqual(0, self.turn([("inspect_design", "{}")])["undo"])
+
+
 class ChatSurface(unittest.TestCase):
     def test_world_page_has_transcript_working_state_and_tool_trace_ui(self):
         page = (ROOT / "playground" / "world.html").read_text(encoding="utf-8")

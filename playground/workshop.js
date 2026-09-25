@@ -982,7 +982,10 @@ function installEditor() {
 // rack holds along the bottom. The older panels are still here, folded away,
 // until each has a home in this frame.
 // ---------------------------------------------------------------------------
-const BENCH_VIEWS = [["3/4", 0.72, 0.42], ["X", Math.PI / 2, 0.06], ["Y", 0, 1.45], ["Z", 0, 0.06]];
+//: Where you stand to look at it. These were called 3/4, X, Y and Z -- the
+//: axis you are looking ALONG -- which is not something anybody reads off a
+//: button. They are named for what you see.
+const BENCH_VIEWS = [["3/4", 0.72, 0.42], ["Front", 0, 0.06], ["Side", Math.PI / 2, 0.06], ["Top", 0, 1.45]];
 
 function centroidOf(candidate) {
   const parts = candidate?.parts || [];
@@ -1557,6 +1560,10 @@ async function chatEdit() {
   // over the object, with one button back to the build.
   const showing = answer.workshop_chat?.showing;
   if (showing?.frames?.length > 1) { setWorkspaceMode("test"); setPlayback(showing); }
+  // Asked to take a change back, the chat says so and the PAGE does it: the
+  // session's history lives here, not in the turn, so it reaches back past
+  // whatever the chat itself did.
+  for (let step = Number(answer.workshop_chat?.undo) || 0; step > 0; step--) stepHistory(-1);
   // The reply belongs in the chat, which already shows it. It used to be said
   // here as well, which put it across the top of the page and under "Cheap
   // checks" at the same time: the same sentence in three places.
@@ -2307,7 +2314,7 @@ function renderIsolation() {
   if (alone) $("#ws-isolation-note").textContent = `Working on ${alone.name} on its own.`;
   $("#ws-show-whole").textContent = `Show the whole ${bench.kind.replace("-", " ")}`;
   // Matter, collision, relations and physics measure the assembled product.
-  document.querySelectorAll(".ws-viewbar button").forEach((button) => {
+  document.querySelectorAll(".ws-viewbar button[data-view]").forEach((button) => {
     const whole = !ISOLATING_VIEWS.includes(button.dataset.view);
     button.disabled = Boolean(bench.isolated || bench.libraryInspection) && whole;
     button.title = button.disabled ? "This view measures the whole product. Show it to use this view." : "";
@@ -2806,9 +2813,14 @@ function renderBuildChoices() {
 // Whole-design controls
 // ---------------------------------------------------------------------------
 function pressView(name) {
-  document.querySelectorAll(".ws-viewbar button").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.view === name)));
+  document.querySelectorAll(".ws-viewbar button[data-view]").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.view === name)));
 }
-document.querySelectorAll(".ws-viewbar button").forEach((button) => {
+// Only the buttons that say how to DRAW it. This ran at module load over every
+// button in the bar, and installBench had already put the points of view there
+// -- so clicking "Top" ran this handler with dataset.view undefined, set the
+// representation to undefined and moved no camera at all. The owner: "what
+// does x y z do, I don't see it changing anything." Nothing. It was this.
+document.querySelectorAll(".ws-viewbar button[data-view]").forEach((button) => {
   button.onclick = () => guard(button, async () => {
     const requested = button.dataset.view;
     if (["matter", "collision", "relations"].includes(requested)) await loadMatter(false);

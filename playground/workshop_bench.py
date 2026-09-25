@@ -58,7 +58,9 @@ LITTLE_WORLD = {
          "min": 0.5, "max": 60.0, "step": 0.5},
         {"name": "load_kg", "label": "Weight set on it (0 for none)", "unit": "kg", "type": "number",
          "default": 0.0, "min": 0.0, "max": 2000.0, "step": 1.0},
-        {"name": "drop_m", "label": "Dropped from", "unit": "m", "type": "range",
+        {"name": "from_m", "label": "Drop that weight on it from", "unit": "m", "type": "range",
+         "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
+        {"name": "drop_m", "label": "The thing itself dropped from", "unit": "m", "type": "range",
          "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
         {"name": "slide_m_s", "label": "Started sliding at", "unit": "m/s", "type": "number",
          "default": 0.0, "min": -30.0, "max": 30.0, "step": 0.1},
@@ -86,6 +88,8 @@ LITTLE_WORLD = {
         "Flat ground of 400 mm of soil, 16 m across. Weather, water and terrain shapes are not in it.",
         "The weight and the thrown block are iron cubes of the mass you ask for, and they are bodies "
         "in the room: they fall, they can miss, and they can bounce off.",
+        "A weight is set on it, or dropped on it from a height. A thrown block goes at its SIDE, "
+        "along the floor; there is no aiming it.",
         "What breaks is the engine's failure model for the material, not a certified strength.",
     ],
 }
@@ -102,6 +106,7 @@ def _how(config: dict[str, Any]) -> dict[str, Any]:
         "seconds": float(config.get("seconds", 6.0)),
         "load_kg": float(config.get("load_kg") or 0.0),
         "on": str(config.get("on") or "top"),
+        "from_m": float(config.get("from_m") or 0.0),
         "drop_m": float(config.get("drop_m") or 0.0),
         "slide_m_s": float(config.get("slide_m_s") or 0.0),
         "strike": strike,
