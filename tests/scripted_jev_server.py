@@ -45,7 +45,7 @@ def sensible(state: dict, questions: dict) -> dict:
         elif kind == "noul":
             answers[name] = {"type": "noul", "noul": 0.1}
         elif kind == "score":
-            levels = list((question.get("criteria") or {}).keys()) or ["0"]
+            levels = [str(l) for l in (question.get("criteria") or [])] or ["0"]
             answers[name] = {"type": "score", "score": 0.0, "legend": {str(i): l for i, l in enumerate(levels)},
                              "probabilities": {"0": 1.0}, "confidence": 0.9}
     return answers

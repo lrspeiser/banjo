@@ -66,7 +66,8 @@ def jev_says(pick: str, confidence: float = 0.9):
         return {"next": {"type": "choice", "choice": pick, "confidence": confidence,
                          "probabilities": {pick: confidence}},
                 "stuck": {"type": "noul", "noul": 0.1},
-                "battery": {"type": "score", "score": 0.0, "legend": {"0": "fine", "1": "low", "2": "urgent"}}}
+                "battery": {"type": "score", "score": 0.0,
+                            "legend": {"0": "fine: plenty", "1": "low: getting low", "2": "urgent: nearly flat"}}}
     ask.asked = asked
     return ask
 

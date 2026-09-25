@@ -83,9 +83,12 @@ KINDS: dict[str, dict[str, Any]] = {
                 "type": "score",
                 "instructions": "How urgently the machine needs to rest and charge, from its battery's share "
                                 "of full and whether it is charging.",
-                "criteria": {"fine": "Plenty of charge: no need to think about it.",
-                             "low": "Getting low: it should not go far from where it can charge.",
-                             "urgent": "Nearly flat: it should rest now."},
+                # A score's criteria are its levels in order, low to high (2 to
+                # 10); the answer's legend maps each level's number back to
+                # its words.
+                "criteria": ["fine: plenty of charge, no need to think about it",
+                             "low: getting low, it should not go far from where it can charge",
+                             "urgent: nearly flat, it should rest now"],
             },
         },
     },
@@ -275,7 +278,8 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam") -> dict[str,
     battery = answers.get("battery") if isinstance(answers.get("battery"), dict) else {}
     out: dict[str, Any] = {"event": event, "pick": pick, "confidence": round(confidence, 2),
                            "stuck": round(float(stuck.get("noul") or 0.0), 2) if stuck else None,
-                           "battery": (battery.get("legend") or {}).get(str(round(float(battery.get("score") or 0))))
+                           "battery": (battery.get("legend") or {}).get(str(round(float(battery.get("score") or 0))),
+                                                                        "").split(":")[0] or None
                            if battery else None,
                            "probabilities": choice.get("probabilities")}
     if pick not in picks:
