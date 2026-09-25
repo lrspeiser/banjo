@@ -8,6 +8,7 @@ engine, because the whole point of the room is that it is the real one.
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import os
 from pathlib import Path
 import sys
@@ -165,6 +166,70 @@ class ALittleWorldAtTheBench(unittest.TestCase):
         self.assertGreater(at_the_bench, 100.0)
         self.assertAlmostEqual(at_the_bench, in_the_world, delta=max(1.0, 0.01 * at_the_bench))
 
+
+    def test_a_machine_can_be_worked_by_hand_where_it_is_built(self):
+        """The world has On/Off, a direction and a drive setting for every
+        control on a machine. The bench had none of it, so a machine could be
+        built here and never worked until it was out in the world.
+        """
+        room = self.opened()
+        room.make(self.candidate())
+        controls = room.works()
+        print("\n    its controls: " + ", ".join(sorted(controls)))
+        self.assertEqual({"left wheel", "right wheel"}, set(controls))
+
+        stood = room.reading()["bodies"]
+        # Both wheels driven the same way, which is forward.
+        for name in sorted(controls):
+            room.work(name, power=True, direction=1, setting=1.0)
+        drove = room.run(4.0)
+        deck = room.made["root_body"]
+        went = math.dist(drove["bodies"][deck]["at_m"], stood["bodies"][deck]["at_m"]
+                         if "bodies" in stood else stood[deck]["at_m"])
+        print(f"      driven for 4 s it went {went:.3f} m")
+        self.assertGreater(went, 0.05, "told to drive, it drove")
+
+        # And switched off it stops, rather than coasting for ever.
+        for name in sorted(controls):
+            room.work(name, power=False, direction=0, setting=0.0)
+        stopped = room.run(3.0)
+        self.assertLess(stopped["bodies"][deck]["speed_m_s"], 0.05)
+        print(f"      switched off it is doing {stopped['bodies'][deck]['speed_m_s']:.4f} m/s")
+
+    def test_what_to_do_to_it_can_be_written_down_with_times(self):
+        """One call: make it, drive it, stop it, and say what happened."""
+        said = bench.try_it(
+            self.app, self.candidate(), seconds=6.0, turn_on=False,
+            do=[{"at_s": 0.0, "control": "left wheel", "direction": 1, "setting": 1.0},
+                {"at_s": 0.0, "control": "right wheel", "direction": 1, "setting": 1.0},
+                {"at_s": 3.0, "control": "left wheel", "power": False, "direction": 0},
+                {"at_s": 3.0, "control": "right wheel", "power": False, "direction": 0}])
+        print("    " + said["says"])
+        self.assertEqual(4, len(said["worked"]))
+        self.assertEqual([0.0, 0.0, 3.0, 3.0], [round(w["at_s"]) for w in said["worked"]])
+        self.assertEqual({"left wheel", "right wheel"}, {w["control"] for w in said["worked"]})
+        # It moved, and its own program was never started: this is by hand.
+        deck = said["made"]["root_body"]
+        went = math.dist(said["ended"]["bodies"][deck]["at_m"], said["began"]["bodies"][deck]["at_m"])
+        print(f"      by hand it went {went:.3f} m, and turned_on is {said['turned_on']}")
+        self.assertFalse(said["turned_on"])
+        self.assertGreater(went, 0.05)
+
+    def test_it_refuses_an_order_it_cannot_carry_out(self):
+        room = self.opened()
+        room.make(self.candidate())
+        with self.assertRaises(ValueError) as caught:
+            room.work("the handbrake")
+        self.assertIn("left wheel, right wheel", str(caught.exception))
+        for bad in ({"direction": 7}, {"setting": 4.0}):
+            with self.assertRaises(ValueError):
+                room.work("left wheel", **bad)
+        # And an order timed after the end of the run is a mistake worth saying,
+        # not one to carry out silently at the end.
+        with self.assertRaises(ValueError) as caught:
+            bench.try_it(self.app, self.candidate(), seconds=1.0, record=False,
+                         do=[{"at_s": 30.0, "control": "left wheel"}])
+        self.assertIn("after the run ends", str(caught.exception))
 
     def test_one_call_makes_it_runs_it_and_says_what_happened(self):
         """try_it: what the chat's tool and the plan route both go through."""

@@ -545,7 +545,8 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
             turn_on=bool(how.get("turn_on", True)),
             load_kg=float(how.get("load_kg") or 0.0), on=str(how.get("on") or "top"),
             drop_m=float(how.get("drop_m") or 0.0), slide_m_s=float(how.get("slide_m_s") or 0.0),
-            strike=how.get("strike"), record=bool(how.get("record", True)))
+            strike=how.get("strike"), do=how.get("do") or (),
+            record=bool(how.get("record", True)))
     return answer
 
 

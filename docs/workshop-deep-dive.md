@@ -243,7 +243,20 @@ What that fixed, and what came out of doing it:
 - **2.9 No test result is ever stored.** Still true.
 - **2.10 The general physics-trial engine cannot be pointed at a design.**
   Still true.
-- **2.11 There is no machine panel at the bench.** Still true.
+- **2.11 There is no machine panel at the bench.** **Done (2026-09-25), and
+  not as a panel.** The world has On/Off, a direction and a drive setting for
+  every control on a machine; the bench had none of it, so a machine could be
+  built here and never worked until it was out in the world. A wall of buttons
+  is the thing the owner took off this page twice, so what it got instead is
+  `do`: a list of {at_s, control, power, direction, setting} carried out while
+  the run goes on. "Drive it forward for three seconds and then stop" is two
+  orders at 0 s and two at 3 s, and you watch it happen over the object.
+
+  It is the same `operate` the world's panel sends. Measured: the chat-built
+  robot, told to drive at full setting, goes 137 mm in four seconds and stops
+  dead when it is switched off -- and in a six-second run by hand it goes over,
+  129 degrees from how it was put down, which is the sort of thing a bench is
+  for finding out.
 
 And one thing that was not on the list, which doing this exposed:
 

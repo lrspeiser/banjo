@@ -82,6 +82,8 @@ FELL_OVER_DEG = 45.0
 #: A break is worked out between steps and the engine can ask for several in a
 #: row. More than this in one step is a runaway, not a result.
 MAX_BREAKS_A_STEP = 64
+#: How many things you may do to a machine in one run of the bench.
+MAX_ORDERS = 24
 
 
 def _box(name, material, size_m, at_m, anchored=False, shape="box"):
@@ -462,6 +464,11 @@ class Bench:
         self.recorder: Any = None
         self.geometry: dict[str, Any] = {}
         self.at_the_start: dict[str, list[float]] = {}
+        #: How many orders have been given, which is the sender's count the
+        #: engine uses to ignore one that arrives out of order.
+        self._orders = 0
+        #: What was done to it and when, for the record.
+        self.worked: list[dict[str, Any]] = []
 
     def close(self) -> None:
         try:
@@ -643,6 +650,35 @@ class Bench:
         self.at_the_start = {b["name"]: list(b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0])
                              for b in self.live.session.send(op="poses").get("bodies") or ()}
 
+    def works(self) -> dict[str, Any]:
+        """Every control the made thing has, by name."""
+        return {str(c["name"]): c for c in (self.reading()["controls"] or [])}
+
+    def work(self, control: str, *, power: bool = True, direction: int = 1,
+             setting: float = 1.0) -> dict[str, Any]:
+        """Do to a control what a person does to it from its panel.
+
+        The world has On/Off, a direction and a drive setting for every control
+        on a machine; the bench had none of it, so a machine could be built here
+        and never worked until it was out there. This is the same `operate` the
+        world's own panel sends.
+        """
+        here = self.works()
+        which = here.get(control)
+        if which is None:
+            raise ValueError(f"nothing here has a control called {control!r}; it has "
+                             + (", ".join(sorted(here)) or "none"))
+        if direction not in (-1, 0, 1):
+            raise ValueError("a direction is -1, 0 or 1")
+        setting = float(setting)
+        if not 0.0 <= setting <= 1.0:
+            raise ValueError("a drive setting is 0 to 1")
+        self._orders += 1
+        answer = self.live.session.send(op="operate", control=which["id"], sender="bench",
+                                        seq=self._orders, power=bool(power),
+                                        direction=int(direction), setting=setting)
+        return answer.get("control") or {}
+
     def turn_on(self, name: str | None = None, *, power: bool = True) -> dict[str, Any]:
         """Set the thing's program running, as a person does from its panel."""
         said = self.reading()
@@ -656,7 +692,7 @@ class Bench:
                                         seq=int(self.t_s * 1000) + 1, power=bool(power))
         return answer.get("program") or {}
 
-    def run(self, seconds: float) -> dict[str, Any]:
+    def run(self, seconds: float, orders: Any = ()) -> dict[str, Any]:
         """Let the room run, a quarter of a second at a time, breaking what breaks.
 
         The engine does not break a thing behind your back: a step that has
@@ -670,8 +706,22 @@ class Bench:
         # not something a person can watch. Recording, it goes a thirtieth of a
         # second at a time, which is what the recorder samples at anyway.
         stride = 8 if self.recorder is not None else 60
+        # What to do to it, and when. Sorted, because a list written out of
+        # order is a list somebody meant in order.
+        waiting = sorted(list(orders or ()), key=lambda o: float(o.get("at_s") or 0.0))
         left = int(round(float(seconds) / DT))
         while left > 0:
+            while waiting and float(waiting[0].get("at_s") or 0.0) <= self.t_s + 1e-9:
+                order = waiting.pop(0)
+                said = self.work(str(order.get("control") or ""),
+                                 power=bool(order.get("power", True)),
+                                 direction=int(order.get("direction", 1)),
+                                 setting=float(order.get("setting", 1.0)))
+                self.worked.append({"at_s": round(self.t_s, 3), "control": order.get("control"),
+                                    "power": bool(order.get("power", True)),
+                                    "direction": int(order.get("direction", 1)),
+                                    "setting": float(order.get("setting", 1.0)),
+                                    "said": said.get("condition") or ""})
             n = min(stride, left)
             state = self.live.session.send(op="step", dt=DT, n=n)
             self.t_s += n * DT
@@ -695,6 +745,10 @@ class Bench:
                 # that held comes back as "piece 1" of itself. Redraw it.
                 self.geometry.update(_geometry(self.live.session.send(op="poses"),
                                                float(self.room.spec["cell_m"])))
+        if waiting:
+            raise ValueError(
+                f"{len(waiting)} of what you asked for happens after the run ends: the first is at "
+                f"{float(waiting[0].get('at_s') or 0.0):.1f} s and the run is {seconds:g} s long")
         return self.reading()
 
     def reading(self) -> dict[str, Any]:
@@ -727,7 +781,7 @@ class Bench:
 def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: Any = None, day: Any = None,
            items: Any = (), add: Any = (), at_m=(0.0, 0.0), turn_on: bool = True, load_kg: float = 0.0,
            on: str = "top", from_m: float = 0.0, drop_m: float = 0.0, slide_m_s: float = 0.0,
-           strike: Any = None, record: bool = True) -> dict[str, Any]:
+           strike: Any = None, do: Any = (), record: bool = True) -> dict[str, Any]:
     """Make the thing in a little room, do a thing to it, and say what happened.
 
     One call: open the room, install the design into it the way the world
@@ -735,6 +789,11 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
     it for `seconds`, and hand back what changed. The room is thrown away
     afterwards; the world is untouched throughout, because none of this is the
     world's session.
+
+    `do` is a list of things to do to the thing's own controls while it runs --
+    {"at_s", "control", "power", "direction", "setting"} -- which is what a
+    person does at its panel in the world. A machine could be built at this
+    bench and never worked until it was out there.
 
     The test is whichever of these you ask for, and they compose: `load_kg` on
     its `on` (a part's name, or the whole thing), and `from_m` to DROP that
@@ -757,7 +816,10 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
         turned_on = None
         if turn_on and began["programs"]:
             turned_on = room.turn_on()
-        ended = room.run(seconds)
+        orders = list(do or ())
+        if len(orders) > MAX_ORDERS:
+            raise ValueError(f"a bench does up to {MAX_ORDERS} things to a machine in one run")
+        ended = room.run(seconds, orders)
         deck = made.get("root_body") or ""
         fell = ended["bodies"].get(deck, {}).get("turn_deg", 0.0) >= FELL_OVER_DEG
         answer = {"schema": SCHEMA, "made": {k: made.get(k) for k in
@@ -766,6 +828,7 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
                   "sky": ended["sun"],
                   "in_the_room": ([t["what"] for t in (items or ())]
                                   + [written(t, i)[1]["name"] for i, t in enumerate(add or ())]),
+                  "worked": list(room.worked), "controls": ended["controls"],
                   "broke": room.broke(), "dented": room.dented(),
                   "failures": list(room.failures), "fell_over": bool(fell),
                   "began": began, "ended": ended,

@@ -112,6 +112,8 @@ def _how(config: dict[str, Any]) -> dict[str, Any]:
         "strike": strike,
         "turn_on": bool(config.get("turn_on", True)),
         "items": config.get("items") or (),
+        "add": config.get("add") or (),
+        "do": config.get("do") or (),
     }
     hour = config.get("hour")
     if hour is not None and abs(float(hour) - 12.0) > 1e-9:

@@ -132,6 +132,11 @@ Important behavior:
 - DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
   throws a block at its SIDE, along the floor, and is not what anyone means by
   "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
+- WORK IT BY HAND with `do`: a list of {at_s, control, power, direction,
+  setting} carried out while it runs, which is what a person does at a
+  machine's panel in the world. "Drive it forward for three seconds and then
+  stop" is two orders at 0 s and two at 3 s. turn_on starts its OWN program
+  instead; do not do both unless you mean them to fight.
 - WRITE THE ROOM when none of those is the test. try_it_in_a_room takes `add`:
   anything you can describe standing in the world beside the thing -- a ramp
   tilted 20 degrees, a ball already rolling at 3 m/s, a wall driven into the
@@ -459,6 +464,18 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                                         "minItems": 2, "maxItems": 2}}}},
                             "turn_on": {"type": "boolean",
                                         "description": "set its program running, if it has one (default true)"},
+                            "do": {"type": "array", "maxItems": 24,
+                                   "description": "what to do to its controls while it runs, by hand",
+                                   "items": {"type": "object", "additionalProperties": False,
+                                             "required": ["control"],
+                                             "properties": {
+                                                 "at_s": {"type": "number", "minimum": 0,
+                                                          "description": "how far into the run (0)"},
+                                                 "control": {"type": "string",
+                                                             "description": "its name, from check_validity or inspect_physics"},
+                                                 "power": {"type": "boolean", "description": "on (default true)"},
+                                                 "direction": {"type": "integer", "enum": [-1, 0, 1]},
+                                                 "setting": {"type": "number", "minimum": 0, "maximum": 1}}}},
                             # What to DO to it, once it is standing there. Leave
                             # them all out and it simply stands, which answers
                             # whether it stands.
@@ -839,7 +856,7 @@ class _State:
                 load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
                 from_m=float(args.get("from_m") or 0.0),
                 drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
-                strike=args.get("strike"), record=True)
+                strike=args.get("strike"), do=args.get("do") or (), record=True)
             # The person watches it. "Ask me to drop a bowling ball on the item"
             # and it will "do that and SHOW you": the recording goes to the page
             # and is played over the object, with one button back to the build.
@@ -850,6 +867,7 @@ class _State:
             return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
                                       "did": answer["did"], "sky": answer["sky"], "made": answer["made"],
                                       "in_the_room": answer["in_the_room"],
+                                      "worked": answer["worked"], "controls": answer["controls"],
                                       "where_everything_ended": {
                                           name: body["at_m"] for name, body in
                                           list(answer["ended"]["bodies"].items())[:24]},
