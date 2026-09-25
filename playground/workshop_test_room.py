@@ -701,6 +701,17 @@ class Bench:
         """The runs where it took a permanent set and stayed in one piece."""
         return [f for f in self.failures if f["outcome"] == "dented"]
 
+    def took_it(self) -> list[dict[str, Any]]:
+        """The runs where a blow hard enough to break it was held anyway.
+
+        The engine only offers a body for breaking when the blow is past the
+        speed its material should give way at, so "held" here is not "nothing
+        happened" -- it is the lattice disagreeing with the bar. Worth saying:
+        a 20 kg block dropped 2 m on a glass table is offered at 6.3 m/s
+        against a 4.5 m/s bar and comes back whole.
+        """
+        return [f for f in self.failures if f["outcome"] == "held"]
+
     def unanswered(self) -> list[dict[str, Any]]:
         """The runs the engine made and could not answer.
 
@@ -862,7 +873,7 @@ class Bench:
                                            b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0],
                                            self.at_the_start.get(b["name"]) or [1.0, 0.0, 0.0, 0.0]), 3)}
                            for b in poses.get("bodies") or []},
-                "broke": self.broke(), "dented": self.dented(),
+                "broke": self.broke(), "dented": self.dented(), "took_it": self.took_it(),
                 "could_not_say": self.unanswered(), "failures": list(self.failures),
                 "stores": machines.get("stores") or [],
                 "panels": machines.get("panels") or [],
@@ -921,12 +932,12 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
                   "in_the_room": ([t["what"] for t in (items or ())]
                                   + [written(t, i)[1]["name"] for i, t in enumerate(add or ())]),
                   "worked": list(room.worked), "controls": ended["controls"],
-                  "broke": room.broke(), "dented": room.dented(),
+                  "broke": room.broke(), "dented": room.dented(), "took_it": room.took_it(),
                   "could_not_say": room.unanswered(),
                   "failures": list(room.failures), "fell_over": bool(fell),
                   "began": began, "ended": ended,
                   "says": _says(made, began, ended, did, room.broke(), room.dented(), fell,
-                                room.unanswered())}
+                                room.unanswered(), room.took_it())}
         if record:
             answer["playback"] = room.playback()
         return answer
@@ -1070,7 +1081,7 @@ def _swept(changing: str, rows: list[dict[str, Any]], changed_at: float | None) 
 
 def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
           did: dict[str, Any] | None = None, broke: Any = (), dented: Any = (),
-          fell: bool = False, unanswered: Any = ()) -> str:
+          fell: bool = False, unanswered: Any = (), took_it: Any = ()) -> str:
     """What happened, in a sentence a person reads."""
     said = []
     did = did or {}
@@ -1122,6 +1133,14 @@ def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
                     + (f" -- {sums}" if sums else "")
                     + " -- and that is arithmetic, not a run: this one could not check it"
                     + (f", because there is {run.split(':')[0]}" if run else ""))
+    elif took_it:
+        # A body is only offered for breaking when the blow is past the speed
+        # its material should give way at, so this is the lattice disagreeing
+        # with the bar, not a quiet afternoon. "It held" without that is the
+        # same silence that had an ice table carrying two tonnes.
+        said.append(f"nothing broke, though it was hit hard enough to be asked about "
+                    f"{len(took_it)} time{'s' if len(took_it) != 1 else ''} and the lattice "
+                    f"held it each time")
     else:
         said.append("nothing broke")
     for store, before in zip(ended["stores"], began["stores"]):

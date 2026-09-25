@@ -336,6 +336,52 @@ scale the same way: four legs resized and weighed is 21 to 30 seconds over
 What is left is nearly all the model thinking, which is the floor: the work
 under it is still 0.0 seconds.
 
+## 1e0. Should a glass table have broken?
+
+**Asked and measured 2026-09-25.** A 20 kg iron block dropped 2 m onto the
+bench's glass table: the room said it held. It should not have.
+
+**By hand.** 392 J, landing at 6.26 m/s. Taking the 40 mm top as a beam over
+its 1.1 m span, all of that into bending gives 9.1 mm of deflection, 86 kN in
+the middle and **127 MPa**. Glass's declared tensile strength is 45. Allowing
+for the top's own mass sharing the blow (84 kg of glass against a 20 kg block)
+brings the honest figure to about **72 MPa** -- still over 45, which is what
+matters. And the energy is not close: parting that section costs 0.22 J of
+fracture energy against the 392 J in the block, 1,750x over.
+
+**The engine's own screening agreed.** It set a bar of 4.51 m/s for the table
+struck by the weight, saw 6.26 m/s, marked it `would_break` and offered it for
+breaking. The lattice run then said held. The same shape as the ice table:
+screening right, run declines, room reports silence.
+
+**Why, and this one is deliberate.** `break_strain_multiplier = 2.0` -- the
+lattice removes a bond at TWICE the strain the declared strength gives. Glass
+in Banjo therefore breaks at 90 MPa, not 45. The catalogue says so in a comment
+and adds that it "remains uncalibrated against laboratory glass data". Our
+blow's honest 72 MPa lands squarely in the band between the two, so the sim is
+right by its own rule and wrong about glass.
+
+Measured, the same table breaks between 785 and 981 J (20 kg from 4 to 5 m).
+Its declared strength predicts 49 J -- 20 kg from **25 cm**.
+
+| | energy | as a 20 kg drop |
+|---|---|---|
+| reaches glass's declared 45 MPa | 49 J | 0.25 m |
+| reaches the lattice's doubled 90 MPa | 198 J | 1.0 m |
+| what the room actually breaks at | 785-981 J | 4-5 m |
+
+**Not the thin-section bug.** Tops of one, two, three and four cells all held a
+blow sized to give the same computed 150 MPa, so this is the dynamic lane being
+uniformly tolerant, not the one-cell blindness of 1e.
+
+**What changed here.** A body is only offered for breaking when the blow is
+past the speed its material should give way at, so "held" is the lattice
+disagreeing with the bar, not a quiet afternoon. The room says so now: *"nothing
+broke, though it was hit hard enough to be asked about once and the lattice held
+it each time"*. Whether the multiplier of 2 is right for a brittle material --
+where there is no plastic reserve to justify it -- is the owner's call, because
+it moves every material result there is.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot
