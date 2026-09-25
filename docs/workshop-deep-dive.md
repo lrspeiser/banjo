@@ -128,6 +128,48 @@ viewport and the test scheduler go on hearing what they listened for. Picking a
 part -- in the list or in the view -- takes you to Change, and picking a test
 takes you to Try, so you are never left looking at the wrong pane.
 
+## 1b. The bench is the chat now
+
+**Done (2026-09-24), and it replaces 1a.** Three goes at the right-hand pane:
+
+1. One shut drawer called "Bench extras" with about fifty working controls in
+   it. Nobody opened it.
+2. Un-buried into six named sections, all open: *"there are so many buttons and
+   fields in the right nav of the workshop I don't have a clue where to begin
+   on it."*
+3. Arranged as four steps -- Ask, Change, Try, Keep: *"I don't really
+   understand how to use the try or change or keep functions, it makes no
+   sense. Since we can't make this work we should just leave it all up to the
+   chat."*
+
+So the bench is the chat down one side, the object, and **one bar** over it:
+which product (a dropdown), Wire/Skin, the four points of view, Check it, Make
+it, and the way back to the world. The page header, the panel under the object
+that said "hold objects on a stable work surface", the row of view buttons
+under it, and the Run simulation / Reset to setup dock are all gone from the
+page.
+
+Under the chat box there are things to ask for -- "Drop a 20 kg iron block on
+it from 2 m and show me what happens" -- and each one is a real turn. When the
+chat tries the thing out, the run is played **over the object**, with one
+button back to the build.
+
+**What a person can no longer reach, and what it needs.** The panels are still
+built and still wired -- the page reads values out of them and the browser
+tests hold the bench to them -- but they are not on the screen. Nothing was
+deleted, and the chat cannot yet do these:
+
+- **Save a design, or open one you saved.** There is no chat tool for either.
+  This is the first thing to add.
+- **The library**: saving a component, reusing one by name is possible
+  (`reuse_library_component`), but browsing is not.
+- **The rack**: `what_it_needs` reports what is short, but nothing can SET a
+  rack row from the chat.
+- **Undo.** The undo built this morning is in the hidden pane.
+- **The bench tests' own controls.** Trying a thing is `try_it_in_a_room`
+  through the chat, which covers all of it; the picker and its fields are not
+  needed, but the saved test presets have no other home.
+
 ## 2. Test it
 
 **Done (2026-09-24).** There were three testing systems and they did not agree;

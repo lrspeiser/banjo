@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import logging
 import re
+import time
 from typing import Any
 from urllib import error, request
 
@@ -28,23 +30,38 @@ import workshop_fitting
 import workshop_test_room as test_room
 import workshop_library
 
+log = logging.getLogger(__name__)
+
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
 MAX_HISTORY = 20
 MAX_MESSAGE_CHARS = 48_000
-MAX_TOOL_ROUNDS = 8
-MAX_TOOL_CALLS = 24
-# Room for one turn: the reasoning AND the answer, because the provider counts
-# both against this. At 1400 -- what this was -- a turn that thought about a
-# design, called a tool and then had to say something ran out before it said
-# it, and the model's reply came back empty with status "incomplete". The page
-# then showed the fallback line, "I inspected the design but made no changes",
-# for a turn where the model had been cut off mid-thought: the owner asked for
-# a shed, answered the questions it put, and was told nothing had changed.
+# How long a turn may go on before it has to stop and say what it has.
 #
-# Every other model caller here already gives more: the room chat that builds
-# things in the world 12,000 (scene_chat.py), the trial planner 6,000, the
-# room's own helper 3,500. This is the same class of work as the first.
-MAX_OUTPUT_TOKENS = 12000
+# The owner, after a turn died with "Workshop chat could not finish within its
+# bounded reasoning loop": *"we need to rethink the reasoning loop, the llm has
+# memory and should be able to get to an answer and we should not need to limit
+# the tokens to get there."*
+#
+# Two things were wrong, and neither was the size of the numbers.
+#
+# The first is that running out threw the turn AWAY. Eight rounds in, having
+# inspected the design and made every edit it was asked for, the loop raised --
+# so the person saw an error, not the work. A turn that runs long now WRAPS UP:
+# one more call with the tools switched off and "answer now with what you
+# have", which is what you would say to a person who was still measuring when
+# the bell went. It has the whole conversation in front of it and can always
+# say something true about it.
+#
+# The second is the per-call ceiling. There is none now. A ceiling on output
+# tokens is a ceiling on THINKING -- the provider counts reasoning against it --
+# and a turn cut off mid-thought comes back with no words at all, which is how
+# "I inspected the design but made no changes" got said about a turn that had
+# done neither. What bounds a turn is how long it may go on and how much of the
+# room it may touch, not how many words it may think in.
+MAX_TOOL_ROUNDS = 32
+MAX_TOOL_CALLS = 120
+#: A turn that has been going this long is not converging, whatever it says.
+MAX_TURN_SECONDS = 240.0
 
 SYSTEM = """You are the Banjo Workshop design assistant.
 
@@ -61,6 +78,13 @@ Important behavior:
   its purpose-specific core action when creating or completing it; it is stored
   with the design, exposed in ProductGraph controls and carried into the world.
   Never claim a product is operational if its intended action is unsupported.
+- NEVER END A TURN WITH AN OPEN QUESTION IN PROSE. If you need the person to
+  decide something, call ask_the_person with the question and two to four
+  CONCRETE answers they can click -- "Make it 50 mm", "Add a sleeve" -- not
+  "what would you like?". Writing their own is always offered, so a suggested
+  answer costs them nothing and an open question costs them the work of
+  inventing one. Say what you would do if they said nothing, and put that
+  first. Calling it ends your turn: you will be told what they picked.
 - Use tools to inspect the design before guessing about component names,
   positions, dimensions, interfaces, contacts, physics, evidence, or library
   contents.
@@ -412,6 +436,27 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                                     "maximum": test_room.MAX_SPEED_M_S},
                                                       "height_fraction": {"type": "number", "minimum": 0,
                                                                           "maximum": 1}}}}}},
+        {"type": "function", "name": "ask_the_person",
+         "description": "Ask the person a question you cannot answer yourself, with concrete "
+                        "answers they can click. ALWAYS use this instead of asking in prose. "
+                        "Ends your turn; their answer arrives as the next message. Put the "
+                        "option you would choose first.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["question", "options"],
+                        "properties": {
+                            "question": {"type": "string",
+                                         "description": "one sentence, ending in a question mark"},
+                            "options": {"type": "array", "minItems": 2, "maxItems": 6,
+                                        "description": "concrete answers, best first",
+                                        "items": {"type": "object", "additionalProperties": False,
+                                                  "required": ["label"],
+                                                  "properties": {
+                                                      "label": {"type": "string",
+                                                                "description": "what the button says, e.g. 'Make it 50 mm'"},
+                                                      "why": {"type": "string",
+                                                              "description": "at most a dozen words on what it would mean"}}}},
+                            "several": {"type": "boolean",
+                                        "description": "true when more than one option can be picked at once"}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -477,6 +522,10 @@ class _State:
                              parameters=spec.get("parameters") or {})
         self.changed: list[str] = []
         self.trace: list[dict[str, Any]] = []
+        #: The question this turn is waiting on, if it asked one.
+        self.asking: dict[str, Any] | None = None
+        #: A run for the person to watch, if the turn tried the thing out.
+        self.showing: dict[str, Any] | None = None
 
     def current_spec(self) -> dict[str, Any]:
         return {"kind": self.design.kind, "design_id": self.design.design_id,
@@ -489,6 +538,31 @@ class _State:
         return result
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool == "ask_the_person":
+            # A question is not work done to the design, so it ends the turn
+            # rather than going round the loop again. What it leaves behind is
+            # read by _model_turn, which stops there.
+            question = " ".join(str(args.get("question") or "").split())[:400]
+            if not question:
+                raise ValueError("a question needs asking in words")
+            options = []
+            for raw in (args.get("options") or [])[:6]:
+                label = " ".join(str((raw or {}).get("label") or "").split())[:120]
+                if not label:
+                    continue
+                why = " ".join(str((raw or {}).get("why") or "").split())[:160]
+                options.append({"label": label, **({"why": why} if why else {})})
+            if len(options) < 2:
+                raise ValueError("ask_the_person needs at least two answers they can click; "
+                                 "an open question is what this tool exists to avoid")
+            self.asking = {"question": question, "options": options,
+                           "several": bool(args.get("several")),
+                           # Writing their own is never taken away. It is what
+                           # makes a suggested answer a suggestion.
+                           "allow_other": True}
+            return self.record(tool, {"summary": question,
+                                      "options": [o["label"] for o in options]})
+
         if tool == "inspect_design":
             measured = self.design.measure()
             return self.record(tool, {
@@ -637,7 +711,14 @@ class _State:
                 items=args.get("items") or (), turn_on=bool(args.get("turn_on", True)),
                 load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
                 drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
-                strike=args.get("strike"), record=False)
+                strike=args.get("strike"), record=True)
+            # The person watches it. "Ask me to drop a bowling ball on the item"
+            # and it will "do that and SHOW you": the recording goes to the page
+            # and is played over the object, with one button back to the build.
+            # It is deliberately not handed to the model -- sixty frames of body
+            # poses is not something to reason over, and it would crowd out the
+            # conversation it is meant to be part of.
+            self.showing = answer.get("playback")
             return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
                                       "did": answer["did"], "sky": answer["sky"], "made": answer["made"],
                                       "broke": answer["broke"], "dented": answer["dented"],
@@ -834,12 +915,12 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
         "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-        "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
+        "reasoning": {"effort": "medium"},
         "instructions": instructions, "input": inputs,
         "tools": tools, "tool_choice": "auto",
     }
     response = _call_model(app, payload)
-    calls_used = 0
+    calls_used, began = 0, time.monotonic()
     for _round in range(MAX_TOOL_ROUNDS):
         calls = [output for output in response.get("output") or [] if output.get("type") == "function_call"]
         if not calls:
@@ -863,13 +944,18 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         for call in calls:
             calls_used += 1
             if calls_used > MAX_TOOL_CALLS:
-                raise ValueError("Workshop chat exceeded its bounded tool-call budget")
+                return _wrap_up(app, state, instructions, inputs + _carry(response),
+                                f"after {calls_used - 1} tool calls")
             name = str(call.get("name") or "")
             try:
                 args = json.loads(call.get("arguments") or "{}")
                 if not isinstance(args, dict): raise ValueError("tool arguments must be an object")
                 result = state.execute(name, args)
                 output = {"ok": True, **result}
+                # A question ends the turn where it was asked. Going round again
+                # would have the model answer its own question.
+                if state.asking is not None:
+                    return str(state.asking["question"])
             except Exception as problem:
                 state.trace.append({"tool": name or "unknown", "ok": False, "summary": str(problem)[:500]})
                 output = {"ok": False, "error": str(problem)}
@@ -884,14 +970,51 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         # request already sets store=False, so nothing was being kept to point
         # at in any case.
         inputs = inputs + _carry(response) + outputs
+        if time.monotonic() - began > MAX_TURN_SECONDS:
+            return _wrap_up(app, state, instructions, inputs,
+                            f"after {MAX_TURN_SECONDS:.0f} seconds")
         payload = {
             "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-            "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
+            "reasoning": {"effort": "medium"},
             "instructions": instructions,
             "input": inputs, "tools": tools, "tool_choice": "auto",
         }
         response = _call_model(app, payload)
-    raise ValueError("Workshop chat could not finish within its bounded reasoning loop")
+    return _wrap_up(app, state, instructions, inputs, f"after {MAX_TOOL_ROUNDS} rounds of tools")
+
+
+def _wrap_up(app: Any, state: _State, instructions: str, inputs: list[dict[str, Any]],
+             why: str) -> str:
+    """Stop using tools and answer with what the turn already has.
+
+    This replaces raising. A turn that has gone long has usually DONE the work
+    -- it has inspected the design and made the edits -- and is going round
+    again over something small; throwing it away told the person their request
+    had failed when their design had already changed. One more call, with the
+    tools off, gets the answer out of a model that has the whole conversation
+    in front of it.
+    """
+    asked = inputs + [{"role": "user", "content":
+                       "Stop here and answer me now, in words, with no further tool calls. "
+                       "Say what you changed and what you did not, and if something is still "
+                       "undecided, ask me about it with concrete options."}]
+    try:
+        last = _call_model(app, {
+            "model": getattr(app, "model", "gpt-5-mini"), "store": False,
+            "reasoning": {"effort": "low"}, "instructions": instructions,
+            "input": asked, "tools": [], "tool_choice": "none"})
+        text = _extract_text(last)
+        if text:
+            return text
+    except Exception:
+        log.exception("The Workshop chat's wrap-up call did not answer either")
+    # Even that did not speak. Say what the room can see for itself rather than
+    # an error: the tools that ran are a true account of the turn.
+    did = ", ".join(dict.fromkeys(row["tool"] for row in state.trace)) or "nothing"
+    return (f"I was still working {why} and had to stop. What I ran: {did}. "
+            + ("The changes I made are in the design; ask me to carry on and I will pick it up."
+               if state.changed else
+               "Nothing in the design was changed. Ask me again, more narrowly."))
 
 
 def _role_from_message(message: str, design: Any) -> str | None:
@@ -978,6 +1101,12 @@ def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
         raise
     return {
         "reply": reply[:4000],
+        # What it is waiting to be told, with answers to click. The page draws
+        # them; picking one sends it back as the next message.
+        "asking": state.asking,
+        # A run to watch, if it tried the thing out. The page plays it over the
+        # object and offers the way back to the build.
+        "showing": state.showing,
         # The richer agent already applied its bounded edits to candidate. The
         # outer Workshop API sees `none` and simply returns that final candidate.
         "action": "none", "scope": "this", "material": None, "library_item_id": None,

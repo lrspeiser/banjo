@@ -191,10 +191,167 @@ class AReplyThatRanOutOfRoom(unittest.TestCase):
         said = self._answer({"id": "r1", "status": "completed", "output": []})["reply"]
         self.assertIn("made no changes", said)
 
-    def test_the_room_it_is_given_matches_the_work_it_does(self):
-        # The room chat that builds things in the world is given 12,000 output
-        # tokens; this does the same class of work on a design.
-        self.assertGreaterEqual(workshop_chat.MAX_OUTPUT_TOKENS, 8000)
+    def test_no_call_puts_a_ceiling_on_how_far_the_model_may_think(self):
+        """A ceiling on output tokens is a ceiling on THINKING.
+
+        The provider counts reasoning against max_output_tokens, so a turn cut
+        off mid-thought comes back with no words -- which is how "I inspected
+        the design but made no changes" got said about a turn that had done
+        neither. The owner: "we should not need to limit the tokens to get
+        there." What bounds a turn is rounds and seconds, not words.
+        """
+        self.assertFalse(hasattr(workshop_chat, "MAX_OUTPUT_TOKENS"))
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        sent = []
+
+        def remember(app, payload):
+            sent.append(payload)
+            return {"id": "r1", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Done."}]}]}
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=remember):
+            workshop_chat.propose(self.app, message="make it taller", selected_part=None,
+                                  candidate=candidate, materials=["oak"], library=[], history=[])
+        self.assertTrue(sent)
+        for payload in sent:
+            self.assertNotIn("max_output_tokens", payload)
+
+    def test_a_long_turn_wraps_up_instead_of_being_thrown_away(self):
+        """It used to raise, and the person lost every edit it had made.
+
+        "Workshop chat could not finish within its bounded reasoning loop" was
+        what the owner saw, for a turn that had already done the work.
+        """
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        going = {"id": "r", "output": [{"type": "function_call", "call_id": "c",
+                                        "name": "inspect_design", "arguments": "{}"}]}
+        wrapped = {"id": "last", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "I stopped there. The legs are longer; the top is not."}]}]}
+        calls = []
+
+        def answer(app, payload):
+            calls.append(payload)
+            # Every round asks for another tool, so the round budget runs out.
+            return wrapped if payload.get("tool_choice") == "none" else going
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            said = workshop_chat.propose(
+                self.app, message="build me a shed", selected_part=None, candidate=candidate,
+                materials=["oak"], library=[], history=[])["reply"]
+        print("\n    wrapped up: " + said, flush=True)
+        self.assertEqual("I stopped there. The legs are longer; the top is not.", said)
+        self.assertEqual("none", calls[-1]["tool_choice"], "the last call has the tools off")
+        self.assertEqual([], calls[-1]["tools"])
+        self.assertEqual(workshop_chat.MAX_TOOL_ROUNDS + 2, len(calls))
+
+    def test_a_long_turn_whose_wrap_up_is_silent_still_says_what_it_ran(self):
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        going = {"id": "r", "output": [{"type": "function_call", "call_id": "c",
+                                        "name": "inspect_design", "arguments": "{}"}]}
+
+        def answer(app, payload):
+            if payload.get("tool_choice") == "none":
+                raise ValueError("the wrap-up call failed too")
+            return going
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            said = workshop_chat.propose(
+                self.app, message="build me a shed", selected_part=None, candidate=candidate,
+                materials=["oak"], library=[], history=[])["reply"]
+        print(f"    silent wrap-up: {said}", flush=True)
+        self.assertIn("inspect_design", said)
+        self.assertIn("had to stop", said)
+        self.assertNotIn("bounded reasoning loop", said)
+
+
+class AQuestionComesWithAnswers(unittest.TestCase):
+    """The owner: "Always give a suggested answer not an open ended question,
+    as long as they can do other it is fine."
+
+    A question in prose makes the person invent the option themselves, which is
+    the work they came to the bench to be spared.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = types.SimpleNamespace(workshop_store=pathlib.Path(self.tmp.name) / "workshop",
+                                         api_key="k", model="gpt-5-mini")
+
+    @staticmethod
+    def a_table():
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def asked(self, arguments):
+        replies = [{"id": "r1", "output": [
+            {"type": "function_call", "call_id": "q1", "name": "ask_the_person",
+             "arguments": arguments}]}]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies) as called:
+            answer = workshop_chat.propose(
+                self.app, message="make the legs stronger", selected_part=None,
+                candidate=self.a_table(), materials=["oak", "iron"], library=[], history=[])
+        return answer, called
+
+    def test_the_tool_is_offered_at_all(self):
+        names = {tool["name"] for tool in workshop_chat._tool_definitions(["oak"])}
+        self.assertIn("ask_the_person", names)
+        rule = workshop_chat.SYSTEM
+        self.assertIn("NEVER END A TURN WITH AN OPEN QUESTION IN PROSE", rule)
+
+    def test_asking_ends_the_turn_and_carries_the_options(self):
+        answer, called = self.asked(
+            '{"question":"How much stronger?","options":['
+            '{"label":"Make it 50 mm","why":"the usual for a table this size"},'
+            '{"label":"Add a sleeve"}]}')
+        self.assertEqual(1, called.call_count, "it does not go round again to answer itself")
+        self.assertEqual("How much stronger?", answer["reply"])
+        asking = answer["asking"]
+        self.assertEqual(["Make it 50 mm", "Add a sleeve"], [o["label"] for o in asking["options"]])
+        self.assertEqual("the usual for a table this size", asking["options"][0]["why"])
+        self.assertFalse(asking["several"])
+        # Writing their own is never taken away: it is what makes a suggested
+        # answer a suggestion rather than a cage.
+        self.assertTrue(asking["allow_other"])
+
+    def test_several_answers_can_be_picked_at_once(self):
+        answer, _ = self.asked('{"question":"Which of these?","several":true,"options":['
+                               '{"label":"Thicker legs"},{"label":"A stretcher"},{"label":"Iron feet"}]}')
+        self.assertTrue(answer["asking"]["several"])
+        self.assertEqual(3, len(answer["asking"]["options"]))
+
+    def test_a_question_with_no_answers_is_refused(self):
+        """Refusing it is the point: an open question is what it replaces."""
+        replies = [
+            {"id": "r1", "output": [{"type": "function_call", "call_id": "q1",
+                                     "name": "ask_the_person",
+                                     "arguments": '{"question":"What would you like?","options":[]}'}]},
+            {"id": "r2", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Made the legs 50 mm."}]}]},
+        ]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            answer = workshop_chat.propose(
+                self.app, message="make the legs stronger", selected_part=None,
+                candidate=self.a_table(), materials=["oak"], library=[], history=[])
+        self.assertIsNone(answer["asking"])
+        self.assertEqual("Made the legs 50 mm.", answer["reply"])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "ask_the_person"]
+        self.assertEqual(1, len(refused))
+        self.assertFalse(refused[0]["ok"])
+        self.assertIn("two answers", refused[0]["summary"])
+
+    def test_a_turn_that_asks_nothing_carries_no_question(self):
+        replies = [{"id": "r1", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "Done."}]}]}]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            answer = workshop_chat.propose(
+                self.app, message="make it taller", selected_part=None, candidate=self.a_table(),
+                materials=["oak"], library=[], history=[])
+        self.assertIsNone(answer["asking"])
 
 
 class ChatSurface(unittest.TestCase):

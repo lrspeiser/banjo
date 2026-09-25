@@ -760,6 +760,18 @@ function updateClipControls() {
   applyClipPlane(); show(false);
 }
 
+// Where a control lives when it is still wired but is not a thing a person
+// should be looking at. Everything in here is driven by the page or by the
+// chat; nothing in here is a panel.
+function holder() {
+  let box = document.querySelector("#ws-hidden-controls");
+  if (!box) {
+    box = make("div", { id:"ws-hidden-controls", hidden:true });
+    document.querySelector("#design-workshop")?.append(box);
+  }
+  return box;
+}
+
 function installEditor() {
   const notice = make("p", {id:"ws-notice", role:"status", "aria-live":"polite"});
   notice.hidden = true; $(".ws-top").append(notice);
@@ -883,7 +895,21 @@ function installEditor() {
   dock.hidden = true;
   dock.append(make("strong", {id:"ws-active-situation"}), $("#ws-run-bench"),
     make("div", {id:"ws-simulation-feedback"}), playback);
-  $(".ws-viewport").append(dock);
+  // Nor is the dock. "Run simulation" and "Reset to setup" belonged to a Test
+  // tab that no longer exists, and the owner could not tell what either did.
+  // Trying a thing is something you ask for; what it leaves behind -- the
+  // playback and its timeline -- is drawn over the view when there is one.
+  holder().append(dock);
+  const watching = make("section", { id:"ws-watching", class:"ws-watching" });
+  watching.hidden = true;
+  // Ask the chat to drop something on it and you watch it here, over the
+  // object, with one way back. The owner: "it will do that and show you and
+  // then have a reset button to bring it back to full build."
+  const backToBuild = make("button", { id:"ws-back-to-build", type:"button", class:"ws-action" },
+                           "Back to the build");
+  backToBuild.onclick = () => { clearPlayback(); showWholeProduct(); };
+  watching.append(playback, backToBuild);
+  $(".ws-viewport").append(watching);
   const context = make("section", {id:"ws-view-context", role:"status", "aria-live":"polite"});
   context.append(make("strong", {id:"ws-view-title"}, "Product"), make("p",{id:"ws-view-description"}),
     make("div", {id:"ws-inspector-actions",class:"ws-row"}));
@@ -898,7 +924,11 @@ function installEditor() {
     const button=make("button",{type:"button",class:"ws-action"},name);
     button.onclick=()=>{yaw=y;pitch=p;placeCamera();};context.querySelector("#ws-inspector-actions").append(button);
   }
-  $(".ws-viewport").append(context);
+  // Not on the page. "hold objects on a stable work surface" told a person
+  // looking at a table that it was a table, and the buttons beside it are on
+  // the bar now. It stays in the holder because updateInspector writes to it.
+  context.hidden = true;
+  holder().append(context);
   const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
   setup.onclick=()=>{benchTestRequest++;$("#ws-bench-result").replaceChildren();clearPlayback();scheduleSetup(0);};
   dock.insertBefore(setup, $("#ws-simulation-feedback"));
@@ -1179,24 +1209,38 @@ function installBench() {
   if (!root || !top || !left || !right || !viewport || root.classList.contains("ws-benched")) return;
   root.classList.add("ws-benched");
 
-  // The header: which product, and the one act that spends.
+  // ONE bar, over the view, and no header above it.
+  //
+  // The owner: "The workshop options of each item should be switched into a
+  // dropdown on the same line as the wire/skin line, and we can also put the
+  // nav elements in that line too so that we don't need the full workshop line
+  // above." There were three bars before -- a page header, a Wire/Skin bar and
+  // a row of view buttons under the object -- for about ten controls between
+  // them.
+  //
+  // Which product, how it is drawn, where you are looking from, and the two
+  // acts that leave the bench. Everything else is the chat's.
   const picker = $("#ws-archetype");
-  const keep = make("div", { id:"ws-hidden-controls", hidden:true });
-  const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
+  const keep = holder();
   const status = make("p", { id:"ws-make-status", role:"status", "aria-live":"polite" });
   const checkButton = make("button", { id:"ws-check", type:"button", class:"ws-action" }, "Check it");
   checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
   madeButton.onclick = () => makeIt(madeButton);
-  // The notice is what say() writes to, and the editor put it in the top bar
-  // before this ran. Rebuilding the bar must not take it away.
   const notice = $("#ws-notice");
-  top.replaceChildren(
-    make("h1", {}, "Workshop"), products, make("span", { class:"ws-spacer" }),
-    status, checkButton, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
-  if (notice) top.append(notice);
+  top.replaceChildren(keep);
+  top.hidden = true;
+  // The product picker is the select itself, on the bar, rather than a row of
+  // chips: seven products is a list, and a list is a dropdown.
+  const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
+  products.hidden = true;
+  keep.append(products);
   if (picker) {
-    keep.append(picker);
+    picker.id = "ws-archetype";
+    picker.classList.add("ws-bar-select");
+    picker.setAttribute("aria-label", "Which product");
+    // The chips stay in the hidden holder because the page and its tests open
+    // a product by clicking one; they mirror the select either way.
     const chips = () => {
       products.replaceChildren();
       for (const option of [...picker.options]) {
@@ -1216,17 +1260,26 @@ function installBench() {
     new MutationObserver(chips).observe(picker, { childList:true, subtree:true });
   }
 
-  // Left: the parts of the thing, and nothing else.
+  // Left: the chat, and nothing else. It is the widest way into the bench --
+  // anything the controls do it can do, and it is where a person starts -- so
+  // it gets a side of its own instead of a box at the top of the other side.
+  // The parts of the thing move across to sit with the controls that change
+  // them. The chat's own log, status line and intro are put in beside the form
+  // by the page's shell after this runs, so moving the form moves all of it.
   const parts = $("#ws-parts");
   const leftKeep = [...left.children];
-  left.replaceChildren(make("h2", {}, "Parts"));
-  if (parts) left.append(parts);
 
-  // Under the view: which way you are looking at it, and how far apart it lies.
-  const bar = make("div", { class:"ws-benchbar" });
-  const views = make("div", { class:"ws-chips", role:"group", "aria-label":"Point of view" });
+  // Where you are looking from, beside how it is drawn, on the same bar. This
+  // was a row of buttons under the object in a panel that also said "hold
+  // objects on a stable work surface", which is not something anyone needed
+  // telling while looking straight at the thing.
+  const views = make("div", { id:"ws-points-of-view", class:"ws-chips", role:"group",
+                              "aria-label":"Point of view" });
   for (const [name, y, p] of BENCH_VIEWS) {
     const button = make("button", { type:"button", class:"ws-chip" }, name);
+    // Not data-view: that belongs to Wire/Skin/Matter, which now share this
+    // bar, and a point of view is not a way of drawing the thing.
+    button.dataset.pointOfView = name;
     button.onclick = () => {
       yaw = y; pitch = p; placeCamera();
       for (const other of [...views.children]) other.setAttribute("aria-current", other === button ? "true" : "false");
@@ -1239,8 +1292,7 @@ function installBench() {
   apart.addEventListener("input", () => { bench.spread = apart.valueAsNumber / 100; draw(chosen()); });
   const apartLabel = make("label", { class:"ws-benchbar-field" }, "Apart");
   apartLabel.append(apart);
-  bar.append(views, apartLabel);
-  viewport.append(bar);
+  keep.append(apartLabel);
 
   // Right: the chat, always, and under it one step of the work at a time.
   //
@@ -1339,9 +1391,28 @@ function installBench() {
     }
     return following;
   };
+  const partsBox = make("section", { id:"ws-parts-box" });
+  partsBox.append(make("h2", {}, "Parts"));
+  if (parts) partsBox.append(parts);
   const rightKeep = [...right.children];
-  right.replaceChildren(chatHome, heldBox, strip, groups.start, groups.build, groups.test,
+  left.replaceChildren(chatHome);
+  // No right nav.
+  //
+  // The owner, twice: "there are so many buttons and fields I don't have a
+  // clue where to begin on it", and then, of the four steps that replaced
+  // them, "I don't really understand how to use the try or change or keep
+  // functions, it makes no sense. Since we can't make this work we should just
+  // leave it all up to the chat."
+  //
+  // So the bench is the chat, the object, and one bar. The panels are still
+  // built and still wired -- the chat drives several of them, the page reads
+  // values out of them, and they are what the browser tests hold the bench to
+  // -- but they are not a wall of controls in front of a person any more. What
+  // a person cannot yet ask the chat for is written down in
+  // docs/workshop-deep-dive.md rather than left on the screen as a puzzle.
+  right.replaceChildren(partsBox, heldBox, strip, groups.start, groups.build, groups.test,
                         groups.details, groups.measure, groups.plumbing);
+  right.hidden = true;
   for (const node of [...rightKeep, ...leftKeep.filter((n) => n !== parts)]) {
     const where = placeIn(node);
     if (where) groups[where].append(node); else node.remove();
@@ -1394,13 +1465,21 @@ function installBench() {
       if (!["wire", "skin"].includes(button.dataset.view)) plumbing.append(button);
     }
     if (plumbing.children.length) groups.plumbing.append(make("h3", {}, "How it compiles"), plumbing);
+    // Everything that was three bars, on one: which product, how it is drawn,
+    // where from, and the two acts that leave the bench.
+    if (picker) viewbar.prepend(picker);
+    viewbar.append(views, make("span", { class:"ws-spacer" }), status,
+                   checkButton, madeButton, make("a", { class:"ws-bar-link", href:"/world" }, "The world"));
+    if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
 
-  // The rack runs along the bottom, where the world keeps its bag slots.
+  // The rack sits at the foot of the right side with the rest of the controls,
+  // rather than across the whole bottom of the page. It is one of the things
+  // you look at while you work, not a status bar under everything.
   const rackBox = $("#ws-rack")?.closest("section") || null;
   const foot = make("footer", { id:"ws-rack-foot" });
   foot.append(make("h2", {}, "The rack"), make("div", { id:"ws-rack-strip" }));
-  root.append(foot);
+  right.append(foot);
   if (rackBox) rackBox.hidden = false;
   renderRackStrip();
 }
@@ -1474,7 +1553,14 @@ async function chatEdit() {
   const answer = await api("/api/workshop/candidates", { ...candidateBody(), component_chat:{ part_name:selected, message } });
   if (!took(answer, selected)) return;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
-  if (answer.workshop_chat?.reply) say(answer.workshop_chat.reply); input.value = "";
+  // Asked to try the thing, the chat hands back a run to watch. It is played
+  // over the object, with one button back to the build.
+  const showing = answer.workshop_chat?.showing;
+  if (showing?.frames?.length > 1) { setWorkspaceMode("test"); setPlayback(showing); }
+  // The reply belongs in the chat, which already shows it. It used to be said
+  // here as well, which put it across the top of the page and under "Cheap
+  // checks" at the same time: the same sentence in three places.
+  input.value = "";
 }
 async function saveSelectedComponent() {
   const part = selectedPart(); if (!part) throw new Error("Click the component you want to save first.");
@@ -1556,7 +1642,12 @@ function renderBuildability() {
     : "Not buildable on this grid. Your original dimensions are preserved.";
   summary.textContent = prefix + (cost?.stored_cells != null ? ` ${cost.stored_cells.toLocaleString()} / ${report.limits.scene_cells.toLocaleString()} scene cells.` : "")
     + (cost?.collision_boxes != null ? ` ${cost.collision_boxes} / ${report.limits.joined_boxes} joined boxes.` : "")
-    + (issues.length ? " " + issues.join(". ") : "") + " No bending, fracture or joint-strength certification.";
+    + (issues.length ? " " + issues.join(". ") : "") + " No bending, fracture or joint-strength certification."
+  // A design the room cannot carry has to reach the person, and the panel this
+  // is written in is not on the bench any more. The notice sits over the view.
+  if (!rigid && report.assessment !== "dimensions-only" && !report.compilation_ready) {
+    say(summary.textContent, true);
+  }
   for (const part of report.components || []) {
     if (!part.disappeared && !part.subcell_axes.length) continue;
     parts.append(make("p", {class:"ws-note"}, `${part.component}: ${part.disappeared ? "disappears; " : "subcell feature; "}`
@@ -1673,7 +1764,12 @@ function renderBenchPresets() {
   root.append(row);
 }
 function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(2)} °C`; }
+function watchPanel(showing) {
+  const panel = $("#ws-watching");
+  if (panel) panel.hidden = !showing;
+}
 function clearPlayback() {
+  watchPanel(false);
   workspace.sequence++; clearTimeout(workspace.timer); workspace.setup=null;
   bench.playback = null; bench.playbackIndex = 0; bench.playbackPlaying = false;
   $("#ws-simulation-feedback")?.replaceChildren();
@@ -1682,6 +1778,7 @@ function clearPlayback() {
   if (view === "physics") { view = "skin"; pressView("skin"); show(false); }
 }
 function setPlayback(recording) {
+  watchPanel(Boolean(recording?.frames?.length));
   if (!recording?.frames || recording.frames.length < 2 || !(recording.duration_s > 0)) {
     clearPlayback(); throw new Error("The test returned no advancing simulation. No successful simulation is claimed.");
   }

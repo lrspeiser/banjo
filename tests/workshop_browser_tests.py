@@ -169,10 +169,22 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.js(f"document.querySelector({json.dumps(selector)}).click()")
 
     def pointer_click(self, selector):
-        """Use actual hit testing, not HTMLElement.click through an overlay."""
+        """Use actual hit testing, not HTMLElement.click through an overlay.
+
+        A control the bench no longer SHOWS is clicked plainly instead. The
+        owner took the right-hand panel off the page -- "since we can't make
+        this work we should just leave it all up to the chat" -- so what is
+        left in it is machinery the page and the chat drive, not a panel
+        anybody points at. Hit-testing something deliberately off screen would
+        be asserting that it is on screen. Everything still on the bench keeps
+        the real hit test, which is what this method is for.
+        """
         if "data-mode" in selector:
             return self.open_extras(self._mode_of(selector))
         self.reveal(selector)
+        if self.js(f"Boolean(document.querySelector({json.dumps(selector)})"
+                   f"?.closest('.ws-right[hidden], #ws-hidden-controls'))"):
+            return self.js(f"document.querySelector({json.dumps(selector)}).click()")
         # 'center', not 'nearest': a control sitting on the pane's bottom edge
         # is scrolled far enough to be hit, not just far enough to be inside.
         self.js(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'center'}})")
@@ -265,12 +277,17 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.click("#ws-refresh-matter")
         self.wait("document.querySelector('#ws-matter-status').dataset.state==='blocked'")
         self.assertIn("Not buildable", self.js("document.querySelector('#ws-buildability-summary').textContent"))
-        self.assertTrue(self.js("document.querySelector('#ws-buildability-summary').getBoundingClientRect().height>0"))
+        # And the person is told, over the view. The panel this is written in
+        # is not on the bench any more, so a design the room cannot carry has
+        # to reach them some other way than a paragraph nobody can see.
+        self.assertFalse(self.js("document.querySelector('#ws-notice').hidden"))
+        self.assertIn("Not buildable", self.js("document.querySelector('#ws-notice').textContent"))
+        self.assertTrue(self.js("document.querySelector('#ws-notice').getBoundingClientRect().height>0"))
         self.assertIn("more than 50,000 cells", self.js("document.querySelector('#ws-matter-status').textContent").lower())
-        # The bench no longer hides panels behind tabs; what matters is that a
-        # design the grid cannot build says so where it is read.
-        self.assertTrue(self.js("document.querySelector('#ws-buildability-summary')"
-                                ".getBoundingClientRect().height>0"))
+        # And it is said where it is read: over the object, not in a panel.
+        self.assertLess(
+            self.js("document.querySelector('#ws-notice').getBoundingClientRect().top"),
+            self.js("document.querySelector('#workshop-stage').getBoundingClientRect().bottom"))
 
     def test_physical_measurements_and_product_switch_are_current(self):
         mass = self.js("document.querySelector('#ws-mass').textContent")
@@ -323,11 +340,16 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual("1",self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
         self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
         self.assert_geometry_is_visible()
-        layout=self.js("""(()=>{const c=document.querySelector('#workshop-stage').getBoundingClientRect(),
-            d=document.querySelector('#ws-simulation-dock').getBoundingClientRect();
-            return {width:c.width,height:c.height,overlap:d.top<c.bottom-.1,advanced:document.querySelector('.ws-advanced').open};})()""")
+        # The object gets the page. The bench is the chat, the object and one
+        # bar over it, so the only things allowed over the canvas are the bar,
+        # a notice, and the player that a run leaves behind.
+        layout=self.js("""(()=>{const c=document.querySelector('#workshop-stage').getBoundingClientRect();
+            const over=[...document.querySelectorAll('.ws-viewport > *')].filter(e=>!e.hidden
+              && e.id!=='workshop-stage' && getComputedStyle(e).position==='absolute'
+              && e.getBoundingClientRect().height>0).map(e=>e.id||e.className);
+            return {width:c.width,height:c.height,over};})()""")
         self.assertGreater(layout["width"],700);self.assertGreater(layout["height"],250)
-        self.assertFalse(layout["overlap"]);self.assertFalse(layout["advanced"])
+        self.assertEqual([],layout["over"],"nothing floats over the object until a run does")
         self.field('[data-bench-control="seconds"]',1)
         self.field('[data-bench-control="load_kg"]',10)
         self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready' && document.querySelector('#ws-setup-status').textContent.includes('10 kg')",timeout=60)
@@ -470,7 +492,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
             "document.querySelector('#ws-base').textContent").replace("×", "x"))
         self.assertTrue(self.js("document.querySelector('#ws-buildability').hidden"))
         self.assertEqual(["matter", "physics", "collision", "relations"], self.js(
-            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+                        # Only the ways of DRAWING it. The bar carries the product picker,
+            # the points of view and the way out of the bench as well now.
+            "[...document.querySelectorAll('.ws-viewbar button[data-view]')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
 
         # It is edited as itself, and the reported size follows.
         self.click('[data-component-edit="thicker"]')
@@ -490,40 +514,75 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertTrue(self.js("document.querySelector('#ws-isolation').hidden"))
         self.assertEqual("14", self.js("document.querySelector('#ws-part-count').textContent"))
         self.assertEqual([], self.js(
-            "[...document.querySelectorAll('.ws-viewbar button')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
+                        # Only the ways of DRAWING it. The bar carries the product picker,
+            # the points of view and the way out of the bench as well now.
+            "[...document.querySelectorAll('.ws-viewbar button[data-view]')].filter(b=>b.disabled).map(b=>b.dataset.view)"))
 
-    def test_the_left_pane_has_no_dead_reference_sections(self):
-        """Variants and the component-family reference are gone.
+    def test_the_bench_is_the_chat_the_object_and_one_bar(self):
+        """Three goes at this pane, and what the owner said about each.
 
-        Both sat folded inside one another, so neither could be found, and
-        neither made a product. What is left is the product library, what the
-        user saved, and their saved designs.
+        It was one shut drawer called "Bench extras" holding about fifty
+        working controls, and nobody opened it. Un-buried, it was six named
+        sections: "there are so many buttons and fields in the right nav of the
+        workshop I don't have a clue where to begin on it." Arranged as four
+        steps: "I don't really understand how to use the try or change or keep
+        functions, it makes no sense. Since we can't make this work we should
+        just leave it all up to the chat."
+
+        So: the chat down one side, the object, and one bar over it.
         """
         self.assertEqual(0, self.js(
             "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
-        # The bench is one screen: the left rail is the parts of the thing in
-        # front of you, and everything else is a named section on the right.
-        self.assertEqual(["Parts"], self.js(
-            "[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
-        self.assertEqual(0, self.js("document.querySelectorAll('.ws-left details').length"))
-        # It all used to be swept into one shut drawer called "Bench extras",
-        # and about fifty working controls were never found. There is no such
-        # drawer now.
         self.assertEqual(0, self.js("document.querySelectorAll('#ws-extras').length"))
-        # And it is not six open sections either. The owner, looking at those:
-        # "there are so many buttons and fields I don't have a clue where to
-        # begin on it." Four steps, one showing, with the chat above them.
-        self.assertEqual(["Ask", "Change", "Try", "Keep"],
-                         self.js("[...document.querySelectorAll('.ws-step-tab')].map(b=>b.textContent)"))
-        self.assertEqual(1, self.js("document.querySelectorAll('.ws-step-pane:not([hidden])').length"),
-                         "one step at a time")
-        self.assertEqual("build", self.js("document.querySelector('.ws-step-tab[aria-selected=true]').dataset.mode"))
-        # The chat is above the steps, because it is another way of doing any
-        # of them rather than a fifth thing to do.
-        self.assertEqual(["ws-chat-home", "ws-held-box"], self.js(
-            "[...document.querySelector('.ws-right').children].slice(0,2).map(e=>e.id)"))
-        named = self.js("[...document.querySelectorAll('.ws-right > .ws-group > summary')].map(h=>h.textContent)")
-        self.assertEqual(["How it measures up", "How the bench works"], named)
+        # The chat has the whole side, and it is the only thing on it.
+        self.assertEqual(["ws-chat-home"],
+                         self.js("[...document.querySelector('.ws-left').children].map(e=>e.id)"))
+        self.assertEqual(["Chat"],
+                         self.js("[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
+        self.assertTrue(self.js("document.querySelector('#ws-chat-log').getBoundingClientRect().height>200"),
+                        "the conversation gets the height, not a 340 px box")
+        # No right nav, and no page header above the bar.
+        self.assertTrue(self.js("document.querySelector('.ws-right').hidden"))
+        self.assertTrue(self.js("document.querySelector('.ws-top').hidden"))
+        # One bar: which product, how it is drawn, where you are looking from,
+        # and the two acts that leave the bench.
+        bar = self.js("[...document.querySelector('.ws-viewbar').children]"
+                      ".map(e=>e.id||e.tagName.toLowerCase())")
+        self.assertEqual(["ws-archetype", "button", "button", "ws-points-of-view", "span",
+                          "ws-make-status", "ws-check", "ws-make", "a"], bar)
+        # Wire and Skin are on the bar; the four that describe how it COMPILES
+        # went to the plumbing drawer when the bench was first unburied.
+        self.assertEqual(["Wire", "Skin"],
+                         self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
+                                 " > button[data-view]')].map(b=>b.textContent)"))
+        self.assertEqual(["3/4", "X", "Y", "Z"],
+                         self.js("[...document.querySelectorAll('#ws-points-of-view button')]"
+                                 ".map(b=>b.dataset.pointOfView)"))
+        # Which product is a dropdown on that bar, not seven chips above it.
+        self.assertEqual("SELECT", self.js("document.querySelector('#ws-archetype').tagName"))
+        self.assertGreater(self.js("document.querySelector('#ws-archetype').getBoundingClientRect().width"), 0)
+        # And the panel that told a person looking at a table that it was a
+        # table is not on the page.
+        self.assertTrue(self.js("Boolean(document.querySelector('#ws-view-context')"
+                                "?.closest('#ws-hidden-controls'))"))
+
+    def test_the_chat_offers_things_to_ask_for(self):
+        """A blank box is the hardest question on the page.
+
+        The owner: "perhaps we have some suggested chat messages below like
+        'Ask me to drop a bowling ball on the item' and it will do that and
+        show you."
+        """
+        said = self.js("[...document.querySelectorAll('.ws-suggestion')].map(b=>b.textContent)")
+        self.assertGreaterEqual(len(said), 4)
+        self.assertTrue(any("Drop" in line for line in said), said)
+        self.assertTrue(any("kg on its top" in line for line in said), said)
+        # Each one is a real turn: clicking it puts that message in the box and
+        # sends it, rather than printing a canned answer.
+        self.js("[...document.querySelectorAll('.ws-suggestion')][1].click()")
+        self.wait("document.querySelectorAll('#ws-chat-log .ws-chat-message.user').length>0")
+        self.assertEqual(said[1],
+                         self.js("document.querySelector('#ws-chat-log .ws-chat-message.user .ws-chat-body').textContent"))
 
     def test_each_step_holds_what_that_step_is_for(self):
         """Saving used to sit under the test bench, because an unnamed field
@@ -1028,28 +1087,39 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("Number(document.querySelector('#ws-play-timeline').value)<Number(document.querySelector('#ws-play-timeline').max)")
         self.assertEqual("Pause",self.js("document.querySelector('#ws-play').textContent"))
 
-    def test_run_and_readout_are_visible_and_clickable_without_sidebar_scrolling(self):
+    def test_the_way_in_is_reachable_on_a_small_screen_without_scrolling(self):
+        """There is no Run button any more; you ask for a run.
+
+        This test used to point a real mouse at "Run simulation" to prove it
+        was not below the fold. The owner: "I don't know why we have the run
+        simulation or reset to setup buttons ... we should just leave it all up
+        to the chat." So what has to be reachable is the chat: the box you type
+        in, the Send beside it, and the first thing to ask for.
+        """
         self.page.send("Emulation.setDeviceMetricsOverride",{"width":1280,"height":720,"deviceScaleFactor":1,"mobile":False})
-        self.click('[data-mode="test"]')
-        self.wait("!document.querySelector('#ws-simulation-dock').hidden")
-        point=self.js("""(()=>{const e=document.querySelector('#ws-run-bench'),r=e.getBoundingClientRect();
-          return {x:r.x+r.width/2,y:r.y+r.height/2,visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,
-          hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e};})()""")
-        self.assertTrue(point['visible'] and point['hit'],point)
+        for selector in ("#ws-component-chat-text", "#ws-component-chat button[type=submit]",
+                         ".ws-suggestion"):
+            point=self.js(f"""(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();
+              return {{x:r.x+r.width/2,y:r.y+r.height/2,visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,
+              hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}};}})()""")
+            self.assertTrue(point['visible'] and point['hit'],f"{selector}: {point}")
         # Real mouse input: a programmatic element.click() can pass for an
         # offscreen button and failed to catch the previous below-fold layout.
+        point=self.js("""(()=>{const e=document.querySelector('.ws-suggestion'),r=e.getBoundingClientRect();
+          return {x:r.x+r.width/2,y:r.y+r.height/2};})()""")
         for kind in ('mousePressed','mouseReleased'):
             self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':point['x'],'y':point['y'],'button':'left','clickCount':1})
-        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
-        # The readout has to be there and have a size. It sits in a rail that
-        # scrolls now, so demanding it be wholly inside the window is asking
-        # the old three-pane layout a question the one screen does not answer.
-        self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout')"
-                                ".getBoundingClientRect();return r.height>0&&r.width>0;})()"))
-        self.assertEqual(.25,float(self.js("document.querySelector('#ws-play-speed').value")))
-        self.click('[data-mode="build"]')
-        # The dock was revealed by the Test tab. There are no tabs; it is there.
-        self.assertFalse(self.js("document.querySelector('#ws-simulation-dock').hidden"))
+        # Without a key the chat answers deterministically, but the turn is a
+        # real one either way: the message goes into the log.
+        self.wait("document.querySelectorAll('#ws-chat-log .ws-chat-message.user').length>0")
+        self.assertIn("Drop a 20 kg iron block",
+                      self.js("document.querySelector('#ws-chat-log .ws-chat-message.user').textContent"))
+        # And the run controls are not on the bench at all: "Run simulation"
+        # and "Reset to setup" went with the Test tab nobody could read.
+        self.assertTrue(self.js("Boolean(document.querySelector('#ws-run-bench')"
+                                "?.closest('#ws-hidden-controls'))"))
+        self.assertTrue(self.js("document.querySelector('.ws-right').hidden"))
+        self.assertTrue(self.js("document.querySelector('.ws-top').hidden"))
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')

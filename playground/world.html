@@ -13,6 +13,19 @@
 .ws-chat-message{max-width:92%;padding:.5rem .58rem;border:1px solid #34404e;border-radius:.55rem;background:#111b26;font-size:.79rem;line-height:1.4;overflow-wrap:anywhere}
 .ws-chat-message.user{justify-self:end;margin-left:1.25rem;background:#1a2a38;border-color:#43576b}.ws-chat-message.assistant{justify-self:start;margin-right:1.25rem}.ws-chat-message.working{opacity:.82;border-style:dashed}
 .ws-chat-who{display:block;margin-bottom:.18rem;color:#91a6bb;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.ws-chat-body{white-space:pre-wrap}
+.ws-chat-suggestions{display:grid;gap:.3rem;margin:.45rem 0 0;min-width:0}
+.ws-suggestion{border:1px solid #3d5064;background:#131f2b;color:#c6d6e6;border-radius:.5rem;padding:.35rem .6rem;cursor:pointer;font:inherit;font-size:.72rem;text-align:left;white-space:normal;line-height:1.3;overflow:visible;height:auto}
+.ws-suggestion:hover{border-color:#6d89a5;background:#18293b;color:#eaf2fb}
+.ws-chat-ask{display:grid;gap:.3rem;margin-top:.5rem}
+.ws-ask-option{display:grid;gap:.1rem;text-align:left;border:1px solid #3d5064;background:#132131;color:#dce7f5;border-radius:.45rem;padding:.4rem .5rem;cursor:pointer;font:inherit}
+.ws-ask-option:hover{border-color:#6d89a5;background:#18293b}
+.ws-ask-option[aria-pressed="true"]{background:#dce7f5;color:#111820;border-color:#dce7f5}
+.ws-ask-option strong{font-size:.78rem;font-weight:650}
+.ws-ask-option small{color:#9fb0c3;font-size:.68rem;line-height:1.25}
+.ws-ask-option[aria-pressed="true"] small{color:#33404e}
+.ws-ask-other{border-style:dashed}
+.ws-ask-send{justify-self:start;margin-top:.15rem;border:1px solid #dce7f5;background:#dce7f5;color:#111820;border-radius:.4rem;padding:.35rem .7rem;cursor:pointer;font:inherit;font-size:.74rem;font-weight:700}
+.ws-ask-send[disabled]{opacity:.45;cursor:default}
 .ws-chat-status{min-height:1.15rem;margin:.2rem 0 .4rem;color:#9ed4ad;font-size:.7rem}.ws-chat-changed{margin-top:.35rem;color:#9ed4ad;font-size:.7rem}.ws-chat-tools{margin-top:.4rem;border-top:1px solid #2e3946;padding-top:.3rem;color:#aebbc9;font-size:.7rem}.ws-chat-tools summary{cursor:pointer;color:#95abc0}.ws-chat-tools ul{margin:.35rem 0 0;padding-left:1.15rem}.ws-chat-tools li{margin:.18rem 0}.ws-chat-tools li.bad{color:#e9a0a0}
 .ws-component-chat{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.4rem;align-items:end}.ws-component-chat textarea{box-sizing:border-box;width:100%;min-height:64px;max-height:180px;resize:vertical;border:1px solid #3d4958;border-radius:.4rem;background:#0d141c;color:#e6edf5;padding:.5rem;font:inherit;line-height:1.35}.ws-component-chat textarea:focus{outline:2px solid #6d89a5;outline-offset:1px}.ws-component-chat button[disabled],.ws-component-chat textarea[disabled]{opacity:.6}
 .ws-product-section{margin-bottom:1rem}.ws-test-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.ws-test-card{display:grid;gap:.2rem;text-align:left;border:1px solid #34404e;background:#111923;color:#dce5ef;border-radius:.6rem;padding:.65rem;cursor:pointer;min-height:64px}.ws-test-card:hover{border-color:#65778b;background:#172331}.ws-test-card[aria-current="true"]{border-color:#9eb7d2;background:#1c2a38;box-shadow:0 0 0 1px #9eb7d233 inset}.ws-test-card strong{font-size:.82rem}.ws-test-card small{color:#91a2b5;font-size:.68rem;line-height:1.25}.ws-workspace-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem;margin:.8rem 0}.ws-workspace-tabs button{border:1px solid #394757;background:#111923;color:#b9c6d3;border-radius:.45rem;padding:.48rem .35rem;cursor:pointer}.ws-workspace-tabs button[aria-selected="true"]{background:#dce7f5;color:#111820;border-color:#dce7f5;font-weight:700}.ws-mode-pane[hidden]{display:none!important}.ws-mode-pane{display:block}.ws-mode-pane>section:first-child,.ws-mode-pane>.ws-component-editor:first-child{margin-top:.2rem}.ws-test-intro{margin:.2rem 0 .65rem;color:#aebdcb;font-size:.78rem;line-height:1.4}.ws-native-picker-hidden{display:none!important}.ws-left>.ws-product-section+section{margin-top:.75rem}.ws-right>h2#ws-name{margin-bottom:.2rem}.ws-right>#ws-purpose{margin-top:0}.ws-right .ws-mode-pane h3:first-child{margin-top:.4rem}
@@ -58,15 +71,64 @@ if(new URLSearchParams(location.search).has("workshop")){
   const textarea=el("textarea",{id:"ws-component-chat-text",rows:"3",maxlength:"4000",placeholder:"Try: make all four legs longer and thinner, then tell me what that does to stability","aria-label":"Message Workshop assistant"});oldInput.replaceWith(textarea);
   const send=form.querySelector("button[type=submit]");if(send)send.textContent="Send";
   function appendMessage(role,text,options={}){const row=el("div",{class:`ws-chat-message ${role}${options.working?" working":""}`});row.append(el("span",{class:"ws-chat-who"},role==="user"?"You":"Workshop"),el("div",{class:"ws-chat-body"},text));if(options.tools&&options.tools.length){const details=el("details",{class:"ws-chat-tools"});details.append(el("summary",{},`${options.tools.length} Workshop tool step${options.tools.length===1?"":"s"}`));const list=el("ul");for(const step of options.tools)list.append(el("li",{class:step.ok===false?"bad":""},`${step.tool}: ${step.summary||"done"}`));details.append(list);row.append(details)}if(options.changed&&options.changed.length){row.append(el("div",{class:"ws-chat-changed"},"Changed: "+options.changed.join(", ")))}log.append(row);log.scrollTop=log.scrollHeight;return row}
+  // A question from the Workshop always arrives with answers you can click.
+  // An open question in prose makes the person invent the option themselves,
+  // which is the work they came here to be spared; "Other (write your own)" is
+  // always there, so a suggestion never takes anything away.
+  function ask(row,asking){
+    const box=el("div",{class:"ws-chat-ask"});
+    const picked=new Set();
+    const go=el("button",{type:"button",class:"ws-ask-send",disabled:"disabled"},"Send these");
+    const answer=text=>{textarea.value=text;form.requestSubmit()};
+    for(const option of asking.options||[]){
+      const button=el("button",{type:"button",class:"ws-ask-option","aria-pressed":"false"});
+      button.append(el("strong",{},option.label));
+      if(option.why)button.append(el("small",{},option.why));
+      button.addEventListener("click",()=>{
+        if(!asking.several){answer(option.label);return}
+        const on=button.getAttribute("aria-pressed")==="true";
+        button.setAttribute("aria-pressed",String(!on));
+        if(on)picked.delete(option.label);else picked.add(option.label);
+        go.disabled=picked.size===0;
+      });
+      box.append(button);
+    }
+    const other=el("button",{type:"button",class:"ws-ask-option ws-ask-other"});
+    other.append(el("strong",{},"Other (write your own)"));
+    other.addEventListener("click",()=>{textarea.focus()});
+    box.append(other);
+    if(asking.several){go.addEventListener("click",()=>{if(picked.size)answer([...picked].join("; "))});box.append(go)}
+    row.append(box);
+    log.scrollTop=log.scrollHeight;
+  }
   function finishWorking(){if(pendingBubble)pendingBubble.remove();pendingBubble=null;pendingOriginal="";status.textContent="";textarea.disabled=false;if(send)send.disabled=false}
-  function assistant(text,tools=[],changed=[]){const clean=String(text||"").trim()||"Done.";appendMessage("assistant",clean,{tools,changed});history.push({role:"assistant",content:clean});if(history.length>20)history.splice(0,history.length-20)}
+  function assistant(text,tools=[],changed=[],asking=null){const clean=String(text||"").trim()||"Done.";const row=appendMessage("assistant",clean,{tools,changed});if(asking&&Array.isArray(asking.options)&&asking.options.length)ask(row,asking);history.push({role:"assistant",content:clean});if(history.length>20)history.splice(0,history.length-20)}
   appendMessage("assistant","I can work on the whole design or a selected component. Tell me what you want changed, or ask me to inspect the geometry or physics first.");
+  // Things to ask for, because a blank box is the hardest question on the page.
+  // The owner: "perhaps we have some suggested chat messages below like 'Ask me
+  // to drop a bowling ball on the item' and it will do that and show you."
+  // Every one of these is a real turn -- nothing here is a canned answer.
+  const SUGGESTIONS=[
+    "Drop a 20 kg iron block on it from 2 m and show me what happens",
+    "Put 120 kg on its top and tell me whether it holds",
+    "Make all four legs 50 mm and tell me what that does to its weight",
+    "What would it take to make this, and does the rack have it?",
+    "Is this actually a machine? Check it and tell me what is missing",
+    "Make it out of iron instead and tell me what changed",
+  ];
+  const suggestions=el("div",{class:"ws-chat-suggestions","aria-label":"Things to ask for"});
+  for(const line of SUGGESTIONS){
+    const chip=el("button",{type:"button",class:"ws-suggestion"},line);
+    chip.addEventListener("click",()=>{textarea.value=line;form.requestSubmit()});
+    suggestions.append(chip);
+  }
+  form.parentElement.insertBefore(suggestions,status.nextSibling);
   fetch("/api/status").then(r=>r.json()).then(answer=>{keyConfigured=Boolean(answer.key_configured)}).catch(()=>{keyConfigured=false});
   function selectedComponentName(){const text=$("#ws-selected-part")?.textContent||"";if(!text||/^Click a part/i.test(text))return null;return text.split(" · ")[0].trim()||null}
-  function deicticEditWithoutSelection(message){if(selectedComponentName())return false;const edit=/\b(longer|shorter|thicker|thinner|wider|narrower|material|iron|oak|aluminum|aluminium)\b/i.test(message),deictic=/\b(this|that|it|selected|the part)\b/i.test(message),semanticSet=/\b(legs?|wheels?|posts?|beams?|braces?|aprons?|stretchers?|axles?|handles?|tops?|surfaces?|panels?|shelves?)\b/i.test(message);return edit&&deictic&&!semanticSet}
+  function deicticEditWithoutSelection(message){if(selectedComponentName())return false;if(/\b(drop|throw|hit|strike|push|slide|load|put|place|test|try|run|show|watch|simulate|break)\b/i.test(message))return false;const edit=/\b(longer|shorter|thicker|thinner|wider|narrower|material|iron|oak|aluminum|aluminium)\b/i.test(message),deictic=/\b(this|that|it|selected|the part)\b/i.test(message),semanticSet=/\b(legs?|wheels?|posts?|beams?|braces?|aprons?|stretchers?|axles?|handles?|tops?|surfaces?|panels?|shelves?)\b/i.test(message);return edit&&deictic&&!semanticSet}
   function conversationContext(current){if(!keyConfigured)return current;const prior=history.slice(0,-1).slice(-10),lines=prior.map(row=>`${row.role==="user"?"User":"Workshop"}: ${row.content}`),selection=selectedComponentName(),selectionLine=selection?`The user currently has component ${selection} selected in the 3D Workshop.`:"No component is selected in the 3D Workshop. If the API transports a placeholder component, do not treat it as a user selection.";return ["WORKSHOP CONVERSATION CONTEXT (use this for references such as 'those' or 'a little more'):",...lines,selectionLine,`CURRENT USER REQUEST: ${current}`].join("\n")}
   form.addEventListener("submit",event=>{const message=textarea.value.trim();if(!message)return;if(deicticEditWithoutSelection(message)){event.preventDefault();event.stopImmediatePropagation();assistant("Which component do you mean? Click it in the 3D view, or name the group—for example, ‘all the legs’.");return}if(!selectedComponentName())$("#ws-parts .ws-part-link")?.click();pendingOriginal=message;history.push({role:"user",content:message});if(history.length>20)history.splice(0,history.length-20);appendMessage("user",message);pendingBubble=appendMessage("assistant","Working… inspecting the design and choosing Workshop tools.",{working:true});status.textContent="Working — the design stays unchanged until this turn completes.";textarea.disabled=true;if(send)send.disabled=true},true);
-  const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if(url.includes("/api/workshop/candidates")&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&requestBody.component_chat);if(isChat&&pendingOriginal){requestBody.component_chat.message=conversationContext(pendingOriginal);init={...init,body:JSON.stringify(requestBody)};status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&answer.workshop_chat){const chat=answer.workshop_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[],Array.isArray(chat.changed)?chat.changed:[])}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}else{finishWorking();assistant("That turn came back with nothing in it. Nothing has changed; ask again.")}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the Workshop agent: ${problem.message||problem}`)}throw problem}};
+  const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if(url.includes("/api/workshop/candidates")&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&requestBody.component_chat);if(isChat&&pendingOriginal){requestBody.component_chat.message=conversationContext(pendingOriginal);init={...init,body:JSON.stringify(requestBody)};status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&answer.workshop_chat){const chat=answer.workshop_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[],Array.isArray(chat.changed)?chat.changed:[],chat.asking||null)}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}else{finishWorking();assistant("That turn came back with nothing in it. Nothing has changed; ask again.")}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the Workshop agent: ${problem.message||problem}`)}throw problem}};
   textarea.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(!textarea.disabled)form.requestSubmit()}});
 }
 </script>
