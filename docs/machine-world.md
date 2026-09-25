@@ -849,6 +849,124 @@ Not built yet: seasons, since every day is an equinox's; the moon; clouds; the
 day's heat warming anything; a machine that plans for the night rather than
 running until it is low.
 
+## What the rover decides by itself, and who it asks
+
+**Status, 2026-09-25.** The rover's reflexes still drive it: the engine's
+program reads its sensors and its slope before every step and works its
+wheels, and that never waits on anything. Above them, when something happens
+to it, a decision model is asked what it should do for the next couple of
+seconds, and its pick is done. The person can also click the rover and talk
+to it (below).
+
+**A program can be asked.** `LiveWorld::behave` (the runner's `behave` op,
+the session's the same) asks a program to do one thing for a while instead
+of deciding for itself: `going forward`, `backing off`, `turning left`,
+`turning right`, `waiting` (held on its brakes, still on), `facing` a point
+in the world (turning on the spot until its front is towards it, then
+waiting) or `approaching` one (facing, then going forward until it is within
+a metre, then waiting); for so many seconds, or until asked otherwise; by a
+sender and its count, stale as `run` is. It says why it was asked as its
+`why`, and when the while is up it goes on as it would have. Turned off, or
+run low, it drops the ask: those come first. A saved world gives it back
+doing what it was asked, as far in. Measured in `tests/rover_roam_tests.cpp`:
+asked to back off it went 0.62 m back in its second second (a controller
+told to reverse stops its wheel first); asked to face a point behind it, it
+turned on the spot to it in 12 s and, driven forward from there, went to it
+(cos 0.98).
+
+**Who is asked.** Jev, TypeSafe AI's decision model: it is sent a state and
+typed questions, and answers each with a typed value and a calibrated
+probability, in a fraction of a second; it cannot write a word, invent a
+number or call a tool, which is what makes it safe to put in the loop. One
+call (`playground/rover_brain.py`), whenever something happens to the
+rover -- water seen ahead, a wheel stalled, something striking it, the
+ground too steep, its battery getting low -- asks three things at once:
+what to do next, a choice among what its program can be asked (keep going,
+back off, turn left, turn right, hold still); whether it is stuck; how
+urgent its battery is. The state it reads is the program as the engine
+reports it, its wheels' controllers, what struck it, and the last few
+decisions: curated, not the whole step, since Jev reads 32k tokens and is
+paid by the one. A pick it gives at least 55% confidence goes to the program
+as a short ask (1.5 to 3 s) with Jev's words as its `why`; a less confident
+one is left to the reflexes, and the panel says so. The same thing happening
+again within 3 s is not asked about again.
+
+**Off the step.** The question is asked on a thread; the answer is applied
+before the next step the page takes (`Brains.before`, in the live act
+route), so the page's frame rate never waits on the network. The server
+hears every reply of the room for it (`app.reply_listeners`). Nothing is
+asked while the person is talking to it.
+
+**What Jev is asked is a table by the kind of program** (`rover_brain.KINDS`):
+what the machine is in words, what can be picked for it and what its program
+is asked for each, and the other questions worth asking in the same call.
+Another kind of machine -- one that digs, say -- is an entry there and a
+program kind in the engine; nothing else in the layer knows what a rover is.
+
+**On the panel** a machine with a program says who decides for it -- its
+reflexes, or Jev -- and what was decided last, with Jev's confidence. Jev
+is the default when a key is configured; without one the switch cannot be
+pressed and says why.
+
+**The key.** `TYPESAFE_API_KEY` in the local `.env` (the same files the
+OpenAI key is read from) turns it on; `JEV_API_URL` there names another
+host that speaks the same API in place of `https://api.typesafe.ai/v1/systemone`:
+a reseller, a proxy, or `tests/scripted_jev_server.py`, which stands in for
+Jev without a key and answers as a sensible Jev might. Every check runs on
+that stand-in or on a Jev that is a function: nothing in the tests reaches
+the network. The request and answer shapes follow TypeSafe's published API;
+a live call with a working key has not been confirmed yet (the key to hand
+was refused by the API with 401).
+
+Checked by `tests/rover_roam_tests.cpp` (the ask) and
+`tests/rover_brain_tests.py`: in the tests-rover room with a Jev that always
+says back off, Jev was asked once at the water's edge ("water ahead on its
+right") and its pick was done -- the program said "Jev said back off (90%
+sure) when water ahead on its right" -- and the while up, its reflexes had it
+back.
+
+Not built yet: a routine beyond roaming (a rover that digs for something and
+brings it back), which is engine work -- a scoop on the rover and the
+machine driving it -- and then one more kind in the table; asking Jev when
+a person comes near, rather than only when they click; and a browser
+journey for the panel's switch and the chat.
+
+## Talking to the rover
+
+**Status, 2026-09-25.** Click the rover, open its panel, press "Talk to it".
+It stops what it is doing and turns to face the person (an ask on its
+program by the sender "talk": `facing` where they stand, until asked
+otherwise), and the chat opens with what it was doing, in its own words: "I
+am turning left: the person came to talk to it. My battery is at 80%; I rest
+below 25%. My sensors see no water ahead. I have turned away from things 3
+times." Every sentence it says of itself is drawn from its program as the
+engine reports it, never invented (`rover_talk.describe`).
+
+**What the person types** is sorted into what they mean by Jev -- one
+choice among stop, go on, come here, turn round, back off, what are you
+doing, why, or something else -- and each of those is done at once, to the
+program: stop is `waiting` until asked otherwise; go on lifts the ask; come
+here is `approaching` where they stand, for up to 30 s; turn round is
+`turning left` for 5 s; back off is `backing off` for 2.5 s; what and why
+are answered from its state, why with the last thing decided for it.
+Anything else goes to the chat's model (`OPENAI_MODEL`, the same one the
+room's chat uses), told to answer in one or two sentences in the rover's
+voice from that state alone and to change nothing; without an OpenAI key
+the rover says what it can take. Without a Jev key the sorting falls back to
+plain words. "Let it go on" lifts the ask, and its reflexes -- and Jev --
+have it back. Closing the panel does the same.
+
+Measured in `tests/rover_brain_tests.py`, in the real engine: opened to
+talk with the person 3 m behind it, the rover turned on the spot and waited
+facing them, and nothing that happened to it meanwhile was put to Jev; told
+"come here", it stopped 0.92 m from them 12 s on; told "stop", it held;
+closed, it went on. A machine that is off says so and does nothing.
+
+`POST /api/world/rover/talk {program, open | said | close, person}` and
+`POST /api/world/rover/brain {program, mode}` are the two routes, on the
+room the page has open; the step reply carries `brains` whenever one has
+changed.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

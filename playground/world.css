@@ -278,6 +278,8 @@ kbd {
    last, and talking to it (docs/machine-world.md, "Talking to the rover"). */
 .mp-brain { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px;
             padding-top: 7px; border-top: 1px solid var(--edge); }
+/* A display of their own would beat the hidden attribute's; hidden wins. */
+.mp-brain[hidden], .mp-chat[hidden], .mp-decided[hidden], #mp-talk[hidden] { display: none; }
 .mp-decided { margin: 0; color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
 .mp-decided.attention { color: var(--ink); }
 #mp-talk { width: 100%; }
