@@ -794,6 +794,8 @@ struct LiveWorld::Impl {
         double deflection_m{};
         std::size_t bonds_removed{}, rounds{}, solves{}, supported_cells{}, loaded_cells{}, pieces{};
         double cost_ms{};
+        std::size_t pinned_mechanism_directions{};
+        double pinned_mechanism_force_n{};
     };
     std::unordered_map<std::string, SustainedAnswer> sustained_answers;
     // A body statics has just said holds, with the section and the load it
@@ -8698,6 +8700,16 @@ std::size_t LiveWorld::applyPending() {
         answer.loaded_cells = job.loaded_cells;
         answer.pieces = 1;
         answer.cost_ms = job.cost_ms;
+        answer.pinned_mechanism_directions = job.statics.pinned_mechanism_directions;
+        answer.pinned_mechanism_force_n = job.statics.pinned_mechanism_force_n;
+        // Held, broke, or could not say -- and the third is not the first. A
+        // solve that stopped because the section is too thin to bend, because
+        // it did not converge or because it ran out of rounds leaves the body
+        // in one piece, and calling that "held" is how an ice table came to
+        // carry two tonnes. Said here because a run that removed no bond
+        // returns below without reaching the blow's own reckoning.
+        if (job.statics.stop != "held" && job.statics.stop != "broke")
+            impl_->last_outcome = LiveOutcome::CouldNotSay;
         impl_->delays.push_back({impl_->time_s, name, "statics", 100.0 * job.statics.first_failure_ratio,
                                  job.cost_ms});
         // Still whole -- it held, or statics could not say (a solve that did not
@@ -11013,7 +11025,9 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
                                 {"supported_cells", s.supported_cells},
                                 {"loaded_cells", s.loaded_cells},
                                 {"pieces", s.pieces},
-                                {"cost_ms", s.cost_ms}});
+                                {"cost_ms", s.cost_ms},
+                                {"pinned_directions", s.pinned_mechanism_directions},
+                                {"pinned_force_n", s.pinned_mechanism_force_n}});
     json burned_json = json::array();
     for (const LiveBurnedAway &b : burnedAway())
         burned_json.push_back({{"name", b.name},
@@ -11071,7 +11085,8 @@ std::vector<LiveStatics> LiveWorld::statics() const {
     out.reserve(impl_->sustained_answers.size());
     for (const auto &[name, a] : impl_->sustained_answers)
         out.push_back({name, a.time_s, a.stop, a.load_n, a.first_failure_ratio, a.deflection_m, a.bonds_removed,
-                       a.rounds, a.solves, a.supported_cells, a.loaded_cells, a.pieces, a.cost_ms});
+                       a.rounds, a.solves, a.supported_cells, a.loaded_cells, a.pieces, a.cost_ms,
+                       a.pinned_mechanism_directions, a.pinned_mechanism_force_n});
     std::sort(out.begin(), out.end(), [](const LiveStatics &a, const LiveStatics &b) { return a.name < b.name; });
     return out;
 }

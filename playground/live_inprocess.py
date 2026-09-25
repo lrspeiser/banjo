@@ -212,7 +212,10 @@ class InProcessSession:
         report = self._world.mechanics_report()
         statics = [{"name": s["name"], "stop": s["stop"], "load_n": rounded(s["load_n"], 0.1),
                     "ratio": rounded(s["first_failure_ratio"], 1e-3), "bonds": s["bonds_removed"],
-                    "pieces": s["pieces"], "t": rounded(s["time_s"], 0.01)}
+                    "pieces": s["pieces"], "t": rounded(s["time_s"], 0.01),
+                    # What stood on directions the lattice has no stiffness in.
+                    "pinned_force_n": rounded(s.get("pinned_force_n", 0.0), 0.1),
+                    "pinned_directions": s.get("pinned_directions", 0)}
                    for s in report.get("statics", [])]
         burned = [{"name": b["name"], "t": rounded(b["time_s"], 0.01),
                    "residue_kg": rounded(b["residue_kg"], 1e-3), "why": b["why"]}

@@ -701,6 +701,38 @@ class Bench:
         """The runs where it took a permanent set and stayed in one piece."""
         return [f for f in self.failures if f["outcome"] == "dented"]
 
+    def unanswered(self) -> list[dict[str, Any]]:
+        """The runs the engine made and could not answer.
+
+        A thing carrying more than it can hold is offered for breaking, the
+        lattice is solved under the load, and sometimes that solve cannot say:
+        a section one cell thick has nothing across it to bend, so its load
+        stands on directions with no stiffness. Still in one piece is not the
+        same as having taken the load, and an ice table carried two tonnes for
+        as long as the two were reported the same way.
+        """
+        return [f for f in self.failures if f["outcome"] == "could not say"]
+
+    def why_not(self, name: str) -> dict[str, Any]:
+        """What is known about a body the run could not answer for.
+
+        Two separate things, and the person wants both. The engine's screening
+        arithmetic has already worked out the bending it carries and what its
+        material takes -- that IS the answer, as an estimate. What it has not
+        got is the lattice's verdict, and why: the stop reason from the solve.
+        """
+        out: dict[str, Any] = {}
+        said = self.live.session.send(op="mechanics")
+        for row in ((said.get("mechanics") or said).get("statics") or ()):
+            if row.get("name") == name:
+                out["the_run"] = str(row.get("stop") or "")
+        for row in (self.live.session.send(op="overloaded").get("overloaded") or ()):
+            if row.get("name") == name:
+                out["the_sums"] = str(row.get("why") or "")
+                out["stress_mpa"] = row.get("stress_mpa")
+                out["holds_mpa"] = row.get("holds_mpa")
+        return out
+
     def remember_poses(self) -> None:
         """Where everything was pointing when the run began."""
         self.at_the_start = {b["name"]: list(b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0])
@@ -793,9 +825,12 @@ class Bench:
                 # might give way and the run says what became of it: held,
                 # dented, or broke. A count of one cannot tell those apart, so
                 # the outcome is what is believed, not the count.
-                self.failures.append({"name": name, "at_s": round(float(state.get("t", self.t_s)), 4),
-                                      "outcome": str(state.get("outcome") or ""),
-                                      "pieces": int(state.get("pieces") or 0)})
+                gave = {"name": name, "at_s": round(float(state.get("t", self.t_s)), 4),
+                        "outcome": str(state.get("outcome") or ""),
+                        "pieces": int(state.get("pieces") or 0)}
+                if gave["outcome"] == "could not say":
+                    gave["because"] = self.why_not(name)
+                self.failures.append(gave)
             if asked:
                 # Whatever broke is different matter from here on, and a piece
                 # that held comes back as "piece 1" of itself. Redraw it.
@@ -827,7 +862,8 @@ class Bench:
                                            b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0],
                                            self.at_the_start.get(b["name"]) or [1.0, 0.0, 0.0, 0.0]), 3)}
                            for b in poses.get("bodies") or []},
-                "broke": self.broke(), "dented": self.dented(), "failures": list(self.failures),
+                "broke": self.broke(), "dented": self.dented(),
+                "could_not_say": self.unanswered(), "failures": list(self.failures),
                 "stores": machines.get("stores") or [],
                 "panels": machines.get("panels") or [],
                 "controls": machines.get("controls") or [],
@@ -886,9 +922,11 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
                                   + [written(t, i)[1]["name"] for i, t in enumerate(add or ())]),
                   "worked": list(room.worked), "controls": ended["controls"],
                   "broke": room.broke(), "dented": room.dented(),
+                  "could_not_say": room.unanswered(),
                   "failures": list(room.failures), "fell_over": bool(fell),
                   "began": began, "ended": ended,
-                  "says": _says(made, began, ended, did, room.broke(), room.dented(), fell)}
+                  "says": _says(made, began, ended, did, room.broke(), room.dented(), fell,
+                                room.unanswered())}
         if record:
             answer["playback"] = room.playback()
         return answer
@@ -935,6 +973,12 @@ def _outcome(said: dict[str, Any]) -> str:
         return "went over"
     if said["dented"]:
         return "dented"
+    # Offered for breaking, solved, and the solve could not say. That is not a
+    # thing that held, and a sweep that prints it as one is worse than a sweep
+    # that prints nothing: "held at 2000 kg" of an ice table is a lie with a
+    # number on it.
+    if said.get("could_not_say"):
+        return "cannot say"
     return "held"
 
 
@@ -1003,6 +1047,13 @@ def _swept(changing: str, rows: list[dict[str, Any]], changed_at: float | None) 
     if len(set(outcomes)) == 1 and outcomes[0] == "held":
         return (f"it held all the way from {rows[0][changing]:g} to {rows[-1][changing]:g} "
                 f"{said}; whatever gives way does so above {rows[-1][changing]:g}, so try higher")
+    if len(set(outcomes)) == 1 and outcomes[0] == "cannot say":
+        # Not one of the runs could answer -- almost always a section one cell
+        # thick, which this lattice has nothing across to bend. "It gave way
+        # even at the smallest" would be a verdict nobody reached.
+        return (f"the run could not say anywhere from {rows[0][changing]:g} to "
+                f"{rows[-1][changing]:g} {said}: by arithmetic it is already carrying more "
+                f"than it can hold, and this lattice cannot check a section that thin")
     if len(set(outcomes)) == 1:
         # Everything gave way, including the smallest. The answer is BELOW the
         # range, not above it, and saying "past the end" would send anyone
@@ -1019,7 +1070,7 @@ def _swept(changing: str, rows: list[dict[str, Any]], changed_at: float | None) 
 
 def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
           did: dict[str, Any] | None = None, broke: Any = (), dented: Any = (),
-          fell: bool = False) -> str:
+          fell: bool = False, unanswered: Any = ()) -> str:
     """What happened, in a sentence a person reads."""
     said = []
     did = did or {}
@@ -1050,13 +1101,27 @@ def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
         else:
             said.append(f"it stands where it was put, {body['at_m'][1]:.2f} m up, "
                         f"having turned {turned:.1f} degrees")
-    broke, dented = list(broke or ()), list(dented or ())
+    broke, dented, unanswered = list(broke or ()), list(dented or ()), list(unanswered or ())
     if broke:
         pieces = sum(b["pieces"] for b in broke)
         said.append(f"{len(broke)} of it broke, into {pieces} pieces, the first at {broke[0]['at_s']:.2f} s")
     elif dented:
         said.append(f"nothing broke, but {len(dented)} of it took a permanent dent, "
                     f"the first at {dented[0]['at_s']:.2f} s")
+    elif unanswered:
+        # The sums have an answer and the run has not, and "nothing broke" is
+        # exactly the wrong thing to tell somebody whose question was whether it
+        # would. Give the sums, say they are only the sums, and say what stopped
+        # the run from checking them.
+        because = next((u.get("because") or {} for u in unanswered if u.get("because")), {})
+        # The overload sentence carries a clause about what heat has left of the
+        # section, which for a thing nobody has heated says 100% at length.
+        sums = str(because.get("the_sums") or "").split("; heated:")[0]
+        run = str(because.get("the_run") or "")
+        said.append("nothing broke, but it is carrying more than it can hold"
+                    + (f" -- {sums}" if sums else "")
+                    + " -- and that is arithmetic, not a run: this one could not check it"
+                    + (f", because there is {run.split(':')[0]}" if run else ""))
     else:
         said.append("nothing broke")
     for store, before in zip(ended["stores"], began["stores"]):

@@ -376,6 +376,60 @@ class TheFourWaysOfTryingAThing(unittest.TestCase):
         self.assertTrue(all(not k.startswith(bench.MARKER + "#") for k in play["geometry"]))
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class WhatItCannotSay(unittest.TestCase):
+    """An ice table held two tonnes, and so did a concrete one.
+
+    Not because the arithmetic was wrong -- the engine's own survey had it at
+    29 MPa against the 1 MPa ice takes, and flagged it. The lattice solve
+    underneath then reported the worst bond at 0.1% of failure and half a
+    micron of deflection, where beam theory gives 17 mm. A bond is an axial
+    spring, so a top one cell thick is a single sheet of nodes with nothing
+    across it: the load stands on directions with no stiffness, the solver
+    holds those still, and a section that CANNOT BEND is answered as one that
+    cannot move.
+
+    The room then reported all of that as "nothing broke", which is the worst
+    of the three, because it is the only part a person reads.
+    """
+
+    def setUp(self):
+        self.app = SimpleNamespace(engine_path=ENGINE, workshop_owner_id="owner")
+
+    @staticmethod
+    def a_table(material):
+        out = {"kind": "table", "design_id": f"cannot-{material}", "purpose": "be stood on",
+               "parameters": {}, "component_overrides": {}}
+        from mcp import workshop_components
+        design, _ = workshop_components.design_from_spec(out)
+        out["component_overrides"] = {p.name: {"material": material} for p in design.parts}
+        return out
+
+    def test_a_run_that_could_not_say_is_not_a_run_that_held(self):
+        did = bench.try_it(self.app, self.a_table("ice"), load_kg=2000, seconds=2.0)
+        print("\n    " + did["says"])
+        self.assertEqual([], did["broke"], "nothing came apart, and that is not the point")
+        self.assertTrue(did["could_not_say"], "the run was offered this and could not answer")
+        self.assertEqual("cannot say", bench._outcome(did))
+        # The sums ARE the answer, as an estimate, and they are given.
+        self.assertIn("carrying more than it can hold", did["says"])
+        self.assertRegex(did["says"], r"bending [\d.]+ MPa against the [\d.]+ MPa")
+        # And it is said which is which: an estimate is not a run.
+        self.assertIn("arithmetic, not a run", did["says"])
+        because = did["could_not_say"][0]["because"]
+        self.assertIn("no bending in a section this thin", because["the_run"])
+
+    def test_a_thing_the_lattice_can_bend_still_answers(self):
+        """Oak takes 52 MPa on its compression side and this is 29: it holds,
+        and it says so plainly, with none of the above."""
+        did = bench.try_it(self.app, self.a_table("oak"), load_kg=2000, seconds=2.0)
+        print("    " + did["says"])
+        self.assertEqual([], did["could_not_say"])
+        self.assertEqual("held", bench._outcome(did))
+        self.assertIn("nothing broke", did["says"])
+        self.assertNotIn("arithmetic", did["says"])
+
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
 class FindingWhereItGivesWay(unittest.TestCase):
     """The owner: "the main point when we are testing is to find the breaking
     point or test how something works ... show how it can handle a weight under

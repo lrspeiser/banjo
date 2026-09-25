@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 
 namespace banjo {
@@ -59,6 +60,11 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
     for (const std::uint32_t node : scene.supported_nodes)
         if (node < count) held_at[node] = displacement[node].y;
 
+    // What is being put on it, to weigh the part of it that ends up standing on
+    // directions with no stiffness against.
+    double applied_n = 0.0;
+    for (const Vec3 &load : scene.loads_n) applied_n += length(load);
+
     StaticLatticeSolver solver(matter);
     std::vector<std::uint32_t> component_of = componentOfNode(matter);
     const auto piecesIn = [](const std::vector<std::uint32_t> &of) {
@@ -103,6 +109,8 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
         // Equilibrium with every support that pushes; one that would have to
         // pull is let go and the lattice solved again without it.
         bool solved_ok = false;
+        std::size_t pinned_directions = 0;
+        double pinned_force_n = 0.0;
         for (unsigned pass = 0; pass < settings.maximum_support_passes; ++pass) {
             std::vector<StaticConstraint> constraints;
             constraints.reserve(supports.size());
@@ -111,6 +119,8 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
             const StaticSolveResult solved =
                 solver.solve(scene.loads_n, constraints, displacement, solve_settings, &component_of);
             ++out.solves;
+            pinned_directions = std::max(pinned_directions, solved.pinned_mechanism_directions);
+            pinned_force_n = std::max(pinned_force_n, solved.pinned_mechanism_force_n);
             if (!solved.converged) {
                 out.stop = std::string("did not converge") + (solved.failure ? std::string(": ") + solved.failure : "");
                 place();
@@ -146,6 +156,33 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
             out.first_failure_ratio = failureRatio(matter);
             for (std::size_t i = 0; i < count; ++i)
                 out.first_deflection_m = std::max(out.first_deflection_m, std::abs(displacement[i].y));
+        }
+        out.pinned_mechanism_directions = std::max(out.pinned_mechanism_directions, pinned_directions);
+        out.pinned_mechanism_force_n = std::max(out.pinned_mechanism_force_n, pinned_force_n);
+        // A bond is an axial spring, so a section ONE cell thick is a single
+        // sheet of nodes with nothing at all across it: every node's
+        // out-of-plane direction has no stiffness, and the solver holds those
+        // directions still rather than leave the operator singular. That turns
+        // a section which CANNOT BEND into one which cannot move, and a plank
+        // that cannot move carries anything you put on it.
+        //
+        // Measured on a 1.2 m clear span, each plank carrying twice what
+        // concrete takes: one cell thick deflects 1.4e-13 mm where beam theory
+        // says 1.58 mm, and 300 pinned directions carry 2,982 N of a 2,529 N
+        // load -- all of it. Two cells thick pins nothing and deflects
+        // 0.76 mm against 0.64; three, 0.40 against 0.44. So the arithmetic is
+        // sound as soon as there is anything to bend, and the thin case is not
+        // a weak answer but a meaningless one. Say so instead of saying held.
+        if (pinned_force_n > 0.01 * applied_n) {
+            char why[240];
+            std::snprintf(why, sizeof why,
+                          "no bending in a section this thin: %.0f N of the %.0f N on it stands on "
+                          "%zu directions the lattice has no stiffness in, so this is about the "
+                          "cell size and not the material",
+                          pinned_force_n, applied_n, pinned_directions);
+            out.stop = why;
+            out.displacement_m = displacement;
+            return out;
         }
         std::vector<std::uint32_t> failing;
         std::vector<BondFailureMode> modes;

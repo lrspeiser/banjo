@@ -49,7 +49,10 @@ from typing import Any, Iterator
 ABI_VERSION = 25
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
-OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
+OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke",
+            # The run was made and could not answer: still in one piece,
+            # which is not the same as having taken the load.
+            4: "could not say"}
 
 OK = 0
 BREAK_PENDING = 1

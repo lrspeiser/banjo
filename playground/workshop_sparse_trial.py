@@ -423,6 +423,11 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
         session.close()
     pieces = [x for x in final.get("bodies") or [] if str(x.get("name") or "").startswith(setup["root_body"])]
     gave = [x for x in watch.answers if x["outcome"] == "broke" and x["name"].startswith(setup["root_body"])]
+    # A run the engine made and could not answer is not a run that held. The
+    # commonest reason is a section one cell thick, which has nothing across it
+    # for the lattice to bend.
+    unanswered = [x for x in watch.answers
+                  if x["outcome"] == "could not say" and x["name"].startswith(setup["root_body"])]
 
     a = core._body(initial, setup["root_body"])
     b = core._body(final, setup["root_body"])
@@ -469,7 +474,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
             # What became of it, in the engine's words: whether the load survey
             # ever called it overloaded and why, what statics then said, and
             # how many pieces of it there are at the end.
-            "outcome": "broke" if gave else "held",
+            "outcome": "broke" if gave else "could not say" if unanswered else "held",
             "pieces": len(pieces),
             "first_break_s": gave[0]["at_s"] if gave else None,
             "overload": watch.overload,

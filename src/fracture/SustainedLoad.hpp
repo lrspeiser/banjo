@@ -72,6 +72,16 @@ struct SustainedLoadResult {
     double first_deflection_m{};
     // Supports let go because they would have had to pull.
     std::size_t supports_released{};
+    // Directions at the first solve that had no stiffness to resist the load
+    // and were held still instead, and the force they took. A lattice bond is
+    // an axial spring, so a section ONE cell thick is a single sheet of nodes
+    // with nothing at all across it: every node's out-of-plane direction is a
+    // mechanism. Pinning them turns a section that cannot bend into one that
+    // cannot move, which reads as enormous strength -- so what stands on them
+    // has to be counted, and a caller that finds the load standing there knows
+    // this answer is not about the material.
+    std::size_t pinned_mechanism_directions{};
+    double pinned_mechanism_force_n{};
     // The displacement of every node from where it was given, at the end.
     std::vector<Vec3> displacement_m;
 };

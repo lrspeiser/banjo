@@ -187,6 +187,21 @@
 #include <unordered_set>
 
 namespace {
+
+// Every outcome the lattice can report, in one place. This was two copies of a
+// four-entry array indexed by the enum, so the fifth outcome read off the end
+// and took the whole world down with it.
+const char *outcomeWord(banjo::fastlattice::LiveOutcome outcome) {
+    switch (outcome) {
+    case banjo::fastlattice::LiveOutcome::Held: return "held";
+    case banjo::fastlattice::LiveOutcome::Dented: return "dented";
+    case banjo::fastlattice::LiveOutcome::Broke: return "broke";
+    case banjo::fastlattice::LiveOutcome::CouldNotSay: return "could not say";
+    case banjo::fastlattice::LiveOutcome::Nothing: break;
+    }
+    return "nothing";
+}
+
 using namespace banjo;
 using namespace banjo::fastlattice;
 
@@ -1692,9 +1707,7 @@ int main(int argc, char **argv) {
                         // shape. Without this every shard is drawn as a box
                         // around itself, which is a lie about what broke.
                         made_bodies = true;
-                        reply["outcome"] = std::array<const char *, 4>{
-                            "nothing", "held", "dented", "broke"}
-                            [static_cast<std::size_t>(world->lastOutcome())];
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
                         if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
                             reply["cost"] = std::move(cost);
                     }
@@ -1919,9 +1932,7 @@ int main(int argc, char **argv) {
                         reply["pieces"] = world->fracture(what, window);
                         // What it turned out to be. A count of one cannot
                         // tell a thing that held from a thing that bent.
-                        reply["outcome"] = std::array<const char *, 4>{
-                            "nothing", "held", "dented", "broke"}
-                            [static_cast<std::size_t>(world->lastOutcome())];
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
                         // And what it cost the thing that took the hit.
                         if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
                             reply["cost"] = std::move(cost);

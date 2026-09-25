@@ -31,6 +31,9 @@
 // 8. Something in your hand is not weighing on anything.
 // 9. A thing that stands on the ground on its own feet is a beam too, and one
 //    that lies on the ground along its whole length is not.
+// 10. A section one cell thick has nothing across it to bend, and says it
+//     cannot say rather than reporting the strength of a thing that cannot
+//     move.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -95,7 +98,7 @@ LiveOverload loadOn(LiveWorld &world, const std::string &name) {
 // The span is what decides whether it can be bent at all: the same shelf laid
 // on the ground is supported everywhere and cannot be.
 TileImpactRequest shelf(int crates = 0, double crate_side_m = 0.2,
-                        bool on_the_ground = false) {
+                        bool on_the_ground = false, double depth_m = 0.1) {
     TileImpactRequest r;
     r.cell_size_m = 0.05;
     r.backend = BackendKind::CpuParallel;
@@ -113,8 +116,8 @@ TileImpactRequest shelf(int crates = 0, double crate_side_m = 0.2,
     shelf_body.name = "shelf";
     shelf_body.shape = BodyShape::Box;
     shelf_body.material = MaterialPreset::Concrete;
-    shelf_body.dimensions_m = {1.4, 0.1, 0.3};
-    shelf_body.center_m = {0.0, 0.45, 0.0};
+    shelf_body.dimensions_m = {1.4, depth_m, 0.3};
+    shelf_body.center_m = {0.0, 0.4 + depth_m / 2.0, 0.0};
     r.bodies = {left, right, shelf_body};
     if (on_the_ground) {
         // A bench under the whole plank: supported everywhere, no clear span.
@@ -134,7 +137,7 @@ TileImpactRequest shelf(int crates = 0, double crate_side_m = 0.2,
         crate.material = MaterialPreset::Iron;
         crate.dimensions_m = {crate_side_m, crate_side_m, crate_side_m};
         // Stacked in the middle of the span, which is where a beam is weakest.
-        crate.center_m = {0.0, 0.5 + crate_side_m * (0.5 + static_cast<double>(i)), 0.0};
+        crate.center_m = {0.0, 0.4 + depth_m + crate_side_m * (0.5 + static_cast<double>(i)), 0.0};
         r.bodies.push_back(crate);
     }
     return r;
@@ -527,6 +530,53 @@ void aThingOnItsOwnFeetIsABeamToo() {
     }
 }
 
+// 10. A section ONE cell thick cannot be bent by this lattice, and it has to
+//     say so rather than report the strength of a thing that cannot move.
+void aSectionOneCellThickSaysItCannotSay() {
+    // A bond is an axial spring. A section one cell deep is a single sheet of
+    // nodes with nothing across it, so every node's out-of-plane direction has
+    // no stiffness whatsoever, and the solver holds those directions still
+    // rather than leave its operator singular. That turns a shelf which CANNOT
+    // BEND into one which cannot move, and a shelf that cannot move carries
+    // anything at all.
+    //
+    // It is not a small error and it does not point the safe way. Measured on
+    // the workshop's own 1.2 m span, one cell thick deflects 1.4e-13 mm where
+    // beam theory says 1.58 -- twelve orders -- while two cells deflect 0.76 mm
+    // against 0.64 and three 0.40 against 0.44. The arithmetic is sound the
+    // moment there is anything to bend; the thin answer is not a weak one but a
+    // meaningless one, and it reads as enormous strength.
+    const auto thin = LiveWorld::open(shelf(5, 0.45, false, 0.05));
+    run(*thin, 480);
+    require(sagging(*thin, "shelf"), "a one-cell shelf under five crates was not even offered");
+    const LiveOverload plank = loadOn(*thin, "shelf");
+    thin->fracture("shelf");
+    const LiveStatics s = staticsOf(*thin, "shelf");
+    std::cout << "  one cell deep, " << plank.carrying_n << " N on it ("
+              << plank.stress_pa / 1e6 << " MPa against " << plank.strength_pa / 1e6
+              << " MPa): statics said \"" << s.stop << "\", " << s.pinned_mechanism_directions
+              << " pinned directions carrying " << s.pinned_mechanism_force_n << " N\n";
+    require(s.stop != "held",
+            "a section too thin for this lattice to bend was reported as having held the load");
+    require(s.pinned_mechanism_directions > 0 && s.pinned_mechanism_force_n > 0.5 * plank.carrying_n,
+            "the load was expected to stand on directions with no stiffness");
+    require(thin->lastOutcome() == LiveOutcome::CouldNotSay,
+            "a solve that could not answer has to say so, not come back as Held");
+
+    // The same shelf one cell deeper is answered as it always was: this is
+    // about a section with nothing across it, not about statics in general.
+    const auto thick = LiveWorld::open(shelf(5, 0.45, false, 0.1));
+    run(*thick, 480);
+    const std::size_t pieces = thick->fracture("shelf");
+    const LiveStatics two = staticsOf(*thick, "shelf");
+    std::cout << "  two cells deep, the same five crates: statics said \"" << two.stop
+              << "\" in " << pieces << " pieces, " << two.pinned_mechanism_directions
+              << " pinned directions\n";
+    require(two.pinned_mechanism_directions == 0,
+            "a section two cells deep has stiffness across it and should pin nothing");
+    require(pieces > 1, "the two-cell shelf under six times its load should still break");
+}
+
 int main() {
     try {
         if (std::getenv("BANJO_BEAM_ONLY_FEET") != nullptr) {
@@ -554,6 +604,8 @@ int main() {
         std::cout << "[PASS] something in a hand weighs on nothing\n";
         aThingOnItsOwnFeetIsABeamToo();
         std::cout << "[PASS] a thing on its own feet is a beam too\n";
+        aSectionOneCellThickSaysItCannotSay();
+        std::cout << "[PASS] a section one cell thick says it cannot say\n";
         std::cout << "\nall beam tests passed\n";
         return 0;
     } catch (const std::exception &error) {

@@ -251,6 +251,74 @@ it really weighs when that differs.
 the box, so two short messages in a tall log were two tall bubbles of mostly
 nothing. `align-content:start` and `align-self:start`.
 
+## 1e. An ice table held two tonnes
+
+**Fixed (2026-09-25).** The owner asked whether a weight that big really cannot
+break a wooden table. For oak, it cannot: 2,000 kg in the middle of a 1.2 m
+top, 40 mm thick, over a 1.1 m span between the leg centres is **28.9 MPa** of
+bending, and oak gives way at 52 on its compression side. It holds, and it
+should.
+
+The trouble was that an **ice** table held it too, and so did concrete and
+rubber. Three layers, and only the middle one was wrong.
+
+1. **The screening arithmetic was right.** `LiveWorld::breakable()` offers
+   anything carrying more than it can hold, and the survey behind it works out
+   a real simply-supported bending stress against whichever side of the section
+   is weaker. It got the same 28.9 MPa as the hand calculation, flagged ice
+   (1 MPa) and concrete (3), and cleared oak (52) and glass (45).
+2. **The lattice solve underneath was wrong by twelve orders.** Asked about the
+   flagged body, it reported the worst bond at 0.1% of failure and 0.00054 mm
+   of deflection. Beam theory for that span gives 17 mm.
+3. **The room then reported all of it as "nothing broke"** -- the only part a
+   person reads.
+
+**Why.** A lattice bond is an axial spring, so a section ONE CELL THICK is a
+single sheet of nodes with nothing at all across it: every node's out-of-plane
+direction has no stiffness, and the solver holds those directions still rather
+than leave its operator singular. A section that cannot BEND is answered as one
+that cannot MOVE, and a top that cannot move carries anything. Measured on a
+1.2 m clear span, each plank carrying twice what concrete takes:
+
+| section | beam theory | the solve | pinned directions |
+|---|---|---|---|
+| 1 cell (40 mm) | 1.58 mm | 1.4e-13 mm | 300, carrying 2,982 N of a 2,529 N load |
+| 2 cells (80 mm) | 0.640 mm | 0.764 mm | none |
+| 3 cells (120 mm) | 0.439 mm | 0.404 mm | none |
+| 4 cells (160 mm) | 0.308 mm | 0.252 mm | none |
+
+So the solver is sound the moment there is anything to bend, and the thin
+answer is not a weak one but a meaningless one -- pointing the worst possible
+way, since unbendable reads as unbreakable. The bench's cell is 40 mm and the
+table top it builds is 40 mm, so every top was exactly the broken case. The
+existing beam test used a shelf two cells deep, which is why this survived.
+
+**The fix.** The solve now counts the load standing on pinned directions and
+refuses to call that "held": it stops with `no bending in a section this thin:
+20,333 N of the 20,364 N on it stands on 636 directions the lattice has no
+stiffness in`. There is a fifth outcome, `could not say`, because still being
+in one piece is not the same as having taken the load. The room says both what
+the arithmetic knows and that the run could not check it:
+
+> 2000 kg set on its top; it is 1.09 m up, has moved 43 mm and turned 0.0
+> degrees; nothing broke, but it is carrying more than it can hold -- bending
+> 27.3 MPa against the 1 MPa it can take on its tension side -- and that is
+> arithmetic, not a run: this one could not check it, because there is no
+> bending in a section this thin
+
+**What is still not fixed.** The lattice cannot bend a one-cell section, so the
+bench cannot give a measured answer for a 40 mm top. Halving the cell would
+make it two cells, but the cell size is the world's, not the bench's, and a
+design tested at one size and installed at another is the one thing this bench
+exists not to do. So the arithmetic is the answer for thin sections, and it is
+labelled as such.
+
+**An aside worth keeping.** Impact is a different path and it works, and it
+does see material: 500 kg dropped 1 m leaves the oak table alone and puts the
+ice one in 419 pieces. But 2,000 kg dropped 2 m on oak -- 39 kJ, against the
+28 J of fracture energy it takes to part that top clean across -- only flips it
+over.
+
 ## 2. Test it
 
 **Done (2026-09-24).** There were three testing systems and they did not agree;

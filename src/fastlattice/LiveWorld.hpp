@@ -851,6 +851,12 @@ struct LiveStatics {
     double deflection_m{};
     std::size_t bonds_removed{}, rounds{}, solves{}, supported_cells{}, loaded_cells{}, pieces{};
     double cost_ms{};
+    // Directions the solve had to hold still because nothing in the lattice
+    // resisted them, and the load that stood on them
+    // (fracture/SustainedLoad.hpp). Any real share of the load here and the
+    // answer is about the discretisation, not the material.
+    std::size_t pinned_mechanism_directions{};
+    double pinned_mechanism_force_n{};
 };
 
 // A body whose load-bearing matter burned away entirely: it left the world,
@@ -1083,6 +1089,11 @@ enum class LiveOutcome : std::uint8_t {
     Held = 1,      // it took the hit and is the shape it was
     Dented = 2,    // still one piece, and no longer the shape it was
     Broke = 3,     // it came apart
+    // The run was made and could not answer: a section too thin for this
+    // lattice to bend, a solve that did not converge, a round limit. It is
+    // still in one piece, but that is not the same as taking the load, and
+    // reporting it as Held is how an ice table came to carry two tonnes.
+    CouldNotSay = 4,
 };
 
 // What opening a world from a saved one gave back (LiveWorld::open with a

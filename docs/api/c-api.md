@@ -215,9 +215,21 @@ What the last `banjo_fracture` turned out to be:
 | `BANJO_HELD` (1) | it took the hit and is the shape it was |
 | `BANJO_DENTED` (2) | still one piece, and no longer the shape it was |
 | `BANJO_BROKE` (3) | it came apart |
+| `BANJO_COULD_NOT_SAY` (4) | the run was made and could not answer |
 
 The piece count alone cannot tell "held exactly as it was" from "held, but bent
 out of shape" — both are one piece — which is why this exists.
+
+`BANJO_COULD_NOT_SAY` is the same distinction one step further out. A body
+carrying more than it can hold is answered from statics rather than from a
+blow, and that solve can fail to say: most often because the section is one
+cell thick, which in a lattice of axial springs is a single sheet of nodes with
+nothing across it to bend. Such a section is held still rather than left
+singular, so it reports not "no answer" but enormous strength — measured, a
+one-cell span deflects 1.4e-13 mm where beam theory gives 1.58. One piece at the
+end, and reporting that as `BANJO_HELD` is how a two-tonne load sat on an ice
+table. The reason is in `statics[].stop` of the mechanics report, with the load
+that stood on directions the lattice has no stiffness in.
 
 ---
 

@@ -365,7 +365,11 @@ typedef enum {
     BANJO_NOTHING = 0,  /* asked about something that is not there */
     BANJO_HELD = 1,     /* it took the hit and is the shape it was */
     BANJO_DENTED = 2,   /* still one piece, and no longer the shape it was */
-    BANJO_BROKE = 3     /* it came apart */
+    BANJO_BROKE = 3,    /* it came apart */
+    /* The run was made and could not answer: a section too thin for this
+     * lattice to bend, a solve that did not converge, a round limit. Still in
+     * one piece, which is NOT the same as having taken the load. */
+    BANJO_COULD_NOT_SAY = 4
 } banjo_outcome;
 
 /* ---- opening and closing -------------------------------------------- */
