@@ -44,6 +44,8 @@ import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import inventory_room
 import gameplay_room
+import rover_brain
+import rover_talk
 import fabrication_room
 import fabrication_qa
 import gameplay_capabilities
@@ -283,6 +285,10 @@ class Playground:
         self.journal = None
         self.reply_listeners = []
         self.on_live_reply = lambda session, reply: heard(self, session, reply)
+        # What thinks for each machine's program on what it meets, and hears
+        # every reply of the room for it (rover_brain).
+        self.brains = rover_brain.Brains(lambda: rover_brain.client_from(_environment_files()))
+        self.reply_listeners.append(self.brains.listen)
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -295,6 +301,7 @@ class Playground:
 
     def status(self):
         return {"key_configured": bool(self.api_key), "model": self.model,
+            "jev_configured": bool(rover_brain.environment_key(_environment_files())),
             "engine_ready": self.engine_path.is_file(), "studio_ready": self.studio_path.is_file(),
             # Whether the one live world is the world page's room. Opening
             # another closes it, so the lab page does not take it over by
@@ -1482,6 +1489,8 @@ class Handler(BaseHTTPRequestHandler):
                 # The conversation so far in this room, so the page shows it again
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
+                app.brains.opened()
+                opened["brains"]=app.brains.summaries()
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
@@ -1588,6 +1597,18 @@ class Handler(BaseHTTPRequestHandler):
                 # to its controller. Only on the room the page has open.
                 _this_pages_room(self.server.app,body)
                 return self.send(operate_machine(self.server.app,body))
+            if path=="/api/world/rover/talk":
+                # Talking to a machine from its panel (rover_talk): opened, it
+                # turns to the person; what they say is sorted and done; closed,
+                # it goes on. Only on the room the page has open.
+                _this_pages_room(self.server.app,body)
+                return self.send(rover_talk.talk(self.server.app,body))
+            if path=="/api/world/rover/brain":
+                # Who decides for a machine's program on what it meets: its
+                # reflexes alone, or Jev asked at each thing that happens
+                # (rover_brain.Brains.request).
+                _this_pages_room(self.server.app,body)
+                return self.send(self.server.app.brains.request(body))
             if path=="/api/world/tool":
                 # What the tool in the person's hand does where they look
                 # (tool_use.resolve): its action, whether it can be done there
@@ -1629,7 +1650,9 @@ class Handler(BaseHTTPRequestHandler):
                 # The notebook revision the page has shown: the answer carries
                 # the notebook when the server's is newer (with_notebook).
                 seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
+                self.server.app.brains.before(self.server.app,body)
                 answer=self.server.app.live.act(body)
+                self.server.app.brains.attach(body,answer)
                 gameplay_room.sync(self.server.app, answer)
                 fabrication_room.sync(self.server.app, answer)
                 remember_ground(self.server.app,body,answer)

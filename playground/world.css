@@ -274,6 +274,21 @@ kbd {
 #mp-condition.attention { color: var(--warm); font-weight: 600; }
 .mp-ack { margin: 0; min-height: 1.2em; color: var(--dim); font-size: 11px; }
 .mp-ack.stale { color: var(--warm); }
+/* Who decides for a machine's program on what it meets, what was decided
+   last, and talking to it (docs/machine-world.md, "Talking to the rover"). */
+.mp-brain { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px;
+            padding-top: 7px; border-top: 1px solid var(--edge); }
+.mp-decided { margin: 0; color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
+.mp-decided.attention { color: var(--ink); }
+#mp-talk { width: 100%; }
+.mp-chat { display: flex; flex-direction: column; gap: 6px; padding-top: 7px; border-top: 1px solid var(--edge); }
+.mp-chat-log { list-style: none; margin: 0; padding: 0; max-height: 26vh; overflow-y: auto; display: flex;
+               flex-direction: column; gap: 4px; font-size: var(--t-small); }
+.mp-chat-log li { padding: 5px 8px; border-radius: 8px; background: rgba(255, 255, 255, .05); overflow-wrap: anywhere; }
+.mp-chat-log li.you { align-self: flex-end; background: #243a2a; }
+.mp-chat-log li .who { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+#mp-chat-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+#mp-chat-say { min-width: 0; }
 
 /* 3. The tabs. They used to take a fixed 27vh whatever was in them, so an empty
    Notes tab held back a third of the side view from the chat above it. They now

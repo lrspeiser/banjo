@@ -1219,6 +1219,16 @@ function followMachines(machines) {
   dressSensors();
 }
 
+// Who decides for each machine's program on what it meets, and what was
+// decided last (docs/machine-world.md, "What the rover decides by itself"):
+// with the room when it opens, and with a step whenever one has changed.
+world.brains = new Map();
+function followBrains(brains) {
+  if (!Array.isArray(brains)) return;
+  for (const b of brains) if (b && b.name) world.brains.set(b.name, b);
+  if (machinePanel.of === "program") showMachinePanel();
+}
+
 // What a machine's controller was told, in a person's words.
 function commandedWords(c) {
   const hoist = c.kind === "hoist";
@@ -1343,6 +1353,8 @@ const machinePanel = {
   poweringOn: false,
   // What the panel shows: a machine's controller, or a machine's program.
   of: "control",
+  // The program being talked to, by name, while its chat is open.
+  talkingTo: null,
 };
 
 function controlsNow() {
@@ -1394,6 +1406,7 @@ function openMachinePanel(control) {
 }
 
 function closeMachinePanel() {
+  if (!$("mp-chat").hidden) closeTalk(true);
   machinePanel.id = null;
   machinePanel.name = "";
   $("machine-panel").hidden = true;
@@ -1461,6 +1474,10 @@ function showMachinePanel() {
     return;
   }
   panelRows(false);
+  $("mp-brain").hidden = true;
+  $("mp-decided").hidden = true;
+  $("mp-talk").hidden = true;
+  if (!$("mp-chat").hidden) closeTalk(true);
   const hoist = c.kind === "hoist";
   setText("mp-kind", hoist ? "Hoist" : "Machine");
   setText("mp-name", titled(c.name));
@@ -1554,10 +1571,122 @@ function showProgramPanel(p) {
   setText("mp-condition", p.power ? (p.why || "nothing in its way") : "off");
   $("mp-condition").classList.toggle("attention",
     p.power && /water|steeper|progress|gone|battery is low/.test(p.why || ""));
+  showBrain(p);
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
 }
+
+// Who decides for this program, and what was decided last. Without a Jev key
+// the switch is shown pressed to its reflexes and Jev cannot be pressed.
+function showBrain(p) {
+  const brain = world.brains.get(p.name) || null;
+  const jev = !!brain && brain.mode === "jev";
+  $("mp-brain").hidden = false;
+  setPressed("mp-brain-reflex", !jev);
+  setPressed("mp-brain-jev", jev, !brain || !brain.configured);
+  $("mp-brain-jev").title = brain && !brain.configured
+    ? "TYPESAFE_API_KEY is not in the local .env, so Jev cannot be asked" : "Ask Jev what to do at each thing that happens to it";
+  const last = brain && brain.decisions && brain.decisions.length ? brain.decisions[brain.decisions.length - 1] : null;
+  const decided = $("mp-decided");
+  if (brain && brain.thinking) { decided.textContent = `Asking Jev about: ${brain.thinking}…`; decided.hidden = false; }
+  else if (jev && last) { decided.textContent = last.said + (last.applied === "applied" ? "" : last.applied ? ` (${last.applied})` : ""); decided.hidden = false; }
+  else if (jev) { decided.textContent = "Jev has not been asked anything yet: nothing has happened to it."; decided.hidden = false; }
+  else { decided.hidden = true; }
+  decided.classList.toggle("attention", !!(brain && brain.thinking));
+  $("mp-talk").hidden = !$("mp-chat").hidden;
+  if (!$("mp-chat").hidden && machinePanel.talkingTo !== p.name) closeTalk(false);
+}
+
+async function setBrain(mode) {
+  const c = shownControl();
+  if (!c || machinePanel.of !== "program") return;
+  try {
+    const brain = await api("/api/world/rover/brain", { session: world.session, program: c.name, mode });
+    followBrains([brain]);
+    machinePanel.said = mode === "jev" ? "Jev decides for it now, at each thing that happens to it."
+      : "Its reflexes alone decide for it now.";
+    machinePanel.stale = false;
+  } catch (error) {
+    machinePanel.stale = true;
+    machinePanel.said = error.message || String(error);
+  }
+  showMachinePanel();
+}
+$("mp-brain-reflex").addEventListener("click", () => setBrain("reflex"));
+$("mp-brain-jev").addEventListener("click", () => setBrain("jev"));
+
+// Talking to it (docs/machine-world.md, "Talking to the rover"): opened, it
+// stops and turns to face the person; what they type is sorted and done, and
+// it answers from its own state; "Let it go on" lifts the ask.
+function sayInChat(who, words) {
+  const li = document.createElement("li");
+  if (who === "you") li.className = "you";
+  const label = document.createElement("span");
+  label.className = "who";
+  label.textContent = who === "you" ? "You" : titled(who);
+  li.append(label, document.createTextNode(words));
+  $("mp-chat-log").append(li);
+  $("mp-chat-log").scrollTop = $("mp-chat-log").scrollHeight;
+}
+async function talkTo(body) {
+  const c = shownControl();
+  if (!c || machinePanel.of !== "program") throw new Error("no machine with a program is shown");
+  const answer = await api("/api/world/rover/talk", { session: world.session, program: c.name, person: whereIAm(), ...body });
+  if (answer.program) mergeProgram(answer.program);
+  return answer;
+}
+async function openTalk() {
+  const c = shownControl();
+  if (!c) return;
+  $("mp-chat-log").replaceChildren();
+  $("mp-chat").hidden = false;
+  $("mp-talk").hidden = true;
+  machinePanel.talkingTo = c.name;
+  try {
+    const answer = await talkTo({ open: true });
+    for (const turn of answer.talk || []) sayInChat(turn.who, turn.said);
+    if (!(answer.talk || []).length) sayInChat(c.name, answer.reply);
+  } catch (error) {
+    sayInChat(c.name, `(${error.message || error})`);
+  }
+  $("mp-chat-say").focus({ preventScroll: true });
+  showMachinePanel();
+}
+async function closeTalk(tell = true) {
+  const name = machinePanel.talkingTo;
+  machinePanel.talkingTo = null;
+  $("mp-chat").hidden = true;
+  $("mp-talk").hidden = false;
+  if (!tell || !name) return;
+  try {
+    const c = programsNow().find((p) => p.name === name);
+    if (c) {
+      const answer = await api("/api/world/rover/talk", { session: world.session, program: name, close: true });
+      if (answer.program) mergeProgram(answer.program);
+    }
+  } catch { /* it goes on when the ask runs out, or on the next open */ }
+  showMachinePanel();
+}
+$("mp-talk").addEventListener("click", openTalk);
+$("mp-chat-close").addEventListener("click", () => closeTalk(true));
+$("mp-chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const said = $("mp-chat-say").value.trim();
+  if (!said) return;
+  $("mp-chat-say").value = "";
+  sayInChat("you", said);
+  $("mp-chat-send").disabled = true;
+  try {
+    const answer = await talkTo({ said });
+    sayInChat(machinePanel.talkingTo || "it", answer.reply);
+  } catch (error) {
+    sayInChat(machinePanel.talkingTo || "it", `(${error.message || error})`);
+  } finally {
+    $("mp-chat-send").disabled = false;
+    $("mp-chat-say").focus({ preventScroll: true });
+  }
+});
 
 $("mp-close").addEventListener("click", closeMachinePanel);
 $("mp-on").addEventListener("click", async () => {
@@ -5442,6 +5571,7 @@ async function tick() {
     tools.follow(state);
     previewShot();
     followMachines(state.machines);
+    followBrains(state.brains);
     // A sun with a day moves with every step the engine takes.
     if (state.sun) lightFromSun(state.sun);
     drawRopes();
@@ -6458,6 +6588,8 @@ async function open({ again = false } = {}) {
     // opened again says its own, so its rope and its panel are there before
     // the first step rather than the last room's.
     followMachines(data.machines);
+  world.brains.clear();
+  followBrains(data.brains);
     lightFromSun(data.sun);
     drawRopes();
     clearHeat();

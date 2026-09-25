@@ -140,6 +140,11 @@ def _told_control(control: dict[str, Any]) -> tuple[Any, Any, Any]:
     return control.get("power"), control.get("direction"), control.get("setting")
 
 
+# What a program can be asked to do for a while (LiveWorld::behave), and ""
+# for nothing more: it decides for itself again.
+ASKS = ("going forward", "backing off", "turning left", "turning right", "waiting", "facing", "approaching", "")
+
+
 def _made_program(program: dict[str, Any]) -> dict[str, Any]:
     """A machine's program as it is made -- its kind, its wheels, its body,
     its setting and climb, its sensors -- without whether it was told to run,
@@ -1691,6 +1696,41 @@ class Live:
                 raise LiveError("run says power: true or false")
             return session.send(op="run", program=program, sender=str(body.get("sender") or "")[:64], seq=seq,
                                 power=body["power"])
+        if op == "behave":
+            # A machine's program asked to do something for a while instead of
+            # deciding for itself (docs/machine-world.md, "Talking to the
+            # rover"): {program, sender, seq, doing, why, for_s, toward}, by a
+            # sender and its count as run is; answered with the program as it
+            # now stands. `doing` is one of the things a program can be asked,
+            # or "" to ask nothing more.
+            try:
+                program = int(body.get("program"))
+                seq = int(body.get("seq", 0))
+                for_s = float(body.get("for_s", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError("behave needs a program's number, a count that is a whole number, and for_s "
+                                "in seconds") from None
+            if seq < 0:
+                raise LiveError("a command's count is a whole number from 0")
+            doing = str(body.get("doing") or "")
+            if doing not in ASKS:
+                raise LiveError("a program can be asked to be " + ", ".join(a for a in ASKS if a) +
+                                ", or asked nothing (\"\")")
+            if not (math.isfinite(for_s) and 0.0 <= for_s <= 60.0):
+                raise LiveError("a program is asked for from 0 s (until asked otherwise) to 60 s")
+            command = {"op": "behave", "program": program, "sender": str(body.get("sender") or "")[:64],
+                       "seq": seq, "doing": doing, "why": str(body.get("why") or "")[:200], "for_s": for_s}
+            toward = body.get("toward")
+            if toward is not None:
+                if not isinstance(toward, list) or len(toward) != 3:
+                    raise LiveError("toward is a point in the world: three numbers")
+                point = [float(v) for v in toward]
+                if not all(math.isfinite(v) for v in point):
+                    raise LiveError("toward was given a number that is not one")
+                command["toward"] = point
+            elif doing in ("facing", "approaching"):
+                raise LiveError("facing and approaching need a point in the world to look toward")
+            return session.send(**command)
         if op == "heat":
             # Kindling, a torch, a stove: external work into a body or a gas
             # region, from now. Whether it lights anything is the engine's

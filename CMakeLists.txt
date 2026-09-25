@@ -1500,6 +1500,15 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_DAY_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/day_room_tests.py -v)
     set_tests_properties(banjo_day_room_tests PROPERTIES TIMEOUT 180)
+    # And what thinks for the rover, and talking to it: what is made of Jev's
+    # answers, a decision applied before the next step, and the chat's open,
+    # say and close working the tests-rover room's program, with a scripted Jev.
+    add_test(NAME banjo_rover_brain_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_brain_tests.py -v)
+    set_tests_properties(banjo_rover_brain_tests PROPERTIES TIMEOUT 300)
     # And what a break costs: the room's failure law reaching the engine, and
     # the account the world gives of a break in the tests-break room.
     add_test(NAME banjo_break_room_tests
