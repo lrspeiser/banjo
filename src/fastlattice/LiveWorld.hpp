@@ -1638,9 +1638,19 @@ public:
     // a shaft rather than a hoist, is worked by no other program, and is turned
     // to a `pose_deg` within a turn either way. It does not rest: it is going
     // somewhere, so a rest_below with it is refused rather than ignored.
+    //
+    // Two of these, and no default argument for the orders. GCC cannot use a
+    // nested aggregate's default member initializers before the enclosing
+    // class is complete, so `const SitOrders &sit = {}` is a hard error there
+    // -- "could not convert <brace-enclosed initializer list>" -- while MSVC
+    // takes it. The overload without them supplies them from a function body,
+    // where the class IS complete.
+    unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
+                     const std::string &body, double setting, double climb_deg,
+                     double rest_below, double rest_until, const SitOrders &sit);
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting = 1.0, double climb_deg = 8.0,
-                     double rest_below = 0.0, double rest_until = 0.0, const SitOrders &sit = {});
+                     double rest_below = 0.0, double rest_until = 0.0);
     // A sensor on a program's machine, as sense() puts one on a controller's:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out

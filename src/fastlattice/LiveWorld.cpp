@@ -6141,6 +6141,13 @@ std::vector<LiveControl> LiveWorld::controls() const {
 
 unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                             const std::string &body, double setting, double climb_deg, double rest_below,
+                            double rest_until) {
+    return program(name, kind, left, right, body, setting, climb_deg, rest_below, rest_until,
+                   SitOrders());
+}
+
+unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
+                            const std::string &body, double setting, double climb_deg, double rest_below,
                             double rest_until, const SitOrders &sit) {
     Impl &I = *impl_;
     if ((kind != "roam" && kind != "sit") || left == right) return 0;
