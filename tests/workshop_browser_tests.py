@@ -106,6 +106,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
             time.sleep(.1)
         diagnostics = self.js("""JSON.stringify({
           notice:document.querySelector('#ws-notice')?.textContent,
+          build:document.querySelector('#ws-build-status')?.textContent,
+          parts:document.querySelector('#ws-part-count')?.textContent,
           test:document.querySelector('#ws-bench-test')?.value,
           result:document.querySelector('#ws-bench-result')?.textContent,
           runDisabled:document.querySelector('#ws-run-bench')?.disabled,
@@ -492,8 +494,54 @@ class WorkshopBrowserRegression(unittest.TestCase):
         named = self.js("[...document.querySelectorAll('.ws-right > .ws-group > h2,"
                         " .ws-right > .ws-group > summary')].map(h=>h.textContent)")
         for heading in ("The part you picked", "Try it", "Materials and making it",
-                        "Save and reopen", "How it measures up", "How the bench works"):
+                        "Save and reopen", "What you changed", "How it measures up",
+                        "How the bench works"):
             self.assertIn(heading, named)
+
+    def test_an_edit_can_be_taken_back_and_what_you_did_is_listed(self):
+        """There was no undo. None.
+
+        A wrong material applied to all eight parts stayed wrong: took() threw
+        the previous design away on every edit and nothing kept a copy.
+        """
+        self.click('[data-mode="build"]')
+        self.assertTrue(self.js("document.querySelector('#ws-undo').disabled"), "nothing to take back yet")
+        was = self.js("document.querySelector('#ws-mass').textContent")
+        self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='top').click()")
+        self.field('#ws-edit-scope','all')
+        self.field('#ws-part-material','glass')
+        self.wait("document.querySelector('#ws-mass').textContent!=='" + was + "'")
+        changed = self.js("document.querySelector('#ws-mass').textContent")
+        # What you did is written down, in the words of what actually changed.
+        self.wait("document.querySelector('#ws-history .ws-history-step')")
+        self.assertIn("material set to glass",
+                      self.js("document.querySelector('#ws-history').textContent"))
+        self.assertIn("parts:", self.js("document.querySelector('#ws-history').textContent"),
+                      "one material on every part is one thing done, not eight")
+        self.assertFalse(self.js("document.querySelector('#ws-undo').disabled"))
+        self.click('#ws-undo')
+        self.wait("document.querySelector('#ws-mass').textContent==='" + was + "'")
+        self.assertFalse(self.js("document.querySelector('#ws-redo').disabled"))
+        self.click('#ws-redo')
+        self.wait("document.querySelector('#ws-mass').textContent==='" + changed + "'")
+
+    def test_a_saved_design_can_be_renamed_and_thrown_away(self):
+        """Fourteen routes and not one of them removed anything."""
+        self.click('[data-mode="details"]')
+        self.field('#ws-save-name','Browser keep-or-bin table')
+        self.click('#ws-save-design')
+        # Its own row, by name: the store is shared with every other test here.
+        mine = ("[...document.querySelectorAll('#ws-saved-designs .ws-keep-row')]"
+                ".find(r=>r.textContent.includes(%s))")
+        self.wait(f"{mine % repr('Browser keep-or-bin table')}")
+        self.js("window.prompt=()=>'A better name'")
+        self.js(f"{mine % repr('Browser keep-or-bin table')}.querySelector('.ws-keep-actions button').click()")
+        self.wait(f"{mine % repr('A better name')}")
+        # Renaming is not saving it again: the count of times it was saved holds.
+        self.assertIn('saved 1 time', self.js(f"{mine % repr('A better name')}.textContent"))
+        self.js("window.confirm=()=>true")
+        self.js(f"{mine % repr('A better name')}.querySelector('.ws-keep-bin').click()")
+        self.wait(f"!{mine % repr('A better name')}")
         # And the things that were buried are inside them, on screen.
         for heading in ("Product library", "My library", "Saved designs"):
             self.assertIn(heading, self.js(

@@ -56,10 +56,30 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _migrate(db: sqlite3.Connection) -> None:
+    """The one schema change there has ever been, and why it is safe.
+
+    `CREATE TABLE IF NOT EXISTS` does nothing to a table that is already there
+    with different columns, so a database written before `workshop_test_results`
+    got its own counting key has no `result_id` and every read of it fails. The
+    table holds kept test RESULTS: a cache of runs that can be made again by
+    running them again, and nothing a person wrote. So it is dropped and remade
+    rather than migrated row by row. Nothing else here is ever dropped.
+    """
+    there = db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                       "AND name='workshop_test_results'").fetchone()
+    if there is None:
+        return
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(workshop_test_results)")}
+    if "result_id" not in columns:
+        db.execute("DROP TABLE workshop_test_results")
+
+
 def _open_connection(app: Any) -> sqlite3.Connection:
     db = sqlite3.connect(db_path(app), timeout=5.0)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
+    _migrate(db)
     db.executescript("""
         CREATE TABLE IF NOT EXISTS workshop_library_items (
             item_id TEXT PRIMARY KEY,
@@ -118,6 +138,34 @@ def _open_connection(app: Any) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, preset_id)
         );
+        -- What a test said, against the exact design it was run on.
+        --
+        -- Nothing anywhere kept a test result. You could not ask "did this
+        -- pass last time", and a run you did before changing a material was
+        -- gone the moment the next answer came back. The row is keyed by the
+        -- design's FINGERPRINT rather than by its name or its save count,
+        -- because the fingerprint is the only thing in the Workshop that says
+        -- two designs are the same geometry: edit a leg and the fingerprint
+        -- moves, so the old result stops being claimed for the new shape.
+        -- Its own key, counting up, rather than one made of what it is about:
+        -- timestamps here are whole seconds, and two runs in the same second
+        -- keyed by their time are one run.
+        CREATE TABLE IF NOT EXISTS workshop_test_results (
+            result_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id TEXT NOT NULL,
+            design_id TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            test_name TEXT NOT NULL,
+            ran_at TEXT NOT NULL,
+            verdict TEXT NOT NULL,
+            says TEXT NOT NULL,
+            requested_json TEXT NOT NULL,
+            measured_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS workshop_test_results_by_print
+            ON workshop_test_results(owner_id, fingerprint, result_id DESC);
+        CREATE INDEX IF NOT EXISTS workshop_test_results_by_design
+            ON workshop_test_results(owner_id, design_id, result_id DESC);
     """)
     who, now = owner_id(app), _now()
     for material, price in DEFAULT_PRICES.items():
@@ -279,6 +327,153 @@ def load_item(app: Any, item_id: str) -> dict[str, Any]:
             "role": row["role"], "version": row["current_version"], "tags": tags,
             "payload": json.loads(row["payload_json"]), "created_at": row["created_at"],
             "updated_at": row["updated_at"]}
+
+
+#: How many runs of one design are kept before the oldest goes.
+RESULTS_KEPT = 50
+
+
+def keep_result(app: Any, *, design_id: str, fingerprint: str, test_name: str,
+                verdict: str, says: str, requested: Any, measured: Any) -> dict[str, Any]:
+    """Keep what a test said, against the exact geometry it was run on."""
+    who, now = owner_id(app), _now()
+    design_id, fingerprint = str(design_id or "")[:200], str(fingerprint or "")[:128]
+    if not design_id or not fingerprint:
+        raise ValueError("a kept result needs the design it was run on and that design's fingerprint")
+    row = {"design_id": design_id, "fingerprint": fingerprint, "test_name": str(test_name or "")[:80],
+           "ran_at": now, "verdict": str(verdict or "measured")[:40], "says": str(says or "")[:2000]}
+    with _connect(app) as db:
+        cursor = db.execute("""INSERT INTO workshop_test_results
+                    (owner_id,design_id,fingerprint,test_name,ran_at,verdict,says,requested_json,measured_json)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                            (who, design_id, fingerprint, row["test_name"], now, row["verdict"], row["says"],
+                             _payload(requested if isinstance(requested, dict) else {}),
+                             _payload(measured if isinstance(measured, dict) else {})))
+        db.execute("""DELETE FROM workshop_test_results
+                    WHERE owner_id=? AND design_id=? AND result_id NOT IN (
+                        SELECT result_id FROM workshop_test_results WHERE owner_id=? AND design_id=?
+                        ORDER BY result_id DESC LIMIT ?)""",
+                   (who, design_id, who, design_id, RESULTS_KEPT))
+    return {"schema": LIBRARY_SCHEMA, "result_id": cursor.lastrowid, **row}
+
+
+def results_for(app: Any, *, design_id: str | None = None, fingerprint: str | None = None,
+                limit: int = 20) -> list[dict[str, Any]]:
+    """What the tests said, newest first.
+
+    With a `fingerprint`, only the runs on that exact geometry, which is the
+    honest answer to "did THIS pass". With only a `design_id`, every run of
+    anything that has gone by that name, each saying whether it was this shape.
+    """
+    who = owner_id(app)
+    query = "SELECT * FROM workshop_test_results WHERE owner_id=?"
+    args: list[Any] = [who]
+    if design_id:
+        query += " AND design_id=?"; args.append(str(design_id))
+    if fingerprint:
+        query += " AND fingerprint=?"; args.append(str(fingerprint))
+    query += " ORDER BY result_id DESC LIMIT ?"; args.append(max(1, min(200, int(limit))))
+    with _connect(app) as db:
+        rows = db.execute(query, args).fetchall()
+    return [{"result_id": r["result_id"], "design_id": r["design_id"], "fingerprint": r["fingerprint"],
+             "this_shape": fingerprint is None or r["fingerprint"] == fingerprint,
+             "test": r["test_name"], "ran_at": r["ran_at"], "verdict": r["verdict"],
+             "says": r["says"], "requested": json.loads(r["requested_json"]),
+             "measured": json.loads(r["measured_json"])} for r in rows]
+
+
+def list_versions(app: Any, item_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+    """Every version of a saved thing, newest first.
+
+    `workshop_library_versions` has been written on every save since the table
+    was made and had no reader anywhere in the repo: every revision was kept
+    and none could be looked at. This is the reader. The row holds only the
+    payload, so what a version was CALLED at the time is not recorded -- the
+    item's current name is what there is, and renaming it renames its history.
+    """
+    ident, who = _id(item_id), owner_id(app)
+    with _connect(app) as db:
+        item = db.execute("SELECT name, item_type, current_version FROM workshop_library_items "
+                          "WHERE item_id=? AND owner_id=?", (ident, who)).fetchone()
+        if item is None:
+            raise FileNotFoundError(f"there is no library item {ident}")
+        rows = db.execute("SELECT version, payload_json, saved_at FROM workshop_library_versions "
+                          "WHERE item_id=? AND owner_id=? ORDER BY version DESC LIMIT ?",
+                          (ident, who, max(1, min(1000, int(limit))))).fetchall()
+    return [{"item_id": ident, "name": item["name"], "item_type": item["item_type"],
+             "version": r["version"], "current": r["version"] == item["current_version"],
+             "saved_at": r["saved_at"], "payload": json.loads(r["payload_json"])} for r in rows]
+
+
+def load_version(app: Any, item_id: str, version: int) -> dict[str, Any]:
+    """One version of a saved thing, as it was when it was saved."""
+    ident, who = _id(item_id), owner_id(app)
+    with _connect(app) as db:
+        row = db.execute("SELECT version, payload_json, saved_at FROM workshop_library_versions "
+                         "WHERE item_id=? AND owner_id=? AND version=?",
+                         (ident, who, int(version))).fetchone()
+        item = db.execute("SELECT name, item_type, current_version FROM workshop_library_items "
+                          "WHERE item_id=? AND owner_id=?", (ident, who)).fetchone()
+    if row is None or item is None:
+        raise FileNotFoundError(f"there is no version {version} of library item {ident}")
+    return {"schema": LIBRARY_SCHEMA, "item_id": ident, "name": item["name"],
+            "item_type": item["item_type"], "version": row["version"],
+            "current": row["version"] == item["current_version"], "saved_at": row["saved_at"],
+            "payload": json.loads(row["payload_json"])}
+
+
+def rename_item(app: Any, item_id: str, name: str) -> dict[str, Any]:
+    """Call it something else, without saving a new version of it.
+
+    Saving under the same id was the only way to change a name, and that minted
+    a version row -- so you could not correct a typo without the history
+    claiming the design had changed.
+    """
+    ident, who = _id(item_id), owner_id(app)
+    name = " ".join(str(name).split())[:160]
+    if not name:
+        raise ValueError("a library item needs a name")
+    with _connect(app) as db:
+        changed = db.execute("UPDATE workshop_library_items SET name=?, updated_at=? "
+                             "WHERE item_id=? AND owner_id=?", (name, _now(), ident, who)).rowcount
+    if not changed:
+        raise FileNotFoundError(f"there is no library item {ident}")
+    return load_item(app, ident)
+
+
+def delete_item(app: Any, item_id: str) -> dict[str, Any]:
+    """Throw a saved thing away, with its versions and its tags.
+
+    The cascade on those two tables was declared when they were made and could
+    never fire, because nothing in the repo deleted a library item.
+    """
+    ident, who = _id(item_id), owner_id(app)
+    with _connect(app) as db:
+        row = db.execute("SELECT name, item_type FROM workshop_library_items "
+                         "WHERE item_id=? AND owner_id=?", (ident, who)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"there is no library item {ident}")
+        versions = db.execute("SELECT COUNT(*) AS n FROM workshop_library_versions "
+                              "WHERE item_id=? AND owner_id=?", (ident, who)).fetchone()["n"]
+        # Named explicitly rather than left to the cascade: sqlite enforces a
+        # foreign key only when foreign_keys is on, which is per connection.
+        db.execute("DELETE FROM workshop_library_versions WHERE item_id=? AND owner_id=?", (ident, who))
+        db.execute("DELETE FROM workshop_library_tags WHERE item_id=? AND owner_id=?", (ident, who))
+        db.execute("DELETE FROM workshop_library_items WHERE item_id=? AND owner_id=?", (ident, who))
+    return {"schema": LIBRARY_SCHEMA, "deleted": ident, "name": row["name"],
+            "item_type": row["item_type"], "versions_deleted": int(versions)}
+
+
+def delete_bench_preset(app: Any, preset_id: str) -> dict[str, Any]:
+    """Throw a saved set of test controls away."""
+    ident, who = _id(preset_id), owner_id(app)
+    with _connect(app) as db:
+        row = db.execute("SELECT name FROM workshop_bench_presets WHERE preset_id=? AND owner_id=?",
+                         (ident, who)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"there is no test preset {ident}")
+        db.execute("DELETE FROM workshop_bench_presets WHERE preset_id=? AND owner_id=?", (ident, who))
+    return {"schema": LIBRARY_SCHEMA, "deleted": ident, "name": row["name"]}
 
 
 def list_items(app: Any, *, item_type: str | None = None, limit: int = 200) -> list[dict[str, Any]]:

@@ -161,10 +161,35 @@ being the world:
 
 ## 3. Save it
 
-- **3.1 Nothing can be deleted** -- not a saved design, a library component, a
-  test preset, a price or a rack row. Fourteen HTTP routes and not one removes
-  anything. (`server.py:1282-1288`, `:1331-1336`)
-- **3.2 Nothing can be renamed or duplicated** either.
+**Partly done (2026-09-24).** Undo, a readable history, delete and rename, and
+test results kept against the exact shape they were measured on.
+
+- **3.1 Nothing can be deleted.** Done for the three that matter: a saved
+  design, a library component (with its versions and its tags) and a test
+  preset. A price and a rack row still cannot be removed -- they are values
+  with defaults, not things a person made.
+- **3.2 Nothing can be renamed.** Done, for both a saved design and a library
+  component, and renaming does NOT count as saving it again: the count of
+  times a thing was saved holds, and no version row is minted. Duplicating is
+  still not there.
+- **3.2a Every version was written and none could be read.** Done.
+  `workshop_library_versions` had been written on every save since the table
+  was made, with no reader anywhere in the repo. There is one now
+  (`list_versions`, `load_version`), and the library card says how many
+  versions a thing has. The row keeps only the payload, so what a version was
+  CALLED at the time is not recorded: renaming a thing renames its history.
+- **3.2b No undo. None.** Done, in the page. Every edit went through `took()`
+  and nothing kept the state before it, so a wrong material on all eight parts
+  stayed wrong. There is an Undo, a Redo, and a list of what you did to get
+  here -- worked out by comparing the two states rather than by every caller
+  remembering to say, and grouped by what was done rather than by which part
+  it was done to. It lives for the session; it is not written down.
+- **3.2c No test result was ever stored.** Done. Every bench run is kept
+  against the design's FINGERPRINT, which is the only thing in the Workshop
+  that says two designs are the same geometry: edit a leg and the fingerprint
+  moves, so yesterday's pass stops being claimed for today's shape. The result
+  card says what this exact shape was told before. Fifty runs per design are
+  kept.
 - **3.3 Saved designs cannot be searched.** Everything, newest first, no filter.
   Tag search exists, but only for library components.
   (`workshop_store.py:146-166`)

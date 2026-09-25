@@ -1236,9 +1236,20 @@ function installBench() {
     test: group("ws-group-test", "Try it"),
     make: group("ws-group-make", "Materials and making it"),
     save: group("ws-group-save", "Save and reopen"),
+    history: group("ws-group-history", "What you changed"),
     measure: drawer("ws-group-measure", "How it measures up"),
     plumbing: drawer("ws-group-plumbing", "How the bench works"),
   };
+  // Undo, and a list of what you did to get here. Every edit went through
+  // took() and nothing kept the state before it, so a wrong material on all
+  // eight parts was a wrong material on all eight parts for good.
+  const back = make("button", { id:"ws-undo", type:"button", class:"ws-action" }, "Undo");
+  const forward = make("button", { id:"ws-redo", type:"button", class:"ws-action" }, "Redo");
+  back.onclick = () => stepHistory(-1);
+  forward.onclick = () => stepHistory(1);
+  const historyRow = make("div", { class:"ws-row" });
+  historyRow.append(back, forward);
+  groups.history.append(historyRow, make("div", { id:"ws-history" }));
   // Where each thing goes. Some of what was swept in is anonymous -- a heading,
   // then the fields under it -- so an unnamed node joins whatever the last
   // heading joined.
@@ -1272,7 +1283,7 @@ function installBench() {
   };
   const rightKeep = [...right.children];
   right.replaceChildren(chatHome, heldBox, groups.part, groups.test, groups.make, groups.save,
-                        groups.measure, groups.plumbing);
+                        groups.history, groups.measure, groups.plumbing);
   for (const node of [...rightKeep, ...leftKeep.filter((n) => n !== parts)]) {
     const where = placeIn(node);
     if (where) groups[where].append(node); else node.remove();
@@ -1747,6 +1758,19 @@ function renderBenchResult(result) {
       make("p", {}, `${s.detailed_components || 0} detailed components → ${s.runtime_bodies || 0} runtime bodies · ${s.mechanisms || 0} mechanisms`));
   }
   if (result.acceptance) card.append(make("p", {}, `Acceptance: ${result.acceptance.status} — ${result.acceptance.why || ""}`));
+  // What this EXACT shape was told before. Kept against the design's
+  // fingerprint, so editing a leg does not inherit yesterday's verdict.
+  if (result.earlier?.length) {
+    const past = make("details", { class:"ws-family", id:"ws-earlier-runs" });
+    past.append(make("summary", {}, `Tried ${result.earlier.length} time${result.earlier.length === 1 ? "" : "s"} before on this exact shape`));
+    for (const run of result.earlier) {
+      past.append(make("p", {}, `${new Date(run.ran_at).toLocaleString()} · ${run.test} · ${run.verdict} — ${run.says}`));
+    }
+    card.append(past);
+  } else if (result.kept_against) {
+    card.append(make("p", { class:"ws-feedback-count", id:"ws-earlier-runs" },
+      "First run on this exact shape. It is kept, so the next one can be compared with it."));
+  }
   if (result.prototype?.matter_physics_hash) card.append(make("p", {}, `Tested Matter ${result.prototype.matter_physics_hash.slice(0,12)} · ${result.prototype.matter_cells} cells`));
   if (result.trial === "static_load") {
     const acceptance = result.acceptance || {};
@@ -1803,13 +1827,43 @@ async function saveBenchPreset() {
 // ---------------------------------------------------------------------------
 // Panels
 // ---------------------------------------------------------------------------
+// Rename and throw away. Nothing in the Workshop could do either: fourteen
+// routes and not one of them removed anything, and a name could only be
+// changed by saving again, which counted as a new revision of the design.
+function keepOrBin(row, { open, rename, remove, label }) {
+  const card = make("div", { class:"ws-card ws-keep-row" });
+  const name = make("button", { type:"button", class:"ws-keep-open" });
+  name.append(make("strong", {}, row.title), make("small", {}, row.said));
+  name.onclick = () => guard(name, open);
+  const edit = make("button", { type:"button", class:"ws-keep-small", title:`Rename this ${label}` }, "Rename");
+  edit.onclick = () => guard(edit, async () => {
+    const called = window.prompt(`What should this ${label} be called?`, row.title);
+    if (called == null || !called.trim()) return;
+    await rename(called.trim());
+  });
+  const bin = make("button", { type:"button", class:"ws-keep-small ws-keep-bin", title:`Throw this ${label} away` }, "Delete");
+  bin.onclick = () => guard(bin, async () => {
+    if (!window.confirm(`Throw away "${row.title}"? This cannot be undone.`)) return;
+    await remove();
+  });
+  const actions = make("div", { class:"ws-keep-actions" });
+  actions.append(edit, bin);
+  card.append(name, actions);
+  return card;
+}
 function savedDesigns(rows) {
   bench.savedDesigns = Array.isArray(rows) ? rows : []; const root = $("#ws-saved-designs"); root.replaceChildren();
   if (!bench.savedDesigns.length) { root.append(make("p", { class:"ws-feedback-count" }, "No saved designs yet.")); return; }
   for (const saved of bench.savedDesigns) {
-    const button = make("button", { type:"button", class:"ws-card" }); button.append(make("strong", {}, saved.label || saved.design_id),
-      make("small", {}, `${saved.kind} · revision ${saved.revision}${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`));
-    button.onclick = () => guard(button, async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); root.append(button);
+    root.append(keepOrBin({
+      title: saved.label || saved.design_id,
+      said: `${saved.kind} · saved ${saved.revision} time${saved.revision === 1 ? "" : "s"}${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`,
+    }, {
+      label: "design",
+      open: async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; },
+      rename: async (name) => savedDesigns((await api("/api/workshop/library", { action:"rename_design", design_id:saved.design_id, name })).saved_designs),
+      remove: async () => savedDesigns((await api("/api/workshop/library", { action:"delete_design", design_id:saved.design_id })).saved_designs),
+    }));
   }
 }
 function renderUserLibrary() {
@@ -1817,14 +1871,53 @@ function renderUserLibrary() {
   const root = $("#ws-user-library"); root.replaceChildren();
   if (!bench.personalLibrary.length) { root.append(make("p", { class:"ws-feedback-count" }, "Nothing saved yet. Select a part and save it.")); return; }
   for (const item of bench.personalLibrary) {
-    const card = make("button", { type:"button", class:"ws-card ws-library-item", draggable:"true" });
-    card.append(make("strong", {}, item.name), make("small", {}, `${item.item_type}${item.family ? ` · ${item.family}` : ""} · v${item.version}`));
-    card.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
-    card.onclick = () => guard(card, async () => {
-      if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
-      else await inspectLibraryComponent(item.item_id);
-    }); root.append(card);
+    const card = keepOrBin({
+      title: item.name,
+      said: `${item.item_type}${item.family ? ` · ${item.family}` : ""} · version ${item.version}`,
+    }, {
+      label: item.item_type,
+      open: async () => {
+        if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
+        else await inspectLibraryComponent(item.item_id);
+      },
+      rename: async (name) => { bench.personalLibrary = (await api("/api/workshop/library", { action:"rename_component", item_id:item.item_id, name })).personal_library; renderUserLibrary(); },
+      remove: async () => { bench.personalLibrary = (await api("/api/workshop/library", { action:"delete_component", item_id:item.item_id })).personal_library; renderUserLibrary(); },
+    });
+    // The name IS the item: clicking it opens the thing and dragging it drops
+    // the thing. Putting those on the card around it instead would mean a
+    // click on the card did nothing, which is what a person would try first.
+    const open = card.querySelector(".ws-keep-open");
+    open.classList.add("ws-library-item");
+    open.draggable = true;
+    open.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
+    // Every version of this was written on every save and could not be read
+    // back by anything. This is the reader.
+    if (item.version > 1) {
+      const past = make("button", { type:"button", class:"ws-keep-small" }, `${item.version} versions`);
+      past.onclick = () => guard(past, () => showVersions(item));
+      card.querySelector(".ws-keep-actions").prepend(past);
+    }
+    root.append(card);
   }
+}
+async function showVersions(item) {
+  const answer = await api("/api/workshop/library", { action:"versions", item_id:item.item_id });
+  const root = $("#ws-user-library");
+  const box = make("div", { class:"ws-note", id:"ws-versions" });
+  box.append(make("strong", {}, `${item.name}: every version saved`));
+  for (const version of answer.versions || []) {
+    const row = make("button", { type:"button", class:"ws-card ws-history-step" });
+    row.append(make("strong", {}, `Version ${version.version}${version.current ? " (the one in use)" : ""}`),
+               make("small", {}, new Date(version.saved_at).toLocaleString()));
+    row.onclick = () => guard(row, async () => {
+      const got = await api("/api/workshop/library", { action:"open_version", item_id:item.item_id, version:version.version });
+      say(`Version ${version.version} of ${item.name}, saved ${new Date(got.version.saved_at).toLocaleString()}. `
+        + `Its recipe is ${JSON.stringify(got.version.payload).slice(0, 200)}…`);
+    });
+    box.append(row);
+  }
+  $("#ws-versions")?.remove();
+  root.prepend(box);
 }
 // The product library is a tree: a row per product, and under the open one a
 // child row per distinct component with its quantity. Names alone carry the
@@ -2131,6 +2224,118 @@ function show(reframe = true) {
   checks.textContent = said.join(" "); $("#ws-plan").hidden = true;
 }
 
+// ---------------------------------------------------------------------------
+// What you changed, and going back
+//
+// Every edit came through took() and nothing kept the state before it, so a
+// wrong material applied to all eight parts stayed wrong. The whole design is
+// {kind, generation, candidates, selected}: small, and enough to restore
+// without asking the server anything. What each step DID is worked out by
+// comparing the two states rather than by every caller remembering to say.
+// ---------------------------------------------------------------------------
+const history = { past: [], now: null, future: [], restoring: false, max: 50 };
+
+function designState() {
+  if (!bench.candidates?.length) return null;
+  return { kind: bench.kind, generation: bench.generation, selected: bench.selected,
+           candidates: JSON.parse(JSON.stringify(bench.candidates)), at: Date.now() };
+}
+
+// What was done to one part, in words. A part with no override before is not
+// "added" as far as a person is concerned -- what happened is that its material
+// or its size was set to something.
+function partDetail(before, after) {
+  if (after === undefined) return "put back as it was";
+  const from = before || {};
+  const fields = [...new Set([...Object.keys(from), ...Object.keys(after)])]
+    .filter(k => JSON.stringify(from[k]) !== JSON.stringify(after[k]));
+  if (!fields.length) return "changed";
+  if (fields.some(k => after[k] !== null && typeof after[k] === "object")) return "redrawn";
+  return fields.map(k => from[k] === undefined ? `${k} set to ${after[k]}`
+    : after[k] === undefined ? `${k} cleared` : `${k} ${from[k]} → ${after[k]}`).join(", ");
+}
+
+// A sentence for one step, from the two states around it. Names of parts, not
+// counts, while there are few enough of them to read.
+function whatChanged(was, now) {
+  if (!was) return "opened";
+  if (was.kind !== now.kind) return `opened a ${now.kind}`;
+  const a = was.candidates[was.selected] || {}, b = now.candidates[now.selected] || {};
+  if (a.design_id !== b.design_id) return `opened ${b.design_id}`;
+  const said = [];
+  const oldParts = a.component_overrides || {}, newParts = b.component_overrides || {};
+  // Grouped by WHAT was done, not by which part it was done to: applying one
+  // material to every part is one thing a person did, and eight lines saying
+  // "leg-1 added; leg-2 added" is not what they would call it.
+  const byDetail = new Map();
+  for (const name of new Set([...Object.keys(oldParts), ...Object.keys(newParts)])) {
+    const before = oldParts[name], after = newParts[name];
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    const detail = partDetail(before, after);
+    if (!byDetail.has(detail)) byDetail.set(detail, []);
+    byDetail.get(detail).push(name);
+  }
+  for (const [detail, names] of byDetail) {
+    said.push(names.length > 2 ? `${names.length} parts: ${detail}` : `${names.join(" and ")}: ${detail}`);
+  }
+  for (const key of new Set([...Object.keys(a.parameters || {}), ...Object.keys(b.parameters || {})])) {
+    const before = (a.parameters || {})[key], after = (b.parameters || {})[key];
+    if (JSON.stringify(before) !== JSON.stringify(after)) said.push(`${key} ${before ?? "—"} → ${after ?? "—"}`);
+  }
+  if (was.selected !== now.selected) said.push(`picked variant ${now.selected + 1}`);
+  if (!said.length) return "redrawn, with nothing of the design changed";
+  return said.length > 4 ? `${said.length} things changed: ${said.slice(0, 3).join("; ")}…` : said.join("; ");
+}
+
+function remember(next) {
+  if (history.restoring || !next) return;
+  if (history.now) {
+    history.past.push({ ...history.now, said: whatChanged(history.past.at(-1) || null, history.now) });
+    if (history.past.length > history.max) history.past.shift();
+  }
+  history.now = next;
+  history.future.length = 0;
+  renderHistory();
+}
+
+function stepHistory(way) {
+  const from = way < 0 ? history.past : history.future, to = way < 0 ? history.future : history.past;
+  const going = from.pop();
+  if (!going || !history.now) return;
+  to.push(history.now);
+  history.now = going;
+  history.restoring = true;
+  try {
+    took({ kind: going.kind, generation: going.generation, candidates: going.candidates });
+    bench.selected = Math.min(going.selected, going.candidates.length - 1);
+    show();
+  } finally { history.restoring = false; }
+  renderHistory();
+}
+
+function renderHistory() {
+  const root = $("#ws-history"); if (!root) return;
+  const undo = $("#ws-undo"), redo = $("#ws-redo");
+  if (undo) undo.disabled = !history.past.length;
+  if (redo) redo.disabled = !history.future.length;
+  root.replaceChildren();
+  if (!history.past.length) {
+    root.append(make("p", { class:"ws-feedback-count" },
+      "Nothing changed yet this session. Every edit will be listed here, newest first, and Undo takes the last one back."));
+    return;
+  }
+  const said = whatChanged(history.past.at(-1), history.now);
+  root.append(make("p", { class:"ws-history-now" }, `Now: ${said}`));
+  for (let i = history.past.length - 1; i >= 0; i--) {
+    const step = history.past[i], when = new Date(step.at);
+    const row = make("button", { type:"button", class:"ws-card ws-history-step", "data-step":String(i) });
+    row.append(make("strong", {}, step.said || "opened"),
+               make("small", {}, when.toLocaleTimeString()));
+    row.onclick = () => { while (history.past.length > i + 1) stepHistory(-1); stepHistory(-1); };
+    root.append(row);
+  }
+}
+
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   workspace.inspecting++;bench.libraryInspection=null;
@@ -2147,6 +2352,7 @@ function took(answer, keepPart = null) {
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
+  remember(designState());
   return true;
 }
 
