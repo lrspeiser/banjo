@@ -361,7 +361,8 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
         book, items = workshop_library.pricebook(app), workshop_library.list_items(app)
         proposal = workshop_chat.propose(
             app, message=str(chat.get("message") or ""), selected_part=part, candidate=wire,
-            materials=[m["material"] for m in book["materials"]], library=items)
+            materials=[m["material"] for m in book["materials"]], library=items,
+            turn=(str(chat.get("turn"))[:64] if chat.get("turn") else None))
         action = proposal["action"]
         if action == "none":
             return {"schema": WORKSHOP_SCHEMA, "kind": kind,

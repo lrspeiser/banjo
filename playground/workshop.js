@@ -1551,12 +1551,40 @@ async function editSkin() {
   if (!took(answer, selected)) return; view = "skin"; pressView("skin"); show(false);
   if ($("#ws-skin-physical").checked) await loadMatter(true);
 }
+// Read back what a turn has done so far, about once a second, and tell the
+// chat's own shell so it can put it under the working bubble.
+function watchTheTurn(turn) {
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const said = await api("/api/workshop/progress", { turn });
+      if (!stopped && said?.steps?.length) {
+        dispatchEvent(new CustomEvent("banjo-workshop-progress", { detail: said }));
+      }
+    } catch { /* the answer itself is what matters; this is only the commentary */ }
+    if (!stopped) setTimeout(tick, 900);
+  };
+  setTimeout(tick, 600);
+  return { stop: () => { stopped = true; } };
+}
+
 async function chatEdit() {
   if (!bench.selectedPart) throw new Error("Click the part you want to talk about first.");
   const input = $("#ws-component-chat-text"), message = input.value.trim();
   if (!message) throw new Error("Tell Workshop what to change.");
   const selected = bench.selectedPart;
-  const answer = await api("/api/workshop/candidates", { ...candidateBody(), component_chat:{ part_name:selected, message } });
+  // A turn is one POST that answers when the whole thing is done, and the work
+  // inside it is several round trips to the model. The id goes in with the
+  // request and the page reads back what the turn has done so far, so the wait
+  // says what is happening instead of nothing.
+  const turn = crypto.randomUUID();
+  const watching = watchTheTurn(turn);
+  let answer;
+  try {
+    answer = await api("/api/workshop/candidates",
+                       { ...candidateBody(), component_chat:{ part_name:selected, message, turn } });
+  } finally { watching.stop(); }
   if (!took(answer, selected)) return;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
   // Asked to try the thing, the chat hands back a run to watch. It is played

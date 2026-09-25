@@ -205,6 +205,52 @@ and the API key. It needs a separate process with no filesystem, no network and
 a time and memory cap. That is its own piece of work and the owner has parked
 it behind this one.
 
+## 1d. Testing means finding the range, and saying what you are doing
+
+**Done (2026-09-25).**
+
+**Where the wait actually is.** Measured, not guessed: the physics of "drop
+20 kg on the table from 2 m" takes **0.35 s**, and a six-second run takes 0.36 s.
+Everything else in a turn is round trips to the model. Watched live, one turn
+went: 5.4 s to look at the part, 10.3 s to check the room can carry it (a call
+that itself takes 10 ms), 11.6 s to measure it, and about 20 s to answer. The
+work is a rounding error; the thinking is the wait.
+
+Three things follow.
+
+- **Say what it is doing while it does it.** A turn is one POST that answers at
+  the end, so the page hands in an id, the server writes each step as it
+  happens, and the page reads it back about once a second and puts it under the
+  working bubble -- in a person's words ("looking at the design", "trying it in
+  a little world"), with how far into the turn each one was. The thinking
+  between calls is said too, because that is where most of the wait is.
+- **Best guess and go.** Asking before starting costs a wait as long as the
+  work. The prompt now says to pick the sensible thing, DO it, say what was
+  picked in one line, and THEN offer what else they might have meant --
+  everything can be taken back. `ask_the_person` is for afterwards, or for a
+  fork that genuinely cannot be picked.
+- **`find_the_limit`.** One run only tells you whether the number you guessed
+  was over or under. A sweep turns one thing up through five or six values and
+  says where the answer changes -- holds here, cracks there -- and keeps the
+  run where it changed to watch. Every row is a real run; nothing is
+  interpolated. Four runs plus the one to watch take **1.6 s**.
+
+  It says which way to look when the answer is outside the range, and that is
+  the whole value of the sentence: glass struck at 10 m/s breaks at 5 kg, the
+  least tried, so the limit is BELOW the range. "Past the end of what was
+  tried" would send somebody looking in exactly the wrong direction.
+
+**A weight of cells has to BE a whole number of cells.** A 1 kg iron cube is
+50 mm, which is not a whole number of 40 mm cells, and the room refuses it.
+Rounding each side is no good -- 50 mm down to 40 mm is half the mass. So a
+weight is now the squarest stack of whole cells of about the right mass: 1 kg
+is two cells, an 80 x 40 x 40 mm bar weighing 1.008 kg, and the run says what
+it really weighs when that differs.
+
+**Bubbles.** `#ws-chat-log` is a grid, and a grid row takes an equal share of
+the box, so two short messages in a tall log were two tall bubbles of mostly
+nothing. `align-content:start` and `align-self:start`.
+
 ## 2. Test it
 
 **Done (2026-09-24).** There were three testing systems and they did not agree;

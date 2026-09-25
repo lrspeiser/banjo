@@ -18,6 +18,7 @@ from copy import deepcopy
 import json
 import logging
 import re
+import threading
 import time
 from typing import Any
 from urllib import error, request
@@ -31,6 +32,74 @@ import workshop_test_room as test_room
 import workshop_library
 
 log = logging.getLogger(__name__)
+
+#: What each turn is doing, while it does it, so the page can say so.
+#:
+#: A turn is one POST that answers when the whole thing is finished, and the
+#: work inside it is several round trips to the model with a run of the little
+#: world in between. Waiting thirty seconds at a bubble that says "Working" and
+#: nothing else is the same as waiting at a blank screen. The page hands in an
+#: id, this is written as the turn goes, and the page reads it back.
+_PROGRESS: dict[str, dict[str, Any]] = {}
+_PROGRESS_LOCK = threading.Lock()
+#: How many turns are remembered, and for how long. A turn is small; this is
+#: only here so that a long session does not grow without end.
+PROGRESS_KEPT = 32
+PROGRESS_TTL_S = 900.0
+#: What each tool is doing, said the way a person would say it. A tool name is
+#: the code's word for it; nobody watching wants to read edit_components.
+DOING = {
+    "inspect_design": "looking at the design",
+    "inspect_component": "looking at that part",
+    "inspect_physics": "measuring it",
+    "search_library": "looking through your library",
+    "edit_components": "changing the parts",
+    "set_parameter": "changing a number on it",
+    "reuse_library_component": "putting one of your saved parts in",
+    "what_it_needs": "working out what making it would take",
+    "set_skin": "changing how it looks",
+    "add_part": "adding a part",
+    "remove_part": "taking a part off",
+    "set_joint": "changing how two parts are fastened",
+    "add_power_part": "wiring something in",
+    "set_program": "writing what it does on its own",
+    "check_validity": "checking the room can carry it",
+    "define_interaction_points": "saying where you take hold of it",
+    "program_use": "writing what it is for",
+    "try_it_in_a_room": "trying it in a little world",
+    "find_the_limit": "finding where it gives way",
+    "save_design": "saving it",
+    "list_saved_designs": "looking at what you saved",
+    "open_saved_design": "opening a saved design",
+    "take_it_back": "taking that back",
+    "ask_the_person": "asking you",
+}
+
+
+def progress(turn: str) -> dict[str, Any]:
+    """What that turn has done so far, for the page to show while it waits."""
+    with _PROGRESS_LOCK:
+        return deepcopy(_PROGRESS.get(str(turn)) or {"turn": str(turn), "steps": [], "done": False})
+
+
+def _note(turn: str | None, said: str, *, done: bool = False, ok: bool = True) -> None:
+    """One line of what is happening now."""
+    if not turn:
+        return
+    now = time.time()
+    with _PROGRESS_LOCK:
+        held = _PROGRESS.setdefault(str(turn), {"turn": str(turn), "began": now, "steps": [],
+                                                "done": False})
+        if said:
+            held["steps"].append({"at_s": round(now - held["began"], 2), "said": said, "ok": ok})
+            del held["steps"][:-40]
+        held["done"] = bool(done)
+        held["seen"] = now
+        for stale in [k for k, v in _PROGRESS.items()
+                      if now - v.get("seen", now) > PROGRESS_TTL_S]:
+            del _PROGRESS[stale]
+        while len(_PROGRESS) > PROGRESS_KEPT:
+            del _PROGRESS[next(iter(_PROGRESS))]
 
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
 MAX_HISTORY = 20
@@ -78,13 +147,20 @@ Important behavior:
   its purpose-specific core action when creating or completing it; it is stored
   with the design, exposed in ProductGraph controls and carried into the world.
   Never claim a product is operational if its intended action is unsupported.
-- NEVER END A TURN WITH AN OPEN QUESTION IN PROSE. If you need the person to
-  decide something, call ask_the_person with the question and two to four
-  CONCRETE answers they can click -- "Make it 50 mm", "Add a sleeve" -- not
-  "what would you like?". Writing their own is always offered, so a suggested
-  answer costs them nothing and an open question costs them the work of
-  inventing one. Say what you would do if they said nothing, and put that
-  first. Calling it ends your turn: you will be told what they picked.
+- MAKE YOUR BEST GUESS AND GO. Do not ask before you start. Every round trip
+  to ask something costs the person a wait as long as the work itself, and
+  anything you do can be taken back -- take_it_back undoes it, and they know
+  that. Pick the sensible thing, DO it, say what you picked and why in one
+  line, and THEN offer what else they might have meant. "I dropped 20 kg on it
+  from 2 m -- it held. Want it harder, or from higher?" is a good turn. "How
+  heavy, and from what height?" is a bad one: it is a wait for nothing.
+- ask_the_person is for AFTERWARDS, or for a fork you genuinely cannot pick
+  between -- not for numbers you can choose yourself. When you do call it, give
+  two to four CONCRETE answers they can click ("Make it 50 mm", "Add a
+  sleeve"), never "what would you like?". Writing their own is always offered.
+  Put what you would do first. Calling it ends your turn.
+- NEVER END A TURN WITH AN OPEN QUESTION IN PROSE. If you want a decision, that
+  is what ask_the_person is for.
 - Use tools to inspect the design before guessing about component names,
   positions, dimensions, interfaces, contacts, physics, evidence, or library
   contents.
@@ -132,6 +208,15 @@ Important behavior:
 - DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
   throws a block at its SIDE, along the floor, and is not what anyone means by
   "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
+- TESTING MEANS FINDING THE RANGE, NOT POKING IT ONCE. What anybody wants to
+  know is where a thing changes: it holds 120 kg, cracks at 300, shatters at
+  500. One run only tells you whether the number you guessed was over or under,
+  so DO NOT stop at one. Call find_the_limit and sweep the thing that matters
+  up through five or six values. It is fast -- a run is about a third of a
+  second -- and the answer is the useful one.
+  Do the same for anything with a range: a solar panel gives nothing in the
+  dark, a little at daybreak and a lot at noon, and a sweep over the hour says
+  so in one turn. Report the whole range, not the one number you tried.
 - WORK IT BY HAND with `do`: a list of {at_s, control, power, direction,
   setting} carried out while it runs, which is what a person does at a
   machine's panel in the world. "Drive it forward for three seconds and then
@@ -522,6 +607,32 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "parameters": {"type": "object", "additionalProperties": False,
                         "properties": {"steps": {"type": "integer", "minimum": 1, "maximum": 20,
                                                  "description": "how many changes to take back (1)"}}}},
+        {"type": "function", "name": "find_the_limit",
+         "description": "Run the same test again and again with ONE thing turned up, and say "
+                        "where it changes: holds here, cracks there, shatters beyond. This is what "
+                        "testing is for; a single run only says whether one guess was over or "
+                        "under. Also the way to show a range -- sweep the hour to show a panel "
+                        "giving nothing in the dark and a lot at noon. Every row is a real run; "
+                        "nothing is interpolated. Fast: a run is about a third of a second.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["changing", "over"],
+                        "properties": {
+                            "changing": {"type": "string",
+                                         "enum": sorted(test_room.SWEEPS),
+                                         "description": "the one thing to turn up"},
+                            "over": {"type": "array", "minItems": 2, "maxItems": 12,
+                                     "items": {"type": "number"},
+                                     "description": "the values to try, going up"},
+                            "seconds": {"type": "number", "minimum": 0.5, "maximum": 30,
+                                        "description": "how long each run is (3)"},
+                            "load_kg": {"type": "number", "minimum": 0, "maximum": 2000},
+                            "from_m": {"type": "number", "minimum": 0, "maximum": 5},
+                            "drop_m": {"type": "number", "minimum": 0, "maximum": 5},
+                            "slide_m_s": {"type": "number", "minimum": -30, "maximum": 30},
+                            "strike_kg": {"type": "number", "minimum": 0, "maximum": 500},
+                            "strike_speed_m_s": {"type": "number", "minimum": 0, "maximum": 30},
+                            "hour": {"type": "number", "minimum": 0, "maximum": 24},
+                            "turn_on": {"type": "boolean"}}}},
         {"type": "function", "name": "ask_the_person",
          "description": "Ask the person a question you cannot answer yourself, with concrete "
                         "answers they can click. ALWAYS use this instead of asking in prose. "
@@ -592,8 +703,11 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
 
 class _State:
     def __init__(self, app: Any, candidate: dict[str, Any], selected_name: str | None,
-                 materials: list[str], library: list[dict[str, Any]]) -> None:
+                 materials: list[str], library: list[dict[str, Any]],
+                 turn: str | None = None) -> None:
         self.app = app
+        #: Which turn this is, so what it does can be watched while it happens.
+        self.turn = turn
         self.candidate = candidate
         self.selected_name = selected_name
         self.materials = materials
@@ -623,6 +737,7 @@ class _State:
     def record(self, tool: str, result: dict[str, Any], *, ok: bool = True) -> dict[str, Any]:
         summary = result.get("summary") or result.get("error") or tool
         self.trace.append({"tool": tool, "ok": ok, "summary": str(summary)[:500]})
+        _note(self.turn, f"{DOING.get(tool, tool)}: {str(summary)[:120]}", ok=ok)
         return result
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -844,6 +959,25 @@ class _State:
                 "machines": {k: v for k, v in described.items() if k != "says"},
                 "note": "Whether it is wired to anything real is check_validity's answer, not this one.",
             })
+
+        if tool == "find_the_limit":
+            changing = str(args.get("changing") or "")
+            held = {k: v for k, v in args.items()
+                    if k not in ("changing", "over", "seconds") and v is not None}
+            held.pop(changing, None)
+            found = test_room.sweep(
+                self.app, {"kind": self.design.kind, "design_id": self.design.design_id,
+                           "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
+                           "component_overrides": self.overrides},
+                changing=changing, over=args.get("over") or (),
+                seconds=float(args.get("seconds", 3.0)), **held)
+            # The run worth looking at is played over the object, as one run is.
+            self.showing = found.get("playback")
+            return self.record(tool, {"summary": found["says"][:400], "sweep": changing,
+                                      "runs": [{k: v for k, v in row.items() if k != "says"}
+                                               for row in found["runs"]],
+                                      "changed_at": found["changed_at"],
+                                      "watching": found["watching"]})
 
         if tool == "try_it_in_a_room":
             answer = test_room.try_it(
@@ -1069,6 +1203,7 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         "instructions": instructions, "input": inputs,
         "tools": tools, "tool_choice": "auto",
     }
+    _note(state.turn, "thinking about what you asked")
     response = _call_model(app, payload)
     calls_used, began = 0, time.monotonic()
     for _round in range(MAX_TOOL_ROUNDS):
@@ -1120,6 +1255,7 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         # request already sets store=False, so nothing was being kept to point
         # at in any case.
         inputs = inputs + _carry(response) + outputs
+        _note(state.turn, "thinking about what that told it")
         if time.monotonic() - began > MAX_TURN_SECONDS:
             return _wrap_up(app, state, instructions, inputs,
                             f"after {MAX_TURN_SECONDS:.0f} seconds")
@@ -1231,7 +1367,7 @@ def _fallback_turn(state: _State, message: str) -> str:
 
 def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
             candidate: dict[str, Any], materials: list[str], library: list[dict[str, Any]],
-            history: Any = None) -> dict[str, Any]:
+            history: Any = None, turn: str | None = None) -> dict[str, Any]:
     """Run one conversational Workshop turn and atomically update ``candidate``."""
     # Browser chat may include recent transcript plus the current request. Keep a
     # generous bounded envelope, and keep its tail so CURRENT USER REQUEST (sent
@@ -1240,15 +1376,18 @@ def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
     if not message: raise ValueError("Workshop chat needs a message")
     selected_name = str((selected_part or {}).get("name") or "") or None
     original = deepcopy(candidate)
-    state = _State(app, candidate, selected_name, materials, library)
+    state = _State(app, candidate, selected_name, materials, library, turn)
     try:
         if getattr(app, "api_key", ""):
             reply = _model_turn(app, state, message=message, history=_history(history))
         else:
             reply = _fallback_turn(state, message)
-    except Exception:
+    except Exception as problem:
         candidate.clear(); candidate.update(original)
+        _note(turn, f"that did not work: {problem}", done=True, ok=False)
         raise
+    finally:
+        _note(turn, "", done=True)
     return {
         "reply": reply[:4000],
         # What it is waiting to be told, with answers to click. The page draws

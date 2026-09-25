@@ -590,6 +590,41 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # And the drawing is untouched: a point of view is not a representation.
         self.assertEqual("skin", self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
 
+    def test_a_bubble_is_the_size_of_what_it_says(self):
+        """A grid row takes an equal share of the box by default, so two short
+        messages in a tall log were two tall bubbles of mostly nothing."""
+        self.js("[...document.querySelectorAll('.ws-suggestion')][1].click()")
+        self.wait("document.querySelectorAll('#ws-chat-log .ws-chat-message').length>1")
+        sizes = self.js("""[...document.querySelectorAll('#ws-chat-log .ws-chat-message')].map(m=>{
+          const box=m.getBoundingClientRect(), inner=m.querySelector('.ws-chat-body').getBoundingClientRect(),
+                who=m.querySelector('.ws-chat-who').getBoundingClientRect();
+          return Math.round(box.height - (inner.height + who.height));})""")
+        # Whatever is left over is padding and the gap between the two lines,
+        # not a bubble stretched to fill a row.
+        for spare in sizes:
+            self.assertLess(spare, 30, sizes)
+
+    def test_the_chat_says_what_it_is_doing_while_it_does_it(self):
+        """A turn is one POST that answers at the end. Waiting at a bubble that
+        says "Working" and nothing else is waiting at a blank screen."""
+        self.js("""window.__progress=[];
+          const was=window.fetch.bind(window);
+          window.fetch=async(r,i)=>{ if(String(r).endsWith('/api/workshop/progress'))
+            window.__progress.push(JSON.parse(i.body).turn);
+            if(String(r).endsWith('/api/workshop/candidates')){
+              const body=JSON.parse(i.body); if(body.component_chat?.turn)window.__sentTurn=body.component_chat.turn; }
+            return was(r,i); };""")
+        # The page hands an id in with the turn and reads back what it has done.
+        self.js("document.querySelector('#ws-component-chat-text').value='make the legs thicker';"
+                "document.querySelector('#ws-component-chat').requestSubmit()")
+        self.wait("window.__progress.length>0", timeout=20)
+        self.assertTrue(self.js("window.__progress[0].length>10"), "a real turn id")
+        # The id it polls with is the one it sent with the turn, or it is
+        # reading somebody else's work.
+        self.assertEqual(self.js("window.__sentTurn"), self.js("window.__progress[0]"))
+        # What the steps SAY is checked in workshop_chat_tests, where the turn
+        # can be driven without a model.
+
     def test_the_chat_offers_things_to_ask_for(self):
         """A blank box is the hardest question on the page.
 
@@ -599,8 +634,12 @@ class WorkshopBrowserRegression(unittest.TestCase):
         """
         said = self.js("[...document.querySelectorAll('.ws-suggestion')].map(b=>b.textContent)")
         self.assertGreaterEqual(len(said), 4)
-        self.assertTrue(any("Drop" in line for line in said), said)
-        self.assertTrue(any("kg on its top" in line for line in said), said)
+        # And they point at finding a RANGE, because that is what testing is
+        # for: one run only says whether the number you guessed was over or
+        # under.
+        self.assertTrue(any("breaks it" in line for line in said), said)
+        self.assertTrue(any("light to heavy" in line for line in said), said)
+        self.assertTrue(any("midnight" in line for line in said), said)
         # Each one is a real turn: clicking it puts that message in the box and
         # sends it, rather than printing a canned answer.
         self.js("[...document.querySelectorAll('.ws-suggestion')][1].click()")
@@ -1136,7 +1175,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # Without a key the chat answers deterministically, but the turn is a
         # real one either way: the message goes into the log.
         self.wait("document.querySelectorAll('#ws-chat-log .ws-chat-message.user').length>0")
-        self.assertIn("Drop a 20 kg iron block",
+        self.assertIn("Find the weight that breaks it",
                       self.js("document.querySelector('#ws-chat-log .ws-chat-message.user').textContent"))
         # And the run controls are not on the bench at all: "Run simulation"
         # and "Reset to setup" went with the Test tab nobody could read.

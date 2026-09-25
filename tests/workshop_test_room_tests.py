@@ -376,6 +376,96 @@ class TheFourWaysOfTryingAThing(unittest.TestCase):
         self.assertTrue(all(not k.startswith(bench.MARKER + "#") for k in play["geometry"]))
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class FindingWhereItGivesWay(unittest.TestCase):
+    """The owner: "the main point when we are testing is to find the breaking
+    point or test how something works ... show how it can handle a weight under
+    X, cracks at Y, and shatters at Z."
+
+    One run says whether the number you guessed was over or under. That is not
+    what anybody wanted to know.
+    """
+
+    def setUp(self):
+        self.app = SimpleNamespace(engine_path=ENGINE, workshop_owner_id="owner")
+
+    @staticmethod
+    def a_table(material="oak"):
+        out = {"kind": "table", "design_id": f"limit-{material}", "purpose": "be stood on",
+               "parameters": {}, "component_overrides": {}}
+        from mcp import workshop_components
+        design, _ = workshop_components.design_from_spec(out)
+        out["component_overrides"] = {p.name: {"material": material} for p in design.parts}
+        return out
+
+    def test_it_says_where_the_answer_changes(self):
+        found = bench.sweep(self.app, self.a_table("oak"), changing="strike_kg",
+                            over=[2, 10, 40, 160], seconds=1.5, strike_speed_m_s=12.0)
+        print("\n    " + found["says"])
+        for row in found["runs"]:
+            print(f"      {row['strike_kg']:6.0f} kg -> {row['outcome']}")
+        self.assertEqual([2, 10, 40, 160], found["over"])
+        self.assertEqual(4, len(found["runs"]))
+        # Every row is a real run in a real room, not a number worked out
+        # between two other numbers.
+        self.assertTrue(all(row["says"] for row in found["runs"]))
+        if found["changed_at"] is not None:
+            self.assertIn("at", found["says"])
+            self.assertEqual(found["changed_at"], found["watching"])
+        # And there is one run kept to watch: the one where it changed.
+        self.assertGreater(len(found["playback"]["frames"]), 2)
+
+    def test_when_it_holds_all_the_way_it_says_to_look_higher(self):
+        found = bench.sweep(self.app, self.a_table("oak"), changing="load_kg",
+                            over=[1, 2, 3], seconds=1.0)
+        print("    " + found["says"])
+        self.assertTrue(found["same_all_the_way"])
+        self.assertIsNone(found["changed_at"])
+        self.assertIn("try higher", found["says"])
+        self.assertEqual(3, found["watching"], "the last one is the one worth watching")
+
+    def test_when_it_gives_way_even_at_the_smallest_it_says_to_look_lower(self):
+        """Which way to look is the whole value of the sentence.
+
+        Glass struck at 10 m/s breaks at 5 kg, the least that was tried, so the
+        answer is BELOW the range. Saying "past the end of what was tried"
+        would send somebody looking in exactly the wrong direction.
+        """
+        found = bench.sweep(self.app, self.a_table("glass"), changing="strike_kg",
+                            over=[5, 20, 80], seconds=1.5, strike_speed_m_s=10.0)
+        print("    " + found["says"])
+        self.assertTrue(found["same_all_the_way"])
+        self.assertIn("try lower", found["says"])
+        self.assertIn("even at 5", found["says"])
+
+    def test_a_sweep_is_a_range_of_answers_not_only_a_breaking_point(self):
+        """A panel gives nothing in the dark and a lot at noon."""
+        found = bench.sweep(self.app, self.a_table("oak"), changing="hour",
+                            over=[0, 6, 12], seconds=1.0)
+        print("    " + found["says"])
+        self.assertEqual([0, 6, 12], found["over"])
+        self.assertEqual(3, len(found["runs"]))
+
+    def test_what_a_sweep_refuses(self):
+        for over, because in (([1], "2 to 12"), ([1] * 20, "2 to 12"), ([3, 1], "goes up")):
+            with self.assertRaises(ValueError) as caught:
+                bench.sweep(self.app, self.a_table(), changing="load_kg", over=over)
+            self.assertIn(because, str(caught.exception))
+        with self.assertRaises(ValueError) as caught:
+            bench.sweep(self.app, self.a_table(), changing="the weather", over=[1, 2])
+        self.assertIn("turns up one of", str(caught.exception))
+
+    def test_a_sweep_takes_about_a_third_of_a_second_a_run(self):
+        """It is only worth doing because it is cheap."""
+        import time
+        began = time.monotonic()
+        bench.sweep(self.app, self.a_table("oak"), changing="load_kg", over=[10, 50, 100, 200],
+                    seconds=1.0)
+        took = time.monotonic() - began
+        print(f"    four runs plus the one to watch took {took:.1f} s")
+        self.assertLess(took, 20.0)
+
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
 class ARoomSomebodyWrote(unittest.TestCase):
     """The owner: "why can't the llm write bits of code to run tests? does it
     need to always be prebuilt?"

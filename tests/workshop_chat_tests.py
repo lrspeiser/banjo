@@ -460,6 +460,92 @@ class KeepingItThroughTheChat(unittest.TestCase):
         self.assertEqual(0, self.turn([("inspect_design", "{}")])["undo"])
 
 
+class SayingWhatItIsDoing(unittest.TestCase):
+    """A turn is one POST that answers when the whole thing is finished.
+
+    The work inside it is several round trips to the model with a run of the
+    little world in between. Waiting thirty seconds at a bubble that says
+    "Working" and nothing else is the same as waiting at a blank screen.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = types.SimpleNamespace(workshop_store=pathlib.Path(self.tmp.name) / "workshop",
+                                         api_key="k", model="gpt-5-mini")
+
+    @staticmethod
+    def a_table():
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def test_the_steps_are_written_as_the_turn_goes_and_read_back_by_id(self):
+        seen = []
+        replies = [
+            {"id": "r1", "output": [{"type": "function_call", "call_id": "c1",
+                                     "name": "inspect_design", "arguments": "{}"}]},
+            {"id": "r2", "output": [{"type": "function_call", "call_id": "c2",
+                                     "name": "edit_components",
+                                     "arguments": '{"selector":{"roles":["leg"]},"action":"thicker"}'}]},
+            {"id": "r3", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Done."}]}]},
+        ]
+
+        def answer(app, payload):
+            # Read it back mid-turn, which is what the page does while it waits.
+            seen.append(workshop_chat.progress("turn-1"))
+            return replies[len(seen) - 1]
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            workshop_chat.propose(self.app, message="thicker legs", selected_part=None,
+                                  candidate=self.a_table(), materials=["oak"], library=[],
+                                  history=[], turn="turn-1")
+        # It grew as the turn went, rather than arriving all at once at the end.
+        counts = [len(said["steps"]) for said in seen]
+        print("\n    steps as it went: " + " -> ".join(str(c) for c in counts), flush=True)
+        self.assertEqual([1, 3, 5], counts)
+        self.assertFalse(any(said["done"] for said in seen))
+        # In words a person reads, not the code's name for the tool. The
+        # thinking between the calls is said too, because that is where most of
+        # the wait is.
+        said = [step["said"] for step in seen[-1]["steps"]]
+        self.assertIn("thinking about what you asked", said[0])
+        self.assertIn("looking at the design", said[1])
+        self.assertIn("thinking about what that told it", said[2])
+        self.assertIn("changing the parts", said[3])
+        self.assertTrue(all(step["ok"] for step in seen[-1]["steps"]))
+        # Each one is stamped with how far into the turn it happened.
+        self.assertEqual(sorted(step["at_s"] for step in seen[-1]["steps"]),
+                         [step["at_s"] for step in seen[-1]["steps"]])
+        # And when the turn is over it says so, so the page can stop reading.
+        after = workshop_chat.progress("turn-1")
+        self.assertTrue(after["done"])
+        self.assertEqual(5, len(after["steps"]))
+
+    def test_a_turn_that_fails_says_so_rather_than_going_quiet(self):
+        with mock.patch.object(workshop_chat, "_call_model",
+                               side_effect=ValueError("the model said no")):
+            with self.assertRaises(ValueError):
+                workshop_chat.propose(self.app, message="x", selected_part=None,
+                                      candidate=self.a_table(), materials=["oak"], library=[],
+                                      history=[], turn="turn-2")
+        said = workshop_chat.progress("turn-2")
+        self.assertTrue(said["done"])
+        self.assertFalse(said["steps"][-1]["ok"])
+        self.assertIn("the model said no", said["steps"][-1]["said"])
+
+    def test_a_turn_nobody_asked_about_is_empty_rather_than_missing(self):
+        said = workshop_chat.progress("no-such-turn")
+        self.assertEqual([], said["steps"])
+        self.assertFalse(said["done"])
+
+    def test_it_does_not_remember_every_turn_for_ever(self):
+        for i in range(workshop_chat.PROGRESS_KEPT + 8):
+            workshop_chat._note(f"turn-{i}", "doing something")
+        self.assertLessEqual(len(workshop_chat._PROGRESS), workshop_chat.PROGRESS_KEPT)
+
+
 class ChatSurface(unittest.TestCase):
     def test_world_page_has_transcript_working_state_and_tool_trace_ui(self):
         page = (ROOT / "playground" / "world.html").read_text(encoding="utf-8")

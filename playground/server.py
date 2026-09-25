@@ -1286,6 +1286,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.server.app,body))
             if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.server.app,body))
             if path=="/api/workshop/library": return self.send(workshop_api.library(self.server.app,body))
+            # What a chat turn is doing WHILE it does it. A turn is one POST
+            # that answers at the end; this is how the page says what is going
+            # on in the meantime instead of showing a spinner for half a minute.
+            if path=="/api/workshop/progress":
+                import workshop_chat
+                return self.send(workshop_chat.progress(str((body or {}).get("turn") or "")))
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.

@@ -336,6 +336,47 @@ def _iron_cube_m(mass_kg: float) -> float:
     return (float(mass_kg) / IRON_KG_M3) ** (1.0 / 3.0)
 
 
+def _of_whole_cells(mass_kg: float, cell_m: float = CELL_M) -> tuple[list[float], float]:
+    """A block of that mass made of WHOLE cells, as near a cube as that allows.
+
+    A room of cells will not take a body whose sides are not a whole number of
+    them: "a 50 mm side is not a whole number of 40 mm cells, and the nearest
+    whole number is 40 mm - too far to substitute". So a 1 kg weight cannot be
+    the 50 mm iron cube it would like to be.
+
+    Rounding each side of the cube on its own is no good either -- 50 mm down
+    to 40 mm is half the mass. What works is to ask how many CELLS of iron that
+    mass is, and then to stack that many into the squarest block there is: 1 kg
+    is two cells, so an 80 x 40 x 40 mm bar, which weighs 1.008 kg.
+
+    Returns the sides in metres and the mass it really is.
+    """
+    one = IRON_KG_M3 * cell_m ** 3
+    wanted = max(1, round(float(mass_kg) / one))
+    # Square first, then near in mass. The other way round gives an exact mass
+    # in a shape nobody meant: 40 kg came out as a 40 x 40 x 3160 mm rod,
+    # because 988 cells in a line is exactly 988 cells.
+    allowed = max(1, round(0.02 * wanted))
+    reach = max(2, int(round(wanted ** (1.0 / 3.0))) + 3)
+    best, how = None, None
+    for a in range(1, reach + 1):
+        for b in range(a, reach + 1):
+            for c in {max(b, round(wanted / (a * b))), max(b, round(wanted / (a * b)) + 1)}:
+                off = abs(a * b * c - wanted)
+                if off > allowed:
+                    continue
+                score = (c / a, off)
+                if best is None or score < best:
+                    best, how = score, (a, b, c)
+    if how is None:
+        # Nothing within the tolerance: take the nearest there is.
+        how = min(((a, b, max(b, round(wanted / (a * b))))
+                   for a in range(1, reach + 1) for b in range(a, reach + 1)),
+                  key=lambda t: (abs(t[0] * t[1] * t[2] - wanted), t[2] / t[0]))
+    a, b, c = how
+    return [a * cell_m, b * cell_m, c * cell_m], a * b * c * one
+
+
 def _weight(name: str, mass_kg: float, over, gap_m: float, exact: bool) -> tuple[str, dict[str, Any]]:
     """An iron block of that mass, hanging just over the middle of `over`.
 
@@ -343,16 +384,20 @@ def _weight(name: str, mass_kg: float, over, gap_m: float, exact: bool) -> tuple
     then presses on it with its own weight through real contact, which is what a
     weight does. A declared downward force would hold steady through a collapse.
     """
-    side = _iron_cube_m(mass_kg)
     lo, hi = over
-    at = [(lo[0] + hi[0]) / 2.0, hi[1] + gap_m + side / 2.0, (lo[2] + hi[2]) / 2.0]
     if exact:
+        # Nothing about an exact body is on the cell grid, so it is the cube it
+        # wants to be.
+        side = _iron_cube_m(mass_kg)
+        at = [(lo[0] + hi[0]) / 2.0, hi[1] + gap_m + side / 2.0, (lo[2] + hi[2]) / 2.0]
         return ("precise_rigid_bodies",
                 {"name": name, "material": "iron", "position_m": [round(v, 6) for v in at],
                  "orientation_wxyz": [1.0, 0.0, 0.0, 0.0],
                  "parts": [{"name": "weight", "dimensions_m": [side, side, side],
                             "center_local_m": [0.0, 0.0, 0.0]}]})
-    return ("bodies", _box(name, "iron", (side, side, side), at))
+    size, _ = _of_whole_cells(mass_kg)
+    at = [(lo[0] + hi[0]) / 2.0, hi[1] + gap_m + size[1] / 2.0, (lo[2] + hi[2]) / 2.0]
+    return ("bodies", _box(name, "iron", size, at))
 
 
 def _striker(name: str, mass_kg: float, speed_m_s: float, at_box, fraction: float,
@@ -362,19 +407,23 @@ def _striker(name: str, mass_kg: float, speed_m_s: float, at_box, fraction: floa
     `fraction` is 0 at its feet and 1 at its top. It starts one of its own
     widths clear of the thing so that the first thing it touches is the thing.
     """
-    side = _iron_cube_m(mass_kg)
     lo, hi = at_box
-    y = lo[1] + max(0.0, min(1.0, fraction)) * (hi[1] - lo[1])
-    y = max(GROUND_M + side / 2.0, min(y, hi[1]))
-    at = [lo[0] - side, y, (lo[2] + hi[2]) / 2.0]
     speed = [float(speed_m_s), 0.0, 0.0]
     if exact:
+        side = _iron_cube_m(mass_kg)
+        y = max(GROUND_M + side / 2.0,
+                min(lo[1] + max(0.0, min(1.0, fraction)) * (hi[1] - lo[1]), hi[1]))
+        at = [lo[0] - side, y, (lo[2] + hi[2]) / 2.0]
         return ("precise_rigid_bodies",
                 {"name": name, "material": "iron", "position_m": [round(v, 6) for v in at],
                  "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "velocity_m_s": speed,
                  "parts": [{"name": "striker", "dimensions_m": [side, side, side],
                             "center_local_m": [0.0, 0.0, 0.0]}]})
-    return ("bodies", dict(_box(name, "iron", (side, side, side), at), velocity_m_s=speed))
+    size, _ = _of_whole_cells(mass_kg)
+    y = max(GROUND_M + size[1] / 2.0,
+            min(lo[1] + max(0.0, min(1.0, fraction)) * (hi[1] - lo[1]), hi[1]))
+    at = [lo[0] - size[0], y, (lo[2] + hi[2]) / 2.0]
+    return ("bodies", dict(_box(name, "iron", size, at), velocity_m_s=speed))
 
 
 #: The name of the cell-sized block every room of exact bodies needs to size
@@ -578,7 +627,14 @@ class Bench:
             spec_now.setdefault(where, []).append(weight)
             did["load_kg"] = load_kg
             did["on"] = str(on or "top")
+            side, really = ((("cube", _iron_cube_m(load_kg)), load_kg) if exact
+                            else (("block",) + tuple(_of_whole_cells(load_kg)[:1]),
+                                  _of_whole_cells(load_kg)[1]))
             did["weight_side_m"] = round(_iron_cube_m(load_kg), 4)
+            # A weight of cells is a whole number of them, so what it really
+            # weighs is not always what was asked for. Say the real one.
+            if abs(really - load_kg) > 0.005 * max(load_kg, 1.0):
+                did["really_kg"] = round(really, 3)
             if from_m:
                 did["dropped_on_from_m"] = from_m
 
@@ -836,6 +892,129 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
         if record:
             answer["playback"] = room.playback()
         return answer
+
+
+#: What a sweep can turn up, and what each one means at a run.
+SWEEPS = {
+    "load_kg": "kilograms set on it",
+    "from_m": "metres a weight is dropped on it from",
+    "drop_m": "metres the thing itself is dropped from",
+    "slide_m_s": "metres a second it is started at",
+    "strike_kg": "kilograms thrown at its side",
+    "strike_speed_m_s": "metres a second a block is thrown at it",
+    "hour": "the hour of the day",
+}
+#: How many runs one sweep may take. Each is a whole little world, made and
+#: thrown away; a table's is about a third of a second.
+MAX_RUNS = 12
+
+
+def as_try_it(flat: dict[str, Any]) -> dict[str, Any]:
+    """The flat names a sweep turns up, as the arguments try_it takes.
+
+    A sweep says "strike_kg" because that is one number to turn up; try_it
+    takes a whole `strike`, because a thrown block is a thing with a mass and a
+    speed. Same for the hour, which is a sky.
+    """
+    out = {k: v for k, v in flat.items()
+           if k not in ("strike_kg", "strike_speed_m_s", "strike_height_fraction", "hour")}
+    if float(flat.get("strike_kg") or 0.0) > 0.0:
+        out["strike"] = {"kg": float(flat["strike_kg"]),
+                         "speed_m_s": float(flat.get("strike_speed_m_s", 8.0)),
+                         "height_fraction": float(flat.get("strike_height_fraction", 1.0))}
+    if flat.get("hour") is not None:
+        out["day"] = {"day_s": 240.0, "hour": float(flat["hour"])}
+    return out
+
+
+def _outcome(said: dict[str, Any]) -> str:
+    """What became of it, in one word, for a row of a sweep."""
+    if said["broke"]:
+        return "broke"
+    if said["fell_over"]:
+        return "went over"
+    if said["dented"]:
+        return "dented"
+    return "held"
+
+
+def sweep(app: Any, candidate: dict[str, Any], *, changing: str, over: Any,
+          seconds: float = 3.0, keep: str = "first change", **how) -> dict[str, Any]:
+    """Run the same test again and again with one thing turned up, and say where it changed.
+
+    The owner: *"the main point when we are testing is to find the breaking
+    point or test how something works ... it can even do multiple steps, like
+    show how it can handle a weight under X, cracks at Y, and shatters at Z."*
+
+    One run tells you whether a number you guessed was over or under. A sweep
+    tells you where the answer is, which is the thing anybody actually wanted
+    to know. Every row is a real run in a real little world -- there is no
+    interpolation and nothing is inferred between two rows.
+    """
+    if changing not in SWEEPS:
+        raise ValueError(f"a sweep turns up one of {sorted(SWEEPS)}; {changing!r} is not one")
+    steps = [float(v) for v in (over or ())]
+    if not 2 <= len(steps) <= MAX_RUNS:
+        raise ValueError(f"a sweep is 2 to {MAX_RUNS} values of {changing}")
+    if sorted(steps) != steps:
+        raise ValueError("a sweep goes up, so that where it changes is where it changes")
+    rows, watching, changed_at = [], None, None
+    for value in steps:
+        said = try_it(app, candidate, seconds=seconds, record=False,
+                      **as_try_it({**how, changing: value}))
+        row = {changing: value, "outcome": _outcome(said),
+               "moved_m": round(math.dist(
+                   said["ended"]["bodies"].get(said["made"].get("root_body") or "", {}).get("at_m")
+                   or [0, 0, 0],
+                   said["began"]["bodies"].get(said["made"].get("root_body") or "", {}).get("at_m")
+                   or [0, 0, 0]), 4),
+               "turned_deg": said["ended"]["bodies"].get(
+                   said["made"].get("root_body") or "", {}).get("turn_deg"),
+               "pieces": sum(b["pieces"] for b in said["broke"]) or None,
+               "says": said["says"]}
+        # A panel's answer is the point of a sweep over the hour, so carry it.
+        if said["ended"]["panels"]:
+            row["watts"] = round(sum(p["power_w"] for p in said["ended"]["panels"]), 2)
+        if said["ended"]["stores"]:
+            row["charge_j"] = round(said["ended"]["stores"][0]["charge_j"], 1)
+        rows.append(row)
+        if changed_at is None and rows[0]["outcome"] != row["outcome"]:
+            changed_at = value
+    # One run kept to watch, made again with the recording on: the first that
+    # was different, or the last, because that is the one worth looking at.
+    watch_at = changed_at if changed_at is not None else steps[-1]
+    watching = try_it(app, candidate, seconds=seconds, **as_try_it({**how, changing: watch_at}))
+    outcomes = [row["outcome"] for row in rows]
+    return {"schema": SCHEMA, "sweep": changing, "over": steps, "runs": rows,
+            "changed_at": changed_at, "watching": watch_at,
+            "says": _swept(changing, rows, changed_at),
+            "playback": watching.get("playback"),
+            "same_all_the_way": len(set(outcomes)) == 1}
+
+
+def _swept(changing: str, rows: list[dict[str, Any]], changed_at: float | None) -> str:
+    """Where it changed, in a sentence."""
+    said = SWEEPS[changing]
+    outcomes = [row["outcome"] for row in rows]
+    if len(set(outcomes)) == 1 and "watts" in rows[0]:
+        lo, hi = rows[0], rows[-1]
+        return (f"over {rows[0][changing]:g} to {rows[-1][changing]:g} {said} it gives "
+                f"{lo['watts']:g} W to {hi['watts']:g} W")
+    if len(set(outcomes)) == 1 and outcomes[0] == "held":
+        return (f"it held all the way from {rows[0][changing]:g} to {rows[-1][changing]:g} "
+                f"{said}; whatever gives way does so above {rows[-1][changing]:g}, so try higher")
+    if len(set(outcomes)) == 1:
+        # Everything gave way, including the smallest. The answer is BELOW the
+        # range, not above it, and saying "past the end" would send anyone
+        # looking in the wrong direction.
+        return (f"it {outcomes[0]} even at {rows[0][changing]:g} {said}, the least that was "
+                f"tried, and at every step up to {rows[-1][changing]:g}; the limit is below "
+                f"{rows[0][changing]:g}, so try lower")
+    steps = []
+    for i, row in enumerate(rows):
+        if i == 0 or row["outcome"] != rows[i - 1]["outcome"]:
+            steps.append(f"{row['outcome']} at {row[changing]:g}")
+    return f"over {said}: " + ", ".join(steps)
 
 
 def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
