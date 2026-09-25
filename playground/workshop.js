@@ -647,8 +647,17 @@ function pickPart(event) {
 
 let probing = false;
 function reprobe() {
-  if (bench.selectedBenchTest !== "force_probe" || !bench.selectedPart || probing) return;
-  probing = true; const config = benchConfig(); showForceAt(bench.forcePoint, config.force_n);
+  // Feeling a point is its own question and always was. It used to wait for
+  // "force_probe" to be the SELECTED test, which the picker can never offer:
+  // the catalogue keeps only tests tagged "simulation" and this one is tagged
+  // "analysis". Every one of its five callers was dead. It needs a part picked
+  // and a point on it, and takes the force from the push panel beside it.
+  if (!bench.selectedPart || !bench.forcePoint || probing) return;
+  probing = true;
+  const config = { force_n: Number($("#ws-push-force")?.value) || 1000,
+                   direction: $("#ws-push-way")?.value || "down",
+                   at_m: bench.forcePoint ? [bench.forcePoint.x, bench.forcePoint.y, bench.forcePoint.z] : null };
+  showForceAt(bench.forcePoint, config.force_n);
   guard(null, async () => {
     try {
       const answer = await api("/api/workshop/plan", {
@@ -1023,8 +1032,30 @@ function renderHeldTo() {
     const row = make("div", { class:"ws-held-row ws-held-run" });
     const said = test.kind === "static_load" ? `hold ${test.load_kg} kg on its ${test.on}`
       : test.kind === "tip" ? `tip about ${test.direction}` : test.kind;
-    row.append(make("span", {}, said), make("strong", {}, "run it"));
+    // "run it" was a <strong>: it read like a button, and nothing happened.
+    const go = make("button", { type:"button", class:"ws-run-declared" }, "run it");
+    go.onclick = () => runDeclared(test, go);
+    row.append(make("span", {}, said), go);
     root.append(row);
+  }
+}
+
+// What a declared test means at the bench: put the thing in a little world and
+// do to it what the design says it must take.
+async function runDeclared(test, button) {
+  const was = button.textContent;
+  button.disabled = true; button.textContent = "running…";
+  try {
+    const answer = await api("/api/workshop/plan", {
+      ...candidateBody(),
+      try_in_a_room: { seconds: 6, load_kg: test.kind === "static_load" ? test.load_kg : 0,
+                       on: test.on || "top", tip: test.kind === "tip" ? test.direction : null },
+    });
+    say(answer.room?.says || "It ran, and said nothing.");
+  } catch (error) {
+    say(`That test would not run: ${error.message || error}`, true);
+  } finally {
+    button.disabled = false; button.textContent = was;
   }
 }
 
@@ -1141,19 +1172,76 @@ function installBench() {
   bar.append(views, apartLabel);
   viewport.append(bar);
 
-  // Right: the chat on top, then what it is held to. Everything the old bench
-  // had is folded into one place until it earns a spot in this frame.
+  // Right: the chat, what it is held to, and then the bench itself in named
+  // sections. Everything below used to be swept into one collapsed <details>
+  // called "Bench extras" whose summary was grey 0.74rem text. Fifty working
+  // controls lived in there -- every way of saving, every way of testing and
+  // every way of editing a part -- and nobody opened it. The bench was not
+  // short of what it could do; it was short of anywhere to see it.
   const chatForm = $("#ws-component-chat");
   const chatHome = make("section", { id:"ws-chat-home" });
   chatHome.append(make("h2", {}, "Chat"));
   const heldBox = make("section", { id:"ws-held-box" });
   heldBox.append(make("h2", {}, "Held to"), make("div", { id:"ws-held" }));
-  const extras = make("details", { id:"ws-extras" });
-  extras.append(make("summary", {}, "Bench extras"));
+
+  // The four that a person reaches for are sections, open. The two that
+  // describe how the bench works are drawers, shut.
+  const group = (id, title) => {
+    const box = make("section", { id, class:"ws-group" });
+    box.append(make("h2", {}, title));
+    return box;
+  };
+  const drawer = (id, title) => {
+    const box = make("details", { id, class:"ws-group ws-drawer" });
+    box.append(make("summary", {}, title));
+    return box;
+  };
+  const groups = {
+    part: group("ws-group-part", "The part you picked"),
+    test: group("ws-group-test", "Try it"),
+    make: group("ws-group-make", "Materials and making it"),
+    save: group("ws-group-save", "Save and reopen"),
+    measure: drawer("ws-group-measure", "How it measures up"),
+    plumbing: drawer("ws-group-plumbing", "How the bench works"),
+  };
+  // Where each thing goes. Some of what was swept in is anonymous -- a heading,
+  // then the fields under it -- so an unnamed node joins whatever the last
+  // heading joined.
+  const BY_ID = {
+    "ws-component-editor":"part", "ws-test-bench":"test",
+    "ws-bom-box":"make", "ws-install-box":"make",
+    "ws-product-library-box":"save", "ws-personal-library-box":"save", "ws-saved-designs":"save",
+    "ws-name":"measure", "ws-purpose":"measure", "ws-checks":"measure",
+    "ws-buildability":"measure", "ws-measurement-basis":"measure",
+    "ws-materialize":"plumbing", "ws-plan":"plumbing",
+  };
+  const BY_HEADING = {
+    "save design":"save", "saved designs":"save", "my library":"save", "product library":"save",
+    "cheap checks":"measure", "feedback":"plumbing", "materialization":"plumbing",
+    "how it compiles":"plumbing", "test bench":"test", "materials":"make",
+  };
+  let following = "plumbing";
+  const placeIn = (node) => {
+    const id = node.id || "";
+    if (BY_ID[id]) return (following = BY_ID[id]);
+    if (node.classList && node.classList.contains("ws-metrics")) return (following = "measure");
+    if (node.classList && node.classList.contains("ws-viewbar-extra")) return "plumbing";
+    if (/^H[1-6]$/.test(node.tagName)) {
+      const said = (node.textContent || "").trim().toLowerCase();
+      // "Components" was the heading over the parts list, which now lives in
+      // the left pane on its own; the heading was left behind.
+      if (said === "components") return null;
+      if (BY_HEADING[said]) return (following = BY_HEADING[said]);
+    }
+    return following;
+  };
   const rightKeep = [...right.children];
-  right.replaceChildren(chatHome, heldBox, extras);
-  for (const node of rightKeep) extras.append(node);
-  for (const node of leftKeep) if (node !== parts) extras.append(node);
+  right.replaceChildren(chatHome, heldBox, groups.part, groups.test, groups.make, groups.save,
+                        groups.measure, groups.plumbing);
+  for (const node of [...rightKeep, ...leftKeep.filter((n) => n !== parts)]) {
+    const where = placeIn(node);
+    if (where) groups[where].append(node); else node.remove();
+  }
   if (chatForm) chatHome.append(chatForm);
 
   // The bench tests stay cards rather than a dropdown: what each one does to
@@ -1175,8 +1263,6 @@ function installBench() {
   // tabs now, so it is simply there.
   const dock = $("#ws-simulation-dock");
   if (dock) dock.hidden = false;
-  // Closing the bench puts the product back in front of you.
-  extras.addEventListener("toggle", () => { if (!extras.open) setWorkspaceMode("build"); });
 
   // Wire and Skin are the product. Matter, physics, collision and relations
   // describe how it is compiled, which is bench plumbing, not editing a thing.
@@ -1186,7 +1272,7 @@ function installBench() {
     for (const button of [...viewbar.children]) {
       if (!["wire", "skin"].includes(button.dataset.view)) plumbing.append(button);
     }
-    if (plumbing.children.length) extras.append(make("h3", {}, "How it compiles"), plumbing);
+    if (plumbing.children.length) groups.plumbing.append(make("h3", {}, "How it compiles"), plumbing);
   }
 
   // The rack runs along the bottom, where the world keeps its bag slots.

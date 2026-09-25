@@ -480,13 +480,29 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(0, self.js(
             "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
         # The bench is one screen: the left rail is the parts of the thing in
-        # front of you, and the libraries it used to hold are in Bench extras.
+        # front of you, and everything else is a named section on the right.
         self.assertEqual(["Parts"], self.js(
             "[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
         self.assertEqual(0, self.js("document.querySelectorAll('.ws-left details').length"))
-        moved = self.js("[...document.querySelectorAll('#ws-extras h2')].map(h=>h.textContent)")
+        # It all used to be swept into one shut drawer called "Bench extras",
+        # and about fifty working controls were never found. There is no such
+        # drawer now.
+        self.assertEqual(0, self.js("document.querySelectorAll('#ws-extras').length"))
+        named = self.js("[...document.querySelectorAll('.ws-right > .ws-group > h2,"
+                        " .ws-right > .ws-group > summary')].map(h=>h.textContent)")
+        for heading in ("The part you picked", "Try it", "Materials and making it",
+                        "Save and reopen", "How it measures up", "How the bench works"):
+            self.assertIn(heading, named)
+        # And the things that were buried are inside them, on screen.
         for heading in ("Product library", "My library", "Saved designs"):
-            self.assertIn(heading, moved)
+            self.assertIn(heading, self.js(
+                "[...document.querySelectorAll('#ws-group-save h2, #ws-group-save h3')]"
+                ".map(h=>h.textContent)"))
+        # The four a person reaches for are open; only the two that describe how
+        # the bench works are shut.
+        self.assertEqual(["ws-group-measure", "ws-group-plumbing"],
+                         self.js("[...document.querySelectorAll('.ws-right > details.ws-group')]"
+                                 ".map(d=>d.id)"))
 
     def test_cart_trace_has_actual_intermediate_simulation_states(self):
         self.open_product("cart")

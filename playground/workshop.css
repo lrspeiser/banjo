@@ -173,8 +173,14 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-grid { grid-template-columns:240px minmax(240px,1fr) 320px; }
 .ws-viewport { display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden; }
 .ws-viewbar { position:static;grid-row:1;flex-wrap:wrap;padding:.65rem .8rem;border-bottom:1px solid #303b49; }
-#workshop-stage { grid-row:2;min-height:0;min-width:0;height:100%; }
-.ws-caption { display:none; }
+#workshop-stage { grid-row:2;grid-column:1;min-height:0;min-width:0;height:100%; }
+.ws-caption { position:absolute;left:0;right:0;top:calc(100% - 0px);pointer-events:none; }
+/* grid-column:1 is load-bearing. The canvas also asks for row 2 with no column,
+   so without it the caption is auto-placed into a SECOND column and the view
+   splits 562/302 -- the canvas loses a third of its width to a line of text. */
+.ws-viewport > .ws-caption { position:static;grid-row:2;grid-column:1;align-self:end;justify-self:start;
+  margin:0 0 .4rem .9rem;padding:.2rem .45rem;border-radius:.3rem;background:rgba(13,17,23,.72);
+  color:#8fa3b8;font-size:.68rem;pointer-events:none;z-index:2; }
 #ws-view-context { grid-row:3;padding:.6rem .9rem;border-top:1px solid #303b49;background:#111923;min-width:0; }
 #ws-view-context p { margin:.3rem 0;font-size:.78rem;color:#b7c7d8;line-height:1.4; }
 #ws-view-context strong { font-size:.9rem; }
@@ -235,8 +241,10 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-held-row span{flex-grow:1;color:#c3d4e4}
 .ws-held-row strong{font-weight:500;color:#dce7f5}
 .ws-held-run strong{color:#6a7d91}
-#ws-extras{margin-top:.8rem;border-top:1px solid #27313d;padding-top:.5rem}
-#ws-extras>summary{cursor:pointer;color:#8fa3b8;font-size:.74rem}
+.ws-group{margin-top:.9rem;border-top:1px solid #27313d;padding-top:.6rem}
+.ws-group>h2,.ws-drawer>summary{margin:0 0 .5rem;font-size:.64rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#8fa3b8;font-weight:700}
+.ws-drawer>summary{cursor:pointer;list-style:revert}
 #ws-rack-foot{grid-column:1/-1;display:flex;align-items:center;gap:.7rem;padding:.5rem .8rem;border-top:1px solid #27313d}
 #ws-rack-foot h2{margin:0;white-space:nowrap}
 #ws-rack-strip{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
