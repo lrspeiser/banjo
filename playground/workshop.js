@@ -2581,6 +2581,13 @@ function took(answer, keepPart = null) {
 // Where a point of the object is on the page, so that a test (or a tool) can
 // click a face of it rather than a pixel that a change of framing would move.
 stage.pagePointOf = (point) => {
+  // As the camera stands NOW, not as it stood at the last frame. lookAt sets
+  // the camera's rotation and leaves matrixWorldInverse -- which is what
+  // project() uses -- to be rebuilt by the next render. So a point of view
+  // clicked and read in the same turn answered for the PREVIOUS point of view
+  // until a frame happened to land in between: green on a machine drawing at
+  // 60 fps, red on a runner drawing when it can.
+  camera.updateMatrixWorld();
   const v = new THREE.Vector3(...point).project(camera), r = stage.getBoundingClientRect();
   return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
 };

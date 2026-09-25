@@ -93,6 +93,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
             image = self.page.send("Page.captureScreenshot", {"format":"png"})["data"]
             (output / name).write_bytes(base64.b64decode(image))
 
+    def gap(self, a, b):
+        """How far apart two points of the object are on the page, in pixels."""
+        where = ("(p)=>{const q=document.querySelector('#workshop-stage').pagePointOf(p);return q}")
+        one = self.js(f"({where})({a})")
+        two = self.js(f"({where})({b})")
+        return round(((one[0] - two[0]) ** 2 + (one[1] - two[1]) ** 2) ** 0.5)
+
     def js(self, expression):
         return self.page.evaluate(expression, await_promise=True)
 
@@ -584,11 +591,43 @@ class WorkshopBrowserRegression(unittest.TestCase):
             seen[name] = [round(v) for v in where()]
         # Four places to stand, four different pictures.
         self.assertEqual(4, len({tuple(v) for v in seen.values()}), seen)
-        # Looking down, a point 0.3 m in front of the middle is ABOVE one
-        # 0.3 m behind it on the screen; looking from the front it is not.
-        self.assertLess(seen["Top"][1], seen["Front"][1], seen)
+        # And each of them puts the object's own axes somewhere different on
+        # the screen, which is what looking from somewhere else MEANS. Two
+        # points 0.6 m apart along the depth of the room, and two 0.6 m apart
+        # across it: from the front the depth pair is on top of itself and the
+        # across pair is spread out, from the side the other way about, and
+        # from above both are spread. Measured, in pixels:
+        #
+        #     Front  depth 22   across 259
+        #     Side   depth 259  across 22
+        #     Top    depth 277  across 297
+        #
+        # A twelvefold difference, so a fourfold test has room in it. This used
+        # to compare one point's height between two views, which is a thing
+        # about the FRAMING as much as the camera -- and it asserted the
+        # opposite of what is true, passing only because the projection it read
+        # was a frame behind.
+        apart = {}
+        for name in ("Front", "Side", "Top"):
+            self.click(f'[data-point-of-view="{name}"]')
+            apart[name] = {"depth": self.gap([0, 0.75, -0.3], [0, 0.75, 0.3]),
+                           "across": self.gap([-0.3, 0.75, 0], [0.3, 0.75, 0])}
+        self.assertGreater(apart["Front"]["across"], 4 * apart["Front"]["depth"], apart)
+        self.assertGreater(apart["Side"]["depth"], 4 * apart["Side"]["across"], apart)
+        self.assertGreater(apart["Top"]["depth"], 4 * apart["Front"]["depth"], apart)
         # And the drawing is untouched: a point of view is not a representation.
         self.assertEqual("skin", self.js("document.querySelector('.ws-viewbar [aria-pressed=true]').dataset.view"))
+        # Where a point IS does not depend on a frame having been drawn since.
+        # lookAt sets the camera's rotation and leaves the inverse world matrix
+        # -- which is what project() reads -- to the next render, so this
+        # answered for the PREVIOUS point of view whenever a frame did not land
+        # in the gap. It did on a machine drawing at 60 fps and did not on the
+        # runner, which is a test that passes here and fails there.
+        self.click('[data-point-of-view="Front"]')
+        at_once = self.js("document.querySelector('#workshop-stage').pagePointOf([0.55,0.75,0.3])")
+        after = self.js("new Promise(go=>requestAnimationFrame(()=>requestAnimationFrame("
+                        "()=>go(document.querySelector('#workshop-stage').pagePointOf([0.55,0.75,0.3])))))")
+        self.assertEqual([round(v) for v in at_once], [round(v) for v in after])
 
     def test_a_bubble_is_the_size_of_what_it_says(self):
         """A grid row takes an equal share of the box by default, so two short
