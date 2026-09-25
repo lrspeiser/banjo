@@ -1565,7 +1565,12 @@ function watchTheTurn(turn) {
     } catch { /* the answer itself is what matters; this is only the commentary */ }
     if (!stopped) setTimeout(tick, 900);
   };
-  setTimeout(tick, 600);
+  // Ask once straight away, before the turn itself is even sent. A turn that
+  // ends quickly -- an error, a refusal, a question -- would otherwise be over
+  // before the first read, and a wait that sometimes says nothing is worse
+  // than one that always does. The first answer is usually empty, which shows
+  // nothing; the point is that the reading has started.
+  tick();
   return { stop: () => { stopped = true; } };
 }
 

@@ -617,7 +617,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # The page hands an id in with the turn and reads back what it has done.
         self.js("document.querySelector('#ws-component-chat-text').value='make the legs thicker';"
                 "document.querySelector('#ws-component-chat').requestSubmit()")
-        self.wait("window.__progress.length>0", timeout=20)
+        # The reading starts before the turn is even sent, so this holds whether
+        # the turn takes half a minute or fails at once. It used to wait 600 ms
+        # first, and a turn that ended sooner than that -- no key, a refusal --
+        # said nothing at all.
+        self.wait("window.__progress.length>0 && window.__sentTurn", timeout=20)
         self.assertTrue(self.js("window.__progress[0].length>10"), "a real turn id")
         # The id it polls with is the one it sent with the turn, or it is
         # reading somebody else's work.
