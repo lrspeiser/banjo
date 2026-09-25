@@ -59,6 +59,15 @@ way as the rest of the sim. The Workshop page calls only these routes.
 | `POST` | `/api/workshop/library` | List/load/save components and assemblies, set material prices, and save functional-test presets. |
 | `POST` | `/api/workshop/feedback` | Save rating/note/selection feedback and optionally persist the design. |
 | `POST` | `/api/workshop/remembered` | Read saved feedback, designs, library items, pricebook and test presets. |
+| `POST` | `/api/workshop/progress` | Read what a chat turn has done so far, while it is still doing it. Takes `{"turn": "<the id sent with the request>"}` and changes nothing. |
+
+A turn of the Workshop assistant is one `POST /api/workshop/candidates` that
+answers when the whole thing is finished, and the work inside it is several
+round trips to the model. The page makes an id, sends it as
+`component_chat.turn`, and reads `/api/workshop/progress` about once a second so
+the wait can say what is happening. Steps are kept for fifteen minutes and then
+forgotten; asking about a turn nobody has heard of is not an error, it answers
+with no steps.
 
 The HTTP routes remain backward-compatible. `mcp/workshop_platform.py` names the
 same operations for MCP and other programmatic clients.
