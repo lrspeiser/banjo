@@ -315,8 +315,30 @@ test results kept against the exact shape they were measured on.
 ## 4. Close the loop to the world
 
 - **4.1 Editing a design and making it again puts a SECOND thing in the room.**
-  `commit` only appends, with a fresh uuid root every time. There is no
-  uninstall, no replace, no update. (`workshop_install.py:711`, `:724`)
+  **Done (2026-09-25).** `preview` takes `replace`: `true` for the most recent
+  still-standing copy of this design, or an explicit list of bodies. The bench
+  asks for it, so Make it after an edit puts the new one where the old one was.
+  Funded fabrication does not: each run of a job is its own output and none of
+  them replaces another, which is why this is asked for rather than assumed.
+
+  What it took to make the append-only guard safe for removal, all of it
+  measured against the engine rather than reasoned about:
+
+  - A group of cells is **several names in the spec and one body in the
+    engine** -- they are joined -- so what the spec drops and what the world
+    loses are different sets, and the guard needs both.
+  - The engine counts the **things** it let go of, not the bodies: five bodies
+    installed as one group report as one.
+  - A machine cannot be identified by name. The replacement declares a battery
+    called "battery" too, so the name survives while the thing does not. Nor by
+    body: a saved motor does not always say which body it is on, because the
+    engine fills that in from the joints and the joints travel only when their
+    set changes. What is checked instead is that every machine naming a body
+    that is STAYING is still there, unchanged and in order, and that nothing
+    which went named a staying body.
+  - A pin, a saved gesture, a blade's cut, a tool point and an interaction
+    point all go out with the body they are about; anything else still naming a
+    removed body is a refusal with the key that named it. (`workshop_install.py:711`, `:724`)
 - **4.2 An installed body has no staleness signal.** The recipe stores no
   fingerprint and no revision, so nothing can tell whether the thing standing
   in the room still matches the design.

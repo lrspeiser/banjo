@@ -165,9 +165,11 @@ class NativeInstallation(unittest.TestCase):
         self.ctx=install.context(self.app,{})
 
     def snap(self):return install._snapshot(self.live)
-    def preview(self,material='oak',position=(3,0),candidate=None):
-        return install.preview(self.app,{'session':self.ctx['session'],'scene':'yard','mode':'authoring',
-          'position_m':list(position),'candidate':candidate or {'kind':'table','parameters':{'material':material}}})
+    def preview(self,material='oak',position=(3,0),candidate=None,replace=None):
+        body={'session':self.ctx['session'],'scene':'yard','mode':'authoring',
+              'position_m':list(position),'candidate':candidate or {'kind':'table','parameters':{'material':material}}}
+        if replace is not None:body['replace']=replace
+        return install.preview(self.app,body)
     def request(self,p,request='install-request-1'):
         return {'scene':'yard','session':self.ctx['session'],'preview_id':p['preview_id'],'request_id':request}
     def do_commit(self,p,request='install-request-1'):return install.commit(self.app,self.request(p,request))
@@ -649,17 +651,33 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual({f'{root}/top'}|{f'{root}/leg-{i}' for i in range(1,5)},
                          {b['part'] for b in spec['bodies'] if b.get('part')})
         self.assertNotIn('interfaces',spec)
-        # Every label carries the root, so a second table of the same design is
-        # its own object: a joint in one could never be read as a joint in the
-        # other once the two are standing in one room.
+        # Making the same design again REPLACES the one standing there. It used
+        # to append, with a fresh root every time, so editing a design and
+        # making it again left you with the old one and the new one side by
+        # side and no way to tell which was which.
         self.ctx=install.context(self.app,{})
-        second=self.do_commit(self.preview(position=(7,0),candidate=self.built()),
-                              request='install-request-2')['root_body']
+        again=self.do_commit(self.preview(position=(7,0),candidate=self.built(),replace=True),
+                             request='install-request-2')
+        second=again['root_body']
         self.assertNotEqual(root,second)
+        # It says what it took out, and that is every body of the old one --
+        # a group of cells is one thing in the world and five names in the spec
+        # that made it, and leaving any of them behind is not a replacement.
+        self.assertEqual([root]+[f'{root}-{i}' for i in range(1,5)],again['replaced'])
         roots=[b['part'].split('/')[0] for b in self.room.spec['bodies'] if b.get('part')]
-        self.assertEqual({root,second},set(roots))
+        self.assertEqual({second},set(roots),'one table, not two')
         self.assertEqual(5,len({b['part'] for b in self.room.spec['bodies']
                                 if b.get('part','').startswith(f'{second}/')}))
+
+        # Asking for a second one gets a second one, and every label carries
+        # its own root: a joint in one could never be read as a joint in the
+        # other once the two are standing in one room.
+        self.ctx=install.context(self.app,{})
+        third=self.do_commit(self.preview(position=(-7,0),candidate=self.built(),replace=False),
+                             request='install-request-3')
+        self.assertEqual([],third['replaced'],'asked for a second one, it took nothing out')
+        roots=[b['part'].split('/')[0] for b in self.room.spec['bodies'] if b.get('part')]
+        self.assertEqual({second,third['root_body']},set(roots))
         # And what is written to disk is what comes back, labels and all.
         self.assertEqual(self.room.spec,self.app.store.load('yard').spec)
 

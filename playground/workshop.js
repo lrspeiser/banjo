@@ -128,8 +128,10 @@ function installPlacementControls(right) {
     const source=await api("/api/world/workshop/context",{});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
     $("#ws-install-context").textContent=`Room: ${source.scene} · native cell size ${source.cell_size_m*1000} mm. ${chosen().mechanical_model === "rigid" ? "Precise rigid geometry keeps its dimensions and continuous placement; anchored scenery only." : "The whole lattice prototype snaps once to this room grid."}`;
+    // replace: making a design again puts the new one where the old one was,
+    // instead of leaving you with two and no way to tell which is which.
     const answer=await api("/api/world/workshop/preview",{session:source.session,scene:source.scene,
-      mode:"authoring",candidate,position_m:position});
+      mode:"authoring",candidate,position_m:position,replace:true});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
     installation.preview=answer;installation.request=crypto.randomUUID();
     const result=$("#ws-install-result");result.dataset.status="preview";
@@ -1048,7 +1050,8 @@ async function makeIt(button) {
     for (const position_m of MAKE_SPOTS) {
       try {
         preview = await api("/api/world/workshop/preview", {
-          session: source.session, scene: source.scene, mode: "authoring", candidate, position_m });
+          session: source.session, scene: source.scene, mode: "authoring", candidate, position_m,
+          replace: true });
         break;
       } catch (error) {
         refused = error;

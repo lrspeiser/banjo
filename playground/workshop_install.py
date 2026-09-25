@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import struct
 import time
@@ -166,11 +167,126 @@ def what_made(app: Any, body: Any) -> dict[str, Any]:
     raise ValueError(f"Nothing the Workshop made in this room is called {name!r}")
 
 
+#: Everything in a room spec that names a body. A removal has to take the
+#: things that point at a body out with it, or the room is asked to open with a
+#: pin on nothing.
+def _without(spec: dict[str, Any], names: set[str]) -> tuple[dict[str, Any], set[str]]:
+    """The room spec with those bodies, and everything that names them, gone.
+
+    Also WHICH machines went with them, by name. A saved motor does not always
+    say which body it is on -- the engine fills that in from the joints, and
+    the joints only travel when their set changes -- so the snapshot cannot be
+    asked. The spec can: it is where the machine was declared.
+    """
+    out = deepcopy(spec)
+    gone_machines: set[str] = set()
+    for where in ("bodies", "precise_rigid_bodies"):
+        if out.get(where):
+            out[where] = [b for b in out[where] if str(b.get("name") or "") not in names]
+    if out.get("joints"):
+        out["joints"] = [j for j in out["joints"]
+                         if not ({str(j.get("a") or ""), str(j.get("b") or "")} & names)]
+    machines = out.get("machines")
+    if isinstance(machines, dict):
+        for key, rows in list(machines.items()):
+            if isinstance(rows, list):
+                machines[key] = [row for row in rows
+                                 if not (set(_machine_bodies(row)) & names)]
+        # A motor or a program named by a row that went takes its own name with
+        # it, and anything pointing at THAT name has to go too.
+        gone = {str(row.get("name") or "") for key, rows in (spec.get("machines") or {}).items()
+                if isinstance(rows, list) for row in rows
+                if isinstance(row, dict) and (set(_machine_bodies(row)) & names)} - {""}
+        for key, rows in list(machines.items()):
+            if isinstance(rows, list):
+                machines[key] = [row for row in rows if not isinstance(row, dict)
+                                 or not ({str(row.get(k) or "") for k in ("store", "motor", "control")} & gone)]
+        before_names = {str(row.get("name") or "") for rows in (spec.get("machines") or {}).values()
+                        if isinstance(rows, list) for row in rows if isinstance(row, dict)}
+        after_names = {str(row.get("name") or "") for rows in machines.values()
+                       if isinstance(rows, list) for row in rows if isinstance(row, dict)}
+        gone_machines = (before_names - after_names) - {""}
+    if out.get("interaction_points"):
+        out["interaction_points"] = [p for p in out["interaction_points"]
+                                     if str((p or {}).get("body") or "") not in names]
+    # Things written ABOUT a body -- a saved gesture, a blade's cut, a tool
+    # point, how it was put together -- go out with the body they are about.
+    said = {json.dumps(name)[1:-1] for name in names}
+    for key in ("actions", "constructions", "blades", "tool_points"):
+        if isinstance(out.get(key), list):
+            out[key] = [row for row in out[key]
+                        if not any(name in json.dumps(row) for name in said)]
+    # Anything else that still names a removed body would make an invalid room,
+    # and a silent invalid room is worse than a refusal.
+    left = json.dumps({k: v for k, v in out.items()
+                       if k not in ("bodies", "precise_rigid_bodies", "joints", "machines",
+                                    "interaction_points", "actions", "constructions",
+                                    "blades", "tool_points")})
+    for name in names:
+        if json.dumps(name)[1:-1] in left:
+            where = sorted(k for k, v in out.items()
+                           if k not in ("bodies", "precise_rigid_bodies", "joints", "machines",
+                                        "interaction_points", "actions", "constructions",
+                                        "blades", "tool_points")
+                           and json.dumps(name)[1:-1] in json.dumps(v))
+            raise ValueError(f"{name} is still named by {', '.join(where)} in the room, so it "
+                             "cannot be replaced yet")
+    return out, gone_machines
+
+
+def replacing(app: Any, design_id: str) -> list[str]:
+    """Which bodies a re-make of this design would take out.
+
+    The most recent installation of the SAME design that is still standing.
+    Making a design again used to put a second one in the room -- commit only
+    ever appended, with a fresh root name each time -- so an edit-and-remake
+    left you with the old one and the new one side by side and no way to tell
+    which was which.
+    """
+    room = getattr(app, "room", None)
+    here = {str(b.get("name") or "") for where in ("bodies", "precise_rigid_bodies")
+            for b in (getattr(room, "spec", {}) or {}).get(where) or []}
+    for row in reversed(made_here(app)):
+        if str(row.get("design_id") or "") != str(design_id):
+            continue
+        # A receipt names the roots. A design compiled into a group of cells
+        # has bodies UNDER those roots -- "<root>-1", "-2" -- which the receipt
+        # does not list, and leaving one of those behind is not a replacement:
+        # the engine reports it as a thing the room changed and staging refuses.
+        wanted = set(row["bodies"])
+        for name in here:
+            base = re.sub(r"-\d+$", "", name)
+            if base in wanted:
+                wanted.add(name)
+        if wanted and wanted <= here:
+            return sorted(wanted)
+    return []
+
+
 def recipe_of(design: Any, overrides: Any) -> dict[str, Any]:
     """The design in the form the library saves and the bench loads."""
     return {"schema": "banjo.workshop-assembly-recipe.v1", "kind": design.kind,
             "design_id": design.design_id, "purpose": design.purpose,
             "parameters": dict(design.parameters), "component_overrides": deepcopy(dict(overrides or {}))}
+
+
+def _replaces(app: Any, answer: dict[str, Any], taking_out: list[str]) -> dict[str, Any]:
+    """Tell the cached plan what this installation takes out, and say so.
+
+    There are four compile paths and each caches its own plan; this is the one
+    place that knows about replacing, so none of them has to. The plan's spec
+    loses the bodies and everything naming them, which is what makes the engine
+    let go of them when the room is opened again.
+    """
+    if not taking_out:
+        return answer
+    held = _preview_cache(app).get(answer.get("preview_id"))
+    if held is None:
+        return answer
+    held["spec"], _ = _without(held["spec"], set(taking_out))
+    held["removed"] = list(taking_out)
+    answer["replaces"] = list(taking_out)
+    return answer
 
 
 def _kept(app: Any, answer: dict[str, Any], design: Any, overrides: Any) -> dict[str, Any]:
@@ -332,6 +448,9 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
     new = {l["body"]: l for l in after.get("lumps", [])}
     if len(new) != len(after.get("lumps", [])) or not set(new) <= body_names:
         raise ValueError("Staging created invalid thermal ownership")
+    # A body that went out takes its stored heat with it; what stays must be
+    # exactly as it was.
+    old = {name: lump for name, lump in old.items() if name in body_names}
     complete = ((before.get("network") or {}).get("schema") == "banjo.thermal-state.v1"
                 and (after.get("network") or {}).get("schema") == "banjo.thermal-state.v1")
     for name, lump in old.items():
@@ -448,19 +567,50 @@ def _machine_bodies(row):
     return named
 
 
-def _appended_machines(before, after, added):
+def _appended_machines(before, after, added, removed=frozenset()):
     """Old machines exactly as they were, new ones only on the new bodies.
 
     A room may already hold a hoist or a rover. Installing a driven cart adds
     stores, motors and controls of its own, so the snapshot legitimately grows
     -- but nothing that was already running may move, and nothing new may reach
     for a body that was there before.
+
+    Taking a thing OUT takes its machines with it, so the old list is no longer
+    a prefix of the new one: the rows belonging to a removed body are gone from
+    the middle. What survives is the old list with those rows dropped, and it
+    must still be exactly the front of the new one, in order.
     """
     for key in MACHINE_KEYS:
         old = before.get(key) or []
         current = after.get(key) or []
         if not isinstance(current, list) or not isinstance(old, list):
             continue
+        if removed:
+            # Which rows went is read off the result, and then justified. A
+            # name cannot say: the replacement declares a battery called
+            # "battery" too, so the name survives while the thing does not.
+            # And a saved motor does not always say which body it is on -- the
+            # engine fills that in from the joints, and the joints travel only
+            # when their set changes -- so "it names no body" is not evidence
+            # of anything either way.
+            #
+            # What must hold: every row that names a body which is STAYING is
+            # still there, unchanged and in order; and nothing went that names
+            # a staying body. A nameless row may go, but only while something
+            # is being removed at all.
+            staying = [row for row in old
+                       if set(_machine_bodies(row)) and not (set(_machine_bodies(row)) & removed)]
+            lost = [row for row in staying if row not in current]
+            if lost:
+                raise ValueError(f"Staging lost a {key[:-1]} on a body that is staying; "
+                                 "installation refused")
+            for row in old:
+                if row in current:
+                    continue
+                if set(_machine_bodies(row)) - removed:
+                    raise ValueError(f"A removed body's {key[:-1]} also reaches a body that is "
+                                     "staying; installation refused")
+            old = [row for row in old if row in current]
         if len(current) < len(old) or current[:len(old)] != old:
             raise ValueError(f"Staging changed existing {key}; installation refused")
         for row in current[len(old):]:
@@ -474,9 +624,18 @@ def _appended_machines(before, after, added):
                                  "installation refused")
 
 
-def _appended_joints(before, after, added, definitions):
-    """Verify old constraint history and the declared new-body hinge frames."""
+def _appended_joints(before, after, added, definitions, removed=frozenset()):
+    """Verify old constraint history and the declared new-body hinge frames.
+
+    A pin on a body that was taken out goes with it, so what has to survive is
+    the old list minus those, still in order at the front of the new one.
+    """
     old, current = before.get("joints", []), after.get("joints", [])
+    if removed:
+        held = [j for j in old if {j.get("a"), j.get("b")} & removed]
+        if any(not {j.get("a"), j.get("b")} <= removed for j in held):
+            raise ValueError("A removed body is pinned to one that is staying; installation refused")
+        old = [j for j in old if j not in held]
     if len(current) != len(old)+len(definitions) or not _joint_readouts_match(old, current[:len(old)]):
         raise ValueError("Staging changed existing joints or added unexpected constraints")
     bodies = {b["name"]:b for b in after["bodies"]}
@@ -523,7 +682,9 @@ def _appended_joints(before, after, added, definitions):
                 raise ValueError("Staging added an undeclared hinge capacity")
 
 
-def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *, thermal_transfer=None, added_joints=()) -> None:
+def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *,
+               thermal_transfer=None, added_joints=(), removed=frozenset(),
+               removed_matter=None) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
     Exact body and part equality also establishes unchanged node/bond index
@@ -532,23 +693,46 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     stored thermal histories remain exact and new network membership is accounted.
     """
     added = {root} if isinstance(root, str) else root
+    removed = set(removed)
+    # A group of cells is one body in the world and several names in the spec
+    # that made it -- they are joined -- and the matter records are written
+    # against those names. `removed` is what the WORLD lost; `removed_matter`
+    # is every name that stood for it.
+    removed_matter = removed | set(removed_matter if removed_matter is not None else removed)
+    if added & removed:
+        raise ValueError("A body cannot be added and removed in the same installation")
     if any(t["body"] not in added for t in _transfers(thermal_transfer)):
         raise ValueError("Thermal transfer may only initialize the new output")
     current = {b["name"]: b for b in after["bodies"]}
     prior = {b["name"]: b for b in before["bodies"]}
-    if len(current) != len(after["bodies"]) or set(current) != set(prior) | added:
+    if removed - set(prior):
+        raise ValueError("Installation was told to remove a body the room does not have: "
+                         + ", ".join(sorted(removed - set(prior))))
+    if len(current) != len(after["bodies"]) or set(current) != (set(prior) - removed) | added:
         raise ValueError("Staging did not preserve the exact existing body set")
     for name, body in prior.items():
+        if name in removed:
+            continue
         if body != current[name]:
             raise ValueError(f"Staging changed existing physical state for {name}; installation refused")
     parts = {tuple(p["bodies"]): p for p in after["parts"]}
     for part in before["parts"]:
+        names = set(part["bodies"])
+        if names & removed_matter:
+            # A part of a body that went out goes out with it, whole. A part
+            # that straddles the boundary would mean the removal cut something
+            # in half, which is not a removal.
+            if not names <= removed_matter:
+                raise ValueError("A removed body shares matter with one that is staying")
+            if tuple(part["bodies"]) in parts:
+                raise ValueError("Staging kept the matter of a body it was told to remove")
+            continue
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
     exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints",
                   "material_geometry", *MACHINE_KEYS}
-    _appended_joints(before, after, added, added_joints)
-    _appended_machines(before, after, added)
+    _appended_joints(before, after, added, added_joints, removed_matter)
+    _appended_machines(before, after, added, removed_matter)
     for key in set(before) | set(after):
         if key in exceptions:
             continue
@@ -577,8 +761,11 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         br, ar = bg.get("records", {}), ag.get("records", {})
         if not isinstance(br, dict) or not isinstance(ar, dict) or not set(ar) <= set(current):
             raise ValueError("Staging has invalid material geometry bodies")
-        if any(ar.get(name) != state for name, state in br.items()) or set(ar) - set(br) - added:
+        if (any(ar.get(name) != state for name, state in br.items() if name not in removed_matter)
+                or set(ar) & removed_matter or set(ar) - set(br) - added):
             raise ValueError("Staging changed existing material geometry")
+    # Removal does not give an id back. The counters only ever go forward, so
+    # what a removal changes is the body set, never the numbering.
     bnext, anext = before.get("next", {}), after.get("next", {})
     increments={"body":len(added),"joint":len(added_joints)}
     if set(bnext) != set(anext) or any(anext[k] != v+increments.get(k,0) for k,v in bnext.items()):
@@ -588,7 +775,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         _thermal_preserved(bh, ah, set(current), thermal_transfer)
 
 
-def _stage(app, live, old, spec, snapshot, matter, root, shift):
+def _stage(app, live, old, spec, snapshot, matter, root, shift, removed=frozenset()):
     staging = live_session.Live()
     scratch = SimpleNamespace(engine_path=app.engine_path, runs_path=app.runs_path,
                               live_inprocess=False, on_live_reply=None)
@@ -596,10 +783,33 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
         terrain_before = _terrain_state(old)
         if "water" in snapshot:
             spec.setdefault("water", {})["state"] = deepcopy(snapshot["water"])
+        # A group of cells is several bodies in the SPEC and one body in the
+        # engine -- they are joined -- so what the spec drops and what the world
+        # loses are different sets. The guard below is about the world's.
+        removed = set(removed)
+        in_the_world = removed & {str(b.get("name") or "") for b in snapshot.get("bodies") or []}
         opened = staging.open(scratch, {"spec": deepcopy(spec), "snapshot": snapshot, "carry": True}, carry_from=old)
         restored = opened.get("restored") or {}
-        if restored.get("tier") != "carried" or restored.get("not_carried"):
+        if restored.get("tier") != "carried":
             raise ValueError("The native engine could not carry the original world unchanged")
+        # Anything the engine did not carry is a refusal, EXCEPT what we told it
+        # to take out. It counts the things it let go of ("gone") and writes one
+        # line for everything it did not carry, for any reason -- so when every
+        # line is a thing it let go of, and it let go of nothing when nothing
+        # was being replaced, the only losses are the ones that were asked for.
+        #
+        # gone counts THINGS, not bodies: a group of five bodies installed as
+        # one thing is one. So it is not compared with how many bodies are being
+        # removed. What proves the body set exactly is _preserved, below.
+        not_carried = restored.get("not_carried") or []
+        gone = int((restored.get("carried") or {}).get("gone") or 0)
+        if len(not_carried) != gone or (gone > 0) != bool(in_the_world) or gone > len(in_the_world):
+            raise ValueError(
+                "The native engine could not carry the original world unchanged"
+                + (f": {len(not_carried) - gone} of what it did not carry was not a replacement"
+                   if len(not_carried) != gone else
+                   f": it let go of {gone} things where {len(in_the_world)} were being replaced")
+                + (f" ({'; '.join(str(line) for line in not_carried[:4])})" if not_carried else ""))
         if any(opened.get(k) for k in ("joint_problems", "machine_problems", "blade_problems", "tool_point_problems")):
             raise ValueError("Staging could not restore every existing joint, control or tool")
         saved = _snapshot(staging)
@@ -607,19 +817,19 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
             raise ValueError("Staging changed terrain or carried excavated material")
         if matter.get("schema") == workshop_articulation.SCHEMA:
             roots={group["root_body"] for group in matter["groups"]}
-            _preserved(snapshot, saved, roots, added_joints=matter["joints"])
+            _preserved(snapshot, saved, roots, added_joints=matter["joints"], removed=in_the_world, removed_matter=removed)
             for group in matter["groups"]:
                 sparse.verify_engine_matter(saved, group["matter"], group["root_body"], placement_grid=shift)
         elif matter.get("schema") == rigid_assembly.SCHEMA:
             # A finalized machine: exact bodies on real pins, nothing to verify
             # against the cell grid because nothing of it was ever cells.
             _preserved(snapshot, saved, {body["name"] for body in matter["bodies"]},
-                       added_joints=matter["joints"])
+                       added_joints=matter["joints"], removed=in_the_world, removed_matter=removed)
         elif matter.get("schema") == workshop_rigid.SCHEMA:
-            _preserved(snapshot, saved, root)
+            _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
             precise_rigid.verify(saved, matter, root)
         else:
-            _preserved(snapshot, saved, root)
+            _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
             sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
         return staging, saved
     except BaseException:
@@ -656,7 +866,7 @@ def _with_needs(app: Any, design: Any, answer: dict[str, Any]) -> dict[str, Any]
 
 
 def preview(app: Any, body: Any) -> dict[str, Any]:
-    body = _object(body, {"session", "scene", "mode", "candidate", "position_m"})
+    body = _object(body, {"session", "scene", "mode", "candidate", "position_m", "replace"})
     if body.get("mode") != "authoring":
         raise ValueError("Choose authoring mode explicitly. Inventory-funded fabrication is not implemented; no resources have been charged")
     pos = body.get("position_m")
@@ -667,21 +877,37 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if getattr(app, "store", None) is None:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
+        # Making a design again can REPLACE the one standing there instead of
+        # putting a second one beside it. The caller says which it wants:
+        #   replace=True   the most recent still-standing copy of this design
+        #   replace=[...]  exactly these bodies
+        #   absent/False   add another one, which is what it always did
+        # The bench asks for replacement, because editing a design and making
+        # it again is one thing and not two. Funded fabrication does not: each
+        # run of a job is its own output and none of them replaces another.
+        wanted = body.get("replace", False)
+        if wanted is True:
+            taking_out = replacing(app, design.design_id)
+        elif isinstance(wanted, list):
+            taking_out = sorted({str(name) for name in wanted})
+        else:
+            taking_out: list[str] = []
         models = workshop_rigid.requested_models(design, overrides)
         if models == {"rigid"} and workshop_articulation.has_bearings(design):
             # Finalized, and it has something that turns: exact bodies on real
             # pins. compile_rigid makes one compound of one material and cannot
             # carry a mechanism at all, so this is the only way a machine is
             # made of its own parts at their own size.
-            return _with_needs(app, design, _kept(app, _preview_exact(app, room, live, old, design, overrides,
-                                                                      pos, body["candidate"]), design, overrides))
+            return _with_needs(app, design, _replaces(app, _kept(app, _preview_exact(app, room, live, old, design, overrides,
+                                                                      pos, body["candidate"]), design, overrides), taking_out))
         if models == {"rigid"}:
-            return _with_needs(app, design, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
-                                                  design, overrides))
+            return _with_needs(app, design, _replaces(app, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
+                                                  design, overrides), taking_out))
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if workshop_articulation.has_bearings(design):
-            return _with_needs(app, design, _kept(app, _preview_articulated(
-                app, room, live, old, design, overrides, pos, body["candidate"]), design, overrides))
+            return _with_needs(app, design, _replaces(app, _kept(app, _preview_articulated(
+                app, room, live, old, design, overrides, pos, body["candidate"]), design, overrides),
+                taking_out))
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])
@@ -763,7 +989,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
                         "spec": spec, "matter": matter, "root": root, "shift": shift,
                         "candidate_hash": _hash(body["candidate"])}
-        return _with_needs(app, design, _kept(app, answer, design, overrides))
+        return _with_needs(app, design, _replaces(app, _kept(app, answer, design, overrides), taking_out))
 
 
 
@@ -1156,7 +1382,12 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if job is None or _hash(job["candidate"]) != plan.get("candidate_hash"):
                 raise ValueError("Preview does not match the funded design and core-use program")
             fabrication_state = fabrication.transfer(fabrication_state, funding_job, plan["answer"], request)
-        staged, saved = _stage(app, live, old, plan["spec"], before, plan["matter"], plan["root"], plan["shift"])
+        removed = set(plan.get("removed") or ())
+        # What the WORLD loses, as against what the spec drops: a group of cells
+        # is several names in the spec and one body in the engine.
+        lost = removed & {str(b.get("name") or "") for b in before.get("bodies") or []}
+        staged, saved = _stage(app, live, old, plan["spec"], before, plan["matter"], plan["root"],
+                               plan["shift"], removed)
         drawn = None
         try:
             thermal_transfer = None
@@ -1164,12 +1395,21 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                 if plan["matter"].get("schema") == workshop_articulation.SCHEMA:
                     outputs = {g["root_body"]:g["mass_kg"] for g in plan["matter"]["groups"]}
                     thermal_transfer, saved = _admit_fabricated_outputs(staged, saved, outputs, fabrication.AMBIENT_K)
-                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer, added_joints=plan["matter"]["joints"])
+                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer,
+                               added_joints=plan["matter"]["joints"],
+                               removed=lost, removed_matter=removed)
                 else:
                     thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)
-                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer)
+                    _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer,
+                               removed=lost, removed_matter=removed)
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
-                       "session": staged.session.id, "source_session": old.id, "replayed": False}
+                       "session": staged.session.id, "source_session": old.id, "replayed": False,
+                       # What it took out, and what shape this one is. A body
+                       # standing in a room used to carry no record of which
+                       # design drew it or which revision, so nothing could tell
+                       # whether it still matched the design on the bench.
+                       "replaced": sorted(removed),
+                       "fingerprint": (plan.get("matter") or {}).get("physics_hash")}
             if plan.get("recipe") is not None:
                 receipt["recipe"] = deepcopy(plan["recipe"])
             if thermal_transfer is not None:
