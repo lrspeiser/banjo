@@ -47,6 +47,9 @@ HTTP = {
     "inventory": "/api/workshop/inventory",
     "recipes": "/api/workshop/recipes",
     "skills": "/api/workshop/skills",
+    # Driving a thing at the bench with the keys: a little world kept open,
+    # stepped as the keys arrive; start, step, stop.
+    "drive": "/api/workshop/drive",
     # Read-only, and about a turn rather than about a design: what the
     # assistant has done so far, while it is still doing it.
     "progress": "/api/workshop/progress",

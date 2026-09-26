@@ -1817,6 +1817,11 @@ struct LiveWorld::Impl {
         constexpr double kDegPerRad = 180.0 / kPi;
         constexpr double kLeanDeg = 5.0;
         constexpr double kYawDegS = 40.0;
+        // How fast the height it holds moves while it is asked to rise or
+        // descend, and how high it may be asked to hold: a little under the
+        // climb the height loop allows, so the machine keeps up with it.
+        constexpr double kHeightM_S = 0.8;
+        constexpr double kHighestHoverM = 50.0;
         constexpr double kFacedDeg = 6.0;
         constexpr double kNearM = 1.0;
         constexpr double kLandedM = 0.06;
@@ -1912,6 +1917,14 @@ struct LiveWorld::Impl {
                 else if (s.asked == "backing off") lean_deg = kLeanDeg;
                 else if (s.asked == "turning left") yaw_deg_s = kYawDegS;
                 else if (s.asked == "turning right") yaw_deg_s = -kYawDegS;
+                // Rising and descending move the height it HOLDS, a little
+                // under what its climb is limited to, so the loop tracks it
+                // and letting go leaves it hovering where it got to -- the
+                // way a flown machine answers a stick. Down to the ground:
+                // held all the way, it sets itself down and stays there.
+                else if (s.asked == "rising" || s.asked == "descending")
+                    s.hover_m = std::clamp(s.hover_m + (s.asked == "rising" ? kHeightM_S : -kHeightM_S) * dt_s,
+                                           0.0, kHighestHoverM);
                 if (s.asked == "turning left") p.turn_sign = 1;
                 if (s.asked == "turning right") p.turn_sign = -1;
             }
@@ -6799,10 +6812,15 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
     if (p == nullptr) return "there is no program " + std::to_string(program);
     if (ask.sender.size() > 64) return "a sender's name is 64 characters at most";
     static const char *const kAsks[] = {"going forward", "backing off", "turning left", "turning right",
-                                        "waiting",       "facing",      "approaching",  ""};
+                                        "waiting",       "facing",      "approaching",  "rising",
+                                        "descending",    ""};
     if (std::find(std::begin(kAsks), std::end(kAsks), ask.doing) == std::end(kAsks))
         return "a program can be asked to be going forward, backing off, turning left, turning right, waiting, "
-               "facing or approaching, or asked nothing (\"\")";
+               "facing, approaching, rising or descending, or asked nothing (\"\")";
+    // Rising and descending are a flying machine's: they move the height it
+    // holds, and a machine on wheels has no such thing.
+    if ((ask.doing == "rising" || ask.doing == "descending") && p->said.kind != "hover")
+        return "only a machine that flies can be asked to be rising or descending";
     if (!std::isfinite(ask.for_s) || ask.for_s < 0.0 || ask.for_s > 60.0)
         return "a program is asked for from 0 s (until asked otherwise) to 60 s";
     if (ask.why.size() > 200) return "why it was asked is 200 characters at most";

@@ -1473,8 +1473,14 @@ function installBench() {
     if (plumbing.children.length) groups.plumbing.append(make("h3", {}, "How it compiles"), plumbing);
     // Everything that was three bars, on one: which product, how it is drawn,
     // where from, and the two acts that leave the bench.
-    if (picker) viewbar.prepend(picker);
-    viewbar.append(views, make("span", { class:"ws-spacer" }), status,
+    // The owner: "we don't need Wire, Skin, 3/4, Front, Side, Top or the
+    // dropdown of the items." The picker and the points of view stay in the
+    // holder, because the page and its tests set them; the bar shows only the
+    // two acts that leave the bench.
+    if (picker) keep.append(picker);
+    keep.append(views);
+    for (const button of [...viewbar.children]) if (button.dataset.view) button.hidden = true;
+    viewbar.append(make("span", { class:"ws-spacer" }), status,
                    checkButton, madeButton, make("a", { class:"ws-bar-link", href:"/world" }, "The world"));
     if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
@@ -1500,9 +1506,213 @@ function installBench() {
     tab.onclick = () => showTab(name);
     tabs.append(tab);
   }
-  centre.append(tabs, viewport);
+  // The takes: little pictures of the thing. The first is the clean one --
+  // the design as it is, untouched by any run -- and every run adds one
+  // beside it, so a test never replaces the thing and the runs stay to be
+  // looked at again. Under the object, the machine's own controls, the
+  // ones its panel has in the world.
+  const takes = make("div", { id:"ws-takes", role:"tablist", "aria-label":"The thing, and every run of it" });
+  const machineBench = make("section", { id:"ws-machine-bench", "aria-label":"Work it as in the world" });
+  machineBench.hidden = true;
+  centre.append(tabs, takes, viewport, machineBench);
   for (const name of ["inventory", "skills", "recipes"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+  renderTakes();
 }
+
+// ---------------------------------------------------------------------------
+// Takes: the clean thing, and every run of it, as little pictures
+// ---------------------------------------------------------------------------
+function snapshot() {
+  // The buffer is not kept between frames, so draw and read in one go.
+  renderer.render(scene, camera);
+  return stage.toDataURL("image/jpeg", 0.7);
+}
+// A picture of what is on the canvas, once there is something on it: the
+// first frames after a thing is opened can be empty while its meshes are
+// built, and an empty picture is worse than a late one.
+function thumbLater(assign, when = () => true, tries = 8) {
+  const retry = () => { if (tries > 0) setTimeout(() => thumbLater(assign, when, tries - 1), 400); };
+  setTimeout(() => {
+    if (!when()) { retry(); return; }
+    let url = "";
+    try { url = snapshot(); } catch (error) { console.warn("banjo: no picture of the take", error); }
+    if (!url) { retry(); return; }
+    const img = new Image();
+    img.onload = () => {
+      const probe = document.createElement("canvas"); probe.width = 32; probe.height = 24;
+      const g = probe.getContext("2d"); g.drawImage(img, 0, 0, 32, 24);
+      const d = g.getImageData(0, 0, 32, 24).data; let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+      if (sum / (d.length / 4 * 3) > 6) { assign(url); renderTakes(); } else retry();
+    };
+    img.onerror = retry;
+    img.src = url;
+  }, 250);
+}
+function scheduleCleanThumb() {
+  if (bench.cleanThumbRevision === bench.revision && bench.cleanThumb) return;
+  const revision = bench.revision;
+  bench.cleanThumbRevision = revision; bench.cleanThumb = bench.cleanThumb || "";
+  thumbLater((url) => { if (revision === bench.revision) bench.cleanThumb = url; },
+             () => revision === bench.revision && !bench.playback && !bench.isolated && !bench.libraryInspection);
+}
+function takeLabel(recording) {
+  const result = bench.lastResult && bench.lastResult.playback === recording ? bench.lastResult : null;
+  const test = recording.test === "try_in_a_room" ? "Little world" : recording.test === "drive" ? "Driven" : (benchDefinition(recording.test)?.name || recording.test || "Run");
+  const said = result?.says || result?.measured?.outcome || "";
+  return { title: test, said: String(said).slice(0, 90) };
+}
+function noteTake(recording) {
+  bench.takes = bench.takes || [];
+  if (bench.takes.some((t) => t.recording === recording)) return;
+  const label = takeLabel(recording);
+  const take = { id: `take-${Date.now()}-${bench.takes.length}`, recording, thumb: "", when: new Date(), ...label };
+  bench.takes.push(take);
+  bench.shownTake = take.id;
+  renderTakes();
+  thumbLater((url) => { take.thumb = url; }, () => bench.playback === recording);
+}
+function showTake(id) {
+  bench.shownTake = id;
+  if (id === "clean") { clearPlayback(); setWorkspaceMode("build"); show(); }
+  else {
+    const take = (bench.takes || []).find((t) => t.id === id);
+    if (take) { setWorkspaceMode("test"); setPlayback(take.recording); }
+  }
+  renderTakes();
+}
+function renderTakes() {
+  const root = $("#ws-takes"); if (!root) return;
+  root.replaceChildren();
+  const shown = bench.playback ? (bench.shownTake || "") : "clean";
+  const card = (id, title, said, thumb) => {
+    const button = make("button", { type:"button", class:"ws-take", role:"tab", "data-take":id, "aria-selected":String(id === shown) });
+    const picture = make("div", { class:"ws-take-picture" });
+    if (thumb) { const img = make("img", { alt:"" }); img.src = thumb; picture.append(img); }
+    button.append(picture, make("strong", {}, title));
+    if (said) button.append(make("small", {}, said));
+    button.onclick = () => showTake(id);
+    return button;
+  };
+  root.append(card("clean", "Clean", "the design, untouched", bench.cleanThumb || ""));
+  for (const take of bench.takes || []) root.append(card(take.id, take.title, take.said, take.thumb));
+}
+
+// ---------------------------------------------------------------------------
+// The machine bench: the controls its panel has in the world, here
+// ---------------------------------------------------------------------------
+function machinesOf(candidate) {
+  const record = candidate?.component_overrides?.["@machines"];
+  return record && typeof record === "object" ? record : null;
+}
+// Drive it: you become the thing. Take the keys, and W A S D (or the arrows)
+// go, back, turn left and turn right in a little world kept open on the
+// server, drawn here as it happens; let go, and the drive is a take.
+const DRIVE_KEYS = { w: "forward", arrowup: "forward", s: "back", arrowdown: "back",
+                     a: "left", arrowleft: "left", d: "right", arrowright: "right" };
+// Up is Space and down is Shift+Space, the same as walking the world
+// (interaction.js BINDINGS). Only a machine that flies is asked for those.
+function driveKeyOf(event) {
+  if (event.key === " " || event.code === "Space") return event.shiftKey ? "down" : "up";
+  return DRIVE_KEYS[event.key.toLowerCase()] || null;
+}
+function renderMachineBench(candidate) {
+  const root = $("#ws-machine-bench"); if (!root) return;
+  const record = machinesOf(candidate);
+  const drivable = (record?.programs || []).length || (record?.controls || []).length >= 2;
+  if (!drivable) { if (bench.drive) letGo(); root.hidden = true; root.replaceChildren(); return; }
+  root.hidden = false;
+  if (root.dataset.forRevision === String(bench.revision) && root.children.length) return;
+  if (bench.drive) letGo();
+  root.dataset.forRevision = String(bench.revision);
+  root.replaceChildren();
+  const take = make("button", { id:"ws-drive-take", type:"button", class:"ws-action primary" }, "Take the keys");
+  const stop = make("button", { id:"ws-drive-stop", type:"button", class:"ws-action" }, "Let go");
+  stop.hidden = true;
+  const status = make("p", { id:"ws-drive-status", class:"ws-note" },
+    "Take the keys and you are the thing: W or \u2191 goes, S or \u2193 backs, A or \u2190 turns left, D or \u2192 turns right, and a machine that flies rises on Space and comes down on Shift+Space, in a little world with ground and a sky. Let go, and the drive is a take.");
+  take.onclick = () => guard(take, takeTheKeys);
+  stop.onclick = () => guard(stop, letGo);
+  const row = make("div", { class:"ws-mb-run" }); row.append(take, stop);
+  root.append(make("h3", {}, "Drive it"), status, row);
+}
+
+async function takeTheKeys() {
+  if (bench.drive) return;
+  const answer = await api("/api/workshop/drive", { action:"start", candidate:candidateBody() });
+  const recording = answer.recording;
+  if (!recording?.frames?.length) throw new Error("The little world gave no first frame.");
+  bench.drive = { keys: { forward:false, back:false, left:false, right:false, up:false, down:false },
+                  recording, inflight:false, timer:null, answer };
+  clearPlayback();
+  setWorkspaceMode("test");
+  bench.playback = recording; bench.playbackIndex = recording.frames.length - 1; bench.playbackPlaying = false;
+  view = "physics"; pressView("physics"); show(false); frameSimulation(recording); drawPlayback();
+  $("#ws-drive-take").hidden = true; $("#ws-drive-stop").hidden = false;
+  driveStatus(`Driving${answer.program ? ` its ${answer.kind} program` : answer.wheels.length ? ` its ${answer.wheels.join(" and ")}` : ""}: W A S D or the arrows${answer.flies ? ", Space up, Shift+Space down" : ""}. Esc lets go.`);
+  stage.dataset.driving = "true";
+  stage.focus?.();
+  bench.drive.timer = setInterval(driveStep, 125);
+}
+function driveStatus(text) { const line = $("#ws-drive-status"); if (line) line.textContent = text; }
+async function driveStep() {
+  const drive = bench.drive;
+  if (!drive || drive.inflight) return;
+  drive.inflight = true;
+  try {
+    const said = await api("/api/workshop/drive", { action:"step", keys:drive.keys, dt_s:0.125 });
+    if (!bench.drive) return;
+    for (const frame of said.frames || []) drive.recording.frames.push(frame);
+    drive.recording.duration_s = Number(said.t_s) || drive.recording.duration_s;
+    bench.playback = drive.recording; bench.playbackIndex = drive.recording.frames.length - 1;
+    if (view !== "physics") { view = "physics"; pressView("physics"); }
+    drawPlayback();
+    const held = Object.entries(drive.keys).filter(([, v]) => v).map(([k]) => k).join("+") || "no keys";
+    driveStatus(`${(said.doing || said.asked || "").replace(/^\w/, (c) => c.toUpperCase())}${said.why ? `: ${said.why}` : ""} \u00b7 ${held} \u00b7 ${Number(said.t_s).toFixed(1)} s`
+      + (said.speed_m_s != null ? ` \u00b7 ${Number(said.speed_m_s).toFixed(2)} m/s` : "")
+      + (said.fell_over ? " \u00b7 it fell over" : "") + ((said.broke || []).length ? ` \u00b7 ${said.broke.length} broke` : ""));
+  } catch (error) {
+    driveStatus(`The little world stopped answering: ${error.message}`);
+    await letGo(true);
+  } finally { if (bench.drive) bench.drive.inflight = false; }
+}
+async function letGo(quiet = false) {
+  const drive = bench.drive; if (!drive) return;
+  clearInterval(drive.timer); bench.drive = null;
+  delete stage.dataset.driving;
+  $("#ws-drive-take") && ($("#ws-drive-take").hidden = false); $("#ws-drive-stop") && ($("#ws-drive-stop").hidden = true);
+  let answer = null;
+  try { answer = await api("/api/workshop/drive", { action:"stop" }); } catch (error) { if (!quiet) throw error; }
+  const recording = answer?.recording || drive.recording;
+  if (recording?.frames?.length > 1) {
+    bench.lastResult = { test:"drive", says: answer?.says || "driven", playback: recording };
+    renderBenchResult({ test:"drive", says: answer?.says || "driven", playback: recording, measured:{} });
+    if (!bench.playback || bench.playback === drive.recording) setPlayback(recording);
+  }
+  driveStatus(answer?.says ? `Let go: ${answer.says}. The drive is a take.` : "Let go.");
+}
+addEventListener("keydown", (event) => {
+  if (!bench.drive) return;
+  const target = event.target;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  if (event.key === "Escape") { event.preventDefault(); guard(null, letGo); return; }
+  const key = driveKeyOf(event);
+  if (!key) return;
+  event.preventDefault();
+  // Shift is let go before Space as often as after it, so pressing one of
+  // them clears the other: a machine cannot rise and descend at once.
+  if (key === "up") bench.drive.keys.down = false;
+  if (key === "down") bench.drive.keys.up = false;
+  bench.drive.keys[key] = true;
+});
+addEventListener("keyup", (event) => {
+  if (!bench.drive) return;
+  if (event.key === " " || event.code === "Space") {
+    event.preventDefault(); bench.drive.keys.up = false; bench.drive.keys.down = false; return;
+  }
+  const key = DRIVE_KEYS[event.key.toLowerCase()];
+  if (key) { event.preventDefault(); bench.drive.keys[key] = false; }
+});
 
 // ---------------------------------------------------------------------------
 // Inventory, Skills, Recipes (workshop_tabs). Each is read when it is opened
@@ -1914,6 +2124,7 @@ function setPlayback(recording) {
   $("#ws-play-speed").value=String(bench.playbackSpeed);
   view="physics";pressView("physics");show(false);frameSimulation(recording);
   setPlaybackIndex(0);togglePlayback();
+  noteTake(recording);
 }
 
 function setPlaybackIndex(index, rebase = true) {
@@ -1973,8 +2184,15 @@ function renderJointScreen(card, screen) {
   if (view === "wire" || view === "skin") show(false);
 }
 function renderBenchResult(result) {
+  bench.lastResult = result || null;
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
+  if (result.test === "drive") {
+    card.append(make("strong", {}, "Driven by hand"), make("p", {}, result.says || "driven"));
+    root.append(card);
+    if (result.playback) setPlayback(result.playback);
+    return;
+  }
   if (result.test === "try_in_a_room") {
     // The little world says what it did and what became of the thing. Turning
     // is its own line: a stool that settled 3 mm and a stool lying on its side
@@ -2086,9 +2304,9 @@ function renderBenchResult(result) {
   const details = make("details", { class:"ws-family" }); details.append(make("summary", {}, "Measured evidence"));
   const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,geometry_basis:result.playback.geometry_basis,duration_s:result.playback.duration_s,states:result.playback.frames.length,sampling:result.playback.sampling} : undefined}, null, 2); details.append(pre); root.append(details);
 }
-async function runBenchTest() {
+async function runBenchTest(configOverride = null) {
   const definition=benchDefinition(); if(!definition) throw new Error("Choose a supported simulation first.");
-  const revision=bench.revision, request=++benchTestRequest, config=benchConfig();
+  const revision=bench.revision, request=++benchTestRequest, config=configOverride || benchConfig();
   const current=()=>request===benchTestRequest && revision===bench.revision && definition.test===bench.selectedBenchTest;
   workspace.sequence++; clearTimeout(workspace.timer); workspace.running=true;
   bench.playback=null; bench.playbackPlaying=false; $("#ws-playback").hidden=true;
@@ -2494,6 +2712,8 @@ function show(reframe = true) {
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
   const m = currentMeasurements(candidate); headline(candidate, m);
+  renderMachineBench(candidate);
+  if (!bench.playback) scheduleCleanThumb();
   const parts = $("#ws-parts"); parts.replaceChildren();
   for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } setWorkspaceMode("build"); bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
@@ -2633,6 +2853,18 @@ function renderHistory() {
   }
 }
 
+// What was open last, so the bench opens on it again rather than on the
+// table every time (the owner, 2026-09-26). Kept in this browser only; a
+// browser that refuses to keep it simply opens on the table.
+const OPENED_KEY = "banjo.workshop.opened";
+function rememberOpened(what) {
+  try { localStorage.setItem(OPENED_KEY, JSON.stringify(what)); } catch { /* nothing to remember with */ }
+}
+function openedLast() {
+  try { const said = JSON.parse(localStorage.getItem(OPENED_KEY) || "null"); return said && typeof said === "object" ? said : null; }
+  catch { return null; }
+}
+
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   workspace.inspecting++;bench.libraryInspection=null;
@@ -2646,6 +2878,7 @@ function took(answer, keepPart = null) {
   $("#ws-push-result")?.replaceChildren(); showForceAt(null);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
+  rememberOpened(answer.library_item ? { library_item_id: answer.library_item.item_id } : { kind: answer.kind });
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
@@ -2994,9 +3227,21 @@ async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");
   // ?kind=cart opens the Workshop on that product, so a thing you are holding
   // in the world can be taken straight to the bench to be looked at properly.
+  // The URL wins; then whatever was open last; then the table. A remembered
+  // thing that has since gone -- a library item thrown away, a template
+  // renamed -- is not an error: the bench opens on the table and says nothing.
   const asked = (params.get("kind") || "").trim();
-  const answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
-    : saved ? { saved_design_id:saved } : { kind: asked || "table" });
+  const last = asked || libraryItem || saved ? null : openedLast();
+  let answer;
+  try {
+    answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
+      : saved ? { saved_design_id:saved }
+      : last?.library_item_id ? { library_item_id:last.library_item_id }
+      : { kind: asked || last?.kind || "table" });
+  } catch (error) {
+    if (!last) throw error;
+    answer = await api("/api/workshop/open", { kind: "table" });
+  }
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }

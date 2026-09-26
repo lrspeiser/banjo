@@ -1322,6 +1322,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/library": return self.send(workshop_api.library(self.server.app,body))
             # The Workshop's other tabs (workshop_tabs): what the person has,
             # what each thing would take, and what they know how to do.
+            # Driving a thing at the bench with the keys (workshop_drive): a
+            # little world kept open and stepped as the keys arrive.
+            if path=="/api/workshop/drive":
+                import workshop_drive
+                if body.get("action")=="start": workshop_drive.sweep(self.server.app)
+                return self.send(workshop_drive.handle(self.server.app,body))
             if path in ("/api/workshop/inventory","/api/workshop/recipes","/api/workshop/skills"):
                 import workshop_tabs
                 app=self.server.app

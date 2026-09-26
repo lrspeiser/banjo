@@ -374,18 +374,65 @@ That provenance lets the user reopen the object later and say "edit this chair";
 
 ## Lab, Inventory, Skills and Recipes
 
-**Status, 2026-09-26.** The bench has four tabs on top and one chat beside
-all of them. **Lab** is the 3D viewer with the parts list; the chat column
-on the right stays through every tab, with "Check it" and "Make it" under
-it and what they said last. The chat takes those as words too -- "check
-it", "make it", "test it" or "run the drop test" -- and does them itself
-without the model; making without the materials is answered in the chat
-with what the rack is short. There are no product buttons across the top
-(the products are in Recipes, and what has been built in Inventory), no
-camera presets, no run-simulation button, and no rack strip along the
-bottom: the rack is edited in Inventory. The other three tabs read beside
-the Lab and spend nothing (`workshop_tabs`, one route each:
-`/api/workshop/inventory`, `/skills`, `/recipes`).
+**Status, 2026-09-26.** The bench is the chat on the left, the object, and
+four tabs over the object: **Lab**, Inventory, Skills, Recipes. The chat
+stays beside all of them, with its suggestions (each a real turn) and a
+narration of what the model is doing while a turn runs. On the Lab's one
+bar there are only the two acts that leave the bench, Check it and Make it,
+and the way to the world: no product dropdown (products are opened from
+Recipes and Inventory), no Wire/Skin, no points of view. The other three
+tabs read beside the Lab and spend nothing (`workshop_tabs`, one route
+each: `/api/workshop/inventory`, `/skills`, `/recipes`).
+
+**Takes.** Under the tabs is a strip of little pictures of the thing. The
+first is *Clean*: the design as it is, untouched by any run, captured as
+it is drawn. Every run -- one the chat asked for, one asked for below the
+object -- becomes a take beside it, with its picture and its verdict in a
+line ("it is 0.79 m up, has moved 2396 mm and turned 0.6 degrees; nothing
+broke"), and stays for the session. Click a run's take and its replay is
+shown; click Clean and the design is back, with no run over it. A run
+never replaces the thing.
+
+**Drive it.** The owner, of a panel of controls and a Do it button: "I
+don't understand what turning the left wheel to reverse and hitting do it
+means ... allow me to become the object and control it with the keys."
+So, under the object: Take the keys, and you are the thing. W or up goes,
+S or down backs, A or left turns left, D or right turns right, and a
+machine that flies rises on Space and comes down on Shift+Space -- the
+same two keys that take a person up and down in the world
+(`interaction.js` BINDINGS) -- in a little world kept open on the server
+(`workshop_drive`, `/api/workshop/drive`) and stepped as the keys arrive,
+an eighth of a second at a time, every frame drawn here as it happens.
+The keys are put to the thing's program as the asks a panel makes in the
+world -- going forward, backing off, turning left, turning right, waiting,
+and now **rising** and **descending** (`LiveWorld::behave`) -- so the
+rover and the drone drive the same way; a machine with wheels and no
+program is driven by its wheels' own controls, the same operate its panel
+sends. Going up or down wins while its key is held, because it is the
+deliberate one. Let go (or Esc), and the drive is a take beside the clean
+thing, with its picture and how far it went.
+
+**Rising and descending** are the hover program's, and the engine refuses
+them to anything else ("only a machine that flies can be asked to be
+rising or descending"). They move the height it HOLDS, 0.8 m/s, a little
+under the 1 m/s its climb is limited to, so the machine keeps up with the
+target and letting go leaves it hovering where it got to, the way a flown
+machine answers a stick; held all the way down it sets itself on the
+ground. Measured (`tests/drone_hover_tests.cpp`): asked to rise for three
+seconds, 1.51 m up became 3.65 m, and let go it held between 3.65 and
+3.95 m; asked to descend for four, it came back to 0.99 m and not through
+the floor.
+
+**The bench opens on what was open last**, not on the table every time: a
+URL's `kind` wins, then whatever was last open in this browser, then the
+table. It is kept in the browser alone, and a remembered thing that has
+since gone -- a library item thrown away, a template renamed -- opens the
+table without a word rather than an error. A saved design is remembered by
+its kind, not by its revision. The little world takes the robot templates now (rover,
+drone, processor: they install as exact bodies through the same gate).
+Measured (`tests/workshop_drive_tests.py`): the rover, W held for two
+seconds, went 2.2 m; A held, it turned; keys up, it held; and the drone,
+W held, lifted and went forward. One drive at a time to a server.
 
 - **Inventory**: the material rack, editable (oak, iron, glass, stocked on
   the bench), the goods rack (copper, copper wire: what machines put on a

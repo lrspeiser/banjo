@@ -278,6 +278,47 @@ void itGoesWhereItIsAsked() {
     require(said.doing == "waiting", "and hovers");
 }
 
+// 5. Asked to be rising, it climbs and holds where it got to; asked to be
+//    descending, it comes back down. Only a machine that flies takes those.
+void itRisesAndDescends() {
+    Drone d = droneOnTheFloor();
+    LiveWorld &world = *d.world;
+    const double floor_height = programOf(world, d.program).height_m;
+    runIt(world, d.program, true, 1);
+    for (int i = 0; i < 4 * 240; ++i) tick(world);      // up to its hover height
+    LiveProgram said = programOf(world, d.program);
+    const double held = said.height_m - floor_height;
+    askIt(world, d.program, "rising", 0.0, 2);
+    for (int i = 0; i < 3 * 240; ++i) tick(world);
+    said = programOf(world, d.program);
+    const double up = said.height_m - floor_height;
+    require(said.doing == "rising", "it says it is rising");
+    require(up > held + 1.0, "it climbed");
+    // Asked nothing more, it holds the height it got to rather than falling
+    // back to the one it was built with.
+    askIt(world, d.program, "", 0.0, 3);
+    double lowest = 1e9, highest = -1e9;
+    for (int i = 0; i < 3 * 240; ++i) {
+        tick(world);
+        const double h = programOf(world, d.program).height_m - floor_height;
+        lowest = std::min(lowest, h);
+        highest = std::max(highest, h);
+    }
+    said = programOf(world, d.program);
+    std::cout << "    asked to rise for 3 s: " << held << " m up became " << up << " m, and let go it held between "
+              << lowest << " and " << highest << " m\n";
+    require(said.doing == "waiting", "and hovers there");
+    require(std::abs(highest - lowest) < 0.5 && lowest > up - 0.7, "it holds the height it rose to");
+    askIt(world, d.program, "descending", 0.0, 4);
+    for (int i = 0; i < 4 * 240; ++i) tick(world);
+    said = programOf(world, d.program);
+    const double down = said.height_m - floor_height;
+    std::cout << "    asked to descend for 4 s: " << up << " m became " << down << " m, " << said.doing << "\n";
+    require(said.doing == "descending", "it says it is descending");
+    require(down < up - 1.0, "it came down");
+    require(down > -0.05, "and not through the floor");
+}
+
 void itsAccountCloses() {
     Drone d = droneOnTheFloor();
     LiveWorld &world = *d.world;
@@ -331,6 +372,7 @@ int main() {
     const std::pair<const char *, void (*)()> tests[] = {
         {"it rises to its height and holds it", itRisesToItsHeightAndHoldsIt},
         {"it goes where it is asked", itGoesWhereItIsAsked},
+        {"it rises and descends when it is asked to", itRisesAndDescends},
         {"its account closes", itsAccountCloses},
         {"turned off it comes down, and saved it flies on", turnedOffItComesDownAndSavedItFliesOn},
     };

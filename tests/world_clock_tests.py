@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unittest
 import urllib.request
@@ -66,17 +67,28 @@ class NoModelIsAskedWhileNobodyIsWatching(unittest.TestCase):
     """The owner's constraint, as a test."""
 
     def _a_brain(self, mode="jev"):
+        """A brain whose decider SAYS when it was asked.
+
+        Not one that raises, and not a check of `brain.thinking`: the
+        question goes on its own thread, and `thinking` is cleared again the
+        moment the decider returns or fails. Asserting on it was asserting on
+        which of the two threads got there first, which held one day and not
+        the next. `asked` is set before anything can clear it.
+        """
         import rover_brain
+
+        asked = threading.Event()
 
         class Decider:
             kind = label = "jev"
 
             def ask(self, *a, **k):
-                raise AssertionError("a model was asked while nobody was watching")
+                asked.set()
+                raise ValueError("this decider only records that it was asked")
 
         brain = rover_brain.Brain("rover", {"jev": Decider()}, mode, None)
         brain.before = self.DRY
-        return brain
+        return brain, asked
 
     #: A program that is running, with a water sensor. `situations` gives no
     #: event at all for a program without `power`, so a bare dict would have
@@ -89,10 +101,10 @@ class NoModelIsAskedWhileNobodyIsWatching(unittest.TestCase):
            "sensors": [{"side": 0.2, "sees": True}]}
 
     def test_a_brain_marked_unattended_asks_nothing(self):
-        brain = self._a_brain()
+        brain, asked = self._a_brain()
         brain.unattended = True
         brain.observe(self.WET, {"programs": [], "controls": []}, [], 1.0)
-        self.assertIsNone(brain.thinking, "nothing should have been asked")
+        self.assertFalse(asked.wait(1.0), "a model was asked while nobody was watching")
 
     def test_the_same_brain_does_ask_when_somebody_is_watching(self):
         """So the test above is about `unattended` and not about the event
@@ -103,16 +115,16 @@ class NoModelIsAskedWhileNobodyIsWatching(unittest.TestCase):
         page's frame rate never waits on the network): an exception raised in
         there would never reach this one.
         """
-        brain = self._a_brain()
+        brain, asked = self._a_brain()
         brain.unattended = False
         brain.observe(self.WET, {"programs": [], "controls": []}, [], 1.0)
-        self.assertEqual("water ahead on its left", brain.thinking,
-                         "with somebody watching, this event is one a decider is asked about")
+        self.assertTrue(asked.wait(5.0),
+                        "with somebody watching, this event is one a decider is asked about")
 
     def test_reflexes_alone_never_ask_whoever_is_watching(self):
-        brain = self._a_brain(mode="reflex")
+        brain, asked = self._a_brain(mode="reflex")
         brain.observe(self.WET, {"programs": [], "controls": []}, [], 1.0)
-        self.assertIsNone(brain.thinking)
+        self.assertFalse(asked.wait(1.0), "reflexes alone ask nobody")
 
 
 PORT = 8875
