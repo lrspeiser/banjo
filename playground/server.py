@@ -1319,6 +1319,14 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.server.app,body))
             if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.server.app,body))
             if path=="/api/workshop/library": return self.send(workshop_api.library(self.server.app,body))
+            # The Workshop's other tabs (workshop_tabs): what the person has,
+            # what each thing would take, and what they know how to do.
+            if path in ("/api/workshop/inventory","/api/workshop/recipes","/api/workshop/skills"):
+                import workshop_tabs
+                app=self.server.app
+                app.knowledge=lambda app=app: knowledge_view(app)
+                app.registry=registry
+                return self.send(getattr(workshop_tabs,path.rsplit("/",1)[1])(app))
             # What a chat turn is doing WHILE it does it. A turn is one POST
             # that answers at the end; this is how the page says what is going
             # on in the meantime instead of showing a spinner for half a minute.

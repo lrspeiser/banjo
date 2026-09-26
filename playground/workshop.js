@@ -1488,6 +1488,87 @@ function installBench() {
   right.append(foot);
   if (rackBox) rackBox.hidden = false;
   renderRackStrip();
+
+  // The tabs over the object: Lab is the object with its bar; Inventory,
+  // Skills and Recipes are read when opened (workshop_tabs). The chat on the
+  // left stays beside every one of them.
+  const centre = make("div", { id:"ws-centre" });
+  viewport.parentElement.insertBefore(centre, viewport);
+  const tabs = make("nav", { class:"ws-tabs", role:"tablist", "aria-label":"Workshop" });
+  for (const [name, label] of [["lab", "Lab"], ["inventory", "Inventory"], ["skills", "Skills"], ["recipes", "Recipes"]]) {
+    const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === "lab") }, label);
+    tab.onclick = () => showTab(name);
+    tabs.append(tab);
+  }
+  centre.append(tabs, viewport);
+  for (const name of ["inventory", "skills", "recipes"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+}
+
+// ---------------------------------------------------------------------------
+// Inventory, Skills, Recipes (workshop_tabs). Each is read when it is opened
+// and spends nothing.
+// ---------------------------------------------------------------------------
+function tag(text, cls = "") { return make("span", { class: `ws-tag ${cls}`.trim() }, text); }
+function item(title, sub, cls = "") { const li = make("li", cls ? { class: cls } : {}); li.append(make("strong", {}, title)); if (sub) li.append(make("small", {}, sub)); return li; }
+function fill(id, rows, empty) { const root = $(id); if (!root) return; root.replaceChildren(); if (!rows.length) root.append(item(empty)); for (const row of rows) root.append(row); }
+
+async function showInventory() {
+  const inv = await api("/api/workshop/inventory");
+  // The rack, editable here: what the bench holds of each material. Making
+  // is what spends it; designing never does.
+  fill("#ws-inv-materials", inv.materials.map((r) => {
+    const li = item(r.material, "");
+    const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(r.mass_kg),
+                                  "aria-label":`${r.material} on the rack, kilograms` });
+    input.addEventListener("change", () => guard(input, async () => {
+      const mass = input.valueAsNumber;
+      if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
+      const answer = await api("/api/workshop/library", { action:"set_rack", material:r.material, mass_kg:mass });
+      bench.rack = answer.rack; renderRack(); renderRackStrip(); reprobe();
+      say(`The rack holds ${mass} kg of ${r.material}.`);
+    }));
+    li.append(input, make("small", {}, "kg")); return li;
+  }), "The rack is empty.");
+  fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
+  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} · standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and ask the chat to make it.");
+  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
+  fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No assemblies in the library.");
+  fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
+  fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
+}
+
+async function showSkills() {
+  const s = await api("/api/workshop/skills");
+  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} techniques known. A technique is earned by what the engine measured your own hands, or your machines, doing.` : "The world has no techniques to learn yet.";
+  fill("#ws-skills-techniques", s.techniques.map((t) => { const li = item(t.name, t.describes, t.known ? "unlocked" : t.within_reach ? "reach" : ""); li.append(tag(t.known ? "unlocked" : t.within_reach ? "within reach" : `needs ${t.needs.join(", ")}`, t.known ? "ok" : "")); for (const d of t.opens) li.append(tag(`opens ${d}`)); return li; }), "No techniques.");
+  fill("#ws-skills-designs", s.designs.map((d) => item(d.name, (d.demonstrated.length ? `demonstrated: ${d.demonstrated.join(", ")}. ` : "") + `${d.evidence.length} piece${d.evidence.length === 1 ? "" : "s"} of evidence`, d.demonstrated.length ? "unlocked" : "")), "Nothing demonstrated yet: use a tool of your own on the ground, or watch a machine work.");
+  fill("#ws-skills-blocked", s.blocked.map((b) => item(b.name, `${b.route}: ${(b.because || []).join("; ")}`)), "Nothing is blocked.");
+  $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
+}
+
+async function showRecipes() {
+  const r = await api("/api/workshop/recipes");
+  fill("#ws-recipes-templates", r.templates.map((t) => {
+    const li = item(t.name, t.problem ? `cannot be assembled: ${t.problem}` : `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`, t.problem ? "" : t.enough ? "enough" : "short");
+    for (const m of t.materials || []) li.append(tag(`${m.kg} kg ${m.material} (have ${m.held_kg})`, m.enough ? "ok" : "short"));
+    for (const g of t.goods || []) li.append(tag(`${g.kg} kg ${g.substance} (have ${g.held_kg})`, g.enough ? "ok" : "short"));
+    if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
+    const open = make("button", { type:"button", class:"ws-action" }, "Design it");
+    open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:t.name, generation:bench.generation + 1 })); $("#ws-archetype").value = t.name; });
+    li.append(open); return li;
+  }), "No templates.");
+  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
+  fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
+  const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
+}
+
+function showTab(name) {
+  for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
+  const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
+  for (const pane of ["inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
+  if (name === "lab") resize();
+  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
+  if (loader) guard(null, loader);
 }
 
 // The rack as a row of bins, the same shape as the world's numbered bag slots.

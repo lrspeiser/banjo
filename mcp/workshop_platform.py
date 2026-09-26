@@ -42,6 +42,11 @@ HTTP = {
     "feedback": "/api/workshop/feedback",
     "remembered": "/api/workshop/remembered",
     "library": "/api/workshop/library",
+    # The bench's other tabs (playground/workshop_tabs): read-only views of
+    # what the person has, what each thing would take, and what they know.
+    "inventory": "/api/workshop/inventory",
+    "recipes": "/api/workshop/recipes",
+    "skills": "/api/workshop/skills",
     # Read-only, and about a turn rather than about a design: what the
     # assistant has done so far, while it is still doing it.
     "progress": "/api/workshop/progress",

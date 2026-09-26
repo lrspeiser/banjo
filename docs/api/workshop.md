@@ -59,6 +59,9 @@ way as the rest of the sim. The Workshop page calls only these routes.
 | `POST` | `/api/workshop/library` | List/load/save components and assemblies, set material prices, and save functional-test presets. |
 | `POST` | `/api/workshop/feedback` | Save rating/note/selection feedback and optionally persist the design. |
 | `POST` | `/api/workshop/remembered` | Read saved feedback, designs, library items, pricebook and test presets. |
+| `POST` | `/api/workshop/inventory` | The Inventory tab: the material rack, the goods rack, the products standing in the world, the saved designs, the personal library, and every component family. Read-only. |
+| `POST` | `/api/workshop/recipes` | The Recipes tab: for each template, its parts, materials against the rack, the goods its machines take, whether the rack covers it and what it can do; the open room's recipes and deposits. Read-only. |
+| `POST` | `/api/workshop/skills` | The Skills tab: the person's notebook as achievements -- each technique known, within reach or not yet, what it opens, what is demonstrated, what is blocked. Read-only. |
 | `POST` | `/api/workshop/progress` | Read what a chat turn has done so far, while it is still doing it. Takes `{"turn": "<the id sent with the request>"}` and changes nothing. |
 
 A turn of the Workshop assistant is one `POST /api/workshop/candidates` that
