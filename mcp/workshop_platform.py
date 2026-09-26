@@ -42,6 +42,11 @@ HTTP = {
     "feedback": "/api/workshop/feedback",
     "remembered": "/api/workshop/remembered",
     "library": "/api/workshop/library",
+    # The bench's other tabs (playground/workshop_tabs): read-only views of
+    # what the person has, what each thing would take, and what they know.
+    "inventory": "/api/workshop/inventory",
+    "recipes": "/api/workshop/recipes",
+    "skills": "/api/workshop/skills",
 }
 
 OPERATIONS = (
