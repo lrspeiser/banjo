@@ -376,6 +376,121 @@ class TheFourWaysOfTryingAThing(unittest.TestCase):
         self.assertTrue(all(not k.startswith(bench.MARKER + "#") for k in play["geometry"]))
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class EveryMaterialGivesWaySomewhere(unittest.TestCase):
+    """One table, eight materials, three ways of loading it.
+
+    Measured 2026-09-25, on the table the bench builds -- a 1.2 x 0.04 x 0.7 m
+    top on four 60 mm legs, 1.1 m between leg centres:
+
+        material    declared  the lattice  a weight on it   20 kg dropped
+        oak            52 MPa    520 (10x)  held to 2000 kg  dented at 5 m
+        iron          250        500  (2x)  held to 2000     dented at 5 m
+        aluminum      250        500  (2x)  held to 2000     dented at 5 m
+        glass          45         45  (1x)  held to 2000     BROKE at 2 m
+        ceramic       300       3600 (12x)  held to 2000     held from 5 m
+        rubber         15         30  (2x)  cannot say 1200  held from 5 m
+        ice             1          2  (2x)  cannot say 100   BROKE at 2 m
+        concrete        3          6  (2x)  cannot say 300   BROKE at 2 m
+
+    Brittle breaks, ductile dents, and the resting load flags exactly the three
+    materials weaker than the bending it puts in the top. Alumina ceramic is
+    the one that does nothing, for the reason glass used to: a break multiplier
+    of 12 nobody has measured.
+    """
+
+    #: What the top carries in bending with a weight set in the middle of it:
+    #: W L / 4 over b d^2 / 6, the same the engine's own survey computes.
+    SPAN, BREADTH, DEPTH = 1.1, 0.7, 0.04
+
+    def setUp(self):
+        self.app = SimpleNamespace(engine_path=ENGINE, workshop_owner_id="owner")
+
+    @classmethod
+    def bending_mpa(cls, load_kg):
+        return (0.25 * load_kg * 9.80665 * cls.SPAN
+                / (cls.BREADTH * cls.DEPTH ** 2 / 6.0) / 1e6)
+
+    def a_table(self, material, tag):
+        out = {"kind": "table", "design_id": f"{tag}-{material.replace(' ', '-')}",
+               "purpose": "be stood on", "parameters": {}, "component_overrides": {}}
+        from mcp import workshop_components
+        design, _ = workshop_components.design_from_spec(out)
+        out["component_overrides"] = {p.name: {"material": material} for p in design.parts}
+        return out
+
+    def test_a_resting_load_flags_exactly_what_it_is_too_heavy_for(self):
+        """2,000 kg is 28.9 MPa of bending. Three of the eight cannot take that
+        and five can, and the room says so for all eight -- which is the whole
+        screening arithmetic checked against the whole catalogue at once."""
+        from mcp import engine_materials
+        heavy = self.bending_mpa(2000)
+        self.assertAlmostEqual(28.9, heavy, places=1)
+        for material in ("oak", "iron", "aluminum", "glass", "alumina ceramic",
+                         "rubber", "ice", "concrete"):
+            mech = engine_materials.MECHANICS[material]
+            takes = min(mech.get("compressive_strength_pa", 1e30),
+                        mech["tensile_strength_pa"]) / 1e6
+            with self.subTest(material=material):
+                did = bench.try_it(self.app, self.a_table(material, "rest"),
+                                   load_kg=2000, seconds=1.0)
+                outcome = bench._outcome(did)
+                print(f"\n    {material:16} takes {takes:4.0f} MPa, carrying {heavy:.1f} -> {outcome}")
+                if takes > heavy:
+                    self.assertEqual("held", outcome,
+                                     f"{material} takes {takes} MPa and was asked for {heavy:.1f}")
+                else:
+                    self.assertEqual("cannot say", outcome,
+                                     f"{material} takes only {takes} MPa: it should not read as held")
+
+    def test_brittle_breaks_and_ductile_dents(self):
+        """A blow has to leave a mark on everything that is not ceramic."""
+        for material, expected in (("glass", "broke"), ("ice", "broke"), ("concrete", "broke"),
+                                   ("oak", "dented"), ("iron", "dented"), ("aluminum", "dented")):
+            with self.subTest(material=material):
+                did = bench.try_it(self.app, self.a_table(material, "blow"),
+                                   load_kg=20, from_m=5.0, seconds=1.5)
+                print(f"    20 kg from 5 m on {material:10} -> {bench._outcome(did)}")
+                self.assertEqual(expected, bench._outcome(did))
+
+    def test_alumina_ceramic_is_the_one_that_shrugs_it_off(self):
+        """Not an accident and not yet fixed, so it is written down.
+
+        Alumina breaks at 300 MPa and the lattice removes its bonds at TWELVE
+        times that strain -- 3,600 MPa -- for the same reason glass sat at
+        twice 45 until somebody looked. 20 kg from 5 m puts about 414 MPa of
+        bending in that top by hand, which is over what alumina takes and
+        nowhere near what this lattice asks of it. Nobody has measured a
+        multiplier for alumina, so nobody has changed it.
+        """
+        did = bench.try_it(self.app, self.a_table("alumina ceramic", "shrug"),
+                           load_kg=20, from_m=5.0, seconds=1.5)
+        print(f"    20 kg from 5 m on alumina ceramic -> {bench._outcome(did)} (known, see #glass)")
+        self.assertEqual("held", bench._outcome(did))
+        self.assertEqual([], did["broke"])
+
+    def test_nothing_bends_sags_or_buckles(self):
+        """There is no folding-under in this world, and that is architecture.
+
+        A body is rigid to the rigid solver; the lattice is consulted to break
+        it or to dent it and for nothing else. So the answers are hold, dent
+        and break, and "the legs went under it" is not among them. Rubber is
+        the proof: 10 MPa of Young's modulus, two thousandths of oak's, and by
+        hand its 60 mm legs squash 98 mm under two tonnes while Euler says they
+        cannot carry the load at all. Measured, the top sits within 1.2 mm of
+        where it sits empty.
+        """
+        empty = bench.try_it(self.app, self.a_table("rubber", "empty"), seconds=1.5)
+        loaded = bench.try_it(self.app, self.a_table("rubber", "loaded"),
+                              load_kg=2000, seconds=1.5)
+        up = empty["ended"]["bodies"][empty["made"]["root_body"]]["at_m"][1]
+        down = loaded["ended"]["bodies"][loaded["made"]["root_body"]]["at_m"][1]
+        print(f"    a rubber table under two tonnes: {1000 * (up - down):+.2f} mm")
+        self.assertLess(abs(up - down), 0.005,
+                        "something deformed under load, which this engine does not do -- "
+                        "if that has changed, this test is the place to say so")
+
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
 class WhatItCannotSay(unittest.TestCase):
     """An ice table held two tonnes, and so did a concrete one.
 

@@ -434,6 +434,54 @@ the same kind of brittle, but no measurement was taken for them, so they were
 left alone. Iron and aluminium have a plateau and keep it honestly. Ceramic
 sits at 12, which nobody has justified here either.
 
+## 1e2. What every material does
+
+**Measured 2026-09-25, after the glass change.** One table -- the 1.2 x 0.04 x
+0.7 m top on four 60 mm legs -- three ways of loading it, eight materials.
+
+| material | takes | the lattice breaks it at | a weight on it | 20 kg dropped on it | 20 kg thrown at it |
+|---|---|---|---|---|---|
+| oak | 52 MPa | 520 (10x) | held to 2,000 kg | dented at 5 m | went over at 8 m/s |
+| iron | 250 | 500 (2x) | held to 2,000 | dented at 5 m | broke at 14 m/s |
+| aluminum | 250 | 500 (2x) | held to 2,000 | dented at 5 m | went over at 22 m/s |
+| glass | 45 | 45 (1x) | held to 2,000 | **broke at 2 m** | broke at 4 m/s |
+| alumina ceramic | 300 | 3,600 (12x) | held to 2,000 | held from 5 m | dented at 14 m/s |
+| rubber | 15 | 30 (2x) | cannot say at 1,200 | held from 5 m | went over at 8 m/s |
+| ice | 1 | 2 (2x) | cannot say at 100 | broke at 2 m | broke at 4 m/s |
+| concrete | 3 | 6 (2x) | cannot say at 300 | broke at 2 m | broke at 4 m/s |
+
+**The resting-load path is right for all eight.** 2,000 kg is 28.9 MPa of
+bending in that top, and exactly the three materials weaker than that are
+flagged -- at loads that match their strengths to within one step of the
+ladder: rubber at 1,200 kg (17.3 MPa against 15), concrete at 300 (4.3 against
+3), ice at 100 (1.4 against 1). The five that are stronger hold. That is the
+screening arithmetic checked against the whole catalogue at once.
+
+**Brittle breaks, ductile dents.** Glass, ice and concrete come apart under a
+blow; oak, iron and aluminium take a permanent set instead. Both are answers; a
+dent is the lattice saying it gave and did not part.
+
+**Alumina ceramic is the one that shrugs everything off**, and for the reason
+glass used to: a break multiplier of **12**, so its bonds go at 3,600 MPa where
+alumina itself goes at 300. A 5 m drop puts about 414 MPa in that top by hand
+-- over what alumina takes, nowhere near what this lattice asks. Nobody has
+measured a multiplier for alumina, so nobody has changed it. Oak sits at 10x
+for the same unmeasured reason, though at least its answer is the right KIND
+for wood.
+
+**Nothing bends, sags or buckles, and that is architecture rather than an
+oversight.** A body is rigid to the rigid solver; the lattice is consulted to
+break it or to dent it and for nothing else. So the answers are hold, dent and
+break -- "the legs went under it" is not among them. Rubber is the proof: its
+Young's modulus is 10 MPa, two thousandths of oak's, and by hand its 60 mm legs
+squash 98 mm under two tonnes while Euler says they cannot carry the load at
+all. Measured, the top sits within **1.2 mm** of where it sits empty. Iron
+moves 0.02 mm and oak 0.23; all three are the same to within noise, which is
+what rigid means.
+
+All of it is pinned in `EveryMaterialGivesWaySomewhere`, including the ceramic
+exception, written into the test rather than left out of it.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot
