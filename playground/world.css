@@ -72,6 +72,22 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 
 /* The bag's slots along the bottom, under the crosshair -- or as near under it
    as the side view leaves room for. */
+/* Zoom: over the view, bottom left, out of the way of the hotbar in the
+   middle and the panel on the right. It is the one control that is worth
+   having under the hand while you are looking at something, so it is on the
+   view and not in a tab. */
+#zoom {
+  position: fixed; left: 14px; bottom: 14px; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 999px;
+  background: rgba(10,17,22,.72); border: 1px solid var(--edge);
+  font-size: 11px; color: var(--dim); backdrop-filter: blur(3px);
+}
+#zoom label { letter-spacing: .1em; text-transform: uppercase; }
+#zoom input[type=range] { width: 132px; accent-color: var(--warm); }
+#zoom output { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); }
+@media (max-width: 900px) { #zoom input[type=range] { width: 88px; } }
+
 #hotbar {
   position: fixed; bottom: 14px; z-index: 5; pointer-events: none;
   left: min(50vw, calc(100vw - var(--panel-w) - 262px)); transform: translateX(-50%);

@@ -198,6 +198,29 @@ scene.background = new THREE.Color(0x070b0d);
 scene.fog = new THREE.Fog(0x0a1116, 18, 55);
 
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 300);
+// ZOOM. The owner, 2026-09-26: "i need a slider that lets me zoom in and out
+// of a world to see things better." It is the field of view and nothing more:
+// where you stand does not move, so what you can reach, dig, pick up and put
+// down is exactly what it was at 1x. A camera that moved instead would change
+// all of that quietly, and reach is measured from the eye (world.js, aim).
+//
+// The slider is in MAGNIFICATION because that is the number a person means by
+// zoom -- bigger as things get bigger. 72 degrees is the view at 1x, and the
+// rest follows from it: half the field's tangent divided by the magnification.
+const FOV_AT_ONE = 72;
+const ZOOM_LEAST = 0.7, ZOOM_MOST = 4;
+function fovFor(mag) {
+  const half = Math.tan((FOV_AT_ONE * Math.PI / 180) / 2) / mag;
+  return 2 * Math.atan(half) * 180 / Math.PI;
+}
+function setZoom(mag) {
+  world.zoom = clamp(mag, ZOOM_LEAST, ZOOM_MOST);
+  camera.fov = fovFor(world.zoom);
+  camera.updateProjectionMatrix();
+  const slider = $("zoom-range"), said = $("zoom-said");
+  if (slider && slider.value !== String(world.zoom)) slider.value = String(world.zoom);
+  if (said) said.textContent = `${world.zoom.toFixed(1)}\u00d7`;
+}
 // Eye height. A person, not a drone: the scale of the room reads wrong from
 // anywhere else, and a 60 mm ball looks like a boulder from 300 mm up.
 const EYE = 1.62;
@@ -3363,7 +3386,14 @@ $("ask-text").addEventListener("keydown", (e) => { if (e.key === "Escape") e.tar
 // there as the hand's strength says, and what is in the way stops it.
 canvas.addEventListener("wheel", (e) => {
   const held = world.held;
-  if (!held || held.bow || held.blade || held.pick) return;
+  if (!held) {
+    // Hands empty: the wheel zooms. A notch is about a tenth of the way, and
+    // it works under pointer lock, where the slider cannot be clicked.
+    e.preventDefault();
+    setZoom(world.zoom * Math.exp(-e.deltaY * 0.0012));
+    return;
+  }
+  if (held.bow || held.blade || held.pick) return;
   e.preventDefault();
   // Placing: the wheel turns the see-through copy about the vertical instead,
   // a twelfth of a turn a notch, and the engine is asked about it at once.
@@ -3382,6 +3412,9 @@ canvas.addEventListener("wheel", (e) => {
 // the gate, the nock off the string. On the mouse as well as on R because a
 // latch is a second thing to do to the object you are already pointing at, and
 // reaching for a key to do it is one hand too many.
+$("zoom-range")?.addEventListener("input", (e) => setZoom(parseFloat(e.target.value)));
+setZoom(1);
+
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   // Secondary, in the middle of a wind-up: lower it instead of throwing.
