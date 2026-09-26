@@ -1205,6 +1205,144 @@ class ABreakSaysWhatItCost(PageJourney):
         self.no_page_errors("after the plank broke")
 
 
+class ADrawingOfTheMatterItIsMadeOf:
+    """What both of the rooms below check about a hull.
+
+    A body made of cells is drawn as the outside surface of those cells
+    (playground/cellmesh.js). The page used to draw one solid cube per cell, so
+    a body was a pile of blocks with every buried face of every one of them
+    drawn as well. The hull is a picture of the SAME matter, and this says so in
+    the only way that settles it: the volume the drawing encloses is the volume
+    of the cells the engine is colliding. A hull with a hole in it, a face wound
+    inside out, or a surface smoothed off the cell boundaries all fail that, and
+    all three draw perfectly well.
+
+    Exactly, while the body is still on its grid. A body that has moved -- and a
+    piece just broken off something has moved a long way -- is drawn where its
+    cells have got to, so its volume follows the matter rather than the grid and
+    the check is that it is near, not that it is exact. Past a third of a cell
+    the grid can no longer say which cell is beside which; then the mesher hands
+    the body back and the page draws cubes, which are always right."""
+
+    HULLS = """(() => {
+      const r = banjoRoom, h = r.world.cellSize, out = [];
+      for (const [name, held] of r.world.bodies) {
+        const mesh = held.mesh;
+        if (!mesh.userData.shaded) continue;
+        const p = mesh.geometry.attributes.position.array;
+        let volume = 0;
+        for (let t = 0; t < p.length; t += 9) {
+          const ax = p[t], ay = p[t+1], az = p[t+2];
+          const ux = p[t+3]-ax, uy = p[t+4]-ay, uz = p[t+5]-az;
+          const vx = p[t+6]-ax, vy = p[t+7]-ay, vz = p[t+8]-az;
+          volume += (ax*(uy*vz - uz*vy) + ay*(uz*vx - ux*vz) + az*(ux*vy - uy*vx)) / 6;
+        }
+        out.push({name, cells: mesh.userData.hullCells, quads: mesh.userData.hullQuads,
+                  bent: !!mesh.userData.hullBent, triangles: p.length / 9, volume,
+                  matter: mesh.userData.hullCells * h * h * h});
+      }
+      return out;
+    })()"""
+
+    def open_world(self, scene):
+        """The scene named, never whatever was left standing: a server holds
+        ONE room, so a class that wants a room of its own asks for it by name
+        and gets a server of its own to ask on."""
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene={scene}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{scene}'"
+                                      " && banjoRoom.ready()", 300),
+                        f"the {scene} room did not open")
+
+    def wait_for_hulls(self, many=1, timeout_s=180):
+        # A body's cells only travel when the set of bodies can have changed, so
+        # a room that has just opened is a room whose geometry is still coming.
+        self.assertTrue(self.wait_for(f"banjoRoom.hullsDrawn().hulls >= {many}", timeout_s),
+                        f"fewer than {many} bodies were ever drawn as a hull:"
+                        f" {self.js('banjoRoom.hullsDrawn()')}")
+
+    def each_piece_holds_what_it_is_made_of(self, hulls):
+        for piece in hulls:
+            with self.subTest(piece["name"]):
+                self.assertGreater(piece["cells"], 0)
+                if piece["bent"]:
+                    self.assertGreater(piece["volume"], 0.6 * piece["matter"])
+                    self.assertLess(piece["volume"], 1.4 * piece["matter"])
+                else:
+                    # A part in ten thousand. The buffer the corners go into is
+                    # single precision, so the volume comes back a few parts in
+                    # a hundred million off whatever the mesher worked out, and
+                    # everything this is looking for -- a face missing, a face
+                    # wound inside out, a surface moved off the cell boundaries
+                    # -- is out by a whole cell or more, not by a rounding.
+                    self.assertAlmostEqual(
+                        piece["volume"], piece["matter"], delta=piece["matter"] * 1e-4,
+                        msg=f"{piece['name']} is drawn as {piece['volume']:.9f} m3 "
+                            f"of matter and is made of {piece['matter']:.9f}")
+
+
+class ARoomWhereThingsStandOnTheGround(ADrawingOfTheMatterItIsMadeOf, PageJourney):
+    """The Explore valley -- one of everything the engine makes -- lit so that
+    what is standing on the ground looks like it is standing on it, and with
+    its lattice furniture drawn as its own surface rather than as cubes.
+
+    Nothing in here is moving, which is the point: this is the room where a
+    hull must come out exactly on the cell boundaries."""
+
+    SCENE = "explore"
+
+    def test_the_room_is_lit_with_a_sun_that_casts(self):
+        self.open_world(self.SCENE)
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().sunCasts", 60),
+                        "the sun never began casting")
+        lit = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   {lit}", flush=True)
+        self.assertTrue(lit["shadows"], "the shadow map is off")
+        self.assertTrue(lit["environment"], "there is nothing for a polished surface to reflect")
+        # ACESFilmicToneMapping. Without a tone curve a bright surface clips to
+        # white and takes its shape with it.
+        self.assertEqual(lit["toneMapping"], 4)
+        self.no_page_errors("with the room lit")
+
+    def test_a_body_of_cells_is_drawn_as_its_surface(self):
+        self.open_world(self.SCENE)
+        self.wait_for_hulls(2)
+        drawn = self.js("banjoRoom.hullsDrawn()")
+        hulls = self.js(self.HULLS)
+        print(f"\n   {drawn['hulls']} hulls, {drawn['cubes']} still cubes,"
+              f" {drawn['cells']} cells, {drawn['triangles']} triangles"
+              f" against {drawn['asCubes']} as cubes", flush=True)
+        self.assertEqual(drawn["cubes"], 0, "a body standing still fell back to cubes")
+        self.assertFalse([p["name"] for p in hulls if p["bent"]],
+                         "nothing in this room is moving, so nothing should read as bent")
+        # Cubes cost twelve triangles a cell whether the cell can be seen or
+        # not. Nothing about the matter changed; the drawing of it got smaller.
+        self.assertLess(drawn["triangles"], drawn["asCubes"] / 4)
+        self.each_piece_holds_what_it_is_made_of(hulls)
+        self.no_page_errors("with the room drawn as hulls")
+
+
+class ThePiecesOfABreakAreDrawnAsTheyAre(ADrawingOfTheMatterItIsMadeOf, PageJourney):
+    """The break room, where the plank comes apart under the falling ball.
+
+    The pieces are the hard case and the room has both kinds in it: some still
+    close enough to their grid to mesh, some thrown so far off it by the break
+    that no grid can say which cell is beside which, which are handed back and
+    drawn as cubes. Either way the drawing holds the matter it is made of."""
+
+    def test_the_pieces_are_drawn_as_the_matter_they_are(self):
+        self.open_world("tests-break")
+        self.wait_for_hulls(2)
+        hulls = self.js(self.HULLS)
+        drawn = self.js("banjoRoom.hullsDrawn()")
+        bent = [p["name"] for p in hulls if p["bent"]]
+        print(f"\n   {drawn['hulls']} pieces as hulls ({len(bent)} of them bent),"
+              f" {drawn['cubes']} thrown about too far to mesh and drawn as cubes",
+              flush=True)
+        self.assertGreaterEqual(len(hulls), 2)
+        self.each_piece_holds_what_it_is_made_of(hulls)
+        self.no_page_errors("after the plank broke")
+
+
 class BrokenPiecesComeWithYou(PageJourney):
     """Walking near broken pieces collects them, and a piece in the hand goes
     into what you carry (the owner, 2026-09-22: "when I walk near broken pieces

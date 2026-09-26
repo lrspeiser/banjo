@@ -19,6 +19,7 @@ import { BINDINGS, isKey, isButton, keyOf, controls, holdPoint, windUpPoint,
          windUpReached, throwStroke, placeStroke, throwable, handHelp, AimArc,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
+import { cellSurface } from "/cellmesh.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 
@@ -193,6 +194,19 @@ const canvas = $("stage");
 canvas.addEventListener("webglcontextlost", () => noteError("the WebGL context was lost"));
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// Lit the way a camera sees it rather than the way the numbers add up. With no
+// tone curve a bright surface clips to flat white and takes its shape with it,
+// which is why polished iron read as a grey cut-out; with one, the highlight
+// rolls off and the shape survives it.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+// The sun casts a shadow, and nothing else does. A second casting lamp doubles
+// what every frame draws, and a room lit from four sides has no shadow anybody
+// believes anyway. What this buys is the cue the room never had: a thing
+// standing on the ground looks like it is ON the ground, and a thing that is
+// not quite touching looks like that too.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070b0d);
 scene.fog = new THREE.Fog(0x0a1116, 18, 55);
@@ -206,19 +220,166 @@ camera.position.set(0, EYE, 2.6);
 // Lit so that a dark rubber ball on a dark floor is still an object. The sky
 // light does most of it, because a room lit by one lamp has half of every
 // object in shadow and the shape of a thing is what you are trying to see.
-const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 1.5);
+//
+// The sky's share of that is smaller than it was, because the sky is now also
+// something to REFLECT (skyEnvironment) and the two would otherwise be counted
+// twice. The sun's is larger, because it is the one that casts and a shadow
+// only reads as a shadow when the light making it leads.
+const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 0.85);
 scene.add(sky);
-const key = new THREE.DirectionalLight(0xfff2dd, 1.6);
+const key = new THREE.DirectionalLight(0xfff2dd, 2.0);
 key.position.set(4, 8, 5);
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x8cc0ff, 0.6);
+// A directional light shines from its position towards its target, so the
+// target has to be in the scene for the light to be aimed at all.
+scene.add(key.target);
+const rim = new THREE.DirectionalLight(0x8cc0ff, 0.45);
 rim.position.set(-6, 4, -5);
 scene.add(rim);
-const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+const fill = new THREE.DirectionalLight(0xffffff, 0.22);
 fill.position.set(0, 2, 8);
 scene.add(fill);
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
+
+// The sun's shadow, and why it follows the person.
+//
+// One lamp over a sixty-metre valley spreads its shadow map so thin that a
+// cart's wheel and the daylight under it land in the same texel, and the whole
+// thing turns to mud. So the shadow is drawn for a box a few strides across
+// that is kept over whoever is looking: what is near enough to matter is
+// sharp, and what is beyond the box is drawn unshadowed, which at that
+// distance nobody reads as missing.
+const SHADOW_REACH_M = 15;     // half the box, each side of the person
+const SHADOW_LAMP_M = 45;      // how far off the lamp stands along the sun
+const SHADOW_AHEAD_M = 5;      // the box set this far ahead of the view
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -SHADOW_REACH_M;
+key.shadow.camera.right = SHADOW_REACH_M;
+key.shadow.camera.top = SHADOW_REACH_M;
+key.shadow.camera.bottom = -SHADOW_REACH_M;
+key.shadow.camera.near = 1;
+key.shadow.camera.far = SHADOW_LAMP_M + 55;
+// Acne against peter-panning. The bias moves the depth comparison and the
+// normal bias moves the sample along the surface's own normal; a cell wall
+// forty millimetres thick needs the second one or it stripes itself in its own
+// shadow, and too much of the first lifts every shadow off its object's feet.
+key.shadow.bias = -0.0004;
+key.shadow.normalBias = 0.03;
+key.shadow.camera.updateProjectionMatrix();
+
+const SUN_TOWARD = new THREE.Vector3(0, 1, 0);
+const SUN_OVER = new THREE.Vector3(), SUN_LEFT = new THREE.Vector3();
+const SUN_FRAME = new THREE.Matrix4();
+const SUN_RIGHT = new THREE.Vector3(), SUN_UP = new THREE.Vector3();
+const ORIGIN = new THREE.Vector3(), STRAIGHT_UP = new THREE.Vector3(0, 1, 0);
+const SIDEWAYS = new THREE.Vector3(0, 0, 1);
+
+function followSun() {
+  // Whoever moved the lamp last says where the sun is: the day (lightFromSun),
+  // an expedition (gameplay.js), or the room's own default. All of them mean
+  // its position as a DIRECTION from the middle of the room, so that is how it
+  // is read -- and then the lamp is moved to stand over the person, because a
+  // shadow map has to be spent where somebody is looking.
+  if (!key.position.equals(SUN_LEFT) && key.position.lengthSq() > 1e-9)
+    SUN_TOWARD.copy(key.position).normalize();
+  // Under the horizon it lights nothing, and a shadow map drawn for a lamp of
+  // no brightness is a sixth of a frame spent on nothing at all.
+  key.castShadow = key.intensity > 0.02 && SUN_TOWARD.y > 0.04;
+  if (!key.castShadow) return;
+  SUN_OVER.copy(camera.position).addScaledVector(forwardVector().setY(0).normalize(),
+                                                 SHADOW_AHEAD_M);
+  // Snapped to the shadow map's own grid. A box that slides with the person by
+  // less than a texel makes every shadow edge crawl, which reads as the room
+  // being unsteady rather than as the person walking; stepped a whole texel at
+  // a time it holds still.
+  SUN_FRAME.lookAt(SUN_TOWARD, ORIGIN,
+                   Math.abs(SUN_TOWARD.y) > 0.99 ? SIDEWAYS : STRAIGHT_UP);
+  SUN_RIGHT.setFromMatrixColumn(SUN_FRAME, 0);
+  SUN_UP.setFromMatrixColumn(SUN_FRAME, 1);
+  const texel = 2 * SHADOW_REACH_M / key.shadow.mapSize.x;
+  const across = Math.round(SUN_OVER.dot(SUN_RIGHT) / texel) * texel;
+  const up = Math.round(SUN_OVER.dot(SUN_UP) / texel) * texel;
+  const along = SUN_OVER.dot(SUN_TOWARD);
+  SUN_OVER.copy(ORIGIN).addScaledVector(SUN_RIGHT, across)
+          .addScaledVector(SUN_UP, up).addScaledVector(SUN_TOWARD, along);
+  key.position.copy(SUN_OVER).addScaledVector(SUN_TOWARD, SHADOW_LAMP_M);
+  SUN_LEFT.copy(key.position);
+  key.target.position.copy(SUN_OVER);
+  key.target.updateMatrixWorld();
+}
+
+// Something for a polished surface to reflect.
+//
+// Metalness has no meaning without an environment. A mirror with nothing
+// around it is black, which is why iron at 0.92 metal read as a flat grey
+// cut-out and glass read as a tinted sheet: they were reflecting a room that
+// was not there. This gives them the cheapest honest one there is -- the
+// room's own sky over the room's own ground, blurred to nothing but a gradient
+// -- and rebuilds it only when the sky changes colour, which under a day is a
+// few times a minute and otherwise never.
+const SKY_ACROSS = 32;
+const skyPixels = new Uint8Array(SKY_ACROSS * (SKY_ACROSS / 2) * 4);
+const skySource = new THREE.DataTexture(skyPixels, SKY_ACROSS, SKY_ACROSS / 2);
+skySource.mapping = THREE.EquirectangularReflectionMapping;
+skySource.colorSpace = THREE.SRGBColorSpace;
+// A DataTexture is uploaded without a flip, so its first row is what the
+// sampler reads at v = 0 -- and three.js puts v = 0 at the BOTTOM of an
+// equirectangular sky (equirectUv: v = asin(dir.y)/PI + 0.5). Row zero is
+// therefore straight down, and the last row is straight up.
+skySource.flipY = false;
+let skyBlur = null;
+let skyMade = "";
+const skyAbove = new THREE.Color(), skyBelow = new THREE.Color();
+const skyBand = new THREE.Color(), skyRGB = { r: 0, g: 0, b: 0 };
+
+function skyEnvironment() {
+  // Built from what the room is lit BY, and not from what is drawn behind it.
+  // A room without a day has a near-black backdrop and a bright sky light over
+  // it, and reflecting the backdrop would tell every polished surface in the
+  // place that it was standing in the dark -- which is exactly the flat grey
+  // this was meant to fix. The hemisphere light is the room's own statement
+  // about what is overhead and what is underfoot, so that is what it reflects.
+  const lit = Math.min(1, sky.intensity);
+  const mark = `${sky.color.getHex()}:${GROUND_COLOURS[1].getHex()}:${lit.toFixed(2)}`;
+  if (mark === skyMade) return;
+  skyMade = mark;
+  skyAbove.copy(sky.color).multiplyScalar(lit);
+  // Underfoot is the ground the room is actually standing on, dimmed the way
+  // the sky's own downward colour is: bare soil throws back soil.
+  skyBelow.copy(GROUND_COLOURS[1]).lerp(sky.groundColor, 0.45).multiplyScalar(lit);
+  const rows = SKY_ACROSS / 2;
+  for (let y = 0; y < rows; ++y) {
+    // Row zero is straight down and the last row straight up (see flipY).
+    const up = y / (rows - 1);
+    skyBand.copy(skyBelow).lerp(skyAbove, up * up * (3 - 2 * up));
+    // Written as the bytes of an sRGB texture, which is what it is tagged as.
+    // Handing it the working colour space's own numbers would bake the sky in
+    // about half as bright as it looks.
+    skyBand.getRGB(skyRGB, THREE.SRGBColorSpace);
+    for (let x = 0; x < SKY_ACROSS; ++x) {
+      const at = (y * SKY_ACROSS + x) * 4;
+      skyPixels[at] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.r)));
+      skyPixels[at + 1] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.g)));
+      skyPixels[at + 2] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.b)));
+      skyPixels[at + 3] = 255;
+    }
+  }
+  skySource.needsUpdate = true;
+  const made = skyPMREM().fromEquirectangular(skySource);
+  if (skyBlur) skyBlur.dispose();
+  skyBlur = made;
+  scene.environment = made.texture;
+  // Enough to put something in a reflection and not so much that it washes the
+  // lamps out: the sun and the sky still say where the light comes from.
+  scene.environmentIntensity = 0.6;
+}
+
+let pmrem = null;
+function skyPMREM() {
+  if (!pmrem) pmrem = new THREE.PMREMGenerator(renderer);
+  return pmrem;
+}
 // The sky's light at night, and the rim's: dim, but enough to see what is in
 // the room by.
 const SKY_NIGHT = 0.4, RIM_NIGHT = 0.3;
@@ -333,6 +494,7 @@ const floor = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x1b2429, roughness: 0.95, metalness: 0.0 }));
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = -0.002;   // just under the grid, so the lines stay visible
+floor.receiveShadow = true;
 scene.add(floor);
 
 // ---------------------------------------------------------------------------
@@ -458,6 +620,10 @@ function drawTerrain(block) {
   geometry.computeVertexNormals();
   ground.mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.96, metalness: 0.0 }));
+  // The ground catches what the room drops on it, and casts too: a valley
+  // whose own hills throw no shade at a low sun is a valley with no shape.
+  ground.mesh.castShadow = true;
+  ground.mesh.receiveShadow = true;
   scene.add(ground.mesh);
 
   // The water: the same points, lifted to the surface where there is water
@@ -471,6 +637,10 @@ function drawTerrain(block) {
   ground.water = new THREE.Mesh(wet, new THREE.MeshStandardMaterial({
     vertexColors: true, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05,
     depthWrite: false }));
+  // Water catches a shadow and throws none: what a surface does to the light
+  // going through it is refraction, and drawing it as a shadow would be a
+  // picture of something that is not happening.
+  ground.water.receiveShadow = true;
   ground.water.renderOrder = 2;
   scene.add(ground.water);
 
@@ -832,15 +1002,24 @@ const MATERIAL_LOOK = {
 //
 // Glass is glass. Two shards off the same pane want the same material object,
 // and then they also batch instead of forcing a state change between them.
+//
+// Two of them, in fact. A body drawn as the hull of its cells carries its
+// corner shading in the mesh itself (cellmesh.js), and a material that reads
+// that attribute is not the same material as one that does not -- so glass
+// drawn as a hull and glass drawn as a box are two shared materials rather
+// than one, and each still batches with its own kind.
 const MATERIALS = new Map();
-function look(material) {
-  const had = MATERIALS.get(material);
+const SHADED = new Map();
+function look(material, shaded = false) {
+  const kept = shaded ? SHADED : MATERIALS;
+  const had = kept.get(material);
   if (had) return had;
   const m = MATERIAL_LOOK[material] || { color: 0x9aa6ae, rough: 0.6, metal: 0.1 };
   const options = { color: m.color, roughness: m.rough, metalness: m.metal };
   if (m.clear) { options.transparent = true; options.opacity = 1 - m.clear * 0.55; }
+  if (shaded) options.vertexColors = true;
   const made = new THREE.MeshStandardMaterial(options);
-  MATERIALS.set(material, made);
+  kept.set(material, made);
   return made;
 }
 
@@ -988,8 +1167,28 @@ function buildMesh(body) {
   // asking, then throw both away for anything drawn from its cells -- which is
   // every piece of everything that ever breaks.
   if (Array.isArray(body.cells_local_m) && body.cells_local_m.length) {
-    // Drawn from its cells: one instanced cube per cell, carried by the body's
-    // own pose, so it stays one pose on the wire and one draw call on screen.
+    // Drawn from its cells -- as the outside surface of them where that can be
+    // built honestly (cellmesh.js), and as cubes where it cannot. Either way it
+    // is one mesh carried by the body's own pose, so it stays one pose on the
+    // wire and one draw call on screen.
+    //
+    // The surface is the same matter: it stands on the cell boundaries the
+    // engine is colliding, it is not smoothed, and where the mesher will not
+    // vouch for it the cubes come back, which are always right.
+    const hull = cellSurface(body.cells_local_m, world.cellSize);
+    if (hull) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(hull.positions, 3));
+      geometry.setAttribute("normal", new THREE.Float32BufferAttribute(hull.normals, 3));
+      geometry.setAttribute("color", new THREE.Float32BufferAttribute(hull.shades, 3));
+      const hulled = new THREE.Mesh(geometry, look(body.material, true));
+      hulled.userData.shaded = true;
+      hulled.userData.hullQuads = hull.quads;
+      hulled.userData.hullFaces = hull.faces;
+      hulled.userData.hullCells = body.cells_local_m.length;
+      hulled.userData.hullBent = !!hull.bent;
+      return hulled;
+    }
     const cloud = new THREE.InstancedMesh(cellCube(), look(body.material),
                                           body.cells_local_m.length);
     for (let i = 0; i < body.cells_local_m.length; ++i) {
@@ -1065,6 +1264,10 @@ function draw(state) {
     if (!held || dentChanged || reshaped || (body.cells_local_m && !held.fromCells) || (body.mechanical_model === "precise-rigid-v1" && !held.fromPrecise)) {
       if (held) forget(held.mesh);
       const mesh = buildMesh(body);
+      // Everything the engine is carrying casts and catches the sun. This is
+      // the one place a body's mesh is made, so it is the one place to say so.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       scene.add(mesh);
       held = { mesh, fromPrecise: body.mechanical_model === "precise-rigid-v1", fromCells: !!(body.cells_local_m && body.cells_local_m.length),
                dentMm: body.dent_mm || 0 };
@@ -4976,7 +5179,8 @@ function glow(name, tK) {
   const charred = entry ? (heat.char.get(name) || 0) : 0;
   if (!g && !(charred > 0.001)) {
     if (own) {
-      if (entry && entry.mesh.material === own) entry.mesh.material = look(entry.material);
+      if (entry && entry.mesh.material === own)
+        entry.mesh.material = look(entry.material, entry.mesh.userData.shaded);
       own.dispose();
       heat.glowing.delete(name);
     }
@@ -4987,7 +5191,7 @@ function glow(name, tK) {
   let mine = own;
   if (!mine || entry.mesh.material !== mine) {
     if (mine) mine.dispose();
-    mine = look(entry.material).clone();
+    mine = look(entry.material, entry.mesh.userData.shaded).clone();
     entry.mesh.material = mine;
     heat.glowing.set(name, mine);
   }
@@ -5825,6 +6029,8 @@ function frame() {
   animateWater(now);
   stepFoam(dt);
   workbench.advance(now);
+  followSun();
+  skyEnvironment();
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -6807,6 +7013,38 @@ window.banjoRoom = {
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
+  // How the bodies made of cells are actually drawn, which is not something a
+  // picture can be asked: `hulls` are the ones drawn as their outside surface
+  // (cellmesh.js) and `cubes` the ones the mesher would not vouch for and
+  // handed back. `triangles` is what they cost against `asCubes`, what the
+  // same cells would have cost drawn one cube each.
+  hullsDrawn: () => {
+    let hulls = 0, cubes = 0, cells = 0, triangles = 0;
+    for (const held of world.bodies.values()) {
+      const mesh = held.mesh;
+      if (mesh.isInstancedMesh && mesh.geometry === cellGeometry) {
+        ++cubes;
+        cells += mesh.count;
+        triangles += 12 * mesh.count;
+      } else if (mesh.userData.shaded) {
+        ++hulls;
+        cells += mesh.userData.hullCells || 0;
+        triangles += mesh.geometry.attributes.position.count / 3;
+      }
+    }
+    return { hulls, cubes, cells, triangles, asCubes: 12 * cells,
+             shadows: renderer.shadowMap.enabled, sunCasts: key.castShadow,
+             environment: !!scene.environment, toneMapping: renderer.toneMapping };
+  },
+  // What one body of cells came out as: the faces its cells expose, the
+  // rectangles those merged into, and the triangles drawn for it.
+  hullOf: (name) => {
+    const held = world.bodies.get(name);
+    if (!held || !held.mesh.userData.shaded) return null;
+    return { faces: held.mesh.userData.hullFaces, quads: held.mesh.userData.hullQuads,
+             cells: held.mesh.userData.hullCells, bent: !!held.mesh.userData.hullBent,
+             triangles: held.mesh.geometry.attributes.position.count / 3 };
+  },
   // What the heat drawing was last given, and what it drew from it.
   heatState: () => heat.last,
   // What heat has left of what things can carry, as the engine last said it.
