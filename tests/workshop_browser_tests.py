@@ -293,6 +293,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
         time.sleep(.2)
         self.assertEqual(name, self.js("document.querySelector('#ws-name').textContent"))
 
+    def chat(self, said):
+        """Say something in the bench chat: how a run is asked for now."""
+        self.js(f"document.querySelector('#ws-component-chat-text').value={json.dumps(said)};"
+                "document.querySelector('#ws-component-chat').requestSubmit()")
+
     def test_workspace_preview_load_run_and_controls_never_cover_canvas(self):
         self.pointer_click('[data-mode="test"]')
         self.wait("document.querySelector('#ws-test-catalog [data-value=declared_static_load]')")
@@ -302,16 +307,22 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual("2",self.js("document.querySelector('#workshop-stage').dataset.physicsBodyCount"))
         self.assertEqual("0",self.js("document.querySelector('#workshop-stage').dataset.physicsTime"))
         self.assert_geometry_is_visible()
-        layout=self.js("""(()=>{const c=document.querySelector('#workshop-stage').getBoundingClientRect(),
-            d=document.querySelector('#ws-simulation-dock').getBoundingClientRect();
-            return {width:c.width,height:c.height,overlap:d.top<c.bottom-.1,advanced:document.querySelector('.ws-advanced').open};})()""")
-        self.assertGreater(layout["width"],700);self.assertGreater(layout["height"],250)
+        # The dock is hidden until a run: a hidden thing covers nothing.
+        overlap="""(()=>{const c=document.querySelector('#workshop-stage').getBoundingClientRect(),
+            e=document.querySelector('#ws-simulation-dock'),d=e.getBoundingClientRect();
+            return {width:c.width,height:c.height,overlap:!e.hidden&&d.top<c.bottom-.1,advanced:document.querySelector('.ws-advanced').open};})()"""
+        layout=self.js(overlap)
+        self.assertGreater(layout["width"],500);self.assertGreater(layout["height"],250)
         self.assertFalse(layout["overlap"]);self.assertFalse(layout["advanced"])
         self.field('[data-bench-control="load_kg"]',10)
         self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready' && document.querySelector('#ws-setup-status').textContent.includes('10.')")
-        self.pointer_click('#ws-run-bench')
+        # A run is asked for in the chat; there is no Run button.
+        self.assertTrue(self.js("document.querySelector('#ws-simulation-dock').hidden"))
+        self.chat("test it")
         self.wait("document.querySelector('#ws-simulation-status')?.dataset.state === 'complete'",timeout=60)
         self.assertFalse(self.js("document.querySelector('#ws-playback').hidden"))
+        self.assertFalse(self.js("document.querySelector('#ws-simulation-dock').hidden"),"the replay is shown after a run")
+        self.assertFalse(self.js(overlap)["overlap"],"and it is a row under the canvas, not over it")
         self.pointer_click('#ws-play')
         self.pointer_click('#ws-reset-setup')
         self.wait("document.querySelector('#ws-setup-status')?.dataset.state === 'ready'")
@@ -371,12 +382,14 @@ class WorkshopBrowserRegression(unittest.TestCase):
                 const response=await window.__originalFetch(url,options);
                 return await new Promise(resolve=>window.__releaseRun=()=>resolve(response));
             }return window.__originalFetch(url,options);};""")
-        self.pointer_click('#ws-run-bench')
+        self.chat("test it")
         self.wait("typeof window.__releaseRun === 'function'")
         self.pointer_click('[data-mode="build"]')
         self.pointer_click('#ws-product-catalog .ws-part-open[data-part="leg-1"]')
         self.js("window.__releaseRun()")
-        self.wait("!document.querySelector('#ws-run-bench').disabled")
+        # The run's turn is over when the chat is free again: a run that came
+        # back to a newer product or component is dropped, not completed.
+        self.wait("!document.querySelector('#ws-component-chat button[type=submit]').disabled && !document.querySelector('#ws-component-chat-text').disabled")
         self.assertEqual('leg-1', self.js("document.querySelector('#workshop-stage').dataset.showing"))
         self.assertEqual('true', self.js("document.querySelector('[data-view=skin]').getAttribute('aria-pressed')"))
         self.assert_geometry_is_visible()
@@ -388,7 +401,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assert_geometry_is_visible()
         self.page.send("Emulation.setDeviceMetricsOverride",{"width":640,"height":900,"deviceScaleFactor":1,"mobile":False})
         self.wait("document.querySelector('#workshop-stage').getBoundingClientRect().width < 650")
-        self.pointer_click('#ws-fit-view')
+        # There is no Fit view button: the view keeps the thing on a resize.
+        self.js("window.dispatchEvent(new Event('resize'))")
         self.assert_geometry_is_visible()
 
     def test_library_rows_are_names_and_open_a_product_to_its_components(self):
@@ -876,28 +890,35 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("Number(document.querySelector('#ws-play-timeline').value)<Number(document.querySelector('#ws-play-timeline').max)")
         self.assertEqual("Pause",self.js("document.querySelector('#ws-play').textContent"))
 
-    def test_run_and_readout_are_visible_and_clickable_without_sidebar_scrolling(self):
+    def test_a_run_is_asked_for_in_the_chat_and_the_readout_is_said_there(self):
+        """There is no Run button. "test it" in the chat runs the chosen test,
+        the replay appears under the thing, and what happened is said in the
+        chat -- which stays beside every tab."""
         self.page.send("Emulation.setDeviceMetricsOverride",{"width":1280,"height":720,"deviceScaleFactor":1,"mobile":False})
         self.click('[data-mode="test"]')
-        self.wait("!document.querySelector('#ws-simulation-dock').hidden")
-        point=self.js("""(()=>{const e=document.querySelector('#ws-run-bench'),r=e.getBoundingClientRect();
-          return {x:r.x+r.width/2,y:r.y+r.height/2,visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,
-          hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e};})()""")
-        self.assertTrue(point['visible'] and point['hit'],point)
-        # Real mouse input: a programmatic element.click() can pass for an
-        # offscreen button and failed to catch the previous below-fold layout.
-        for kind in ('mousePressed','mouseReleased'):
-            self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':point['x'],'y':point['y'],'button':'left','clickCount':1})
+        self.assertTrue(self.js("document.querySelector('#ws-simulation-dock').hidden"))
+        self.assertIsNone(self.js("document.querySelector('#ws-run-bench').offsetParent"),"the Run button is not shown")
+        box=self.js("""(()=>{const e=document.querySelector('#ws-component-chat-text'),r=e.getBoundingClientRect();
+          return {visible:r.top>=0&&r.bottom<=innerHeight&&r.width>0,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e};})()""")
+        self.assertTrue(box['visible'] and box['hit'],box)
+        said=self.js("document.querySelectorAll('#ws-chat-log .ws-chat-message').length")
+        self.chat("test it")
         self.wait("document.querySelector('#ws-simulation-status')?.dataset.state==='complete'")
-        # The readout has to be there and have a size. It sits in a rail that
-        # scrolls now, so demanding it be wholly inside the window is asking
-        # the old three-pane layout a question the one screen does not answer.
+        self.assertFalse(self.js("document.querySelector('#ws-simulation-dock').hidden"))
         self.assertTrue(self.js("(()=>{const r=document.querySelector('#ws-simulation-readout')"
                                 ".getBoundingClientRect();return r.height>0&&r.width>0;})()"))
         self.assertEqual(.25,float(self.js("document.querySelector('#ws-play-speed').value")))
-        self.click('[data-mode="build"]')
-        # The dock was revealed by the Test tab. There are no tabs; it is there.
-        self.assertFalse(self.js("document.querySelector('#ws-simulation-dock').hidden"))
+        self.wait(f"document.querySelectorAll('#ws-chat-log .ws-chat-message').length > {said}+1")
+        last=self.js("[...document.querySelectorAll('#ws-chat-log .ws-chat-message.assistant')].pop().textContent")
+        self.assertTrue(len(last.strip())>10,last)
+        self.assertEqual([], self.js("[...document.querySelectorAll('#ws-chat-log .ws-chat-message.working')].map(e=>e.textContent)"),
+                         "no 'Working…' bubble is left hanging by a turn the model never saw")
+        self.assertFalse(self.js("document.querySelector('#ws-component-chat-text').disabled"))
+        # The chat, and Check it and Make it, are beside every tab.
+        self.click('.ws-tabs button[data-tab="recipes"]')
+        self.assertEqual("flex",self.js("getComputedStyle(document.querySelector('#ws-chat-col')).display"))
+        self.assertFalse(self.js("document.querySelector('#ws-pane-recipes').hidden"))
+        self.click('.ws-tabs button[data-tab="lab"]')
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')

@@ -842,17 +842,13 @@ function installEditor() {
   const context = make("section", {id:"ws-view-context", role:"status", "aria-live":"polite"});
   context.append(make("strong", {id:"ws-view-title"}, "Product"), make("p",{id:"ws-view-description"}),
     make("div", {id:"ws-inspector-actions",class:"ws-row"}));
-  const fit = make("button", {id:"ws-fit-view",type:"button",class:"ws-action"}, "Fit view");
-  fit.onclick=()=>{if(workspace.mode==="test" && (bench.playback || workspace.setup)) frameSimulation(bench.playback || workspace.setup); else {draw(chosen());frameCandidate();}};
+  // Fit view and the camera presets are gone: drag to orbit, wheel to zoom,
+  // and the view is framed when a thing is opened.
   const back = make("button", {id:"ws-inspector-back",type:"button",class:"ws-action"}, "Back to product");
   back.onclick=showWholeProduct;
   const use = make("button", {id:"ws-inspector-use",type:"button",class:"ws-action"}, "Use on selected part");
   use.onclick=()=>guard(use,()=>reuseLibraryComponent(bench.libraryInspection.library_item.item_id));
-  context.querySelector("#ws-inspector-actions").append(fit,back,use);
-  for(const [name,y,p] of [["Perspective",.72,.42],["Side",0,.08],["Top",0,1.25]]) {
-    const button=make("button",{type:"button",class:"ws-action"},name);
-    button.onclick=()=>{yaw=y;pitch=p;placeCamera();};context.querySelector("#ws-inspector-actions").append(button);
-  }
+  context.querySelector("#ws-inspector-actions").append(back,use);
   $(".ws-viewport").append(context);
   const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
   setup.onclick=()=>{benchTestRequest++;$("#ws-bench-result").replaceChildren();clearPlayback();scheduleSetup(0);};
@@ -891,7 +887,21 @@ function installEditor() {
   $("#ws-component-name").oninput = (event) => {
     if (event.target.value.trim()) event.target.dataset.edited = "1"; else delete event.target.dataset.edited;
   };
-  chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
+  chat.onsubmit = (event) => {
+    event.preventDefault();
+    const message = ($("#ws-component-chat-text")?.value || "").trim();
+    const command = chatCommand(message);
+    if (command) {
+      event.stopImmediatePropagation();
+      $("#ws-component-chat-text").value = "";
+      // The page's chat shell may have put up its "Working…" bubble and
+      // locked the box for a turn that never goes to the model: clear it.
+      const settle = () => { document.querySelectorAll("#ws-chat-log .ws-chat-message.working").forEach((el) => el.remove()); const box = $("#ws-component-chat-text"); if (box) box.disabled = false; const send = chat.querySelector("button[type=submit]"); if (send) send.disabled = false; const st = $("#ws-chat-status"); if (st) st.textContent = ""; };
+      guard(chat.querySelector("button"), async () => { try { await command(); } finally { settle(); setTimeout(settle, 50); } });
+      return;
+    }
+    guard(chat.querySelector("button"), chatEdit);
+  };
   testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); scheduleSetup(0); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
   $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
@@ -927,9 +937,10 @@ function laidOutCenter(candidate, part) {
 
 function setMakeStatus(message, bad) {
   const line = $("#ws-make-status");
-  if (!line) return;
-  line.textContent = message || "";
-  line.dataset.bad = bad ? "yes" : "no";
+  if (line) { line.textContent = message || ""; line.dataset.bad = bad ? "yes" : "no"; }
+  // What checking and making say is said in the chat too: that is where the
+  // person asked, and where a short rack is explained.
+  if (message && !/…$/.test(message)) chatSay(message);
 }
 
 // Make it: the one act that spends. Preview is free and runs whatever the rack
@@ -1090,11 +1101,13 @@ function installBench() {
   // The notice is what say() writes to, and the editor put it in the top bar
   // before this ran. Rebuilding the bar must not take it away.
   const notice = $("#ws-notice");
-  // The tabs on top (Lab, Inventory, Skills, Recipes) stay through the rebuild.
+  // The header is the tabs (Lab, Inventory, Skills, Recipes) and the way out.
+  // The products are in Recipes and Inventory; Check it and Make it sit with
+  // the chat, which is where checking and making are asked for.
   const tabs = $(".ws-tabs");
   top.replaceChildren(
-    make("h1", {}, "Workshop"), ...(tabs ? [tabs] : []), products, make("span", { class:"ws-spacer" }),
-    status, checkButton, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
+    make("h1", {}, "Workshop"), ...(tabs ? [tabs] : []), make("span", { class:"ws-spacer" }),
+    make("a", { href:"/world" }, "Back to the world"), keep);
   if (notice) top.append(notice);
   if (picker) {
     keep.append(picker);
@@ -1148,15 +1161,25 @@ function installBench() {
   const chatForm = $("#ws-component-chat");
   const chatHome = make("section", { id:"ws-chat-home" });
   chatHome.append(make("h2", {}, "Chat"));
+  // What it measures (parts, mass, stands on, tips at) is in the extras now:
+  // "Held to" did nothing a person could act on from the Lab.
   const heldBox = make("section", { id:"ws-held-box" });
-  heldBox.append(make("h2", {}, "Held to"), make("div", { id:"ws-held" }));
+  heldBox.append(make("h3", {}, "Measured"), make("div", { id:"ws-held" }));
   const extras = make("details", { id:"ws-extras" });
   extras.append(make("summary", {}, "Bench extras"));
   const rightKeep = [...right.children];
-  right.replaceChildren(chatHome, heldBox, extras);
+  right.replaceChildren();
+  right.hidden = true;
   for (const node of rightKeep) extras.append(node);
   for (const node of leftKeep) if (node !== parts) extras.append(node);
   if (chatForm) chatHome.append(chatForm);
+  // The chat column: beside every tab, not only the Lab. Check it and Make it
+  // under the chat, with what they said last; the extras folded at the foot.
+  const chatCol = make("aside", { id:"ws-chat-col", "aria-label":"Workshop chat" });
+  const acts = make("div", { class:"ws-row ws-chat-acts" });
+  acts.append(checkButton, madeButton);
+  chatCol.append(chatHome, acts, status, extras, heldBox);
+  root.append(chatCol);
 
   // The bench tests stay cards rather than a dropdown: what each one does to
   // the thing is worth reading before you pick it. This used to live in the
@@ -1176,7 +1199,7 @@ function installBench() {
   // The old shell revealed the run dock only on the Test tab. There are no
   // tabs now, so it is simply there.
   const dock = $("#ws-simulation-dock");
-  if (dock) dock.hidden = false;
+  if (dock) dock.hidden = true;
   // Closing the bench puts the product back in front of you.
   extras.addEventListener("toggle", () => { if (!extras.open) setWorkspaceMode("build"); });
 
@@ -1193,11 +1216,8 @@ function installBench() {
 
   // The rack runs along the bottom, where the world keeps its bag slots.
   const rackBox = $("#ws-rack")?.closest("section") || null;
-  const foot = make("footer", { id:"ws-rack-foot" });
-  foot.append(make("h2", {}, "The rack"), make("div", { id:"ws-rack-strip" }));
-  root.append(foot);
-  if (rackBox) rackBox.hidden = false;
-  renderRackStrip();
+  const inventoryFirst = $("#ws-pane-inventory .ws-tabcols > div");
+  if (rackBox && inventoryFirst) { rackBox.hidden = false; inventoryFirst.prepend(rackBox); $("#ws-inv-materials")?.closest("h2")?.remove(); }
 }
 
 // The rack as a row of bins, the same shape as the world's numbered bag slots.
@@ -1261,11 +1281,43 @@ async function editSkin() {
   if (!took(answer, selected)) return; view = "skin"; pressView("skin"); show(false);
   if ($("#ws-skin-physical").checked) await loadMatter(true);
 }
+// What the chat does itself, without the model: checking, making, testing.
+// "check it" draws the thing again until the room can carry it; "make it"
+// puts it in the world, and the rack's shortfall is what it says back; "test
+// it" (or "run the drop test") runs a bench test and says what happened.
+function chatSay(text, role = "assistant") {
+  const log = $("#ws-chat-log");
+  if (!log) { say(text); return; }
+  const row = make("div", { class:`ws-chat-message ${role}` });
+  row.append(make("span", { class:"ws-chat-who" }, role === "user" ? "You" : "Workshop"), make("div", { class:"ws-chat-body" }, text));
+  log.append(row); log.scrollTop = log.scrollHeight;
+}
+function chatCommand(message) {
+  const said = message.toLowerCase().replace(/[.!?]+$/, "").trim();
+  if (/^(check( it)?|check (its )?validity|does it work|is it valid)$/.test(said)) return () => checkValidity($("#ws-check"));
+  if (/^(make( it)?|build( it)?|install( it)?|put it in the world)$/.test(said)) return () => makeIt($("#ws-make"));
+  const test = said.match(/^(?:test( it)?|simulate( it)?|run (?:the |a )?(?:simulation|test)|run (?:the |a )?(.+?) test)$/);
+  if (test) {
+    return async () => {
+      const wanted = (test[3] || "").trim();
+      if (wanted) {
+        const found = (bench.benchTests || []).find((t) => (t.name || t.test || "").toLowerCase().includes(wanted));
+        if (!found) throw new Error(`There is no test called ${wanted}. The tests are ${(bench.benchTests || []).map((t) => t.name).join(", ")}.`);
+        bench.selectedBenchTest = found.test; renderBenchControls();
+      }
+      setWorkspaceMode("test");
+      await runBenchTest();
+      const result = $("#ws-simulation-readout")?.textContent || $("#ws-bench-result")?.textContent || "Ran it.";
+      chatSay(result.trim().slice(0, 600) || "Ran it.");
+    };
+  }
+  return null;
+}
+
 async function chatEdit() {
-  if (!bench.selectedPart) throw new Error("Click the part you want to talk about first.");
   const input = $("#ws-component-chat-text"), message = input.value.trim();
   if (!message) throw new Error("Tell Workshop what to change.");
-  const selected = bench.selectedPart;
+  const selected = bench.selectedPart || "";
   const answer = await api("/api/workshop/candidates", { ...candidateBody(), component_chat:{ part_name:selected, message } });
   if (!took(answer, selected)) return;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
@@ -1640,6 +1692,8 @@ async function runBenchTest() {
     if(!current()) return;
     if (!answer.bench?.playback?.frames || answer.bench.playback.frames.length < 2) throw new Error("No visible simulation was returned. This test is not complete.");
     renderBenchResult(answer.bench);
+    // The run was asked for in the chat; its replay is shown under the thing.
+    const dock = $("#ws-simulation-dock"); if (dock) dock.hidden = false;
     status.dataset.state="complete";status.textContent="Simulation complete. Showing calculated behavior; use Pause or Replay to inspect it.";
     $("#ws-simulation-feedback").replaceChildren(status);
   } catch(error) {
@@ -2342,7 +2396,10 @@ function fill(id, rows, empty) { const root = $(id); root.replaceChildren(); if 
 
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
+  if ($("#ws-rack")) $("#ws-inv-materials").replaceChildren(); else
   fill("#ws-inv-materials", inv.materials.map((r) => item(r.material, `${r.mass_kg} kg`)), "The rack is empty.");
+  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} · standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and tell the chat to make it.");
+  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
   fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
   fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open on the bench"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "Nothing saved yet: save a design from the Lab.");
   fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");

@@ -29,10 +29,28 @@ def inventory(app: Any) -> dict[str, Any]:
     families = [{"name": f.name, "role": f.role, "about": f.about, "offers": list(f.offers),
                  "parameters": [{"name": p.name, "unit": p.unit, "default": p.default} for p in f.parameters]}
                 for f in w.LIBRARY_FAMILIES]
+    # The products built: standing in the world (the room's install receipts),
+    # and saved on the bench (workshop_store).
+    room = getattr(app, "room", None)
+    in_world = []
+    for receipt in getattr(room, "workshop_installs", None) or []:
+        if not isinstance(receipt, dict) or receipt.get("status") != "installed":
+            continue
+        kind = receipt.get("kind") or (receipt.get("candidate") or {}).get("kind") or receipt.get("design_id") or "?"
+        in_world.append({"name": receipt.get("root_body") or kind, "kind": str(kind).split("-")[0],
+                         "design_id": receipt.get("design_id"), "scene": receipt.get("scene"),
+                         "at": receipt.get("request_id")})
+    saved = []
+    try:
+        import workshop_store
+        from workshop_api_core import _store
+        saved = workshop_store.list_saved(_store(app))
+    except Exception:
+        saved = []
     return {"materials": rack.get("materials", []), "goods": goods.get("goods", []),
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
-            "families": families}
+            "families": families, "in_world": in_world, "saved": saved}
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:

@@ -6,6 +6,24 @@ body.workshop-mode { margin:0;background:#0d1117;color:#e7edf4;overflow:hidden;f
 body.workshop-mode > :not(#design-workshop) { display:none!important; }
 #design-workshop[hidden] { display:none; }
 #design-workshop { position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr;background:#0d1117; }
+/* The bench once installed: the tabs' panes on the left, the chat column beside every one of them. */
+#design-workshop.ws-benched { grid-template-columns:minmax(0,1fr) clamp(300px,32%,400px); }
+#design-workshop.ws-benched .ws-right[hidden] { display:none!important; }
+#design-workshop.ws-benched .ws-viewport { grid-template-rows:auto minmax(0,1fr) auto auto auto; }
+#design-workshop.ws-benched .ws-benchbar { position:static;grid-row:3;margin:.5rem .7rem;flex-wrap:wrap; }
+#design-workshop.ws-benched #ws-view-context { grid-row:4; }
+#design-workshop.ws-benched .ws-simulation-dock { grid-row:5; }
+#design-workshop.ws-benched #ws-run-bench { display:none; }
+#design-workshop.ws-benched > .ws-top { grid-column:1 / -1; }
+#design-workshop.ws-benched > .ws-tabpane,#design-workshop.ws-benched > #ws-pane-lab { grid-column:1;grid-row:2;min-height:0; }
+#design-workshop.ws-benched > #ws-pane-lab { grid-template-columns:260px minmax(320px,1fr); }
+#ws-chat-col { grid-column:2;grid-row:2;min-height:0;overflow:auto;padding:.85rem;border-left:1px solid #2a3340;background:#111821;display:flex;flex-direction:column;gap:.6rem; }
+#ws-chat-col h2 { margin:.2rem 0 .4rem;font-size:.88rem;text-transform:uppercase;letter-spacing:.08em;color:#9ba9ba; }
+#ws-chat-col #ws-chat-log { max-height:46vh;overflow:auto; }
+.ws-chat-acts { margin:0; }
+#ws-make-status { margin:0;font-size:.8rem;color:#b7c2d0; }
+#ws-make-status[data-bad="yes"] { color:#f0b8b8; }
+#ws-chat-col #ws-extras { margin-top:auto;font-size:.8rem; }
 .ws-tabs { display:flex;gap:.25rem;margin-left:.5rem; }
 .ws-tabs button { border:1px solid #465363;background:#17212c;color:#dfe7f1;border-radius:.4rem;padding:.38rem .7rem;cursor:pointer; }
 .ws-tabs button[aria-selected="true"] { background:#dce7f5;color:#111820; }

@@ -374,16 +374,25 @@ That provenance lets the user reopen the object later and say "edit this chair";
 
 ## Lab, Inventory, Skills and Recipes
 
-**Status, 2026-09-26.** The bench has four tabs on top. **Lab** is the bench
-as it was: the 3D viewer, the candidate, its components, checks and chat.
-The other three read beside it and spend nothing (`workshop_tabs`, one
-route each: `/api/workshop/inventory`, `/skills`, `/recipes`).
+**Status, 2026-09-26.** The bench has four tabs on top and one chat beside
+all of them. **Lab** is the 3D viewer with the parts list; the chat column
+on the right stays through every tab, with "Check it" and "Make it" under
+it and what they said last. The chat takes those as words too -- "check
+it", "make it", "test it" or "run the drop test" -- and does them itself
+without the model; making without the materials is answered in the chat
+with what the rack is short. There are no product buttons across the top
+(the products are in Recipes, and what has been built in Inventory), no
+camera presets, no run-simulation button, and no rack strip along the
+bottom: the rack is edited in Inventory. The other three tabs read beside
+the Lab and spend nothing (`workshop_tabs`, one route each:
+`/api/workshop/inventory`, `/skills`, `/recipes`).
 
-- **Inventory**: the material rack (oak, iron, glass, stocked on the bench),
-  the goods rack (copper, copper wire: what machines put on a stockpile
-  marked as the Workshop's rack), the saved designs and components of the
-  personal library, and every component family a design is built from with
-  its parameters.
+- **Inventory**: the material rack, editable (oak, iron, glass, stocked on
+  the bench), the goods rack (copper, copper wire: what machines put on a
+  stockpile marked as the Workshop's rack), the products made and standing
+  in the world and the designs saved on the bench -- each with a way into
+  the Lab -- the personal library, and every component family a design is
+  built from with its parameters.
 - **Recipes**: for every template the bench can make, what it takes -- its
   parts and families, its materials by mass against the rack, the goods its
   machines take -- whether the rack covers it, and what it can do (drives
