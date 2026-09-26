@@ -1234,30 +1234,36 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertTrue(self.js("document.querySelector('.ws-right').hidden"))
         self.assertTrue(self.js("document.querySelector('.ws-top').hidden"))
 
-    def test_a_run_is_a_take_beside_the_clean_thing_and_the_machine_is_worked_as_in_the_world(self):
-        """A run never replaces the thing: it becomes a take beside the clean
-        one, with its picture, and the clean take brings the design back. And
-        a machine's own controls -- power, direction, setting, its program --
-        are under the object, as its panel has them in the world."""
+    def test_you_drive_it_with_the_keys_and_the_drive_is_a_take_beside_the_clean_thing(self):
+        """You become the thing: take the keys, W goes and A turns, in a little
+        world drawn as it happens; let go, and the drive is a take beside the
+        clean one, with its picture; Clean brings the design back untouched."""
         self.open_product("rover")
-        self.wait("document.querySelectorAll('#ws-machine-bench .ws-mb-row').length === 2")
-        self.assertEqual(["left wheel", "right wheel"],
-                         self.js("[...document.querySelectorAll('#ws-machine-bench .ws-mb-row')].map(r=>r.dataset.control)"))
-        self.assertTrue(self.js("document.querySelector('#ws-mb-program').checked"), "its roam program is on by default")
-        self.field("#ws-mb-seconds", 3)
-        self.pointer_click("#ws-mb-go")
-        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state === 'complete'", timeout=120)
-        self.wait("document.querySelectorAll('#ws-takes .ws-take').length === 2")
-        takes = self.js("[...document.querySelectorAll('#ws-takes .ws-take')].map(t=>({take:t.dataset.take,title:t.querySelector('strong').textContent,selected:t.getAttribute('aria-selected'),picture:Boolean(t.querySelector('img'))}))")
+        self.wait("document.querySelector('#ws-drive-take')")
+        self.pointer_click("#ws-drive-take")
+        self.wait("document.querySelector('#workshop-stage').dataset.driving === 'true'", timeout=60)
+        self.assertTrue(self.js("document.querySelector('#ws-drive-take').hidden"))
+        frames = self.js("document.querySelector('#ws-play-timeline') ? 0 : 0")
+        # W down: it goes. The keys go to the window, as a person's do.
+        self.js("dispatchEvent(new KeyboardEvent('keydown', {key:'w', bubbles:true}))")
+        self.wait("/Going forward/.test(document.querySelector('#ws-drive-status').textContent)", timeout=30)
+        self.wait("parseFloat((document.querySelector('#ws-drive-status').textContent.match(/([0-9.]+) s/)||[0,0])[1]) >= 1.5", timeout=60)
+        self.js("dispatchEvent(new KeyboardEvent('keyup', {key:'w', bubbles:true}))")
+        self.js("dispatchEvent(new KeyboardEvent('keydown', {key:'a', bubbles:true}))")
+        self.wait("/Turning left/.test(document.querySelector('#ws-drive-status').textContent)", timeout=30)
+        self.js("dispatchEvent(new KeyboardEvent('keyup', {key:'a', bubbles:true}))")
+        self.assertEqual("true", self.js("document.querySelector('[data-view=physics]').getAttribute('aria-pressed')"), "drawn as it happens")
+        # Let go: the drive is a take.
+        self.pointer_click("#ws-drive-stop")
+        self.wait("document.querySelectorAll('#ws-takes .ws-take').length === 2", timeout=60)
+        self.wait("/Let go: driven for/.test(document.querySelector('#ws-drive-status').textContent)", timeout=30)
+        said = self.js("document.querySelector('#ws-drive-status').textContent")
+        moved = re.search(r"([0-9.]+) m from where it stood", said)
+        self.assertTrue(moved and float(moved.group(1)) > 0.5, said)
+        takes = self.js("[...document.querySelectorAll('#ws-takes .ws-take')].map(t=>({take:t.dataset.take,title:t.querySelector('strong').textContent,selected:t.getAttribute('aria-selected')}))")
         self.assertEqual("clean", takes[0]["take"])
-        self.assertEqual(("Little world", "true"), (takes[1]["title"], takes[1]["selected"]))
+        self.assertEqual(("Driven", "true"), (takes[1]["title"], takes[1]["selected"]))
         self.wait("document.querySelectorAll('#ws-takes .ws-take img').length === 2")
-        self.assertEqual("physics", self.js("document.querySelector('[data-view=physics]').getAttribute('aria-pressed')==='true' ? 'physics' : 'other'"))
-        # The worked orders reached the little world as the panel's own operate:
-        # wheels forward at full setting, it went somewhere.
-        said = self.js("document.querySelector('#ws-bench-result').textContent")
-        moved = re.search(r"has moved (\d+) mm", said)
-        self.assertTrue(moved and int(moved.group(1)) > 500, said)
         # Back to the clean thing: the design, untouched, with no run over it.
         self.pointer_click('#ws-takes .ws-take[data-take="clean"]')
         self.wait("document.querySelector('#ws-playback').hidden")

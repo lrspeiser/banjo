@@ -1523,19 +1523,42 @@ function installBench() {
 // Takes: the clean thing, and every run of it, as little pictures
 // ---------------------------------------------------------------------------
 function snapshot() {
-  try { renderer.render(scene, camera); return stage.toDataURL("image/jpeg", 0.6); } catch { return ""; }
+  // The buffer is not kept between frames, so draw and read in one go.
+  renderer.render(scene, camera);
+  return stage.toDataURL("image/jpeg", 0.7);
+}
+// A picture of what is on the canvas, once there is something on it: the
+// first frames after a thing is opened can be empty while its meshes are
+// built, and an empty picture is worse than a late one.
+function thumbLater(assign, when = () => true, tries = 8) {
+  const retry = () => { if (tries > 0) setTimeout(() => thumbLater(assign, when, tries - 1), 400); };
+  setTimeout(() => {
+    if (!when()) { retry(); return; }
+    let url = "";
+    try { url = snapshot(); } catch (error) { console.warn("banjo: no picture of the take", error); }
+    if (!url) { retry(); return; }
+    const img = new Image();
+    img.onload = () => {
+      const probe = document.createElement("canvas"); probe.width = 32; probe.height = 24;
+      const g = probe.getContext("2d"); g.drawImage(img, 0, 0, 32, 24);
+      const d = g.getImageData(0, 0, 32, 24).data; let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+      if (sum / (d.length / 4 * 3) > 6) { assign(url); renderTakes(); } else retry();
+    };
+    img.onerror = retry;
+    img.src = url;
+  }, 250);
 }
 function scheduleCleanThumb() {
   if (bench.cleanThumbRevision === bench.revision && bench.cleanThumb) return;
   const revision = bench.revision;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (revision !== bench.revision || bench.playback || bench.isolated || bench.libraryInspection) return;
-    bench.cleanThumb = snapshot(); bench.cleanThumbRevision = revision; renderTakes();
-  }));
+  bench.cleanThumbRevision = revision; bench.cleanThumb = bench.cleanThumb || "";
+  thumbLater((url) => { if (revision === bench.revision) bench.cleanThumb = url; },
+             () => revision === bench.revision && !bench.playback && !bench.isolated && !bench.libraryInspection);
 }
 function takeLabel(recording) {
   const result = bench.lastResult && bench.lastResult.playback === recording ? bench.lastResult : null;
-  const test = recording.test === "try_in_a_room" ? "Little world" : (benchDefinition(recording.test)?.name || recording.test || "Run");
+  const test = recording.test === "try_in_a_room" ? "Little world" : recording.test === "drive" ? "Driven" : (benchDefinition(recording.test)?.name || recording.test || "Run");
   const said = result?.says || result?.measured?.outcome || "";
   return { title: test, said: String(said).slice(0, 90) };
 }
@@ -1547,7 +1570,7 @@ function noteTake(recording) {
   bench.takes.push(take);
   bench.shownTake = take.id;
   renderTakes();
-  requestAnimationFrame(() => requestAnimationFrame(() => { take.thumb = snapshot(); renderTakes(); }));
+  thumbLater((url) => { take.thumb = url; }, () => bench.playback === recording);
 }
 function showTake(id) {
   bench.shownTake = id;
@@ -1582,60 +1605,100 @@ function machinesOf(candidate) {
   const record = candidate?.component_overrides?.["@machines"];
   return record && typeof record === "object" ? record : null;
 }
+// Drive it: you become the thing. Take the keys, and W A S D (or the arrows)
+// go, back, turn left and turn right in a little world kept open on the
+// server, drawn here as it happens; let go, and the drive is a take.
+const DRIVE_KEYS = { w: "forward", arrowup: "forward", s: "back", arrowdown: "back",
+                     a: "left", arrowleft: "left", d: "right", arrowright: "right" };
 function renderMachineBench(candidate) {
   const root = $("#ws-machine-bench"); if (!root) return;
   const record = machinesOf(candidate);
-  const controls = (record?.controls || []);
-  const programs = (record?.programs || []);
-  if (!controls.length && !programs.length) { root.hidden = true; root.replaceChildren(); return; }
+  const drivable = (record?.programs || []).length || (record?.controls || []).length >= 2;
+  if (!drivable) { if (bench.drive) letGo(); root.hidden = true; root.replaceChildren(); return; }
   root.hidden = false;
   if (root.dataset.forRevision === String(bench.revision) && root.children.length) return;
+  if (bench.drive) letGo();
   root.dataset.forRevision = String(bench.revision);
   root.replaceChildren();
-  root.append(make("h3", {}, "Work it"),
-    make("p", { class:"ws-note" }, "The same controls its panel has in the world: power, a direction and a drive setting for each control, and its program. Set them and press Do it: it runs in a little world with ground and a sky, and the run becomes a take."));
-  const rows = [];
-  for (const control of controls) {
-    const row = make("div", { class:"ws-mb-row", "data-control":control.name });
-    row.append(make("strong", {}, control.name));
-    const power = make("div", { class:"ws-mb-seg", role:"group", "aria-label":`${control.name} power` });
-    for (const [value, label] of [["on", "On"], ["off", "Off"]]) {
-      const b = make("button", { type:"button", "data-power":value, "aria-pressed":String(value === "on") }, label);
-      b.onclick = () => { for (const o of power.children) o.setAttribute("aria-pressed", String(o === b)); };
-      power.append(b);
-    }
-    const direction = make("div", { class:"ws-mb-seg", role:"group", "aria-label":`${control.name} direction` });
-    for (const [value, label] of [["-1", "Reverse"], ["0", "Stop"], ["1", "Forward"]]) {
-      const b = make("button", { type:"button", "data-direction":value, "aria-pressed":String(value === "1") }, label);
-      b.onclick = () => { for (const o of direction.children) o.setAttribute("aria-pressed", String(o === b)); };
-      direction.append(b);
-    }
-    const setting = make("input", { type:"range", min:"0", max:"100", step:"5", value:"100", "aria-label":`${control.name} drive setting, percent` });
-    const shown = make("output", {}, "100%"); setting.oninput = () => { shown.textContent = `${setting.value}%`; };
-    const settingLabel = make("label", { class:"ws-mb-setting" }, "Setting "); settingLabel.append(setting, shown);
-    row.append(power, direction, settingLabel);
-    root.append(row); rows.push({ control, row, power, direction, setting });
-  }
-  const run = make("div", { class:"ws-mb-run" });
-  const program = make("input", { id:"ws-mb-program", type:"checkbox" }); program.checked = programs.length > 0;
-  const programLabel = make("label", {}, programs.length ? `Its program on (${programs[0].kind})` : "It has no program"); programLabel.prepend(program);
-  if (!programs.length) program.disabled = true;
-  const seconds = make("input", { id:"ws-mb-seconds", type:"number", min:"1", max:"30", step:"1", value:"6", "aria-label":"for how many seconds" });
-  const secondsLabel = make("label", {}, "for "); secondsLabel.append(seconds, " s");
-  const go = make("button", { id:"ws-mb-go", type:"button", class:"ws-action primary" }, "Do it");
-  go.onclick = () => guard(go, async () => {
-    const orders = rows.map(({ control, power, direction, setting }) => ({
-      at_s: 0, control: control.name,
-      power: power.querySelector('[aria-pressed="true"]').dataset.power === "on",
-      direction: Number(direction.querySelector('[aria-pressed="true"]').dataset.direction),
-      setting: Number(setting.value) / 100 }));
-    bench.selectedBenchTest = "try_in_a_room";
-    setWorkspaceMode("test");
-    await runBenchTest({ seconds: Number(seconds.value) || 6, turn_on: program.checked, do: orders });
-  });
-  run.append(programLabel, secondsLabel, go);
-  root.append(run);
+  const take = make("button", { id:"ws-drive-take", type:"button", class:"ws-action primary" }, "Take the keys");
+  const stop = make("button", { id:"ws-drive-stop", type:"button", class:"ws-action" }, "Let go");
+  stop.hidden = true;
+  const status = make("p", { id:"ws-drive-status", class:"ws-note" },
+    "Take the keys and you are the thing: W or \u2191 goes, S or \u2193 backs, A or \u2190 turns left, D or \u2192 turns right, in a little world with ground and a sky. Let go, and the drive is a take.");
+  take.onclick = () => guard(take, takeTheKeys);
+  stop.onclick = () => guard(stop, letGo);
+  const row = make("div", { class:"ws-mb-run" }); row.append(take, stop);
+  root.append(make("h3", {}, "Drive it"), status, row);
 }
+
+async function takeTheKeys() {
+  if (bench.drive) return;
+  const answer = await api("/api/workshop/drive", { action:"start", candidate:candidateBody() });
+  const recording = answer.recording;
+  if (!recording?.frames?.length) throw new Error("The little world gave no first frame.");
+  bench.drive = { keys: { forward:false, back:false, left:false, right:false }, recording, inflight:false, timer:null,
+                  answer };
+  clearPlayback();
+  setWorkspaceMode("test");
+  bench.playback = recording; bench.playbackIndex = recording.frames.length - 1; bench.playbackPlaying = false;
+  view = "physics"; pressView("physics"); show(false); frameSimulation(recording); drawPlayback();
+  $("#ws-drive-take").hidden = true; $("#ws-drive-stop").hidden = false;
+  driveStatus(`Driving${answer.program ? ` its ${answer.kind} program` : answer.wheels.length ? ` its ${answer.wheels.join(" and ")}` : ""}: W A S D or the arrows. Esc lets go.`);
+  stage.dataset.driving = "true";
+  stage.focus?.();
+  bench.drive.timer = setInterval(driveStep, 125);
+}
+function driveStatus(text) { const line = $("#ws-drive-status"); if (line) line.textContent = text; }
+async function driveStep() {
+  const drive = bench.drive;
+  if (!drive || drive.inflight) return;
+  drive.inflight = true;
+  try {
+    const said = await api("/api/workshop/drive", { action:"step", keys:drive.keys, dt_s:0.125 });
+    if (!bench.drive) return;
+    for (const frame of said.frames || []) drive.recording.frames.push(frame);
+    drive.recording.duration_s = Number(said.t_s) || drive.recording.duration_s;
+    bench.playback = drive.recording; bench.playbackIndex = drive.recording.frames.length - 1;
+    if (view !== "physics") { view = "physics"; pressView("physics"); }
+    drawPlayback();
+    const held = Object.entries(drive.keys).filter(([, v]) => v).map(([k]) => k).join("+") || "no keys";
+    driveStatus(`${(said.doing || said.asked || "").replace(/^\w/, (c) => c.toUpperCase())}${said.why ? `: ${said.why}` : ""} \u00b7 ${held} \u00b7 ${Number(said.t_s).toFixed(1)} s`
+      + (said.speed_m_s != null ? ` \u00b7 ${Number(said.speed_m_s).toFixed(2)} m/s` : "")
+      + (said.fell_over ? " \u00b7 it fell over" : "") + ((said.broke || []).length ? ` \u00b7 ${said.broke.length} broke` : ""));
+  } catch (error) {
+    driveStatus(`The little world stopped answering: ${error.message}`);
+    await letGo(true);
+  } finally { if (bench.drive) bench.drive.inflight = false; }
+}
+async function letGo(quiet = false) {
+  const drive = bench.drive; if (!drive) return;
+  clearInterval(drive.timer); bench.drive = null;
+  delete stage.dataset.driving;
+  $("#ws-drive-take") && ($("#ws-drive-take").hidden = false); $("#ws-drive-stop") && ($("#ws-drive-stop").hidden = true);
+  let answer = null;
+  try { answer = await api("/api/workshop/drive", { action:"stop" }); } catch (error) { if (!quiet) throw error; }
+  const recording = answer?.recording || drive.recording;
+  if (recording?.frames?.length > 1) {
+    bench.lastResult = { test:"drive", says: answer?.says || "driven", playback: recording };
+    renderBenchResult({ test:"drive", says: answer?.says || "driven", playback: recording, measured:{} });
+    if (!bench.playback || bench.playback === drive.recording) setPlayback(recording);
+  }
+  driveStatus(answer?.says ? `Let go: ${answer.says}. The drive is a take.` : "Let go.");
+}
+addEventListener("keydown", (event) => {
+  if (!bench.drive) return;
+  const target = event.target;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  if (event.key === "Escape") { event.preventDefault(); guard(null, letGo); return; }
+  const key = DRIVE_KEYS[event.key.toLowerCase()];
+  if (!key) return;
+  event.preventDefault(); bench.drive.keys[key] = true;
+});
+addEventListener("keyup", (event) => {
+  if (!bench.drive) return;
+  const key = DRIVE_KEYS[event.key.toLowerCase()];
+  if (key) { event.preventDefault(); bench.drive.keys[key] = false; }
+});
 
 // ---------------------------------------------------------------------------
 // Inventory, Skills, Recipes (workshop_tabs). Each is read when it is opened
@@ -2110,6 +2173,12 @@ function renderBenchResult(result) {
   bench.lastResult = result || null;
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
+  if (result.test === "drive") {
+    card.append(make("strong", {}, "Driven by hand"), make("p", {}, result.says || "driven"));
+    root.append(card);
+    if (result.playback) setPlayback(result.playback);
+    return;
+  }
   if (result.test === "try_in_a_room") {
     // The little world says what it did and what became of the thing. Turning
     // is its own line: a stool that settled 3 mm and a stool lying on its side

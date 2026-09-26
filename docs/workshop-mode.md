@@ -393,16 +393,24 @@ broke"), and stays for the session. Click a run's take and its replay is
 shown; click Clean and the design is back, with no run over it. A run
 never replaces the thing.
 
-**Work it.** Under the object, a machine's own controls, the ones its
-panel has in the world: for each control, power On/Off, Reverse/Stop/
-Forward and a drive setting; its program on or off; and for how long. "Do
-it" runs it in the little world (`try_in_a_room`) with those as `do`
-orders at the start -- the same `operate` the world's panel sends -- and
-the run is a take. The little world takes the robot templates now (rover,
+**Drive it.** The owner, of a panel of controls and a Do it button: "I
+don't understand what turning the left wheel to reverse and hitting do it
+means ... allow me to become the object and control it with the keys."
+So, under the object: Take the keys, and you are the thing. W or up goes,
+S or down backs, A or left turns left, D or right turns right, in a little
+world kept open on the server (`workshop_drive`, `/api/workshop/drive`)
+and stepped as the keys arrive, an eighth of a second at a time, every
+frame drawn here as it happens. The keys are put to the thing's program as
+the asks a panel makes in the world -- going forward, backing off, turning
+left, turning right, waiting (`LiveWorld::behave`) -- so the rover and the
+drone drive the same way; a machine with wheels and no program is driven
+by its wheels' own controls, the same operate its panel sends. Let go (or
+Esc), and the drive is a take beside the clean thing, with its picture and
+how far it went. The little world takes the robot templates now (rover,
 drone, processor: they install as exact bodies through the same gate).
-Measured: the rover, wheels forward at full setting with its roam program
-on, moved 2396 mm in 3 s of the little world and turned 0.6 degrees, its
-battery 100,000 to 99,953 J with its panel giving 34.6 W.
+Measured (`tests/workshop_drive_tests.py`): the rover, W held for two
+seconds, went 2.2 m; A held, it turned; keys up, it held; and the drone,
+W held, lifted and went forward. One drive at a time to a server.
 
 - **Inventory**: the material rack, editable (oak, iron, glass, stocked on
   the bench), the goods rack (copper, copper wire: what machines put on a
