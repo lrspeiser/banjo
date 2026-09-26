@@ -30,8 +30,13 @@ import workshop_test_room as rooms
 IDLE_S = 90.0
 STEP_MOST_S = 0.5
 FRAMES_MOST = 12000                     # ten minutes at the recorder's thirtieth of a second
-ASKS = {(True, False, False, False): "going forward", (False, True, False, False): "backing off",
-        (False, False, True, False): "turning left", (False, False, False, True): "turning right"}
+# The keys, in the order one wins over another: a machine does one thing at a
+# time, and going up or down is the deliberate key, so it wins while it is
+# held. Rising and descending are a flying machine's only (LiveWorld::behave
+# refuses them to anything else), so they are skipped for the rest.
+ASKS = (("up", "rising"), ("down", "descending"), ("left", "turning left"), ("right", "turning right"),
+        ("forward", "going forward"), ("back", "backing off"))
+FLIES_ONLY = {"rising", "descending"}
 # Wheels, for a machine without a program: left and right, forward and back.
 WHEELS = {"going forward": (1, 1), "backing off": (-1, -1), "turning left": (-1, 1), "turning right": (1, -1),
           "waiting": (0, 0)}
@@ -49,6 +54,7 @@ class Drive:
             self.programs = list(began.get("programs") or [])
             self.controls = {str(c.get("name")): c for c in began.get("controls") or []}
             self.steers = "program" if self.programs else "wheels" if len(self.controls) >= 2 else "none"
+            self.flies = bool(self.programs) and str(self.programs[0].get("kind") or "") == "hover"
             self.wheels: tuple[str, str] | None = None
             if self.steers == "wheels":
                 names = list(self.controls)
@@ -90,10 +96,15 @@ class Drive:
 
     def step(self, keys: dict[str, Any], dt_s: float) -> dict[str, Any]:
         self.touched = time.monotonic()
-        pressed = tuple(bool(keys.get(k)) for k in ("forward", "back", "left", "right"))
-        self.ask(ASKS.get(pressed, "waiting" if not any(pressed) else
-                          "turning left" if pressed[2] else "turning right" if pressed[3] else
-                          "going forward" if pressed[0] else "backing off"))
+        doing = "waiting"
+        for key, ask in ASKS:
+            if not keys.get(key):
+                continue
+            if ask in FLIES_ONLY and not self.flies:
+                continue
+            doing = ask
+            break
+        self.ask(doing)
         dt_s = max(rooms.DT, min(STEP_MOST_S, float(dt_s)))
         frames = self.room.recorder.frames
         before = len(frames)
@@ -136,11 +147,13 @@ def start(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     app.workshop_drive = drive
     began = drive.recording()
     return {"schema": "banjo.workshop-drive.v1", "status": "driving", "steers": drive.steers,
+            "flies": drive.flies,
             "kind": (drive.programs[0].get("kind") if drive.programs else None),
             "program": (drive.programs[0].get("name") if drive.programs else None),
             "wheels": list(drive.wheels) if drive.wheels else [],
             "root_body": drive.root, "recording": began,
-            "keys": {"forward": "W or up", "back": "S or down", "left": "A or left", "right": "D or right"}}
+            "keys": {"forward": "W or up", "back": "S or down", "left": "A or left", "right": "D or right",
+                     **({"up": "Space", "down": "Shift+Space"} if drive.flies else {})}}
 
 
 def step(app: Any, body: dict[str, Any]) -> dict[str, Any]:

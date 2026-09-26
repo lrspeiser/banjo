@@ -397,16 +397,38 @@ never replaces the thing.
 don't understand what turning the left wheel to reverse and hitting do it
 means ... allow me to become the object and control it with the keys."
 So, under the object: Take the keys, and you are the thing. W or up goes,
-S or down backs, A or left turns left, D or right turns right, in a little
-world kept open on the server (`workshop_drive`, `/api/workshop/drive`)
-and stepped as the keys arrive, an eighth of a second at a time, every
-frame drawn here as it happens. The keys are put to the thing's program as
-the asks a panel makes in the world -- going forward, backing off, turning
-left, turning right, waiting (`LiveWorld::behave`) -- so the rover and the
-drone drive the same way; a machine with wheels and no program is driven
-by its wheels' own controls, the same operate its panel sends. Let go (or
-Esc), and the drive is a take beside the clean thing, with its picture and
-how far it went. The little world takes the robot templates now (rover,
+S or down backs, A or left turns left, D or right turns right, and a
+machine that flies rises on Space and comes down on Shift+Space -- the
+same two keys that take a person up and down in the world
+(`interaction.js` BINDINGS) -- in a little world kept open on the server
+(`workshop_drive`, `/api/workshop/drive`) and stepped as the keys arrive,
+an eighth of a second at a time, every frame drawn here as it happens.
+The keys are put to the thing's program as the asks a panel makes in the
+world -- going forward, backing off, turning left, turning right, waiting,
+and now **rising** and **descending** (`LiveWorld::behave`) -- so the
+rover and the drone drive the same way; a machine with wheels and no
+program is driven by its wheels' own controls, the same operate its panel
+sends. Going up or down wins while its key is held, because it is the
+deliberate one. Let go (or Esc), and the drive is a take beside the clean
+thing, with its picture and how far it went.
+
+**Rising and descending** are the hover program's, and the engine refuses
+them to anything else ("only a machine that flies can be asked to be
+rising or descending"). They move the height it HOLDS, 0.8 m/s, a little
+under the 1 m/s its climb is limited to, so the machine keeps up with the
+target and letting go leaves it hovering where it got to, the way a flown
+machine answers a stick; held all the way down it sets itself on the
+ground. Measured (`tests/drone_hover_tests.cpp`): asked to rise for three
+seconds, 1.51 m up became 3.65 m, and let go it held between 3.65 and
+3.95 m; asked to descend for four, it came back to 0.99 m and not through
+the floor.
+
+**The bench opens on what was open last**, not on the table every time: a
+URL's `kind` wins, then whatever was last open in this browser, then the
+table. It is kept in the browser alone, and a remembered thing that has
+since gone -- a library item thrown away, a template renamed -- opens the
+table without a word rather than an error. A saved design is remembered by
+its kind, not by its revision. The little world takes the robot templates now (rover,
 drone, processor: they install as exact bodies through the same gate).
 Measured (`tests/workshop_drive_tests.py`): the rover, W held for two
 seconds, went 2.2 m; A held, it turned; keys up, it held; and the drone,

@@ -1610,6 +1610,12 @@ function machinesOf(candidate) {
 // server, drawn here as it happens; let go, and the drive is a take.
 const DRIVE_KEYS = { w: "forward", arrowup: "forward", s: "back", arrowdown: "back",
                      a: "left", arrowleft: "left", d: "right", arrowright: "right" };
+// Up is Space and down is Shift+Space, the same as walking the world
+// (interaction.js BINDINGS). Only a machine that flies is asked for those.
+function driveKeyOf(event) {
+  if (event.key === " " || event.code === "Space") return event.shiftKey ? "down" : "up";
+  return DRIVE_KEYS[event.key.toLowerCase()] || null;
+}
 function renderMachineBench(candidate) {
   const root = $("#ws-machine-bench"); if (!root) return;
   const record = machinesOf(candidate);
@@ -1624,7 +1630,7 @@ function renderMachineBench(candidate) {
   const stop = make("button", { id:"ws-drive-stop", type:"button", class:"ws-action" }, "Let go");
   stop.hidden = true;
   const status = make("p", { id:"ws-drive-status", class:"ws-note" },
-    "Take the keys and you are the thing: W or \u2191 goes, S or \u2193 backs, A or \u2190 turns left, D or \u2192 turns right, in a little world with ground and a sky. Let go, and the drive is a take.");
+    "Take the keys and you are the thing: W or \u2191 goes, S or \u2193 backs, A or \u2190 turns left, D or \u2192 turns right, and a machine that flies rises on Space and comes down on Shift+Space, in a little world with ground and a sky. Let go, and the drive is a take.");
   take.onclick = () => guard(take, takeTheKeys);
   stop.onclick = () => guard(stop, letGo);
   const row = make("div", { class:"ws-mb-run" }); row.append(take, stop);
@@ -1636,14 +1642,14 @@ async function takeTheKeys() {
   const answer = await api("/api/workshop/drive", { action:"start", candidate:candidateBody() });
   const recording = answer.recording;
   if (!recording?.frames?.length) throw new Error("The little world gave no first frame.");
-  bench.drive = { keys: { forward:false, back:false, left:false, right:false }, recording, inflight:false, timer:null,
-                  answer };
+  bench.drive = { keys: { forward:false, back:false, left:false, right:false, up:false, down:false },
+                  recording, inflight:false, timer:null, answer };
   clearPlayback();
   setWorkspaceMode("test");
   bench.playback = recording; bench.playbackIndex = recording.frames.length - 1; bench.playbackPlaying = false;
   view = "physics"; pressView("physics"); show(false); frameSimulation(recording); drawPlayback();
   $("#ws-drive-take").hidden = true; $("#ws-drive-stop").hidden = false;
-  driveStatus(`Driving${answer.program ? ` its ${answer.kind} program` : answer.wheels.length ? ` its ${answer.wheels.join(" and ")}` : ""}: W A S D or the arrows. Esc lets go.`);
+  driveStatus(`Driving${answer.program ? ` its ${answer.kind} program` : answer.wheels.length ? ` its ${answer.wheels.join(" and ")}` : ""}: W A S D or the arrows${answer.flies ? ", Space up, Shift+Space down" : ""}. Esc lets go.`);
   stage.dataset.driving = "true";
   stage.focus?.();
   bench.drive.timer = setInterval(driveStep, 125);
@@ -1690,12 +1696,20 @@ addEventListener("keydown", (event) => {
   const target = event.target;
   if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
   if (event.key === "Escape") { event.preventDefault(); guard(null, letGo); return; }
-  const key = DRIVE_KEYS[event.key.toLowerCase()];
+  const key = driveKeyOf(event);
   if (!key) return;
-  event.preventDefault(); bench.drive.keys[key] = true;
+  event.preventDefault();
+  // Shift is let go before Space as often as after it, so pressing one of
+  // them clears the other: a machine cannot rise and descend at once.
+  if (key === "up") bench.drive.keys.down = false;
+  if (key === "down") bench.drive.keys.up = false;
+  bench.drive.keys[key] = true;
 });
 addEventListener("keyup", (event) => {
   if (!bench.drive) return;
+  if (event.key === " " || event.code === "Space") {
+    event.preventDefault(); bench.drive.keys.up = false; bench.drive.keys.down = false; return;
+  }
   const key = DRIVE_KEYS[event.key.toLowerCase()];
   if (key) { event.preventDefault(); bench.drive.keys[key] = false; }
 });
@@ -2839,6 +2853,18 @@ function renderHistory() {
   }
 }
 
+// What was open last, so the bench opens on it again rather than on the
+// table every time (the owner, 2026-09-26). Kept in this browser only; a
+// browser that refuses to keep it simply opens on the table.
+const OPENED_KEY = "banjo.workshop.opened";
+function rememberOpened(what) {
+  try { localStorage.setItem(OPENED_KEY, JSON.stringify(what)); } catch { /* nothing to remember with */ }
+}
+function openedLast() {
+  try { const said = JSON.parse(localStorage.getItem(OPENED_KEY) || "null"); return said && typeof said === "object" ? said : null; }
+  catch { return null; }
+}
+
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   workspace.inspecting++;bench.libraryInspection=null;
@@ -2852,6 +2878,7 @@ function took(answer, keepPart = null) {
   $("#ws-push-result")?.replaceChildren(); showForceAt(null);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
+  rememberOpened(answer.library_item ? { library_item_id: answer.library_item.item_id } : { kind: answer.kind });
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
@@ -3200,9 +3227,21 @@ async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");
   // ?kind=cart opens the Workshop on that product, so a thing you are holding
   // in the world can be taken straight to the bench to be looked at properly.
+  // The URL wins; then whatever was open last; then the table. A remembered
+  // thing that has since gone -- a library item thrown away, a template
+  // renamed -- is not an error: the bench opens on the table and says nothing.
   const asked = (params.get("kind") || "").trim();
-  const answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
-    : saved ? { saved_design_id:saved } : { kind: asked || "table" });
+  const last = asked || libraryItem || saved ? null : openedLast();
+  let answer;
+  try {
+    answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
+      : saved ? { saved_design_id:saved }
+      : last?.library_item_id ? { library_item_id:last.library_item_id }
+      : { kind: asked || last?.kind || "table" });
+  } catch (error) {
+    if (!last) throw error;
+    answer = await api("/api/workshop/open", { kind: "table" });
+  }
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }

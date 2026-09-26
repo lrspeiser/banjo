@@ -1558,6 +1558,8 @@ function showProgramPanel(p) {
     "turning left": "its rotors turning it left",
     "turning right": "its rotors turning it right",
     "waiting": "hovering on its spot",
+    "rising": "climbing on its rotors",
+    "descending": "coming down on its rotors",
     "resting": "down on the ground, its rotors off",
   } : {
     "going forward": "both wheels forward",

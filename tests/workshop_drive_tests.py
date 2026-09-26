@@ -79,13 +79,45 @@ class DrivingTheRover(unittest.TestCase):
         again = workshop_drive.handle(self.app, {"action": "start", "candidate": candidate("rover")})
         self.assertEqual("driving", again["status"])
 
-    def test_the_drone_is_driven_by_the_same_asks(self):
+    def test_the_drone_is_driven_by_the_same_asks_and_rises_on_the_up_key(self):
         began = workshop_drive.handle(self.app, {"action": "start", "candidate": candidate("drone")})
-        self.assertEqual(("program", "hover"), (began["steers"], began["kind"]))
+        self.assertEqual(("program", "hover", True), (began["steers"], began["kind"], began["flies"]))
+        self.assertEqual(("Space", "Shift+Space"), (began["keys"]["up"], began["keys"]["down"]))
         for _ in range(24):                       # 3 s: it lifts, then goes
             said = workshop_drive.handle(self.app, {"action": "step", "keys": {"forward": True}, "dt_s": 0.125})
         self.assertEqual("going forward", said["doing"])
         self.assertGreater(said["at_m"][1], began["recording"]["frames"][0]["bodies"][0]["position_m"][1] + 0.5, "in the air")
+        # Up: it climbs, and holds the height it got to when the key comes up.
+        was = said["at_m"][1]
+        for _ in range(24):                       # 3 s of Space
+            said = workshop_drive.handle(self.app, {"action": "step", "keys": {"up": True}, "dt_s": 0.125})
+        self.assertEqual("rising", said["doing"])
+        rose = said["at_m"][1]
+        self.assertGreater(rose, was + 1.0, "it climbed")
+        for _ in range(12):
+            said = workshop_drive.handle(self.app, {"action": "step", "keys": {}, "dt_s": 0.125})
+        self.assertEqual("waiting", said["doing"])
+        self.assertLess(abs(said["at_m"][1] - rose), 0.6, "it holds the height it rose to")
+        # Down, and up beats forward while it is held.
+        for _ in range(24):
+            said = workshop_drive.handle(self.app, {"action": "step", "keys": {"down": True, "forward": True}, "dt_s": 0.125})
+        self.assertEqual("descending", said["doing"])
+        self.assertLess(said["at_m"][1], rose - 1.0, "it came down")
+
+    def test_a_rover_is_not_asked_to_rise(self):
+        """Rising is a flying machine's: the key does nothing to a rover, and
+        the engine refuses the ask outright."""
+        began = workshop_drive.handle(self.app, {"action": "start", "candidate": candidate("rover")})
+        self.assertFalse(began["flies"])
+        self.assertNotIn("up", began["keys"])
+        said = workshop_drive.handle(self.app, {"action": "step", "keys": {"up": True}, "dt_s": 0.125})
+        self.assertEqual("waiting", said["asked"], "the up key is nothing to a machine on wheels")
+        said = workshop_drive.handle(self.app, {"action": "step", "keys": {"up": True, "forward": True}, "dt_s": 0.125})
+        self.assertEqual("going forward", said["asked"], "and the keys under it still work")
+        drive = getattr(self.app, "workshop_drive")
+        with self.assertRaisesRegex(Exception, "only a machine that flies"):
+            drive.room.live.session.send(op="behave", program=drive.programs[0]["id"], sender="test",
+                                         seq=999, doing="rising", for_s=0.0, why="a rover cannot")
 
 
 if __name__ == "__main__":
