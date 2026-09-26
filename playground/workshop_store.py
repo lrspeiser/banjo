@@ -138,6 +138,35 @@ def load(root: Path, design_id: str) -> tuple[dict[str, Any], WorkshopDesign]:
     return record, design
 
 
+def rename(root: Path, design_id: str, label: str) -> dict[str, Any]:
+    """Call a saved design something else, without saving it again.
+
+    The label was only settable by saving, and saving bumps the revision
+    counter, so correcting a name made it look like the design had changed.
+    """
+    label = " ".join(str(label).split())[:160]
+    if not label:
+        raise ValueError("a saved design needs a name")
+    path = _path(root, design_id)
+    with _lock:
+        record = _read(path)
+        record["label"] = label
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+    return record
+
+
+def delete(root: Path, design_id: str) -> dict[str, Any]:
+    """Throw a saved design away. Nothing in the Workshop could do this before."""
+    path = _path(root, design_id)
+    with _lock:
+        record = _read(path)
+        path.unlink()
+    return {"deleted": record.get("design_id"), "label": record.get("label"),
+            "kind": record.get("kind"), "revision": record.get("revision")}
+
+
 def list_saved(root: Path, *, limit: int = 200) -> list[dict[str, Any]]:
     """Newest saved recipes, as summaries suitable for the Library pane."""
     rows: list[dict[str, Any]] = []

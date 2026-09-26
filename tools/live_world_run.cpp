@@ -187,6 +187,21 @@
 #include <unordered_set>
 
 namespace {
+
+// Every outcome the lattice can report, in one place. This was two copies of a
+// four-entry array indexed by the enum, so the fifth outcome read off the end
+// and took the whole world down with it.
+const char *outcomeWord(banjo::fastlattice::LiveOutcome outcome) {
+    switch (outcome) {
+    case banjo::fastlattice::LiveOutcome::Held: return "held";
+    case banjo::fastlattice::LiveOutcome::Dented: return "dented";
+    case banjo::fastlattice::LiveOutcome::Broke: return "broke";
+    case banjo::fastlattice::LiveOutcome::CouldNotSay: return "could not say";
+    case banjo::fastlattice::LiveOutcome::Nothing: break;
+    }
+    return "nothing";
+}
+
 using namespace banjo;
 using namespace banjo::fastlattice;
 
@@ -405,7 +420,7 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
 nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json parts = nlohmann::json::array();
     for (const nlohmann::json &c : controls) {
-        if (c.at("id") != p.left && c.at("id") != p.right &&
+        if (c.at("id") != p.left && c.at("id") != p.right && c.at("id") != p.pose &&
             std::find(p.rotors.begin(), p.rotors.end(), c.at("id").get<unsigned>()) == p.rotors.end())
             continue;
         for (const nlohmann::json &part : c.at("parts"))
@@ -447,6 +462,16 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
             {"rests", p.rests},
+            // A "sit" program: what it goes to, how near it wants to be and how
+            // near it is, which way that is off its nose, and the pose it holds.
+            {"toward", p.toward},
+            {"close_m", tidy(p.close_m)},
+            {"toward_m", tidy(p.toward_m)},
+            {"bearing_deg", tidy(p.bearing_deg)},
+            {"pose", p.pose},
+            {"pose_deg", tidy(p.pose_deg)},
+            {"pose_at_deg", tidy(p.pose_at_deg)},
+            {"speed_m_s", tidy(p.speed_m_s)},
             // What it was asked to do for a while, or null when it decides
             // for itself (LiveWorld::behave).
             {"asked", p.asked.empty() ? nlohmann::json{}
@@ -1702,9 +1727,7 @@ int main(int argc, char **argv) {
                         // shape. Without this every shard is drawn as a box
                         // around itself, which is a lie about what broke.
                         made_bodies = true;
-                        reply["outcome"] = std::array<const char *, 4>{
-                            "nothing", "held", "dented", "broke"}
-                            [static_cast<std::size_t>(world->lastOutcome())];
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
                         if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
                             reply["cost"] = std::move(cost);
                     }
@@ -1929,9 +1952,7 @@ int main(int argc, char **argv) {
                         reply["pieces"] = world->fracture(what, window);
                         // What it turned out to be. A count of one cannot
                         // tell a thing that held from a thing that bent.
-                        reply["outcome"] = std::array<const char *, 4>{
-                            "nothing", "held", "dented", "broke"}
-                            [static_cast<std::size_t>(world->lastOutcome())];
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
                         // And what it cost the thing that took the hit.
                         if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
                             reply["cost"] = std::move(cost);
@@ -2236,16 +2257,37 @@ int main(int argc, char **argv) {
                             "above 0 and at most 1");
                     reply["solar_panel"] = made;
                 } else if (op == "program") {
-                    // A program for a machine (LiveProgram): of a kind ("roam"),
-                    // working the controllers of its left and right wheels, on a
-                    // body both turn on; it starts off.
+                    // A program for a machine (LiveProgram): of a kind ("roam",
+                    // "sit", "hover" or "still"), working the controllers of its
+                    // left and right wheels, on a body both turn on; it starts
+                    // off. A "sit" one also says what it goes to, how near it
+                    // wants to be, and the controller and angle of the pose it
+                    // holds there; a "hover" one its rotors and the height it
+                    // keeps; a "still" one its store, and it has no wheels.
+                    LiveWorld::SitOrders sit;
+                    sit.toward = command.value("toward", std::string{});
+                    sit.close_m = command.value("close_m", 0.0);
+                    sit.pose = command.value("pose", 0U);
+                    sit.pose_deg = command.value("pose_deg", 0.0);
                     std::vector<unsigned> rotors;
                     if (command.contains("rotors"))
                         for (const nlohmann::json &r : command.at("rotors")) rotors.push_back(r.get<unsigned>());
-                    const unsigned made = command.value("kind", std::string{}) == "still"
+                    // Two overloads, and one call takes one of them: the orders
+                    // or the rotors. There is no signature with both, because
+                    // GCC cannot default a nested aggregate before the class is
+                    // complete.
+                    const std::string kind = command.value("kind", std::string{});
+                    const unsigned made =
+                        kind == "still"
                         ? world->stillProgram(command.value("name", std::string{}), command.value("body", std::string{}),
                                               command.value("store", 0U), command.value("rest_below", 0.0),
                                               command.value("rest_until", 0.0))
+                        : kind == "sit"
+                        ? world->program(command.value("name", std::string{}), kind,
+                                         command.value("left", 0U), command.value("right", 0U),
+                                         command.value("body", std::string{}), command.value("setting", 1.0),
+                                         command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
+                                         command.value("rest_until", 0.0), sit)
                         : world->program(
                         command.value("name", std::string{}), command.value("kind", std::string{}),
                         command.value("left", 0U), command.value("right", 0U),
@@ -2254,13 +2296,17 @@ int main(int argc, char **argv) {
                         command.value("rest_until", 0.0), rotors, command.value("hover_m", 0.0));
                     if (made == 0)
                         throw std::invalid_argument(
-                            "a program is of kind \"roam\", on two shafts' controllers that no program works yet, "
+                            "a program is of kind \"roam\" or \"sit\", on two shafts' controllers that no program "
+                            "works yet, "
                             "each on a pin through the body it names, with a setting above 0 and no more than 1, "
                             "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
-                            "more than 1; or of kind \"hover\", on four rotors' controllers (round the machine "
-                            "from above, front-left first), each on a rotor's pin through the body it names, "
-                            "with a hover_m above 0 and at most 50; or of kind \"still\", on a body that is in "
-                            "the world with a store that is there, one still program to a body");
+                            "more than 1; a \"sit\" one goes toward another body in the world, within a "
+                            "close_m above 0 and up to 100, holding a pose controller that is there and is "
+                            "neither wheel's at a pose_deg within a turn either way, and it does not rest; or "
+                            "of kind \"hover\", on four rotors' controllers (round the machine from above, "
+                            "front-left first), each on a rotor's pin through the body it names, with a hover_m "
+                            "above 0 and at most 50; or of kind \"still\", on a body that is in the world with "
+                            "a store that is there, one still program to a body");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,

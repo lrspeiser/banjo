@@ -47,6 +47,9 @@ HTTP = {
     "inventory": "/api/workshop/inventory",
     "recipes": "/api/workshop/recipes",
     "skills": "/api/workshop/skills",
+    # Read-only, and about a turn rather than about a design: what the
+    # assistant has done so far, while it is still doing it.
+    "progress": "/api/workshop/progress",
 }
 
 OPERATIONS = (

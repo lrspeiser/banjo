@@ -358,12 +358,12 @@ void theCountIsWhatIsActuallyInTheWorld() {
 
 void aHardEnoughHitActuallyBreaksIt() {
     const Drop hard = dropAndBreak(10.0);
-    const Drop marginal = dropAndBreak(1.5);
+    const Drop marginal = dropAndBreak(0.8);
     std::cout << "  dropped 10.00 m: hit at " << hard.at_speed << " m/s (threshold "
               << hard.threshold << ") -> " << hard.pieces << " pieces of pane in "
               << hard.fracture_wall_ms << " ms; world now holds " << hard.bodies_after
               << " bodies\n";
-    std::cout << "  dropped  1.50 m: hit at " << marginal.at_speed << " m/s (threshold "
+    std::cout << "  dropped  0.80 m: hit at " << marginal.at_speed << " m/s (threshold "
               << marginal.threshold << ") -> " << marginal.pieces << " pieces\n";
 
     require(hard.at_speed > hard.threshold, "the drop never exceeded the breaking speed");
@@ -376,13 +376,18 @@ void aHardEnoughHitActuallyBreaksIt() {
 
     // The threshold is a LOWER BOUND -- a necessary condition, taken from a
     // spall bound that is deliberately generous. Clearing it means a break is
-    // possible, not that one happens, and this pair is the evidence: 5.4 m/s
-    // against a 4.5 m/s threshold is admitted and the pane still holds, while
+    // possible, not that one happens, and this pair is the evidence: 3.9 m/s
+    // against a 2.25 m/s threshold is admitted and the pane still holds, while
     // 13.9 m/s shatters it. Reading admission as a promise reads the derivation
     // backwards, and a test that only ever checked the hard case would let that
     // misreading stand.
+    //
+    // It was a 1.5 m drop against a 4.5 m/s threshold. Glass breaks at the
+    // 45 MPa EN 572-1 gives annealed float glass now, rather than at twice
+    // that strain, so both numbers halved and 1.5 m goes through the pane.
+    // 0.8 m clears the bar by the same wide margin and still holds.
     require(marginal.at_speed > marginal.threshold,
-            "the 1.5 m drop was supposed to clear the threshold");
+            "the 0.8 m drop was supposed to clear the threshold");
     require(marginal.pieces <= 1,
             "the marginal drop broke it after all -- the note about the bound "
             "being necessary rather than sufficient needs revisiting");
@@ -417,22 +422,31 @@ void breakingSomethingThatCannotBreakIsHarmless() {
 // ever. That is exactly what a live playground did -- the scene froze and the
 // chat repeated "concrete ball was hit hard enough to break" without end.
 void aThingThatHeldDoesNotStopTheWorld() {
-    // 1.5 m arrives above the threshold and does not break the pane, which is
-    // the case that used to wedge.
-    const auto live = LiveWorld::open(ballOntoGlass(1.5));
-    bool ever_breakable = false, tried = false;
+    // 0.8 m arrives above the threshold and does not break the pane, which is
+    // the case that used to wedge. It was 1.5 m against a 4.5 m/s threshold;
+    // glass breaks at its declared 45 MPa now rather than at twice that strain,
+    // so the threshold is 2.25 m/s and 1.5 m goes through.
+    const auto live = LiveWorld::open(ballOntoGlass(0.8));
+    int answered = 0;
     for (int i = 0; i < 900; ++i) {
         live->step(1.0 / 240.0);
-        if (!tried && !live->breakable().empty()) {
-            ever_breakable = true;
-            tried = true;
+        // EVERY offer, not only the first. A ball that holds goes on bouncing,
+        // and each bounce past the bar is a fresh question -- it used to be
+        // asked once because the bar was 4.5 m/s and no bounce came near it.
+        // At glass's real 45 MPa the bar is 2.25 and the pane is asked about
+        // dozens of times. A host that answers one and ignores the rest stops
+        // the world, which is a host bug and not an engine one, but a test
+        // that answers once cannot tell the two apart.
+        while (!live->breakable().empty()) {
+            ++answered;
             require(live->fracture("pane") <= 1,
                     "this drop was supposed to be the marginal one that holds");
         }
     }
-    require(ever_breakable, "the drop never cleared the threshold, so this proves nothing");
+    require(answered > 0, "the drop never cleared the threshold, so this proves nothing");
     const double reached = live->time_s();
-    std::cout << "  held at the threshold, then ran on to t=" << reached << " s\n";
+    std::cout << "  held at the threshold " << answered << " times, then ran on to t="
+              << reached << " s\n";
     // The clock is the whole point: a deadlocked world sits at the instant it
     // refused, however many times it is stepped.
     require(reached > 1.0,
@@ -584,10 +598,19 @@ void aRayFindsPiecesAfterSomethingBreaks() {
               << exact << " met the piece they were aimed at\n";
     require(asked > 4, "the pane did not break into enough pieces to prove anything");
     require(answered == asked, "a ray aimed straight down at a piece met nothing named");
-    // Aimed from directly above its own centre, a piece is usually what is hit
-    // first -- but not always, because another piece can be resting over it.
-    require(exact * 2 >= asked,
-            "fewer than half the rays found the piece they were aimed at, so the "
+    // Aimed from directly above its own centre, a piece is often what is hit
+    // first -- but not always, because another piece can be resting over it,
+    // and the finer the shatter the more of them are. Glass breaks at the
+    // 45 MPa EN 572-1 gives annealed float now rather than at twice that
+    // strain, so the same blow makes 37 pieces where it made 8, and 17 of the
+    // 37 rays meet their own piece where more than half used to.
+    //
+    // The share is a sanity check and not the claim. The claim is the two
+    // above it: every ray met a named body, and every name was a body the
+    // world is really holding. A ray query that had lost the shapes would
+    // score near nothing here, not a third.
+    require(exact * 3 >= asked,
+            "fewer than a third of the rays found the piece they were aimed at, so the "
             "query is not tracking the real shapes");
 }
 
@@ -1019,7 +1042,11 @@ ForeseenDrop watchADrop(double fall) {
 }
 
 void theWorldSeesACollisionComing() {
-    const ForeseenDrop gentle = watchADrop(0.5);
+    // 0.2 m, not 0.5: glass breaks at the 45 MPa EN 572-1 gives annealed float
+    // now rather than at twice that strain, so its bar halved to 2.25 m/s and
+    // a half-metre drop arrives at 3.1 -- worth foreseeing, which is the
+    // opposite of what this half of the pair is for.
+    const ForeseenDrop gentle = watchADrop(0.2);
     const ForeseenDrop fair = watchADrop(1.5);
     const ForeseenDrop high = watchADrop(6.0);
     std::cout << "  1.5 m: " << fair.lead_ms << " ms warning on " << fair.object
@@ -1085,7 +1112,7 @@ void theDeadlineIsMet() {
     const unsigned lattice = threads < 1U ? 1U : (threads > 16U ? 16U : threads);
     std::cout << "  on " << threads << " hardware threads (the lattice uses " << lattice << "), "
               << kCompiler << ", profile " << kProfile << "\n";
-    const ForeseenDrop gentle = watchADrop(0.5);   // as the suite runs it: nothing breaks first
+    const ForeseenDrop gentle = watchADrop(0.2);   // as the suite runs it: nothing breaks first
     const ForeseenDrop cold = watchADrop(1.5);     // the first run the process makes
     const ForeseenDrop high = watchADrop(6.0);
     const ForeseenDrop warm = watchADrop(1.5);     // the same drop again, the process warm

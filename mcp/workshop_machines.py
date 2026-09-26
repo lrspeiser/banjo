@@ -28,20 +28,18 @@ from typing import Any
 
 MACHINES_KEY = "@machines"
 SCHEMA = "banjo.workshop-machines.v1"
-# The room's program kinds: "roam" is the one there is (playground/fracture_lab
-# PROGRAM_KINDS); a "drive" program was allowed here and refused at the door.
-PROGRAM_KINDS = ("roam", "hover", "still")
+# The room's program kinds. A "drive" program used to be allowed here and
+# refused at the door, which is worse than not offering it at all.
+PROGRAM_KINDS = ("roam", "sit", "hover", "still")
 SENSOR_KINDS = ("water",)
 ROUTINE_KINDS = ("dig", "haul", "process", "custom", "roam")
 MAX_EACH = 32
-
 
 def _name(value: Any, what: str) -> str:
     text = str(value or "").strip()
     if not text or len(text) > 120:
         raise ValueError(f"{what} needs a name of 1 to 120 characters")
     return text
-
 
 def _number(value: Any, what: str, low: float, high: float, default: Any = None) -> float:
     if value is None and default is not None:
@@ -54,7 +52,6 @@ def _number(value: Any, what: str, low: float, high: float, default: Any = None)
         raise ValueError(f"{what} must be between {low:g} and {high:g}")
     return out
 
-
 def _pair(value: Any, what: str) -> list[str]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError(f"{what} names the two components its pin joins")
@@ -62,7 +59,6 @@ def _pair(value: Any, what: str) -> list[str]:
     if a == b:
         raise ValueError(f"{what} names the same component twice; a pin joins two things")
     return [a, b]
-
 
 def _rows(value: Any, what: str) -> list[dict[str, Any]]:
     if value in (None, []):
@@ -73,7 +69,6 @@ def _rows(value: Any, what: str) -> list[dict[str, Any]]:
         if not isinstance(row, dict):
             raise ValueError(f"each of {what} is an object")
     return list(value)
-
 
 def checked(value: Any) -> dict[str, Any]:
     """The declaration as written, with its shape and its numbers checked.
@@ -156,6 +151,14 @@ def checked(value: Any) -> dict[str, Any]:
         else:
             program["left"] = _name(row.get("left"), "a program's left control")
             program["right"] = _name(row.get("right"), "a program's right control")
+        # A "sit" program drives, and goes to a thing already standing in the
+        # world, by the name the room calls it: the bench takes that as given.
+        if kind == "sit":
+            program["toward"] = _name(row.get("toward"), "what a sit program goes to")
+            program["close_m"] = _number(row.get("close_m"), "close_m", 0.01, 100.0, default=1.0)
+            if row.get("pose"):
+                program["pose"] = _name(row.get("pose"), "a program's pose control")
+                program["pose_deg"] = _number(row.get("pose_deg"), "pose_deg", -360.0, 360.0, default=90.0)
         if row.get("climb_deg") is not None and kind != "hover":
             program["climb_deg"] = _number(row.get("climb_deg"), "climb_deg", 0.0, 89.0)
         if row.get("rest_below") is not None:
@@ -183,7 +186,6 @@ def checked(value: Any) -> dict[str, Any]:
 
     return {k: v for k, v in out.items() if v or k == "schema"}
 
-
 def _three(value: Any, what: str) -> list[float]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise ValueError(f"{what} is three numbers")
@@ -192,13 +194,11 @@ def _three(value: Any, what: str) -> list[float]:
         raise ValueError(f"{what} must be finite")
     return out
 
-
 def _kind(value: Any, kinds: tuple[str, ...], what: str) -> str:
     kind = str(value or "").strip()
     if kind not in kinds:
         raise ValueError(f"{what}'s kind is " + " or ".join(kinds))
     return kind
-
 
 def _routine(value: Any) -> dict[str, Any]:
     """What a machine does on its own, as far as a design can say it: its
@@ -270,16 +270,13 @@ def _routine(value: Any) -> dict[str, Any]:
                                                      _number(xz[1], "z", -1000.0, 1000.0)]
     return out
 
-
 def of_overrides(overrides: Any) -> dict[str, Any]:
     if not isinstance(overrides, dict):
         return {}
     return deepcopy(overrides.get(MACHINES_KEY) or {})
 
-
 def of(design: Any) -> dict[str, Any]:
     return of_overrides((getattr(design, "lineage", None) or {}).get("component_overrides"))
-
 
 def described(design: Any) -> dict[str, Any]:
     record = of(design)
@@ -305,7 +302,6 @@ def described(design: Any) -> dict[str, Any]:
                 words += f" ({routine['hopper_kg']:g} kg hopper)"
         parts.append(words)
     return {**record, "says": ", ".join(parts) if parts else "nothing drives it"}
-
 
 def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
               places: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -408,3 +404,4 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
             made["routine"] = routine
         out["programs"] = [made]
     return out
+

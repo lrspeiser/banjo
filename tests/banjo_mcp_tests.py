@@ -199,9 +199,16 @@ class TheTools(unittest.TestCase):
     def test_a_gentle_drop_says_why_nothing_happened(self):
         """The answer someone actually needs. A tool that reports silence when a
         thing bounced off teaches nothing; one that says what it would have
-        taken can be acted on."""
+        taken can be acted on.
+
+        0.2 m, not the 0.3 it was: glass breaks at the 45 MPa EN 572-1 gives
+        annealed float now rather than at twice it, so the pane's bar is
+        2.25 m/s and a 0.3 m drop arrives at 2.35 -- over it, which makes
+        "nothing happened because it was under the bar" the wrong explanation
+        even when nothing happens.
+        """
         world_id = self.pane_world()
-        answer = self.client.call("drop", world_id=world_id, fall_m=0.3,
+        answer = self.client.call("drop", world_id=world_id, fall_m=0.2,
                                   over_m=[0, 0, 0],
                                   object={"name": "iron ball", "shape": "sphere",
                                           "material": "iron", "size_m": [0.12] * 3})

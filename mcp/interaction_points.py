@@ -43,7 +43,11 @@ def checked(points):
         if kind in ("surface", "container"):
             point["size_m"] = vector(raw.get("size_m"), "size_m", True)
         elif any(k in raw for k in ("size_m", "max_mass_kg")):
-            raise ValueError("only receiving points have size_m or max_mass_kg")
+            named = sorted(k for k in ("size_m", "max_mass_kg") if k in raw)
+            raise ValueError(
+                f"a {kind} point cannot say {named}: leave {' and '.join(named)} out. "
+                "Only a surface or a container receives something, so only those two say how "
+                "big it is and how much it takes.")
         for k, default, lo, hi in (("yaw_deg", 0, -360, 360), ("max_mass_kg", None, 0.001, 1e6)):
             value = raw.get(k, default)
             if value is None:

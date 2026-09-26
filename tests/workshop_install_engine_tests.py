@@ -157,6 +157,10 @@ class NativeInstallation(unittest.TestCase):
         import workshop_library
         for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber'):
             workshop_library.set_rack(self.app, _material, 500.0)
+        # And the goods its machines take (workshop_library.GOODS_PER): a
+        # machine's power parts come off the goods rack when it is made.
+        for _substance in ("copper", "copper wire"):
+            workshop_library.set_goods(self.app, _substance, 500.0)
         self.open()
 
     def open(self,spec=None):
@@ -165,9 +169,11 @@ class NativeInstallation(unittest.TestCase):
         self.ctx=install.context(self.app,{})
 
     def snap(self):return install._snapshot(self.live)
-    def preview(self,material='oak',position=(3,0),candidate=None):
-        return install.preview(self.app,{'session':self.ctx['session'],'scene':'yard','mode':'authoring',
-          'position_m':list(position),'candidate':candidate or {'kind':'table','parameters':{'material':material}}})
+    def preview(self,material='oak',position=(3,0),candidate=None,replace=None):
+        body={'session':self.ctx['session'],'scene':'yard','mode':'authoring',
+              'position_m':list(position),'candidate':candidate or {'kind':'table','parameters':{'material':material}}}
+        if replace is not None:body['replace']=replace
+        return install.preview(self.app,body)
     def request(self,p,request='install-request-1'):
         return {'scene':'yard','session':self.ctx['session'],'preview_id':p['preview_id'],'request_id':request}
     def do_commit(self,p,request='install-request-1'):return install.commit(self.app,self.request(p,request))
@@ -207,6 +213,123 @@ class NativeInstallation(unittest.TestCase):
                 reply=self.live.act({'session':self.live.session.id,'op':'step','dt':1/120,'n':2})
                 self.assertIn(result['root_body'],[b['name'] for b in reply['bodies']])
 
+
+    def test_a_thing_it_made_can_be_opened_on_the_bench_again(self):
+        """The way back: world -> bench -> world.
+
+        The room kept which design an installation came from and which body
+        each component became, but not the design, so a thing standing in the
+        world could not be opened on the bench that made it. It keeps the
+        recipe now, and hands it back when asked which design made a body.
+        """
+        made = self.do_commit(self.preview(candidate=self.built()))
+        self.assertEqual("installed", made["status"])
+
+        here = install.made_here(self.app)
+        self.assertTrue(here, "the room does not remember making anything")
+        self.assertIn(made["root_body"], here[-1]["bodies"])
+
+        said = install.what_made(self.app, {"body": made["root_body"]})
+        recipe = said["recipe"]
+        print(f"\n    {made['root_body']} was made from a {recipe['kind']} "
+              f"({said['design_id']}), {len(said['bodies'])} bodies", flush=True)
+        self.assertEqual("table", recipe["kind"])
+        self.assertEqual(made["design_id"], said["design_id"])
+
+        # And the recipe is the bench's own form: it loads back into a design.
+        from mcp import workshop_components
+        again, overrides = workshop_components.design_from_spec(recipe)
+        self.assertEqual("table", again.kind)
+        self.assertEqual({p.name for p in again.parts},
+                         {p.name for p in workshop_components.design_from_spec(self.built())[0].parts})
+
+        # Changed on the bench and made again, it is a second thing in the
+        # world drawn from the first: the round trip, once around.
+        thicker = {**recipe, "parameters": {**recipe["parameters"], "leg_section_m": 0.065}}
+        self.ctx = install.context(self.app, {})   # the world moved: look at it again
+        second = self.do_commit(self.preview(candidate=thicker, position=(5, 0)),
+                                request="install-request-again")
+        self.assertEqual("installed", second["status"])
+        self.assertNotEqual(made["root_body"], second["root_body"])
+        self.assertGreater(second["mass_kg"], made["mass_kg"])
+        print(f"    made again with thicker legs: {made['mass_kg']:.2f} kg -> "
+              f"{second['mass_kg']:.2f} kg", flush=True)
+
+    def test_a_body_nothing_made_says_so(self):
+        with self.assertRaises(ValueError):
+            install.what_made(self.app, {"body": "a body that was never made here"})
+
+    def solar_cart(self):
+        """A cart that carries a battery, a motor on a back wheel and a panel.
+
+        The same thing the world has had since the rover, declared on the bench
+        rather than in a hand-written room file.
+        """
+        from mcp import workshop_components, workshop_construction, workshop_machines
+        spec = {"kind": "cart", "design_id": "solar-cart",
+                "parameters": {"primary_use_component": "handle",
+                               "interaction_point_components": {"deck": "deck", "grip": "handle",
+                                                                "use": "handle"}}}
+        design = workshop_components.design_from_spec(spec)[0]
+        machines = {
+            "stores": [{"name": "battery", "in": "deck", "capacity_j": 5000,
+                        "charge_j": 1400, "voltage_v": 24}],
+            "motors": [{"name": "left motor", "turns": ["bearing-mount-11", "axle-1"],
+                        "store": "battery", "stall_torque_n_m": 20, "no_load_rpm": 60,
+                        "brake_torque_n_m": 40}],
+            "panels": [{"name": "solar panel", "on": "deck", "store": "battery",
+                        "area_m2": 0.25, "efficiency": 0.2}],
+        }
+        return {**spec, "component_overrides": {
+            workshop_construction.CONSTRUCTION_KEY: workshop_construction.adopted(design),
+            workshop_machines.MACHINES_KEY: machines}}
+
+    def test_the_solar_cart_goes_to_the_world_and_comes_back_to_the_bench(self):
+        """What the owner asked for: a cart with its battery, motor and panel
+        made from the bench, opened again from the world, changed, and made
+        again -- with the machines still on it both times."""
+        from mcp import workshop_components, workshop_machines
+        import workshop_fitting
+
+        # Drawn as the person left it, the cart does not compile; Check it
+        # redraws it until it does, and that is what gets made.
+        cart = self.solar_cart()
+        design, overrides = workshop_components.design_from_spec(cart)
+        checked = workshop_fitting.check_validity(design, overrides, cell_m=0.04, root="cart")
+        self.assertTrue(checked["ok"], checked.get("says"))
+        drawn = {**cart, "component_overrides": checked["overrides"]}
+
+        made = self.do_commit(self.preview(candidate=drawn, position=(3, 2)))
+        self.assertEqual("installed", made["status"])
+        bodies = made.get("root_bodies") or [made["root_body"]]
+        print(f"\n    the solar cart went in as {len(bodies)} bodies, "
+              f"{made['mass_kg']:.1f} kg", flush=True)
+
+        # Opened again from the world, by the name of a body standing in it.
+        said = install.what_made(self.app, {"body": bodies[0]})
+        recipe = said["recipe"]
+        self.assertEqual("cart", recipe["kind"])
+        record = workshop_machines.of_overrides(recipe["component_overrides"])
+        self.assertEqual(["battery"], [s["name"] for s in record["stores"]])
+        self.assertEqual(["left motor"], [m["name"] for m in record["motors"]])
+        self.assertEqual(["solar panel"], [p["name"] for p in record["panels"]])
+        print(f"    opened again: a {recipe['kind']} carrying "
+              f"{record['stores'][0]['capacity_j']:.0f} J, {len(record['motors'])} motor, "
+              f"{record['panels'][0]['area_m2']} m2 of panel", flush=True)
+
+        # Changed on the bench -- a bigger battery -- and made again.
+        bigger = deepcopy(recipe)
+        store = workshop_machines.of_overrides(bigger["component_overrides"])
+        store["stores"][0]["capacity_j"] = 9000
+        bigger["component_overrides"][workshop_machines.MACHINES_KEY] = store
+        self.ctx = install.context(self.app, {})
+        again = self.do_commit(self.preview(candidate=bigger, position=(6, 2)),
+                               request="install-request-solar-again")
+        self.assertEqual("installed", again["status"])
+        back = install.what_made(self.app, {"body": (again.get("root_bodies") or [again["root_body"]])[0]})
+        self.assertEqual(9000, workshop_machines.of_overrides(
+            back["recipe"]["component_overrides"])["stores"][0]["capacity_j"])
+        print(f"    made again with a 9 kJ battery: {again['mass_kg']:.1f} kg", flush=True)
 
     def test_native_terrain_install_keeps_excavation_and_rejects_changed_ground(self):
         import server
@@ -532,17 +655,33 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual({f'{root}/top'}|{f'{root}/leg-{i}' for i in range(1,5)},
                          {b['part'] for b in spec['bodies'] if b.get('part')})
         self.assertNotIn('interfaces',spec)
-        # Every label carries the root, so a second table of the same design is
-        # its own object: a joint in one could never be read as a joint in the
-        # other once the two are standing in one room.
+        # Making the same design again REPLACES the one standing there. It used
+        # to append, with a fresh root every time, so editing a design and
+        # making it again left you with the old one and the new one side by
+        # side and no way to tell which was which.
         self.ctx=install.context(self.app,{})
-        second=self.do_commit(self.preview(position=(7,0),candidate=self.built()),
-                              request='install-request-2')['root_body']
+        again=self.do_commit(self.preview(position=(7,0),candidate=self.built(),replace=True),
+                             request='install-request-2')
+        second=again['root_body']
         self.assertNotEqual(root,second)
+        # It says what it took out, and that is every body of the old one --
+        # a group of cells is one thing in the world and five names in the spec
+        # that made it, and leaving any of them behind is not a replacement.
+        self.assertEqual([root]+[f'{root}-{i}' for i in range(1,5)],again['replaced'])
         roots=[b['part'].split('/')[0] for b in self.room.spec['bodies'] if b.get('part')]
-        self.assertEqual({root,second},set(roots))
+        self.assertEqual({second},set(roots),'one table, not two')
         self.assertEqual(5,len({b['part'] for b in self.room.spec['bodies']
                                 if b.get('part','').startswith(f'{second}/')}))
+
+        # Asking for a second one gets a second one, and every label carries
+        # its own root: a joint in one could never be read as a joint in the
+        # other once the two are standing in one room.
+        self.ctx=install.context(self.app,{})
+        third=self.do_commit(self.preview(position=(-7,0),candidate=self.built(),replace=False),
+                             request='install-request-3')
+        self.assertEqual([],third['replaced'],'asked for a second one, it took nothing out')
+        roots=[b['part'].split('/')[0] for b in self.room.spec['bodies'] if b.get('part')]
+        self.assertEqual({second,third['root_body']},set(roots))
         # And what is written to disk is what comes back, labels and all.
         self.assertEqual(self.room.spec,self.app.store.load('yard').spec)
 

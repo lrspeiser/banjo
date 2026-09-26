@@ -128,8 +128,10 @@ function installPlacementControls(right) {
     const source=await api("/api/world/workshop/context",{});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
     $("#ws-install-context").textContent=`Room: ${source.scene} · native cell size ${source.cell_size_m*1000} mm. ${chosen().mechanical_model === "rigid" ? "Precise rigid geometry keeps its dimensions and continuous placement; anchored scenery only." : "The whole lattice prototype snaps once to this room grid."}`;
+    // replace: making a design again puts the new one where the old one was,
+    // instead of leaving you with two and no way to tell which is which.
     const answer=await api("/api/world/workshop/preview",{session:source.session,scene:source.scene,
-      mode:"authoring",candidate,position_m:position});
+      mode:"authoring",candidate,position_m:position,replace:true});
     if(sequence!==installation.sequence || revision!==bench.revision)return;
     installation.preview=answer;installation.request=crypto.randomUUID();
     const result=$("#ws-install-result");result.dataset.status="preview";
@@ -441,6 +443,27 @@ function playbackBodyGeometry(body) {
   if (body.shape === "sphere" || body.shape === 1) return new THREE.SphereGeometry(d[0] / 2, 18, 12);
   return new THREE.BoxGeometry(Math.max(0.000001, d[0]), Math.max(0.000001, d[1]), Math.max(0.000001, d[2]));
 }
+// An exact compound is its parts, each about the body's centre of mass and each
+// turned by its own rotation. Drawn as one box the whole way round it, a chair
+// is a crate and a mace is a crate: the shape IS the answer in a rigid test.
+function playbackCompound(parts, fallbackMaterial) {
+  const compound = new THREE.Group();
+  for (const part of parts) {
+    const d = part.dimensions_m || [0.01, 0.01, 0.01];
+    const geometry = part.shape === "cylinder"
+      ? new THREE.CylinderGeometry(d[0] / 2, d[0] / 2, d[1], 16)
+      : new THREE.BoxGeometry(Math.max(1e-6, d[0]), Math.max(1e-6, d[1]), Math.max(1e-6, d[2]));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: materialColor(part.material || fallbackMaterial), roughness: 0.62 }));
+    mesh.position.set(...(part.center_local_m || [0, 0, 0]));
+    const q = part.rotation_wxyz || [1, 0, 0, 0]; mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+    compound.add(mesh);
+  }
+  return compound;
+}
+function disposeCompound(node) {
+  node.traverse?.((child) => { if (child.isMesh) { child.geometry.dispose(); disposeMaterial(child.material); } });
+}
 let drawnRecording = null;
 const playbackMeshes = new Map();
 let physicsMeshBuilds = 0;
@@ -458,10 +481,13 @@ function drawPlayback() {
     const signature = JSON.stringify([body.revision || 0, exact, body.shape, body.dimensions_m, body.material]);
     let entry = playbackMeshes.get(body.name);
     if (!entry || entry.signature !== signature) {
-      if (entry) { group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); }
+      if (entry) { group.remove(entry.mesh); disposeCompound(entry.mesh); entry.mesh.geometry?.dispose(); disposeMaterial(entry.mesh.material); }
       const material = new THREE.MeshStandardMaterial({color:materialColor(body.material), roughness:0.62});
       let mesh;
-      if (exact) {
+      if (exact && geometry.parts) {
+        mesh = playbackCompound(geometry.parts, body.material);
+        disposeMaterial(material);
+      } else if (exact) {
         const cell = geometry.cell_size_m;
         mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell,cell,cell), material, geometry.offsets_m.length);
         const matrix = new THREE.Matrix4();
@@ -484,7 +510,7 @@ function drawPlayback() {
     }
   }
   for (const [name,entry] of playbackMeshes) if (!present.has(name)) {
-    group.remove(entry.mesh); entry.mesh.geometry.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
+    group.remove(entry.mesh); disposeCompound(entry.mesh); entry.mesh.geometry?.dispose(); disposeMaterial(entry.mesh.material); playbackMeshes.delete(name);
   }
   if (followsMatter(recording)) followCentre = matterCentre(recording, frame) || followCentre;
   stage.dataset.physicsTime = String(frame.t_s);
@@ -510,6 +536,8 @@ function drawPlayback() {
   }
   $("#ws-play-note").textContent = recording.geometry_basis === "verified-precise-rigid-shapes"
     ? "Exact rigid collision shapes and actual native poses. No internal fracture, bending or attachment-failure calculation."
+    : recording.geometry_basis === "recorded-native-shapes"
+    ? "A little world with real ground under it. Every body as the engine's own shape: its cells where it is cells, its exact parts where it is exact, and every piece as the cells the engine left it. Showing the computed experiment, not a live connection to the outside world."
     : `${recording.geometry_basis === "verified-native-cells-and-native-pieces" ? "Exact Matter cells, and every piece as the cells the engine left it. " : recording.geometry ? "Exact Matter cells until topology changes. " : ""}${proxies ? `${proxies} bodies use simplified collision shapes. ` : ""}Showing the computed experiment, not a live connection to the outside world.`;
 }
 // A thing dropped from 4 m, or knocked across the floor in pieces, is a speck if
@@ -517,11 +545,15 @@ function drawPlayback() {
 // starts and the view then goes with the matter: every body weighed by the
 // cells it is drawn with, so it stays on the bulk of the wreck and lets a
 // one-cell shard fly out of shot.
-const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces";
+const followsMatter = recording => recording?.geometry_basis === "verified-native-cells-and-native-pieces"
+  || recording?.geometry_basis === "recorded-native-shapes";
 let followCentre = null, followClock = 0;
 function matterCentre(recording, frame) {
   const sum = new THREE.Vector3(); let weight = 0;
   for (const body of frame?.bodies || []) {
+    // The ground and anything driven into it are scenery: 16 m of ground at the
+    // origin would drag the view off whatever is being watched.
+    if (body.anchored) continue;
     const cells = recording.geometry?.[body.name]?.offsets_m?.length || 1;
     sum.x += cells*body.position_m[0]; sum.y += cells*body.position_m[1]; sum.z += cells*body.position_m[2]; weight += cells;
   }
@@ -537,15 +569,20 @@ function followMatter(now) {
 function frameSimulation(recording) {
   const bounds = new THREE.Box3();
   for (const frame of followsMatter(recording) ? recording.frames.slice(0,1) : recording.frames) for (const body of frame.bodies || []) {
+    // 16 m of ground would make everything standing on it a speck.
+    if (body.anchored) continue;
     const radius = .5*Math.hypot(...(body.dimensions_m || [.05,.05,.05]));
     const point = new THREE.Vector3(...body.position_m);
     bounds.expandByPoint(point.clone().addScalar(radius)); bounds.expandByPoint(point.clone().addScalar(-radius));
   }
-  if(recording.phase==="setup" && !bounds.isEmpty()) bounds.expandByPoint(new THREE.Vector3((bounds.min.x+bounds.max.x)/2,0,(bounds.min.z+bounds.max.z)/2));
+  const floor = Number(recording.ground_m) || 0;
+  if(recording.phase==="setup" && !bounds.isEmpty()) bounds.expandByPoint(new THREE.Vector3((bounds.min.x+bounds.max.x)/2,floor,(bounds.min.z+bounds.max.z)/2));
   if (!bounds.isEmpty()) { bounds.getCenter(target); reach = Math.max(.3,bounds.getSize(new THREE.Vector3()).length()/2); frameCandidate(); }
   followCentre = followsMatter(recording) ? matterCentre(recording, recording.frames[0]) : null;
   if (followCentre) { target.copy(followCentre); placeCamera(); }
-  grid.position.y = 0;
+  // The little world's ground stands at the depth of its soil, so the grid goes
+  // where the ground actually is rather than through the middle of it.
+  grid.position.y = floor;
 }
 
 function draw(candidate) {
@@ -636,6 +673,7 @@ function pickPart(event) {
   const hit = raycaster.intersectObjects(group.children, false)
     .find((item) => hitPartName(item));
   if (build.placing) { placeAtHit(hit); return; }
+  setWorkspaceMode("build");
   bench.selectedPart = hitPartName(hit);
   bench.forcePoint = hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
   // A new spot: the last push's colours no longer describe what is selected.
@@ -647,8 +685,17 @@ function pickPart(event) {
 
 let probing = false;
 function reprobe() {
-  if (bench.selectedBenchTest !== "force_probe" || !bench.selectedPart || probing) return;
-  probing = true; const config = benchConfig(); showForceAt(bench.forcePoint, config.force_n);
+  // Feeling a point is its own question and always was. It used to wait for
+  // "force_probe" to be the SELECTED test, which the picker can never offer:
+  // the catalogue keeps only tests tagged "simulation" and this one is tagged
+  // "analysis". Every one of its five callers was dead. It needs a part picked
+  // and a point on it, and takes the force from the push panel beside it.
+  if (!bench.selectedPart || !bench.forcePoint || probing) return;
+  probing = true;
+  const config = { force_n: Number($("#ws-push-force")?.value) || 1000,
+                   direction: $("#ws-push-way")?.value || "down",
+                   at_m: bench.forcePoint ? [bench.forcePoint.x, bench.forcePoint.y, bench.forcePoint.z] : null };
+  showForceAt(bench.forcePoint, config.force_n);
   guard(null, async () => {
     try {
       const answer = await api("/api/workshop/plan", {
@@ -713,6 +760,18 @@ function addOption(select, value, label) { select.append(make("option", { value 
 function updateClipControls() {
   const output=$("#ws-clip-value"); if(output) output.textContent=`${bench.clip.position.toFixed(2)} m`;
   applyClipPlane(); show(false);
+}
+
+// Where a control lives when it is still wired but is not a thing a person
+// should be looking at. Everything in here is driven by the page or by the
+// chat; nothing in here is a panel.
+function holder() {
+  let box = document.querySelector("#ws-hidden-controls");
+  if (!box) {
+    box = make("div", { id:"ws-hidden-controls", hidden:true });
+    document.querySelector("#design-workshop")?.append(box);
+  }
+  return box;
 }
 
 function installEditor() {
@@ -838,18 +897,40 @@ function installEditor() {
   dock.hidden = true;
   dock.append(make("strong", {id:"ws-active-situation"}), $("#ws-run-bench"),
     make("div", {id:"ws-simulation-feedback"}), playback);
-  $(".ws-viewport").append(dock);
+  // Nor is the dock. "Run simulation" and "Reset to setup" belonged to a Test
+  // tab that no longer exists, and the owner could not tell what either did.
+  // Trying a thing is something you ask for; what it leaves behind -- the
+  // playback and its timeline -- is drawn over the view when there is one.
+  holder().append(dock);
+  const watching = make("section", { id:"ws-watching", class:"ws-watching" });
+  watching.hidden = true;
+  // Ask the chat to drop something on it and you watch it here, over the
+  // object, with one way back. The owner: "it will do that and show you and
+  // then have a reset button to bring it back to full build."
+  const backToBuild = make("button", { id:"ws-back-to-build", type:"button", class:"ws-action" },
+                           "Back to the build");
+  backToBuild.onclick = () => { clearPlayback(); showWholeProduct(); };
+  watching.append(playback, backToBuild);
+  $(".ws-viewport").append(watching);
   const context = make("section", {id:"ws-view-context", role:"status", "aria-live":"polite"});
   context.append(make("strong", {id:"ws-view-title"}, "Product"), make("p",{id:"ws-view-description"}),
     make("div", {id:"ws-inspector-actions",class:"ws-row"}));
-  // Fit view and the camera presets are gone: drag to orbit, wheel to zoom,
-  // and the view is framed when a thing is opened.
+  const fit = make("button", {id:"ws-fit-view",type:"button",class:"ws-action"}, "Fit view");
+  fit.onclick=()=>{if(workspace.mode==="test" && (bench.playback || workspace.setup)) frameSimulation(bench.playback || workspace.setup); else {draw(chosen());frameCandidate();}};
   const back = make("button", {id:"ws-inspector-back",type:"button",class:"ws-action"}, "Back to product");
   back.onclick=showWholeProduct;
   const use = make("button", {id:"ws-inspector-use",type:"button",class:"ws-action"}, "Use on selected part");
   use.onclick=()=>guard(use,()=>reuseLibraryComponent(bench.libraryInspection.library_item.item_id));
-  context.querySelector("#ws-inspector-actions").append(back,use);
-  $(".ws-viewport").append(context);
+  context.querySelector("#ws-inspector-actions").append(fit,back,use);
+  for(const [name,y,p] of [["Perspective",.72,.42],["Side",0,.08],["Top",0,1.25]]) {
+    const button=make("button",{type:"button",class:"ws-action"},name);
+    button.onclick=()=>{yaw=y;pitch=p;placeCamera();};context.querySelector("#ws-inspector-actions").append(button);
+  }
+  // Not on the page. "hold objects on a stable work surface" told a person
+  // looking at a table that it was a table, and the buttons beside it are on
+  // the bar now. It stays in the holder because updateInspector writes to it.
+  context.hidden = true;
+  holder().append(context);
   const setup = make("button", {id:"ws-reset-setup",type:"button",class:"ws-action"}, "Reset to setup");
   setup.onclick=()=>{benchTestRequest++;$("#ws-bench-result").replaceChildren();clearPlayback();scheduleSetup(0);};
   dock.insertBefore(setup, $("#ws-simulation-feedback"));
@@ -887,21 +968,7 @@ function installEditor() {
   $("#ws-component-name").oninput = (event) => {
     if (event.target.value.trim()) event.target.dataset.edited = "1"; else delete event.target.dataset.edited;
   };
-  chat.onsubmit = (event) => {
-    event.preventDefault();
-    const message = ($("#ws-component-chat-text")?.value || "").trim();
-    const command = chatCommand(message);
-    if (command) {
-      event.stopImmediatePropagation();
-      $("#ws-component-chat-text").value = "";
-      // The page's chat shell may have put up its "Working…" bubble and
-      // locked the box for a turn that never goes to the model: clear it.
-      const settle = () => { document.querySelectorAll("#ws-chat-log .ws-chat-message.working").forEach((el) => el.remove()); const box = $("#ws-component-chat-text"); if (box) box.disabled = false; const send = chat.querySelector("button[type=submit]"); if (send) send.disabled = false; const st = $("#ws-chat-status"); if (st) st.textContent = ""; };
-      guard(chat.querySelector("button"), async () => { try { await command(); } finally { settle(); setTimeout(settle, 50); } });
-      return;
-    }
-    guard(chat.querySelector("button"), chatEdit);
-  };
+  chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
   testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); scheduleSetup(0); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
   $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
@@ -917,7 +984,10 @@ function installEditor() {
 // rack holds along the bottom. The older panels are still here, folded away,
 // until each has a home in this frame.
 // ---------------------------------------------------------------------------
-const BENCH_VIEWS = [["3/4", 0.72, 0.42], ["X", Math.PI / 2, 0.06], ["Y", 0, 1.45], ["Z", 0, 0.06]];
+//: Where you stand to look at it. These were called 3/4, X, Y and Z -- the
+//: axis you are looking ALONG -- which is not something anybody reads off a
+//: button. They are named for what you see.
+const BENCH_VIEWS = [["3/4", 0.72, 0.42], ["Front", 0, 0.06], ["Side", Math.PI / 2, 0.06], ["Top", 0, 1.45]];
 
 function centroidOf(candidate) {
   const parts = candidate?.parts || [];
@@ -937,10 +1007,9 @@ function laidOutCenter(candidate, part) {
 
 function setMakeStatus(message, bad) {
   const line = $("#ws-make-status");
-  if (line) { line.textContent = message || ""; line.dataset.bad = bad ? "yes" : "no"; }
-  // What checking and making say is said in the chat too: that is where the
-  // person asked, and where a short rack is explained.
-  if (message && !/…$/.test(message)) chatSay(message);
+  if (!line) return;
+  line.textContent = message || "";
+  line.dataset.bad = bad ? "yes" : "no";
 }
 
 // Make it: the one act that spends. Preview is free and runs whatever the rack
@@ -981,7 +1050,8 @@ async function makeIt(button) {
     for (const position_m of MAKE_SPOTS) {
       try {
         preview = await api("/api/world/workshop/preview", {
-          session: source.session, scene: source.scene, mode: "authoring", candidate, position_m });
+          session: source.session, scene: source.scene, mode: "authoring", candidate, position_m,
+          replace: true });
         break;
       } catch (error) {
         refused = error;
@@ -1034,8 +1104,30 @@ function renderHeldTo() {
     const row = make("div", { class:"ws-held-row ws-held-run" });
     const said = test.kind === "static_load" ? `hold ${test.load_kg} kg on its ${test.on}`
       : test.kind === "tip" ? `tip about ${test.direction}` : test.kind;
-    row.append(make("span", {}, said), make("strong", {}, "run it"));
+    // "run it" was a <strong>: it read like a button, and nothing happened.
+    const go = make("button", { type:"button", class:"ws-run-declared" }, "run it");
+    go.onclick = () => runDeclared(test, go);
+    row.append(make("span", {}, said), go);
     root.append(row);
+  }
+}
+
+// What a declared test means at the bench: put the thing in a little world and
+// do to it what the design says it must take.
+async function runDeclared(test, button) {
+  const was = button.textContent;
+  button.disabled = true; button.textContent = "running…";
+  try {
+    const answer = await api("/api/workshop/plan", {
+      ...candidateBody(),
+      try_in_a_room: { seconds: 6, load_kg: test.kind === "static_load" ? test.load_kg : 0,
+                       on: test.on || "top", tip: test.kind === "tip" ? test.direction : null },
+    });
+    say(answer.room?.says || "It ran, and said nothing.");
+  } catch (error) {
+    say(`That test would not run: ${error.message || error}`, true);
+  } finally {
+    button.disabled = false; button.textContent = was;
   }
 }
 
@@ -1076,11 +1168,45 @@ function cardify(select, rootId, cardClass, onPick) {
   return root;
 }
 
-// The workspace was told which of three tabs was showing. One screen has no
-// tabs, so the same word is said when the thing that used to need it happens.
+// Which step of the work is showing. The word is the same one the workspace
+// has always been told -- the viewport and the test scheduler listen for it --
+// and now it also decides which step of the right pane you can see.
 function setWorkspaceMode(mode) {
   if (workspace.mode === mode) return;
   dispatchEvent(new CustomEvent("banjo-workshop-mode", { detail: mode }));
+}
+
+// A run of nodes under a heading becomes a drawer with that heading's name.
+// The headings were already there; all this does is decide which of them a
+// person has to open. Everything stays reachable and stays where it was.
+function foldSections(root, keepOpen) {
+  if (!root) return;
+  const open = new Set(keepOpen.map((name) => name.toLowerCase()));
+  const runs = [];
+  for (const node of [...root.children]) {
+    if (/^H[1-6]$/.test(node.tagName)) runs.push({ heading: node, under: [] });
+    else if (runs.length) runs.at(-1).under.push(node);
+  }
+  for (const run of runs) {
+    const said = (run.heading.textContent || "").trim();
+    if (open.has(said.toLowerCase()) || !run.under.length) continue;
+    const box = make("details", { class:"ws-group ws-drawer ws-fold" });
+    box.append(make("summary", {}, said));
+    run.heading.replaceWith(box);
+    for (const node of run.under) box.append(node);
+  }
+}
+
+// Show one step and no other. Called on every mode change, including the ones
+// the page makes for you: picking a part takes you to Change, picking a test
+// takes you to Try, so you are never left looking at the wrong pane.
+function showStep(mode) {
+  for (const pane of document.querySelectorAll(".ws-step-pane")) {
+    pane.hidden = pane.dataset.mode !== mode;
+  }
+  for (const tab of document.querySelectorAll(".ws-step-tab")) {
+    tab.setAttribute("aria-selected", String(tab.dataset.mode === mode));
+  }
 }
 
 function installBench() {
@@ -1089,28 +1215,38 @@ function installBench() {
   if (!root || !top || !left || !right || !viewport || root.classList.contains("ws-benched")) return;
   root.classList.add("ws-benched");
 
-  // The header: which product, and the one act that spends.
+  // ONE bar, over the view, and no header above it.
+  //
+  // The owner: "The workshop options of each item should be switched into a
+  // dropdown on the same line as the wire/skin line, and we can also put the
+  // nav elements in that line too so that we don't need the full workshop line
+  // above." There were three bars before -- a page header, a Wire/Skin bar and
+  // a row of view buttons under the object -- for about ten controls between
+  // them.
+  //
+  // Which product, how it is drawn, where you are looking from, and the two
+  // acts that leave the bench. Everything else is the chat's.
   const picker = $("#ws-archetype");
-  const keep = make("div", { id:"ws-hidden-controls", hidden:true });
-  const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
+  const keep = holder();
   const status = make("p", { id:"ws-make-status", role:"status", "aria-live":"polite" });
   const checkButton = make("button", { id:"ws-check", type:"button", class:"ws-action" }, "Check it");
   checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
   madeButton.onclick = () => makeIt(madeButton);
-  // The notice is what say() writes to, and the editor put it in the top bar
-  // before this ran. Rebuilding the bar must not take it away.
   const notice = $("#ws-notice");
-  // The header is the tabs (Lab, Inventory, Skills, Recipes) and the way out.
-  // The products are in Recipes and Inventory; Check it and Make it sit with
-  // the chat, which is where checking and making are asked for.
-  const tabs = $(".ws-tabs");
-  top.replaceChildren(
-    make("h1", {}, "Workshop"), ...(tabs ? [tabs] : []), make("span", { class:"ws-spacer" }),
-    make("a", { href:"/world" }, "Back to the world"), keep);
-  if (notice) top.append(notice);
+  top.replaceChildren(keep);
+  top.hidden = true;
+  // The product picker is the select itself, on the bar, rather than a row of
+  // chips: seven products is a list, and a list is a dropdown.
+  const products = make("div", { id:"ws-products", class:"ws-chips", role:"group", "aria-label":"Which product" });
+  products.hidden = true;
+  keep.append(products);
   if (picker) {
-    keep.append(picker);
+    picker.id = "ws-archetype";
+    picker.classList.add("ws-bar-select");
+    picker.setAttribute("aria-label", "Which product");
+    // The chips stay in the hidden holder because the page and its tests open
+    // a product by clicking one; they mirror the select either way.
     const chips = () => {
       products.replaceChildren();
       for (const option of [...picker.options]) {
@@ -1130,17 +1266,26 @@ function installBench() {
     new MutationObserver(chips).observe(picker, { childList:true, subtree:true });
   }
 
-  // Left: the parts of the thing, and nothing else.
+  // Left: the chat, and nothing else. It is the widest way into the bench --
+  // anything the controls do it can do, and it is where a person starts -- so
+  // it gets a side of its own instead of a box at the top of the other side.
+  // The parts of the thing move across to sit with the controls that change
+  // them. The chat's own log, status line and intro are put in beside the form
+  // by the page's shell after this runs, so moving the form moves all of it.
   const parts = $("#ws-parts");
   const leftKeep = [...left.children];
-  left.replaceChildren(make("h2", {}, "Parts"));
-  if (parts) left.append(parts);
 
-  // Under the view: which way you are looking at it, and how far apart it lies.
-  const bar = make("div", { class:"ws-benchbar" });
-  const views = make("div", { class:"ws-chips", role:"group", "aria-label":"Point of view" });
+  // Where you are looking from, beside how it is drawn, on the same bar. This
+  // was a row of buttons under the object in a panel that also said "hold
+  // objects on a stable work surface", which is not something anyone needed
+  // telling while looking straight at the thing.
+  const views = make("div", { id:"ws-points-of-view", class:"ws-chips", role:"group",
+                              "aria-label":"Point of view" });
   for (const [name, y, p] of BENCH_VIEWS) {
     const button = make("button", { type:"button", class:"ws-chip" }, name);
+    // Not data-view: that belongs to Wire/Skin/Matter, which now share this
+    // bar, and a point of view is not a way of drawing the thing.
+    button.dataset.pointOfView = name;
     button.onclick = () => {
       yaw = y; pitch = p; placeCamera();
       for (const other of [...views.children]) other.setAttribute("aria-current", other === button ? "true" : "false");
@@ -1153,33 +1298,149 @@ function installBench() {
   apart.addEventListener("input", () => { bench.spread = apart.valueAsNumber / 100; draw(chosen()); });
   const apartLabel = make("label", { class:"ws-benchbar-field" }, "Apart");
   apartLabel.append(apart);
-  bar.append(views, apartLabel);
-  viewport.append(bar);
+  keep.append(apartLabel);
 
-  // Right: the chat on top, then what it is held to. Everything the old bench
-  // had is folded into one place until it earns a spot in this frame.
+  // Right: the chat, always, and under it one step of the work at a time.
+  //
+  // This pane has been wrong twice. It was one shut drawer called "Bench
+  // extras" holding about fifty working controls, and nobody ever opened it.
+  // Then it was six named sections, all open, and the owner said: "there are
+  // so many buttons and fields I don't have a clue where to begin". Both are
+  // the same fault. The controls were never the problem; there was no ORDER
+  // OF WORK, so every one of them looked equally like the next thing to do.
+  //
+  // Four steps, and you see one: Ask what to make, Change it, Try it, Keep it.
+  // Nothing is deleted and nothing is hidden behind an unnamed lid -- the step
+  // you are not in is a click away and says what it holds. The chat sits above
+  // them because it is another way of doing any of the four, not a fifth step.
   const chatForm = $("#ws-component-chat");
   const chatHome = make("section", { id:"ws-chat-home" });
   chatHome.append(make("h2", {}, "Chat"));
-  // What it measures (parts, mass, stands on, tips at) is in the extras now:
-  // "Held to" did nothing a person could act on from the Lab.
   const heldBox = make("section", { id:"ws-held-box" });
-  heldBox.append(make("h3", {}, "Measured"), make("div", { id:"ws-held" }));
-  const extras = make("details", { id:"ws-extras" });
-  extras.append(make("summary", {}, "Bench extras"));
+  heldBox.append(make("h2", {}, "Held to"), make("div", { id:"ws-held" }));
+
+  // The step names are what a person is doing, not what the code calls it; the
+  // mode keys underneath are the ones the workspace has always used, so the
+  // viewport and the test scheduler go on hearing what they listened for.
+  const STEPS = [
+    { mode:"start", name:"Ask", about:"Which product to start from, your own parts, and anything you saved." },
+    { mode:"build", name:"Change", about:"The part you picked, building part by part, and taking a change back." },
+    { mode:"test", name:"Try", about:"Put it in a little world with ground and a sky, and do something to it." },
+    { mode:"details", name:"Keep", about:"What it is made of, making it in the world, and saving it." },
+  ];
+  const strip = make("div", { class:"ws-steps", role:"tablist", "aria-label":"What you are doing" });
+  const groups = {};
+  for (const step of STEPS) {
+    const tab = make("button", { type:"button", class:"ws-step-tab", role:"tab",
+                                 "data-mode":step.mode, "aria-selected":String(step.mode === workspace.mode) }, step.name);
+    tab.onclick = () => setWorkspaceMode(step.mode);
+    strip.append(tab);
+    const pane = make("section", { id:`ws-step-${step.mode}`, class:"ws-step-pane", role:"tabpanel",
+                                   "data-mode":step.mode });
+    pane.hidden = step.mode !== workspace.mode;
+    pane.append(make("p", { class:"ws-step-about" }, step.about));
+    groups[step.mode] = pane;
+  }
+  // Two drawers under the steps, shut, because they describe the bench rather
+  // than being a step of the work.
+  const drawer = (id, title) => {
+    const box = make("details", { id, class:"ws-group ws-drawer" });
+    box.append(make("summary", {}, title));
+    return box;
+  };
+  groups.measure = drawer("ws-group-measure", "How it measures up");
+  groups.plumbing = drawer("ws-group-plumbing", "How the bench works");
+
+  // Undo, and a list of what you did to get here. Every edit went through
+  // took() and nothing kept the state before it, so a wrong material on all
+  // eight parts was a wrong material on all eight parts for good.
+  const back = make("button", { id:"ws-undo", type:"button", class:"ws-action" }, "Undo");
+  const forward = make("button", { id:"ws-redo", type:"button", class:"ws-action" }, "Redo");
+  back.onclick = () => stepHistory(-1);
+  forward.onclick = () => stepHistory(1);
+  const historyRow = make("div", { class:"ws-row" });
+  historyRow.append(back, forward);
+  const historyBox = make("section", { id:"ws-group-history", class:"ws-group" });
+  historyBox.append(make("h2", {}, "What you changed"), historyRow, make("div", { id:"ws-history" }));
+
+  // Where each thing goes. Some of what was swept in is anonymous -- a heading,
+  // then the fields under it -- so an unnamed node joins whatever the last
+  // heading joined.
+  const BY_ID = {
+    "ws-component-editor":"build", "ws-test-bench":"test",
+    "ws-bom-box":"details", "ws-install-box":"details",
+    "ws-product-library-box":"start", "ws-personal-library-box":"start", "ws-saved-designs":"start",
+    "ws-name":"measure", "ws-purpose":"measure", "ws-checks":"measure",
+    "ws-buildability":"measure", "ws-measurement-basis":"measure",
+    "ws-materialize":"plumbing", "ws-plan":"plumbing",
+  };
+  const BY_HEADING = {
+    // "Save design" and its name field sat under the test bench, because the
+    // heading before them was the test bench's and an unnamed node follows the
+    // last heading. Saving is Keep.
+    "save design":"details", "saved designs":"start", "my library":"start", "product library":"start",
+    "cheap checks":"measure", "feedback":"plumbing", "materialization":"plumbing",
+    "how it compiles":"plumbing", "test bench":"test", "materials":"details",
+  };
+  let following = "plumbing";
+  const placeIn = (node) => {
+    const id = node.id || "";
+    if (BY_ID[id]) return (following = BY_ID[id]);
+    if (node.classList && node.classList.contains("ws-metrics")) return (following = "measure");
+    if (node.classList && node.classList.contains("ws-viewbar-extra")) return "plumbing";
+    if (/^H[1-6]$/.test(node.tagName)) {
+      const said = (node.textContent || "").trim().toLowerCase();
+      // "Components" was the heading over the parts list, which now lives in
+      // the left pane on its own; the heading was left behind.
+      if (said === "components") return null;
+      if (BY_HEADING[said]) return (following = BY_HEADING[said]);
+    }
+    return following;
+  };
+  const partsBox = make("section", { id:"ws-parts-box" });
+  partsBox.append(make("h2", {}, "Parts"));
+  if (parts) partsBox.append(parts);
   const rightKeep = [...right.children];
-  right.replaceChildren();
+  left.replaceChildren(chatHome);
+  // No right nav.
+  //
+  // The owner, twice: "there are so many buttons and fields I don't have a
+  // clue where to begin on it", and then, of the four steps that replaced
+  // them, "I don't really understand how to use the try or change or keep
+  // functions, it makes no sense. Since we can't make this work we should just
+  // leave it all up to the chat."
+  //
+  // So the bench is the chat, the object, and one bar. The panels are still
+  // built and still wired -- the chat drives several of them, the page reads
+  // values out of them, and they are what the browser tests hold the bench to
+  // -- but they are not a wall of controls in front of a person any more. What
+  // a person cannot yet ask the chat for is written down in
+  // docs/workshop-deep-dive.md rather than left on the screen as a puzzle.
+  right.replaceChildren(partsBox, heldBox, strip, groups.start, groups.build, groups.test,
+                        groups.details, groups.measure, groups.plumbing);
   right.hidden = true;
-  for (const node of rightKeep) extras.append(node);
-  for (const node of leftKeep) if (node !== parts) extras.append(node);
+  for (const node of [...rightKeep, ...leftKeep.filter((n) => n !== parts)]) {
+    const where = placeIn(node);
+    if (where) groups[where].append(node); else node.remove();
+  }
+  groups.build.append(historyBox);
+  // Change was still 47 controls, which is most of the fault all over again in
+  // one step. Inside it, the two things a person reaches for -- the part they
+  // picked and adding a part -- stay out, and the other six become drawers
+  // with the names they already had. Nothing moves and nothing is lost; a
+  // drawer says what is in it, which "Bench extras" never did.
+  foldSections($("#ws-component-editor"), ["selected component", "build part by part"]);
+  foldSections($("#ws-build-box"), ["build part by part"]);
+  foldSections($("#ws-push-box"), []);
+  showStep(workspace.mode);
+  // Saving is Keep, and it did not land there on its own: the name field and
+  // the Save button are unnamed nodes, and an unnamed node follows the last
+  // heading it saw, which in the pane they came from was the test bench's.
+  for (const control of ["#ws-save-name", "#ws-save-design"]) {
+    const node = $(control)?.closest("label, .ws-row");
+    if (node) groups.details.append(node);
+  }
   if (chatForm) chatHome.append(chatForm);
-  // The chat column: beside every tab, not only the Lab. Check it and Make it
-  // under the chat, with what they said last; the extras folded at the foot.
-  const chatCol = make("aside", { id:"ws-chat-col", "aria-label":"Workshop chat" });
-  const acts = make("div", { class:"ws-row ws-chat-acts" });
-  acts.append(checkButton, madeButton);
-  chatCol.append(chatHome, acts, status, extras, heldBox);
-  root.append(chatCol);
 
   // The bench tests stay cards rather than a dropdown: what each one does to
   // the thing is worth reading before you pick it. This used to live in the
@@ -1199,9 +1460,7 @@ function installBench() {
   // The old shell revealed the run dock only on the Test tab. There are no
   // tabs now, so it is simply there.
   const dock = $("#ws-simulation-dock");
-  if (dock) dock.hidden = true;
-  // Closing the bench puts the product back in front of you.
-  extras.addEventListener("toggle", () => { if (!extras.open) setWorkspaceMode("build"); });
+  if (dock) dock.hidden = false;
 
   // Wire and Skin are the product. Matter, physics, collision and relations
   // describe how it is compiled, which is bench plumbing, not editing a thing.
@@ -1211,13 +1470,105 @@ function installBench() {
     for (const button of [...viewbar.children]) {
       if (!["wire", "skin"].includes(button.dataset.view)) plumbing.append(button);
     }
-    if (plumbing.children.length) extras.append(make("h3", {}, "How it compiles"), plumbing);
+    if (plumbing.children.length) groups.plumbing.append(make("h3", {}, "How it compiles"), plumbing);
+    // Everything that was three bars, on one: which product, how it is drawn,
+    // where from, and the two acts that leave the bench.
+    if (picker) viewbar.prepend(picker);
+    viewbar.append(views, make("span", { class:"ws-spacer" }), status,
+                   checkButton, madeButton, make("a", { class:"ws-bar-link", href:"/world" }, "The world"));
+    if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
 
-  // The rack runs along the bottom, where the world keeps its bag slots.
+  // The rack sits at the foot of the right side with the rest of the controls,
+  // rather than across the whole bottom of the page. It is one of the things
+  // you look at while you work, not a status bar under everything.
   const rackBox = $("#ws-rack")?.closest("section") || null;
-  const inventoryFirst = $("#ws-pane-inventory .ws-tabcols > div");
-  if (rackBox && inventoryFirst) { rackBox.hidden = false; inventoryFirst.prepend(rackBox); $("#ws-inv-materials")?.closest("h2")?.remove(); }
+  const foot = make("footer", { id:"ws-rack-foot" });
+  foot.append(make("h2", {}, "The rack"), make("div", { id:"ws-rack-strip" }));
+  right.append(foot);
+  if (rackBox) rackBox.hidden = false;
+  renderRackStrip();
+
+  // The tabs over the object: Lab is the object with its bar; Inventory,
+  // Skills and Recipes are read when opened (workshop_tabs). The chat on the
+  // left stays beside every one of them.
+  const centre = make("div", { id:"ws-centre" });
+  viewport.parentElement.insertBefore(centre, viewport);
+  const tabs = make("nav", { class:"ws-tabs", role:"tablist", "aria-label":"Workshop" });
+  for (const [name, label] of [["lab", "Lab"], ["inventory", "Inventory"], ["skills", "Skills"], ["recipes", "Recipes"]]) {
+    const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === "lab") }, label);
+    tab.onclick = () => showTab(name);
+    tabs.append(tab);
+  }
+  centre.append(tabs, viewport);
+  for (const name of ["inventory", "skills", "recipes"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+}
+
+// ---------------------------------------------------------------------------
+// Inventory, Skills, Recipes (workshop_tabs). Each is read when it is opened
+// and spends nothing.
+// ---------------------------------------------------------------------------
+function tag(text, cls = "") { return make("span", { class: `ws-tag ${cls}`.trim() }, text); }
+function item(title, sub, cls = "") { const li = make("li", cls ? { class: cls } : {}); li.append(make("strong", {}, title)); if (sub) li.append(make("small", {}, sub)); return li; }
+function fill(id, rows, empty) { const root = $(id); if (!root) return; root.replaceChildren(); if (!rows.length) root.append(item(empty)); for (const row of rows) root.append(row); }
+
+async function showInventory() {
+  const inv = await api("/api/workshop/inventory");
+  // The rack, editable here: what the bench holds of each material. Making
+  // is what spends it; designing never does.
+  fill("#ws-inv-materials", inv.materials.map((r) => {
+    const li = item(r.material, "");
+    const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(r.mass_kg),
+                                  "aria-label":`${r.material} on the rack, kilograms` });
+    input.addEventListener("change", () => guard(input, async () => {
+      const mass = input.valueAsNumber;
+      if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
+      const answer = await api("/api/workshop/library", { action:"set_rack", material:r.material, mass_kg:mass });
+      bench.rack = answer.rack; renderRack(); renderRackStrip(); reprobe();
+      say(`The rack holds ${mass} kg of ${r.material}.`);
+    }));
+    li.append(input, make("small", {}, "kg")); return li;
+  }), "The rack is empty.");
+  fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
+  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} · standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and ask the chat to make it.");
+  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
+  fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No assemblies in the library.");
+  fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
+  fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
+}
+
+async function showSkills() {
+  const s = await api("/api/workshop/skills");
+  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} techniques known. A technique is earned by what the engine measured your own hands, or your machines, doing.` : "The world has no techniques to learn yet.";
+  fill("#ws-skills-techniques", s.techniques.map((t) => { const li = item(t.name, t.describes, t.known ? "unlocked" : t.within_reach ? "reach" : ""); li.append(tag(t.known ? "unlocked" : t.within_reach ? "within reach" : `needs ${t.needs.join(", ")}`, t.known ? "ok" : "")); for (const d of t.opens) li.append(tag(`opens ${d}`)); return li; }), "No techniques.");
+  fill("#ws-skills-designs", s.designs.map((d) => item(d.name, (d.demonstrated.length ? `demonstrated: ${d.demonstrated.join(", ")}. ` : "") + `${d.evidence.length} piece${d.evidence.length === 1 ? "" : "s"} of evidence`, d.demonstrated.length ? "unlocked" : "")), "Nothing demonstrated yet: use a tool of your own on the ground, or watch a machine work.");
+  fill("#ws-skills-blocked", s.blocked.map((b) => item(b.name, `${b.route}: ${(b.because || []).join("; ")}`)), "Nothing is blocked.");
+  $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
+}
+
+async function showRecipes() {
+  const r = await api("/api/workshop/recipes");
+  fill("#ws-recipes-templates", r.templates.map((t) => {
+    const li = item(t.name, t.problem ? `cannot be assembled: ${t.problem}` : `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`, t.problem ? "" : t.enough ? "enough" : "short");
+    for (const m of t.materials || []) li.append(tag(`${m.kg} kg ${m.material} (have ${m.held_kg})`, m.enough ? "ok" : "short"));
+    for (const g of t.goods || []) li.append(tag(`${g.kg} kg ${g.substance} (have ${g.held_kg})`, g.enough ? "ok" : "short"));
+    if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
+    const open = make("button", { type:"button", class:"ws-action" }, "Design it");
+    open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:t.name, generation:bench.generation + 1 })); $("#ws-archetype").value = t.name; });
+    li.append(open); return li;
+  }), "No templates.");
+  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
+  fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
+  const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
+}
+
+function showTab(name) {
+  for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
+  const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
+  for (const pane of ["inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
+  if (name === "lab") resize();
+  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
+  if (loader) guard(null, loader);
 }
 
 // The rack as a row of bins, the same shape as the world's numbered bag slots.
@@ -1281,47 +1632,59 @@ async function editSkin() {
   if (!took(answer, selected)) return; view = "skin"; pressView("skin"); show(false);
   if ($("#ws-skin-physical").checked) await loadMatter(true);
 }
-// What the chat does itself, without the model: checking, making, testing.
-// "check it" draws the thing again until the room can carry it; "make it"
-// puts it in the world, and the rack's shortfall is what it says back; "test
-// it" (or "run the drop test") runs a bench test and says what happened.
-function chatSay(text, role = "assistant") {
-  const log = $("#ws-chat-log");
-  if (!log) { say(text); return; }
-  const row = make("div", { class:`ws-chat-message ${role}` });
-  row.append(make("span", { class:"ws-chat-who" }, role === "user" ? "You" : "Workshop"), make("div", { class:"ws-chat-body" }, text));
-  log.append(row); log.scrollTop = log.scrollHeight;
-}
-function chatCommand(message) {
-  const said = message.toLowerCase().replace(/[.!?]+$/, "").trim();
-  if (/^(check( it)?|check (its )?validity|does it work|is it valid)$/.test(said)) return () => checkValidity($("#ws-check"));
-  if (/^(make( it)?|build( it)?|install( it)?|put it in the world)$/.test(said)) return () => makeIt($("#ws-make"));
-  const test = said.match(/^(?:test( it)?|simulate( it)?|run (?:the |a )?(?:simulation|test)|run (?:the |a )?(.+?) test)$/);
-  if (test) {
-    return async () => {
-      const wanted = (test[3] || "").trim();
-      if (wanted) {
-        const found = (bench.benchTests || []).find((t) => (t.name || t.test || "").toLowerCase().includes(wanted));
-        if (!found) throw new Error(`There is no test called ${wanted}. The tests are ${(bench.benchTests || []).map((t) => t.name).join(", ")}.`);
-        bench.selectedBenchTest = found.test; renderBenchControls();
+// Read back what a turn has done so far, about once a second, and tell the
+// chat's own shell so it can put it under the working bubble.
+function watchTheTurn(turn) {
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const said = await api("/api/workshop/progress", { turn });
+      if (!stopped && said?.steps?.length) {
+        dispatchEvent(new CustomEvent("banjo-workshop-progress", { detail: said }));
       }
-      setWorkspaceMode("test");
-      await runBenchTest();
-      const result = $("#ws-simulation-readout")?.textContent || $("#ws-bench-result")?.textContent || "Ran it.";
-      chatSay(result.trim().slice(0, 600) || "Ran it.");
-    };
-  }
-  return null;
+    } catch { /* the answer itself is what matters; this is only the commentary */ }
+    if (!stopped) setTimeout(tick, 900);
+  };
+  // Ask once straight away, before the turn itself is even sent. A turn that
+  // ends quickly -- an error, a refusal, a question -- would otherwise be over
+  // before the first read, and a wait that sometimes says nothing is worse
+  // than one that always does. The first answer is usually empty, which shows
+  // nothing; the point is that the reading has started.
+  tick();
+  return { stop: () => { stopped = true; } };
 }
 
 async function chatEdit() {
+  if (!bench.selectedPart) throw new Error("Click the part you want to talk about first.");
   const input = $("#ws-component-chat-text"), message = input.value.trim();
   if (!message) throw new Error("Tell Workshop what to change.");
-  const selected = bench.selectedPart || "";
-  const answer = await api("/api/workshop/candidates", { ...candidateBody(), component_chat:{ part_name:selected, message } });
+  const selected = bench.selectedPart;
+  // A turn is one POST that answers when the whole thing is done, and the work
+  // inside it is several round trips to the model. The id goes in with the
+  // request and the page reads back what the turn has done so far, so the wait
+  // says what is happening instead of nothing.
+  const turn = crypto.randomUUID();
+  const watching = watchTheTurn(turn);
+  let answer;
+  try {
+    answer = await api("/api/workshop/candidates",
+                       { ...candidateBody(), component_chat:{ part_name:selected, message, turn } });
+  } finally { watching.stop(); }
   if (!took(answer, selected)) return;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
-  if (answer.workshop_chat?.reply) say(answer.workshop_chat.reply); input.value = "";
+  // Asked to try the thing, the chat hands back a run to watch. It is played
+  // over the object, with one button back to the build.
+  const showing = answer.workshop_chat?.showing;
+  if (showing?.frames?.length > 1) { setWorkspaceMode("test"); setPlayback(showing); }
+  // Asked to take a change back, the chat says so and the PAGE does it: the
+  // session's history lives here, not in the turn, so it reaches back past
+  // whatever the chat itself did.
+  for (let step = Number(answer.workshop_chat?.undo) || 0; step > 0; step--) stepHistory(-1);
+  // The reply belongs in the chat, which already shows it. It used to be said
+  // here as well, which put it across the top of the page and under "Cheap
+  // checks" at the same time: the same sentence in three places.
+  input.value = "";
 }
 async function saveSelectedComponent() {
   const part = selectedPart(); if (!part) throw new Error("Click the component you want to save first.");
@@ -1403,7 +1766,12 @@ function renderBuildability() {
     : "Not buildable on this grid. Your original dimensions are preserved.";
   summary.textContent = prefix + (cost?.stored_cells != null ? ` ${cost.stored_cells.toLocaleString()} / ${report.limits.scene_cells.toLocaleString()} scene cells.` : "")
     + (cost?.collision_boxes != null ? ` ${cost.collision_boxes} / ${report.limits.joined_boxes} joined boxes.` : "")
-    + (issues.length ? " " + issues.join(". ") : "") + " No bending, fracture or joint-strength certification.";
+    + (issues.length ? " " + issues.join(". ") : "") + " No bending, fracture or joint-strength certification."
+  // A design the room cannot carry has to reach the person, and the panel this
+  // is written in is not on the bench any more. The notice sits over the view.
+  if (!rigid && report.assessment !== "dimensions-only" && !report.compilation_ready) {
+    say(summary.textContent, true);
+  }
   for (const part of report.components || []) {
     if (!part.disappeared && !part.subcell_axes.length) continue;
     parts.append(make("p", {class:"ws-note"}, `${part.component}: ${part.disappeared ? "disappears; " : "subcell feature; "}`
@@ -1439,8 +1807,10 @@ function scheduleBuildability() {
 function benchDefinition(name = bench.selectedBenchTest) { return bench.benchTests.find((item) => item.test === name) || null; }
 function renderBenchCatalog() {
   // Analysis/reference tools remain callable by specialist APIs, not presented as product simulations.
+  // "any" is the little world: it installs whatever the design compiles to, so
+  // it is offered for a design of cells and a design of exact bodies alike.
   bench.benchTests = bench.benchTests.filter(t => t.category === "simulation" && t.subject === "selected-product"
-    && (t.required_model || "lattice") === (chosen()?.mechanical_model || "lattice"));
+    && (t.required_model === "any" || (t.required_model || "lattice") === (chosen()?.mechanical_model || "lattice")));
   const picker = $("#ws-bench-test"); picker.replaceChildren();
   for (const test of bench.benchTests) picker.append(make("option", { value:test.test }, test.name));
   if (!bench.selectedBenchTest || !benchDefinition(bench.selectedBenchTest)) bench.selectedBenchTest = bench.benchTests[0]?.test || null;
@@ -1505,7 +1875,7 @@ function benchConfig() {
     else out[control.name] = input.value;
   }
   out.record_trace = true; // Visible runs require actual simulation states.
-  if (definition.test !== "rigid_motion") {
+  if (definition.test !== "rigid_motion" && definition.test !== "try_in_a_room") {
     if (bench.selectedPart && out.component === undefined) out.component = bench.selectedPart;
     if (bench.forcePoint && out.point_m === undefined) out.point_m = bench.forcePoint;
   }
@@ -1518,7 +1888,12 @@ function renderBenchPresets() {
   root.append(row);
 }
 function celsius(k) { return k == null ? "—" : `${(Number(k)-273.15).toFixed(2)} °C`; }
+function watchPanel(showing) {
+  const panel = $("#ws-watching");
+  if (panel) panel.hidden = !showing;
+}
 function clearPlayback() {
+  watchPanel(false);
   workspace.sequence++; clearTimeout(workspace.timer); workspace.setup=null;
   bench.playback = null; bench.playbackIndex = 0; bench.playbackPlaying = false;
   $("#ws-simulation-feedback")?.replaceChildren();
@@ -1527,6 +1902,7 @@ function clearPlayback() {
   if (view === "physics") { view = "skin"; pressView("skin"); show(false); }
 }
 function setPlayback(recording) {
+  watchPanel(Boolean(recording?.frames?.length));
   if (!recording?.frames || recording.frames.length < 2 || !(recording.duration_s > 0)) {
     clearPlayback(); throw new Error("The test returned no advancing simulation. No successful simulation is claimed.");
   }
@@ -1599,7 +1975,29 @@ function renderJointScreen(card, screen) {
 function renderBenchResult(result) {
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
-  if (result.test === "rigid_motion") {
+  if (result.test === "try_in_a_room") {
+    // The little world says what it did and what became of the thing. Turning
+    // is its own line: a stool that settled 3 mm and a stool lying on its side
+    // have both "moved" about nothing.
+    const m = result.measured || {}, broke = m.broke || [], dented = m.dented || [];
+    const what = m.fell_over ? "It went over" : broke.length ? `${broke.length} of it broke`
+      : dented.length ? `${dented.length} of it is dented` : "It stayed up";
+    card.append(make("strong", { id:"ws-room-outcome", "data-outcome": m.fell_over ? "fell" : broke.length ? "broke" : dented.length ? "dented" : "stood",
+                                 "data-broke": String(broke.length), "data-dented": String(dented.length) }, what),
+      make("p", { id:"ws-room-says" }, result.says || ""),
+      make("p", {}, `Moved ${m.moved_m == null ? "—" : `${(Number(m.moved_m) * 1000).toFixed(0)} mm`} · turned ${Number(m.turned_deg || 0).toFixed(1)}° · ${Number(m.ran_for_s || 0).toFixed(1)} s in the room`));
+    for (const store of m.stores || []) card.append(make("p", {}, `${store.name}: ${Number(store.charge_j).toFixed(0)} J`));
+    for (const panel of m.panels || []) card.append(make("p", {}, `${panel.name}: ${Number(panel.power_w).toFixed(1)} W`));
+    for (const program of m.programs || []) card.append(make("p", {}, `${program.name} is ${program.doing}: ${program.why}`));
+    for (const run of m.failures || []) card.append(make("p", {}, `${run.name} ${run.outcome} into ${run.pieces} at ${Number(run.at_s).toFixed(2)} s`));
+    const verdict = result.acceptance || {}, status = verdict.status || "not-declared";
+    card.append(make("strong", { id:"ws-acceptance-status", "data-status":status },
+      `Declared limits: ${status === "not-declared" ? "not evaluated (no limits declared)" : status}`));
+    for (const check of verdict.checks || []) {
+      if (check.status === "passed") continue;
+      card.append(make("p", {}, `${check.metric}: ${check.measured == null ? "not measured" : check.measured}; ${check.operator} ${check.limit}${check.unit ? ` ${check.unit}` : ""} (${check.status}).`));
+    }
+  } else if (result.test === "rigid_motion") {
     const m = result.measured || {};
     card.append(make("strong", {}, "Native precise rigid motion — not a strength test"),
       make("p", {}, `${m.collision_boxes} exact boxes · ${m.stored_cells} lattice cells · ${Number(m.mass_kg).toFixed(3)} kg`),
@@ -1656,6 +2054,19 @@ function renderBenchResult(result) {
       make("p", {}, `${s.detailed_components || 0} detailed components → ${s.runtime_bodies || 0} runtime bodies · ${s.mechanisms || 0} mechanisms`));
   }
   if (result.acceptance) card.append(make("p", {}, `Acceptance: ${result.acceptance.status} — ${result.acceptance.why || ""}`));
+  // What this EXACT shape was told before. Kept against the design's
+  // fingerprint, so editing a leg does not inherit yesterday's verdict.
+  if (result.earlier?.length) {
+    const past = make("details", { class:"ws-family", id:"ws-earlier-runs" });
+    past.append(make("summary", {}, `Tried ${result.earlier.length} time${result.earlier.length === 1 ? "" : "s"} before on this exact shape`));
+    for (const run of result.earlier) {
+      past.append(make("p", {}, `${new Date(run.ran_at).toLocaleString()} · ${run.test} · ${run.verdict} — ${run.says}`));
+    }
+    card.append(past);
+  } else if (result.kept_against) {
+    card.append(make("p", { class:"ws-feedback-count", id:"ws-earlier-runs" },
+      "First run on this exact shape. It is kept, so the next one can be compared with it."));
+  }
   if (result.prototype?.matter_physics_hash) card.append(make("p", {}, `Tested Matter ${result.prototype.matter_physics_hash.slice(0,12)} · ${result.prototype.matter_cells} cells`));
   if (result.trial === "static_load") {
     const acceptance = result.acceptance || {};
@@ -1692,8 +2103,6 @@ async function runBenchTest() {
     if(!current()) return;
     if (!answer.bench?.playback?.frames || answer.bench.playback.frames.length < 2) throw new Error("No visible simulation was returned. This test is not complete.");
     renderBenchResult(answer.bench);
-    // The run was asked for in the chat; its replay is shown under the thing.
-    const dock = $("#ws-simulation-dock"); if (dock) dock.hidden = false;
     status.dataset.state="complete";status.textContent="Simulation complete. Showing calculated behavior; use Pause or Replay to inspect it.";
     $("#ws-simulation-feedback").replaceChildren(status);
   } catch(error) {
@@ -1714,13 +2123,43 @@ async function saveBenchPreset() {
 // ---------------------------------------------------------------------------
 // Panels
 // ---------------------------------------------------------------------------
+// Rename and throw away. Nothing in the Workshop could do either: fourteen
+// routes and not one of them removed anything, and a name could only be
+// changed by saving again, which counted as a new revision of the design.
+function keepOrBin(row, { open, rename, remove, label }) {
+  const card = make("div", { class:"ws-card ws-keep-row" });
+  const name = make("button", { type:"button", class:"ws-keep-open" });
+  name.append(make("strong", {}, row.title), make("small", {}, row.said));
+  name.onclick = () => guard(name, open);
+  const edit = make("button", { type:"button", class:"ws-keep-small", title:`Rename this ${label}` }, "Rename");
+  edit.onclick = () => guard(edit, async () => {
+    const called = window.prompt(`What should this ${label} be called?`, row.title);
+    if (called == null || !called.trim()) return;
+    await rename(called.trim());
+  });
+  const bin = make("button", { type:"button", class:"ws-keep-small ws-keep-bin", title:`Throw this ${label} away` }, "Delete");
+  bin.onclick = () => guard(bin, async () => {
+    if (!window.confirm(`Throw away "${row.title}"? This cannot be undone.`)) return;
+    await remove();
+  });
+  const actions = make("div", { class:"ws-keep-actions" });
+  actions.append(edit, bin);
+  card.append(name, actions);
+  return card;
+}
 function savedDesigns(rows) {
   bench.savedDesigns = Array.isArray(rows) ? rows : []; const root = $("#ws-saved-designs"); root.replaceChildren();
   if (!bench.savedDesigns.length) { root.append(make("p", { class:"ws-feedback-count" }, "No saved designs yet.")); return; }
   for (const saved of bench.savedDesigns) {
-    const button = make("button", { type:"button", class:"ws-card" }); button.append(make("strong", {}, saved.label || saved.design_id),
-      make("small", {}, `${saved.kind} · revision ${saved.revision}${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`));
-    button.onclick = () => guard(button, async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); root.append(button);
+    root.append(keepOrBin({
+      title: saved.label || saved.design_id,
+      said: `${saved.kind} · saved ${saved.revision} time${saved.revision === 1 ? "" : "s"}${saved.measured ? ` · ${saved.measured.mass_kg} kg` : ""}`,
+    }, {
+      label: "design",
+      open: async () => { const answer = await api("/api/workshop/open", { saved_design_id:saved.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; },
+      rename: async (name) => savedDesigns((await api("/api/workshop/library", { action:"rename_design", design_id:saved.design_id, name })).saved_designs),
+      remove: async () => savedDesigns((await api("/api/workshop/library", { action:"delete_design", design_id:saved.design_id })).saved_designs),
+    }));
   }
 }
 function renderUserLibrary() {
@@ -1728,14 +2167,53 @@ function renderUserLibrary() {
   const root = $("#ws-user-library"); root.replaceChildren();
   if (!bench.personalLibrary.length) { root.append(make("p", { class:"ws-feedback-count" }, "Nothing saved yet. Select a part and save it.")); return; }
   for (const item of bench.personalLibrary) {
-    const card = make("button", { type:"button", class:"ws-card ws-library-item", draggable:"true" });
-    card.append(make("strong", {}, item.name), make("small", {}, `${item.item_type}${item.family ? ` · ${item.family}` : ""} · v${item.version}`));
-    card.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
-    card.onclick = () => guard(card, async () => {
-      if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
-      else await inspectLibraryComponent(item.item_id);
-    }); root.append(card);
+    const card = keepOrBin({
+      title: item.name,
+      said: `${item.item_type}${item.family ? ` · ${item.family}` : ""} · version ${item.version}`,
+    }, {
+      label: item.item_type,
+      open: async () => {
+        if (item.item_type === "assembly") { const answer = await api("/api/workshop/open", { library_item_id:item.item_id }); bench.openedLibraryItem = item.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }
+        else await inspectLibraryComponent(item.item_id);
+      },
+      rename: async (name) => { bench.personalLibrary = (await api("/api/workshop/library", { action:"rename_component", item_id:item.item_id, name })).personal_library; renderUserLibrary(); },
+      remove: async () => { bench.personalLibrary = (await api("/api/workshop/library", { action:"delete_component", item_id:item.item_id })).personal_library; renderUserLibrary(); },
+    });
+    // The name IS the item: clicking it opens the thing and dragging it drops
+    // the thing. Putting those on the card around it instead would mean a
+    // click on the card did nothing, which is what a person would try first.
+    const open = card.querySelector(".ws-keep-open");
+    open.classList.add("ws-library-item");
+    open.draggable = true;
+    open.ondragstart = (event) => { event.dataTransfer.setData("application/x-banjo-library-item", item.item_id); event.dataTransfer.effectAllowed = "copy"; };
+    // Every version of this was written on every save and could not be read
+    // back by anything. This is the reader.
+    if (item.version > 1) {
+      const past = make("button", { type:"button", class:"ws-keep-small" }, `${item.version} versions`);
+      past.onclick = () => guard(past, () => showVersions(item));
+      card.querySelector(".ws-keep-actions").prepend(past);
+    }
+    root.append(card);
   }
+}
+async function showVersions(item) {
+  const answer = await api("/api/workshop/library", { action:"versions", item_id:item.item_id });
+  const root = $("#ws-user-library");
+  const box = make("div", { class:"ws-note", id:"ws-versions" });
+  box.append(make("strong", {}, `${item.name}: every version saved`));
+  for (const version of answer.versions || []) {
+    const row = make("button", { type:"button", class:"ws-card ws-history-step" });
+    row.append(make("strong", {}, `Version ${version.version}${version.current ? " (the one in use)" : ""}`),
+               make("small", {}, new Date(version.saved_at).toLocaleString()));
+    row.onclick = () => guard(row, async () => {
+      const got = await api("/api/workshop/library", { action:"open_version", item_id:item.item_id, version:version.version });
+      say(`Version ${version.version} of ${item.name}, saved ${new Date(got.version.saved_at).toLocaleString()}. `
+        + `Its recipe is ${JSON.stringify(got.version.payload).slice(0, 200)}…`);
+    });
+    box.append(row);
+  }
+  $("#ws-versions")?.remove();
+  root.prepend(box);
 }
 // The product library is a tree: a row per product, and under the open one a
 // child row per distinct component with its quantity. Names alone carry the
@@ -1858,6 +2336,7 @@ async function previewSetup(sequence) {
 }
 addEventListener("banjo-workshop-mode",event=>{
   workspace.mode=event.detail;workspace.sequence++;benchTestRequest++;clearTimeout(workspace.timer);
+  showStep(workspace.mode);
   if(workspace.mode==="test") {
     workspace.inspecting++;bench.libraryInspection=null;bench.isolated=null;
     bench.clip.enabled=false;$("#ws-clip-enabled").checked=false;renderer.clippingPlanes=[];
@@ -1952,7 +2431,7 @@ function renderIsolation() {
   if (alone) $("#ws-isolation-note").textContent = `Working on ${alone.name} on its own.`;
   $("#ws-show-whole").textContent = `Show the whole ${bench.kind.replace("-", " ")}`;
   // Matter, collision, relations and physics measure the assembled product.
-  document.querySelectorAll(".ws-viewbar button").forEach((button) => {
+  document.querySelectorAll(".ws-viewbar button[data-view]").forEach((button) => {
     const whole = !ISOLATING_VIEWS.includes(button.dataset.view);
     button.disabled = Boolean(bench.isolated || bench.libraryInspection) && whole;
     button.title = button.disabled ? "This view measures the whole product. Show it to use this view." : "";
@@ -2016,7 +2495,7 @@ function show(reframe = true) {
   draw(candidate); if (reframe) frameCandidate();
   const m = currentMeasurements(candidate); headline(candidate, m);
   const parts = $("#ws-parts"); parts.replaceChildren();
-  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
+  for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } setWorkspaceMode("build"); bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();
   if(bench.libraryInspection) {
     $("#ws-selected-part").textContent="Inspecting a saved component. Your product has not changed.";
@@ -2042,6 +2521,118 @@ function show(reframe = true) {
   checks.textContent = said.join(" "); $("#ws-plan").hidden = true;
 }
 
+// ---------------------------------------------------------------------------
+// What you changed, and going back
+//
+// Every edit came through took() and nothing kept the state before it, so a
+// wrong material applied to all eight parts stayed wrong. The whole design is
+// {kind, generation, candidates, selected}: small, and enough to restore
+// without asking the server anything. What each step DID is worked out by
+// comparing the two states rather than by every caller remembering to say.
+// ---------------------------------------------------------------------------
+const history = { past: [], now: null, future: [], restoring: false, max: 50 };
+
+function designState() {
+  if (!bench.candidates?.length) return null;
+  return { kind: bench.kind, generation: bench.generation, selected: bench.selected,
+           candidates: JSON.parse(JSON.stringify(bench.candidates)), at: Date.now() };
+}
+
+// What was done to one part, in words. A part with no override before is not
+// "added" as far as a person is concerned -- what happened is that its material
+// or its size was set to something.
+function partDetail(before, after) {
+  if (after === undefined) return "put back as it was";
+  const from = before || {};
+  const fields = [...new Set([...Object.keys(from), ...Object.keys(after)])]
+    .filter(k => JSON.stringify(from[k]) !== JSON.stringify(after[k]));
+  if (!fields.length) return "changed";
+  if (fields.some(k => after[k] !== null && typeof after[k] === "object")) return "redrawn";
+  return fields.map(k => from[k] === undefined ? `${k} set to ${after[k]}`
+    : after[k] === undefined ? `${k} cleared` : `${k} ${from[k]} → ${after[k]}`).join(", ");
+}
+
+// A sentence for one step, from the two states around it. Names of parts, not
+// counts, while there are few enough of them to read.
+function whatChanged(was, now) {
+  if (!was) return "opened";
+  if (was.kind !== now.kind) return `opened a ${now.kind}`;
+  const a = was.candidates[was.selected] || {}, b = now.candidates[now.selected] || {};
+  if (a.design_id !== b.design_id) return `opened ${b.design_id}`;
+  const said = [];
+  const oldParts = a.component_overrides || {}, newParts = b.component_overrides || {};
+  // Grouped by WHAT was done, not by which part it was done to: applying one
+  // material to every part is one thing a person did, and eight lines saying
+  // "leg-1 added; leg-2 added" is not what they would call it.
+  const byDetail = new Map();
+  for (const name of new Set([...Object.keys(oldParts), ...Object.keys(newParts)])) {
+    const before = oldParts[name], after = newParts[name];
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    const detail = partDetail(before, after);
+    if (!byDetail.has(detail)) byDetail.set(detail, []);
+    byDetail.get(detail).push(name);
+  }
+  for (const [detail, names] of byDetail) {
+    said.push(names.length > 2 ? `${names.length} parts: ${detail}` : `${names.join(" and ")}: ${detail}`);
+  }
+  for (const key of new Set([...Object.keys(a.parameters || {}), ...Object.keys(b.parameters || {})])) {
+    const before = (a.parameters || {})[key], after = (b.parameters || {})[key];
+    if (JSON.stringify(before) !== JSON.stringify(after)) said.push(`${key} ${before ?? "—"} → ${after ?? "—"}`);
+  }
+  if (was.selected !== now.selected) said.push(`picked variant ${now.selected + 1}`);
+  if (!said.length) return "redrawn, with nothing of the design changed";
+  return said.length > 4 ? `${said.length} things changed: ${said.slice(0, 3).join("; ")}…` : said.join("; ");
+}
+
+function remember(next) {
+  if (history.restoring || !next) return;
+  if (history.now) {
+    history.past.push({ ...history.now, said: whatChanged(history.past.at(-1) || null, history.now) });
+    if (history.past.length > history.max) history.past.shift();
+  }
+  history.now = next;
+  history.future.length = 0;
+  renderHistory();
+}
+
+function stepHistory(way) {
+  const from = way < 0 ? history.past : history.future, to = way < 0 ? history.future : history.past;
+  const going = from.pop();
+  if (!going || !history.now) return;
+  to.push(history.now);
+  history.now = going;
+  history.restoring = true;
+  try {
+    took({ kind: going.kind, generation: going.generation, candidates: going.candidates });
+    bench.selected = Math.min(going.selected, going.candidates.length - 1);
+    show();
+  } finally { history.restoring = false; }
+  renderHistory();
+}
+
+function renderHistory() {
+  const root = $("#ws-history"); if (!root) return;
+  const undo = $("#ws-undo"), redo = $("#ws-redo");
+  if (undo) undo.disabled = !history.past.length;
+  if (redo) redo.disabled = !history.future.length;
+  root.replaceChildren();
+  if (!history.past.length) {
+    root.append(make("p", { class:"ws-feedback-count" },
+      "Nothing changed yet this session. Every edit will be listed here, newest first, and Undo takes the last one back."));
+    return;
+  }
+  const said = whatChanged(history.past.at(-1), history.now);
+  root.append(make("p", { class:"ws-history-now" }, `Now: ${said}`));
+  for (let i = history.past.length - 1; i >= 0; i--) {
+    const step = history.past[i], when = new Date(step.at);
+    const row = make("button", { type:"button", class:"ws-card ws-history-step", "data-step":String(i) });
+    row.append(make("strong", {}, step.said || "opened"),
+               make("small", {}, when.toLocaleTimeString()));
+    row.onclick = () => { while (history.past.length > i + 1) stepHistory(-1); stepHistory(-1); };
+    root.append(row);
+  }
+}
+
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   workspace.inspecting++;bench.libraryInspection=null;
@@ -2058,6 +2649,7 @@ function took(answer, keepPart = null) {
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
+  remember(designState());
   return true;
 }
 
@@ -2070,6 +2662,13 @@ function took(answer, keepPart = null) {
 // Where a point of the object is on the page, so that a test (or a tool) can
 // click a face of it rather than a pixel that a change of framing would move.
 stage.pagePointOf = (point) => {
+  // As the camera stands NOW, not as it stood at the last frame. lookAt sets
+  // the camera's rotation and leaves matrixWorldInverse -- which is what
+  // project() uses -- to be rebuilt by the next render. So a point of view
+  // clicked and read in the same turn answered for the PREVIOUS point of view
+  // until a frame happened to land in between: green on a machine drawing at
+  // 60 fps, red on a runner drawing when it can.
+  camera.updateMatrixWorld();
   const v = new THREE.Vector3(...point).project(camera), r = stage.getBoundingClientRect();
   return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
 };
@@ -2338,9 +2937,14 @@ function renderBuildChoices() {
 // Whole-design controls
 // ---------------------------------------------------------------------------
 function pressView(name) {
-  document.querySelectorAll(".ws-viewbar button").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.view === name)));
+  document.querySelectorAll(".ws-viewbar button[data-view]").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.view === name)));
 }
-document.querySelectorAll(".ws-viewbar button").forEach((button) => {
+// Only the buttons that say how to DRAW it. This ran at module load over every
+// button in the bar, and installBench had already put the points of view there
+// -- so clicking "Top" ran this handler with dataset.view undefined, set the
+// representation to undefined and moved no camera at all. The owner: "what
+// does x y z do, I don't see it changing anything." Nothing. It was this.
+document.querySelectorAll(".ws-viewbar button[data-view]").forEach((button) => {
   button.onclick = () => guard(button, async () => {
     const requested = button.dataset.view;
     if (["matter", "collision", "relations"].includes(requested)) await loadMatter(false);
@@ -2385,60 +2989,6 @@ stage.visibleGeometry = () => {
   }
   return {points,meshes:group.children.filter(c=>c.isMesh || c.isLineSegments).length,clipped:renderer.clippingPlanes.length};
 };
-
-// ---------------------------------------------------------------------------
-// The tabs on top: Lab (the bench), Inventory, Skills, Recipes
-// (workshop_tabs). Each is read when it is opened and spends nothing.
-// ---------------------------------------------------------------------------
-function tag(text, cls = "") { return make("span", { class: `ws-tag ${cls}`.trim() }, text); }
-function item(title, sub, cls = "") { const li = make("li", cls ? { class: cls } : {}); li.append(make("strong", {}, title)); if (sub) li.append(make("small", {}, sub)); return li; }
-function fill(id, rows, empty) { const root = $(id); root.replaceChildren(); if (!rows.length) root.append(item(empty)); for (const row of rows) root.append(row); }
-
-async function showInventory() {
-  const inv = await api("/api/workshop/inventory");
-  if ($("#ws-rack")) $("#ws-inv-materials").replaceChildren(); else
-  fill("#ws-inv-materials", inv.materials.map((r) => item(r.material, `${r.mass_kg} kg`)), "The rack is empty.");
-  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} · standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and tell the chat to make it.");
-  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
-  fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
-  fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open on the bench"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "Nothing saved yet: save a design from the Lab.");
-  fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
-  fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
-}
-
-async function showSkills() {
-  const s = await api("/api/workshop/skills");
-  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} techniques known. A technique is earned by what the engine measured your own hands, or your machines, doing.` : "The world has no techniques to learn yet.";
-  fill("#ws-skills-techniques", s.techniques.map((t) => { const li = item(t.name, t.describes, t.known ? "unlocked" : t.within_reach ? "reach" : ""); li.append(tag(t.known ? "unlocked" : t.within_reach ? "within reach" : `needs ${t.needs.join(", ")}`, t.known ? "ok" : "")); for (const d of t.opens) li.append(tag(`opens ${d}`)); return li; }), "No techniques.");
-  fill("#ws-skills-designs", s.designs.map((d) => item(d.name, (d.demonstrated.length ? `demonstrated: ${d.demonstrated.join(", ")}. ` : "") + `${d.evidence.length} piece${d.evidence.length === 1 ? "" : "s"} of evidence`, d.demonstrated.length ? "unlocked" : "")), "Nothing demonstrated yet: use a tool of your own on the ground, or watch a machine work.");
-  fill("#ws-skills-blocked", s.blocked.map((b) => item(b.name, `${b.route}: ${(b.because || []).join("; ")}`)), "Nothing is blocked.");
-  $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
-}
-
-async function showRecipes() {
-  const r = await api("/api/workshop/recipes");
-  fill("#ws-recipes-templates", r.templates.map((t) => {
-    const li = item(t.name, t.problem ? `cannot be assembled: ${t.problem}` : `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`, t.problem ? "" : t.enough ? "enough" : "short");
-    for (const m of t.materials || []) li.append(tag(`${m.kg} kg ${m.material} (have ${m.held_kg})`, m.enough ? "ok" : "short"));
-    for (const g of t.goods || []) li.append(tag(`${g.kg} kg ${g.substance} (have ${g.held_kg})`, g.enough ? "ok" : "short"));
-    if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
-    const open = make("button", { type:"button", class:"ws-action" }, "Design it");
-    open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:t.name, generation:bench.generation + 1 })); $("#ws-archetype").value = t.name; });
-    li.append(open); return li;
-  }), "No templates.");
-  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
-  fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
-  const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
-}
-
-function showTab(name) {
-  for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
-  for (const pane of ["lab", "inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
-  if (name === "lab") resize();
-  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
-  if (loader) guard(null, loader);
-}
-for (const button of document.querySelectorAll(".ws-tabs button")) button.onclick = () => showTab(button.dataset.tab);
 
 async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");

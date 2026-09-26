@@ -6,25 +6,12 @@ body.workshop-mode { margin:0;background:#0d1117;color:#e7edf4;overflow:hidden;f
 body.workshop-mode > :not(#design-workshop) { display:none!important; }
 #design-workshop[hidden] { display:none; }
 #design-workshop { position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr;background:#0d1117; }
-/* The bench once installed: the tabs' panes on the left, the chat column beside every one of them. */
-#design-workshop.ws-benched { grid-template-columns:minmax(0,1fr) clamp(300px,32%,400px); }
-#design-workshop.ws-benched .ws-right[hidden] { display:none!important; }
-#design-workshop.ws-benched .ws-viewport { grid-template-rows:auto minmax(0,1fr) auto auto auto; }
-#design-workshop.ws-benched .ws-benchbar { position:static;grid-row:3;margin:.5rem .7rem;flex-wrap:wrap; }
-#design-workshop.ws-benched #ws-view-context { grid-row:4; }
-#design-workshop.ws-benched .ws-simulation-dock { grid-row:5; }
-#design-workshop.ws-benched #ws-run-bench { display:none; }
-#design-workshop.ws-benched > .ws-top { grid-column:1 / -1; }
-#design-workshop.ws-benched > .ws-tabpane,#design-workshop.ws-benched > #ws-pane-lab { grid-column:1;grid-row:2;min-height:0; }
-#design-workshop.ws-benched > #ws-pane-lab { grid-template-columns:260px minmax(320px,1fr); }
-#ws-chat-col { grid-column:2;grid-row:2;min-height:0;overflow:auto;padding:.85rem;border-left:1px solid #2a3340;background:#111821;display:flex;flex-direction:column;gap:.6rem; }
-#ws-chat-col h2 { margin:.2rem 0 .4rem;font-size:.88rem;text-transform:uppercase;letter-spacing:.08em;color:#9ba9ba; }
-#ws-chat-col #ws-chat-log { max-height:46vh;overflow:auto; }
-.ws-chat-acts { margin:0; }
-#ws-make-status { margin:0;font-size:.8rem;color:#b7c2d0; }
-#ws-make-status[data-bad="yes"] { color:#f0b8b8; }
-#ws-chat-col #ws-extras { margin-top:auto;font-size:.8rem; }
-.ws-tabs { display:flex;gap:.25rem;margin-left:.5rem; }
+/* The tabs over the object: Lab (the object and its bar), Inventory, Skills,
+   Recipes. The chat, on the left, stays beside all of them. */
+#ws-centre { display:flex;flex-direction:column;min-width:0;min-height:0; }
+#ws-centre > .ws-viewport { flex:1 1 auto;min-height:0; }
+#ws-centre > .ws-tabpane { flex:1 1 auto; }
+.ws-tabs { display:flex;gap:.25rem;padding:.45rem .8rem 0;background:#0f151d; }
 .ws-tabs button { border:1px solid #465363;background:#17212c;color:#dfe7f1;border-radius:.4rem;padding:.38rem .7rem;cursor:pointer; }
 .ws-tabs button[aria-selected="true"] { background:#dce7f5;color:#111820; }
 .ws-tabpane { min-height:0;overflow:auto;padding:1rem 1.2rem; }
@@ -208,11 +195,21 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 /* Workspace v2: canvas and controls occupy different layout rows, never overlap. */
 .ws-workspace-tabs { display:flex;gap:.35rem;margin:0; }
 .ws-workspace-tabs button { padding:.45rem .95rem; }
-.ws-grid { grid-template-columns:240px minmax(240px,1fr) 320px; }
+/* Chat on one side, the view in the middle, everything you touch on the other.
+   The chat's side is wider than the parts rail it replaced: it is the widest
+   way into the bench, and a conversation in a 240 px column is a column of
+   two-word lines. */
+.ws-grid { grid-template-columns:330px minmax(240px,1fr) 340px; }
 .ws-viewport { display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden; }
 .ws-viewbar { position:static;grid-row:1;flex-wrap:wrap;padding:.65rem .8rem;border-bottom:1px solid #303b49; }
-#workshop-stage { grid-row:2;min-height:0;min-width:0;height:100%; }
-.ws-caption { display:none; }
+#workshop-stage { grid-row:2;grid-column:1;min-height:0;min-width:0;height:100%; }
+.ws-caption { position:absolute;left:0;right:0;top:calc(100% - 0px);pointer-events:none; }
+/* grid-column:1 is load-bearing. The canvas also asks for row 2 with no column,
+   so without it the caption is auto-placed into a SECOND column and the view
+   splits 562/302 -- the canvas loses a third of its width to a line of text. */
+.ws-viewport > .ws-caption { position:static;grid-row:2;grid-column:1;align-self:end;justify-self:start;
+  margin:0 0 .4rem .9rem;padding:.2rem .45rem;border-radius:.3rem;background:rgba(13,17,23,.72);
+  color:#8fa3b8;font-size:.68rem;pointer-events:none;z-index:2; }
 #ws-view-context { grid-row:3;padding:.6rem .9rem;border-top:1px solid #303b49;background:#111923;min-width:0; }
 #ws-view-context p { margin:.3rem 0;font-size:.78rem;color:#b7c7d8;line-height:1.4; }
 #ws-view-context strong { font-size:.9rem; }
@@ -273,10 +270,14 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-held-row span{flex-grow:1;color:#c3d4e4}
 .ws-held-row strong{font-weight:500;color:#dce7f5}
 .ws-held-run strong{color:#6a7d91}
-#ws-extras{margin-top:.8rem;border-top:1px solid #27313d;padding-top:.5rem}
-#ws-extras>summary{cursor:pointer;color:#8fa3b8;font-size:.74rem}
-#ws-rack-foot{grid-column:1/-1;display:flex;align-items:center;gap:.7rem;padding:.5rem .8rem;border-top:1px solid #27313d}
-#ws-rack-foot h2{margin:0;white-space:nowrap}
+.ws-group{margin-top:.9rem;border-top:1px solid #27313d;padding-top:.6rem}
+.ws-group>h2,.ws-drawer>summary{margin:0 0 .5rem;font-size:.64rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#8fa3b8;font-weight:700}
+.ws-drawer>summary{cursor:pointer;list-style:revert}
+#ws-rack-foot{display:block;margin-top:.9rem;padding:.7rem 0 .2rem;border-top:1px solid #27313d}
+#ws-rack-foot h2{margin:0 0 .5rem;font-size:.64rem;letter-spacing:.16em;text-transform:uppercase;
+  color:#8fa3b8;font-weight:700}
+
 #ws-rack-strip{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
 .ws-bin{display:flex;align-items:center;gap:.4rem;border:1px solid #27313d;border-radius:.35rem;padding:.25rem .5rem;font-size:.74rem}
 .ws-bin[data-state="wanted"]{border-color:#2f5c45}
@@ -307,3 +308,68 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
    top bar, the panes, and the rack. It was two, and a third child of a
    two-row grid overflows the screen and takes the rails with it. */
 #design-workshop:not([hidden]) { grid-template-rows:auto 1fr auto; }
+/* What you changed, and going back to it. */
+#ws-history{display:flex;flex-direction:column;gap:.35rem;max-height:16rem;overflow-y:auto}
+.ws-history-now{margin:0 0 .4rem;font-size:.76rem;color:#c6d0dc}
+.ws-history-step{padding:.4rem .5rem;font-size:.74rem}
+/* Open it, rename it, or throw it away -- none of which existed before. */
+.ws-keep-row{display:grid;gap:.3rem;cursor:default;padding:.5rem}
+.ws-keep-open{width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;font:inherit}
+.ws-keep-open strong{display:block}
+.ws-keep-open small{display:block;margin-top:.2rem;color:#97a6b8;line-height:1.3}
+.ws-keep-actions{display:flex;gap:.3rem;flex-wrap:wrap}
+.ws-keep-small{border:1px solid #3d4958;background:#0d141c;color:#b7c2d0;border-radius:.35rem;
+  padding:.18rem .45rem;font:inherit;font-size:.68rem;cursor:pointer}
+.ws-keep-bin:hover{border-color:#d96f6f;color:#efa6a6}
+/* One step at a time. The chat is above them, because it is another way of
+   doing any of the four rather than a fifth thing to do. */
+.ws-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:.3rem;margin:.9rem 0 .2rem;
+  border-top:1px solid #27313d;padding:.7rem 0 .5rem;
+  /* Sticky: a step's content is taller than the pane, and the four steps are
+     the one thing you must be able to reach wherever you have scrolled to. */
+  position:sticky;top:-.85rem;background:#111821;z-index:3}
+.ws-step-tab{border:1px solid #394757;background:#111923;color:#b9c6d3;border-radius:.45rem;
+  padding:.45rem .3rem;cursor:pointer;font:inherit;font-size:.78rem}
+.ws-step-tab:hover{border-color:#65778b}
+.ws-step-tab[aria-selected="true"]{background:#dce7f5;color:#111820;border-color:#dce7f5;font-weight:700}
+.ws-step-pane[hidden]{display:none!important}
+.ws-step-about{margin:.5rem 0 .2rem;font-size:.74rem;color:#8fa3b8;line-height:1.4}
+.ws-step-pane>section:first-of-type{margin-top:.2rem}
+/* A named drawer inside a step. Nothing is swept into it that the summary
+   does not say is in it. */
+.ws-fold{margin-top:.7rem;border-top:1px solid #27313d;padding-top:.5rem}
+.ws-fold>summary{cursor:pointer;color:#8fa3b8;font-size:.64rem;letter-spacing:.16em;
+  text-transform:uppercase;font-weight:700;list-style:revert}
+
+/* The bench is the chat, the object, and one bar over it. */
+.ws-top[hidden]{display:none!important}
+.ws-right[hidden]{display:none!important}
+/* The page is the grid, now that the header above it is gone. A hidden element
+   is not a grid item at all, so with .ws-top gone the grid became the FIRST
+   row -- "auto" -- and sized itself to its content: 530 px of bench in a
+   1029 px window, with black underneath. */
+#design-workshop{grid-template-rows:minmax(0,1fr)!important}
+.ws-grid{grid-template-columns:minmax(360px,30%) minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important}
+.ws-left,.ws-viewport{grid-row:1!important;min-width:0}
+.ws-left{grid-column:1!important}
+.ws-viewport{grid-column:2!important}
+.ws-chat-suggestions{min-width:0}
+.ws-suggestion{max-width:100%;overflow-wrap:anywhere}
+.ws-left{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.7rem}
+#ws-chat-home{display:flex;flex-direction:column;min-height:0;flex:1}
+#ws-chat-home h2{flex:0 0 auto}
+#ws-chat-log{flex:1 1 auto;max-height:none!important;min-height:0}
+/* One bar: which product, how it is drawn, where from, and the way out. */
+.ws-viewbar{position:static!important;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;
+  padding:.5rem .7rem;border-bottom:1px solid #303b49;background:#111821;z-index:2}
+.ws-viewbar .ws-spacer{flex:1}
+.ws-bar-select{border:1px solid #465363;background:#17212c;color:#e7edf4;border-radius:.4rem;
+  padding:.4rem .5rem;font:inherit;text-transform:capitalize}
+.ws-bar-link{color:#dfe7f1;text-decoration:none;border:1px solid #465363;border-radius:.4rem;padding:.38rem .6rem;font-size:.8rem}
+#ws-points-of-view{display:flex;gap:.25rem}
+#ws-notice{position:absolute;left:.7rem;right:.7rem;top:3.2rem;z-index:4;border-radius:.4rem}
+/* What a test left behind, over the object rather than under a panel. */
+.ws-watching{position:absolute;left:1rem;right:1rem;bottom:1rem;z-index:4;display:grid;gap:.4rem;
+  padding:.6rem .75rem;border:1px solid #465363;border-radius:.5rem;background:#0b1017ee;font-size:.78rem}
+.ws-watching[hidden]{display:none!important}

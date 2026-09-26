@@ -59,7 +59,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 fracture_lab.validate(room)
 
-        refused(lambda m, p: p.update(kind="hunt"), "the kinds there are: 'roam', 'hover'")
+        refused(lambda m, p: p.update(kind="hunt"), "the kinds there are: 'roam', 'sit'")
         refused(lambda m, p: p.update(left="front wheel"), "there is none")
         refused(lambda m, p: p.update(right="left wheel"), "are one")
         refused(lambda m, p: p.update(body="post"), "does not turn a wheel on 'post'")
@@ -69,6 +69,53 @@ class TheRoomDeclaresIt(unittest.TestCase):
         refused(lambda m, p: p["sensors"][0].update(stops=1), "cannot say")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p), name="twin")), "worked by another program")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p))), "a name of its own")
+
+    def test_a_sit_program_says_what_it_goes_to_and_the_pose_it_holds(self):
+        """A "sit" program goes to a thing already in the room and holds a pose
+        when it gets there. Here the rover is told to go to its own marker
+        stone, holding its left wheel's shaft at a quarter turn -- a silly pose
+        for a wheel, and exactly the shape of the thing: a controller that is
+        neither wheel, turned to an angle, once it is there."""
+        room = rover_room()
+        program = room["machines"]["programs"][0]
+        program.update(kind="sit", toward="post", close_m=1.5, pose="left wheel", pose_deg=90.0)
+        program.pop("sensors", None)
+        with self.assertRaisesRegex(ValueError, "is one of its wheels"):
+            fracture_lab.validate(deepcopy(room))
+
+        # A controller of its own to hold the pose with: the rover has none, so
+        # one is declared on the caster's swivel.
+        room["machines"]["motors"].append({"on": ["rover", "rover: caster"], "store": "rover battery",
+                                           "stall_torque_n_m": 4.0, "no_load_rpm": 30.0,
+                                           "brake_torque_n_m": 8.0})
+        room["machines"]["controls"].append({"name": "swivel", "on": ["rover", "rover: caster"]})
+        program["pose"] = "swivel"
+        [said] = fracture_lab.validate(room)["machines"]["programs"]
+        self.assertEqual({"name": "rover", "kind": "sit", "left": "left wheel", "right": "right wheel",
+                          "body": "rover", "setting": 1.0, "climb_deg": 8.0, "power": False,
+                          "toward": "post", "close_m": 1.5, "pose": "swivel", "pose_deg": 90.0}, said)
+
+    def test_a_sit_program_the_engine_could_not_run_is_refused_here(self):
+        def refused(change, message):
+            room = rover_room()
+            program = room["machines"]["programs"][0]
+            program.update(kind="sit", toward="post", close_m=1.5)
+            program.pop("sensors", None)
+            change(room["machines"], program)
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                fracture_lab.validate(room)
+
+        refused(lambda m, p: p.update(toward="a stone that is not there"), "no such thing in the room")
+        refused(lambda m, p: p.update(toward="rover"), "goes toward itself")
+        refused(lambda m, p: p.update(close_m=0.0), "close_m")
+        refused(lambda m, p: p.update(pose="a controller that is not there"), "and there is none")
+        refused(lambda m, p: p.update(rest_below=0.25), "does not rest")
+
+    def test_only_a_sit_program_says_where_it_is_going(self):
+        room = rover_room()
+        room["machines"]["programs"][0]["toward"] = "post"
+        with self.assertRaisesRegex(ValueError, "nothing to go toward"):
+            fracture_lab.validate(room)
 
     def test_a_room_without_programs_says_nothing_of_them(self):
         room = rover_room()
@@ -217,6 +264,94 @@ class RoamingIt(unittest.TestCase):
         self.assertGreater(path, 3.0)
         self.assertLessEqual(wet, 0.003)
 
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
+class SittingDown(unittest.TestCase):
+    """The tests-sit room opened as the playground opens it: a robot told where
+    a stool is, turned on, going to it and putting its torso down on it."""
+
+    SEAT_TOP_M = 0.85   # the stool's seat, on ground 400 mm up
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.live = live_session.Live()
+        self.addCleanup(self.live.shutdown)
+        self.room = world_room.Room("tests-sit")
+        self.app = SimpleNamespace(live=self.live, live_holder="world", room=self.room, engine_path=ENGINE,
+                                   runs_path=root / "runs", store=room_store.RoomStore(root / "rooms"))
+        self.opened = self.live.open(self.app, {"spec": self.room.spec})
+
+    def program(self, reply=None):
+        reply = reply or self.live.session.send(op="step", dt=DT, n=1)
+        return next(p for p in reply["machines"]["programs"] if p["name"] == "robot")
+
+    def pose(self, name):
+        return next(b for b in self.live.session.send(op="poses")["bodies"] if b["name"] == name)
+
+    def end_of_the_torso(self):
+        """250 mm along the bar from its middle: its far end."""
+        at = self.pose("robot: torso")
+        w, x, y, z = at["orientation_wxyz"]
+        v = (0.0, 0.25, 0.0)
+        t = (2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0]))
+        turned = (v[0] + w * t[0] + y * t[2] - z * t[1],
+                  v[1] + w * t[1] + z * t[0] - x * t[2],
+                  v[2] + w * t[2] + x * t[1] - y * t[0])
+        return [at["position_m"][a] + turned[a] for a in range(3)]
+
+    def test_it_opens_off_and_reads_the_stool_where_it_stands(self):
+        self.assertNotIn("machine_problems", self.opened)
+        said = self.program()
+        self.assertEqual(("stopped", False, "sit"), (said["doing"], said["power"], said["kind"]))
+        self.assertEqual("stool", said["toward"])
+        # It reads the stool 3.8 m off and 23 degrees to its left before it has
+        # taken a step, and its torso standing up.
+        self.assertAlmostEqual(3.81, said["toward_m"], delta=0.1)
+        self.assertAlmostEqual(23.2, said["bearing_deg"], delta=2.0)
+        self.assertAlmostEqual(0.0, said["pose_at_deg"], delta=1.0)
+
+    def test_turned_on_it_goes_to_the_stool_and_puts_its_torso_on_the_seat(self):
+        self.live.session.send(op="step", dt=DT, n=240)       # settled on its brakes
+        said = self.live.session.send(op="run", program=self.program()["id"], sender="test", seq=1,
+                                      power=True)["program"]
+        self.assertTrue(said["power"])
+        was = self.pose("stool")["position_m"]
+        order, took_s = [said["doing"]], 0.0
+        for _ in range(40 * 4):                               # a quarter second at a time, up to 40 s
+            reply = self.live.session.send(op="step", dt=DT, n=60)
+            took_s += 60 * DT
+            said = self.program(reply)
+            if not order or order[-1] != said["doing"]:
+                order.append(said["doing"])
+            if said["doing"] == "sitting" and said["doing_s"] > 3.0:
+                break
+        now = self.pose("stool")["position_m"]
+        tip = self.end_of_the_torso()
+        above = tip[1] - self.SEAT_TOP_M
+        aside = math.dist([tip[0], tip[2]], [now[0], now[2]])
+        print(f"\n    {' -> '.join(order)}")
+        print(f"    in {took_s:.1f} s it stopped {said['toward_m']:.2f} m from the stool's middle, "
+              f"{said['bearing_deg']:+.1f} degrees off square, its torso at {said['pose_at_deg']:.0f} of the "
+              f"{said['pose_deg']:.0f} it reached for")
+        print(f"    the end of the torso is {above * 1000:.0f} mm above the seat and {aside * 1000:.0f} mm in from "
+              f"its middle; the stool moved {math.dist(was, now) * 1000:.0f} mm")
+
+        self.assertEqual("sitting", said["doing"], said["why"])
+        self.assertIn("going to it", order)
+        self.assertTrue(any(d.startswith("turning") for d in order), order)
+        # The seat stopped it short of the angle it reached for: something is
+        # carrying it.
+        self.assertLess(said["pose_at_deg"], said["pose_deg"] - 5.0)
+        self.assertLess(abs(above), 0.06)
+        self.assertLess(aside, 0.225)
+        self.assertLess(math.dist(was, now), 0.15)
+
+        # And it holds: three more seconds and the torso has not moved.
+        held = self.end_of_the_torso()
+        self.live.session.send(op="step", dt=DT, n=3 * 240)
+        self.assertLess(math.dist(held, self.end_of_the_torso()), 0.01)
 
 if __name__ == "__main__":
     if os.environ.get("BANJO_ROVER_LIVE_TESTS") == "required" and not (ENGINE and ENGINE.is_file()):

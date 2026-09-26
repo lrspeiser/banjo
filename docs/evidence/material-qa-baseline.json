@@ -682,7 +682,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 1.2349999999860302,
+      "wall_s": 0.9477536310000687,
       "metrics": {
         "outcome": "intact",
         "cells": 288,
@@ -705,7 +705,20 @@
         "simulated_s": 0.34250147037203593,
         "frame_count": 29,
         "came_to_rest": true,
-        "signed_striker_loss_j": -0.06731407597293143
+        "signed_striker_loss_j": -0.06731407597293143,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.020000000000000018,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -719,30 +732,43 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 1.4690000000118744,
+      "wall_s": 0.9462010739998732,
       "metrics": {
-        "outcome": "intact",
+        "outcome": "cracked",
         "cells": 288,
         "bonds": 2648,
         "dt_s": 7.938841860374448e-07,
         "tile_mass_kg": 0.7200000000000012,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 2.1098098503468097,
-        "broken_bonds": 0,
-        "broken_fraction": 0.0,
+        "broken_bonds": 58,
+        "broken_fraction": 0.02190332326283988,
         "components": 1,
         "largest_mass_fraction": 0.9999999999999923,
-        "removed_energy_j": 0.0,
-        "impulse_n_s": 1.555234424610556,
-        "contact_events": 937,
+        "removed_energy_j": 0.43628841074270297,
+        "impulse_n_s": 1.4518010172036855,
+        "contact_events": 935,
         "peak_force_n": null,
         "maximum_penetration_m": 1.1574764214213051e-05,
-        "lattice_simulated_s": 0.005817583315282396,
-        "lattice_exit_reason": 5,
-        "simulated_s": 0.35581758331528235,
+        "lattice_simulated_s": 0.0050006764878498654,
+        "lattice_exit_reason": 4,
+        "simulated_s": 0.35500067648784983,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -1.4127392239696293
+        "signed_striker_loss_j": -1.6014272505154779,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.020000000000000018,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -756,7 +782,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 1.0460000000020955,
+      "wall_s": 0.9458884400000898,
       "metrics": {
         "outcome": "fragmented",
         "cells": 288,
@@ -765,21 +791,34 @@
         "tile_mass_kg": 0.7200000000000012,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 18.988288653121288,
-        "broken_bonds": 1113,
-        "broken_fraction": 0.42031722054380666,
-        "components": 48,
-        "largest_mass_fraction": 0.44444444444444403,
-        "removed_energy_j": 6.461534408016467,
-        "impulse_n_s": 2.5086086146601367,
-        "contact_events": 2576,
+        "broken_bonds": 1005,
+        "broken_fraction": 0.3795317220543807,
+        "components": 39,
+        "largest_mass_fraction": 0.8229166666666631,
+        "removed_energy_j": 1.6566700797577891,
+        "impulse_n_s": 1.3474215126838196,
+        "contact_events": 977,
         "peak_force_n": null,
-        "maximum_penetration_m": 1.799207177451828e-05,
-        "lattice_simulated_s": 0.0050006764878498654,
+        "maximum_penetration_m": 4.3673835155022545e-06,
+        "lattice_simulated_s": 0.005513525672030054,
         "lattice_exit_reason": 4,
-        "simulated_s": 0.35500067648784983,
+        "simulated_s": 0.35551352567203004,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -16.939300018465996
+        "signed_striker_loss_j": -10.60020770373008,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.020000000000000018,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -793,7 +832,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 1.5,
+      "wall_s": 1.3561683679999987,
       "metrics": {
         "outcome": "fragmented",
         "cells": 288,
@@ -802,21 +841,34 @@
         "tile_mass_kg": 0.7200000000000012,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 118.67680408200805,
-        "broken_bonds": 1050,
-        "broken_fraction": 0.39652567975830816,
-        "components": 43,
-        "largest_mass_fraction": 0.8159722222222188,
-        "removed_energy_j": 9.936583389906984,
-        "impulse_n_s": 7.771060447950645,
-        "contact_events": 1334,
+        "broken_bonds": 1320,
+        "broken_fraction": 0.4984894259818731,
+        "components": 65,
+        "largest_mass_fraction": 0.7430555555555538,
+        "removed_energy_j": 6.89977331738889,
+        "impulse_n_s": 8.01586630944339,
+        "contact_events": 1891,
         "peak_force_n": null,
-        "maximum_penetration_m": 3.859794983726572e-05,
-        "lattice_simulated_s": 0.00759032670270401,
+        "maximum_penetration_m": 0.00010104508111202781,
+        "lattice_simulated_s": 0.009751279457097936,
         "lattice_exit_reason": 4,
-        "simulated_s": 0.35759032670270396,
+        "simulated_s": 0.3597512794570979,
         "frame_count": 31,
         "came_to_rest": false,
-        "signed_striker_loss_j": -95.45981935045772
+        "signed_striker_loss_j": -93.2615921098375,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.020000000000000018,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -830,7 +882,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 3.625,
+      "wall_s": 2.895637997999984,
       "metrics": {
         "outcome": "intact",
         "cells": 576,
@@ -853,7 +905,20 @@
         "simulated_s": 0.33000080285252115,
         "frame_count": 28,
         "came_to_rest": true,
-        "signed_striker_loss_j": -0.09909505383199567
+        "signed_striker_loss_j": -0.09909505383199567,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.001999999999999974,
+          "specimen_size_m": [
+            0.12,
+            0.04000000000000001,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -867,7 +932,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 3.75,
+      "wall_s": 2.899774456999694,
       "metrics": {
         "outcome": "intact",
         "cells": 576,
@@ -890,7 +955,20 @@
         "simulated_s": 0.35500080285252106,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -1.6084250140525946
+        "signed_striker_loss_j": -1.6084250140525946,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.001999999999999974,
+          "specimen_size_m": [
+            0.12,
+            0.04000000000000001,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -904,30 +982,43 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 3.6089999999967404,
+      "wall_s": 2.7993193790002806,
       "metrics": {
-        "outcome": "cracked",
+        "outcome": "fragmented",
         "cells": 576,
         "bonds": 6740,
         "dt_s": 6.698999132647144e-07,
         "tile_mass_kg": 1.4400000000000188,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 18.988288653121288,
-        "broken_bonds": 4,
-        "broken_fraction": 0.0005934718100890207,
-        "components": 1,
-        "largest_mass_fraction": 0.9999999999999734,
-        "removed_energy_j": 0.40582946813230536,
-        "impulse_n_s": 4.27922728611949,
-        "contact_events": 365,
+        "broken_bonds": 2082,
+        "broken_fraction": 0.30890207715133533,
+        "components": 63,
+        "largest_mass_fraction": 0.855902777777756,
+        "removed_energy_j": 8.422134709357271,
+        "impulse_n_s": 2.7386306375513207,
+        "contact_events": 4885,
         "peak_force_n": null,
-        "maximum_penetration_m": 1.5575605635382433e-05,
+        "maximum_penetration_m": 3.2713340100798405e-05,
         "lattice_simulated_s": 0.005000132952607828,
         "lattice_exit_reason": 4,
         "simulated_s": 0.3550001329526078,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -13.542386059292776
+        "signed_striker_loss_j": -16.47616298729938,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.001999999999999974,
+          "specimen_size_m": [
+            0.12,
+            0.04000000000000001,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -941,7 +1032,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 3.0780000000086147,
+      "wall_s": 2.6990806769999836,
       "metrics": {
         "outcome": "fragmented",
         "cells": 576,
@@ -950,21 +1041,34 @@
         "tile_mass_kg": 1.4400000000000188,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 118.67680408200805,
-        "broken_bonds": 1984,
-        "broken_fraction": 0.29436201780415433,
-        "components": 68,
-        "largest_mass_fraction": 0.8576388888888671,
-        "removed_energy_j": 56.5960229886326,
-        "impulse_n_s": 7.995941622063609,
-        "contact_events": 3907,
+        "broken_bonds": 2919,
+        "broken_fraction": 0.4330860534124629,
+        "components": 126,
+        "largest_mass_fraction": 0.7361111111110935,
+        "removed_energy_j": 27.53441821085207,
+        "impulse_n_s": 7.670598813642579,
+        "contact_events": 5861,
         "peak_force_n": null,
-        "maximum_penetration_m": 6.758920305658181e-05,
+        "maximum_penetration_m": 3.4463210222514945e-05,
         "lattice_simulated_s": 0.005000132952607828,
         "lattice_exit_reason": 4,
         "simulated_s": 0.3550001329526078,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -102.82137414631855
+        "signed_striker_loss_j": -97.0892194953012,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.001999999999999974,
+          "specimen_size_m": [
+            0.12,
+            0.04000000000000001,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -978,7 +1082,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 9.09399999998277,
+      "wall_s": 6.599327595999966,
       "metrics": {
         "outcome": "intact",
         "cells": 1152,
@@ -1001,7 +1105,20 @@
         "simulated_s": 0.32166787017425374,
         "frame_count": 28,
         "came_to_rest": true,
-        "signed_striker_loss_j": -0.10351086597367254
+        "signed_striker_loss_j": -0.10351086597367254,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.08000000000000002,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -1015,7 +1132,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 9.10899999999674,
+      "wall_s": 6.605700799999795,
       "metrics": {
         "outcome": "intact",
         "cells": 1152,
@@ -1038,7 +1155,20 @@
         "simulated_s": 0.35500120350758696,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -1.2919366922968514
+        "signed_striker_loss_j": -1.2919366922968514,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.08000000000000002,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -1052,30 +1182,43 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 9.0,
+      "wall_s": 6.905593691999911,
       "metrics": {
-        "outcome": "cracked",
+        "outcome": "fragmented",
         "cells": 1152,
         "bonds": 14924,
         "dt_s": 6.647000940439917e-07,
         "tile_mass_kg": 2.880000000000006,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 18.988288653121288,
-        "broken_bonds": 46,
-        "broken_fraction": 0.003082283570088448,
-        "components": 1,
-        "largest_mass_fraction": 0.9999999999999805,
-        "removed_energy_j": 3.1194243176378573,
-        "impulse_n_s": 4.910029676056055,
-        "contact_events": 308,
+        "broken_bonds": 2680,
+        "broken_fraction": 0.17957652103993568,
+        "components": 19,
+        "largest_mass_fraction": 0.9687499999999811,
+        "removed_energy_j": 25.655944273503547,
+        "impulse_n_s": 3.543480838568576,
+        "contact_events": 2398,
         "peak_force_n": null,
-        "maximum_penetration_m": 1.5518235969159966e-05,
+        "maximum_penetration_m": 3.5381868639848546e-05,
         "lattice_simulated_s": 0.00500053880749295,
         "lattice_exit_reason": 4,
         "simulated_s": 0.35500053880749294,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -9.76319537195613
+        "signed_striker_loss_j": -16.818340938825315,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.08000000000000002,
+            0.12
+          ]
+        }
       }
     },
     {
@@ -1089,7 +1232,7 @@
       "warnings": [
         "Signed striker-loss diagnostic is negative; not a closed energy audit."
       ],
-      "wall_s": 8.344000000011874,
+      "wall_s": 7.219017625000106,
       "metrics": {
         "outcome": "fragmented",
         "cells": 1152,
@@ -1098,21 +1241,34 @@
         "tile_mass_kg": 2.880000000000006,
         "ball_mass_kg": 0.2637262312933512,
         "initial_kinetic_j": 118.67680408200805,
-        "broken_bonds": 2124,
-        "broken_fraction": 0.14232109354060574,
-        "components": 30,
-        "largest_mass_fraction": 0.9722222222222033,
-        "removed_energy_j": 135.0635521517376,
-        "impulse_n_s": 9.174799476147127,
-        "contact_events": 1065,
+        "broken_bonds": 5041,
+        "broken_fraction": 0.33777807558295364,
+        "components": 149,
+        "largest_mass_fraction": 0.8463541666666506,
+        "removed_energy_j": 55.5566269892678,
+        "impulse_n_s": 7.918630872136774,
+        "contact_events": 7924,
         "peak_force_n": null,
-        "maximum_penetration_m": 6.46755707444241e-05,
+        "maximum_penetration_m": 3.691228214646597e-05,
         "lattice_simulated_s": 0.00500053880749295,
         "lattice_exit_reason": 4,
         "simulated_s": 0.35500053880749294,
         "frame_count": 30,
         "came_to_rest": false,
-        "signed_striker_loss_j": -100.82341490509162
+        "signed_striker_loss_j": -101.94098452577711,
+        "alignment": {
+          "valid": true,
+          "offset_xz_m": [
+            0.0,
+            0.0
+          ],
+          "initial_gap_m": 0.0020000000000000018,
+          "specimen_size_m": [
+            0.12,
+            0.08000000000000002,
+            0.12
+          ]
+        }
       }
     },
     {

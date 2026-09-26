@@ -191,10 +191,443 @@ class AReplyThatRanOutOfRoom(unittest.TestCase):
         said = self._answer({"id": "r1", "status": "completed", "output": []})["reply"]
         self.assertIn("made no changes", said)
 
-    def test_the_room_it_is_given_matches_the_work_it_does(self):
-        # The room chat that builds things in the world is given 12,000 output
-        # tokens; this does the same class of work on a design.
-        self.assertGreaterEqual(workshop_chat.MAX_OUTPUT_TOKENS, 8000)
+    def test_no_call_puts_a_ceiling_on_how_far_the_model_may_think(self):
+        """A ceiling on output tokens is a ceiling on THINKING.
+
+        The provider counts reasoning against max_output_tokens, so a turn cut
+        off mid-thought comes back with no words -- which is how "I inspected
+        the design but made no changes" got said about a turn that had done
+        neither. The owner: "we should not need to limit the tokens to get
+        there." What bounds a turn is rounds and seconds, not words.
+        """
+        self.assertFalse(hasattr(workshop_chat, "MAX_OUTPUT_TOKENS"))
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        sent = []
+
+        def remember(app, payload):
+            sent.append(payload)
+            return {"id": "r1", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Done."}]}]}
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=remember):
+            workshop_chat.propose(self.app, message="make it taller", selected_part=None,
+                                  candidate=candidate, materials=["oak"], library=[], history=[])
+        self.assertTrue(sent)
+        for payload in sent:
+            self.assertNotIn("max_output_tokens", payload)
+
+    def test_a_long_turn_wraps_up_instead_of_being_thrown_away(self):
+        """It used to raise, and the person lost every edit it had made.
+
+        "Workshop chat could not finish within its bounded reasoning loop" was
+        what the owner saw, for a turn that had already done the work.
+        """
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        going = {"id": "r", "output": [{"type": "function_call", "call_id": "c",
+                                        "name": "inspect_design", "arguments": "{}"}]}
+        wrapped = {"id": "last", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "I stopped there. The legs are longer; the top is not."}]}]}
+        calls = []
+
+        def answer(app, payload):
+            calls.append(payload)
+            # Every round asks for another tool, so the round budget runs out.
+            return wrapped if payload.get("tool_choice") == "none" else going
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            said = workshop_chat.propose(
+                self.app, message="build me a shed", selected_part=None, candidate=candidate,
+                materials=["oak"], library=[], history=[])["reply"]
+        print("\n    wrapped up: " + said, flush=True)
+        self.assertEqual("I stopped there. The legs are longer; the top is not.", said)
+        self.assertEqual("none", calls[-1]["tool_choice"], "the last call has the tools off")
+        self.assertEqual([], calls[-1]["tools"])
+        self.assertEqual(workshop_chat.MAX_TOOL_ROUNDS + 2, len(calls))
+
+    def test_a_long_turn_whose_wrap_up_is_silent_still_says_what_it_ran(self):
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        going = {"id": "r", "output": [{"type": "function_call", "call_id": "c",
+                                        "name": "inspect_design", "arguments": "{}"}]}
+
+        def answer(app, payload):
+            if payload.get("tool_choice") == "none":
+                raise ValueError("the wrap-up call failed too")
+            return going
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            said = workshop_chat.propose(
+                self.app, message="build me a shed", selected_part=None, candidate=candidate,
+                materials=["oak"], library=[], history=[])["reply"]
+        print(f"    silent wrap-up: {said}", flush=True)
+        self.assertIn("inspect_design", said)
+        self.assertIn("had to stop", said)
+        self.assertNotIn("bounded reasoning loop", said)
+
+
+class AQuestionComesWithAnswers(unittest.TestCase):
+    """The owner: "Always give a suggested answer not an open ended question,
+    as long as they can do other it is fine."
+
+    A question in prose makes the person invent the option themselves, which is
+    the work they came to the bench to be spared.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = types.SimpleNamespace(workshop_store=pathlib.Path(self.tmp.name) / "workshop",
+                                         api_key="k", model="gpt-5-mini")
+
+    @staticmethod
+    def a_table():
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def asked(self, arguments):
+        replies = [{"id": "r1", "output": [
+            {"type": "function_call", "call_id": "q1", "name": "ask_the_person",
+             "arguments": arguments}]}]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies) as called:
+            answer = workshop_chat.propose(
+                self.app, message="make the legs stronger", selected_part=None,
+                candidate=self.a_table(), materials=["oak", "iron"], library=[], history=[])
+        return answer, called
+
+    def test_the_tool_is_offered_at_all(self):
+        names = {tool["name"] for tool in workshop_chat._tool_definitions(["oak"])}
+        self.assertIn("ask_the_person", names)
+        rule = workshop_chat.SYSTEM
+        self.assertIn("NEVER END A TURN WITH AN OPEN QUESTION IN PROSE", rule)
+
+    def test_it_is_handed_the_design_rather_than_made_to_ask(self):
+        """Every turn used to open by calling inspect_design, because the
+        request said nothing about what was on the bench: two to three seconds
+        to be told five part names that fit in a dozen lines.
+        """
+        state = workshop_chat._State(self.app, self.a_table(), "leg-1",
+                                     ["oak", "glass"], [])
+        looking = workshop_chat._what_it_is_looking_at(state)
+        self.assertIn("ON THE BENCH: a table", looking)
+        self.assertIn("SELECTED IN THE UI: leg-1", looking)
+        for part in ("top", "leg-1", "leg-2", "leg-3", "leg-4"):
+            self.assertIn(part, looking)
+        # What each part is made of, or it still has to ask to change a material.
+        self.assertIn("oak", looking)
+        # Short enough to be worth it: this is a saving of a round trip, not a
+        # swap of one cost for another.
+        self.assertLess(len(looking), 2000, looking)
+
+    def test_what_changes_comes_after_what_does_not(self):
+        """A cached prefix ends at the first byte that differs.
+
+        The selection and the assembly kind were the tail of `instructions`,
+        which put two lines that change every turn in front of 5,400 tokens of
+        tool schema. They belong in `input`, after everything fixed.
+        """
+        self.assertNotIn("CURRENT UI SELECTION", workshop_chat.SYSTEM)
+        self.assertNotIn("CURRENT ASSEMBLY", workshop_chat.SYSTEM)
+
+    def test_a_tool_refused_over_and_over_is_stopped(self):
+        """Measured on "make the table out of glass": 142 seconds, 34 round
+        trips, and the edit was done at round 2. The other 129 seconds were
+        three refusals repeated NINE TIMES EACH -- told "inspect cannot say
+        ['distance_m', 'speed_m_s']" nine times and asking again the same way
+        nine times. A loop that allows that is the bug.
+        """
+        state = workshop_chat._State(self.app, self.a_table(), None, ["oak"], [])
+        self.assertEqual({}, state.refused)
+        self.assertGreaterEqual(workshop_chat.REFUSALS_A_TOOL, 2)
+        self.assertGreater(workshop_chat.REFUSALS_A_TURN, workshop_chat.REFUSALS_A_TOOL)
+        rule = workshop_chat.SYSTEM
+        self.assertIn("A REFUSAL IS INFORMATION", rule)
+        self.assertIn("DO WHAT WAS ASKED AND STOP", rule)
+
+    def test_a_refusal_says_what_to_do_about_it(self):
+        """"inspect cannot say ['distance_m', 'speed_m_s']" names the fault and
+        leaves the fix to be guessed. It was guessed wrong nine times."""
+        from mcp import core_use, interaction_points
+        with self.assertRaises(ValueError) as caught:
+            core_use.checked_step({"do": "inspect", "distance_m": 0.2, "speed_m_s": 1.0})
+        self.assertIn("leave distance_m and speed_m_s out", str(caught.exception))
+        self.assertIn('{"do": "inspect"}', str(caught.exception))
+        with self.assertRaises(ValueError) as caught:
+            interaction_points.checked([{"id": "hold", "kind": "grip", "position_m": [0, 0, 0],
+                                         "size_m": [0.1, 0.1, 0.1]}])
+        self.assertIn("leave size_m out", str(caught.exception))
+
+    def test_nothing_in_the_rules_tells_it_to_ask_first(self):
+        """Told to make a table out of glass it did it, then asked three
+        questions -- because the rules said both things.
+
+        "MAKE YOUR BEST GUESS AND GO" was near the top and "if the request is
+        ambiguous in a way that materially changes the object, ask a concise
+        question instead of making up a choice" was a hundred lines below it,
+        left over from before. It obeyed the older one. Two rules that
+        contradict each other are worse than either, because which one wins is
+        not something anybody decided.
+        """
+        rule = workshop_chat.SYSTEM
+        self.assertIn("MAKE YOUR BEST GUESS AND GO", rule)
+        self.assertNotIn("ask a concise question", rule)
+        self.assertNotRegex(rule, r"(?i)ambiguous[^.]*\bask\b")
+
+    def test_it_may_only_offer_what_this_bench_can_make(self):
+        """The same turn offered nine choices, and not one of them exists:
+        tempered against annealed glass, laminated build-ups, glass-fibre legs
+        with metal cores, structural adhesive, metal brackets. There are eight
+        materials and a part is one of them, solid through. Prose that sounds
+        like expertise and cannot be acted on is worse than no prose.
+        """
+        rule = workshop_chat.SYSTEM
+        self.assertIn("ONLY OFFER WHAT THIS BENCH CAN DO", rule)
+        for cannot in ("tempering", "laminating", "adhesive", "bracket"):
+            self.assertIn(cannot, rule, f"the rule should name {cannot} as something it cannot do")
+
+    def test_asking_ends_the_turn_and_carries_the_options(self):
+        answer, called = self.asked(
+            '{"question":"How much stronger?","options":['
+            '{"label":"Make it 50 mm","why":"the usual for a table this size"},'
+            '{"label":"Add a sleeve"}]}')
+        self.assertEqual(1, called.call_count, "it does not go round again to answer itself")
+        self.assertEqual("How much stronger?", answer["reply"])
+        asking = answer["asking"]
+        self.assertEqual(["Make it 50 mm", "Add a sleeve"], [o["label"] for o in asking["options"]])
+        self.assertEqual("the usual for a table this size", asking["options"][0]["why"])
+        self.assertFalse(asking["several"])
+        # Writing their own is never taken away: it is what makes a suggested
+        # answer a suggestion rather than a cage.
+        self.assertTrue(asking["allow_other"])
+
+    def test_several_answers_can_be_picked_at_once(self):
+        answer, _ = self.asked('{"question":"Which of these?","several":true,"options":['
+                               '{"label":"Thicker legs"},{"label":"A stretcher"},{"label":"Iron feet"}]}')
+        self.assertTrue(answer["asking"]["several"])
+        self.assertEqual(3, len(answer["asking"]["options"]))
+
+    def test_a_question_with_no_answers_is_refused(self):
+        """Refusing it is the point: an open question is what it replaces."""
+        replies = [
+            {"id": "r1", "output": [{"type": "function_call", "call_id": "q1",
+                                     "name": "ask_the_person",
+                                     "arguments": '{"question":"What would you like?","options":[]}'}]},
+            {"id": "r2", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Made the legs 50 mm."}]}]},
+        ]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            answer = workshop_chat.propose(
+                self.app, message="make the legs stronger", selected_part=None,
+                candidate=self.a_table(), materials=["oak"], library=[], history=[])
+        self.assertIsNone(answer["asking"])
+        self.assertEqual("Made the legs 50 mm.", answer["reply"])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "ask_the_person"]
+        self.assertEqual(1, len(refused))
+        self.assertFalse(refused[0]["ok"])
+        self.assertIn("two answers", refused[0]["summary"])
+
+    def test_a_turn_that_asks_nothing_carries_no_question(self):
+        replies = [{"id": "r1", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "Done."}]}]}]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            answer = workshop_chat.propose(
+                self.app, message="make it taller", selected_part=None, candidate=self.a_table(),
+                materials=["oak"], library=[], history=[])
+        self.assertIsNone(answer["asking"])
+
+
+class KeepingItThroughTheChat(unittest.TestCase):
+    """Saving, opening and taking back, now that the panels are off the bench.
+
+    The owner took the right-hand pane off the page. Everything it could do
+    that the chat could not was a thing a person had lost, so these are the
+    three that mattered.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = pathlib.Path(self.tmp.name)
+        self.app = types.SimpleNamespace(workshop_store=root / "workshop", api_key="k",
+                                         model="gpt-5-mini", workshop_owner_id="owner")
+        self.app.workshop_store.mkdir(parents=True)
+
+    @staticmethod
+    def a_table(kind="table"):
+        candidate = assemble(kind, design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def turn(self, calls, candidate=None, message="do it"):
+        """One turn whose tool calls are `calls`, then a word."""
+        replies = [{"id": f"r{i}", "output": [
+            {"type": "function_call", "call_id": f"c{i}", "name": name, "arguments": arguments}]}
+            for i, (name, arguments) in enumerate(calls)]
+        replies.append({"id": "last", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "Done."}]}]})
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies):
+            return workshop_chat.propose(
+                self.app, message=message, selected_part=None,
+                candidate=candidate if candidate is not None else self.a_table(),
+                materials=["oak", "iron"], library=[], history=[])
+
+    def test_the_three_tools_are_offered(self):
+        names = {tool["name"] for tool in workshop_chat._tool_definitions(["oak"])}
+        self.assertTrue({"save_design", "list_saved_designs", "open_saved_design",
+                         "take_it_back"} <= names)
+        self.assertIn("KEEPING IT: save_design", workshop_chat.SYSTEM)
+
+    def test_it_saves_under_the_name_the_person_used(self):
+        answer = self.turn([("save_design", '{"name":"The tall one"}')])
+        saved = [row for row in answer["tool_trace"] if row["tool"] == "save_design"]
+        self.assertEqual(1, len(saved))
+        self.assertTrue(saved[0]["ok"], saved[0])
+        self.assertIn("The tall one", saved[0]["summary"])
+        # And it is really on disk, under that name.
+        import workshop_store
+        from workshop_api_core import _store
+        rows = workshop_store.list_saved(_store(self.app))
+        self.assertEqual(["The tall one"], [r["label"] for r in rows])
+        self.assertEqual(1, rows[0]["revision"])
+
+    def test_saving_it_again_is_a_revision_not_a_second_thing(self):
+        self.turn([("save_design", '{"name":"The tall one"}')])
+        self.turn([("save_design", '{"name":"The tall one"}')])
+        import workshop_store
+        from workshop_api_core import _store
+        rows = workshop_store.list_saved(_store(self.app))
+        self.assertEqual(1, len(rows))
+        self.assertEqual(2, rows[0]["revision"])
+
+    def test_a_save_with_no_name_is_refused(self):
+        answer = self.turn([("save_design", '{"name":"   "}')])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "save_design"]
+        self.assertFalse(refused[0]["ok"])
+        self.assertIn("needs a name", refused[0]["summary"])
+
+    def test_what_is_saved_can_be_listed_and_opened_back_onto_the_bench(self):
+        # A bench is saved under one name, then a table is on the bench.
+        bench = self.a_table("bench")
+        self.turn([("save_design", '{"name":"My bench"}')], candidate=bench)
+        listed = self.turn([("list_saved_designs", "{}")])
+        rows = [row for row in listed["tool_trace"] if row["tool"] == "list_saved_designs"]
+        self.assertIn("1 saved", rows[0]["summary"])
+
+        table = self.a_table()
+        was = [dict(part) for part in table["parts"]]
+        answer = self.turn([("open_saved_design", '{"design_id":"chat-candidate"}')],
+                           candidate=table)
+        opened = [row for row in answer["tool_trace"] if row["tool"] == "open_saved_design"]
+        self.assertTrue(opened[0]["ok"], opened[0])
+        # It REPLACED what was on the bench: the candidate the API owns is the
+        # saved one now, parts and all. A bench and a table both have five
+        # parts, so the count proves nothing; the sizes do.
+        self.assertEqual("bench", table["kind"])
+        self.assertNotEqual(was, table["parts"])
+        self.assertIn("My bench", opened[0]["summary"])
+        self.assertEqual({p["name"] for p in table["parts"]}, set(answer["changed"]))
+
+    def test_opening_something_that_was_never_saved_is_refused(self):
+        answer = self.turn([("open_saved_design", '{"design_id":"no-such-design"}')])
+        refused = [row for row in answer["tool_trace"] if row["tool"] == "open_saved_design"]
+        self.assertFalse(refused[0]["ok"])
+
+    def test_taking_it_back_asks_the_page_because_the_page_holds_the_history(self):
+        answer = self.turn([("take_it_back", '{"steps":2}')])
+        self.assertEqual(2, answer["undo"])
+        took = [row for row in answer["tool_trace"] if row["tool"] == "take_it_back"]
+        self.assertIn("last 2 changes", took[0]["summary"])
+        # One is the default, and a turn that does not ask for it says zero.
+        self.assertEqual(1, self.turn([("take_it_back", "{}")])["undo"])
+        self.assertEqual(0, self.turn([("inspect_design", "{}")])["undo"])
+
+
+class SayingWhatItIsDoing(unittest.TestCase):
+    """A turn is one POST that answers when the whole thing is finished.
+
+    The work inside it is several round trips to the model with a run of the
+    little world in between. Waiting thirty seconds at a bubble that says
+    "Working" and nothing else is the same as waiting at a blank screen.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = types.SimpleNamespace(workshop_store=pathlib.Path(self.tmp.name) / "workshop",
+                                         api_key="k", model="gpt-5-mini")
+
+    @staticmethod
+    def a_table():
+        candidate = assemble("table", design_id="chat-candidate").wireframe()
+        candidate["component_overrides"] = {}
+        return candidate
+
+    def test_the_steps_are_written_as_the_turn_goes_and_read_back_by_id(self):
+        seen = []
+        replies = [
+            {"id": "r1", "output": [{"type": "function_call", "call_id": "c1",
+                                     "name": "inspect_design", "arguments": "{}"}]},
+            {"id": "r2", "output": [{"type": "function_call", "call_id": "c2",
+                                     "name": "edit_components",
+                                     "arguments": '{"selector":{"roles":["leg"]},"action":"thicker"}'}]},
+            {"id": "r3", "output": [{"type": "message", "content": [
+                {"type": "output_text", "text": "Done."}]}]},
+        ]
+
+        def answer(app, payload):
+            # Read it back mid-turn, which is what the page does while it waits.
+            seen.append(workshop_chat.progress("turn-1"))
+            return replies[len(seen) - 1]
+
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=answer):
+            workshop_chat.propose(self.app, message="thicker legs", selected_part=None,
+                                  candidate=self.a_table(), materials=["oak"], library=[],
+                                  history=[], turn="turn-1")
+        # It grew as the turn went, rather than arriving all at once at the end.
+        counts = [len(said["steps"]) for said in seen]
+        print("\n    steps as it went: " + " -> ".join(str(c) for c in counts), flush=True)
+        self.assertEqual([1, 3, 5], counts)
+        self.assertFalse(any(said["done"] for said in seen))
+        # In words a person reads, not the code's name for the tool. The
+        # thinking between the calls is said too, because that is where most of
+        # the wait is.
+        said = [step["said"] for step in seen[-1]["steps"]]
+        self.assertIn("thinking about what you asked", said[0])
+        self.assertIn("looking at the design", said[1])
+        self.assertIn("thinking about what that told it", said[2])
+        self.assertIn("changing the parts", said[3])
+        self.assertTrue(all(step["ok"] for step in seen[-1]["steps"]))
+        # Each one is stamped with how far into the turn it happened.
+        self.assertEqual(sorted(step["at_s"] for step in seen[-1]["steps"]),
+                         [step["at_s"] for step in seen[-1]["steps"]])
+        # And when the turn is over it says so, so the page can stop reading.
+        after = workshop_chat.progress("turn-1")
+        self.assertTrue(after["done"])
+        self.assertEqual(5, len(after["steps"]))
+
+    def test_a_turn_that_fails_says_so_rather_than_going_quiet(self):
+        with mock.patch.object(workshop_chat, "_call_model",
+                               side_effect=ValueError("the model said no")):
+            with self.assertRaises(ValueError):
+                workshop_chat.propose(self.app, message="x", selected_part=None,
+                                      candidate=self.a_table(), materials=["oak"], library=[],
+                                      history=[], turn="turn-2")
+        said = workshop_chat.progress("turn-2")
+        self.assertTrue(said["done"])
+        self.assertFalse(said["steps"][-1]["ok"])
+        self.assertIn("the model said no", said["steps"][-1]["said"])
+
+    def test_a_turn_nobody_asked_about_is_empty_rather_than_missing(self):
+        said = workshop_chat.progress("no-such-turn")
+        self.assertEqual([], said["steps"])
+        self.assertFalse(said["done"])
+
+    def test_it_does_not_remember_every_turn_for_ever(self):
+        for i in range(workshop_chat.PROGRESS_KEPT + 8):
+            workshop_chat._note(f"turn-{i}", "doing something")
+        self.assertLessEqual(len(workshop_chat._PROGRESS), workshop_chat.PROGRESS_KEPT)
 
 
 class ChatSurface(unittest.TestCase):

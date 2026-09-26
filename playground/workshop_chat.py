@@ -16,7 +16,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import logging
 import re
+import threading
+import time
 from typing import Any
 from urllib import error, request
 
@@ -25,25 +28,115 @@ from mcp.product_contract import compile_contract
 from mcp.workshop import WirePart, assemble, assembly
 from mcp.workshop_statics import declared_statics
 import workshop_fitting
+import workshop_test_room as test_room
 import workshop_library
+
+log = logging.getLogger(__name__)
+
+#: What each turn is doing, while it does it, so the page can say so.
+#:
+#: A turn is one POST that answers when the whole thing is finished, and the
+#: work inside it is several round trips to the model with a run of the little
+#: world in between. Waiting thirty seconds at a bubble that says "Working" and
+#: nothing else is the same as waiting at a blank screen. The page hands in an
+#: id, this is written as the turn goes, and the page reads it back.
+_PROGRESS: dict[str, dict[str, Any]] = {}
+_PROGRESS_LOCK = threading.Lock()
+#: How many times one tool may be refused before this turn stops calling it,
+#: and how many refusals in all before the turn gives up and answers with what
+#: it has. A turn that has been told the same thing twice has been told.
+REFUSALS_A_TOOL = 3
+REFUSALS_A_TURN = 8
+
+#: How many turns are remembered, and for how long. A turn is small; this is
+#: only here so that a long session does not grow without end.
+PROGRESS_KEPT = 32
+PROGRESS_TTL_S = 900.0
+#: What each tool is doing, said the way a person would say it. A tool name is
+#: the code's word for it; nobody watching wants to read edit_components.
+DOING = {
+    "inspect_design": "looking at the design",
+    "inspect_component": "looking at that part",
+    "inspect_physics": "measuring it",
+    "search_library": "looking through your library",
+    "edit_components": "changing the parts",
+    "set_parameter": "changing a number on it",
+    "reuse_library_component": "putting one of your saved parts in",
+    "what_it_needs": "working out what making it would take",
+    "set_skin": "changing how it looks",
+    "add_part": "adding a part",
+    "remove_part": "taking a part off",
+    "set_joint": "changing how two parts are fastened",
+    "add_power_part": "wiring something in",
+    "set_program": "writing what it does on its own",
+    "check_validity": "checking the room can carry it",
+    "define_interaction_points": "saying where you take hold of it",
+    "program_use": "writing what it is for",
+    "try_it_in_a_room": "trying it in a little world",
+    "find_the_limit": "finding where it gives way",
+    "save_design": "saving it",
+    "list_saved_designs": "looking at what you saved",
+    "open_saved_design": "opening a saved design",
+    "take_it_back": "taking that back",
+    "ask_the_person": "asking you",
+}
+
+
+def progress(turn: str) -> dict[str, Any]:
+    """What that turn has done so far, for the page to show while it waits."""
+    with _PROGRESS_LOCK:
+        return deepcopy(_PROGRESS.get(str(turn)) or {"turn": str(turn), "steps": [], "done": False})
+
+
+def _note(turn: str | None, said: str, *, done: bool = False, ok: bool = True) -> None:
+    """One line of what is happening now."""
+    if not turn:
+        return
+    now = time.time()
+    with _PROGRESS_LOCK:
+        held = _PROGRESS.setdefault(str(turn), {"turn": str(turn), "began": now, "steps": [],
+                                                "done": False})
+        if said:
+            held["steps"].append({"at_s": round(now - held["began"], 2), "said": said, "ok": ok})
+            del held["steps"][:-40]
+        held["done"] = bool(done)
+        held["seen"] = now
+        for stale in [k for k, v in _PROGRESS.items()
+                      if now - v.get("seen", now) > PROGRESS_TTL_S]:
+            del _PROGRESS[stale]
+        while len(_PROGRESS) > PROGRESS_KEPT:
+            del _PROGRESS[next(iter(_PROGRESS))]
 
 EDIT_ACTIONS = ("longer", "shorter", "thicker", "thinner", "wider", "narrower", "material")
 MAX_HISTORY = 20
 MAX_MESSAGE_CHARS = 48_000
-MAX_TOOL_ROUNDS = 8
-MAX_TOOL_CALLS = 24
-# Room for one turn: the reasoning AND the answer, because the provider counts
-# both against this. At 1400 -- what this was -- a turn that thought about a
-# design, called a tool and then had to say something ran out before it said
-# it, and the model's reply came back empty with status "incomplete". The page
-# then showed the fallback line, "I inspected the design but made no changes",
-# for a turn where the model had been cut off mid-thought: the owner asked for
-# a shed, answered the questions it put, and was told nothing had changed.
+# How long a turn may go on before it has to stop and say what it has.
 #
-# Every other model caller here already gives more: the room chat that builds
-# things in the world 12,000 (scene_chat.py), the trial planner 6,000, the
-# room's own helper 3,500. This is the same class of work as the first.
-MAX_OUTPUT_TOKENS = 12000
+# The owner, after a turn died with "Workshop chat could not finish within its
+# bounded reasoning loop": *"we need to rethink the reasoning loop, the llm has
+# memory and should be able to get to an answer and we should not need to limit
+# the tokens to get there."*
+#
+# Two things were wrong, and neither was the size of the numbers.
+#
+# The first is that running out threw the turn AWAY. Eight rounds in, having
+# inspected the design and made every edit it was asked for, the loop raised --
+# so the person saw an error, not the work. A turn that runs long now WRAPS UP:
+# one more call with the tools switched off and "answer now with what you
+# have", which is what you would say to a person who was still measuring when
+# the bell went. It has the whole conversation in front of it and can always
+# say something true about it.
+#
+# The second is the per-call ceiling. There is none now. A ceiling on output
+# tokens is a ceiling on THINKING -- the provider counts reasoning against it --
+# and a turn cut off mid-thought comes back with no words at all, which is how
+# "I inspected the design but made no changes" got said about a turn that had
+# done neither. What bounds a turn is how long it may go on and how much of the
+# room it may touch, not how many words it may think in.
+MAX_TOOL_ROUNDS = 32
+MAX_TOOL_CALLS = 120
+#: A turn that has been going this long is not converging, whatever it says.
+MAX_TURN_SECONDS = 240.0
 
 SYSTEM = """You are the Banjo Workshop design assistant.
 
@@ -52,14 +145,55 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
-- Define the finished product\'s key interaction points with define_interaction_points:
-  grip/use plus real receiving surfaces or cargo interiors. Positions are in the
-  design frame; receiving position is on the floor and size_m is usable space.
-  Update these points when geometry changes. Metadata never creates a cavity.
-- Every finished product needs a primary_use program. Call program_use to write
-  its purpose-specific core action when creating or completing it; it is stored
-  with the design, exposed in ProductGraph controls and carried into the world.
-  Never claim a product is operational if its intended action is unsupported.
+- define_interaction_points says where a finished product is taken hold of and
+  what it receives: grip/use points, plus real receiving surfaces or cargo
+  interiors. Positions are in the design frame; a receiving position is on the
+  floor and size_m is the usable space above it. Metadata never creates a
+  cavity. ONLY when the person is making or finishing a product, when they ask
+  for it, or when GEOMETRY you just changed has moved the points -- a change of
+  material has moved nothing.
+- A finished product needs a primary_use program, written with program_use when
+  it is being MADE or FINISHED, or when the person asks what it does. It is
+  stored with the design, exposed in ProductGraph controls and carried into the
+  world. Never claim a product is operational if its intended action is
+  unsupported. Do not write one as a bonus on top of an edit that had nothing to
+  do with what the thing is for.
+- MAKE YOUR BEST GUESS AND GO. Do not ask before you start. Every round trip
+  to ask something costs the person a wait as long as the work itself, and
+  anything you do can be taken back -- take_it_back undoes it, and they know
+  that. Pick the sensible thing, DO it, say what you picked and why in one
+  line, and THEN offer what else they might have meant. "I dropped 20 kg on it
+  from 2 m -- it held. Want it harder, or from higher?" is a good turn. "How
+  heavy, and from what height?" is a bad one: it is a wait for nothing.
+- ask_the_person is for AFTERWARDS, or for a fork you genuinely cannot pick
+  between -- not for numbers you can choose yourself. When you do call it, give
+  two to four CONCRETE answers they can click ("Make it 50 mm", "Add a
+  sleeve"), never "what would you like?". Writing their own is always offered.
+  Put what you would do first. Calling it ends your turn.
+- NEVER END A TURN WITH AN OPEN QUESTION IN PROSE. If you want a decision, that
+  is what ask_the_person is for.
+- DO WHAT WAS ASKED AND STOP. Asked to change a material, change the material.
+  Do not also declare where the thing is held, write it a use, give it a skin
+  or run a test nobody mentioned. Measured: "make the table out of glass" was
+  done at the second round trip, in 13 seconds, and then spent 129 more on
+  interaction points and a usage program that nobody had asked for and that
+  were refused 27 times between them.
+- A REFUSAL IS INFORMATION, NOT A SETBACK. Read what it says and change that,
+  or leave the tool alone and say what you could not do. Calling it again the
+  same way gets the same answer and costs the person another wait. After a few
+  refusals of one tool this bench stops running it for the rest of the turn.
+- ONLY OFFER WHAT THIS BENCH CAN DO. Every alternative you name has to be one
+  you could carry out with the tools you have, on the next turn, without asking
+  anybody for anything. A part is one of the materials in the material enum,
+  solid through, at a size and a place. There is no tempering, no laminating,
+  no coating, no filling, no adhesive, no bracket and no bought fastener: a
+  joint is a declared fastening between two parts and nothing else. Offering a
+  choice between annealed and tempered glass, or a metal insert down the middle
+  of a leg, is offering something nobody here can make -- and it reads as
+  expertise, which makes it worse.
+- Say plainly when a tool call failed and what you did about it. "I attempted to
+  set a usage program but that call failed" in the middle of a list of results
+  is a thing gone wrong being carried along as though it were an outcome.
 - Use tools to inspect the design before guessing about component names,
   positions, dimensions, interfaces, contacts, physics, evidence, or library
   contents.
@@ -97,6 +231,38 @@ Important behavior:
   anything meant to turn on another part (a wheel on its mount, a door leaf on
   its post, a pulley on its pin) and 'fixed' for anything bonded solid. Build
   the concept first and do not agonise over millimetres.
+- KEEPING IT: save_design writes the design down under a name you choose, and
+  saving the same name again is a new revision of it rather than a second
+  thing. list_saved_designs says what is there, and open_saved_design brings
+  one back -- which REPLACES what is on the bench, so ask first unless they
+  said to. take_it_back undoes the last change, or several. These were panels
+  on the page once; they are yours now, so a person who asks you to "save this
+  as the tall one" gets it saved rather than pointed at a control.
+- DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
+  throws a block at its SIDE, along the floor, and is not what anyone means by
+  "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
+- TESTING MEANS FINDING THE RANGE, NOT POKING IT ONCE. What anybody wants to
+  know is where a thing changes: it holds 120 kg, cracks at 300, shatters at
+  500. One run only tells you whether the number you guessed was over or under,
+  so DO NOT stop at one. Call find_the_limit and sweep the thing that matters
+  up through five or six values. It is fast -- a run is about a third of a
+  second -- and the answer is the useful one.
+  Do the same for anything with a range: a solar panel gives nothing in the
+  dark, a little at daybreak and a lot at noon, and a sweep over the hour says
+  so in one turn. Report the whole range, not the one number you tried.
+- WORK IT BY HAND with `do`: a list of {at_s, control, power, direction,
+  setting} carried out while it runs, which is what a person does at a
+  machine's panel in the world. "Drive it forward for three seconds and then
+  stop" is two orders at 0 s and two at 3 s. turn_on starts its OWN program
+  instead; do not do both unless you mean them to fight.
+- WRITE THE ROOM when none of those is the test. try_it_in_a_room takes `add`:
+  anything you can describe standing in the world beside the thing -- a ramp
+  tilted 20 degrees, a ball already rolling at 3 m/s, a wall driven into the
+  ground for it to hit. Say what it is made of, how big, where, which way up
+  and how fast it is already going. HEIGHT IS MEASURED FROM THE GROUND, so 0 is
+  resting on it. Build the test you were actually asked for rather than the
+  nearest of the four settings: "roll a ball down a ramp into its leg" is a
+  ramp and a ball, not a thrown block.
 - MAKING IT GO: add_power_part puts a store, motor, panel or control on the
   design and set_program says what it does on its own. A motor names the two
   components its pin joins and that pin MUST be a bearing -- a bond cannot
@@ -120,8 +286,9 @@ Important behavior:
   has redrawn something, tell the person what changed and why, in its words.
 - Edits are deterministic tools. Do not fabricate geometry or silently change
   unrelated components.
-- If the request is ambiguous in a way that materially changes the object, ask
-  a concise question instead of making up a choice. Otherwise execute the work.
+- Ambiguity is not a reason to ask. It is a reason to pick, do it, and say in
+  one line what you picked -- "glass everywhere, top and legs; say the word if
+  you meant the top only". The person can take it back.
 - Explain what actually changed, using real component names/counts from tool
   results. Distinguish analytical estimates from engine evidence.
 """
@@ -165,6 +332,33 @@ def _refresh(app: Any, candidate: dict[str, Any], design: Any,
     wire["bom"] = workshop_library.bill_of_materials(app, design)
     candidate.clear()
     candidate.update(wire)
+
+
+def _round_along(axis: Any, size: list[float]) -> tuple[str, tuple[float, float, float], list[float]]:
+    """A round part, said the way a person says it.
+
+    The chat gives every part the box it fills, which is what a person sees. A
+    cylinder is drawn in its own frame instead -- diameter, length, diameter,
+    about its own y -- and turned onto the axis it lies along, so this does that
+    turning rather than asking the model for three Euler angles. Without it the
+    chat could only make boxes, and a robot it designed had square wheels: the
+    library has carried cylinders all along (workshop_construction.checked) and
+    only this tool could not say one.
+    """
+    if not axis:
+        return "box", (0.0, 0.0, 0.0), size
+    along = str(axis).lower()
+    if along not in ("x", "y", "z"):
+        raise ValueError("round_along is x, y or z: the axis the cylinder lies along")
+    a = "xyz".index(along)
+    across = [size[i] for i in range(3) if i != a]
+    if abs(across[0] - across[1]) > 1e-9:
+        raise ValueError(f"a part round along {along} is as wide as it is deep across that axis, and this one "
+                         f"is {across[0] * 1000:.0f} mm by {across[1] * 1000:.0f} mm")
+    # Its own frame: as round as it is across, as long as it is along.
+    drawn = [across[0], size[a], across[0]]
+    turn = {"x": (0.0, 0.0, 90.0), "y": (0.0, 0.0, 0.0), "z": (90.0, 0.0, 0.0)}[along]
+    return "cylinder", turn, drawn
 
 
 def _part_doc(part: Any) -> dict[str, Any]:
@@ -243,7 +437,11 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                         "in metres and center_m is its middle in the design frame. It must TOUCH the part it "
                         "fastens to -- move it against that part first, face to face; a gap is refused. "
                         "kind is 'fixed' for a part bonded solid, or 'bearing' for one that turns on the other "
-                        "(a wheel, a door leaf, a pulley). Do not fret about the millimetres: call "
+                        "(a wheel, a door leaf, a pulley). round_along makes it a cylinder lying along that "
+                        "axis -- a wheel that rolls forward is round along x, the axis across the machine. A "
+                        "bearing turns about the face the two parts meet on, so a wheel goes against the side "
+                        "of its mount and a thing that swivels goes under a flat face. Do not fret about the "
+                        "millimetres: call "
                         "check_validity when the assembly is complete and it redraws whatever the room's cell "
                         "grid cannot carry.",
          "parameters": {"type": "object", "additionalProperties": False,
@@ -257,7 +455,10 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "center_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                             "material": {"type": "string", "enum": list(materials)},
                             "fasten_to": {"type": "string", "description": "the part it is fastened to"},
-                            "kind": {"type": "string", "enum": ["fixed", "bearing"]}}}},
+                            "kind": {"type": "string", "enum": ["fixed", "bearing"]},
+                            "round_along": {"type": "string", "enum": ["x", "y", "z"],
+                                            "description": "leave it out for a box; give the axis it is round "
+                                                           "about to make it a cylinder"}}}},
         {"type": "function", "name": "remove_part",
          "description": "Take one component out of the design, with whatever fastened it.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["name"],
@@ -317,16 +518,20 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                                      "drag_n_m_per_rad2": {"type": "number"}}},
                             "area_m2": {"type": "number"}, "efficiency": {"type": "number"}}}},
         {"type": "function", "name": "set_program",
-         "description": "What the machine does on its own. 'roam' wanders on two driven wheels and turns away "
-                        "from water: left and right name the wheels' controls, climb_deg the steepest ground it "
-                        "will take. 'hover' flies on four rotors: rotors names their four controls in order "
-                        "round the machine from above, hover_m the height it holds its centre at. rest_below "
-                        "is the share of charge it stops (or lands) at and rest_until the share it sets off "
-                        "again at. A product runs one program.",
+         "description": "What the machine does on its own. 'roam' wanders on two driven wheels and turns "
+                        "away from water: left and right name the wheels' controls, climb_deg the steepest "
+                        "ground it will take. 'sit' drives the same two wheels to a thing already standing in "
+                        "the world and holds a pose there: toward is the world's name for that thing, close_m "
+                        "how near its middle comes to that thing's middle across the ground, and pose/pose_deg "
+                        "the control it works when it gets there and the angle it turns that pin to. 'hover' "
+                        "flies on four rotors: rotors names their four controls in order round the machine "
+                        "from above, hover_m the height it holds its centre at. 'still' goes nowhere and draws "
+                        "on a store of its own. rest_below is the share of charge it stops (or lands) at and "
+                        "rest_until the share it sets off again at. A product runs one program.",
          "parameters": {"type": "object", "additionalProperties": False,
                         "required": ["kind"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam", "hover", "still"]},
+                            "kind": {"type": "string", "enum": ["roam", "sit", "hover", "still"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
                             "store": {"type": "string", "description": "for a still program: the store it draws "
                                                                       "on; the machine stands on that store's part"},
@@ -335,7 +540,11 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
                             "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
                             "rest_below": {"type": "number", "minimum": 0, "maximum": 1},
-                            "rest_until": {"type": "number", "minimum": 0, "maximum": 1}}}},
+                            "rest_until": {"type": "number", "minimum": 0, "maximum": 1},
+                            "toward": {"type": "string"},
+                            "close_m": {"type": "number", "minimum": 0.01, "maximum": 100},
+                            "pose": {"type": "string"},
+                            "pose_deg": {"type": "number", "minimum": -360, "maximum": 360}}}},
         {"type": "function", "name": "add_sensor",
          "description": "A water eye for the program: a point on a component, in the design's own metres "
                         "(the floor at y = 0, its front towards +z, its left towards +x), that reads the depth "
@@ -396,6 +605,161 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                 "properties": {"when": {"anyOf": [{"type": "string"}, {"type": "object"}]},
                                                "do": {"type": "array", "items": {"type": "object"}},
                                                "then": {"type": "string", "enum": ["resume", "restart"]}}}}}}},
+        {"type": "function", "name": "try_it_in_a_room",
+         "description": "Make the design in a little room with real ground, gravity and a sky, let it run, and "
+                        "say what happened. It is the world's own physics and the world's own way of making a "
+                        "thing, so what it does here is what it will do out there. Put the sun where you like -- "
+                        "leave it out for noon, or give a day with an hour for the afternoon or the dark -- and "
+                        "stand other things in the room to test it against. Call this to answer whether "
+                        "something WORKS, rather than guessing from its shape. Call check_validity first.",
+         "parameters": {"type": "object", "additionalProperties": False, "properties": {
+                            "seconds": {"type": "number", "minimum": 0.5, "maximum": 120,
+                                        "description": "how long to let it run"},
+                            "day": {"type": "object", "additionalProperties": False,
+                                    "description": "a sky with a day it crosses; hour 23 is the dark",
+                                    "properties": {"day_s": {"type": "number"},
+                                                   "noon_elevation_deg": {"type": "number"},
+                                                   "hour": {"type": "number", "minimum": 0, "maximum": 23.99},
+                                                   "irradiance_w_m2": {"type": "number"}}},
+                            "add": {"type": "array", "maxItems": 12,
+                                    "description": "things YOU write into the room, beside the design",
+                                    "items": {"type": "object", "additionalProperties": False,
+                                              "required": ["size_m", "at_m"],
+                                              "properties": {
+                                                  "name": {"type": "string",
+                                                           "description": "what to call it, e.g. 'the ramp'"},
+                                                  "shape": {"type": "string",
+                                                            "enum": ["box", "sphere", "cylinder"]},
+                                                  "material": {"type": "string",
+                                                               "enum": ["oak", "iron", "concrete", "glass"]},
+                                                  "size_m": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                             "items": {"type": "number"},
+                                                             "description": "x, y, z in metres; a cylinder is [across, along, across]"},
+                                                  "at_m": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                           "items": {"type": "number"},
+                                                           "description": "x, HEIGHT ABOVE THE GROUND, z. 0 is resting on it."},
+                                                  "tilt_deg": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                               "items": {"type": "number"},
+                                                               "description": "degrees about x, y, z; a tilted thing is an exact body"},
+                                                  "moving_m_s": {"type": "array", "minItems": 3, "maxItems": 3,
+                                                                 "items": {"type": "number"},
+                                                                 "description": "how fast it is already going"},
+                                                  "fixed": {"type": "boolean",
+                                                            "description": "driven into the ground; cannot move or be tilted"}}}},
+                            "items": {"type": "array", "maxItems": 6, "description": "four things it already knows how to make",
+                                      "items": {"type": "object", "additionalProperties": False,
+                                                "required": ["what"],
+                                                "properties": {"what": {"type": "string",
+                                                                        "enum": sorted(test_room.THINGS)},
+                                                               "at_m": {"type": "array", "items": {"type": "number"},
+                                                                        "minItems": 2, "maxItems": 2}}}},
+                            "turn_on": {"type": "boolean",
+                                        "description": "set its program running, if it has one (default true)"},
+                            "do": {"type": "array", "maxItems": 24,
+                                   "description": "what to do to its controls while it runs, by hand",
+                                   "items": {"type": "object", "additionalProperties": False,
+                                             "required": ["control"],
+                                             "properties": {
+                                                 "at_s": {"type": "number", "minimum": 0,
+                                                          "description": "how far into the run (0)"},
+                                                 "control": {"type": "string",
+                                                             "description": "its name, from check_validity or inspect_physics"},
+                                                 "power": {"type": "boolean", "description": "on (default true)"},
+                                                 "direction": {"type": "integer", "enum": [-1, 0, 1]},
+                                                 "setting": {"type": "number", "minimum": 0, "maximum": 1}}}},
+                            # What to DO to it, once it is standing there. Leave
+                            # them all out and it simply stands, which answers
+                            # whether it stands.
+                            "load_kg": {"type": "number", "minimum": 0, "maximum": test_room.MAX_LOAD_KG,
+                                        "description": "set an iron weight of this many kilograms on it"},
+                            "on": {"type": "string",
+                                   "description": "the name of the part to set the weight on; the whole thing by default"},
+                            "from_m": {"type": "number", "minimum": 0, "maximum": 5,
+                                       "description": "DROP that weight on it from this height instead of "
+                                                      "setting it there. This is how you drop something ON "
+                                                      "a thing; `strike` throws a block at its SIDE."},
+                            "drop_m": {"type": "number", "minimum": 0, "maximum": test_room.MAX_DROP_M,
+                                       "description": "let it go from this far above where it stands"},
+                            "slide_m_s": {"type": "number", "minimum": -test_room.MAX_SPEED_M_S,
+                                          "maximum": test_room.MAX_SPEED_M_S,
+                                          "description": "start it moving along +X at this speed"},
+                            "strike": {"type": "object", "additionalProperties": False,
+                                       "description": "throw an iron block at it",
+                                       "properties": {"kg": {"type": "number", "minimum": 0.1,
+                                                             "maximum": test_room.MAX_STRIKER_KG},
+                                                      "speed_m_s": {"type": "number", "minimum": 0.1,
+                                                                    "maximum": test_room.MAX_SPEED_M_S},
+                                                      "height_fraction": {"type": "number", "minimum": 0,
+                                                                          "maximum": 1}}}}}},
+        {"type": "function", "name": "save_design",
+         "description": "Write the design down under a name. Saving the same design again is a new "
+                        "revision of it, not a second one. Use the name the person used.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["name"],
+                        "properties": {"name": {"type": "string",
+                                                "description": "what to call it, in their words"}}}},
+        {"type": "function", "name": "list_saved_designs",
+         "description": "What has been saved, newest first: the name, what it is, how many times it "
+                        "was saved and its id. Call this before opening one by name.",
+         "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
+        {"type": "function", "name": "open_saved_design",
+         "description": "Bring a saved design back onto the bench. This REPLACES what is there now, "
+                        "so say what you are about to lose unless they already said to.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["design_id"],
+                        "properties": {"design_id": {"type": "string",
+                                                     "description": "from list_saved_designs"}}}},
+        {"type": "function", "name": "take_it_back",
+         "description": "Undo the last change to the design, or several. The bench remembers every "
+                        "state of this session, so this reaches back past your own turn.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "properties": {"steps": {"type": "integer", "minimum": 1, "maximum": 20,
+                                                 "description": "how many changes to take back (1)"}}}},
+        {"type": "function", "name": "find_the_limit",
+         "description": "Run the same test again and again with ONE thing turned up, and say "
+                        "where it changes: holds here, cracks there, shatters beyond. This is what "
+                        "testing is for; a single run only says whether one guess was over or "
+                        "under. Also the way to show a range -- sweep the hour to show a panel "
+                        "giving nothing in the dark and a lot at noon. Every row is a real run; "
+                        "nothing is interpolated. Fast: a run is about a third of a second.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["changing", "over"],
+                        "properties": {
+                            "changing": {"type": "string",
+                                         "enum": sorted(test_room.SWEEPS),
+                                         "description": "the one thing to turn up"},
+                            "over": {"type": "array", "minItems": 2, "maxItems": 12,
+                                     "items": {"type": "number"},
+                                     "description": "the values to try, going up"},
+                            "seconds": {"type": "number", "minimum": 0.5, "maximum": 30,
+                                        "description": "how long each run is (3)"},
+                            "load_kg": {"type": "number", "minimum": 0, "maximum": 2000},
+                            "from_m": {"type": "number", "minimum": 0, "maximum": 5},
+                            "drop_m": {"type": "number", "minimum": 0, "maximum": 5},
+                            "slide_m_s": {"type": "number", "minimum": -30, "maximum": 30},
+                            "strike_kg": {"type": "number", "minimum": 0, "maximum": 500},
+                            "strike_speed_m_s": {"type": "number", "minimum": 0, "maximum": 30},
+                            "hour": {"type": "number", "minimum": 0, "maximum": 24},
+                            "turn_on": {"type": "boolean"}}}},
+        {"type": "function", "name": "ask_the_person",
+         "description": "Ask the person a question you cannot answer yourself, with concrete "
+                        "answers they can click. ALWAYS use this instead of asking in prose. "
+                        "Ends your turn; their answer arrives as the next message. Put the "
+                        "option you would choose first.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["question", "options"],
+                        "properties": {
+                            "question": {"type": "string",
+                                         "description": "one sentence, ending in a question mark"},
+                            "options": {"type": "array", "minItems": 2, "maxItems": 6,
+                                        "description": "concrete answers, best first",
+                                        "items": {"type": "object", "additionalProperties": False,
+                                                  "required": ["label"],
+                                                  "properties": {
+                                                      "label": {"type": "string",
+                                                                "description": "what the button says, e.g. 'Make it 50 mm'"},
+                                                      "why": {"type": "string",
+                                                              "description": "at most a dozen words on what it would mean"}}}},
+                            "several": {"type": "boolean",
+                                        "description": "true when more than one option can be picked at once"}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -445,8 +809,13 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
 
 class _State:
     def __init__(self, app: Any, candidate: dict[str, Any], selected_name: str | None,
-                 materials: list[str], library: list[dict[str, Any]]) -> None:
+                 materials: list[str], library: list[dict[str, Any]],
+                 turn: str | None = None) -> None:
         self.app = app
+        #: Which turn this is, so what it does can be watched while it happens.
+        self.turn = turn
+        #: How many times each tool has refused in this turn.
+        self.refused: dict[str, int] = {}
         self.candidate = candidate
         self.selected_name = selected_name
         self.materials = materials
@@ -461,6 +830,12 @@ class _State:
                              parameters=spec.get("parameters") or {})
         self.changed: list[str] = []
         self.trace: list[dict[str, Any]] = []
+        #: The question this turn is waiting on, if it asked one.
+        self.asking: dict[str, Any] | None = None
+        #: A run for the person to watch, if the turn tried the thing out.
+        self.showing: dict[str, Any] | None = None
+        #: How many changes the page is being asked to take back.
+        self.undo: int = 0
 
     def current_spec(self) -> dict[str, Any]:
         return {"kind": self.design.kind, "design_id": self.design.design_id,
@@ -470,6 +845,7 @@ class _State:
     def record(self, tool: str, result: dict[str, Any], *, ok: bool = True) -> dict[str, Any]:
         summary = result.get("summary") or result.get("error") or tool
         self.trace.append({"tool": tool, "ok": ok, "summary": str(summary)[:500]})
+        _note(self.turn, f"{DOING.get(tool, tool)}: {str(summary)[:120]}", ok=ok)
         return result
 
     def _power_part(self, kind: str, fields: dict[str, Any], record: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -553,6 +929,86 @@ class _State:
         raise ValueError("a power part is a store, a motor, a panel or a control")
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool == "save_design":
+            import workshop_store
+            from workshop_api_core import _store
+            name = " ".join(str(args.get("name") or "").split())[:160]
+            if not name:
+                raise ValueError("a saved design needs a name")
+            record = workshop_store.save(_store(self.app), self.design,
+                                         label=name, world_revision=None)
+            return self.record(tool, {
+                "summary": f"saved as {record['label']!r} ({record['design_id']}), "
+                           f"revision {record['revision']}",
+                "design_id": record["design_id"], "revision": record["revision"],
+                "label": record["label"]})
+
+        if tool == "list_saved_designs":
+            import workshop_store
+            from workshop_api_core import _store
+            rows = workshop_store.list_saved(_store(self.app), limit=40)
+            return self.record(tool, {
+                "summary": f"{len(rows)} saved" if rows else "nothing has been saved yet",
+                "saved": [{"design_id": r.get("design_id"), "name": r.get("label"),
+                           "kind": r.get("kind"), "times_saved": r.get("revision"),
+                           "saved_at": r.get("saved_at")} for r in rows]})
+
+        if tool == "open_saved_design":
+            import workshop_store
+            from workshop_api_core import _store
+            design_id = str(args.get("design_id") or "")
+            record, design = workshop_store.load(_store(self.app), design_id)
+            # The candidate the API owns is replaced in place, the same way an
+            # edit replaces it, so the page draws what came back without any
+            # second route through the server.
+            self.design = design
+            self.overrides = workshop_components.checked_overrides(
+                record.get("component_overrides") or design.lineage.get("component_overrides") or {})
+            self.base = assemble(str(record["kind"]), design_id=str(record["design_id"]),
+                                 purpose=(str(record.get("purpose")) if record.get("purpose") else None),
+                                 parameters=dict(record.get("parameters") or {}))
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed = [part.name for part in self.design.parts]
+            return self.record(tool, {
+                "summary": f"opened {record.get('label') or design_id}: "
+                           f"{len(self.design.parts)} parts",
+                "design_id": design_id, "name": record.get("label"), "kind": record["kind"]})
+
+        if tool == "take_it_back":
+            # The bench keeps every state of the session and this turn does not,
+            # so the page does the undoing. What comes back here is the
+            # instruction; the page carries it out when the turn lands.
+            steps = max(1, min(20, int(args.get("steps") or 1)))
+            self.undo = steps
+            return self.record(tool, {
+                "summary": f"taking back the last {steps} change" + ("" if steps == 1 else "s"),
+                "steps": steps})
+
+        if tool == "ask_the_person":
+            # A question is not work done to the design, so it ends the turn
+            # rather than going round the loop again. What it leaves behind is
+            # read by _model_turn, which stops there.
+            question = " ".join(str(args.get("question") or "").split())[:400]
+            if not question:
+                raise ValueError("a question needs asking in words")
+            options = []
+            for raw in (args.get("options") or [])[:6]:
+                label = " ".join(str((raw or {}).get("label") or "").split())[:120]
+                if not label:
+                    continue
+                why = " ".join(str((raw or {}).get("why") or "").split())[:160]
+                options.append({"label": label, **({"why": why} if why else {})})
+            if len(options) < 2:
+                raise ValueError("ask_the_person needs at least two answers they can click; "
+                                 "an open question is what this tool exists to avoid")
+            self.asking = {"question": question, "options": options,
+                           "several": bool(args.get("several")),
+                           # Writing their own is never taken away. It is what
+                           # makes a suggested answer a suggestion.
+                           "allow_other": True}
+            return self.record(tool, {"summary": question,
+                                      "options": [o["label"] for o in options]})
+
         if tool == "inspect_design":
             measured = self.design.measure()
             return self.record(tool, {
@@ -603,9 +1059,10 @@ class _State:
             if len(size) != 3 or len(centre) != 3:
                 raise ValueError("size_m and center_m are each three numbers, in metres")
             role = str(args.get("role") or "beam")
+            shape, turn, size = _round_along(args.get("round_along"), size)
             new = WirePart(name=str(args.get("name") or ""), role=role, size_m=tuple(size),
                            center_m=tuple(centre), material=str(args.get("material") or "oak"),
-                           rotation_deg=(0.0, 0.0, 0.0), shape="box", family=role)
+                           rotation_deg=turn, shape=shape, family=role)
             joint = None
             if args.get("fasten_to"):
                 joint = {"to": str(args["fasten_to"]), "kind": str(args.get("kind") or "fixed")}
@@ -711,6 +1168,56 @@ class _State:
                 "machines": {k: v for k, v in described.items() if k != "says"},
                 "note": "Whether it is wired to anything real is check_validity's answer, not this one.",
             })
+
+        if tool == "find_the_limit":
+            changing = str(args.get("changing") or "")
+            held = {k: v for k, v in args.items()
+                    if k not in ("changing", "over", "seconds") and v is not None}
+            held.pop(changing, None)
+            found = test_room.sweep(
+                self.app, {"kind": self.design.kind, "design_id": self.design.design_id,
+                           "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
+                           "component_overrides": self.overrides},
+                changing=changing, over=args.get("over") or (),
+                seconds=float(args.get("seconds", 3.0)), **held)
+            # The run worth looking at is played over the object, as one run is.
+            self.showing = found.get("playback")
+            return self.record(tool, {"summary": found["says"][:400], "sweep": changing,
+                                      "runs": [{k: v for k, v in row.items() if k != "says"}
+                                               for row in found["runs"]],
+                                      "changed_at": found["changed_at"],
+                                      "watching": found["watching"]})
+
+        if tool == "try_it_in_a_room":
+            answer = test_room.try_it(
+                self.app, {"kind": self.design.kind, "design_id": self.design.design_id,
+                           "purpose": self.design.purpose, "parameters": dict(self.design.parameters),
+                           "component_overrides": self.overrides},
+                seconds=float(args.get("seconds", 10.0)), day=args.get("day"),
+                items=args.get("items") or (), add=args.get("add") or (),
+                turn_on=bool(args.get("turn_on", True)),
+                load_kg=float(args.get("load_kg") or 0.0), on=str(args.get("on") or "top"),
+                from_m=float(args.get("from_m") or 0.0),
+                drop_m=float(args.get("drop_m") or 0.0), slide_m_s=float(args.get("slide_m_s") or 0.0),
+                strike=args.get("strike"), do=args.get("do") or (), record=True)
+            # The person watches it. "Ask me to drop a bowling ball on the item"
+            # and it will "do that and SHOW you": the recording goes to the page
+            # and is played over the object, with one button back to the build.
+            # It is deliberately not handed to the model -- sixty frames of body
+            # poses is not something to reason over, and it would crowd out the
+            # conversation it is meant to be part of.
+            self.showing = answer.get("playback")
+            return self.record(tool, {"summary": answer["says"][:400], "ran_for_s": answer["ran_for_s"],
+                                      "did": answer["did"], "sky": answer["sky"], "made": answer["made"],
+                                      "in_the_room": answer["in_the_room"],
+                                      "worked": answer["worked"], "controls": answer["controls"],
+                                      "where_everything_ended": {
+                                          name: body["at_m"] for name, body in
+                                          list(answer["ended"]["bodies"].items())[:24]},
+                                      "broke": answer["broke"], "dented": answer["dented"],
+                                      "fell_over": answer["fell_over"],
+                                      "stores": answer["ended"]["stores"], "panels": answer["ended"]["panels"],
+                                      "programs": answer["ended"]["programs"]})
 
         if tool == "check_validity":
             answer = workshop_fitting.check_validity(self.base, self.overrides, cell_m=0.04,
@@ -893,20 +1400,48 @@ def _carry(response: dict[str, Any]) -> list[dict[str, Any]]:
             if item.get("type") in {"function_call", "message"}]
 
 
+def _what_it_is_looking_at(state: _State) -> str:
+    """The design as it stands, so a simple edit needs no round trip to learn it.
+
+    Every turn used to open by calling inspect_design, because the request said
+    nothing about what was on the bench. Two to three seconds to be told five
+    part names. They fit in a dozen lines.
+    """
+    measured = state.design.measure()
+    rows = [f"ON THE BENCH: a {state.design.kind} called {state.design.design_id}, "
+            f"{len(state.design.parts)} parts, {measured.get('mass_kg')} kg"
+            + (f", for: {state.design.purpose}" if state.design.purpose else ""),
+            f"SELECTED IN THE UI: {state.selected_name or 'nothing'}",
+            "PARTS (name, what it is, what it is made of, size in mm, middle in mm):"]
+    for part in state.design.parts:
+        rows.append("  {}, {}, {}, {}, {}".format(
+            part.name, part.role, part.material,
+            "x".join(f"{v * 1000:.0f}" for v in part.size_m),
+            " ".join(f"{v * 1000:.0f}" for v in part.center_m)))
+    rows.append("This is the design as it stands. Inspect further only when you need "
+                "something that is not here -- physics, joints, the library, the rack.")
+    return "\n".join(rows)
+
+
 def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str, str]]) -> str:
-    selected = state.selected_name or "none"
-    instructions = SYSTEM + f"\nCURRENT UI SELECTION: {selected}\nCURRENT ASSEMBLY: {state.design.kind}\n"
+    # The instructions and the tools are the same bytes every turn, so they stay
+    # cached; everything that varies goes after them, in `input`. They used to
+    # end with the selection and the assembly kind, which put two changing lines
+    # in front of 5,400 tokens of tool schema.
+    instructions = SYSTEM
     inputs: list[dict[str, Any]] = list(history)
+    inputs.append({"role": "user", "content": _what_it_is_looking_at(state)})
     inputs.append({"role": "user", "content": message})
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
         "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-        "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
+        "reasoning": {"effort": "medium"},
         "instructions": instructions, "input": inputs,
         "tools": tools, "tool_choice": "auto",
     }
+    _note(state.turn, "thinking about what you asked")
     response = _call_model(app, payload)
-    calls_used = 0
+    calls_used, began = 0, time.monotonic()
     for _round in range(MAX_TOOL_ROUNDS):
         calls = [output for output in response.get("output") or [] if output.get("type") == "function_call"]
         if not calls:
@@ -930,16 +1465,47 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         for call in calls:
             calls_used += 1
             if calls_used > MAX_TOOL_CALLS:
-                raise ValueError("Workshop chat exceeded its bounded tool-call budget")
+                return _wrap_up(app, state, instructions, inputs + _carry(response),
+                                f"after {calls_used - 1} tool calls")
             name = str(call.get("name") or "")
+            # Measured on "make the table out of glass": 142 seconds, 34 round
+            # trips, and the edit itself was done at round 2. The other 129
+            # seconds were three refusals repeated NINE TIMES EACH -- program_use
+            # told "inspect cannot say ['distance_m', 'speed_m_s']" nine times,
+            # and asked again with the same two fields nine times. Being told
+            # the same thing twice and trying again is not a model problem this
+            # end can argue with; it is a loop that lets it.
+            already = state.refused.get(name, 0)
+            if already >= REFUSALS_A_TOOL:
+                outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
+                                "output": json.dumps({"ok": False, "error": (
+                                    f"{name} has been refused {already} times this turn and was "
+                                    "not run again. Leave it alone, finish anything else you "
+                                    "meant to do, and say plainly what you could not do.")})})
+                continue
             try:
                 args = json.loads(call.get("arguments") or "{}")
                 if not isinstance(args, dict): raise ValueError("tool arguments must be an object")
                 result = state.execute(name, args)
                 output = {"ok": True, **result}
+                # A question ends the turn where it was asked. Going round again
+                # would have the model answer its own question.
+                if state.asking is not None:
+                    return str(state.asking["question"])
             except Exception as problem:
                 state.trace.append({"tool": name or "unknown", "ok": False, "summary": str(problem)[:500]})
+                state.refused[name] = state.refused.get(name, 0) + 1
+                again = state.refused[name]
                 output = {"ok": False, "error": str(problem)}
+                if again >= 2:
+                    output["stop"] = (f"That is {again} refusals from {name} in this turn. Read the "
+                                      "message and change what it names, or leave the tool alone: "
+                                      "asking again the same way will be refused again.")
+                if sum(state.refused.values()) >= REFUSALS_A_TURN:
+                    outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
+                                    "output": json.dumps(output, allow_nan=False)})
+                    return _wrap_up(app, state, instructions, inputs + _carry(response) + outputs,
+                                    f"after {sum(state.refused.values())} refused tool calls")
             outputs.append({"type": "function_call_output", "call_id": call.get("call_id"),
                             "output": json.dumps(output, allow_nan=False)})
         # Carry the turn forward in `input` rather than pointing at a stored
@@ -951,14 +1517,52 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
         # request already sets store=False, so nothing was being kept to point
         # at in any case.
         inputs = inputs + _carry(response) + outputs
+        _note(state.turn, "thinking about what that told it")
+        if time.monotonic() - began > MAX_TURN_SECONDS:
+            return _wrap_up(app, state, instructions, inputs,
+                            f"after {MAX_TURN_SECONDS:.0f} seconds")
         payload = {
             "model": getattr(app, "model", "gpt-5-mini"), "store": False,
-            "max_output_tokens": MAX_OUTPUT_TOKENS, "reasoning": {"effort": "medium"},
+            "reasoning": {"effort": "medium"},
             "instructions": instructions,
             "input": inputs, "tools": tools, "tool_choice": "auto",
         }
         response = _call_model(app, payload)
-    raise ValueError("Workshop chat could not finish within its bounded reasoning loop")
+    return _wrap_up(app, state, instructions, inputs, f"after {MAX_TOOL_ROUNDS} rounds of tools")
+
+
+def _wrap_up(app: Any, state: _State, instructions: str, inputs: list[dict[str, Any]],
+             why: str) -> str:
+    """Stop using tools and answer with what the turn already has.
+
+    This replaces raising. A turn that has gone long has usually DONE the work
+    -- it has inspected the design and made the edits -- and is going round
+    again over something small; throwing it away told the person their request
+    had failed when their design had already changed. One more call, with the
+    tools off, gets the answer out of a model that has the whole conversation
+    in front of it.
+    """
+    asked = inputs + [{"role": "user", "content":
+                       "Stop here and answer me now, in words, with no further tool calls. "
+                       "Say what you changed and what you did not, and if something is still "
+                       "undecided, ask me about it with concrete options."}]
+    try:
+        last = _call_model(app, {
+            "model": getattr(app, "model", "gpt-5-mini"), "store": False,
+            "reasoning": {"effort": "low"}, "instructions": instructions,
+            "input": asked, "tools": [], "tool_choice": "none"})
+        text = _extract_text(last)
+        if text:
+            return text
+    except Exception:
+        log.exception("The Workshop chat's wrap-up call did not answer either")
+    # Even that did not speak. Say what the room can see for itself rather than
+    # an error: the tools that ran are a true account of the turn.
+    did = ", ".join(dict.fromkeys(row["tool"] for row in state.trace)) or "nothing"
+    return (f"I was still working {why} and had to stop. What I ran: {did}. "
+            + ("The changes I made are in the design; ask me to carry on and I will pick it up."
+               if state.changed else
+               "Nothing in the design was changed. Ask me again, more narrowly."))
 
 
 def _role_from_message(message: str, design: Any) -> str | None:
@@ -1025,7 +1629,7 @@ def _fallback_turn(state: _State, message: str) -> str:
 
 def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
             candidate: dict[str, Any], materials: list[str], library: list[dict[str, Any]],
-            history: Any = None) -> dict[str, Any]:
+            history: Any = None, turn: str | None = None) -> dict[str, Any]:
     """Run one conversational Workshop turn and atomically update ``candidate``."""
     # Browser chat may include recent transcript plus the current request. Keep a
     # generous bounded envelope, and keep its tail so CURRENT USER REQUEST (sent
@@ -1034,17 +1638,29 @@ def propose(app: Any, *, message: str, selected_part: dict[str, Any] | None,
     if not message: raise ValueError("Workshop chat needs a message")
     selected_name = str((selected_part or {}).get("name") or "") or None
     original = deepcopy(candidate)
-    state = _State(app, candidate, selected_name, materials, library)
+    state = _State(app, candidate, selected_name, materials, library, turn)
     try:
         if getattr(app, "api_key", ""):
             reply = _model_turn(app, state, message=message, history=_history(history))
         else:
             reply = _fallback_turn(state, message)
-    except Exception:
+    except Exception as problem:
         candidate.clear(); candidate.update(original)
+        _note(turn, f"that did not work: {problem}", done=True, ok=False)
         raise
+    finally:
+        _note(turn, "", done=True)
     return {
         "reply": reply[:4000],
+        # What it is waiting to be told, with answers to click. The page draws
+        # them; picking one sends it back as the next message.
+        "asking": state.asking,
+        # A run to watch, if it tried the thing out. The page plays it over the
+        # object and offers the way back to the build.
+        "showing": state.showing,
+        # Changes to take back. The page holds the session's history, so it is
+        # the page that walks back through it.
+        "undo": state.undo,
         # The richer agent already applied its bounded edits to candidate. The
         # outer Workshop API sees `none` and simply returns that final candidate.
         "action": "none", "scope": "this", "material": None, "library_item_id": None,

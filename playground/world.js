@@ -6159,7 +6159,27 @@ function showNotebook(book, fresh) {
       notebookSeen.add(e.id);
     }
   }
-  for (const t of book.techniques || []) rows.push(["known", `You know ${t.name}.`]);
+  for (const t of book.techniques || []) {
+    rows.push(["known", `You know ${t.name}.`]);
+    // Said once, when it happens. Learning something and being told nothing
+    // is the same as not learning it.
+    if (fresh && !notebookSeen.has(`t:${t.id}`)) say("world", `Notebook: you know ${t.name} now.`);
+    notebookSeen.add(`t:${t.id}`);
+  }
+  // What is one step away, and what it would open. Without this a person can
+  // be one demonstration short of a capability and never know it exists.
+  for (const step of book.next || []) {
+    if (!step.within_reach) {
+      rows.push(["later", `${step.name} needs ${step.first_learn.join(", ")} first.`]);
+      continue;
+    }
+    const way = (step.earned_by || []).find((e) => !e.done) || (step.earned_by || [])[0];
+    const opens = (step.would_open || []).length
+      ? ` It would let you make ${step.would_open.length} thing`
+        + `${step.would_open.length === 1 ? "" : "s"} you cannot make yet.`
+      : "";
+    rows.push(["next", `Next: ${step.name}. ${way ? way.says : ""}${opens}`]);
+  }
   for (const b of book.blocked || []) {
     rows.push(["blocked", `Making ${b.name.toLowerCase()} yourself is blocked: ${b.because.join("; ")}.`]);
   }
@@ -6170,7 +6190,9 @@ function showNotebook(book, fresh) {
     li.textContent = text;
     return li;
   }));
-  $("notebook-empty").hidden = (book.designs || []).length > 0;
+  // There is always a next rung, so the panel is not empty just because
+  // nothing has been tried yet.
+  $("notebook-empty").hidden = (book.designs || []).length > 0 || (book.next || []).length > 0;
 }
 
 function actionsFor(name) {
@@ -6595,7 +6617,10 @@ async function open({ again = false } = {}) {
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
     world.scene = data.scene || null;
-    $("manufacture-link").href="/fabrication?scene="+encodeURIComponent(world.scene||"world");   // what the server says it opened
+    // The fabrication page is on its way out with the rest of the pages that are
+    // not the world or the Workshop, so its link may not be here.
+    const manufacture=document.getElementById("manufacture-link");
+    if(manufacture)manufacture.href="/fabrication?scene="+encodeURIComponent(world.scene||"world");
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;

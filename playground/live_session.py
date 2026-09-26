@@ -1232,6 +1232,18 @@ class Live:
                     problems.append(f"the program {name} has no controller for its "
                                     f"{'left' if left is None else 'right'} wheel")
                     continue
+                # A "sit" program also says what it goes to, how near it wants
+                # to be, and the controller and angle of the pose it holds
+                # there. It drives, so it comes through here with the rest.
+                if kind == "sit":
+                    pose = control_ids.get(str(program.get("pose"))) if program.get("pose") else None
+                    if program.get("pose") and pose is None:
+                        problems.append(f"the program {name} has no controller to hold its pose with")
+                        continue
+                    extra = {"toward": str(program.get("toward", "")),
+                             "close_m": float(program.get("close_m", 0.0)),
+                             "pose": int(pose or 0),
+                             "pose_deg": float(program.get("pose_deg", 0.0))}
             try:
                 answer = session.send(op="program", name=name, kind=kind,
                                       left=left, right=right, body=str(program.get("body", "")),

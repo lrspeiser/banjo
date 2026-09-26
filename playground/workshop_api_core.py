@@ -8,6 +8,7 @@ and the material pricebook live in ``workshop_library``.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 import sys
 import threading
@@ -29,6 +30,7 @@ import workshop_chat  # noqa: E402
 import workshop_library  # noqa: E402
 import workshop_store  # noqa: E402
 
+log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
 SEED_SWEEPS: dict[str, dict[str, list[Any]]] = {
@@ -203,6 +205,15 @@ def library(app: Any = None, body: Any = None,
             return {"schema": WORKSHOP_SCHEMA,
                     "rack": workshop_library.set_rack(
                         app, str(body.get("material") or ""), float(body.get("mass_kg")))}
+        if action == "set_goods":
+            # The other rack: what the workshop holds of the goods machines are
+            # made of -- copper, copper wire -- which the world fills by mining
+            # and smelting and which a machine's power parts spend when it is
+            # made. Settable here for the same reason the material rack is: a
+            # page, and a test, has to be able to say what is on the shelf.
+            return {"schema": WORKSHOP_SCHEMA,
+                    "goods": workshop_library.set_goods(
+                        app, str(body.get("substance") or ""), float(body.get("mass_kg")))}
         if action == "check_validity":
             import workshop_fitting
             kind = _kind(body, "custom")
@@ -253,6 +264,52 @@ def library(app: Any = None, body: Any = None,
                 preset_id=(str(body["preset_id"]) if body.get("preset_id") else None))
             return {"schema": WORKSHOP_SCHEMA, "bench_preset": preset,
                     "bench_presets": workshop_library.list_bench_presets(app)}
+
+        # ------------------------------------------------------------------
+        # Memory: what was saved before, what it was called, and throwing it
+        # away. Fourteen routes and not one of them removed anything, and
+        # every version of every saved component was written and could not be
+        # read back. These are the readers and the removers.
+        # ------------------------------------------------------------------
+        if action == "versions":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "versions": workshop_library.list_versions(app, str(body.get("item_id") or ""))}
+        if action == "open_version":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "version": workshop_library.load_version(app, str(body.get("item_id") or ""),
+                                                             int(body.get("version") or 0))}
+        if action == "rename_component":
+            item = workshop_library.rename_item(app, str(body.get("item_id") or ""),
+                                                str(body.get("name") or ""))
+            return {"schema": WORKSHOP_SCHEMA, "item": item,
+                    "personal_library": workshop_library.list_items(app)}
+        if action == "delete_component":
+            gone = workshop_library.delete_item(app, str(body.get("item_id") or ""))
+            return {"schema": WORKSHOP_SCHEMA, "deleted": gone,
+                    "personal_library": workshop_library.list_items(app)}
+        if action == "delete_bench_preset":
+            gone = workshop_library.delete_bench_preset(app, str(body.get("preset_id") or ""))
+            return {"schema": WORKSHOP_SCHEMA, "deleted": gone,
+                    "bench_presets": workshop_library.list_bench_presets(app)}
+        if action == "rename_design":
+            record = workshop_store.rename(_store(app), str(body.get("design_id") or ""),
+                                           str(body.get("name") or ""))
+            return {"schema": WORKSHOP_SCHEMA, "saved": {k: record.get(k) for k in
+                                                         ("design_id", "label", "revision", "kind")},
+                    "saved_designs": workshop_store.list_saved(_store(app))}
+        if action == "delete_design":
+            gone = workshop_store.delete(_store(app), str(body.get("design_id") or ""))
+            return {"schema": WORKSHOP_SCHEMA, "deleted": gone,
+                    "saved_designs": workshop_store.list_saved(_store(app))}
+        if action == "results":
+            return {"schema": WORKSHOP_SCHEMA,
+                    "results": workshop_library.results_for(
+                        app, design_id=body.get("design_id") or None,
+                        fingerprint=body.get("fingerprint") or None)}
+        # An action nobody recognises used to fall through and hand back the
+        # whole catalogue, so a typo looked like it had worked.
+        if action:
+            raise ValueError(f"the library does not do {action!r}")
     return {
         "schema": WORKSHOP_SCHEMA,
         "families": ComponentLibrary().described(),
@@ -322,7 +379,8 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
         book, items = workshop_library.pricebook(app), workshop_library.list_items(app)
         proposal = workshop_chat.propose(
             app, message=str(chat.get("message") or ""), selected_part=part, candidate=wire,
-            materials=[m["material"] for m in book["materials"]], library=items)
+            materials=[m["material"] for m in book["materials"]], library=items,
+            turn=(str(chat.get("turn"))[:64] if chat.get("turn") else None))
         action = proposal["action"]
         if action == "none":
             return {"schema": WORKSHOP_SCHEMA, "kind": kind,
@@ -414,9 +472,34 @@ def more_like_this(app: Any, body: Any) -> dict[str, Any]:
             "bench_tests": workshop_bench.catalog(kind), "generation": generation, "candidates": made}
 
 
+def _remember_result(app: Any, design: Any, answer: dict[str, Any]) -> None:
+    """Keep what the bench just said, against the fingerprint of what it ran on.
+
+    Never fatal: a test that ran is a test that ran, and failing to write it
+    down must not turn a good answer into an error the person sees instead.
+    """
+    bench = answer.get("bench") or {}
+    fingerprint = answer.get("matter_physics_hash") or answer.get("fingerprint")
+    if app is None or not isinstance(bench, dict) or not fingerprint:
+        return
+    verdict = (bench.get("acceptance") or {}).get("status") or bench.get("status") or "measured"
+    try:
+        # What this exact shape was told before, read BEFORE this run is added.
+        bench["earlier"] = workshop_library.results_for(
+            app, design_id=str(design.design_id), fingerprint=str(fingerprint), limit=5)
+        workshop_library.keep_result(
+            app, design_id=str(design.design_id), fingerprint=str(fingerprint),
+            test_name=str(bench.get("test") or ""), verdict=str(verdict),
+            says=str(bench.get("says") or ""), requested=bench.get("requested"),
+            measured=bench.get("measured"))
+        bench["kept_against"] = str(fingerprint)
+    except Exception:
+        log.exception("A bench result could not be kept; the run itself stands")
+
+
 def plan(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
-    design, _ = workshop_components.design_from_spec(
+    design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": str(body.get("design_id") or kind), "parameters": _parameters(body),
          "component_overrides": body.get("component_overrides") or {}})
     try:
@@ -461,7 +544,28 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         answer["trial"] = workshop_trials.run_declared_static_load(
             app, design, cell_size_m=cell, duration_s=duration, record_trace=body.get("record_trace", True))
     if body.get("bench_test") is not None:
-        answer["bench"] = workshop_bench.run(app, design, body.get("bench_test"))
+        answer["bench"] = workshop_bench.run(
+            app, design, body.get("bench_test"),
+            candidate={"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
+                       "parameters": dict(design.parameters), "component_overrides": overrides})
+        # Kept against the exact geometry it was run on, so "did this pass" has
+        # an answer tomorrow and an edit to a leg does not inherit yesterday's.
+        _remember_result(app, design, answer)
+    if body.get("try_in_a_room") is not None:
+        # The Workshop's little world: ground, gravity and a sky, and the thing
+        # installed into it the way the world installs it.
+        import workshop_test_room
+        how = body["try_in_a_room"] if isinstance(body["try_in_a_room"], dict) else {}
+        answer["room"] = workshop_test_room.try_it(
+            app, {"kind": kind, "design_id": design.design_id, "purpose": design.purpose,
+                  "parameters": dict(design.parameters), "component_overrides": overrides},
+            seconds=float(how.get("seconds", 10.0)), sun=how.get("sun"), day=how.get("day"),
+            items=how.get("items") or (), add=how.get("add") or (),
+            turn_on=bool(how.get("turn_on", True)),
+            load_kg=float(how.get("load_kg") or 0.0), on=str(how.get("on") or "top"),
+            drop_m=float(how.get("drop_m") or 0.0), slide_m_s=float(how.get("slide_m_s") or 0.0),
+            strike=how.get("strike"), do=how.get("do") or (),
+            record=bool(how.get("record", True)))
     return answer
 
 

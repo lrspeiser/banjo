@@ -324,9 +324,15 @@ class VisibleSimulationEngine(unittest.TestCase):
         # The product is one fused body, and it is still a top on four legs: what
         # a blow or a landing parts is the joint, and each leg comes away whole
         # -- all of it but the one cell let into the top -- whichever way it broke.
+        #
+        # The glass table falls 2 m, not the 4 it did. Glass breaks at the
+        # 45 MPa EN 572-1 gives annealed float now rather than at twice that
+        # strain, and at 4 m the legs no longer come away, they crumble: 15, 15,
+        # 14, 14 cells of an 18-cell leg, with the rest in chips. Measured, 1 to
+        # 3 m all give four whole legs and 4 m gives none.
         import workshop_motion
         for material, test, config in (("oak", "impact_product", {"striker_kg": 20.0, "speed_m_s": 15.0}),
-                                       ("glass", "drop_product", {"height_m": 4.0, "duration_s": 1.7}),
+                                       ("glass", "drop_product", {"height_m": 2.0, "duration_s": 1.7}),
                                        ("oak", "drop_product", {"height_m": 10.0, "duration_s": 2.2})):
             with self.subTest(material=material, test=test):
                 design = assemble("table", parameters={"material": material})

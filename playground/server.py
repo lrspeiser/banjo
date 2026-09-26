@@ -296,6 +296,25 @@ class Playground:
             import workshop_library
             workshop_library.add_goods(app, substance, kg)
         self.brains.on_rack = onto_rack
+        # And what is LEARNED by watching a batch worked: a recipe the
+        # knowledge graph has a machine for becomes evidence, and evidence can
+        # earn the technique (docs/knowledge-and-progression.md, 7.1). Watching
+        # a smelter is how smelting is learned; nothing else teaches it.
+        self.batches = 0
+        def made(recipe, out, used, app=self):
+            app.batches += 1
+            at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            session = getattr(getattr(app, "live", None), "session", None)
+            evidence = progression.evidence_from_batch(
+                recipe, out, used, session_id=str(getattr(session, "id", "room")),
+                at=at, batch=app.batches)
+            if evidence is None:
+                return
+            journal = journal_of(app)
+            if journal.add_evidence(evidence):
+                for learned in progression.earn(journal, registry(), at):
+                    log.info("banjo: learned %s by watching %s", learned, recipe)
+        self.brains.on_made = made
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -1308,6 +1327,12 @@ class Handler(BaseHTTPRequestHandler):
                 app.knowledge=lambda app=app: knowledge_view(app)
                 app.registry=registry
                 return self.send(getattr(workshop_tabs,path.rsplit("/",1)[1])(app))
+            # What a chat turn is doing WHILE it does it. A turn is one POST
+            # that answers at the end; this is how the page says what is going
+            # on in the meantime instead of showing a spinner for half a minute.
+            if path=="/api/workshop/progress":
+                import workshop_chat
+                return self.send(workshop_chat.progress(str((body or {}).get("turn") or "")))
             # The fracture lab runs a lane executable synchronously under its
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
@@ -1352,6 +1377,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/world/workshop/"):
                 operations = {"/api/world/workshop/context": workshop_install.context,
                               "/api/world/workshop/preview": workshop_install.preview,
+                              # Which design made this body, so a thing standing
+                              # in the world can be opened on the bench again.
+                              "/api/world/workshop/what_made": workshop_install.what_made,
                               "/api/world/workshop/commit": workshop_install.commit}
                 if path in operations:
                     try:
@@ -2893,6 +2921,11 @@ def journal_of(app):
     if journal is None:
         store=getattr(app,"store",None)
         journal=app.journal=progression.Journal(Path(store.folder)/"journal.json" if store is not None else None)
+        # What the starting area teaches, once, to a notebook that holds
+        # nothing. start.json has had the field since the registries were
+        # written and nothing read it.
+        progression.teach_the_start(journal,registry(),
+                                    time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()))
     return journal
 
 
@@ -2929,6 +2962,11 @@ def hear(app,session,reply):
             continue
         evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(),at=at)
         if evidence is not None: journal.add_evidence(evidence)
+    # And what that has now earned them. Learning is the only thing here that
+    # was missing: evidence has been piling up in the journal since increment 2
+    # and no code path could turn any of it into a capability.
+    for learned in progression.earn(journal,registry(),at):
+        logging.getLogger("banjo").info("banjo: learned %s",learned)
 
 
 def note_strike(app,answer):

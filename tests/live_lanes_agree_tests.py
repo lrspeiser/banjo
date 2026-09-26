@@ -76,6 +76,17 @@ def places(state: dict) -> dict[str, tuple[float, float, float]]:
     return {b["name"]: tuple(b["position_m"]) for b in state["bodies"]}
 
 
+def it_or_its_pieces(state: dict, name: str) -> dict[str, tuple[float, float, float]]:
+    """Where a body is, or where the pieces of it are.
+
+    A break renames what it makes, so a shard let go from a height and landing
+    hard enough to go again is not in the world under the name it went up with.
+    Both lanes have to agree on the names as well as the places.
+    """
+    return {n: at for n, at in places(state).items()
+            if n == name or n.startswith(name + " piece")}
+
+
 def speeds(state: dict) -> dict[str, float]:
     return {b["name"]: max(abs(v) for v in b["velocity_m_s"]) for b in state["bodies"]}
 
@@ -267,12 +278,22 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
             # bouncing compared two chaotic trajectories, which differed by
             # 9 mm and said nothing about either lane.
             a, b = run_to(out, 4.0), run_to(here, 4.0)
-            fell_out = places(a)[ball][1]
+            # What was let go, or what it became: dropped from 1.4 m it can
+            # arrive well over the bar its material sets, and glass breaks at
+            # the 45 MPa EN 572-1 gives annealed float now rather than at twice
+            # it. Both lanes must make the same pieces and put them in the same
+            # places, which is a stronger agreement than one body's height.
+            mine, theirs = it_or_its_pieces(a, ball), it_or_its_pieces(b, ball)
+            self.assertTrue(mine, f"{ball} is in the world under no name at all")
+            self.assertEqual(sorted(mine), sorted(theirs),
+                             "the lanes made different pieces of what was let go")
+            fell_out = min(at[1] for at in mine.values())
             self.assertLess(fell_out, 1.3, "the ball did not fall after being let go")
-            self.assertLess(speeds(a)[ball], 0.6,
+            self.assertLess(max(speeds(a)[n] for n in mine), 0.6,
                             "the ball is moving fast enough to still be bouncing, so "
                             "this would compare a trajectory rather than a place")
-            self.assertAlmostEqual(fell_out, places(b)[ball][1], delta=TOLERANCE_M,
+            self.assertAlmostEqual(fell_out, min(at[1] for at in theirs.values()),
+                                   delta=TOLERANCE_M,
                                    msg="the two lanes put it to rest in different places")
         finally:
             out.close(); here.close()

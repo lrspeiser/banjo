@@ -16,7 +16,11 @@ def checked_step(value):
     do = value["do"]
     allowed = {"do"} if do in ("inspect", "place") else {"do", "distance_m", "speed_m_s"}
     if set(value) - allowed:
-        raise ValueError(f"{do} cannot say {sorted(set(value) - allowed)}")
+        extra = sorted(set(value) - allowed)
+        raise ValueError(
+            f"{do} cannot say {extra}: leave {' and '.join(extra)} out of this step and send "
+            f'{{"do": "{do}"}} on its own. Only strike and push_forward carry a distance and a '
+            "speed.")
     out = {"do": do}
     if do not in ("inspect", "place"):
         limits = (0.05, 0.8, 0.35, 0.1, 5.0, 3.0) if do == "strike" else (0.05, 1.5, 0.4, 0.1, 1.5, 0.4)
