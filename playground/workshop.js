@@ -1090,8 +1090,10 @@ function installBench() {
   // The notice is what say() writes to, and the editor put it in the top bar
   // before this ran. Rebuilding the bar must not take it away.
   const notice = $("#ws-notice");
+  // The tabs on top (Lab, Inventory, Skills, Recipes) stay through the rebuild.
+  const tabs = $(".ws-tabs");
   top.replaceChildren(
-    make("h1", {}, "Workshop"), products, make("span", { class:"ws-spacer" }),
+    make("h1", {}, "Workshop"), ...(tabs ? [tabs] : []), products, make("span", { class:"ws-spacer" }),
     status, checkButton, madeButton, make("a", { href:"/world" }, "Back to the world"), keep);
   if (notice) top.append(notice);
   if (picker) {
@@ -2329,6 +2331,57 @@ stage.visibleGeometry = () => {
   }
   return {points,meshes:group.children.filter(c=>c.isMesh || c.isLineSegments).length,clipped:renderer.clippingPlanes.length};
 };
+
+// ---------------------------------------------------------------------------
+// The tabs on top: Lab (the bench), Inventory, Skills, Recipes
+// (workshop_tabs). Each is read when it is opened and spends nothing.
+// ---------------------------------------------------------------------------
+function tag(text, cls = "") { return make("span", { class: `ws-tag ${cls}`.trim() }, text); }
+function item(title, sub, cls = "") { const li = make("li", cls ? { class: cls } : {}); li.append(make("strong", {}, title)); if (sub) li.append(make("small", {}, sub)); return li; }
+function fill(id, rows, empty) { const root = $(id); root.replaceChildren(); if (!rows.length) root.append(item(empty)); for (const row of rows) root.append(row); }
+
+async function showInventory() {
+  const inv = await api("/api/workshop/inventory");
+  fill("#ws-inv-materials", inv.materials.map((r) => item(r.material, `${r.mass_kg} kg`)), "The rack is empty.");
+  fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
+  fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open on the bench"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "Nothing saved yet: save a design from the Lab.");
+  fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
+  fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
+}
+
+async function showSkills() {
+  const s = await api("/api/workshop/skills");
+  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} techniques known. A technique is earned by what the engine measured your own hands, or your machines, doing.` : "The world has no techniques to learn yet.";
+  fill("#ws-skills-techniques", s.techniques.map((t) => { const li = item(t.name, t.describes, t.known ? "unlocked" : t.within_reach ? "reach" : ""); li.append(tag(t.known ? "unlocked" : t.within_reach ? "within reach" : `needs ${t.needs.join(", ")}`, t.known ? "ok" : "")); for (const d of t.opens) li.append(tag(`opens ${d}`)); return li; }), "No techniques.");
+  fill("#ws-skills-designs", s.designs.map((d) => item(d.name, (d.demonstrated.length ? `demonstrated: ${d.demonstrated.join(", ")}. ` : "") + `${d.evidence.length} piece${d.evidence.length === 1 ? "" : "s"} of evidence`, d.demonstrated.length ? "unlocked" : "")), "Nothing demonstrated yet: use a tool of your own on the ground, or watch a machine work.");
+  fill("#ws-skills-blocked", s.blocked.map((b) => item(b.name, `${b.route}: ${(b.because || []).join("; ")}`)), "Nothing is blocked.");
+  $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
+}
+
+async function showRecipes() {
+  const r = await api("/api/workshop/recipes");
+  fill("#ws-recipes-templates", r.templates.map((t) => {
+    const li = item(t.name, t.problem ? `cannot be assembled: ${t.problem}` : `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`, t.problem ? "" : t.enough ? "enough" : "short");
+    for (const m of t.materials || []) li.append(tag(`${m.kg} kg ${m.material} (have ${m.held_kg})`, m.enough ? "ok" : "short"));
+    for (const g of t.goods || []) li.append(tag(`${g.kg} kg ${g.substance} (have ${g.held_kg})`, g.enough ? "ok" : "short"));
+    if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
+    const open = make("button", { type:"button", class:"ws-action" }, "Design it");
+    open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:t.name, generation:bench.generation + 1 })); $("#ws-archetype").value = t.name; });
+    li.append(open); return li;
+  }), "No templates.");
+  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
+  fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
+  const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
+}
+
+function showTab(name) {
+  for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
+  for (const pane of ["lab", "inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
+  if (name === "lab") resize();
+  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
+  if (loader) guard(null, loader);
+}
+for (const button of document.querySelectorAll(".ws-tabs button")) button.onclick = () => showTab(button.dataset.tab);
 
 async function start() {
   const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");

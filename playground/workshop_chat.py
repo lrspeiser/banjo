@@ -291,10 +291,11 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "description": "Put a store, motor, panel or control on the design. A MOTOR names the two "
                         "components its pin joins, exactly as a wheel and the mount it turns in -- it "
                         "must be a bearing, because a bond cannot turn -- and the store it draws on. A "
-                        "STORE sits in a component and holds joules. A PANEL sits on a component, faces "
-                        "the way that component faces, and charges a store. A CONTROL names a pin so a "
-                        "program can work it. Nothing is guessed: naming a joint that does not turn, or "
-                        "a store that is not there, comes back refused.",
+                        "STORE sits in a component (in) and holds joules: add it BEFORE a panel or a "
+                        "motor. A PANEL (a solar panel) sits on a component (on), charges a store (the "
+                        "design's one store if it has one), and becomes a glass plate of area_m2 on top "
+                        "of that component. A CONTROL names a pin so a program can work it. What is "
+                        "missing comes back said in words: do what it says and call again.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
                         "properties": {
                             "kind": {"type": "string", "enum": ["store", "motor", "panel", "control"]},
@@ -471,6 +472,86 @@ class _State:
         self.trace.append({"tool": tool, "ok": ok, "summary": str(summary)[:500]})
         return result
 
+    def _power_part(self, kind: str, fields: dict[str, Any], record: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """A power part checked against the design as it stands, and made
+        real where it is a thing (docs/workshop-mode.md, "Adding solar"): a
+        PANEL is a glass plate on top of the part it sits on -- put there if
+        the design has none of that name -- wired to the one store, or the
+        store named; a STORE sits in a part that is there; a MOTOR or a
+        CONTROL turns two parts that are there. What is missing is said in
+        plain words, with what to do about it."""
+        from mcp import workshop as w
+        parts = {p.name: p for p in self.design.parts}
+        names = ", ".join(sorted(parts)) or "nothing"
+
+        def a_part(name: Any, what: str) -> str:
+            name = str(name or "")
+            if name not in parts:
+                raise ValueError(f"{what} names {name!r}, and there is no part called that; the parts are {names}")
+            return name
+
+        if kind == "panel":
+            fields = dict(fields)
+            on = a_part(fields.get("on"), "a panel's `on`")
+            stores = [s.get("name") for s in record.get("stores") or []]
+            store = fields.get("store")
+            if not store:
+                if len(stores) == 1:
+                    store = fields["store"] = stores[0]
+                elif not stores:
+                    raise ValueError("A panel charges a battery, and this design has none. Add one first -- "
+                                     "add_power_part {kind: store, name: battery, in: <a part>, capacity_j, "
+                                     "charge_j, voltage_v} -- and then the panel")
+                else:
+                    raise ValueError(f"which store does the panel charge? Say store: one of {', '.join(map(str, stores))}")
+            elif store not in stores:
+                raise ValueError(f"the panel names the store {store!r}, and there is none; the stores are "
+                                 + (", ".join(map(str, stores)) or "none: add one first"))
+            area = float(fields.get("area_m2") or 0.2)
+            fields["area_m2"] = area
+            fields.setdefault("efficiency", 0.2)
+            name = str(fields.get("name") or "solar panel")
+            fields["name"] = name
+            if name not in parts:
+                # The plate itself, on top of the part, as the rover's is:
+                # square, of the panel's area, glass, fixed to what it sits on.
+                base = parts[on]
+                corners = base.corners_m()
+                top = max(c[1] for c in corners)
+                side = max(0.05, min(2.0, area ** 0.5))
+                plate = w.ComponentLibrary().make("solar-panel", name=name, material="glass",
+                                                  at_m=(float(base.center_m[0]), float(top), float(base.center_m[2])),
+                                                  parameters={"width_m": side, "depth_m": side}).parts[0]
+                self.overrides = workshop_construction.add_part(self.design, self.overrides, part=plate,
+                                                                joint={"to": on, "kind": "fixed"})
+                self.design = workshop_components.apply_overrides(self.base, self.overrides)
+                self.changed.append(f"added:{name}")
+                fields["on"] = name
+                return fields, (f"added a {area:g} m2 glass panel, {name!r}, on top of {on}, charging {store}; it is "
+                                f"a part now, fixed to {on}")
+            return fields, f"declared the panel on {name}, charging {store}"
+        if kind == "store":
+            fields = dict(fields)
+            fields["in"] = a_part(fields.get("in"), "a store's `in`")
+            fields.setdefault("name", "battery")
+            return fields, f"added a store, {fields['name']!r}, in {fields['in']}"
+        if kind in ("motor", "control"):
+            turns = fields.get("turns") or []
+            if not isinstance(turns, list) or len(turns) != 2:
+                raise ValueError(f"a {kind} turns two parts: turns: [a, b], the pair a bearing joins")
+            for t in turns:
+                a_part(t, f"a {kind}'s `turns`")
+            if kind == "motor":
+                stores = [s.get("name") for s in record.get("stores") or []]
+                store = fields.get("store")
+                if not store and len(stores) == 1:
+                    fields = {**fields, "store": stores[0]}
+                elif not store or store not in stores:
+                    raise ValueError("a motor draws on a store: say store: "
+                                     + (", ".join(map(str, stores)) if stores else "<add a store first>"))
+            return fields, f"added a {kind} on {turns[0]} and {turns[1]}"
+        raise ValueError("a power part is a store, a motor, a panel or a control")
+
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         if tool == "inspect_design":
             measured = self.design.measure()
@@ -592,9 +673,9 @@ class _State:
             if tool == "add_power_part":
                 kind = str(args.get("kind") or "")
                 fields = {k: v for k, v in args.items() if k != "kind" and v is not None}
+                fields, said = self._power_part(kind, fields, record)
                 record[{"store": "stores", "motor": "motors",
                         "panel": "panels", "control": "controls"}[kind]].append(fields)
-                said = f"added a {kind}"
             elif tool == "set_program":
                 # A program set again keeps the sensors and the routine it had.
                 was = record["programs"][0] if record["programs"] else {}

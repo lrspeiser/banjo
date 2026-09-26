@@ -372,6 +372,57 @@ On success the live object keeps:
 
 That provenance lets the user reopen the object later and say "edit this chair"; the workshop recovers the design rather than reverse engineering anonymous voxels.
 
+## Lab, Inventory, Skills and Recipes
+
+**Status, 2026-09-26.** The bench has four tabs on top. **Lab** is the bench
+as it was: the 3D viewer, the candidate, its components, checks and chat.
+The other three read beside it and spend nothing (`workshop_tabs`, one
+route each: `/api/workshop/inventory`, `/skills`, `/recipes`).
+
+- **Inventory**: the material rack (oak, iron, glass, stocked on the bench),
+  the goods rack (copper, copper wire: what machines put on a stockpile
+  marked as the Workshop's rack), the saved designs and components of the
+  personal library, and every component family a design is built from with
+  its parameters.
+- **Recipes**: for every template the bench can make, what it takes -- its
+  parts and families, its materials by mass against the rack, the goods its
+  machines take -- whether the rack covers it, and what it can do (drives
+  itself, flies, digs and carries, hauls, works a recipe, sees water,
+  charges from the sun); "Design it" opens it in the Lab. Beside them, the
+  recipes the open room knows, which machine works each, and what is in the
+  ground.
+- **Skills**: achievements. Every technique the world has, known or not:
+  known ones ticked, the next ones "within reach", the rest with what they
+  need; what each opens; what has been demonstrated with how much evidence;
+  what is blocked and why; and the regimes the engine said it does not
+  model. It reads the person's notebook (`docs/knowledge-and-progression.md`)
+  and awards nothing itself.
+
+### Adding solar
+
+Measured 2026-09-26, after the owner tried it: "adding solar did not seem to
+work". The bench chat's `add_power_part` wrote a panel into the design's
+record and nothing else -- no plate, nothing in the viewer, nothing in the
+components list -- and a panel with no store came back refused as "a panel's
+store needs a name of 1 to 120 characters", which says nothing about what
+to do. Three framework changes:
+
+- A power part is checked against the parts that are there, and what is
+  missing is said in words that name the fix: "A panel charges a battery,
+  and this design has none. Add one first -- add_power_part {kind: store,
+  ...} -- and then the panel"; "a panel's `on` names 'roof', and there is no
+  part called that; the parts are ..."; "which store does the panel charge?
+  Say store: one of ...". The model reads the refusal and calls again; a
+  person reads it and knows.
+- A panel is a thing: adding one puts a square glass plate of its area on
+  top of the part it sits on, fixed to it, as the rover template's is, so it
+  shows in the viewer and the components list and weighs what glass weighs.
+  With one store in the design the panel is wired to it unasked.
+- The tool's description says the order: store before panel or motor.
+
+So the answer to "should it have worked?" is no: the record was taken but
+nothing was made of it. Checked by `tests/workshop_tabs_tests.py`.
+
 ## What to build next
 
 ### Increment 1 — landed on `agent/workshop-mode`
