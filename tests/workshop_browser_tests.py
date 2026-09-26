@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import re
 import os
 from pathlib import Path
 import socket
@@ -551,23 +552,23 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # No right nav, and no page header above the bar.
         self.assertTrue(self.js("document.querySelector('.ws-right').hidden"))
         self.assertTrue(self.js("document.querySelector('.ws-top').hidden"))
-        # One bar: which product, how it is drawn, where you are looking from,
-        # and the two acts that leave the bench.
-        bar = self.js("[...document.querySelector('.ws-viewbar').children]"
+        # One bar, and on it only the two acts that leave the bench. The owner:
+        # "we don't need Wire, Skin, 3/4, Front, Side, Top or the dropdown of
+        # the items" -- products are opened from Recipes and Inventory, and the
+        # takes under the tabs are the views.
+        bar = self.js("[...document.querySelector('.ws-viewbar').children].filter(e=>!e.hidden)"
                       ".map(e=>e.id||e.tagName.toLowerCase())")
-        self.assertEqual(["ws-archetype", "button", "button", "ws-points-of-view", "span",
-                          "ws-make-status", "ws-check", "ws-make", "a"], bar)
-        # Wire and Skin are on the bar; the four that describe how it COMPILES
-        # went to the plumbing drawer when the bench was first unburied.
-        self.assertEqual(["Wire", "Skin"],
-                         self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
-                                 " > button[data-view]')].map(b=>b.textContent)"))
-        self.assertEqual(["3/4", "Front", "Side", "Top"],
-                         self.js("[...document.querySelectorAll('#ws-points-of-view button')]"
-                                 ".map(b=>b.dataset.pointOfView)"))
-        # Which product is a dropdown on that bar, not seven chips above it.
+        self.assertEqual(["span", "ws-make-status", "ws-check", "ws-make", "a"], bar)
+        self.assertEqual([], self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
+                                     " > button[data-view]')].filter(b=>!b.hidden).map(b=>b.textContent)"))
+        # The picker and the points of view still exist, in the holder, because
+        # the page sets them; nobody sees them.
         self.assertEqual("SELECT", self.js("document.querySelector('#ws-archetype').tagName"))
-        self.assertGreater(self.js("document.querySelector('#ws-archetype').getBoundingClientRect().width"), 0)
+        self.assertIsNone(self.js("document.querySelector('#ws-archetype').offsetParent"))
+        self.assertIsNone(self.js("document.querySelector('#ws-points-of-view').offsetParent"))
+        # The takes: the clean thing first, with its picture.
+        self.wait("document.querySelector('#ws-takes .ws-take[data-take=clean] img')")
+        self.assertEqual(["clean"], self.js("[...document.querySelectorAll('#ws-takes .ws-take')].map(t=>t.dataset.take)"))
         # And the panel that told a person looking at a table that it was a
         # table is not on the page.
         self.assertTrue(self.js("Boolean(document.querySelector('#ws-view-context')"
@@ -1232,6 +1233,39 @@ class WorkshopBrowserRegression(unittest.TestCase):
                                 "?.closest('#ws-hidden-controls'))"))
         self.assertTrue(self.js("document.querySelector('.ws-right').hidden"))
         self.assertTrue(self.js("document.querySelector('.ws-top').hidden"))
+
+    def test_a_run_is_a_take_beside_the_clean_thing_and_the_machine_is_worked_as_in_the_world(self):
+        """A run never replaces the thing: it becomes a take beside the clean
+        one, with its picture, and the clean take brings the design back. And
+        a machine's own controls -- power, direction, setting, its program --
+        are under the object, as its panel has them in the world."""
+        self.open_product("rover")
+        self.wait("document.querySelectorAll('#ws-machine-bench .ws-mb-row').length === 2")
+        self.assertEqual(["left wheel", "right wheel"],
+                         self.js("[...document.querySelectorAll('#ws-machine-bench .ws-mb-row')].map(r=>r.dataset.control)"))
+        self.assertTrue(self.js("document.querySelector('#ws-mb-program').checked"), "its roam program is on by default")
+        self.field("#ws-mb-seconds", 3)
+        self.pointer_click("#ws-mb-go")
+        self.wait("document.querySelector('#ws-simulation-status')?.dataset.state === 'complete'", timeout=120)
+        self.wait("document.querySelectorAll('#ws-takes .ws-take').length === 2")
+        takes = self.js("[...document.querySelectorAll('#ws-takes .ws-take')].map(t=>({take:t.dataset.take,title:t.querySelector('strong').textContent,selected:t.getAttribute('aria-selected'),picture:Boolean(t.querySelector('img'))}))")
+        self.assertEqual("clean", takes[0]["take"])
+        self.assertEqual(("Little world", "true"), (takes[1]["title"], takes[1]["selected"]))
+        self.wait("document.querySelectorAll('#ws-takes .ws-take img').length === 2")
+        self.assertEqual("physics", self.js("document.querySelector('[data-view=physics]').getAttribute('aria-pressed')==='true' ? 'physics' : 'other'"))
+        # The worked orders reached the little world as the panel's own operate:
+        # wheels forward at full setting, it went somewhere.
+        said = self.js("document.querySelector('#ws-bench-result').textContent")
+        moved = re.search(r"has moved (\d+) mm", said)
+        self.assertTrue(moved and int(moved.group(1)) > 500, said)
+        # Back to the clean thing: the design, untouched, with no run over it.
+        self.pointer_click('#ws-takes .ws-take[data-take="clean"]')
+        self.wait("document.querySelector('#ws-playback').hidden")
+        self.assertEqual("true", self.js("document.querySelector('#ws-takes .ws-take[data-take=clean]').getAttribute('aria-selected')"))
+        self.assertEqual(2, self.js("document.querySelectorAll('#ws-takes .ws-take').length"), "the run is kept")
+        # And the run again, from its take.
+        self.pointer_click('#ws-takes .ws-take:nth-child(2)')
+        self.wait("!document.querySelector('#ws-playback').hidden")
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')

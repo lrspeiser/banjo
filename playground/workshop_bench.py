@@ -42,7 +42,10 @@ RETIRED = {"declared_static_load", "drop_product", "slide_product", "impact_prod
 #: which is how the robot and the solar cart are tried. Making the rest of the
 #: templates installable is real work and is on the list; it is not hidden by
 #: offering a test that would fail.
-CAN_BE_MADE = {"table", "bench", "custom"}
+# The robot templates install as exact bodies on pins through the same gate
+# (tests/workshop_rover_tests.py, workshop_drone_tests.py, goods_tests.py),
+# so the little world takes them too.
+CAN_BE_MADE = {"table", "bench", "custom", "rover", "drone", "processor"}
 
 #: What a bench does to a thing, all of it in one grounded room.
 LITTLE_WORLD = {

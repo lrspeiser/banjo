@@ -374,18 +374,35 @@ That provenance lets the user reopen the object later and say "edit this chair";
 
 ## Lab, Inventory, Skills and Recipes
 
-**Status, 2026-09-26.** The bench has four tabs on top and one chat beside
-all of them. **Lab** is the 3D viewer with the parts list; the chat column
-on the right stays through every tab, with "Check it" and "Make it" under
-it and what they said last. The chat takes those as words too -- "check
-it", "make it", "test it" or "run the drop test" -- and does them itself
-without the model; making without the materials is answered in the chat
-with what the rack is short. There are no product buttons across the top
-(the products are in Recipes, and what has been built in Inventory), no
-camera presets, no run-simulation button, and no rack strip along the
-bottom: the rack is edited in Inventory. The other three tabs read beside
-the Lab and spend nothing (`workshop_tabs`, one route each:
-`/api/workshop/inventory`, `/skills`, `/recipes`).
+**Status, 2026-09-26.** The bench is the chat on the left, the object, and
+four tabs over the object: **Lab**, Inventory, Skills, Recipes. The chat
+stays beside all of them, with its suggestions (each a real turn) and a
+narration of what the model is doing while a turn runs. On the Lab's one
+bar there are only the two acts that leave the bench, Check it and Make it,
+and the way to the world: no product dropdown (products are opened from
+Recipes and Inventory), no Wire/Skin, no points of view. The other three
+tabs read beside the Lab and spend nothing (`workshop_tabs`, one route
+each: `/api/workshop/inventory`, `/skills`, `/recipes`).
+
+**Takes.** Under the tabs is a strip of little pictures of the thing. The
+first is *Clean*: the design as it is, untouched by any run, captured as
+it is drawn. Every run -- one the chat asked for, one asked for below the
+object -- becomes a take beside it, with its picture and its verdict in a
+line ("it is 0.79 m up, has moved 2396 mm and turned 0.6 degrees; nothing
+broke"), and stays for the session. Click a run's take and its replay is
+shown; click Clean and the design is back, with no run over it. A run
+never replaces the thing.
+
+**Work it.** Under the object, a machine's own controls, the ones its
+panel has in the world: for each control, power On/Off, Reverse/Stop/
+Forward and a drive setting; its program on or off; and for how long. "Do
+it" runs it in the little world (`try_in_a_room`) with those as `do`
+orders at the start -- the same `operate` the world's panel sends -- and
+the run is a take. The little world takes the robot templates now (rover,
+drone, processor: they install as exact bodies through the same gate).
+Measured: the rover, wheels forward at full setting with its roam program
+on, moved 2396 mm in 3 s of the little world and turned 0.6 degrees, its
+battery 100,000 to 99,953 J with its panel giving 34.6 W.
 
 - **Inventory**: the material rack, editable (oak, iron, glass, stocked on
   the bench), the goods rack (copper, copper wire: what machines put on a

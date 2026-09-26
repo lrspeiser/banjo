@@ -1473,8 +1473,14 @@ function installBench() {
     if (plumbing.children.length) groups.plumbing.append(make("h3", {}, "How it compiles"), plumbing);
     // Everything that was three bars, on one: which product, how it is drawn,
     // where from, and the two acts that leave the bench.
-    if (picker) viewbar.prepend(picker);
-    viewbar.append(views, make("span", { class:"ws-spacer" }), status,
+    // The owner: "we don't need Wire, Skin, 3/4, Front, Side, Top or the
+    // dropdown of the items." The picker and the points of view stay in the
+    // holder, because the page and its tests set them; the bar shows only the
+    // two acts that leave the bench.
+    if (picker) keep.append(picker);
+    keep.append(views);
+    for (const button of [...viewbar.children]) if (button.dataset.view) button.hidden = true;
+    viewbar.append(make("span", { class:"ws-spacer" }), status,
                    checkButton, madeButton, make("a", { class:"ws-bar-link", href:"/world" }, "The world"));
     if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
@@ -1500,8 +1506,135 @@ function installBench() {
     tab.onclick = () => showTab(name);
     tabs.append(tab);
   }
-  centre.append(tabs, viewport);
+  // The takes: little pictures of the thing. The first is the clean one --
+  // the design as it is, untouched by any run -- and every run adds one
+  // beside it, so a test never replaces the thing and the runs stay to be
+  // looked at again. Under the object, the machine's own controls, the
+  // ones its panel has in the world.
+  const takes = make("div", { id:"ws-takes", role:"tablist", "aria-label":"The thing, and every run of it" });
+  const machineBench = make("section", { id:"ws-machine-bench", "aria-label":"Work it as in the world" });
+  machineBench.hidden = true;
+  centre.append(tabs, takes, viewport, machineBench);
   for (const name of ["inventory", "skills", "recipes"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+  renderTakes();
+}
+
+// ---------------------------------------------------------------------------
+// Takes: the clean thing, and every run of it, as little pictures
+// ---------------------------------------------------------------------------
+function snapshot() {
+  try { renderer.render(scene, camera); return stage.toDataURL("image/jpeg", 0.6); } catch { return ""; }
+}
+function scheduleCleanThumb() {
+  if (bench.cleanThumbRevision === bench.revision && bench.cleanThumb) return;
+  const revision = bench.revision;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (revision !== bench.revision || bench.playback || bench.isolated || bench.libraryInspection) return;
+    bench.cleanThumb = snapshot(); bench.cleanThumbRevision = revision; renderTakes();
+  }));
+}
+function takeLabel(recording) {
+  const result = bench.lastResult && bench.lastResult.playback === recording ? bench.lastResult : null;
+  const test = recording.test === "try_in_a_room" ? "Little world" : (benchDefinition(recording.test)?.name || recording.test || "Run");
+  const said = result?.says || result?.measured?.outcome || "";
+  return { title: test, said: String(said).slice(0, 90) };
+}
+function noteTake(recording) {
+  bench.takes = bench.takes || [];
+  if (bench.takes.some((t) => t.recording === recording)) return;
+  const label = takeLabel(recording);
+  const take = { id: `take-${Date.now()}-${bench.takes.length}`, recording, thumb: "", when: new Date(), ...label };
+  bench.takes.push(take);
+  bench.shownTake = take.id;
+  renderTakes();
+  requestAnimationFrame(() => requestAnimationFrame(() => { take.thumb = snapshot(); renderTakes(); }));
+}
+function showTake(id) {
+  bench.shownTake = id;
+  if (id === "clean") { clearPlayback(); setWorkspaceMode("build"); show(); }
+  else {
+    const take = (bench.takes || []).find((t) => t.id === id);
+    if (take) { setWorkspaceMode("test"); setPlayback(take.recording); }
+  }
+  renderTakes();
+}
+function renderTakes() {
+  const root = $("#ws-takes"); if (!root) return;
+  root.replaceChildren();
+  const shown = bench.playback ? (bench.shownTake || "") : "clean";
+  const card = (id, title, said, thumb) => {
+    const button = make("button", { type:"button", class:"ws-take", role:"tab", "data-take":id, "aria-selected":String(id === shown) });
+    const picture = make("div", { class:"ws-take-picture" });
+    if (thumb) { const img = make("img", { alt:"" }); img.src = thumb; picture.append(img); }
+    button.append(picture, make("strong", {}, title));
+    if (said) button.append(make("small", {}, said));
+    button.onclick = () => showTake(id);
+    return button;
+  };
+  root.append(card("clean", "Clean", "the design, untouched", bench.cleanThumb || ""));
+  for (const take of bench.takes || []) root.append(card(take.id, take.title, take.said, take.thumb));
+}
+
+// ---------------------------------------------------------------------------
+// The machine bench: the controls its panel has in the world, here
+// ---------------------------------------------------------------------------
+function machinesOf(candidate) {
+  const record = candidate?.component_overrides?.["@machines"];
+  return record && typeof record === "object" ? record : null;
+}
+function renderMachineBench(candidate) {
+  const root = $("#ws-machine-bench"); if (!root) return;
+  const record = machinesOf(candidate);
+  const controls = (record?.controls || []);
+  const programs = (record?.programs || []);
+  if (!controls.length && !programs.length) { root.hidden = true; root.replaceChildren(); return; }
+  root.hidden = false;
+  if (root.dataset.forRevision === String(bench.revision) && root.children.length) return;
+  root.dataset.forRevision = String(bench.revision);
+  root.replaceChildren();
+  root.append(make("h3", {}, "Work it"),
+    make("p", { class:"ws-note" }, "The same controls its panel has in the world: power, a direction and a drive setting for each control, and its program. Set them and press Do it: it runs in a little world with ground and a sky, and the run becomes a take."));
+  const rows = [];
+  for (const control of controls) {
+    const row = make("div", { class:"ws-mb-row", "data-control":control.name });
+    row.append(make("strong", {}, control.name));
+    const power = make("div", { class:"ws-mb-seg", role:"group", "aria-label":`${control.name} power` });
+    for (const [value, label] of [["on", "On"], ["off", "Off"]]) {
+      const b = make("button", { type:"button", "data-power":value, "aria-pressed":String(value === "on") }, label);
+      b.onclick = () => { for (const o of power.children) o.setAttribute("aria-pressed", String(o === b)); };
+      power.append(b);
+    }
+    const direction = make("div", { class:"ws-mb-seg", role:"group", "aria-label":`${control.name} direction` });
+    for (const [value, label] of [["-1", "Reverse"], ["0", "Stop"], ["1", "Forward"]]) {
+      const b = make("button", { type:"button", "data-direction":value, "aria-pressed":String(value === "1") }, label);
+      b.onclick = () => { for (const o of direction.children) o.setAttribute("aria-pressed", String(o === b)); };
+      direction.append(b);
+    }
+    const setting = make("input", { type:"range", min:"0", max:"100", step:"5", value:"100", "aria-label":`${control.name} drive setting, percent` });
+    const shown = make("output", {}, "100%"); setting.oninput = () => { shown.textContent = `${setting.value}%`; };
+    const settingLabel = make("label", { class:"ws-mb-setting" }, "Setting "); settingLabel.append(setting, shown);
+    row.append(power, direction, settingLabel);
+    root.append(row); rows.push({ control, row, power, direction, setting });
+  }
+  const run = make("div", { class:"ws-mb-run" });
+  const program = make("input", { id:"ws-mb-program", type:"checkbox" }); program.checked = programs.length > 0;
+  const programLabel = make("label", {}, programs.length ? `Its program on (${programs[0].kind})` : "It has no program"); programLabel.prepend(program);
+  if (!programs.length) program.disabled = true;
+  const seconds = make("input", { id:"ws-mb-seconds", type:"number", min:"1", max:"30", step:"1", value:"6", "aria-label":"for how many seconds" });
+  const secondsLabel = make("label", {}, "for "); secondsLabel.append(seconds, " s");
+  const go = make("button", { id:"ws-mb-go", type:"button", class:"ws-action primary" }, "Do it");
+  go.onclick = () => guard(go, async () => {
+    const orders = rows.map(({ control, power, direction, setting }) => ({
+      at_s: 0, control: control.name,
+      power: power.querySelector('[aria-pressed="true"]').dataset.power === "on",
+      direction: Number(direction.querySelector('[aria-pressed="true"]').dataset.direction),
+      setting: Number(setting.value) / 100 }));
+    bench.selectedBenchTest = "try_in_a_room";
+    setWorkspaceMode("test");
+    await runBenchTest({ seconds: Number(seconds.value) || 6, turn_on: program.checked, do: orders });
+  });
+  run.append(programLabel, secondsLabel, go);
+  root.append(run);
 }
 
 // ---------------------------------------------------------------------------
@@ -1914,6 +2047,7 @@ function setPlayback(recording) {
   $("#ws-play-speed").value=String(bench.playbackSpeed);
   view="physics";pressView("physics");show(false);frameSimulation(recording);
   setPlaybackIndex(0);togglePlayback();
+  noteTake(recording);
 }
 
 function setPlaybackIndex(index, rebase = true) {
@@ -1973,6 +2107,7 @@ function renderJointScreen(card, screen) {
   if (view === "wire" || view === "skin") show(false);
 }
 function renderBenchResult(result) {
+  bench.lastResult = result || null;
   const root = $("#ws-bench-result"); root.replaceChildren(); if (!result) return;
   const card = make("div", { class:"ws-note" });
   if (result.test === "try_in_a_room") {
@@ -2086,9 +2221,9 @@ function renderBenchResult(result) {
   const details = make("details", { class:"ws-family" }); details.append(make("summary", {}, "Measured evidence"));
   const pre = make("pre"); pre.textContent = JSON.stringify({...result, playback:result.playback ? {test:result.playback.test,geometry_basis:result.playback.geometry_basis,duration_s:result.playback.duration_s,states:result.playback.frames.length,sampling:result.playback.sampling} : undefined}, null, 2); details.append(pre); root.append(details);
 }
-async function runBenchTest() {
+async function runBenchTest(configOverride = null) {
   const definition=benchDefinition(); if(!definition) throw new Error("Choose a supported simulation first.");
-  const revision=bench.revision, request=++benchTestRequest, config=benchConfig();
+  const revision=bench.revision, request=++benchTestRequest, config=configOverride || benchConfig();
   const current=()=>request===benchTestRequest && revision===bench.revision && definition.test===bench.selectedBenchTest;
   workspace.sequence++; clearTimeout(workspace.timer); workspace.running=true;
   bench.playback=null; bench.playbackPlaying=false; $("#ws-playback").hidden=true;
@@ -2494,6 +2629,8 @@ function show(reframe = true) {
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
   const m = currentMeasurements(candidate); headline(candidate, m);
+  renderMachineBench(candidate);
+  if (!bench.playback) scheduleCleanThumb();
   const parts = $("#ws-parts"); parts.replaceChildren();
   for (const part of candidate.parts) { const row = make("li"), button = make("button", { type:"button", class:"ws-part-link" }, part.name); button.onclick = () => { if (bench.isolated) { openComponent(part.name); return; } setWorkspaceMode("build"); bench.selectedPart = part.name; show(false); }; row.append(button, document.createTextNode(` · ${part.role} · ${part.material} · ${Number(candidate.mechanical_model === "rigid" ? (bench.rigid?.components.find(p => p.component === part.name)?.mass_kg ?? part.mass_kg) : (["matter", "collision", "relations"].includes(view) && bench.matterMasses ? bench.matterMasses[part.name] || 0 : part.mass_kg)).toFixed(4)} kg`)); parts.append(row); }
   renderSelected(); renderBuild(); renderBom(candidate); renderProductCatalog();

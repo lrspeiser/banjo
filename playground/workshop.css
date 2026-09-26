@@ -9,6 +9,25 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 /* The tabs over the object: Lab (the object and its bar), Inventory, Skills,
    Recipes. The chat, on the left, stays beside all of them. */
 #ws-centre { display:flex;flex-direction:column;min-width:0;min-height:0; }
+#ws-takes { display:flex;gap:.5rem;padding:.5rem .8rem;overflow-x:auto;background:#0f151d;border-bottom:1px solid #2a3340; }
+.ws-take { flex:0 0 auto;width:132px;display:grid;gap:.2rem;text-align:left;border:1px solid #34404e;background:#151e28;color:#dce5ef;border-radius:.5rem;padding:.35rem;cursor:pointer; }
+.ws-take[aria-selected="true"] { outline:2px solid #dce7f5;outline-offset:1px; }
+.ws-take-picture { width:100%;aspect-ratio:4 / 3;background:#0b1017;border-radius:.3rem;overflow:hidden; }
+.ws-take-picture img { width:100%;height:100%;object-fit:cover;display:block; }
+.ws-take strong { font-size:.76rem; }
+.ws-take small { font-size:.66rem;color:#97a6b8;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical; }
+#ws-machine-bench { padding:.6rem .9rem;border-top:1px solid #303b49;background:#111923; }
+#ws-machine-bench h3 { margin:0 0 .3rem;font-size:.9rem; }
+#ws-machine-bench .ws-note { margin:0 0 .5rem; }
+.ws-mb-row { display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;padding:.3rem 0;border-top:1px solid #27313d;font-size:.8rem; }
+.ws-mb-row strong { min-width:7rem; }
+.ws-mb-seg { display:inline-flex;border:1px solid #465363;border-radius:.4rem;overflow:hidden; }
+.ws-mb-seg button { border:0;background:#17212c;color:#e7edf4;padding:.3rem .6rem;cursor:pointer;font:inherit;font-size:.76rem; }
+.ws-mb-seg button[aria-pressed="true"] { background:#dce7f5;color:#111820; }
+.ws-mb-setting { display:inline-flex;align-items:center;gap:.4rem;font-size:.76rem;color:#b8c4d1; }
+.ws-mb-setting input[type=range] { width:120px;accent-color:#dce7f5; }
+.ws-mb-run { display:flex;flex-wrap:wrap;align-items:center;gap:.8rem;padding-top:.45rem;font-size:.8rem; }
+.ws-mb-run input[type=number] { width:4rem; }
 #ws-centre > .ws-viewport { flex:1 1 auto;min-height:0; }
 #ws-centre > .ws-tabpane { flex:1 1 auto; }
 .ws-tabs { display:flex;gap:.25rem;padding:.45rem .8rem 0;background:#0f151d; }
