@@ -1018,10 +1018,13 @@ stands at 1 complete, 26 partial and 3 planned.
 - [ ] **Page controls for what only the chat or the protocol can do:** gas
   vents, filling and cutting ground, the river's flow, heat-weakened fixings,
   the rolling and material reports.
-- [ ] **Something in the world that fills the rack.** A design is priced against
-  what the workshop holds and making it spends that stock, but no chopping,
-  quarrying or reclaiming puts anything back: the rack is stocked by hand on the
-  bench.
+- [x] **Something in the world that fills the rack.** Done for goods: a
+  stockpile marked as the Workshop's rack puts what lands on it onto the goods
+  rack, and `/world?scene=tests-mine` runs the whole chain -- a rover digs a
+  copper vein, a smelter makes copper of the ore, a drone hauls it to a mill,
+  the mill draws wire and 1.47 kg of it reaches the rack in 38 s of the world.
+  Still by hand for MATTER: no chopping or quarrying puts oak, iron or stone
+  back, so a design's materials are stocked on the bench as they always were.
 - [ ] **Take a made thing back apart.** A machine installs as separate bodies
   that keep their joints, and the world can break it; but there is no intake
   that carries one back into the Workshop, opens it as its components and
