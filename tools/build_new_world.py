@@ -135,6 +135,15 @@ def compose(ground: dict, world: dict) -> dict:
          "routine": {"kind": "process", "recipe": "smelt copper", "intake": "smelter intake",
                      "output": "workshop rack", "batch_kg": 5.0}})
 
+    # BOTH MACHINES ARE RUNNING WHEN THE ROOM OPENS. A program that does not
+    # say `power` opens stopped and waits to be switched on by hand, which is
+    # right for a test room and wrong for a new game: the point of the world
+    # clock is that you come back and find work has been done, and a rover
+    # that was never turned on has done none. live_session._power runs a
+    # program that asks for it, at open.
+    for program in spec["machines"]["programs"]:
+        program["power"] = True
+
     spec["goods"] = json.loads(json.dumps(goods))
     return spec
 

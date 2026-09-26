@@ -420,6 +420,8 @@ class Brain:
         self.deciders: dict[str, Any] = deciders
         self.mode = mode if mode == "reflex" or mode in deciders else "reflex"
         self.routine = routines.Routine(name, declared)
+        #: Set by the Brains while the world clock has the room.
+        self.unattended = False
         self.goods: Any = None                     # the room's goods ledger (machine_goods.Goods), shared
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
@@ -466,6 +468,16 @@ class Brain:
         if bodies is not None:
             self.bodies = bodies
         if self.mode == "reflex" or self.client is None or not events:
+            return
+        if self.unattended:
+            # NOBODY IS WATCHING (world_clock): the room is being stepped by
+            # the server's own clock because every page has gone. Its
+            # reflexes and its routine carry on -- they are what the machine
+            # needs to do its job -- but nothing is asked of a model. The
+            # owner, 2026-09-26: "we can't have every bot constantly asking
+            # llms for what to do, it will need to have routines that it can
+            # run without constant calls to the llm." A world left running
+            # overnight costs the processor and nothing else.
             return
         asked_by = (program.get("asked") or {}).get("by") if isinstance(program.get("asked"), dict) else None
         if asked_by == "talk":
@@ -558,6 +570,9 @@ class Brains:
         self._deciders = deciders
         self.brains: dict[str, Brain] = {}
         self.modes: dict[str, str] = {}            # kept across rooms, by name
+        #: Whether the room is running with no page on it (world_clock). No
+        #: model is asked while this is true.
+        self.unattended = False
         #: What the page was last told each machine was showing (_showing), so
         #: a hopper filling reaches it and an unchanged machine costs nothing.
         self._sent: dict[str, tuple] = {}
@@ -641,6 +656,7 @@ class Brains:
         ask = self._ask(app, body.get("session"))
         for brain in list(self.brains.values()):
             brain.person = self.person
+            brain.unattended = self.unattended
             ctx = brain.context(ask)
             decision = brain.take()
             if decision is not None:

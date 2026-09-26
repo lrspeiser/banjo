@@ -38,6 +38,7 @@ import physics_trial_planner
 import live_session
 import live_inprocess
 import world_chat
+import world_clock
 import world_room
 import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
@@ -1693,6 +1694,13 @@ class Handler(BaseHTTPRequestHandler):
                 # The notebook revision the page has shown: the answer carries
                 # the notebook when the server's is newer (with_notebook).
                 seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
+                # THE PAGE HAS THE ROOM. Said before the step and not after,
+                # so a slow one does not read as nobody being there and let
+                # the world clock in on top of it (world_clock).
+                clock=getattr(self.server.app,"clock",None)
+                if clock is not None and isinstance(body,dict) and body.get("op")=="step":
+                    clock.page_stepped()
+                    self.server.app.brains.unattended=False
                 self.server.app.brains.before(self.server.app,body)
                 answer=self.server.app.live.act(body)
                 self.server.app.brains.attach(body,answer)
@@ -3122,6 +3130,13 @@ def main():
     # One saved world at a time (keep_world): two request threads saving at once
     # could put the older world on disk last.
     app.world_lock=threading.Lock()
+    # THE WORLD RUNS WHEN NOBODY IS LOOKING (world_clock). Until now the page
+    # was the only thing that ever stepped a room, so going to the Workshop
+    # -- or to another tab -- stopped time. The clock steps the open room
+    # whenever no page has for a couple of seconds, at realtime and no
+    # faster, and asks no model while it does (the owner, 2026-09-26).
+    app.clock=world_clock.WorldClock(app,keep=keep_world)
+    app.clock.start()
     server=ThreadingHTTPServer((args.host,args.port),Handler);server.app=app
     print(f"Banjo playground: http://127.0.0.1:{args.port}"
           +(f" -- listening on {args.host}, behind a password" if app.password else ""),flush=True)
@@ -3140,6 +3155,7 @@ def main():
         # The room as it stands now, for the server that starts next.
         try: keep_world(app,"the server stopped")
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")
+        if hasattr(app,"clock"): app.clock.stop()
         if hasattr(app,"tool_qa"): app.tool_qa.shutdown()
         if hasattr(app,"material_qa"): app.material_qa.shutdown()
         if hasattr(app,"mechanics_qa"): app.mechanics_qa.shutdown()

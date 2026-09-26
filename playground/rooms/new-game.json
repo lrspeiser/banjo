@@ -404,6 +404,7 @@
     "kind": "roam",
     "left": "left wheel",
     "name": "rover",
+    "power": true,
     "right": "right wheel",
     "routine": {
      "hopper_kg": 40.0,
@@ -485,6 +486,7 @@
     "body": "smelter",
     "kind": "still",
     "name": "smelter",
+    "power": true,
     "routine": {
      "batch_kg": 5.0,
      "intake": "smelter intake",
