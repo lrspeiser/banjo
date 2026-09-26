@@ -1468,6 +1468,64 @@ Not built: a hopper or a stockpile drawn on the
 page; a routine that changes with what it senses (a step's `until` is one
 condition, not a choice); a market or a price for goods.
 
+## A routine that responds, and standing requests
+
+**Status, 2026-09-26.** Two things the framework lacked: a routine could not
+answer what its senses read, and a person could ask a machine for nothing
+that outlasted one sentence.
+
+**Conditions** (`machine_conditions`) are named readings off the same senses
+the deciders read, in words a person or a model writes: `hopper_full`,
+`hopper_empty`, `hopper_has` (a substance, a mass), `battery_below` and
+`battery_above` (a share), `pile_empty` and `pile_has` (the stockpile at a
+place it knows, or by name, or within reach; a substance, a mass),
+`water_ahead`, `person_near` (metres), `at_place`, `night`, `day`,
+`stalled`, `struck`, `resting`, `asked_by_someone`; and `not`, `all`, `any`
+over them. A condition that needs what the machine lacks is false, never a
+fault. A new one is one entry in CONDITIONS.
+
+**A step may carry one**: `when` (the step is skipped unless it holds) or
+`unless` (skipped while it holds), read as the step is about to be issued.
+**A routine may watch**: `watch` is a list of `{when, do, then}`; the moment
+a condition comes to hold -- on its rising edge, once, and never while its
+own steps are running -- its steps interrupt whatever the routine was
+doing, and when they are done the routine resumes the interrupted step
+(`then: resume`) or starts its round over (`then: restart`). The runner
+(`machine_routine`) keeps its work as frames: its own round at the bottom,
+and above it whatever interrupted it, run first.
+
+**Standing requests.** A person's words can be a job now: "bring copper
+from the source to the destination", "dig at the vein and dump it at the
+smelter intake", "go to the depot and wait", "make three batches". The
+chat's model writes it as steps of the routine language over the places,
+substances and recipes the machine knows (a strict schema, `ORDER_SCHEMA`),
+or says why it cannot; without a key, plain words cover those shapes. The
+steps are checked as a routine's are, queued on the machine as an order --
+run before its own round, a second order behind the first -- and answered
+("Will do: go to source; take source, copper; go to destination; dump
+destination. Then back to my rounds."). "What are you doing" says what
+orders it has; "never mind" drops them; and when an order runs to its end
+the machine says so in the chat, whether or not the person is still there
+("Done: go to the smelter intake. Back to my rounds."). A still machine
+takes only batches and waiting. The bench chat's `set_routine` takes
+`when`, `unless` and `watch`.
+
+Measured in the real engine (`tests/routine_language_tests.py`): the mine's
+rover, told "go to the smelter intake" while digging, left its round, got
+there within 2 m, said "Done" in the chat and went back to digging; a watch
+put on it -- a person within 3 m, hold still for 4 s -- held it the moment
+the person walked up; the drone told "bring copper from the source to the
+destination" answered with the four steps it would take, said it had one
+order when asked, and dropped it at "never mind"; the smelter told to go
+somewhere said it goes nowhere. The runner's own tests cover `when` and
+`unless` skipping as a step is issued, a watch firing once per rising edge
+and resuming or restarting, and orders queued, run first, cancelled and
+reported once.
+
+Not built: a condition on a whole routine ("only by day"); a decider asked
+what to do when an order cannot be done; a person's order carried across a
+restart (orders live with the brain, not the room).
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

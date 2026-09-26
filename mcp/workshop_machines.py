@@ -208,7 +208,7 @@ def _routine(value: Any) -> dict[str, Any]:
         raise ValueError("a routine is an object: kind, hopper_kg, work_j_per_kg, places, steps, recipe, intake, "
                          "output, batch_kg")
     unknown = set(value) - {"kind", "hopper_kg", "work_j_per_kg", "places", "steps", "recipe", "intake", "output",
-                            "batch_kg", "recipes"}
+                            "batch_kg", "recipes", "watch"}
     if unknown:
         raise ValueError("a routine cannot say " + ", ".join(sorted(unknown)))
     out: dict[str, Any] = {"kind": _kind(value.get("kind") or "roam", ROUTINE_KINDS, "a routine")}
@@ -236,6 +236,14 @@ def _routine(value: Any) -> dict[str, Any]:
                                                                   else "a stockpile of the room's, by name"))
     if value.get("batch_kg") is not None:
         out["batch_kg"] = _number(value.get("batch_kg"), "batch_kg", 0.01, 1000.0)
+    if value.get("watch") is not None:
+        try:
+            import machine_routine
+            out["watch"] = machine_routine.checked_watch(value["watch"])
+        except ImportError:
+            if not isinstance(value["watch"], list):
+                raise ValueError("a routine's watch is a list of {when, do, then}")
+            out["watch"] = [dict(w) for w in value["watch"]]
     if value.get("recipes") is not None:
         # The recipes it brings to a room that lacks them, in the room's own
         # spelling (machine_goods.checked).

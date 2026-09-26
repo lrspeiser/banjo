@@ -565,9 +565,16 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                         "'custom' is steps of your own, each a tool (go_to, dig, dump, take, process, "
                         "back_off, turn_left, turn_right, hold_still, face, go_forward) with args (a 'place' "
                         "by name), an until (arrived, asked_done, load_full, load_empty, done, or seconds), "
-                        "repeat and retries; 'roam' wanders by its reflexes. The places it works between are "
-                        "the room's, given when it is installed. work_j_per_kg is what a scoop costs its "
-                        "battery. The program must be set first.",
+                        "repeat and retries; 'roam' wanders by its reflexes. A step may carry a condition: "
+                        "'when' (skipped unless it holds) or 'unless' (skipped while it holds); a condition is "
+                        "a name (hopper_full, hopper_empty, battery_below, battery_above, pile_empty, pile_has, "
+                        "water_ahead, person_near, at_place, night, day, stalled, struck, resting), or {is: "
+                        "name, ...arguments such as share, place, substance, kg}, or {not: c}, {all: [...]}, "
+                        "{any: [...]}. 'watch' is a list of {when: condition, do: steps, then: resume|restart}: "
+                        "the steps run the moment the condition comes to hold, interrupting the routine, and "
+                        "then it resumes (or restarts its round). The places it works between are the room's, "
+                        "given when it is installed. work_j_per_kg is what a scoop costs its battery. The "
+                        "program must be set first.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
                         "properties": {
                             "kind": {"type": "string", "enum": ["dig", "haul", "process", "custom", "roam"]},
@@ -589,7 +596,14 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                 "properties": {"do": {"type": "string"}, "args": {"type": "object"},
                                                "until": {"anyOf": [{"type": "string"}, {"type": "number"}]},
                                                "repeat": {"type": "boolean"},
-                                               "retries": {"type": "integer", "minimum": 0, "maximum": 20}}}}}}},
+                                               "retries": {"type": "integer", "minimum": 0, "maximum": 20},
+                                               "when": {"anyOf": [{"type": "string"}, {"type": "object"}]},
+                                               "unless": {"anyOf": [{"type": "string"}, {"type": "object"}]}}}},
+                            "watch": {"type": "array", "maxItems": 8, "items": {
+                                "type": "object", "additionalProperties": False, "required": ["when", "do"],
+                                "properties": {"when": {"anyOf": [{"type": "string"}, {"type": "object"}]},
+                                               "do": {"type": "array", "items": {"type": "object"}},
+                                               "then": {"type": "string", "enum": ["resume", "restart"]}}}}}}},
         {"type": "function", "name": "try_it_in_a_room",
          "description": "Make the design in a little room with real ground, gravity and a sky, let it run, and "
                         "say what happened. It is the world's own physics and the world's own way of making a "

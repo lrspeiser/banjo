@@ -430,6 +430,8 @@ class Brain:
         self.asked_at: dict[str, float] = {}       # event text -> world time it was asked at
         self.decisions: deque[dict[str, Any]] = deque(maxlen=DECISIONS_KEPT)
         self.talk: deque[dict[str, Any]] = deque(maxlen=24)
+        self.orders_given: dict[int, str] = {}     # order id -> what the person said
+        self._reported = 0                         # how many finished frames have been said
         self.thinking: str | None = None           # the event being asked about
         self._answer: dict[str, Any] | None = None
         self._lock = threading.Lock()
@@ -503,6 +505,24 @@ class Brain:
         with self._lock:
             self._answer = decision
             self.thinking = None
+
+    def report_finished(self) -> None:
+        """An order (or a watch) that ran to its end, said once in the chat
+        (docs/machine-world.md, "Standing requests"): the machine reports
+        back, whether or not the person is still there."""
+        finished = list(self.routine.finished)
+        while self._reported < len(finished) or self._reported > len(finished):
+            if self._reported > len(finished):
+                self._reported = 0
+                break
+            done = finished[self._reported]
+            self._reported += 1
+            if done.get("order") is not None:
+                said = self.orders_given.pop(done["order"], "")
+                words = f"Done: {said}." if said else f"Done with order {done['order']}."
+                self.talk.append({"who": self.name, "said": words + " Back to my rounds.", "at": time.time(),
+                                  "order_done": done["order"]})
+                self.changed = True
 
     def take(self) -> dict[str, Any] | None:
         """The decision waiting to be applied, once."""
@@ -625,6 +645,7 @@ class Brains:
                 if did is not None:
                     brain.changed = True
                     _log.info("banjo: the routine of %s: %s", brain.name, did.get("did"))
+                brain.report_finished()
 
     def attach(self, body: Any, answer: Any) -> None:
         """On a step's answer, the brains the page has not heard the latest of."""
