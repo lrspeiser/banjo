@@ -237,9 +237,13 @@ def _joint_readouts_match(before: list, after: list) -> bool:
             # Jolt recomputes this diagnostic from the SAME restored poses in
             # single precision. One measured case differs by one float32 ULP.
             # Bound only that derived angle; limits, anchors, reference frames,
-            # motor state and every other serialized field remain exact.
+            # motor state and every other serialized field remain exact. A
+            # pin between exact bodies that were moving when the world was
+            # saved reads a few hundred ULPs off (measured 1.3e-7 rad on the
+            # rover's caster), so a microradian is allowed as well: less than
+            # a ten-thousandth of a degree, and a readout, not a declaration.
             x, y = ah.pop("at"), bh.pop("at")
-            if abs(float_code(x)-float_code(y)) > 4:
+            if abs(float_code(x)-float_code(y)) > 4 and abs(float(x) - float(y)) > 1e-6:
                 return False
         if a != b:
             return False
@@ -769,6 +773,38 @@ def _default_places(pos, routine):
     return out
 
 
+def _named_apart(existing, made):
+    """A machine's names, kept apart from the room's: a second rover's battery
+    is "rover battery 2", its program "rover 2", and whatever names them --
+    a motor its store, a program its wheels' controls -- follows. The room
+    refuses two stores of one name, and a design does not know the room."""
+    taken = {kind: {row.get("name") for row in existing.get(kind) or [] if isinstance(row, dict)}
+             for kind in ("stores", "controls", "programs", "panels")}
+    renamed = {}
+    out = deepcopy(made)
+    for kind in ("stores", "controls", "programs", "panels"):
+        for row in out.get(kind) or []:
+            name = row.get("name")
+            if name is None:
+                continue
+            new, n = name, 1
+            while new in taken[kind]:
+                n += 1
+                new = f"{name} {n}"
+            taken[kind].add(new)
+            if new != name:
+                renamed[(kind, name)] = new
+                row["name"] = new
+    for motor in out.get("motors") or []:
+        motor["store"] = renamed.get(("stores", motor.get("store")), motor.get("store"))
+    for panel in out.get("panels") or []:
+        panel["store"] = renamed.get(("stores", panel.get("store")), panel.get("store"))
+    for program in out.get("programs") or []:
+        for side in ("left", "right"):
+            program[side] = renamed.get(("controls", program.get(side)), program.get(side))
+    return out
+
+
 def _preview_exact(app, room, live, old, design, overrides, pos, candidate, places):
     """A design installed as exact rigid bodies on pins (rigid_assembly): its
     rigid groups as compounds of their own parts, its bearings as hinges, and
@@ -803,6 +839,7 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
         raise ValueError("places maps at most 16 names to [x, z] in the room's metres")
     made = workshop_machines.installed(design, set_down["component_to_body"], frame, places)
     spec = deepcopy(room.spec)
+    made = _named_apart(spec.get("machines") or {}, made)
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + bodies
     for field, extra in (("joints", pins), ("actions", actions), ("interaction_points", points)):
         spec[field] = (spec.get(field) or []) + extra

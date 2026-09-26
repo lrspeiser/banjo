@@ -325,7 +325,9 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
                              + (", ".join(sorted(shared)) if shared else "nothing"))
         chassis = next(iter(shared))
         made: dict[str, Any] = {k: v for k, v in program.items() if k not in ("sensors", "routine")}
-        made["name"] = program.get("name") or design.design_id
+        # Named as the person knows it: the design's kind ("rover"), not the
+        # bench's candidate id ("rover-g1-v1"); the installer keeps names apart.
+        made["name"] = program.get("name") or getattr(design, "kind", None) or design.design_id
         made["body"] = chassis
         if program.get("sensors"):
             made["sensors"] = [{"kind": s["kind"], "body": body(s["on"], "a sensor"),

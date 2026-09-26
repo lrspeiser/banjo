@@ -899,10 +899,23 @@ so nothing starts below the ground, and written into the room as
 `machines` block in the room's own words: sensor and panel points carried
 from the design's frame to where it stands. A routine's places, when the
 install names none, are its dig site three metres ahead and its depot three
-metres behind, said in the receipt. The staged world is checked as every
-install is: the old bodies exact, the new pins the design's, a machine
-counter allowed to begin counting. Powering happens when the room is next
-opened, as for every installed machine.
+metres behind, said in the receipt. A machine's names are kept apart from
+the room's -- a second rover's battery is "rover battery 2", its program
+"rover 2", and whatever names them follows -- since the room refuses two
+stores of one name and a design does not know the room. The staged world is
+checked as every install is: the old bodies exact, the new pins the
+design's, a machine counter allowed to begin counting, and a hinge's
+measured angle allowed a microradian (a pin between exact bodies that were
+moving when the world was saved reads a few hundred float ULPs off, and
+that refused every install into a room with a rover in it). Powering
+happens when the room is next opened, as for every installed machine.
+
+Seen on the page: the rover opened on the bench by its kind, checked by
+the bench chat (gpt-5-mini: "powered by a single energy store with two
+motors ... a roam program"), made with "Make it" into the rover room beside
+the room's own rover, and talked to there: "I am backing off: water ahead:
+its reflexes have it. My battery is at 100%." -- and "turn around and hold
+still" turned it round.
 
 Measured in `tests/workshop_rover_tests.py`, in the real engine: the rover
 from the bench, installed in the empty basin by the lake, compiled to five

@@ -125,6 +125,25 @@ class TheRoverIsInTheCatalogue(unittest.TestCase):
         self.assertEqual("dig", validated["machines"]["programs"][0]["routine"]["kind"])
 
 
+class NamedApartFromTheRoom(unittest.TestCase):
+    def test_a_second_rovers_machines_take_names_of_their_own(self):
+        existing = {"stores": [{"name": "rover battery"}], "controls": [{"name": "left wheel"}, {"name": "right wheel"}],
+                    "programs": [{"name": "rover"}], "panels": [{"name": "solar panel"}]}
+        made = {"stores": [{"name": "rover battery", "body": "w"}],
+                "motors": [{"on": ["w", "w-2"], "store": "rover battery"}],
+                "panels": [{"name": "solar panel", "store": "rover battery", "body": "w"}],
+                "controls": [{"name": "left wheel", "on": ["w", "w-2"]}, {"name": "right wheel", "on": ["w", "w-3"]}],
+                "programs": [{"name": "rover", "left": "left wheel", "right": "right wheel", "body": "w"}]}
+        apart = install._named_apart(existing, made)
+        self.assertEqual("rover battery 2", apart["stores"][0]["name"])
+        self.assertEqual("rover battery 2", apart["motors"][0]["store"])
+        self.assertEqual(("solar panel 2", "rover battery 2"), (apart["panels"][0]["name"], apart["panels"][0]["store"]))
+        self.assertEqual(["left wheel 2", "right wheel 2"], [c["name"] for c in apart["controls"]])
+        self.assertEqual(("rover 2", "left wheel 2", "right wheel 2"),
+                         (apart["programs"][0]["name"], apart["programs"][0]["left"], apart["programs"][0]["right"]))
+        self.assertEqual(made["stores"][0]["name"], "rover battery", "the design's own record is untouched")
+
+
 class TheBenchChatMakesItARobot(unittest.TestCase):
     def setUp(self):
         import workshop_chat
