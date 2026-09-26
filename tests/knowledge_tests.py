@@ -313,3 +313,118 @@ class TheChatReadsItAndCannotWriteIt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThereIsAWayToLearnSomething(unittest.TestCase):
+    """The knowledge layer kept a journal for a fortnight and nothing could
+    write a technique into it.
+
+    `Journal.knows()` read a dict that no code path filled, so the graph could
+    not advance: a player could find a wooden pick and never, by any route,
+    become able to make a second one -- the only non-found route is shut behind
+    rough-shaping-wood, and rough-shaping-wood could not be learned.
+    """
+
+    def setUp(self):
+        self.registry = progression.Registry()
+        self.journal = progression.Journal()
+        self.now = "2026-09-26T00:00:00Z"
+
+    def found_a_pick(self):
+        self.journal.data["designs"]["one-piece-wooden-pick@1"] = {
+            "standing": {"found": {"since": self.now, "object": "wooden pick"}}}
+
+    def test_a_technique_is_earned_by_studying_what_you_were_given(self):
+        self.assertEqual(set(), self.journal.knows())
+        self.assertEqual([], progression.earn(self.journal, self.registry, self.now),
+                         "nothing is earned by a person who has done nothing")
+        self.found_a_pick()
+        self.assertEqual(["rough-shaping-wood"],
+                         progression.earn(self.journal, self.registry, self.now))
+        self.assertEqual({"rough-shaping-wood"}, self.journal.knows())
+        source = self.journal.data["techniques"]["rough-shaping-wood"]["source"]
+        self.assertEqual("experiment", source["kind"])
+        self.assertEqual("studied-a-found-pick", source["route"])
+
+    def test_it_is_learned_once_however_often_it_is_asked(self):
+        self.found_a_pick()
+        progression.earn(self.journal, self.registry, self.now)
+        was = self.journal.data["revision"]
+        self.assertEqual([], progression.earn(self.journal, self.registry, "2026-09-26T01:00:00Z"))
+        self.assertEqual(was, self.journal.data["revision"], "nothing was written the second time")
+
+    def test_what_is_one_step_away_is_said_before_it_is_taken(self):
+        """The ladder. A person one demonstration short of a capability should
+        be told so, which is the whole of what a technology tree is for."""
+        rungs = progression.what_is_next(self.journal, self.registry)
+        self.assertEqual(1, len(rungs))
+        rung = rungs[0]
+        self.assertEqual("rough-shaping-wood", rung["technique"])
+        self.assertTrue(rung["within_reach"], rung)
+        self.assertEqual([], rung["first_learn"])
+        self.assertEqual(["one-piece-wooden-pick"], rung["would_open"])
+        self.assertEqual(1, len(rung["earned_by"]))
+        self.assertFalse(rung["earned_by"][0]["done"])
+        self.assertIn("Study", rung["earned_by"][0]["says"])
+        # And once it is taken it is not still being offered.
+        self.found_a_pick()
+        progression.earn(self.journal, self.registry, self.now)
+        self.assertEqual([], progression.what_is_next(self.journal, self.registry))
+
+    def test_a_technique_whose_groundwork_is_missing_is_not_within_reach(self):
+        """The graph is walked, not skipped: prerequisites first, however much
+        has been shown."""
+        self.registry.techniques["casting-iron"] = {
+            "id": "casting-iron", "version": 1, "name": "Casting iron",
+            "describes": "pouring iron into a mould",
+            "prerequisites": {"all_of": ["rough-shaping-wood"]},
+            "earned_by": {"any_of": [{"id": "x", "says": "s", "all_of": [
+                {"design": "one-piece-wooden-pick", "found": True}]}]}}
+        self.found_a_pick()
+        rungs = {r["technique"]: r for r in progression.what_is_next(self.journal, self.registry)}
+        self.assertFalse(rungs["casting-iron"]["within_reach"])
+        self.assertEqual(["rough-shaping-wood"], rungs["casting-iron"]["first_learn"])
+        # Both, in the order the graph allows, from the one thing they found.
+        self.assertEqual(["rough-shaping-wood", "casting-iron"],
+                         progression.earn(self.journal, self.registry, self.now))
+
+    def test_the_starting_area_can_teach(self):
+        """start.json has carried a `teaches` list all along with no reader."""
+        self.registry.start["teaches"] = ["rough-shaping-wood"]
+        self.assertEqual(["rough-shaping-wood"],
+                         progression.teach_the_start(self.journal, self.registry, self.now))
+        self.assertEqual("lesson",
+                         self.journal.data["techniques"]["rough-shaping-wood"]["source"]["kind"])
+        # Only to a notebook that holds nothing: a lesson does not overwrite
+        # what somebody worked out for themselves.
+        self.assertEqual([], progression.teach_the_start(self.journal, self.registry, self.now))
+
+    def test_the_notebook_says_what_is_known_and_what_is_next(self):
+        book = progression.notebook(self.journal, self.registry)
+        self.assertEqual([], book["techniques"])
+        self.assertEqual(["rough-shaping-wood"], [r["technique"] for r in book["next"]])
+        self.found_a_pick()
+        progression.earn(self.journal, self.registry, self.now)
+        book = progression.notebook(self.journal, self.registry)
+        self.assertEqual(["rough-shaping-wood"], [t["id"] for t in book["techniques"]])
+        self.assertEqual("experiment", book["techniques"][0]["learned_from"])
+        self.assertEqual([], book["next"])
+
+    def test_a_dead_rung_is_refused_when_the_graph_is_loaded(self):
+        """The point of checking at load is that a rung nobody can reach is
+        found here rather than by a player."""
+        for broken, because in (
+                ({"any_of": [{"id": "x", "says": "s", "all_of": [
+                    {"design": "no-such-design", "found": True}]}]}, "not a design"),
+                ({"any_of": [{"id": "x", "says": "s", "all_of": [
+                    {"design": "one-piece-wooden-pick"}]}]}, "finding a design"),
+                ({"any_of": [{"id": "x", "says": "s", "all_of": [
+                    {"design": "one-piece-wooden-pick", "demonstrated": True,
+                     "test": "no-such-test"}]}]}, "no test called"),
+                ({"any_of": [{"id": "x", "says": "s"}]}, "asks for nothing")):
+            with self.subTest(because=because):
+                registry = progression.Registry()
+                registry.techniques["rough-shaping-wood"]["earned_by"] = broken
+                with self.assertRaises(progression.DefinitionError) as caught:
+                    registry.check()
+                self.assertIn(because, str(caught.exception))

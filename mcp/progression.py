@@ -92,6 +92,31 @@ class Registry:
                 if need not in self.techniques:
                     raise DefinitionError(f"technique {technique['id']} needs {need!r}, "
                                           f"which is not a technique")
+            # What earns it, if anything does. A technique with no earned_by
+            # and no prerequisites can only be taught, which is a real kind of
+            # technique and not an error -- but a condition that names a design
+            # nobody has is a dead rung, and the point of checking the graph at
+            # load is that a dead rung is found here and not by a player.
+            for route in (technique.get("earned_by") or {}).get("any_of") or []:
+                if not route.get("all_of"):
+                    raise DefinitionError(f"technique {technique['id']}: the route "
+                                          f"{route.get('id')!r} asks for nothing, so it is "
+                                          f"already earned by everybody")
+                for need in route["all_of"]:
+                    design = need.get("design")
+                    if design not in self.designs:
+                        raise DefinitionError(f"technique {technique['id']}, route "
+                                              f"{route.get('id')!r}: {design!r} is not a design")
+                    if "found" not in need and "demonstrated" not in need:
+                        raise DefinitionError(f"technique {technique['id']}, route "
+                                              f"{route.get('id')!r}: a condition is met by "
+                                              f"finding a design or by demonstrating one")
+                    test = need.get("test")
+                    if test is not None and test not in {t.get("id") for t
+                                                         in self.designs[design].get("tests") or []}:
+                        raise DefinitionError(f"technique {technique['id']}, route "
+                                              f"{route.get('id')!r}: {design} has no test "
+                                              f"called {test!r}")
         for design in self.designs.values():
             template = (design.get("interaction") or {}).get("template")
             if template is not None and template not in interaction_profiles.TEMPLATES:
@@ -246,6 +271,40 @@ class Journal:
             self.data["revision"] += 1
             self._save()
             return True
+
+    def learn(self, technique: str, source: dict[str, Any], at: str) -> bool:
+        """Write one technique into the journal. False, and nothing changed,
+        when it was already known: a technique is learned once and no source
+        overwrites another.
+
+        Nothing about matter is touched here, and nothing here can be read by a
+        physics law. Learning stoneworking does not harden a wooden pick.
+        """
+        with self.lock:
+            if technique in self.data["techniques"]:
+                return False
+            self.data["techniques"][technique] = {"since": at, "source": source}
+            self.data["events"].append(f"{technique}:learned:{source.get('kind', 'unknown')}")
+            self.data["revision"] += 1
+            self._save()
+            return True
+
+    def standing_of(self, design: str) -> dict[str, Any]:
+        """How a design stands with this person, by its id, whatever revision
+        they met: found, built, demonstrated. Flags, not a ladder."""
+        out: dict[str, Any] = {}
+        with self.lock:
+            for key, entry in self.data["designs"].items():
+                if key.split("@", 1)[0] != design:
+                    continue
+                for name, value in (entry.get("standing") or {}).items():
+                    if name == "demonstrated":
+                        shown = out.setdefault("demonstrated", {})
+                        for test, records in (value or {}).items():
+                            shown.setdefault(test, []).extend(records)
+                    else:
+                        out.setdefault(name, value)
+        return out
 
     def knows(self) -> set[str]:
         return set(self.data["techniques"])
@@ -432,6 +491,106 @@ def not_modelled(record: dict[str, Any]) -> str | None:
 
 # -- what a person's notebook says ---------------------------------------------
 
+# -- learning (docs/knowledge-and-progression.md, 3.1 learn_from) -------------
+
+def _met(journal: Journal, condition: dict[str, Any]) -> bool:
+    """Whether one condition of an `earned_by` route is answered by the journal.
+
+    Two kinds, and both are things the journal already records without being
+    asked. `found` is having a made example in your hands -- you learn how a
+    thing was shaped by studying one, which is how anybody learns it and, more
+    to the point here, does not require the technique you are trying to learn.
+    `demonstrated` is having shown a design does what it is for, by evidence
+    from an accepted engine result.
+    """
+    standing = journal.standing_of(str(condition.get("design") or ""))
+    if "found" in condition:
+        return "found" in standing
+    if "demonstrated" in condition:
+        shown = standing.get("demonstrated") or {}
+        test = condition.get("test")
+        return bool(shown.get(test)) if test else bool(shown)
+    return False
+
+
+def earn(journal: Journal, registry: Registry, at: str) -> list[str]:
+    """Learn every technique this person has now earned, and say which.
+
+    Once each: `Journal.learn` refuses a second source for a technique already
+    known, so reading the same evidence twice awards nothing twice. A technique
+    whose own prerequisites are not met is not earned yet however much has been
+    shown -- the graph is walked, not skipped.
+    """
+    learned: list[str] = []
+    for _pass in range(len(registry.techniques) + 1):
+        moved = False
+        for technique in registry.techniques.values():
+            if technique["id"] in journal.knows():
+                continue
+            if not set((technique.get("prerequisites") or {}).get("all_of")
+                       or []) <= journal.knows():
+                continue
+            for route in (technique.get("earned_by") or {}).get("any_of") or []:
+                if all(_met(journal, need) for need in route.get("all_of") or []):
+                    if journal.learn(technique["id"],
+                                     {"kind": "experiment", "route": route.get("id"),
+                                      "says": route.get("says", "")}, at):
+                        learned.append(technique["id"])
+                        moved = True
+                    break
+        if not moved:
+            break
+    return learned
+
+
+def teach_the_start(journal: Journal, registry: Registry, at: str) -> list[str]:
+    """What the starting area teaches, given once to a journal that has nothing.
+
+    start.json has carried a `teaches` list since the registries were written
+    and nothing has ever read it.
+    """
+    if journal.knows():
+        return []
+    given = []
+    for technique in registry.start.get("teaches") or []:
+        if technique in registry.techniques and journal.learn(
+                technique, {"kind": "lesson", "id": "the starting area"}, at):
+            given.append(technique)
+    return given
+
+
+def what_is_next(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
+    """Every technique not known yet: whether it is within reach, what would
+    earn it, and what it would open.
+
+    This is the ladder. Without it a person can be one demonstration away from
+    a capability and have no way at all of knowing.
+    """
+    known = journal.knows()
+    out = []
+    for technique in registry.techniques.values():
+        if technique["id"] in known:
+            continue
+        needs = [t for t in (technique.get("prerequisites") or {}).get("all_of") or []
+                 if t not in known]
+        routes = []
+        for route in (technique.get("earned_by") or {}).get("any_of") or []:
+            routes.append({"id": route.get("id"), "says": route.get("says", ""),
+                           "done": all(_met(journal, need) for need in route.get("all_of") or [])})
+        opens = sorted({design["id"] for design in registry.designs.values()
+                        for way in design["routes"]["any_of"]
+                        for need in way.get("all_of") or []
+                        if need.get("technique") == technique["id"]})
+        out.append({"technique": technique["id"], "name": technique["name"],
+                    "describes": technique.get("describes", ""),
+                    "within_reach": not needs and bool(routes),
+                    "first_learn": needs, "earned_by": routes,
+                    "would_open": opens,
+                    "taught_only": not routes and not needs})
+    out.sort(key=lambda row: (not row["within_reach"], row["technique"]))
+    return out
+
+
 def notebook(journal: Journal, registry: Registry) -> dict[str, Any]:
     """The journal as a person reads it, and as read_knowledge answers: what is
     known, what has been demonstrated -- each claim with its scope and the
@@ -463,8 +622,14 @@ def notebook(journal: Journal, registry: Registry) -> dict[str, Any]:
                 blocked.append({"design": design["id"], "name": design["name"],
                                 "route": route["id"], "because": why})
     return {"revision": data["revision"],
-            "techniques": [{"id": t, "name": registry.techniques[t]["name"]}
+            "techniques": [{"id": t, "name": registry.techniques[t]["name"],
+                            "since": (data["techniques"][t] or {}).get("since"),
+                            "learned_from": ((data["techniques"][t] or {}).get("source")
+                                             or {}).get("kind")}
                            for t in sorted(data["techniques"]) if t in registry.techniques],
+            # What is one step away, and what it would open. A person one
+            # demonstration short of a capability should be told so.
+            "next": what_is_next(journal, registry),
             "designs": designs, "blocked": blocked,
             # Regimes the engine said it does not model, met by their own tools.
             "not_modelled": sorted(set((data.get("notes") or {}).values()))}

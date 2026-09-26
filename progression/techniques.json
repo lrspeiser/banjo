@@ -1,12 +1,38 @@
 {
- "format": "banjo.progression.techniques.v1",
- "about": "What a person can know how to do (docs/knowledge-and-progression.md, 3.1). A technique names the processes it lets someone operate and is never a property of matter.",
- "techniques": [
-  {"id": "rough-shaping-wood", "version": 1,
-   "name": "Rough-shaping wood",
-   "describes": "Taking wood off a piece of stock with a supported shaping process until it has a wanted outline",
-   "prerequisites": {"all_of": []},
-   "learn_from": ["lesson", "teacher", "document", "experiment"],
-   "processes": ["shape-wood-v1"]}
- ]
+  "format": "banjo.progression.techniques.v1",
+  "about": "What a person can know how to do (docs/knowledge-and-progression.md, 3.1). A technique names the processes it lets someone operate and is never a property of matter.",
+  "techniques": [
+    {
+      "id": "rough-shaping-wood",
+      "version": 1,
+      "name": "Rough-shaping wood",
+      "describes": "Taking wood off a piece of stock with a supported shaping process until it has a wanted outline",
+      "prerequisites": {
+        "all_of": []
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [
+        "shape-wood-v1"
+      ],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "studied-a-found-pick",
+            "says": "Study the wooden pick you were given: how it was shaped is in the shape of it.",
+            "all_of": [
+              {
+                "design": "one-piece-wooden-pick",
+                "found": true
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

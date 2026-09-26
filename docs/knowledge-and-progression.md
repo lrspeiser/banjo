@@ -399,10 +399,46 @@ Built so far:
 - the registries (`progression/*.json`) and their load checks;
 - the journal: one per server, `journal.json` in its rooms' folder;
 - the evaluator, fed by every reply of the live room (`server.hear`);
-- MCP `read_knowledge`, `GET /api/knowledge` and the notebook panel.
+- MCP `read_knowledge`, `GET /api/knowledge` and the notebook panel;
+- **learning, and the ladder** (2026-09-26, below).
 
 Not built yet:
-- `assess_goal`, `inspect_design` and `list_learning_opportunities`;
+- `assess_goal` and `inspect_design`;
 - `evaluate_experiment`, for a world outside the playground;
-- any way to learn a technique (a lesson, a teacher, a document);
 - evidence for the in-process lane, whose steps hand over no ground work.
+
+### 7.1 Learning, and seeing the next rung
+
+Until now nothing could write a technique into the journal. `Journal.knows()`
+read a dict no code path filled, so the graph could not advance: a player could
+find the wooden pick and never, by any route, become able to make a second one,
+because the only route that is not "find one" is shut behind rough-shaping-wood
+and rough-shaping-wood could not be learned. Evidence had been piling up since
+increment 2 with nothing to spend it on.
+
+Two ways in, both non-circular:
+
+- **What the start teaches.** `start.json` has carried a `teaches` list since
+  the registries were written and nothing ever read it. A notebook that holds
+  nothing is given it once, as a lesson.
+- **What has been earned.** A technique may declare `earned_by`, in the same
+  idiom a design declares its routes -- `any_of` over conditions the journal can
+  already answer: `found` (you have a made example) and `demonstrated` (you have
+  shown a design does what it is for, by evidence from an accepted engine
+  result). Prerequisites are walked, not skipped; a technique is learned once,
+  and reading the same evidence again awards nothing.
+
+The first rung is the one that was missing: rough-shaping-wood is earned by
+**studying the pick you were given** -- how a thing was shaped is in the shape
+of it, which is how anybody learns it and, more to the point, does not require
+the technique being learned. The graph refuses a dead rung at load: a condition
+naming a design nobody has, a test the design does not declare, or a route that
+asks for nothing.
+
+`what_is_next` is the ladder, and `notebook` carries it. For every technique
+not known: whether it is within reach, what would earn it in the words a person
+reads, and how many things it would let them make. The page says it in the
+notebook panel and says "you know X now" once, when it happens.
+
+A rank here is a capability and never a score. There are no points, no levels
+and no experience, which is what section 6 has always said.

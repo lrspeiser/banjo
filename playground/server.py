@@ -2864,6 +2864,11 @@ def journal_of(app):
     if journal is None:
         store=getattr(app,"store",None)
         journal=app.journal=progression.Journal(Path(store.folder)/"journal.json" if store is not None else None)
+        # What the starting area teaches, once, to a notebook that holds
+        # nothing. start.json has had the field since the registries were
+        # written and nothing read it.
+        progression.teach_the_start(journal,registry(),
+                                    time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()))
     return journal
 
 
@@ -2900,6 +2905,11 @@ def hear(app,session,reply):
             continue
         evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(),at=at)
         if evidence is not None: journal.add_evidence(evidence)
+    # And what that has now earned them. Learning is the only thing here that
+    # was missing: evidence has been piling up in the journal since increment 2
+    # and no code path could turn any of it into a capability.
+    for learned in progression.earn(journal,registry(),at):
+        logging.getLogger("banjo").info("banjo: learned %s",learned)
 
 
 def note_strike(app,answer):
