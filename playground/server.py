@@ -3136,7 +3136,11 @@ def main():
     # whenever no page has for a couple of seconds, at realtime and no
     # faster, and asks no model while it does (the owner, 2026-09-26).
     app.clock=world_clock.WorldClock(app,keep=keep_world)
-    app.clock.start()
+    # BANJO_WORLD_CLOCK=0 keeps the world still while no page is stepping it,
+    # which is how it was before the clock existed. For a test that holds the
+    # room and expects it to stay as it left it, and for anybody who wants
+    # the old behaviour back without a rebuild.
+    if os.environ.get("BANJO_WORLD_CLOCK","1")!="0": app.clock.start()
     server=ThreadingHTTPServer((args.host,args.port),Handler);server.app=app
     print(f"Banjo playground: http://127.0.0.1:{args.port}"
           +(f" -- listening on {args.host}, behind a password" if app.password else ""),flush=True)

@@ -894,9 +894,9 @@ class ACartDrivesItselfToTheWater(PageJourney):
 
     Looking at the cart's front wheels -- which the motor does not turn -- E
     opens the cart's panel. Power On and Forward, pressed with the mouse, send
-    it down the shore; the sensor's bead ahead of it turns from blue to amber
-    over the water, and the cart stops on its brake with its front wheels on dry
-    ground, the panel saying why. Forward again does not move it; Reverse
+    it down the shore; its water sensor comes to see the water, and the cart
+    stops on its brake with its front wheels on dry ground, the panel saying
+    why. Forward again does not move it; Reverse
     backs it away."""
 
     def test_it_drives_down_the_shore_and_stops_at_the_waters_edge(self):
@@ -907,9 +907,13 @@ class ACartDrivesItselfToTheWater(PageJourney):
                                       "(banjoRoom.world.machines.controls || []).length === 1", 60),
                         f"the room's steps do not carry the cart's machine: {self.situation()}")
         control = "banjoRoom.world.machines.controls[0]"
+        # The SENSOR, not a bead drawn for it. The beads and the motor arcs
+        # came off the view on the owner's word (2026-09-26: "what are the
+        # blue dots on lines in front the rover, they are confusing"), and
+        # what they showed is on the machine's own panel now. This line was
+        # always the one that knew the truth; the bead check beside it was a
+        # second look at the same fact through a picture of it.
         self.assertEqual(self.js(f"{control}.sensors.map((s) => [s.kind, s.sees])"), [["water", False]])
-        self.assertEqual(self.js("banjoRoom.sensorMarks().map((m) => m.sees)"), [False],
-                         "the sensor's bead is not drawn, blue")
         # Beside the front wheels, low enough that the crosshair is on a wheel
         # rather than the deck above it.
         x, y, z = self.position("cart-2")
@@ -933,8 +937,8 @@ class ACartDrivesItselfToTheWater(PageJourney):
         text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
         self.assertEqual(text("mp-condition"), "water ahead: it stopped at the water's edge")
         self.assertIn("its water sensor ahead:", text("mp-measured"))
-        self.assertTrue(self.wait_for("banjoRoom.sensorMarks().every((m) => m.sees)", 10),
-                        "the sensor's bead did not turn to show the water it sees")
+        self.assertTrue(self.wait_for(f"{control}.sensors.every((s) => s.sees)", 10),
+                        "the cart's water sensor does not see the water that stopped it")
         self.wait_world(2.0)          # brought to rest on its brake
         rest = self.position("cart")
         c = self.js(control)
