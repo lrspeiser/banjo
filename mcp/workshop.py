@@ -534,6 +534,12 @@ MACHINE_FAMILIES = (
            (Parameter("diameter_m", "m", 0.4, 0.1, 2.0), Parameter("thickness_m", "m", 0.01, 0.004, 0.05),
             Parameter("stub_diameter_m", "m", 0.02, 0.008, 0.06), Parameter("stub_length_m", "m", 0.12, 0.06, 0.4)),
            _rotor, offers=("hub", "mount")),
+    Family("bin", "post", "A bin: an open box on a deck that goods are put into and taken out of; a machine "
+                          "that processes has an intake bin and an output bin, each a stockpile of the room's "
+                          "once it is installed.",
+           (Parameter("width_m", "m", 0.5, 0.1, 2.0), Parameter("height_m", "m", 0.3, 0.05, 1.5),
+            Parameter("depth_m", "m", 0.5, 0.1, 2.0)),
+           _block("post", "bin"), offers=("bottom", "top", "centre")),
     Family("hopper", "post", "A hopper: a bin on the deck that a dig routine fills (declare hopper_kg on the "
                              "routine).",
            (Parameter("width_m", "m", 0.3, 0.05, 1.5), Parameter("height_m", "m", 0.15, 0.03, 1.0),

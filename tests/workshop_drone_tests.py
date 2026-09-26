@@ -139,6 +139,9 @@ class InstalledIntoTheRoom(unittest.TestCase):
                                    on_live_reply=lambda session, reply: self.brains.listen(session, reply))
         for material in ("glass", "oak", "iron", "concrete"):
             workshop_library.set_rack(self.app, material, 500.0)
+        # And the goods its machines take (workshop_library.GOODS_PER).
+        for substance in ("copper", "copper wire"):
+            workshop_library.set_goods(self.app, substance, 50.0)
         from unittest import mock
         import world_room
         patcher = mock.patch.dict(world_room.SCENES, {"basin": empty_basin})

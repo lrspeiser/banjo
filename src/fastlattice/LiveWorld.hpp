@@ -742,6 +742,12 @@ struct LiveProgram {
     std::vector<unsigned> rotors;
     double hover_m{};
     double height_m{};            // its centre above the ground under it, as the last kept step left it
+    // A "still" program's machine (docs/machine-world.md, "Raw materials into
+    // finished goods"): a machine that goes nowhere -- a smelter, a mill --
+    // with a store of its own and no wheels. It stands by, rests when its
+    // battery is low, and can be asked to wait; what it makes is the
+    // playground's routine over it, drawing on its store.
+    unsigned store{};
     double climb_m_s{};           // how fast it is rising
     std::string asked;
     std::string asked_why;        // why, in a person's words, shown as its `why`
@@ -1643,6 +1649,9 @@ public:
     // the kind is not one it knows, or the numbers are not a program's -- a
     // rest_until at or below a rest_below above 0, or either above 1. It starts
     // off, and does nothing to its wheels until it is turned on.
+    // A "still" program: a machine that goes nowhere, on `body`, with `store`.
+    unsigned stillProgram(const std::string &name, const std::string &body, unsigned store, double rest_below,
+                          double rest_until);
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting = 1.0, double climb_deg = 8.0,
                      double rest_below = 0.0, double rest_until = 0.0,

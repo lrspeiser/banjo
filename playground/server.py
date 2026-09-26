@@ -289,6 +289,13 @@ class Playground:
         # every reply of the room for it (rover_brain).
         self.brains = rover_brain.Brains(lambda: rover_brain.deciders_from(_environment_files()))
         self.reply_listeners.append(self.brains.listen)
+        # Goods a machine puts on a stockpile marked as the Workshop's rack go
+        # onto the Workshop's goods rack, to build machines with
+        # (machine_goods; workshop_library.add_goods).
+        def onto_rack(substance, kg, app=self):
+            import workshop_library
+            workshop_library.add_goods(app, substance, kg)
+        self.brains.on_rack = onto_rack
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id

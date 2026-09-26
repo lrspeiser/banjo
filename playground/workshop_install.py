@@ -773,6 +773,57 @@ def _default_places(pos, routine):
     return out
 
 
+def _goods_for(spec, made, design, frame, pos):
+    """A machine that processes (docs/machine-world.md, "Raw materials into
+    finished goods"): its intake and its output are stockpiles of the room's.
+    Named after a component of the design (a bin), each is made where that
+    part stands, under the machine's own name; named otherwise, where the
+    machine is set down, a metre and a half ahead and behind. The recipes the
+    routine brings are given to the room where it lacks them."""
+    import machine_goods
+    for program in made.get("programs") or []:
+        routine = program.get("routine")
+        if not isinstance(routine, dict):
+            continue
+        recipes = routine.pop("recipes", None) or []
+        if routine.get("kind") != "process" and not recipes:
+            continue
+        goods = spec.get("goods")
+        if not isinstance(goods, dict):
+            goods = spec["goods"] = {"deposits": [], "stockpiles": [], "recipes": []}
+        for key in ("deposits", "stockpiles", "recipes"):
+            goods.setdefault(key, [])
+        parts = {p.name: p for p in getattr(design, "parts", [])}
+        for role, ahead in (("intake", 1.5), ("output", -1.5)):
+            name = routine.get(role)
+            if not name:
+                continue
+            if any(s.get("name") == name for s in goods["stockpiles"]):
+                continue                             # the room's own, by name
+            part = parts.get(name)
+            if part is not None:
+                at = frame[0](part.center_m)
+                xz = [round(float(at[0]), 3), round(float(at[2]), 3)]
+                pile_name = f"{program['name']} {name}"
+            else:
+                xz = [round(float(pos[0]), 3), round(float(pos[1]) + ahead, 3)]
+                pile_name = name
+            n, base = 1, pile_name
+            while any(s.get("name") == pile_name for s in goods["stockpiles"]):
+                n += 1
+                pile_name = f"{base} {n}"
+            goods["stockpiles"].append({"name": pile_name, "at_m": xz, "radius_m": 1.0, "holds": {}})
+            routine[role] = pile_name
+        for recipe in recipes:
+            if not any(r.get("name") == recipe.get("name") for r in goods["recipes"]):
+                goods["recipes"].append(deepcopy(recipe))
+        if routine.get("recipe") and not any(r.get("name") == routine["recipe"] for r in goods["recipes"]):
+            raise ValueError(f"the room has no recipe called {routine['recipe']!r}; declare it on the routine "
+                             f"(recipes) or pick one the room knows: "
+                             + (", ".join(repr(r.get("name")) for r in goods["recipes"]) or "none"))
+        spec["goods"] = machine_goods.checked(goods)
+
+
 def _named_apart(existing, made):
     """A machine's names, kept apart from the room's: a second rover's battery
     is "rover battery 2", its program "rover 2", and whatever names them --
@@ -853,6 +904,7 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
                 continue
             machines[kind] = (machines.get(kind) or []) + rows
         spec["machines"] = machines
+        _goods_for(spec, made, design, frame, pos)
     # Admission before any new process; this does not rewrite old declarations.
     normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
     spec["precise_rigid_bodies"] = normalised

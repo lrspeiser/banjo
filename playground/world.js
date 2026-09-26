@@ -1548,7 +1548,11 @@ function showProgramPanel(p) {
   setPressed("mp-on", p.power);
   setPressed("mp-off", !p.power);
   setText("mp-enabled", p.power ? "On" : "Off");
-  const wheels = p.kind === "hover" ? {
+  const wheels = p.kind === "still" ? {
+    "standing by": "ready, with nothing to do",
+    "waiting": "working, or waiting as it was asked",
+    "resting": "its battery low, resting until it is charged",
+  } : p.kind === "hover" ? {
     "going forward": "leaning forward on its rotors",
     "backing off": "leaning back on its rotors",
     "turning left": "its rotors turning it left",

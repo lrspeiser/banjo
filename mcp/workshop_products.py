@@ -315,6 +315,92 @@ def _drone_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+# ---------------------------------------------------------------------------
+# The processor (docs/machine-world.md, "Raw materials into finished goods"):
+# a machine that goes nowhere and makes one thing of another. A deck on legs
+# with an intake bin at its front and an output bin at its back, a battery
+# and a solar panel, and a still program with a process routine. The recipe
+# is a parameter, named as the room names it; a recipe the room lacks is
+# declared on the routine (`recipes`) and the install gate gives it to the
+# room, with the two bins as stockpiles.
+# ---------------------------------------------------------------------------
+
+PROCESSOR_PARAMETERS = (
+    w.Parameter("deck_m", "m", 1.2, 0.6, 3.0, about="the square deck's side"),
+    w.Parameter("deck_height_m", "m", 0.5, 0.2, 1.5),
+    w.Parameter("top_thickness_m", "m", 0.04, 0.01, 0.1),
+    w.Parameter("bin_m", "m", 0.5, 0.2, 1.5, about="each bin's side"),
+    w.Parameter("capacity_j", "J", 2000000.0, 100.0, 1e9),
+    w.Parameter("charge_j", "J", 2000000.0, 0.0, 1e9),
+    w.Parameter("batch_kg", "kg", 5.0, 0.1, 500.0),
+    w.Parameter("recipe", "", "smelt copper", choices=("smelt copper", "draw wire")),
+    w.Parameter("material", "", "oak", choices=("oak", "iron")),
+)
+# The recipes the template knows, per kilogram in, so a processor made on
+# the bench brings its chemistry to a room that has none.
+PROCESSOR_RECIPES = {
+    "smelt copper": {"name": "smelt copper", "in": {"copper ore": 1.0}, "out": {"copper": 0.3},
+                     "work_j_per_kg": 2000.0, "s_per_kg": 2.0},
+    "draw wire": {"name": "draw wire", "in": {"copper": 1.0}, "out": {"copper wire": 0.98},
+                  "work_j_per_kg": 500.0, "s_per_kg": 1.0},
+}
+
+
+def _build_processor(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    material = str(values["material"])
+    side, deck_y, top_t = float(values["deck_m"]), float(values["deck_height_m"]), float(values["top_thickness_m"])
+    bin_m = min(float(values["bin_m"]), side * 0.45)
+    under = deck_y - top_t
+    parts: list[w.WirePart] = []
+    parts += library.make("surface", name="deck", material=material, at_m=(0.0, deck_y, 0.0),
+                          parameters={"width_m": side, "thickness_m": top_t, "depth_m": side,
+                                      "profile": "square"}).parts
+    for i, (sx, sz) in enumerate(((1, 1), (-1, 1), (1, -1), (-1, -1)), 1):
+        parts.append(w.strut(name=f"leg-{i}", role="leg", from_m=(sx * side * 0.42, 0.0, sz * side * 0.42),
+                             to_m=(sx * side * 0.42, under, sz * side * 0.42), section_m=(0.05, 0.05),
+                             material=material, family="leg"))
+    parts += library.make("bin", name="intake bin", material=material, at_m=(0.0, deck_y, side * 0.26),
+                          parameters={"width_m": bin_m, "height_m": 0.15, "depth_m": bin_m}).parts
+    parts += library.make("bin", name="output bin", material=material, at_m=(0.0, deck_y, -side * 0.26),
+                          parameters={"width_m": bin_m, "height_m": 0.15, "depth_m": bin_m}).parts
+    parts += library.make("battery", name="battery", material=material, at_m=(side * 0.3, deck_y, 0.0),
+                          parameters={"width_m": 0.25, "height_m": 0.12, "depth_m": 0.25}).parts
+    parts += library.make("solar-panel", name="solar panel", material="glass", at_m=(-side * 0.3, deck_y, 0.0),
+                          parameters={"width_m": min(0.4, side * 0.3), "depth_m": min(0.6, side * 0.45)}).parts
+    return parts
+
+
+def _processor_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    from . import workshop_construction, workshop_machines
+    joints = [{"id": f"joint-{i + 1}", "kind": "fixed", "a": "deck", "b": b, "method": "bonded"}
+              for i, b in enumerate(["leg-1", "leg-2", "leg-3", "leg-4", "intake bin", "output bin", "battery",
+                                     "solar panel"])]
+    construction = {"schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+                    "joints": joints, "added": [], "removed": []}
+    recipe = str(values["recipe"])
+    machines = workshop_machines.checked({
+        "stores": [{"name": "processor battery", "in": "battery", "capacity_j": values["capacity_j"],
+                    "charge_j": values["charge_j"], "voltage_v": 48.0}],
+        "motors": [], "controls": [],
+        "panels": [{"name": "solar panel", "on": "solar panel", "store": "processor battery",
+                    "area_m2": round(min(0.4, float(values["deck_m"]) * 0.3) * min(0.6, float(values["deck_m"]) * 0.45), 4),
+                    "efficiency": 0.2}],
+        "programs": [{"kind": "still", "store": "processor battery",
+                      "routine": {"kind": "process", "recipe": recipe, "intake": "intake bin", "output": "output bin",
+                                  "batch_kg": values["batch_kg"],
+                                  "recipes": [dict(PROCESSOR_RECIPES[recipe])] if recipe in PROCESSOR_RECIPES else []}}],
+    })
+    out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,
+                           workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _processor_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    return []
+
+
 def _kettle_capacity_l(values: dict[str, Any]) -> float:
     width = float(values["width_m"]); depth = float(values["depth_m"])
     height = float(values["vessel_height_m"]); wall = float(values["wall_thickness_m"])
@@ -420,8 +506,16 @@ def install() -> None:
         DRONE_PARAMETERS, _build_drone, _drone_trials, _drone_overrides,
         uses={"primary_use_component": "deck",
               "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "deck"}})
+    existing["processor"] = w.Assembly(
+        "processor", "make one thing of another, standing still",
+        "A machine that goes nowhere: a deck on legs with an intake bin and an output bin, a battery and a "
+        "panel, and a still program working the room's recipe from the one bin into the other.",
+        PROCESSOR_PARAMETERS, _build_processor, _processor_trials, _processor_overrides,
+        uses={"primary_use_component": "deck",
+              "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "intake bin"}})
     if "rover" not in seen: ordered.append(existing["rover"])
     if "drone" not in seen: ordered.append(existing["drone"])
+    if "processor" not in seen: ordered.append(existing["processor"])
     w.ASSEMBLIES = tuple(ordered)
     w._BY_NAME = {assembly.name: assembly for assembly in w.ASSEMBLIES}
     _INSTALLED = True

@@ -440,6 +440,7 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"heading_deg", tidy(p.heading_deg)},
             {"rotors", p.rotors},
             {"hover_m", tidy(p.hover_m)},
+            {"store", p.store},
             {"height_m", tidy(p.height_m)},
             {"climb_m_s", tidy(p.climb_m_s)},
             {"rest_below", tidy(p.rest_below)},
@@ -2241,7 +2242,11 @@ int main(int argc, char **argv) {
                     std::vector<unsigned> rotors;
                     if (command.contains("rotors"))
                         for (const nlohmann::json &r : command.at("rotors")) rotors.push_back(r.get<unsigned>());
-                    const unsigned made = world->program(
+                    const unsigned made = command.value("kind", std::string{}) == "still"
+                        ? world->stillProgram(command.value("name", std::string{}), command.value("body", std::string{}),
+                                              command.value("store", 0U), command.value("rest_below", 0.0),
+                                              command.value("rest_until", 0.0))
+                        : world->program(
                         command.value("name", std::string{}), command.value("kind", std::string{}),
                         command.value("left", 0U), command.value("right", 0U),
                         command.value("body", std::string{}), command.value("setting", 1.0),
@@ -2254,7 +2259,8 @@ int main(int argc, char **argv) {
                             "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
                             "more than 1; or of kind \"hover\", on four rotors' controllers (round the machine "
                             "from above, front-left first), each on a rotor's pin through the body it names, "
-                            "with a hover_m above 0 and at most 50");
+                            "with a hover_m above 0 and at most 50; or of kind \"still\", on a body that is in "
+                            "the world with a store that is there, one still program to a body");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,

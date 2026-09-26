@@ -118,6 +118,13 @@ def _open_connection(app: Any) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, preset_id)
         );
+        CREATE TABLE IF NOT EXISTS workshop_goods_rack (
+            owner_id TEXT NOT NULL,
+            substance TEXT NOT NULL,
+            mass_kg REAL NOT NULL CHECK(mass_kg >= 0),
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(owner_id, substance)
+        );
     """)
     who, now = owner_id(app), _now()
     for material, price in DEFAULT_PRICES.items():
@@ -361,6 +368,70 @@ def set_rack(app: Any, material: str, mass_kg: float) -> dict[str, Any]:
     return rack(app)
 
 
+# ---- goods: what machines are made of beyond their matter -------------------------
+# The goods rack (docs/machine-world.md, "Raw materials into finished goods"):
+# what the workshop holds of the goods the room's machines make -- copper,
+# copper wire -- by substance, in kilograms, apart from the material rack of
+# oak and iron. A stockpile in the room marked as the rack feeds it; a
+# machine's power parts spend it, by this declared table: what each part
+# takes per unit of what it is, and at least.
+GOODS_PER = {
+    "motors": ("copper wire", "stall_torque_n_m", 0.05, 0.5),      # kg per N m of stall, at least 0.5 kg
+    "stores": ("copper", "capacity_j", 1.0e-5, 0.5),                # kg per joule of capacity, at least 0.5 kg
+    "controls": ("copper wire", None, 0.0, 0.1),
+    "panels": ("copper wire", "area_m2", 0.5, 0.1),
+}
+
+
+def goods_rack(app: Any) -> dict[str, Any]:
+    """What the workshop holds of goods, per substance, in kilograms."""
+    with _connect(app) as db:
+        rows = db.execute("""SELECT substance,mass_kg,updated_at FROM workshop_goods_rack
+                           WHERE owner_id=? ORDER BY substance""", (owner_id(app),)).fetchall()
+    return {"schema": RACK_SCHEMA, "unit": "kg",
+            "goods": [{"substance": r["substance"], "mass_kg": round(r["mass_kg"], 4),
+                       "updated_at": r["updated_at"]} for r in rows]}
+
+
+def set_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
+    substance, mass = " ".join(str(substance).split())[:64], float(mass_kg)
+    if not substance or not 0.0 <= mass <= 1e9:
+        raise ValueError("a substance has a name, and mass_kg is between 0 and 1e9")
+    with _connect(app) as db:
+        db.execute("""INSERT INTO workshop_goods_rack(owner_id,substance,mass_kg,updated_at)
+                    VALUES (?,?,?,?) ON CONFLICT(owner_id,substance) DO UPDATE SET
+                    mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
+                   (owner_id(app), substance, mass, _now()))
+    return goods_rack(app)
+
+
+def add_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
+    """Goods put on the rack, added to what is there (the room's rack
+    stockpile, machine_goods.put)."""
+    substance, mass = " ".join(str(substance).split())[:64], float(mass_kg)
+    if not substance or not 0.0 <= mass <= 1e9:
+        raise ValueError("a substance has a name, and mass_kg is between 0 and 1e9")
+    with _connect(app) as db:
+        db.execute("""INSERT INTO workshop_goods_rack(owner_id,substance,mass_kg,updated_at)
+                    VALUES (?,?,?,?) ON CONFLICT(owner_id,substance) DO UPDATE SET
+                    mass_kg=workshop_goods_rack.mass_kg+excluded.mass_kg,updated_at=excluded.updated_at""",
+                   (owner_id(app), substance, mass, _now()))
+    return goods_rack(app)
+
+
+def goods_needed(design: Any) -> dict[str, float]:
+    """The goods a design's machines take to make, by GOODS_PER: nothing for
+    a design with no machines."""
+    from mcp import workshop_machines
+    record = workshop_machines.of(design)
+    out: dict[str, float] = {}
+    for key, (substance, per, rate, least) in GOODS_PER.items():
+        for row in record.get(key) or []:
+            amount = max(least, rate * float(row.get(per) or 0.0)) if per else least
+            out[substance] = round(out.get(substance, 0.0) + amount, 4)
+    return out
+
+
 def _needs_sentence(rows: list[dict[str, Any]], missing: list[dict[str, Any]]) -> str:
     if not rows:
         return "It takes no material at all."
@@ -389,10 +460,20 @@ def what_it_needs(app: Any, design: WorkshopDesign, *, matter_summary=None) -> d
                      "short_kg": short, "enough": need - have <= _SLACK_KG})
         if need - have > _SLACK_KG:
             missing.append({"material": row["material"], "short_kg": short})
+    # And the goods its machines take, against the goods rack.
+    goods_rows: list[dict[str, Any]] = []
+    held_goods = {row["substance"]: row["mass_kg"] for row in goods_rack(app)["goods"]}
+    for substance, need in sorted(goods_needed(design).items()):
+        have = float(held_goods.get(substance, 0.0))
+        short = round(max(0.0, need - have), 4)
+        goods_rows.append({"substance": substance, "material": substance, "needed_kg": need,
+                           "held_kg": round(have, 4), "short_kg": short, "enough": need - have <= _SLACK_KG})
+        if need - have > _SLACK_KG:
+            missing.append({"material": substance, "substance": substance, "short_kg": short})
     return {"schema": NEEDS_SCHEMA, "unit": "kg", "enough": not missing,
-            "materials": rows, "missing": missing, "basis": bom.get("basis"),
+            "materials": rows, "goods": goods_rows, "missing": missing, "basis": bom.get("basis"),
             "material_cost": bom.get("material_cost"), "currency": bom.get("currency"),
-            "says": _needs_sentence(rows, missing)}
+            "says": _needs_sentence(rows + goods_rows, missing)}
 
 
 def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
@@ -413,6 +494,17 @@ def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
         if missing:
             raise ValueError("the rack is short " + ", ".join(
                 f"{m['short_kg']:g} kg of {m['material']}" for m in missing))
+        # The goods its machines take, out of the goods rack, in the same
+        # transaction: all of it or none.
+        goods_wanted = {row["substance"]: float(row["needed_kg"]) for row in needs.get("goods") or []
+                        if float(row["needed_kg"]) > 0.0}
+        goods_held = {r["substance"]: float(r["mass_kg"]) for r in db.execute(
+            "SELECT substance,mass_kg FROM workshop_goods_rack WHERE owner_id=?", (who,)).fetchall()}
+        missing += [{"material": s, "substance": s, "short_kg": round(want - goods_held.get(s, 0.0), 4)}
+                    for s, want in sorted(goods_wanted.items()) if want - goods_held.get(s, 0.0) > _SLACK_KG]
+        if missing:
+            raise ValueError("the rack is short " + ", ".join(
+                f"{m['short_kg']:g} kg of {m['material']}" for m in missing))
         for material, want in sorted(wanted.items()):
             left = max(0.0, held.get(material, 0.0) - want)
             db.execute("""INSERT INTO workshop_material_rack(owner_id,material,mass_kg,updated_at)
@@ -420,7 +512,15 @@ def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
                         mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
                        (who, material, left, now))
             took.append({"material": material, "took_kg": round(want, 4), "left_kg": round(left, 4)})
-    return {"schema": RACK_SCHEMA, "took": took, "rack": rack(app)}
+        for substance, want in sorted(goods_wanted.items()):
+            left = max(0.0, goods_held.get(substance, 0.0) - want)
+            db.execute("""INSERT INTO workshop_goods_rack(owner_id,substance,mass_kg,updated_at)
+                        VALUES (?,?,?,?) ON CONFLICT(owner_id,substance) DO UPDATE SET
+                        mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
+                       (who, substance, left, now))
+            took.append({"material": substance, "substance": substance, "took_kg": round(want, 4),
+                         "left_kg": round(left, 4)})
+    return {"schema": RACK_SCHEMA, "took": took, "rack": rack(app), "goods_rack": goods_rack(app)}
 
 
 def save_bench_preset(app: Any, *, name: str, test_name: str, config: dict[str, Any],

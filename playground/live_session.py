@@ -1201,12 +1201,25 @@ class Live:
         for program in machines.get("programs") or []:
             name = str(program.get("name", ""))
             kind = str(program.get("kind", "roam"))
+            extra: dict[str, Any] = {}
             if kind == "hover":
                 rotors = [control_ids.get(str(r)) for r in program.get("rotors") or []]
                 if len(rotors) != 4 or any(r is None for r in rotors):
                     problems.append(f"the program {name} has no controller for one of its rotors")
                     continue
                 left, right = rotors[0], rotors[1]
+                extra = {"rotors": rotors, "hover_m": float(program.get("hover_m", 1.5))}
+            elif kind == "still":
+                store_ids = dict((made or {}).get("stores") or {})
+                for s in ((session.state or {}).get("machines") or {}).get("stores") or []:
+                    if isinstance(s, dict) and s.get("name") and isinstance(s.get("id"), int):
+                        store_ids.setdefault(str(s["name"]), s["id"])
+                store_id = store_ids.get(str(program.get("store")))
+                if store_id is None:
+                    problems.append(f"the program {name} draws on a store that is not there: {program.get('store')}")
+                    continue
+                left = right = 0
+                extra = {"store": store_id}
             else:
                 rotors = []
                 left, right = control_ids.get(str(program.get("left"))), control_ids.get(str(program.get("right")))
@@ -1220,9 +1233,7 @@ class Live:
                                       setting=float(program.get("setting", 1.0)),
                                       climb_deg=float(program.get("climb_deg", 8.0)),
                                       rest_below=float(program.get("rest_below", 0.0)),
-                                      rest_until=float(program.get("rest_until", 0.0)),
-                                      **({"rotors": rotors, "hover_m": float(program.get("hover_m", 1.5))}
-                                         if kind == "hover" else {}))
+                                      rest_until=float(program.get("rest_until", 0.0)), **extra)
             except Exception as error:
                 problems.append(f"the program {name} would not go on: {error}")
                 continue

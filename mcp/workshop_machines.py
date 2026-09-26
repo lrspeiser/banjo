@@ -30,9 +30,9 @@ MACHINES_KEY = "@machines"
 SCHEMA = "banjo.workshop-machines.v1"
 # The room's program kinds: "roam" is the one there is (playground/fracture_lab
 # PROGRAM_KINDS); a "drive" program was allowed here and refused at the door.
-PROGRAM_KINDS = ("roam", "hover")
+PROGRAM_KINDS = ("roam", "hover", "still")
 SENSOR_KINDS = ("water",)
-ROUTINE_KINDS = ("dig", "roam")
+ROUTINE_KINDS = ("dig", "haul", "process", "custom", "roam")
 MAX_EACH = 32
 
 
@@ -151,6 +151,8 @@ def checked(value: Any) -> dict[str, Any]:
                 raise ValueError("a hover program names four rotor controls, in order round the machine from above")
             program["rotors"] = [_name(r, "a rotor control") for r in rotors]
             program["hover_m"] = _number(row.get("hover_m"), "hover_m", 0.3, 50.0, default=1.5)
+        elif kind == "still":
+            program["store"] = _name(row.get("store"), "a still program's store")
         else:
             program["left"] = _name(row.get("left"), "a program's left control")
             program["right"] = _name(row.get("right"), "a program's right control")
@@ -203,13 +205,47 @@ def _routine(value: Any) -> dict[str, Any]:
     kind, its hopper and what a scoop costs. The places it works between are
     the room's, given when it is installed."""
     if not isinstance(value, dict):
-        raise ValueError("a routine is an object: kind, hopper_kg, work_j_per_kg")
-    unknown = set(value) - {"kind", "hopper_kg", "work_j_per_kg", "places"}
+        raise ValueError("a routine is an object: kind, hopper_kg, work_j_per_kg, places, steps, recipe, intake, "
+                         "output, batch_kg")
+    unknown = set(value) - {"kind", "hopper_kg", "work_j_per_kg", "places", "steps", "recipe", "intake", "output",
+                            "batch_kg", "recipes"}
     if unknown:
         raise ValueError("a routine cannot say " + ", ".join(sorted(unknown)))
     out: dict[str, Any] = {"kind": _kind(value.get("kind") or "roam", ROUTINE_KINDS, "a routine")}
-    if out["kind"] == "dig" and not value.get("hopper_kg"):
-        raise ValueError("a dig routine needs a hopper: hopper_kg above 0")
+    if out["kind"] in ("dig", "haul") and not value.get("hopper_kg"):
+        raise ValueError(f"a {out['kind']} routine needs a hopper: hopper_kg above 0")
+    if out["kind"] == "custom":
+        try:
+            import machine_routine
+        except ImportError:                      # the bench without the playground on the path
+            machine_routine = None
+        steps = value.get("steps")
+        if machine_routine is not None:
+            out["steps"] = machine_routine.checked_steps(steps)
+        elif not isinstance(steps, list) or not steps:
+            raise ValueError("a custom routine is its steps: a list of {do, args, until, repeat, retries}")
+        else:
+            out["steps"] = [dict(s) for s in steps]
+    elif value.get("steps") is not None:
+        raise ValueError("steps are for a custom routine; the other kinds have theirs written")
+    for key in ("recipe", "intake", "output"):
+        if value.get(key) is not None:
+            out[key] = _name(value.get(key), f"a routine's {key}")
+        elif out["kind"] == "process":
+            raise ValueError(f"a process routine needs {key}: " + ("a recipe of the room's" if key == "recipe"
+                                                                  else "a stockpile of the room's, by name"))
+    if value.get("batch_kg") is not None:
+        out["batch_kg"] = _number(value.get("batch_kg"), "batch_kg", 0.01, 1000.0)
+    if value.get("recipes") is not None:
+        # The recipes it brings to a room that lacks them, in the room's own
+        # spelling (machine_goods.checked).
+        try:
+            import machine_goods
+            out["recipes"] = machine_goods.checked({"recipes": value["recipes"]})["recipes"]
+        except ImportError:
+            if not isinstance(value["recipes"], list):
+                raise ValueError("a routine's recipes is a list of {name, in, out, work_j_per_kg, s_per_kg}")
+            out["recipes"] = [dict(r) for r in value["recipes"]]
     if value.get("hopper_kg") is not None:
         out["hopper_kg"] = _number(value.get("hopper_kg"), "hopper_kg", 0.1, 1000.0)
     if value.get("work_j_per_kg") is not None:
@@ -328,19 +364,26 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
     if record.get("programs"):
         program = dict(record["programs"][0])
         controls = {c["name"]: c for c in record.get("controls") or []}
-        # Its chassis: the one body every drive's pin turns on -- the mounts
-        # are components of their own, but one body with the deck.
-        drives = program.get("rotors") if program["kind"] == "hover" else [program["left"], program["right"]]
-        shared: set[str] | None = None
-        for name in drives:
-            control = controls.get(name)
-            bodies = {body(c, "a control") for c in control["turns"]} if control else set()
-            shared = bodies if shared is None else shared & bodies
-        if not shared or len(shared) != 1:
-            raise ValueError("a program's chassis is the one body every drive's pin turns on; "
-                             + ", ".join(repr(d) for d in drives) + " share "
-                             + (", ".join(sorted(shared)) if shared else "nothing"))
-        chassis = next(iter(shared))
+        if program["kind"] == "still":
+            # A machine that goes nowhere stands on the body its store is in.
+            store = next((s for s in record.get("stores") or [] if s["name"] == program["store"]), None)
+            if store is None:
+                raise ValueError(f"the program draws on the store {program['store']!r}, and there is none")
+            chassis = body(store["in"], "a store")
+        else:
+            # Its chassis: the one body every drive's pin turns on -- the
+            # mounts are components of their own, but one body with the deck.
+            drives = program.get("rotors") if program["kind"] == "hover" else [program["left"], program["right"]]
+            shared: set[str] | None = None
+            for name in drives:
+                control = controls.get(name)
+                bodies = {body(c, "a control") for c in control["turns"]} if control else set()
+                shared = bodies if shared is None else shared & bodies
+            if not shared or len(shared) != 1:
+                raise ValueError("a program's chassis is the one body every drive's pin turns on; "
+                                 + ", ".join(repr(d) for d in drives) + " share "
+                                 + (", ".join(sorted(shared)) if shared else "nothing"))
+            chassis = next(iter(shared))
         made: dict[str, Any] = {k: v for k, v in program.items() if k not in ("sensors", "routine")}
         # Named as the person knows it: the design's kind ("rover"), not the
         # bench's candidate id ("rover-g1-v1"); the installer keeps names apart.

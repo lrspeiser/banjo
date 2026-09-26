@@ -180,7 +180,13 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     # holds as what it holds, Environment::withdrawCarried.)
     if sand > 0.0 or soil > 0.0:
         _act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
-    r.load_in(sand, soil, kg)
+    # What the scoop brought up from a deposit besides soil (machine_goods):
+    # ore, at the deposit's grade of the scoop's mass. Its share of the
+    # volume has left the ground for good -- exported, as a material packet
+    # is -- so the hopper keeps only the rest of the soil to put back.
+    ore = ctx.goods.dug(point[0], point[1], kg) if ctx.goods is not None else {}
+    ore_share = min(1.0, sum(ore.values()) / kg) if ore else 0.0
+    r.load_in(sand * (1.0 - ore_share), soil * (1.0 - ore_share), kg, ore)
     work_j = kg * float(r.work_j_per_kg)
     drawn = 0.0
     if store is not None and work_j > 0.0:
@@ -191,34 +197,175 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
             drawn = take
     took_s = kg * DIG_S_PER_KG
     _behave(ctx, call, "waiting", max(0.5, took_s))
-    r.note(f"dug {kg:.1f} kg ({sand:.3f} m3 sand, {soil:.3f} m3 soil), {drawn:.0f} J drawn")
-    return {"did": f"dug {kg:.1f} kg into its hopper, drawing {drawn:.0f} J, in {took_s:.1f} s",
-            "dug": {"kg": round(kg, 2), "sand_m3": round(sand, 4), "soil_m3": round(soil, 4)},
+    found = ", ".join(f"{v:.1f} kg of {k}" for k, v in ore.items())
+    r.note(f"dug {kg:.1f} kg ({sand:.3f} m3 sand, {soil:.3f} m3 soil{', ' + found if found else ''}), "
+           f"{drawn:.0f} J drawn")
+    return {"did": f"dug {kg:.1f} kg into its hopper" + (f", {found} in it" if found else "")
+                   + f", drawing {drawn:.0f} J, in {took_s:.1f} s",
+            "dug": {"kg": round(kg, 2), "sand_m3": round(sand, 4), "soil_m3": round(soil, 4),
+                    "goods_kg": {k: round(v, 3) for k, v in ore.items()}},
             "drawn_j": round(drawn), "load": r.load_reading()}
 
 
+def _pile_for(ctx: senses.Context, args: dict[str, Any]) -> tuple[dict[str, Any] | None, list[float]]:
+    """The stockpile a tool works: the one at the place named (a place the
+    routine knows, such as "source": the stockpile is the one within half a
+    metre of it), else the one within reach of the machine, else none; and
+    the point the tool works at. A stockpile out of the machine's reach is
+    refused: it must stand by it."""
+    goods = ctx.goods
+    ax, az = ctx.at()
+    if args.get("place"):
+        point, name = _place(ctx, args)
+        # No stockpile at the place: a dump makes a heap there; a take says so.
+        pile = goods.stockpile_near(point[0], point[1], reach_m=0.5)
+    else:
+        point = senses.point_ahead(ctx, float(args.get("ahead_m", DIG_AHEAD_M)))
+        pile = goods.stockpile_near(ax, az)
+    if pile is not None:
+        at = pile["at_m"]
+        off = math.hypot(ax - float(at[0]), az - float(at[1])) - float(pile.get("radius_m", 1.0))
+        if off > machine_goods_reach():
+            raise ValueError(f"{pile['name']} is {off:.1f} m beyond its reach; it must go there first")
+        point = [float(at[0]), float(at[1])]
+    return pile, point
+
+
+def machine_goods_reach() -> float:
+    import machine_goods
+    return machine_goods.REACH_M
+
+
 def dump(ctx: senses.Context, call: Call) -> dict[str, Any]:
-    """Its hopper emptied onto the ground ahead of it: the packet back into
-    what is carried, then heaped there."""
+    """Its hopper emptied ahead of it: the soil and sand back into what is
+    carried and heaped on the ground there; the goods in it onto the
+    stockpile within reach (the one named by `place`, if any, or the nearest,
+    or a new heap), machine_goods.put."""
     r = ctx.routine
     if r is None or not r.carries():
         raise ValueError("it has no hopper to empty")
     sand, soil, kg = r.sand_m3, r.soil_m3, r.kg
+    goods = {k: v for k, v in r.goods.items() if v > 0.0}
     if kg <= 0.0:
         return {"did": "dumped nothing: its hopper is empty"}
     point = senses.point_ahead(ctx, float(call.args.get("ahead_m", DIG_AHEAD_M)))
-    # The ground takes it back first; a hopper emptied before a refusal read
-    # 0 of 20 kg while the load was still out of the ground (the drone's
-    # first dump, 2026-09-25).
-    _act(ctx, op="ground_return", sand_m3=sand, soil_m3=soil)
+    if goods and ctx.goods is None:
+        raise ValueError("it carries goods and the room keeps no account of goods")
+    pile = None
+    if ctx.goods is not None:
+        pile, goods_point = _pile_for(ctx, call.args)
+    else:
+        goods_point = point
+    # The ground takes its share back first; a hopper emptied before a
+    # refusal read 0 of 20 kg while the load was still out of the ground
+    # (the drone's first dump, 2026-09-25).
+    if sand > 0.0 or soil > 0.0:
+        _act(ctx, op="ground_return", sand_m3=sand, soil_m3=soil)
+    onto = None
+    if goods:
+        put = ctx.goods.put(goods_point[0], goods_point[1], goods, named=pile["name"] if pile else None)
+        onto = put["onto"]
     r.load_out()
-    reply = _act(ctx, op="deposit", at=point, radius_m=float(call.args.get("radius_m", DUMP_RADIUS_M)),
-                 sand_m3=sand, soil_m3=soil, from_carried=True)
+    heaped = None
+    if sand > 0.0 or soil > 0.0:
+        reply = _act(ctx, op="deposit", at=point, radius_m=float(call.args.get("radius_m", DUMP_RADIUS_M)),
+                     sand_m3=sand, soil_m3=soil, from_carried=True)
+        heaped = reply.get("heaped")
     r.delivered(sand, soil, kg)
     _behave(ctx, call, "waiting", 2.0)
-    r.note(f"dumped {kg:.1f} kg")
-    return {"did": f"dumped {kg:.1f} kg on the ground ahead", "heaped": reply.get("heaped"),
+    words = ", ".join(f"{v:.1f} kg of {k}" for k, v in goods.items())
+    r.note(f"dumped {kg:.1f} kg" + (f" ({words} onto {onto})" if goods else ""))
+    return {"did": f"dumped {kg:.1f} kg" + (f", {words} onto {onto}" if goods else " on the ground ahead"),
+            "heaped": heaped, "onto": onto, "load": r.load_reading()}
+
+
+def take(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """Goods off the stockpile within reach of it into its hopper: one
+    substance if named, else whatever is there, up to the room its hopper has
+    (machine_goods.take)."""
+    r = ctx.routine
+    if r is None or not r.carries():
+        raise ValueError("it has no hopper to take into")
+    if ctx.goods is None:
+        raise ValueError("the room keeps no account of goods")
+    room = r.load_room_kg()
+    if room <= 1e-6:
+        return {"did": "took nothing: its hopper is full", "load": r.load_reading()}
+    pile, point = _pile_for(ctx, call.args)
+    if pile is None:
+        raise ValueError("there is no stockpile " + (f"at {call.args['place']}" if call.args.get("place")
+                                                     else "within reach"))
+    most = min(room, float(call.args["kg"])) if call.args.get("kg") is not None else room
+    got = ctx.goods.take(point[0], point[1], most, substance=call.args.get("substance") or None,
+                         named=pile["name"])
+    taken = got["took"]
+    if not taken:
+        return {"did": f"took nothing: {got['from']} has none of "
+                       + (str(call.args.get("substance")) if call.args.get("substance") else "anything")
+                       + " on it", "load": r.load_reading(), "idle": True}
+    r.load_in(0.0, 0.0, sum(taken.values()), taken)
+    took_s = sum(taken.values()) * DIG_S_PER_KG
+    _behave(ctx, call, "waiting", max(0.5, took_s))
+    words = ", ".join(f"{v:.1f} kg of {k}" for k, v in taken.items())
+    r.note(f"took {words} off {got['from']}")
+    return {"did": f"took {words} off {got['from']}, in {took_s:.1f} s", "took": taken, "from": got["from"],
             "load": r.load_reading()}
+
+
+def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """One batch of its recipe: the inputs off its intake stockpile, the work
+    drawn from its store, the outputs onto its output stockpile, and a wait
+    for as long as the batch takes (machine_goods.convert). A machine that
+    goes nowhere works this way; a machine with wheels can too, standing at
+    a stockpile that is both its intake and its output."""
+    r = ctx.routine
+    if r is None:
+        raise ValueError("it has no routine to say what it makes")
+    if ctx.goods is None:
+        raise ValueError("the room keeps no account of goods")
+    recipe = str(call.args.get("recipe") or r.recipe or "")
+    if not recipe:
+        raise ValueError("it has no recipe: say which, or set one on its routine")
+    ax, az = ctx.at()
+    intake = ctx.goods.stockpile_near(ax, az, named=str(call.args.get("intake") or r.intake or "") or None)
+    if intake is None:
+        raise ValueError("its intake stockpile is not within reach")
+    output_name = str(call.args.get("output") or r.output or "") or None
+    output = ctx.goods.stockpile_near(ax, az, named=output_name) if output_name else intake
+    if output is None:
+        raise ValueError("its output stockpile is not within reach")
+    store = senses._store(ctx)
+    batch = float(call.args.get("kg") or r.batch_kg)
+    holds = intake.setdefault("holds", {})
+    trial = ctx.goods.convert(recipe, dict(holds), batch)
+    if not trial["made"]:
+        return {"did": f"made nothing: {intake['name']} has no " + ", ".join(trial.get("missing") or []) + " on it",
+                "idle": True}
+    # The work must be in the battery before anything is worked.
+    if store is not None and trial["work_j"] > 0.0:
+        have = float(store.get("charge_j") or 0.0)
+        if have + 1e-9 < trial["work_j"]:
+            scale = have / trial["work_j"]
+            if scale * trial["kg_in"] < 0.01:
+                return {"did": f"made nothing: its battery has {have:.0f} J and a batch takes "
+                               f"{trial['work_j']:.0f} J", "failed": True}
+            trial = ctx.goods.convert(recipe, dict(holds), trial["kg_in"] * scale * 0.999)
+    made = ctx.goods.convert(recipe, holds, trial["kg_in"])
+    drawn = 0.0
+    if store is not None and made["work_j"] > 0.0:
+        _act(ctx, op="draw", store=store["id"], joules=made["work_j"])
+        drawn = made["work_j"]
+    ctx.goods.put(float(output["at_m"][0]), float(output["at_m"][1]), made["made"], named=output["name"])
+    r.made_kg += sum(made["made"].values())
+    r.batches += 1
+    took_s = max(0.5, made["took_s"])
+    _behave(ctx, call, "waiting", min(60.0, took_s))
+    words_in = ", ".join(f"{v:.2f} kg of {k}" for k, v in made["used"].items())
+    words_out = ", ".join(f"{v:.2f} kg of {k}" for k, v in made["made"].items())
+    r.note(f"{recipe}: {words_in} into {words_out}, {drawn:.0f} J")
+    return {"did": f"worked {words_in} into {words_out} by {recipe}, drawing {drawn:.0f} J, in {took_s:.1f} s",
+            "made": made["made"], "used": made["used"], "waste_kg": round(made.get("waste_kg", 0.0), 3),
+            "drawn_j": round(drawn), "took_s": round(took_s, 1), "onto": output["name"]}
 
 
 @dataclass(frozen=True)
@@ -251,6 +398,8 @@ _WHERE = {"place": {"type": "string", "description": "a place it knows by name, 
           "distance_m": {"type": "number", "description": "how far, metres",
                          "levels": [{"value": 1.0, "words": "close, a metre"}, {"value": 3.0, "words": "a few metres"},
                                     {"value": 6.0, "words": "some way, six metres"}]}}
+_SUBSTANCE = {"substance": {"type": "string", "description": "which substance to take, or none for whatever "
+                                                             "is there", "options": "substances"}}
 _DIG = {"depth_m": {"type": "number", "description": "how deep the scoop bites, metres",
                     "levels": [{"value": 0.08, "words": "a shallow scrape"}, {"value": 0.15, "words": "a scoop"},
                                {"value": 0.3, "words": "a deep bite"}]}}
@@ -271,7 +420,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
          {**_WHERE, **_FOR_S}),
     Tool("dig", "Take one scoop of the ground ahead into its hopper, drawing the work from its battery.", dig,
          _DIG),
-    Tool("dump", "Empty its hopper onto the ground ahead of it.", dump, {}),
+    Tool("dump", "Empty its hopper ahead of it: soil onto the ground, goods onto the stockpile there (a "
+                 "place it knows, or the nearest, or a new heap).", dump, {"place": _WHERE["place"]}),
+    Tool("take", "Take goods off the stockpile within reach of it into its hopper: one substance, or "
+                 "whatever is there.", take, {"place": _WHERE["place"], **_SUBSTANCE}),
+    Tool("process", "Work one batch of its recipe: its intake stockpile's goods into its output "
+                    "stockpile's, drawing the work from its battery.", process, {}, for_deciders=False),
     Tool("carry_on", "Ask nothing more of it: its routine and its reflexes have it back.", carry_on, {}),
 )}
 
@@ -281,7 +435,8 @@ def catalogue(for_deciders: bool = True) -> list[dict[str, Any]]:
             for t in TOOLS.values() if t.for_deciders or not for_deciders]
 
 
-def argument_questions(places: dict[str, Any] | None = None) -> dict[str, Any]:
+def argument_questions(places: dict[str, Any] | None = None,
+                       substances: list[str] | None = None) -> dict[str, Any]:
     """One typed question per argument a decider can fill, across the tools it
     may pick, keyed `arg_<name>`: asked in the same call as the tool, so a
     decider answers everything at once and only the picked tool's are read
@@ -303,6 +458,13 @@ def argument_questions(places: dict[str, Any] | None = None) -> dict[str, Any]:
                                             "picked. `senses.places` says how far and which way each lies.",
                             "criteria": {n: ("the person, where they stand" if n == "person" else f"the place called {n}")
                                          for n in names}}
+            elif spec.get("options") == "substances":
+                if not substances:
+                    continue
+                out[key] = {"type": "choice",
+                            "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
+                                            "is picked. `senses.goods` says what each stockpile holds.",
+                            "criteria": {s: f"the substance called {s}" for s in substances}}
             elif isinstance(spec.get("options"), dict):
                 out[key] = {"type": "choice",
                             "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
@@ -316,7 +478,8 @@ def argument_questions(places: dict[str, Any] | None = None) -> dict[str, Any]:
     return out
 
 
-def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any] | None = None) -> dict[str, Any]:
+def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any] | None = None,
+                  substances: list[str] | None = None) -> dict[str, Any]:
     """The picked tool's arguments, from the answers to its argument questions:
     a choice's value, a score's nearest level. An argument not answered is
     left to the tool's own default."""
@@ -331,6 +494,10 @@ def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any
         if spec.get("options") == "places":
             choice = answer.get("choice")
             if choice == "person" or (places and choice in places):
+                args[name] = choice
+        elif spec.get("options") == "substances":
+            choice = answer.get("choice")
+            if substances and choice in substances:
                 args[name] = choice
         elif isinstance(spec.get("options"), dict):
             choice = answer.get("choice")
@@ -360,6 +527,8 @@ def described(tool_name: str, args: dict[str, Any]) -> str:
         bits.append(f"{args.get('distance_m', 3):g} m at {args['bearing_deg']:+g} deg")
     if "depth_m" in args:
         bits.append(f"{args['depth_m']:g} m deep")
+    if args.get("substance"):
+        bits.append(str(args["substance"]))
     if "for_s" in args:
         bits.append(f"for {args['for_s']:g} s")
     return words + (" " + ", ".join(bits) if bits else "")

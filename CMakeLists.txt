@@ -1531,6 +1531,15 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_drone_tests.py -v)
     set_tests_properties(banjo_workshop_drone_tests PROPERTIES TIMEOUT 300)
+    # And raw materials into finished goods: the room's account of goods, the
+    # routine language, a machine that goes nowhere, the goods rack, and the
+    # mine in the real engine: ore to wire on the Workshop's rack.
+    add_test(NAME banjo_goods_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
+    set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
     # And what a break costs: the room's failure law reaching the engine, and
     # the account the world gives of a break in the tests-break room.
     add_test(NAME banjo_break_room_tests

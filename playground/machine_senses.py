@@ -46,6 +46,7 @@ class Context:
     person: dict[str, Any] | None = None                 # {standing_m: [x, y, z]} when someone is there
     impacts: list[dict[str, Any]] = field(default_factory=list)
     t: float = 0.0
+    goods: Any = None                                    # machine_goods.Goods, the room's ledger, or None
     _surveys: dict[tuple[float, float], dict[str, Any]] = field(default_factory=dict)
     _sun: dict[str, Any] | None = None
 
@@ -121,10 +122,13 @@ def _controls(ctx: Context) -> dict[Any, dict[str, Any]]:
 
 
 def _store(ctx: Context) -> dict[str, Any] | None:
-    """The store the machine's wheels draw on."""
+    """The store the machine's wheels draw on, or the one a machine that goes
+    nowhere has of its own."""
     controls = _controls(ctx)
     motors = {m.get("id"): m for m in (ctx.machines or {}).get("motors") or []}
     stores = {s.get("id"): s for s in (ctx.machines or {}).get("stores") or []}
+    if ctx.program.get("store"):
+        return stores.get(ctx.program.get("store"))
     left = controls.get(ctx.program.get("left")) or {}
     motor = motors.get(left.get("motor")) or {}
     return stores.get(motor.get("store"))
@@ -233,7 +237,7 @@ def sense_wheels(ctx: Context) -> dict[str, Any]:
     controls = _controls(ctx)
     out = []
     drives = ([(f"rotor {i + 1}", ident) for i, ident in enumerate(ctx.program.get("rotors") or [])]
-              if ctx.program.get("kind") == "hover" else
+              if ctx.program.get("kind") == "hover" else [] if ctx.program.get("kind") == "still" else
               [(side, ctx.program.get(side)) for side in ("left", "right")])
     for side, ident in drives:
         c = controls.get(ident) or {}
@@ -248,6 +252,18 @@ def sense_load(ctx: Context) -> dict[str, Any]:
     if r is None:
         return {"carries": False}
     return {"carries": True, **r.load_reading()}
+
+
+def sense_goods(ctx: Context) -> dict[str, Any]:
+    """The room's goods (machine_goods): each deposit and stockpile, how far
+    and which way from the machine and what it holds, and the recipes."""
+    if ctx.goods is None:
+        return {"deposits": [], "stockpiles": [], "recipes": []}
+    ax, az = ctx.at()
+    out = ctx.goods.reading(ax, az)
+    for row in out["deposits"] + out["stockpiles"]:
+        row["bearing_deg"] = relative_bearing(ctx.heading(), float(row["x_m"]) - ax, float(row["z_m"]) - az)
+    return out
 
 
 def sense_places(ctx: Context) -> dict[str, Any]:
@@ -319,6 +335,9 @@ SENSES: dict[str, Sense] = {s.name: s for s in (
     Sense("wheels", "What each wheel's controller is doing and reports, and whether either has stalled.",
           sense_wheels),
     Sense("load", "What it carries in its hopper, by material, against what it can carry.", sense_load),
+    Sense("goods", "The room's deposits (ore in the ground), its stockpiles (heaps of goods, and what each "
+                   "holds) with how far and which way each lies, and the recipes a machine can work.",
+          sense_goods),
     Sense("places", "How far and which way each place it knows lies: its dig site, its depot.", sense_places),
     Sense("nearby", "The things within eight metres of it: what they are, how far, which way, whether they "
                     "move.", sense_nearby),

@@ -31,16 +31,18 @@ INTENTS = {
     "come_here": "Come here, come to me, come over, approach me, come closer.",
     "turn_around": "Turn around, turn round, about face, turn back, go the other way.",
     "back_off": "Back off, back up, reverse, go back a bit, get away from that.",
-    "dig": "Dig here, take a scoop, dig for something, get some sand or soil.",
-    "dump": "Dump it, empty your hopper, drop the load, put it down here.",
+    "dig": "Dig here, take a scoop, dig for something, get some sand, soil or ore.",
+    "dump": "Dump it, empty your hopper, drop the load, put it down here, unload onto the pile.",
+    "take": "Take that, load up, pick up the ore, take some copper off the pile, fill your hopper from the heap.",
+    "make": "Make a batch, process it, smelt, work the recipe, get to work on what is on your intake.",
     "status": "What are you doing, where are you, how is your battery, what do your sensors see, report.",
     "why": "Why did you stop, why did you turn, why are you doing that, what happened, explain.",
     "other": "Anything else: a question about the world, chit-chat, an instruction it cannot take.",
 }
 INTENT_QUESTIONS = {
     "intent": {"type": "choice",
-               "instructions": "The person is talking to a small wheeled rover in a physics sandbox. "
-                               "`said` is what they typed. What do they mean it to do?",
+               "instructions": "The person is talking to a machine in a physics sandbox: `machine` says what "
+                               "kind. `said` is what they typed. What do they mean it to do?",
                "criteria": INTENTS},
 }
 INTENT_LEAST = 0.5
@@ -53,6 +55,8 @@ PLAIN = [
     ("turn_around", r"\b(turn (a)?round|turn around|about face|other way|turn back)\b"),
     ("back_off", r"\b(back (off|up|away)|reverse|get away)\b"),
     ("dump", r"\b(dump|empty|drop (it|the load)|unload)\b"),
+    ("take", r"\b(take|load up|pick up|fill your hopper)\b"),
+    ("make", r"\b(make|process|smelt|work the|batch)\b"),
     ("dig", r"\b(dig|scoop|shovel)\b"),
     ("go_on", r"\b(go on|carry on|continue|resume|go roam|back to work|get going|off you go|bye|goodbye)\b"),
     ("status", r"\b(what are you|where are you|how is|how'?s|battery|sensors?|report|status|doing)\b"),
@@ -61,11 +65,11 @@ TALK_TIMEOUT_S = 30.0
 MAX_OUTPUT_TOKENS = 300
 
 
-def classify(client: rover_brain.JevClient | None, said: str) -> tuple[str, float, str]:
+def classify(client: rover_brain.JevClient | None, said: str, kind: str = "roam") -> tuple[str, float, str]:
     """What the person means: the intent, how sure, and who sorted it."""
     if client is not None:
         try:
-            answers = client.ask({"said": said}, INTENT_QUESTIONS)
+            answers = client.ask({"said": said, "machine": rover_brain.kind_of(kind)}, INTENT_QUESTIONS)
             choice = answers.get("intent") if isinstance(answers.get("intent"), dict) else {}
             intent, confidence = str(choice.get("choice") or "other"), float(choice.get("confidence") or 0.0)
             who = getattr(client, "kind", "jev")
@@ -159,11 +163,11 @@ def _model_answer(app: Any, said: str, program: dict[str, Any]) -> str:
         return ("I can take: stop, go on, come here, turn round, back off, or ask what I am doing and why. "
                 "Nobody has given me words for anything else.")
     instructions = (
-        "You are a small battery rover with two driven wheels and a caster, roaming a lake's shore in a "
-        "physics sandbox. A person is talking to you. Answer in one or two short sentences, in the first "
-        "person, from the STATE given and nothing else: never invent an event, a place or a number that is "
-        "not in it. You cannot change anything by answering. If asked to do something you cannot do, say "
-        "what you can take: stop, go on, come here, turn round, back off, or say what you are doing and why.")
+        f"You are {rover_brain.kind_of(str(program.get('kind') or 'roam'))}, in a physics sandbox. A person is "
+        "talking to you. Answer in one or two short sentences, in the first person, from the STATE given and "
+        "nothing else: never invent an event, a place or a number that is not in it. You cannot change "
+        "anything by answering. If asked to do something you cannot do, say what you can take: stop, go on, "
+        "come here, turn round, back off, dig, dump, take, make, or say what you are doing and why.")
     payload = {"model": model, "store": False, "max_output_tokens": MAX_OUTPUT_TOKENS,
                "reasoning": {"effort": "low"}, "instructions": instructions,
                "input": f"STATE: {json.dumps(program, allow_nan=False)}\n\nThe person said: {said}"}
@@ -208,7 +212,7 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
     if body.get("open"):
         if not program.get("power"):
             reply = f"{describe(program)} Switch me on and I will talk."
-        elif standing is not None:
+        elif standing is not None and program.get("kind") != "still":
             program = _ask(app, program, brain, "facing", 0.0, "the person came to talk to it", standing)
             reply = describe(program)
         else:
@@ -226,7 +230,7 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
         if not said:
             raise ValueError("say something: {said: ...}")
         say("you", said)
-        intent, confidence, sorted_by = classify(brain.decider(), said)
+        intent, confidence, sorted_by = classify(brain.decider(), said, str(program.get("kind") or "roam"))
         if not program.get("power") and intent not in ("status", "why", "other"):
             reply = "I am switched off, so I cannot. Switch me on first."
         elif intent == "stop":
@@ -235,6 +239,8 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
         elif intent == "go_on":
             did, program = _use(app, program, brain, body, "carry_on", {}, "")
             reply = "Going on with my rounds."
+        elif intent in ("come_here", "turn_around", "back_off") and program.get("kind") == "still":
+            reply = "I go nowhere: I stand where I was built."
         elif intent == "come_here":
             if standing is None:
                 reply = "I do not know where you are standing."
@@ -250,8 +256,9 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
             did, program = _use(app, program, brain, body, "back_off", {"for_s": 2.5},
                                 "the person asked it to back off")
             reply = "Backing off."
-        elif intent in ("dig", "dump"):
-            did, program = _use(app, program, brain, body, intent, {}, f"the person asked it to {intent}")
+        elif intent in ("dig", "dump", "take", "make"):
+            tool = "process" if intent == "make" else intent
+            did, program = _use(app, program, brain, body, tool, {}, f"the person asked it to {intent}")
             reply = did.get("did", "").capitalize() + "."
         elif intent in ("status", "why"):
             reply = describe(program)

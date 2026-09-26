@@ -153,6 +153,10 @@ def concepts(design: Any) -> list[dict[str, Any]]:
             if tuple(sorted(control["turns"])) not in turning_pairs:
                 wrong.append(f"{control['name']} works a joint that does not turn")
         for program in machines.get("programs") or []:
+            if program.get("kind") == "still":
+                if not any(s["name"] == program.get("store") for s in machines.get("stores") or []):
+                    wrong.append(f"the program draws on {program.get('store')}, which is not a store here")
+                continue
             if program.get("kind") == "hover":
                 rotor_motors = {tuple(sorted(m["turns"])) for m in machines.get("motors") or [] if m.get("rotor")}
                 for k, name in enumerate(program.get("rotors") or []):
@@ -175,11 +179,16 @@ def concepts(design: Any) -> list[dict[str, Any]]:
                      "says": workshop_machines.described(design)["says"] if not wrong
                              else "; ".join(wrong[:3])})
 
-        driven = any(machines.get("motors"))
+        driven = any(machines.get("motors") or [])
+        # A machine that goes nowhere (a still program) is driven by nothing
+        # and is a machine all the same: what it does is its routine.
+        still = any(p.get("kind") == "still" for p in machines.get("programs") or [])
         said.append({"concept": "if it is powered, something can move it",
-                     "ok": not machines.get("programs") or driven,
+                     "ok": not machines.get("programs") or driven or still,
                      "says": ("it runs a program but no motor drives anything"
-                              if machines.get("programs") and not driven else
+                              if machines.get("programs") and not driven and not still else
+                              "it goes nowhere: a still program, working its routine where it stands"
+                              if still and not driven else
                               "nothing is powered" if not driven else
                               f"{len(machines['motors'])} motor(s) drive it")})
 

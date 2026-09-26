@@ -66,6 +66,8 @@ KINDS: dict[str, str] = {
             "own by a lake",
     "hover": "a small battery machine that flies on four rotors, holding a height above the ground and moving "
              "by leaning, working on its own by a lake; it cannot roll, and off its rotors it falls",
+    "still": "a battery machine that goes nowhere -- a smelter, a mill -- working what is put on its intake "
+             "stockpile into goods on its output one by a recipe; it can only wait or work",
 }
 ALSO_QUESTIONS: dict[str, Any] = {
     "stuck": {
@@ -92,7 +94,8 @@ def kind_of(kind: str) -> str:
     return KINDS.get(kind) or KINDS["roam"]
 
 
-def questions_for(kind: str, places: dict[str, Any] | None = None) -> dict[str, Any]:
+def questions_for(kind: str, places: dict[str, Any] | None = None,
+                  substances: list[str] | None = None) -> dict[str, Any]:
     """The questions asked of a machine of this kind, in one call: which tool
     next, from the tools a decider may pick; each argument a decider can fill,
     as a question of its own (machine_tools.argument_questions); and the
@@ -109,7 +112,7 @@ def questions_for(kind: str, places: dict[str, Any] | None = None) -> dict[str, 
                              "it to its routine and its reflexes."),
             "criteria": criteria,
         },
-        **tools.argument_questions(places),
+        **tools.argument_questions(places, substances),
         **ALSO_QUESTIONS,
     }
 
@@ -367,7 +370,7 @@ _side = senses._side
 
 
 def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "Jev",
-           places: dict[str, Any] | None = None) -> dict[str, Any]:
+           places: dict[str, Any] | None = None, substances: list[str] | None = None) -> dict[str, Any]:
     """The answers as a decision: which tool to call, or none, and what the
     panel says of it. A choice under CONFIDENCE_LEAST is left to the reflexes
     and the routine; a score or a noul the answer lacks is simply not said."""
@@ -387,7 +390,7 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "
         out["call"] = None
         out["said"] = f"{who} gave no tool it has ({pick or 'nothing'}); its reflexes have it"
         return out
-    args = tools.arguments_for(pick, answers, places)
+    args = tools.arguments_for(pick, answers, places, substances)
     words = tools.described(pick, args)
     out["args"] = args
     if confidence < CONFIDENCE_LEAST:
@@ -417,6 +420,7 @@ class Brain:
         self.deciders: dict[str, Any] = deciders
         self.mode = mode if mode == "reflex" or mode in deciders else "reflex"
         self.routine = routines.Routine(name, declared)
+        self.goods: Any = None                     # the room's goods ledger (machine_goods.Goods), shared
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
         self.bodies: list[dict[str, Any]] | None = None
@@ -448,7 +452,8 @@ class Brain:
     def context(self, ask: Callable[..., dict[str, Any]] | None) -> senses.Context:
         """Its senses' view of the world as the last step left it."""
         return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
-                              routine=self.routine, person=self.person, impacts=self.impacts, t=self.t)
+                              routine=self.routine, person=self.person, impacts=self.impacts, t=self.t,
+                              goods=self.goods)
 
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
                 t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
@@ -487,8 +492,9 @@ class Brain:
                who: str = "Jev", places: dict[str, Any] | None = None) -> None:
         began = time.monotonic()
         try:
-            answers = ask(state, questions_for(kind, places))
-            decision = decide(answers, event, kind, who, places)
+            substances = self.goods.substances() if self.goods is not None else None
+            answers = ask(state, questions_for(kind, places, substances))
+            decision = decide(answers, event, kind, who, places, substances)
         except Exception as failed:               # a fault upstream never stops the room
             decision = {"event": event, "pick": None, "confidence": 0.0, "call": None,
                         "said": f"{who} was not asked to the end ({str(failed)[:80]}); its reflexes have it"}
@@ -534,6 +540,11 @@ class Brains:
         self.modes: dict[str, str] = {}            # kept across rooms, by name
         self.spec: dict[str, Any] | None = None    # the room's, for what each program's routine is
         self.person: dict[str, Any] | None = None  # where the person last said they stood
+        # The room's goods ledger (machine_goods.Goods), over the spec's own
+        # block, shared by every brain; and what a stockpile marked as the
+        # Workshop's rack does with what lands on it (the server sets it).
+        self.goods: Any = None
+        self.on_rack: Callable[[str, float], None] | None = None
 
     def _made(self) -> tuple[Any, str]:
         made = self._deciders()
@@ -547,6 +558,7 @@ class Brains:
             deciders, default = self._made()
             brain = self.brains[name] = Brain(name, deciders, self.modes.get(name, default),
                                               routines.declared_for(self.spec, name))
+            brain.goods = self.goods
         return brain
 
     def opened(self, spec: dict[str, Any] | None = None) -> None:
@@ -556,6 +568,8 @@ class Brains:
             self.modes[name] = brain.mode
         self.brains.clear()
         self.spec = spec
+        import machine_goods
+        self.goods = machine_goods.Goods(spec, on_rack=self.on_rack) if isinstance(spec, dict) else None
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})

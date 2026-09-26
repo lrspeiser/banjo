@@ -1072,6 +1072,12 @@ SCENES = {
     # roams on. Laid out by tools/build_rover_room.py; open it at
     # /world?scene=tests-day.
     "tests-day": _saved_room("tests-day"),
+    # Raw materials into finished goods (docs/machine-world.md): a copper vein,
+    # the rover digging it by a routine of its own steps, a smelter and a mill
+    # that go nowhere, and the drone hauling between them, onto a stockpile
+    # that is the Workshop's rack. Laid out by tools/build_mine_room.py; open
+    # it at /world?scene=tests-mine.
+    "tests-mine": _saved_room("tests-mine"),
     # What a break costs (docs/what-a-break-costs.md): an oak plank on piers, a
     # ball dropped on it, and the room's own account of what breaking it cost.
     # The one room that runs the energy-scaled failure law.

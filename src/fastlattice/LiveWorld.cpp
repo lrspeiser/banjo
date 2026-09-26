@@ -1727,6 +1727,7 @@ struct LiveWorld::Impl {
     // The store a program's machine runs on: the one its left wheel's motor
     // draws on.
     [[nodiscard]] LiveEnergyStore *storeOfProgram(const Program &p) {
+        if (p.said.store != 0) return energyStoreById(p.said.store);
         const Control *left = controlById(p.said.left);
         const Motor *motor = left != nullptr ? motorById(left->said.motor) : nullptr;
         return motor != nullptr ? energyStoreById(motor->said.store) : nullptr;
@@ -1945,9 +1946,59 @@ struct LiveWorld::Impl {
         tellAll(true, settings);
     }
 
+    // A machine that goes nowhere (a "still" program): on, it stands by;
+    // asked to wait, it waits, for as long as it was asked; its battery low,
+    // it rests until charged; off, it is stopped. Nothing is told to any
+    // controller: what it does with its power is the routine over it.
+    void decideStill(Program &p) {
+        LiveProgram &s = p.said;
+        const auto into = [&](const char *doing, std::string why) {
+            if (s.doing != doing) {
+                s.doing_s = 0.0;
+                s.turned_deg = 0.0;
+            }
+            s.doing = doing;
+            s.why = std::move(why);
+        };
+        const auto dropAsk = [&]() {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+        };
+        if (!s.power) {
+            dropAsk();
+            into("stopped", "off");
+            return;
+        }
+        const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
+        if (s.doing == "resting") {
+            if (s.charge_share < s.rest_until) return;
+            into("standing by", "its battery is charged again");
+        } else if (low) {
+            dropAsk();
+            into("resting", "its battery is low, so it rests until it is charged");
+            ++s.rests;
+            return;
+        }
+        if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
+            dropAsk();
+            into("standing by", "it has done what it was asked");
+        }
+        if (!s.asked.empty()) {
+            into("waiting", s.asked_why);
+            return;
+        }
+        if (s.doing != "standing by") into("standing by", "ready");
+    }
+
     void decideProgram(Program &p) {
         if (p.said.kind == "hover") {
             decideHover(p, p.last_dt_s > 0.0 ? p.last_dt_s : 1.0 / 240.0);
+            return;
+        }
+        if (p.said.kind == "still") {
+            decideStill(p);
             return;
         }
         constexpr double kPi = 3.14159265358979323846;
@@ -4865,6 +4916,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.asked_for_s = o.contains("asked_for_s") ? numberFrom(o.at("asked_for_s")) : 0.0;
         p.said.asked_s = o.contains("asked_s") ? numberFrom(o.at("asked_s")) : 0.0;
         if (o.contains("asked_toward_m")) p.said.asked_toward_m = vecFrom(o.at("asked_toward_m"));
+        p.said.store = o.value("store", 0U);
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
@@ -4873,7 +4925,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.interruptions = o.value("interruptions", 0U);
         if (carrying) {
             const bool declared = kept(asked.programs, p.said.id);
-            const bool wheels = impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
+            const bool wheels = p.said.kind == "still"
+                                    ? impl.energyStoreById(p.said.store) != nullptr
+                                    : impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
             if (!declared || !wheels) {
                 if (declared)
                     lost.push_back("the program of " + p.said.name +
@@ -6305,6 +6359,33 @@ std::vector<LiveControl> LiveWorld::controls() const {
     return out;
 }
 
+unsigned LiveWorld::stillProgram(const std::string &name, const std::string &body, unsigned store, double rest_below,
+                                 double rest_until) {
+    Impl &I = *impl_;
+    if (!(rest_below >= 0.0 && rest_below < 1.0) || (rest_below > 0.0 && !(rest_until > rest_below && rest_until <= 1.0)))
+        return 0;
+    if (I.energyStoreById(store) == nullptr) return 0;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+    for (const Impl::Program &other : I.programs)
+        if (other.said.kind == "still" && other.said.body == body) return 0;
+    Impl::Program p{};
+    p.forward_local = Vec3{0.0, 0.0, 1.0};
+    p.left_local = Vec3{1.0, 0.0, 0.0};
+    p.said.id = I.next_program++;
+    p.said.name = name.empty() ? "program " + std::to_string(p.said.id) : name;
+    p.said.kind = "still";
+    p.said.store = store;
+    p.said.body = body;
+    p.said.setting = 1.0;
+    p.said.climb_deg = 90.0;
+    p.said.rest_below = rest_below;
+    p.said.rest_until = rest_below > 0.0 ? rest_until : 0.0;
+    I.readProgram(p);
+    I.programs.push_back(std::move(p));
+    return I.programs.back().said.id;
+}
+
 unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                             const std::string &body, double setting, double climb_deg, double rest_below,
                             double rest_until, const std::vector<unsigned> &rotors, double hover_m) {
@@ -6490,6 +6571,8 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
     if (!std::isfinite(ask.for_s) || ask.for_s < 0.0 || ask.for_s > 60.0)
         return "a program is asked for from 0 s (until asked otherwise) to 60 s";
     if (ask.why.size() > 200) return "why it was asked is 200 characters at most";
+    if (p->said.kind == "still" && !ask.doing.empty() && ask.doing != "waiting")
+        return "a machine that goes nowhere can only be asked to be waiting, or asked nothing (\"\")";
     const bool needs_toward = ask.doing == "facing" || ask.doing == "approaching";
     if (needs_toward && (!ask.has_toward || !std::isfinite(ask.toward_m.x) || !std::isfinite(ask.toward_m.z)))
         return "facing and approaching need a point in the world to look toward";
@@ -14525,6 +14608,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"asked_for_s", savedNumber(p.said.asked_for_s)},
                                 {"asked_s", savedNumber(p.said.asked_s)},
                                 {"asked_toward_m", savedVec(p.said.asked_toward_m)},
+                                {"store", p.said.store},
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},

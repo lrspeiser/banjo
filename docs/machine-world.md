@@ -1263,6 +1263,97 @@ Not built: a landing pad or a place to land other than where it is; wind;
 a rotor's own inertia (the disc spins up as fast as the motor can turn it);
 a flying machine that carries a thing on a rope.
 
+## Raw materials into finished goods
+
+**Status, 2026-09-26.** Machines that make things out of what other machines
+dig, in one language a person or a model writes, on the same framework the
+rover and the drone run on. Open `/world?scene=tests-mine` and switch the
+four machines on from the Room tab: the rover digs copper ore out of a vein,
+the smelter makes copper of it, the drone flies the copper to the mill, the
+mill draws it into wire, and the wire lands on the Workshop's goods rack,
+where a machine built on the bench takes it.
+
+**The room's account of goods** is one block, `goods`, kept with the room and
+changed in place as machines work (`machine_goods`):
+
+- *Deposits*: a patch of ground where a scoop brings up ore with the soil --
+  its substance, where, how wide, its `grade` (the share of a scoop's mass
+  that is ore) and how much is there in all. What is taken is booked; a vein
+  runs out. The ore's share of a scoop's volume has left the ground for good,
+  exported as a material packet is, so the ground's own ledger stays whole.
+- *Stockpiles*: heaps of goods at a place, by substance and mass. A machine
+  dumps onto one or takes off one from within two metres of its edge; a dump
+  where there is none makes a heap. One marked `rack` is the Workshop's: what
+  lands there goes onto the Workshop's goods rack (`workshop_library`).
+- *Recipes*: what a machine that processes makes of what it is given, per
+  kilogram in -- what it takes, what comes out (no more mass than went in;
+  the rest is waste), the work it draws from its battery and the time it
+  takes. Nothing here is copper's: a substance is a name, and the room's
+  recipes are the only chemistry there is.
+
+**A machine that goes nowhere** is a program of kind `still`: it stands on a
+body, draws on a store of its own, has no wheels, and can only stand by,
+wait as asked, rest when its battery is low, or be off (`LiveWorld::
+decideStill`). What it makes is its routine, run by the playground over it.
+
+**Three more tools**, for any machine (`machine_tools`): `take` (goods off
+the stockpile it stands by, or the one at a place it knows, into its hopper,
+one substance or whatever is there), `process` (one batch of its recipe: the
+inputs off its intake stockpile, the work off its battery, the outputs onto
+its output stockpile, and a wait for as long as the batch takes) and `dump`,
+which now puts a load's goods onto the stockpile it stands by and its soil
+on the ground. The senses gained `goods`: every deposit and stockpile, how
+far and which way, what each holds, and the recipes. The deciders' argument
+questions gained a substance to take. A person can say "take", "make" and
+"dump" to any machine, and a still machine tells them it goes nowhere.
+
+**The routine language.** A routine was a named kind whose steps were written
+in code. It can now be written out: `kind: custom` with `steps`, each a tool,
+its arguments (a `place` by name), an `until` (arrived, asked_done,
+load_full, load_empty, done, or a number of seconds), `repeat` and
+`retries`, checked against the tools the machines have and the places the
+routine knows. Two more named kinds: `haul` (take at its source, carry to
+its destination, put it there; when the source pile is empty it goes with
+what it has) and `process` (its recipe, between its intake and output
+stockpiles, `batch_kg` at a time). A step with nothing to do yet -- nothing
+on the pile, nothing to work -- is asked again next time, quietly. The rover
+in the mine runs a custom routine: go to the vein, dig until full, back off,
+go to the smelter's intake, dump there. The bench chat's `set_routine` takes
+all of it, and `set_program` takes `still` with its store.
+
+**What machines are made of, beyond their matter.** A machine's power parts
+take goods off the Workshop's goods rack when it is made, by a declared
+table (`workshop_library.GOODS_PER`): a motor 0.05 kg of copper wire per
+newton-metre of stall torque and at least half a kilogram, a store a
+kilogram of copper per 100 kJ and at least half, a control a tenth of a
+kilogram of wire, a panel half a kilogram per square metre. "What it needs"
+lists them with the oak and the iron, and the install gate spends them in
+the same transaction, all or none. A rover takes 2.3 kg of copper wire and a
+kilogram of copper; without them the gate says so and keeps the design.
+
+Measured in the real engine (`tools/build_mine_room.py`, which refuses to
+write the room unless the chain closes): switched on together, the rover
+reached the vein 4 s in and dug a 40 kg scoop with 12 kg of copper ore in
+it; at 28 s it dumped the load on the smelter's intake, the soil on the
+ground and the ore on the pile; the smelter worked its first 5 kg batch into
+1.5 kg of copper at once, 10 kJ and 10 s; the drone, waiting at the output,
+took the copper and flew it to the mill's intake by 40 s; the mill drew it
+into 1.47 kg of copper wire, 750 J and 1.5 s, onto the rack stockpile, and
+the same 1.47 kg went onto the Workshop's goods rack. Every battery's
+account closed and the ground's carried account was back at 0.01 kg. The
+vein had 388 kg left of 400. Checked by `tests/goods_tests.py`.
+
+**On the bench**, a `bin` family and a `processor` template: a deck on legs with
+an intake bin and an output bin, a battery and a panel, and a still program
+with a process routine whose recipe is a parameter. Installed through the
+gate, its bins become stockpiles of the room's where they stand, and the
+recipe it brings is given to a room that lacks it; in the engine, 7 kg of
+ore put on its intake became 2.1 kg of copper on its output for 14 kJ.
+
+Not built: a hopper or a stockpile drawn on the
+page; a routine that changes with what it senses (a step's `until` is one
+condition, not a choice); a market or a price for goods.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

@@ -325,8 +325,10 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "parameters": {"type": "object", "additionalProperties": False,
                         "required": ["kind"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam", "hover"]},
+                            "kind": {"type": "string", "enum": ["roam", "hover", "still"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
+                            "store": {"type": "string", "description": "for a still program: the store it draws "
+                                                                      "on; the machine stands on that store's part"},
                             "rotors": {"type": "array", "items": {"type": "string"}, "minItems": 4, "maxItems": 4},
                             "hover_m": {"type": "number", "minimum": 0.3, "maximum": 50},
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
@@ -348,14 +350,37 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         {"type": "function", "name": "set_routine",
          "description": "What the machine does on its own when nobody is telling it anything: 'dig' goes to "
                         "its dig site, fills its hopper (hopper_kg), carries the load to its depot and dumps "
-                        "it, again and again; 'roam' wanders by its reflexes. The places it works between are "
+                        "it, again and again; 'haul' takes what is on the stockpile at its source to its "
+                        "destination; 'process' works its intake stockpile into its output one by a recipe of "
+                        "the room's (recipe, intake, output name them; batch_kg is how much at a time); "
+                        "'custom' is steps of your own, each a tool (go_to, dig, dump, take, process, "
+                        "back_off, turn_left, turn_right, hold_still, face, go_forward) with args (a 'place' "
+                        "by name), an until (arrived, asked_done, load_full, load_empty, done, or seconds), "
+                        "repeat and retries; 'roam' wanders by its reflexes. The places it works between are "
                         "the room's, given when it is installed. work_j_per_kg is what a scoop costs its "
                         "battery. The program must be set first.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["dig", "roam"]},
+                            "kind": {"type": "string", "enum": ["dig", "haul", "process", "custom", "roam"]},
                             "hopper_kg": {"type": "number", "minimum": 0.1, "maximum": 1000},
-                            "work_j_per_kg": {"type": "number", "minimum": 0, "maximum": 10000}}}},
+                            "work_j_per_kg": {"type": "number", "minimum": 0, "maximum": 10000},
+                            "recipe": {"type": "string"}, "intake": {"type": "string"}, "output": {"type": "string"},
+                            "batch_kg": {"type": "number", "minimum": 0.01, "maximum": 1000},
+                            "recipes": {"type": "array", "maxItems": 8, "description": "recipes the machine brings "
+                                        "to a room that lacks them, per kilogram in: in and out map substances to "
+                                        "kilograms (no more out than in), work_j_per_kg and s_per_kg",
+                                        "items": {"type": "object", "additionalProperties": False,
+                                                  "required": ["name", "in", "out"],
+                                                  "properties": {"name": {"type": "string"},
+                                                                 "in": {"type": "object"}, "out": {"type": "object"},
+                                                                 "work_j_per_kg": {"type": "number"},
+                                                                 "s_per_kg": {"type": "number"}}}},
+                            "steps": {"type": "array", "maxItems": 24, "items": {
+                                "type": "object", "additionalProperties": False, "required": ["do"],
+                                "properties": {"do": {"type": "string"}, "args": {"type": "object"},
+                                               "until": {"anyOf": [{"type": "string"}, {"type": "number"}]},
+                                               "repeat": {"type": "boolean"},
+                                               "retries": {"type": "integer", "minimum": 0, "maximum": 20}}}}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
