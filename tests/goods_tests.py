@@ -119,7 +119,7 @@ class TheRoutineLanguage(unittest.TestCase):
         self.assertEqual(("go_to", "arrived", True, 2, 4), (steps[0]["do"], steps[0]["until"], steps[1]["repeat"],
                                                             steps[1]["retries"], steps[2]["until"]))
         for broken, why in (([{"do": "fly"}], "no such tool"), ([{"do": "dig", "until": "never"}], "until is one of"),
-                            ([{"do": "dig", "when": 1}], "cannot say"), ([], "list of 1 to"),
+                            ([{"do": "dig", "whenever": 1}], "cannot say"), ([], "list of 1 to"),
                             ([{"do": "dig", "retries": 99}], "retries is 0 to 20")):
             with self.subTest(why=why), self.assertRaisesRegex(ValueError, why):
                 machine_routine.checked_steps(broken)

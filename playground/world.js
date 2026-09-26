@@ -1630,7 +1630,10 @@ function showRoutine(r) {
     (r.load.trips ? `, ${r.load.trips} load${r.load.trips === 1 ? "" : "s"} delivered (${Math.round(r.load.delivered_kg)} kg)` : "") : "";
   const paused = r.paused_by ? ` · waiting: ${r.paused_by} has it` : "";
   const note = r.notes && r.notes.length ? ` · ${r.notes[r.notes.length - 1]}` : "";
-  line.textContent = `Routine: ${r.kind}, step ${r.step} of ${r.of} (${r.doing})${load}${paused}${note}`;
+  const on = r.on ? ` · on ${r.on}: ${r.doing}` : "";
+  const orders = r.orders && r.orders.length ? ` · ${r.orders.length} order${r.orders.length === 1 ? "" : "s"} to do` : "";
+  const watches = r.watches ? ` · watching ${r.watches} thing${r.watches === 1 ? "" : "s"}` : "";
+  line.textContent = `Routine: ${r.kind}, step ${r.step} of ${r.of} (${r.doing})${on}${orders}${watches}${load}${paused}${note}`;
   line.hidden = false;
 }
 

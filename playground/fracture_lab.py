@@ -1117,10 +1117,10 @@ def _routine(given: Any, name: str) -> dict[str, Any]:
         raise ValueError(f"program {name!r} routine is an object: kind, places, hopper_kg, work_j_per_kg, and for "
                          f"a custom routine steps, for a process routine recipe, intake, output, batch_kg")
     unknown = set(given) - {"kind", "places", "hopper_kg", "work_j_per_kg", "steps", "recipe", "intake", "output",
-                            "batch_kg"}
+                            "batch_kg", "watch"}
     if unknown:
         raise ValueError(f"program {name!r} routine cannot say {sorted(unknown)}: it holds kind, places, "
-                         f"hopper_kg, work_j_per_kg, steps, recipe, intake, output and batch_kg")
+                         f"hopper_kg, work_j_per_kg, steps, recipe, intake, output, batch_kg and watch")
     kind = str(given.get("kind") or "roam")
     spec = machine_routine.ROUTINES.get(kind)
     if spec is None:
@@ -1171,6 +1171,16 @@ def _routine(given: Any, name: str) -> dict[str, Any]:
                              + ("a recipe of the room's" if key == "recipe" else "a stockpile of the room's"))
     if given.get("batch_kg") is not None:
         made["batch_kg"] = _number(given["batch_kg"], 0.01, 1000.0, f"program {name!r} routine batch_kg")
+    # What it watches for (docs/machine-world.md, "A routine that responds"):
+    # conditions and the steps that answer them, over places it knows.
+    if given.get("watch") is not None:
+        made["watch"] = machine_routine.checked_watch(given["watch"])
+        for watch in made["watch"]:
+            for step in watch["do"]:
+                place = step["args"].get("place")
+                if place and place != "person" and place not in places:
+                    raise ValueError(f"program {name!r} routine watch step {step['do']} goes to {place!r}, a place "
+                                     f"it does not know; it knows {sorted(places) or 'none'}")
     return made
 
 
