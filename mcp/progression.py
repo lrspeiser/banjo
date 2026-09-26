@@ -17,6 +17,7 @@ own hand did in their own world.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -381,7 +382,6 @@ def own_design_key(construction: dict[str, Any]) -> str:
     """A construction no registered design matches is a design of its own, and
     its evidence is kept under it: the same numbers are the same key, and any
     change is a new revision whose claims have to be shown again (3.2)."""
-    import hashlib
     canonical = json.dumps(construction, sort_keys=True, separators=(",", ":"))
     return "own:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
 
@@ -467,7 +467,7 @@ def evidence_from(record: dict[str, Any], *, session_id: str, spec: dict[str, An
                  else f"recorded: did not loosen the {ground}")
     key = result_key(session_id, record)
     return {
-        "id": "ev-" + __import__("hashlib").sha256(key.encode("utf-8")).hexdigest()[:10],
+        "id": "ev-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10],
         "run": key, "at": at, "design": design, "object": profile["object"], "tool": tool,
         "source": "found-example", "test": test, "passes": passes, "action": action,
         "target": {"ground": ground},
@@ -479,6 +479,49 @@ def evidence_from(record: dict[str, Any], *, session_id: str, spec: dict[str, An
         "limitations": list(GROUND_WORK_LIMITS),
         "said": said, "claim": claim,
         "scope": f"for this design revision ({design}), this {ground or 'ground'}, {action}"}
+
+
+#: Which design a recipe is worked by, and the test it passes by working it.
+#: A recipe is a room's, and the machine that runs it is a design: watching one
+#: work is how the other is learned.
+MADE_BY = {
+    "smelt copper": ("copper-smelter@1", "smelts-ore", "a smelter"),
+    "draw wire": ("copper-mill@1", "draws-wire", "a mill"),
+}
+
+
+def evidence_from_batch(recipe: str, made: dict[str, float], used: dict[str, float],
+                        *, session_id: str, at: str, batch: int) -> dict[str, Any] | None:
+    """One batch of a recipe, as evidence that the machine does what it is for.
+
+    A recipe nobody has named a machine for makes no evidence -- the room may
+    carry any chemistry a person writes, and the knowledge graph only knows the
+    ones it has designs for. Named by the session, the recipe and which batch
+    it was, so reading the same reply twice awards nothing twice.
+    """
+    known = MADE_BY.get(str(recipe))
+    if known is None or not made:
+        return None
+    design, test, what = known
+    key = f"{session_id}:{recipe}:{batch}"
+    words_in = ", ".join(f"{v:.2f} kg of {k}" for k, v in sorted(used.items()))
+    words_out = ", ".join(f"{v:.2f} kg of {k}" for k, v in sorted(made.items()))
+    return {
+        "id": "ev-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10],
+        "run": key, "at": at, "design": design, "object": what,
+        "source": "watched", "test": test, "passes": True, "action": f"work a batch of {recipe}",
+        "target": {"substance": sorted(used)[0] if used else ""},
+        "result": {"made_kg": round(sum(made.values()), 4), "used_kg": round(sum(used.values()), 4),
+                   "made": {k: round(v, 4) for k, v in made.items()},
+                   "used": {k: round(v, 4) for k, v in used.items()}},
+        "models": ["machine_goods recipe ledger"],
+        "limitations": ["the recipe's yield is declared by the room, not measured from chemistry",
+                        "the work and the time it takes are the recipe's own numbers"],
+        "said": f"{what} worked {words_in} into {words_out}",
+        "claim": f"demonstrated: it makes {' and '.join(sorted(made))} of "
+                 f"{' and '.join(sorted(used))}",
+        "scope": "this recipe, in this room",
+    }
 
 
 def not_modelled(record: dict[str, Any]) -> str | None:

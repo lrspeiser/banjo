@@ -358,6 +358,9 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
     ctx.goods.put(float(output["at_m"][0]), float(output["at_m"][1]), made["made"], named=output["name"])
     r.made_kg += sum(made["made"].values())
     r.batches += 1
+    # Somebody saw this happen, and that is how a recipe is learned.
+    if getattr(ctx.goods, "on_made", None) is not None:
+        ctx.goods.on_made(recipe, dict(made["made"]), dict(made["used"]))
     took_s = max(0.5, made["took_s"])
     _behave(ctx, call, "waiting", min(60.0, took_s))
     words_in = ", ".join(f"{v:.2f} kg of {k}" for k, v in made["used"].items())

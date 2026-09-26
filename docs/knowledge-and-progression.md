@@ -442,3 +442,34 @@ notebook panel and says "you know X now" once, when it happens.
 
 A rank here is a capability and never a score. There are no points, no levels
 and no experience, which is what section 6 has always said.
+
+### 7.2 A recipe you watched run is a recipe you know
+
+The goods chain arrived whole (docs/machine-world.md, "Raw materials into
+finished goods"): a copper vein, a rover that digs it, a smelter that makes
+copper of the ore, a mill that draws it into wire, and the wire landing on the
+Workshop's rack to build machines with. Every step of it was simply AVAILABLE.
+Nobody had to learn anything, so nothing was ever gained -- a material chain
+with no progression in it.
+
+The ledger already told the server when goods reached the rack (`Goods.on_rack`
+-> `workshop_library.add_goods`). Its sibling `on_made` says when a batch of a
+recipe is worked: which recipe, what went in, what came out. The server turns
+that into evidence (`progression.evidence_from_batch`) and asks what it has
+earned.
+
+Two rungs, and the second stands on the first:
+
+| | |
+|---|---|
+| **Smelting copper** | watch a smelter work copper ore into copper, once. Opens the copper smelter. |
+| **Drawing wire** | watch a mill draw copper into wire, once. Needs smelting first, because you cannot draw wire out of copper you cannot make. Opens the copper mill. |
+
+Watched out of order, the mill teaches nothing until smelting is in, and then
+both land at once: the graph is walked, not skipped.
+
+`MADE_BY` names which design a recipe belongs to. A room may carry any
+chemistry a person writes, and a recipe with no design against it makes no
+evidence at all rather than inventing a technique for itself. A batch that made
+nothing is not evidence either, and the same batch read twice awards nothing
+twice -- it is named by the session, the recipe and which batch it was.

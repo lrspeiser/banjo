@@ -545,6 +545,8 @@ class Brains:
         # Workshop's rack does with what lands on it (the server sets it).
         self.goods: Any = None
         self.on_rack: Callable[[str, float], None] | None = None
+        #: What a batch of a recipe was: the server turns it into evidence.
+        self.on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None
 
     def _made(self) -> tuple[Any, str]:
         made = self._deciders()
@@ -569,7 +571,8 @@ class Brains:
         self.brains.clear()
         self.spec = spec
         import machine_goods
-        self.goods = machine_goods.Goods(spec, on_rack=self.on_rack) if isinstance(spec, dict) else None
+        self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
+                      if isinstance(spec, dict) else None)
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})

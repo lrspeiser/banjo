@@ -296,6 +296,25 @@ class Playground:
             import workshop_library
             workshop_library.add_goods(app, substance, kg)
         self.brains.on_rack = onto_rack
+        # And what is LEARNED by watching a batch worked: a recipe the
+        # knowledge graph has a machine for becomes evidence, and evidence can
+        # earn the technique (docs/knowledge-and-progression.md, 7.1). Watching
+        # a smelter is how smelting is learned; nothing else teaches it.
+        self.batches = 0
+        def made(recipe, out, used, app=self):
+            app.batches += 1
+            at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            session = getattr(getattr(app, "live", None), "session", None)
+            evidence = progression.evidence_from_batch(
+                recipe, out, used, session_id=str(getattr(session, "id", "room")),
+                at=at, batch=app.batches)
+            if evidence is None:
+                return
+            journal = journal_of(app)
+            if journal.add_evidence(evidence):
+                for learned in progression.earn(journal, registry(), at):
+                    log.info("banjo: learned %s by watching %s", learned, recipe)
+        self.brains.on_made = made
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id

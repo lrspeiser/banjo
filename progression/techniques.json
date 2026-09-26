@@ -33,6 +33,70 @@
           }
         ]
       }
+    },
+    {
+      "id": "smelting-copper",
+      "version": 1,
+      "name": "Smelting copper",
+      "describes": "Working copper ore into copper with heat, in a machine that holds a batch",
+      "prerequisites": {
+        "all_of": []
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-a-smelt",
+            "says": "Watch a smelter work copper ore into copper, once.",
+            "all_of": [
+              {
+                "design": "copper-smelter",
+                "demonstrated": true,
+                "test": "smelts-ore"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "drawing-wire",
+      "version": 1,
+      "name": "Drawing wire",
+      "describes": "Pulling copper down into wire, which is what a machine's windings are made of",
+      "prerequisites": {
+        "all_of": [
+          "smelting-copper"
+        ]
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-a-draw",
+            "says": "Watch a mill draw copper into wire, once.",
+            "all_of": [
+              {
+                "design": "copper-mill",
+                "demonstrated": true,
+                "test": "draws-wire"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

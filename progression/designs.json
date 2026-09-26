@@ -1,30 +1,270 @@
 {
- "format": "banjo.progression.designs.v1",
- "about": "How things are constructed and what they are for (docs/knowledge-and-progression.md, 3.2). Requirements are properties, never names: a thing is this design when its construction is, whatever it is called.",
- "material_classes": {"wood": ["oak"]},
- "designs": [
-  {"id": "one-piece-wooden-pick", "revision": 1,
-   "name": "One-piece wooden pick",
-   "purpose": {"function": "loosen ground by hand-driven strikes and levering",
-               "claim": "intended, not guaranteed"},
-   "construction": {"one_piece": true, "material_class": "wood",
-                    "parts": [{"role": "handle", "size_m": [0.8, 0.04, 0.04]},
-                              {"role": "arm", "size_m": [0.04, 0.28, 0.04], "angle_to_handle_deg": 90}],
-                    "tool_point": {"on": "arm", "width_m": 0.04, "thickness_m": 0.04, "angle_deg": 30},
-                    "matches_within_m": 0.005},
-   "components": [{"role": "stock", "requires": {"material_class": "wood", "shape": "angled",
-                                                 "long_m": [0.7, 1.0], "arm_m": [0.2, 0.35],
-                                                 "section_m": [0.03, 0.06], "state": "sound"}}],
-   "routes": {"any_of": [
-     {"id": "found-whole", "obtain": "the whole tool, found"},
-     {"id": "shaped-from-angled-stock",
-      "all_of": [{"component": "stock"},
-                 {"process": "shape-wood-v1", "technique": "rough-shaping-wood",
-                  "equipment": ["workbench"], "work": "quoted by the process"}]}]},
-   "interaction": {"template": "swing-and-lever"},
-   "tests": [{"id": "loosens-soil", "action": "swing, then lever", "target": {"ground": "soil"},
-              "passes_when": {"loosened_m3": ">0", "tool": "whole"}},
-             {"id": "on-rock", "action": "swing", "target": {"ground": "rock"},
-              "records": "whatever the engine reports"}]}
- ]
+  "format": "banjo.progression.designs.v1",
+  "about": "How things are constructed and what they are for (docs/knowledge-and-progression.md, 3.2). Requirements are properties, never names: a thing is this design when its construction is, whatever it is called.",
+  "material_classes": {
+    "wood": [
+      "oak"
+    ]
+  },
+  "designs": [
+    {
+      "id": "one-piece-wooden-pick",
+      "revision": 1,
+      "name": "One-piece wooden pick",
+      "purpose": {
+        "function": "loosen ground by hand-driven strikes and levering",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": true,
+        "material_class": "wood",
+        "parts": [
+          {
+            "role": "handle",
+            "size_m": [
+              0.8,
+              0.04,
+              0.04
+            ]
+          },
+          {
+            "role": "arm",
+            "size_m": [
+              0.04,
+              0.28,
+              0.04
+            ],
+            "angle_to_handle_deg": 90
+          }
+        ],
+        "tool_point": {
+          "on": "arm",
+          "width_m": 0.04,
+          "thickness_m": 0.04,
+          "angle_deg": 30
+        },
+        "matches_within_m": 0.005
+      },
+      "components": [
+        {
+          "role": "stock",
+          "requires": {
+            "material_class": "wood",
+            "shape": "angled",
+            "long_m": [
+              0.7,
+              1.0
+            ],
+            "arm_m": [
+              0.2,
+              0.35
+            ],
+            "section_m": [
+              0.03,
+              0.06
+            ],
+            "state": "sound"
+          }
+        }
+      ],
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole tool, found"
+          },
+          {
+            "id": "shaped-from-angled-stock",
+            "all_of": [
+              {
+                "component": "stock"
+              },
+              {
+                "process": "shape-wood-v1",
+                "technique": "rough-shaping-wood",
+                "equipment": [
+                  "workbench"
+                ],
+                "work": "quoted by the process"
+              }
+            ]
+          }
+        ]
+      },
+      "interaction": {
+        "template": "swing-and-lever"
+      },
+      "tests": [
+        {
+          "id": "loosens-soil",
+          "action": "swing, then lever",
+          "target": {
+            "ground": "soil"
+          },
+          "passes_when": {
+            "loosened_m3": ">0",
+            "tool": "whole"
+          }
+        },
+        {
+          "id": "on-rock",
+          "action": "swing",
+          "target": {
+            "ground": "rock"
+          },
+          "records": "whatever the engine reports"
+        }
+      ]
+    },
+    {
+      "id": "copper-smelter",
+      "revision": 1,
+      "name": "Copper smelter",
+      "purpose": {
+        "function": "work copper ore into copper, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.5,
+              0.4,
+              0.5
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "smelt copper"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "smelting-copper"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "smelts-ore",
+          "action": "work a batch of smelt copper",
+          "target": {
+            "substance": "copper ore"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "copper-mill",
+      "revision": 1,
+      "name": "Copper mill",
+      "purpose": {
+        "function": "work copper into copper wire, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.5,
+              0.4,
+              0.5
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "draw wire"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "drawing-wire"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "draws-wire",
+          "action": "work a batch of draw wire",
+          "target": {
+            "substance": "copper"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    }
+  ]
 }

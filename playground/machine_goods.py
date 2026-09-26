@@ -55,7 +55,8 @@ class Goods:
     """The room's goods as they stand, over the spec's own block (changed in
     place, never copied, so the room keeps it)."""
 
-    def __init__(self, spec: dict[str, Any] | None, on_rack: Callable[[str, float], None] | None = None):
+    def __init__(self, spec: dict[str, Any] | None, on_rack: Callable[[str, float], None] | None = None,
+                 on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None):
         self.spec = spec if isinstance(spec, dict) else {}
         block = self.spec.get("goods")
         # A room that declares no goods gets no block until something is
@@ -66,6 +67,11 @@ class Goods:
             if not isinstance(self.block.get(key), list):
                 self.block[key] = []
         self.on_rack = on_rack
+        # And when a batch of a recipe is worked: which recipe, what came out
+        # and what went in. Somebody watching a thing being made can learn how
+        # it is made, which is the whole of progression above this layer
+        # (docs/knowledge-and-progression.md).
+        self.on_made = on_made
 
     def _kept(self) -> None:
         """The block into the room's spec, once there is something in it."""

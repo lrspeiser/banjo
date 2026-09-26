@@ -356,10 +356,8 @@ class ThereIsAWayToLearnSomething(unittest.TestCase):
     def test_what_is_one_step_away_is_said_before_it_is_taken(self):
         """The ladder. A person one demonstration short of a capability should
         be told so, which is the whole of what a technology tree is for."""
-        rungs = progression.what_is_next(self.journal, self.registry)
-        self.assertEqual(1, len(rungs))
-        rung = rungs[0]
-        self.assertEqual("rough-shaping-wood", rung["technique"])
+        rungs = {r["technique"]: r for r in progression.what_is_next(self.journal, self.registry)}
+        rung = rungs["rough-shaping-wood"]
         self.assertTrue(rung["within_reach"], rung)
         self.assertEqual([], rung["first_learn"])
         self.assertEqual(["one-piece-wooden-pick"], rung["would_open"])
@@ -369,7 +367,8 @@ class ThereIsAWayToLearnSomething(unittest.TestCase):
         # And once it is taken it is not still being offered.
         self.found_a_pick()
         progression.earn(self.journal, self.registry, self.now)
-        self.assertEqual([], progression.what_is_next(self.journal, self.registry))
+        self.assertNotIn("rough-shaping-wood",
+                         [r["technique"] for r in progression.what_is_next(self.journal, self.registry)])
 
     def test_a_technique_whose_groundwork_is_missing_is_not_within_reach(self):
         """The graph is walked, not skipped: prerequisites first, however much
@@ -402,13 +401,13 @@ class ThereIsAWayToLearnSomething(unittest.TestCase):
     def test_the_notebook_says_what_is_known_and_what_is_next(self):
         book = progression.notebook(self.journal, self.registry)
         self.assertEqual([], book["techniques"])
-        self.assertEqual(["rough-shaping-wood"], [r["technique"] for r in book["next"]])
+        self.assertIn("rough-shaping-wood", [r["technique"] for r in book["next"]])
         self.found_a_pick()
         progression.earn(self.journal, self.registry, self.now)
         book = progression.notebook(self.journal, self.registry)
         self.assertEqual(["rough-shaping-wood"], [t["id"] for t in book["techniques"]])
         self.assertEqual("experiment", book["techniques"][0]["learned_from"])
-        self.assertEqual([], book["next"])
+        self.assertNotIn("rough-shaping-wood", [r["technique"] for r in book["next"]])
 
     def test_a_dead_rung_is_refused_when_the_graph_is_loaded(self):
         """The point of checking at load is that a rung nobody can reach is
@@ -428,3 +427,69 @@ class ThereIsAWayToLearnSomething(unittest.TestCase):
                 with self.assertRaises(progression.DefinitionError) as caught:
                     registry.check()
                 self.assertIn(because, str(caught.exception))
+
+
+class ARecipeYouWatchedIsARecipeYouKnow(unittest.TestCase):
+    """The goods chain arrived whole and taught nobody anything.
+
+    A vein, a rover that digs it, a smelter that makes copper of the ore, a
+    mill that draws it into wire, the wire landing on the Workshop's rack --
+    and every step of it simply available. The ledger already told the server
+    when goods reached the rack; this is its sibling, and it is the difference
+    between equipment you were handed and progress you made.
+    """
+
+    def setUp(self):
+        self.registry = progression.Registry()
+        self.journal = progression.Journal()
+        self.now = "2026-09-26T00:00:00Z"
+
+    def watched(self, recipe, made, used, batch=1):
+        record = progression.evidence_from_batch(
+            recipe, made, used, session_id="s1", at=self.now, batch=batch)
+        self.assertIsNotNone(record, f"{recipe} made no evidence")
+        self.journal.add_evidence(record)
+        return progression.earn(self.journal, self.registry, self.now)
+
+    def test_watching_a_smelt_teaches_smelting(self):
+        self.assertEqual(set(), self.journal.knows())
+        learned = self.watched("smelt copper", {"copper": 1.5}, {"copper ore": 5.0})
+        self.assertEqual(["smelting-copper"], learned)
+        book = progression.notebook(self.journal, self.registry)
+        said = [e["said"] for d in book["designs"] for e in d["evidence"]]
+        self.assertIn("a smelter worked 5.00 kg of copper ore into 1.50 kg of copper", said)
+
+    def test_the_mill_is_a_rung_above_the_smelter(self):
+        """You cannot draw wire out of copper you cannot make, so the graph is
+        walked: watching a mill first teaches nothing until smelting is in."""
+        rungs = {r["technique"]: r for r in progression.what_is_next(self.journal, self.registry)}
+        self.assertTrue(rungs["smelting-copper"]["within_reach"])
+        self.assertFalse(rungs["drawing-wire"]["within_reach"])
+        self.assertEqual(["smelting-copper"], rungs["drawing-wire"]["first_learn"])
+        self.assertEqual(["copper-mill"], rungs["drawing-wire"]["would_open"])
+        # Watched out of order, both land the moment the first one does.
+        self.watched("draw wire", {"copper wire": 0.98}, {"copper": 1.0}, batch=1)
+        self.assertEqual(set(), self.journal.knows(), "the mill alone teaches nothing yet")
+        learned = self.watched("smelt copper", {"copper": 1.5}, {"copper ore": 5.0}, batch=2)
+        self.assertEqual(["smelting-copper", "drawing-wire"], learned)
+
+    def test_a_recipe_no_machine_is_registered_for_teaches_nothing(self):
+        """A room may carry any chemistry a person writes. The graph only knows
+        the recipes it has designs for, and says nothing about the rest rather
+        than inventing a technique for them."""
+        self.assertIsNone(progression.evidence_from_batch(
+            "bake a cake", {"cake": 1.0}, {"flour": 1.0},
+            session_id="s1", at=self.now, batch=1))
+
+    def test_the_same_batch_read_twice_awards_nothing_twice(self):
+        self.watched("smelt copper", {"copper": 1.5}, {"copper ore": 5.0}, batch=1)
+        was = self.journal.data["revision"]
+        record = progression.evidence_from_batch(
+            "smelt copper", {"copper": 1.5}, {"copper ore": 5.0},
+            session_id="s1", at=self.now, batch=1)
+        self.assertFalse(self.journal.add_evidence(record))
+        self.assertEqual(was, self.journal.data["revision"])
+
+    def test_a_batch_that_made_nothing_is_not_evidence(self):
+        self.assertIsNone(progression.evidence_from_batch(
+            "smelt copper", {}, {"copper ore": 5.0}, session_id="s1", at=self.now, batch=1))
