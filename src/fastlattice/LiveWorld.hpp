@@ -570,6 +570,19 @@ struct LiveMotor {
     // Since it was made.
     double turned_rad{};          // the whole turn, not wrapped at +-180 degrees
     double work_j{}, heat_j{}, drawn_j{}, friction_heat_j{};
+    // A rotor on the pin (docs/machine-world.md, "A rover that flies"): a
+    // DECLARED propeller. Spinning at w, it lifts its pin's a body with
+    // rotor_thrust_n_per_rad2 * w^2 along the pin's axis, whichever way it
+    // spins, and loads the pin with rotor_drag_n_m_per_rad2 * w^2 of friction,
+    // whose reaction turns the frame the other way -- how a machine on four
+    // rotors yaws. Momentum theory's T = k w^2 and Q = k' w^2, with k and k'
+    // declared to the machine, not derived from a blade; zero for a plain
+    // motor. What the thrust does to the frame is not charged to the store
+    // beyond the drag the motor works against: declare k' so that drag power
+    // is the induced power (P = T^1.5 / sqrt(2 rho A)) and the account is fair.
+    double rotor_thrust_n_per_rad2{}, rotor_drag_n_m_per_rad2{};
+    double thrust_n{};            // the last kept step
+    double air_j{};               // what the drag took, since it was made
 };
 
 // What a controller senses (docs/machine-world.md, "One autonomous creature"):
@@ -718,6 +731,18 @@ struct LiveProgram {
     // It does what it was asked for `asked_for_s` seconds -- 0 for until it is
     // asked otherwise -- and then goes on as it would have. Its battery low,
     // or turned off, it drops what it was asked: those come first.
+    // A "hover" program's machine (docs/machine-world.md, "A rover that
+    // flies"): four rotors' controllers, in order round the machine from
+    // above -- front-left, front-right, back-right, back-left -- spun
+    // alternately one way and the other, on pins up through the chassis
+    // whose own +z is its front and +x its left. It holds its centre
+    // `hover_m` above the ground under it, level, and moves by leaning: the
+    // same asks as a rover's, done with thrust instead of wheels. Its battery
+    // low, it lands and rests where it is.
+    std::vector<unsigned> rotors;
+    double hover_m{};
+    double height_m{};            // its centre above the ground under it, as the last kept step left it
+    double climb_m_s{};           // how fast it is rising
     std::string asked;
     std::string asked_why;        // why, in a person's words, shown as its `why`
     std::string asked_by;         // who asked
@@ -1552,7 +1577,8 @@ public:
     // the pin or the store is not there, the pin is not a hinge, the pin has a
     // motor already, or the numbers are not a motor's.
     unsigned motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
-                   double brake_torque_n_m = 0.0);
+                   double brake_torque_n_m = 0.0, double rotor_thrust_n_per_rad2 = 0.0,
+                   double rotor_drag_n_m_per_rad2 = 0.0);
     // What a motor is told: a command from -1 to 1, and whether its brake is
     // on. The brake is friction on the pin, so it holds only while the motor
     // is not driving -- a command of zero. False if there is no such motor.
@@ -1619,7 +1645,8 @@ public:
     // off, and does nothing to its wheels until it is turned on.
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting = 1.0, double climb_deg = 8.0,
-                     double rest_below = 0.0, double rest_until = 0.0);
+                     double rest_below = 0.0, double rest_until = 0.0,
+                     const std::vector<unsigned> &rotors = {}, double hover_m = 0.0);
     // A sensor on a program's machine, as sense() puts one on a controller's:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out
@@ -1651,6 +1678,10 @@ public:
         Vec3 toward_m{};
     };
     std::string behave(unsigned program, const ProgramAsk &ask);
+    // A "hover" program on four rotors' controllers (LiveProgram::rotors), its
+    // centre hover_m above the ground; program() with kind "hover" comes here.
+    unsigned hoverProgram(const std::string &name, const std::string &body, double setting, double rest_below,
+                          double rest_until, const std::vector<unsigned> &rotors, double hover_m);
     [[nodiscard]] std::vector<LiveProgram> programs() const;
     // The room's sun (LiveSun): `elevation_deg` above the horizon, from 0 to 90,
     // `azimuth_deg` round from +z towards +x, shining `irradiance_w_m2` on a

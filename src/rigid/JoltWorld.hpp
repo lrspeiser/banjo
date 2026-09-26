@@ -774,6 +774,12 @@ public:
     // The drag Jolt puts on a moving body's speed, as a share of it per second,
     // linear and turning. Nothing for a body that does not move. Between steps.
     void setDamping(MatterBodyId body_id, double linear_per_s, double angular_per_s);
+    // A force on a body at a point in the world, for the step to come: Jolt
+    // clears it after the step, so it is put on again each step it acts. A
+    // rotor's thrust on its frame (LiveWorld's motors).
+    void addForce(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &at_world_m);
+    // A torque on a body, for the step to come, cleared after it as a force is.
+    void addTorque(MatterBodyId body_id, const Vec3 &torque_n_m);
     // Take the pin out. What was hanging on it falls.
     void removeJoint(unsigned joint);
     [[nodiscard]] std::vector<unsigned> jointsOn(MatterBodyId body_id) const;

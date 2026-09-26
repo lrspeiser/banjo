@@ -405,7 +405,9 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
 nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json parts = nlohmann::json::array();
     for (const nlohmann::json &c : controls) {
-        if (c.at("id") != p.left && c.at("id") != p.right) continue;
+        if (c.at("id") != p.left && c.at("id") != p.right &&
+            std::find(p.rotors.begin(), p.rotors.end(), c.at("id").get<unsigned>()) == p.rotors.end())
+            continue;
         for (const nlohmann::json &part : c.at("parts"))
             if (std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
     }
@@ -436,6 +438,10 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"roll_deg", tidy(p.roll_deg)},
             {"at_m", {tidy(p.at_m.x), tidy(p.at_m.y), tidy(p.at_m.z)}},
             {"heading_deg", tidy(p.heading_deg)},
+            {"rotors", p.rotors},
+            {"hover_m", tidy(p.hover_m)},
+            {"height_m", tidy(p.height_m)},
+            {"climb_m_s", tidy(p.climb_m_s)},
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
@@ -570,6 +576,10 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"work_j", tidy(m.work_j)},
                                  {"heat_j", tidy(m.heat_j)},
                                  {"drawn_j", tidy(m.drawn_j)},
+                                 {"rotor_thrust_n_per_rad2", tidy(m.rotor_thrust_n_per_rad2)},
+                                 {"rotor_drag_n_m_per_rad2", tidy(m.rotor_drag_n_m_per_rad2)},
+                                 {"thrust_n", tidy(m.thrust_n)},
+                                 {"air_j", tidy(m.air_j)},
                                  {"friction_heat_j", tidy(m.friction_heat_j)}});
     }
     out["circuits"] = nlohmann::json::parse(world.circuits());
@@ -2103,7 +2113,8 @@ int main(int argc, char **argv) {
                     const unsigned motor = world->motor(
                         command.at("joint").get<unsigned>(), command.at("store").get<unsigned>(),
                         command.value("stall_torque_n_m", 0.0), command.value("no_load_rad_s", 0.0),
-                        command.value("brake_torque_n_m", 0.0));
+                        command.value("brake_torque_n_m", 0.0), command.value("rotor_thrust_n_per_rad2", 0.0),
+                        command.value("rotor_drag_n_m_per_rad2", 0.0));
                     if (motor == 0)
                         throw std::invalid_argument(
                             "a motor goes on a pin with none, wired to a store, with a stall torque and an "
@@ -2227,18 +2238,23 @@ int main(int argc, char **argv) {
                     // A program for a machine (LiveProgram): of a kind ("roam"),
                     // working the controllers of its left and right wheels, on a
                     // body both turn on; it starts off.
+                    std::vector<unsigned> rotors;
+                    if (command.contains("rotors"))
+                        for (const nlohmann::json &r : command.at("rotors")) rotors.push_back(r.get<unsigned>());
                     const unsigned made = world->program(
                         command.value("name", std::string{}), command.value("kind", std::string{}),
-                        command.at("left").get<unsigned>(), command.at("right").get<unsigned>(),
+                        command.value("left", 0U), command.value("right", 0U),
                         command.value("body", std::string{}), command.value("setting", 1.0),
                         command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
-                        command.value("rest_until", 0.0));
+                        command.value("rest_until", 0.0), rotors, command.value("hover_m", 0.0));
                     if (made == 0)
                         throw std::invalid_argument(
                             "a program is of kind \"roam\", on two shafts' controllers that no program works yet, "
                             "each on a pin through the body it names, with a setting above 0 and no more than 1, "
                             "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
-                            "more than 1");
+                            "more than 1; or of kind \"hover\", on four rotors' controllers (round the machine "
+                            "from above, front-left first), each on a rotor's pin through the body it names, "
+                            "with a hover_m above 0 and at most 50");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,

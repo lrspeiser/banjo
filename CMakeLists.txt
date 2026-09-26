@@ -1165,6 +1165,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_rover_roam_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_rover_roam_tests)
             add_test(NAME banjo_rover_roam_tests COMMAND banjo_rover_roam_tests)
+            add_executable(banjo_drone_hover_tests tests/drone_hover_tests.cpp)
+            target_link_libraries(banjo_drone_hover_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_drone_hover_tests)
+            add_test(NAME banjo_drone_hover_tests COMMAND banjo_drone_hover_tests)
 
             # Solar panels: a room's sun, and what a panel on a part puts into the
             # store it is wired to -- square on, at an angle, in shade, and full.
