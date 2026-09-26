@@ -295,7 +295,9 @@ def install() -> None:
         "rover", "roam, dig and carry on its own",
         "A deck on two driven wheels and a caster, with a battery, a solar panel, a hopper and two water eyes: "
         "the room's rover, as exact bodies on pins, with its program and its dig routine.",
-        ROVER_PARAMETERS, _build_rover, _rover_trials, _rover_overrides)
+        ROVER_PARAMETERS, _build_rover, _rover_trials, _rover_overrides,
+        uses={"primary_use_component": "deck",
+              "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "deck"}})
 
     ordered, seen = [], set()
     for assembly in w.ASSEMBLIES:

@@ -170,7 +170,8 @@ class TheBenchChatMakesItARobot(unittest.TestCase):
         state = workshop_chat._State(SimpleNamespace(runs_path=Path(self.tmp.name), workshop_owner_id="owner"),
                                      candidate, None, ["oak", "iron", "glass"], [])
         described = workshop_machines.described(state.design)
-        self.assertEqual("1 store, 2 motors, 1 panel, 2 controls, a roam program", described["says"])
+        self.assertEqual("1 store, 2 motors, 1 panel, 2 controls, a roam program with 2 water eyes and a dig routine (40 kg hopper)",
+                         described["says"])
         out = state.execute("inspect_design", {})
         self.assertEqual(17, len(state.design.parts))
         self.assertTrue(out)

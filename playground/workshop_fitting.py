@@ -265,6 +265,12 @@ def _compiled(design: Any, overrides: dict[str, Any], cell_m: float, root: str) 
     it. Every piece of furniture on the bench was refused that way.
     """
     if workshop_rigid.requested_models(design, overrides) == {"rigid"}:
+        if workshop_articulation.has_bearings(design) or workshop_machines.of(design):
+            # A machine asked for exactly is drawn as installation draws it:
+            # exact bodies on pins, each part its own material (rigid_assembly).
+            import rigid_assembly
+            rigid_assembly.compile_design(design, overrides, root=root)
+            return
         workshop_rigid.compile_rigid(design, overrides)
         return
     if workshop_articulation.has_bearings(design):

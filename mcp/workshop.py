@@ -831,6 +831,10 @@ class Assembly:
     # (@construction), what drives it (@machines), how each is modelled. A
     # machine's template authors every joint, so nothing is inferred.
     overrides: Callable[[dict[str, Any], list[WirePart]], dict[str, Any]] | None = None
+    # What a person does with it, when the template knows: its primary-use
+    # component and which part each interaction point names, taken unless
+    # the person says otherwise.
+    uses: dict[str, Any] | None = None
 
     def defaults(self) -> dict[str, Any]:
         return {p.name: p.default for p in self.parameters}
@@ -1114,6 +1118,8 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     library = library or ComponentLibrary()
     from mcp import core_use
     supplied = dict(parameters or {})
+    for key, value in (spec.uses or {}).items():
+        supplied.setdefault(key, deepcopy(value))
     points = supplied.pop("interaction_points", None)
     use = supplied.pop("primary_use", None)
     use_component = supplied.pop("primary_use_component", None)

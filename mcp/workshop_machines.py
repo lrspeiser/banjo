@@ -236,7 +236,17 @@ def described(design: Any) -> dict[str, Any]:
         if count:
             parts.append(f"{count} {word}{'' if count == 1 else 's'}")
     if record.get("programs"):
-        parts.append("a " + record["programs"][0]["kind"] + " program")
+        program = record["programs"][0]
+        words = "a " + program["kind"] + " program"
+        eyes = len(program.get("sensors") or [])
+        if eyes:
+            words += f" with {eyes} water eye{'' if eyes == 1 else 's'}"
+        if program.get("routine"):
+            routine = program["routine"]
+            words += f" and a {routine['kind']} routine"
+            if routine.get("hopper_kg"):
+                words += f" ({routine['hopper_kg']:g} kg hopper)"
+        parts.append(words)
     return {**record, "says": ", ".join(parts) if parts else "nothing drives it"}
 
 

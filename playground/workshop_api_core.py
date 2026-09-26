@@ -153,6 +153,11 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
     spec = assembly(kind)
     root = assemble(kind, design_id=f"{kind}-g{generation}", purpose=purpose, parameters=base)
     checked = workshop_components.checked_overrides(overrides)
+    # A template with joints and machines of its own (Assembly.overrides) is
+    # spread with them when the person gives none: a machine's template says
+    # how it is fastened and what drives it, and that is what is opened.
+    if not checked and (root.lineage or {}).get("component_overrides"):
+        checked = workshop_components.checked_overrides(root.lineage["component_overrides"])
     # Parts a person put in stand where they were put. Sweeping the template's
     # numbers would move the template out from under them, so a built design is
     # one candidate, changed part by part.
