@@ -529,6 +529,13 @@ HIGH_SHARE = 0.33
 #: A hand's width of daylight between one patch and the next, as the Explore
 #: builder keeps between things it sets down.
 CLEAR_M = 0.5
+#: How far the start's heaps stand either side of the machine between them,
+#: and how wide each of them is. A machine reaches a stockpile from
+#: machine_goods.REACH_M (2 m) beyond its edge, so 1.5 m out and 0.8 m across
+#: leaves a metre and a half of margin on both heaps at once -- room for the
+#: ground to be uneven without the yard stopping working.
+YARD_M = 1.5
+YARD_PILE_M = 0.8
 #: How small a seam may be squeezed before it is not a seam. `place` shrinks a
 #: vein that will not fit rather than leaving the substance out of the world,
 #: because a missing substance strands the whole map and a smaller vein only
@@ -641,20 +648,28 @@ def place(ground: dict[str, Any], seed: int, *,
         return None
 
     # The start's yard goes down before anything else, by where the player
-    # arrives: the heaps the first smelter works between, and the Workshop's
-    # own rack, which is the one stockpile whose contents can be built with.
-    # It is FIRST for the same reason the timber is early -- it has exactly one
-    # acceptable place, and laid down last it lost every time. Placed after the
-    # seams it fell back to the start's own feet on all three, because nine
-    # veins and their clearances had covered every workable patch within eight
-    # metres.
-    for name, extra in (("workshop rack", {"rack": True}),
-                        ("smelter intake", {}), ("smelter output", {})):
-        got = pick(None, 1.0, near=start_xz)
-        x, z, radius = got if got else (start_xz[0], start_xz[1], 1.0)
-        taken.append((x, z, radius))
+    # arrives: the heap the first smelter is fed from, and the Workshop's own
+    # rack, which is the one stockpile whose contents can be built with.
+    #
+    # IT IS ONE PLACE, NOT TWO. Picked as two independent nearest patches they
+    # came out 2.5 to 5 m apart and the smelter could reach its intake or the
+    # rack but never both -- "its output stockpile is not within reach", every
+    # step for ten minutes. A machine works between heaps, so the heaps are
+    # laid out around where the machine will stand.
+    #
+    # And it is FIRST for the same reason the timber is early: it has exactly
+    # one acceptable place. Laid down after the seams it fell back to the
+    # player's own feet on every pile, because the veins and their clearances
+    # had covered every workable patch within eight metres.
+    got = pick(None, YARD_M + 1.0, near=start_xz) or pick(None, 1.0, near=start_xz)
+    middle = (got[0], got[1]) if got else start_xz
+    for n, (name, extra) in enumerate((("smelter intake", {}),
+                                       ("workshop rack", {"rack": True}))):
+        a = n * math.tau / 2.0
+        x, z = middle[0] + YARD_M * math.cos(a), middle[1] + YARD_M * math.sin(a)
+        taken.append((x, z, YARD_PILE_M))
         stockpiles.append({"name": name, "at_m": [round(x, 2), round(z, 2)],
-                           "radius_m": radius, **extra})
+                           "radius_m": YARD_PILE_M, **extra})
 
     # ORDER IS THE DIFFERENCE BETWEEN A PLAYABLE MAP AND A BAD ROLL. Laid down
     # seam by seam, with the timber last, 25 of 60 seeds of the valley had no

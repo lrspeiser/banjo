@@ -1029,6 +1029,13 @@ SCENES = {
     "fabrication": yard,
     "expedition": valley,
     "world": world,
+    # A new game: the valley, a seeded map of what is in its ground, and the
+    # rover and smelter a person arrives with. Laid out by
+    # tools/build_new_world.py, which will not write the room until it has
+    # opened it and watched copper reach the Workshop's rack; the proof that
+    # every material is reachable from the start is kept beside it in
+    # docs/evidence/new-game-proof.json. Open it at /world?scene=new-game.
+    "new-game": _saved_room("new-game"),
     # The Explore valley: one of everything the engine can make, standing on
     # ground you can walk. Laid out by tools/build_explore_world.py rather than
     # by hand, because every object has to be seated on the real heightfield and

@@ -1,0 +1,74 @@
+{
+  "schema": "banjo.world-seed.v1",
+  "seed": 1,
+  "tries": 1,
+  "start": {
+    "standing": [
+      "rover",
+      "smelter"
+    ],
+    "costs": {
+      "rover": {
+        "materials": {
+          "oak": 37.828,
+          "iron": 11.767,
+          "glass": 4.0
+        },
+        "goods": {
+          "copper wire": 2.3,
+          "copper": 1.0
+        }
+      },
+      "smelter": {
+        "materials": {
+          "concrete": 691.2
+        },
+        "goods": {
+          "copper": 20.0,
+          "copper wire": 0.25
+        }
+      }
+    },
+    "can": [
+      "dig",
+      "haul",
+      "process"
+    ]
+  },
+  "can make it": {
+    "reached": {
+      "alumina ceramic": "alumina ceramic <- fire ceramic <- dug from clay seam",
+      "aluminum": "aluminum <- smelt aluminium <- dug from bauxite seam",
+      "concrete": "concrete <- mix concrete <- burn lime <- dug from limestone seam",
+      "glass": "glass <- melt glass <- dug from sand seam",
+      "iron": "iron <- smelt iron <- dug from iron ore seam",
+      "oak": "oak <- taken from oak pile",
+      "copper": "copper <- smelt copper <- dug from copper ore seam",
+      "copper wire": "copper wire <- draw wire <- smelt copper <- dug from copper ore seam"
+    },
+    "stranded": {},
+    "not in the world": {
+      "ice": "water freezes in the world (docs, melting) but nothing puts ice on a rack, so it cannot be built with",
+      "rubber": "no tree, no oil, and no recipe: rubber is on the rack at the start and can never be replaced"
+    },
+    "ok": true
+  },
+  "can get there": {
+    "reachable": [
+      "copper ore seam",
+      "iron ore seam",
+      "bauxite seam",
+      "limestone seam",
+      "sand seam",
+      "clay seam",
+      "sand 2 seam",
+      "sand 3 seam",
+      "smelter intake",
+      "workshop rack",
+      "oak pile"
+    ],
+    "cut off": {},
+    "ok": true
+  },
+  "ok": true
+}
