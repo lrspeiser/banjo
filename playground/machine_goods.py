@@ -58,15 +58,19 @@ class Goods:
     def __init__(self, spec: dict[str, Any] | None, on_rack: Callable[[str, float], None] | None = None):
         self.spec = spec if isinstance(spec, dict) else {}
         block = self.spec.get("goods")
-        if not isinstance(block, dict):
-            block = {}
-            if isinstance(spec, dict):
-                spec["goods"] = block
-        self.block = block
+        # A room that declares no goods gets no block until something is
+        # heaped in it: an empty block written at open changed the spec's
+        # digest, and a funded room refused its own saved world (2026-09-26).
+        self.block = block if isinstance(block, dict) else {}
         for key in ("deposits", "stockpiles", "recipes"):
-            if not isinstance(block.get(key), list):
-                block[key] = []
+            if not isinstance(self.block.get(key), list):
+                self.block[key] = []
         self.on_rack = on_rack
+
+    def _kept(self) -> None:
+        """The block into the room's spec, once there is something in it."""
+        if self.spec.get("goods") is not self.block:
+            self.spec["goods"] = self.block
 
     # ---- what is declared ----------------------------------------------------
     @property
@@ -150,6 +154,7 @@ class Goods:
             pile = {"name": self._heap_name(), "at_m": [round(x, 3), round(z, 3)], "radius_m": HEAP_RADIUS_M,
                     "holds": {}}
             self.stockpiles.append(pile)
+            self._kept()
         holds = pile.setdefault("holds", {})
         for k, v in goods.items():
             holds[k] = round(float(holds.get(k, 0.0)) + v, 6)
