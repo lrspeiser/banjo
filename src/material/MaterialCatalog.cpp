@@ -108,16 +108,42 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.damping_ratio = 0.015;
         material.strength_variation = 0.12;
         material.calibration.activation_energy_scale = 1.0;
-        // Failure follows the declared 45 MPa tensile / 35 MPa shear strengths
-        // through the shared SolverCalibration defaults. The previous 8x/16x
-        // strain multipliers put bond failure at 360-720 MPa, so a resolved
-        // impact that exceeds glass strength five-fold produced no damage at
-        // all; the fragmentation seen in earlier runs came from the unbounded
-        // support projection instead. This is a strength-based lattice
-        // criterion, not a Gc-calibrated one, and remains uncalibrated against
-        // laboratory glass data.
-        material.calibration.damage_strain_multiplier = 1.0;
-        material.calibration.break_strain_multiplier = 2.0;
+        // Failure follows the declared 45 MPa tensile / 35 MPa shear strengths.
+        // The previous 8x/16x strain multipliers put bond failure at
+        // 360-720 MPa, so a resolved impact five times over glass strength
+        // produced no damage at all; the fragmentation in earlier runs came
+        // from the unbounded support projection instead.
+        //
+        // A BREAK MULTIPLIER OF 2 WAS STILL A DIFFERENT GLASS. The multiplier
+        // says how far past its strength a bond stretches before it is
+        // removed, which for a material with a yield plateau is a real
+        // reserve; glass has none. 45 MPa is not a yield point glass carries
+        // on past. It is the characteristic bending strength of annealed
+        // soda lime silicate float glass in EN 572-1: quasi-static loading,
+        // 5% breakage probability at the 95% lower confidence limit. Against
+        // the same family of standards, EN 1863-1 puts heat strengthened
+        // glass at 70 N/mm^2 and EN 12150-1 puts thermally toughened at 120.
+        // Twice 45 is 90, so a multiplier of 2 quietly made every pane in
+        // this world stronger than heat strengthened while the catalogue
+        // said annealed.
+        //
+        // 45 being a 5% fractile rather than a mean makes breaking AT it
+        // conservative, which is the right way round for an answer somebody
+        // leans on, and strength_variation above scatters around it.
+        //
+        // Measured before the change: a 20 kg iron block dropped on the
+        // Workshop's 40 mm glass table needed 4 to 5 m to break it (785-981 J)
+        // where the declared strength puts it at 0.25 m (49 J). The break
+        // strain is now the strength strain: a bond goes when its stretch
+        // reaches 45 MPa / E, and damage starts a tenth before it, which is
+        // the softening band a brittle bond gets rather than a reserve of
+        // strength it does not have.
+        //
+        // Still a strength-based lattice criterion and not a Gc-calibrated
+        // one: the declared 8 J/m^2 does not enter here, and the energy per
+        // unit crack area therefore still moves with the cell size.
+        material.calibration.damage_strain_multiplier = 0.9;
+        material.calibration.break_strain_multiplier = 1.0;
         // Hard, elastic and smooth: as iron.
         setContact(material, 0.45, 0.35, 0.0005, 0.08);
         break;

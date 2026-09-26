@@ -623,9 +623,16 @@ class AWorldRunsFromPython(unittest.TestCase):
             self.assertIn("ball", left, "sweeping pocketed the ball that did the breaking")
 
     def test_the_threshold_is_necessary_and_not_sufficient(self):
-        """1.5 m clears the bar and still holds. Reading the bar as a promise
-        reads the derivation backwards, so this pins the distinction."""
-        with banjo.World(pane_and_ball(1.5)) as world:
+        """0.8 m clears the bar and still holds. Reading the bar as a promise
+        reads the derivation backwards, so this pins the distinction.
+
+        It was 1.5 m, against a 4.5 m/s bar. Glass now breaks at the 45 MPa
+        EN 572-1 gives annealed float rather than at twice it, so the bar is
+        2.25 m/s and 1.5 m goes through the pane. 0.8 m arrives at 3.9 m/s,
+        which clears the bar by a wide margin and still holds -- the same
+        lesson, at the strength glass actually has.
+        """
+        with banjo.World(pane_and_ball(0.8)) as world:
             cleared = False
             for _ in range(900):
                 if world.step(1 / 240) != banjo.BREAK_PENDING:
@@ -685,8 +692,16 @@ class AWorldRunsFromPython(unittest.TestCase):
             self.assertEqual(world.held, "")
             for _ in range(480):
                 world.advance(1 / 240)
-            self.assertAlmostEqual(world.body("ball").position_m[1], settled, places=2,
-                                   msg="it was let go a metre up and did not come back down")
+            came_down = world.body("ball").position_m[1]
+            # It comes back down, and it may end LOWER than it started. A metre
+            # onto a glass pane arrives at 4.4 m/s against the pane's 2.25 m/s
+            # bar -- glass breaks at the 45 MPa EN 572-1 gives annealed float
+            # now, not at twice it -- so the pane gives and the ball settles
+            # about a cell further down than it began.
+            self.assertLess(came_down, settled + 0.01,
+                            "it was let go a metre up and did not come back down")
+            self.assertGreater(came_down, settled - 0.2,
+                               "it went further down than the pane is thick")
 
     def test_anchored_scenery_and_missing_names_are_refused_clearly(self):
         scene = pane_and_ball(1.0)

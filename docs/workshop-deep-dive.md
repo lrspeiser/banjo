@@ -382,6 +382,58 @@ it each time"*. Whether the multiplier of 2 is right for a brittle material --
 where there is no plastic reserve to justify it -- is the owner's call, because
 it moves every material result there is.
 
+## 1e1. What the standard says glass is
+
+**Changed (2026-09-25), against a source rather than a guess.** The owner's
+call on 1e0 was: do not pick a number, find out what real glass does and use
+that.
+
+What EN gives for soda lime silicate glass in bending, characteristic values:
+
+| | |
+|---|---|
+| annealed float, EN 572-1 | **45 N/mm2** (quasi-static, 5% breakage probability at the 95% lower confidence limit) |
+| heat strengthened, EN 1863-1 | 70 N/mm2 |
+| thermally toughened, EN 12150-1 | 120 N/mm2 |
+
+The catalogue's declared 45 MPa is exactly EN 572-1's annealed value, so the
+declared strength was never the problem. The problem was the multiplier on top
+of it: a bond was removed at TWICE the strain that strength gives, putting
+failure at 90 MPa -- above heat strengthened, most of the way to toughened --
+while every label in the world said annealed.
+
+A strain multiplier is a real thing for a material with a yield plateau: steel
+carries load past first yield. Glass has no plateau; 45 MPa is where it goes,
+not where it starts to give. So `break_strain_multiplier` is 1.0 for glass now,
+with damage starting a tenth before it -- a softening band for the solver, not
+a reserve of strength the material does not have.
+
+That 45 is a 5% fractile rather than a mean makes breaking at it conservative,
+which is the right direction for an answer somebody leans on, and
+`strength_variation` (0.12) scatters around it.
+
+**What it changes.** The owner's own test, a 20 kg iron block dropped on the
+40 mm glass table:
+
+| | before | after |
+|---|---|---|
+| 1.0 m (196 J) | held | held |
+| 2.0 m (392 J) | held | **breaks, 14 of it** |
+| 4.0 m (785 J) | held | breaks |
+| 5.0 m (981 J) | breaks | breaks |
+
+Oak is untouched: held at 2 m, dented at 5 m, as before.
+
+By the arithmetic, taking all the drop energy into bending puts 45 MPa at
+0.25 m, and allowing the top's own 84 kg to share the blow puts it near 1 m.
+The bench now breaks between 1 and 2 m. Still a little tolerant, and no longer
+by a factor of sixteen.
+
+**Only glass.** Ice and concrete carry the same default multiplier of 2 and are
+the same kind of brittle, but no measurement was taken for them, so they were
+left alone. Iron and aluminium have a plateau and keep it honestly. Ceramic
+sits at 12, which nobody has justified here either.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot

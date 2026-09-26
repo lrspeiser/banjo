@@ -48,6 +48,30 @@ static int findY(banjo_world *world, const char *name, double *y) {
     return found;
 }
 
+/* The lowest y of a body called `name`, or of anything that used to be it:
+ * a break renames what it makes, so "pane piece 2" that lands hard enough to
+ * go again is "pane piece 2 piece 1" and the old name is not in the world. */
+static int findYOfItOrItsPieces(banjo_world *world, const char *name, double *y, int *how_many) {
+    int count = banjo_body_count(world), i, found = 0;
+    size_t length = strlen(name);
+    banjo_body *bodies;
+    *how_many = 0;
+    if (count <= 0) return 0;
+    bodies = malloc((size_t)count * sizeof *bodies);
+    if (!bodies) return 0;
+    count = banjo_bodies(world, bodies, count);
+    for (i = 0; i < count; ++i) {
+        if (strncmp(bodies[i].name, name, length) != 0) continue;
+        if (bodies[i].name[length] != '\0' && strncmp(bodies[i].name + length, " piece", 6) != 0)
+            continue;
+        if (!found || bodies[i].position_m[1] < *y) *y = bodies[i].position_m[1];
+        found = 1;
+        ++*how_many;
+    }
+    free(bodies);
+    return found;
+}
+
 static int piecesOf(banjo_world *world, const char *prefix) {
     int count = banjo_body_count(world), i, n = 0;
     banjo_body *bodies;
@@ -115,7 +139,7 @@ int main(int argc, char **argv) {
 
     /* The hand. Pick a piece up, carry it, let go, and gravity has it back. */
     {
-        int count = banjo_body_count(world);
+        int count = banjo_body_count(world), landed = 0;
         banjo_body *bodies = malloc((size_t)count * sizeof *bodies);
         char name[256];
         name[0] = '\0';
@@ -140,8 +164,15 @@ int main(int argc, char **argv) {
             printf("lifted %s from %.3f m to %.3f m\n", name, settled, y);
             banjo_release(world);
             for (i = 0; i < 360; ++i) banjo_advance(world, 1.0 / 120.0, 0.003);
-            check(findY(world, name, &y), "the piece vanished after being let go");
-            printf("let go: it fell to %.3f m\n", y);
+            /* It comes back down, and it may not come back whole: a shard of
+             * glass let go a metre up lands at 4.4 m/s, over the 4.5 m/s-ish
+             * bar its material sets against the ground, and glass breaks at
+             * its declared 45 MPa now rather than at twice that. What broke is
+             * renamed, so look for the piece OR for what it became. */
+            check(findYOfItOrItsPieces(world, name, &y, &landed),
+                  "the piece vanished after being let go");
+            printf("let go: it came down to %.3f m, in %d piece%s\n",
+                   y, landed, landed == 1 ? "" : "s");
             check(y < settled + 0.2, "it was let go a metre up and did not fall");
         }
     }

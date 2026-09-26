@@ -356,7 +356,24 @@ void criterionMatchesBondFailure() {
                 require(broken == summary.newly_broken && alive_mismatch == 0, "same removed bond set");
                 require(mode_mismatch == 0, "same failure modes");
                 require(max_damage_error <= (precision == Precision::Double ? 1e-12 : 1e-4), "same damage");
-                require(energy_error <= (precision == Precision::Double ? 1e-12 : 1e-5), "same removed energy");
+                // The float bound is 5e-5 and glass is what sets it. A bond's
+                // removed elastic energy goes as the square of the stretch it
+                // broke at, and glass breaks at the smallest stretch of the
+                // three by a wide margin -- 45 MPa over 70 GPa, and at 1.0 of
+                // that strain since it is annealed float glass and not
+                // something with a yield plateau to carry it past. So its
+                // energies are the smallest, and a relative error on a small
+                // sum with cancellation in it is the largest. Measured:
+                //
+                //     glass  double 5.0e-16   float 1.3e-05
+                //     iron   double 4.0e-16   float 2.1e-06
+                //     oak    double 2.6e-16   float 2.0e-07
+                //
+                // In double the two lanes agree to the last bit, so this is
+                // float rounding and not a difference in what either did. It
+                // was 1e-5, set when glass broke at twice the strain and its
+                // energies were four times larger.
+                require(energy_error <= (precision == Precision::Double ? 1e-12 : 5e-5), "same removed energy");
             };
             if (precision == Precision::Double) run(double{}); else run(float{});
         }
@@ -632,9 +649,25 @@ void colourOrderIsBrittleBondSolverInAPermutedOrder() {
               << ", removed " << index.reference.removed_energy_j << " / " << index.fast.removed_energy_j
               << " J, max |dx| = " << index.max_position_difference_m << " m, alive mismatches "
               << index.alive_mismatches << " (Gauss-Seidel ordering effect)\n";
-    require(index.fast.first_failure_step == index.reference.first_failure_step &&
-            index.first_failure_set_symmetric_difference == 0,
-            "the first failure does not depend on the sweep order");
+    // The STEP does not depend on the sweep order, and the set barely does.
+    //
+    // It used to agree exactly. The tile is glass, which now breaks at the
+    // 45 MPa EN 572-1 gives annealed float rather than at twice that strain,
+    // so the cascade starts earlier in the loading -- while the stress across
+    // the tile is still fairly even -- and more bonds arrive at the threshold
+    // together. Measured: both orders find the first failure at step 214;
+    // schedule order sees 26 bonds go and index order 28, the two extra being
+    // bonds that index order's earlier neighbour updates push over inside the
+    // same substep. That is a tie broken by the loop, not a different physics,
+    // and the run downstream is already known to diverge from it -- the line
+    // above prints 349 alive mismatches and calls it the Gauss-Seidel ordering
+    // effect.
+    require(index.fast.first_failure_step == index.reference.first_failure_step,
+            "the first failure step depends on the sweep order");
+    require(index.first_failure_set_symmetric_difference * 10 <=
+                static_cast<std::ptrdiff_t>(index.reference.first_failure_bonds.size()),
+            "the first failure set depends on the sweep order for more than a bond or two "
+            "on the line");
 }
 
 // -------------------------------------------------------------------------
@@ -1017,9 +1050,16 @@ void cudaAgreesWithContact() {
 // contact list reaches 1.25, so every pair inside the list radius of an intact
 // lattice is bonded: contact cannot act until a SHORT bond fails, and this
 // window breaks only long ones.
+//
+// 6 m/s, not the 12 it was. The tile is glass, which now breaks at the 45 MPa
+// EN 572-1 gives annealed float rather than at twice that strain, so at 12 m/s
+// short bonds go too and the window is no longer a no-contact one: measured,
+// 14,189 pairs listed and 113,099 contacts, which is a different test than the
+// one this is. At 6 m/s it breaks long bonds and lists nothing, which is the
+// window this wants.
 void fractureWithoutContactIsUnchanged() {
     TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
-    request.ball_speed_m_s = 12.0;
+    request.ball_speed_m_s = 6.0;
     const auto run = [&](NodeContactMode mode) {
         TileImpactRequest local = request;
         local.node_contact = mode;
