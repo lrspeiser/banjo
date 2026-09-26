@@ -81,6 +81,23 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-row { display:flex;gap:.4rem;flex-wrap:wrap;margin:.55rem 0; }
 .ws-field { display:grid;gap:.28rem;margin:.55rem 0;font-size:.8rem;color:#b8c4d1; }
 .ws-field input,.ws-field select,.ws-field textarea,#design-workshop textarea,.ws-component-chat input { box-sizing:border-box;width:100%;border:1px solid #3d4958;border-radius:.4rem;background:#0d141c;color:#e6edf5;padding:.45rem; }
+/* Every box you can type in is dark, wherever on the bench it was made. The
+   rule above reaches only the ones inside a .ws-field, so a box built
+   anywhere else -- the rack in Inventory -- fell back to the browser's white
+   under the page's light ink (the owner, 2026-09-26: "the text in entry
+   boxes is light gray on white"). */
+#design-workshop input:not([type="checkbox"]):not([type="range"]),
+#design-workshop select,
+#design-workshop textarea {
+  box-sizing:border-box;border:1px solid #3d4958;border-radius:.4rem;
+  background:#0d141c;color:#e6edf5;padding:.45rem;font:inherit;
+}
+#design-workshop input[type="range"] { background:transparent;accent-color:#dce7f5; }
+#design-workshop input[type="checkbox"] { accent-color:#dce7f5; }
+#design-workshop ::placeholder { color:#8d9bad;opacity:1; }
+/* A rack bin is a number beside its material, not a field across the pane. */
+.ws-list input[type="number"] { width:6.5rem;margin-top:.25rem; }
+.ws-list small { display:inline; }
 .ws-metrics { display:grid;grid-template-columns:1fr 1fr;gap:.4rem; }
 .ws-metric { border:1px solid #303a47;border-radius:.4rem;padding:.45rem;background:#0d141c; }
 .ws-metric span { display:block;font-size:.68rem;color:#91a0b2; }
