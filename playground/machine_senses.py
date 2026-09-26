@@ -47,6 +47,7 @@ class Context:
     impacts: list[dict[str, Any]] = field(default_factory=list)
     t: float = 0.0
     goods: Any = None                                    # machine_goods.Goods, the room's ledger, or None
+    ports: Any = None                                    # machine_ports.Ports, the room's mouths, or None
     _surveys: dict[tuple[float, float], dict[str, Any]] = field(default_factory=dict)
     _sun: dict[str, Any] | None = None
 
@@ -266,6 +267,23 @@ def sense_goods(ctx: Context) -> dict[str, Any]:
     return out
 
 
+def sense_ports(ctx: Context) -> dict[str, Any]:
+    """Its own mouths and every other machine's (machine_ports): where each is,
+    how far and which way, what is behind it, and what it is docked to -- or
+    what it is near and why the two are not paired. This is how anything above
+    the reflexes knows it can release a load without being told."""
+    if ctx.ports is None or not ctx.ports:
+        return {"mine": [], "others": []}
+    machine = str(ctx.program.get("name") or "")
+    mine, others = [], []
+    for row in ctx.ports.report():
+        at = row["at_m"]
+        row = {**row, **toward(ctx, float(at[0]), float(at[2]))}
+        (mine if row.get("machine") == machine else others).append(row)
+    return {"mine": mine, "others": others,
+            "docked_to": sorted({str(r["docked"]) for r in mine if r.get("docked")})}
+
+
 def sense_places(ctx: Context) -> dict[str, Any]:
     r = ctx.routine
     places = (r.places if r is not None else {}) or {}
@@ -338,6 +356,9 @@ SENSES: dict[str, Sense] = {s.name: s for s in (
     Sense("goods", "The room's deposits (ore in the ground), its stockpiles (heaps of goods, and what each "
                    "holds) with how far and which way each lies, and the recipes a machine can work.",
           sense_goods),
+    Sense("ports", "Its own ports -- the mouths goods go into it and come out of -- and every other machine's: "
+                   "where each is, how far and which way, what is behind it, and what it is docked to, or what "
+                   "it is near and why the two are not paired.", sense_ports),
     Sense("places", "How far and which way each place it knows lies: its dig site, its depot.", sense_places),
     Sense("nearby", "The things within eight metres of it: what they are, how far, which way, whether they "
                     "move.", sense_nearby),

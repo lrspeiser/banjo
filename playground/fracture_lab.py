@@ -983,12 +983,12 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str],
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
-                                  "rest_below", "rest_until", "routine", "toward", "close_m", "pose",
+                                  "rest_below", "rest_until", "routine", "ports", "toward", "close_m", "pose",
                                   "pose_deg", "rotors", "hover_m", "store"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power, sensors, rest_below, rest_until, routine; for a sit "
-                             f"program toward, close_m, pose and pose_deg; for a hover program rotors and "
+                             f"setting, climb_deg, power, sensors, ports, rest_below, rest_until, routine; for a "
+                             f"sit program toward, close_m, pose and pose_deg; for a hover program rotors and "
                              f"hover_m; and for a still program its store")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
@@ -1061,10 +1061,41 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str],
         sensors = _sensors(program.get("sensors"), name, named, stops=False)
         if sensors:
             made["sensors"] = sensors
+        ports = _ports(program.get("ports"), name, named)
+        if ports:
+            made["ports"] = ports
         if program.get("routine") is not None:
             made["routine"] = _routine(program["routine"], name)
         out.append(made)
+    # A port is named across the whole room, not within its own machine: a
+    # routine sends a machine to "the smelter intake" by that name, and the
+    # page draws it by that name, so two of them would be two different mouths
+    # answering to one word.
+    mouths: set[str] = set()
+    for made in out:
+        for port in made.get("ports") or []:
+            if port["name"] in mouths:
+                raise ValueError(f"two ports are called {port['name']!r}")
+            mouths.add(port["name"])
+    # And a step that sends a machine to a port, or docks at one, names a port
+    # the room has. Unlike a stockpile, a port is declared here, so it can be
+    # checked here.
+    for made in out:
+        routine = made.get("routine") or {}
+        for step in list(routine.get("steps") or []) + [s for w in routine.get("watch") or [] for s in w["do"]]:
+            port = step["args"].get("port")
+            if port and port not in mouths:
+                raise ValueError(f"program {made['name']!r} routine step {step['do']} names the port {port!r}, and "
+                                 f"the room has none; it has {sorted(mouths) or 'none'}")
     return out
+
+
+def _ports(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
+    """A machine's ports (docs/machine-world.md, "Devices that pair"): where
+    goods go into it and where they come out, on its own parts so they move
+    with it. machine_ports has the spelling and the rule that pairs two."""
+    import machine_ports
+    return machine_ports.checked(given, name, named)
 
 
 def _still_program(program: dict[str, Any], name: str, body: str, named: set[str], out: list[dict[str, Any]],
@@ -1095,6 +1126,9 @@ def _still_program(program: dict[str, Any], name: str, body: str, named: set[str
     sensors = _sensors(program.get("sensors"), name, named, stops=False)
     if sensors:
         made["sensors"] = sensors
+    ports = _ports(program.get("ports"), name, named)
+    if ports:
+        made["ports"] = ports
     if program.get("routine") is not None:
         made["routine"] = _routine(program["routine"], name)
     return made
@@ -1137,6 +1171,9 @@ def _hover_program(program: dict[str, Any], name: str, body: str, controls: list
     sensors = _sensors(program.get("sensors"), name, named, stops=False)
     if sensors:
         made["sensors"] = sensors
+    ports = _ports(program.get("ports"), name, named)
+    if ports:
+        made["ports"] = ports
     if program.get("routine") is not None:
         made["routine"] = _routine(program["routine"], name)
     return made

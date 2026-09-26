@@ -190,6 +190,11 @@ class Frame:
     #: on this step, and which beat of the recovery it is on.
     shoves: int = 0
     shoving: str = ""
+    # When the current step was FIRST issued, for a step bounded in seconds.
+    # Kept apart from issued_t, which moves with every re-issue: a repeating
+    # step reset issued_t on every tick, so its seconds were never up and the
+    # step ran for ever (the mine's rover stood at the smelter's port).
+    began_t: float | None = None
     order_id: int | None = None
 
     def current(self) -> dict[str, Any] | None:
@@ -266,6 +271,26 @@ class Routine:
         self.goods = {}
         return out
 
+    def goods_out(self, wanted: dict[str, float]) -> dict[str, float]:
+        """Some of the goods out of the hopper and none of the soil: what a
+        port passes to another machine (machine_ports), which takes goods and
+        nothing else. The hopper's mass comes down by what left; its sand and
+        soil stay where they are, to be dumped back on the ground as ever."""
+        gone: dict[str, float] = {}
+        for substance, kg in wanted.items():
+            have = float(self.goods.get(substance, 0.0))
+            took = min(have, max(0.0, float(kg)))
+            if took <= 0.0:
+                continue
+            left = round(have - took, 6)
+            if left <= 0.0:
+                self.goods.pop(substance, None)
+            else:
+                self.goods[substance] = left
+            self.kg = max(0.0, round(self.kg - took, 6))
+            gone[substance] = took
+        return gone
+
     def delivered(self, sand_m3: float, soil_m3: float, kg: float) -> None:
         self.delivered_kg += kg
         self.trips += 1
@@ -298,6 +323,7 @@ class Routine:
     def resume(self) -> None:
         self.paused_by = None
         self.frame.issued = None
+        self.frame.began_t = None
 
     def interrupt(self, name: str, steps: list[dict[str, Any]], then: str = "resume",
                   order_id: int | None = None) -> Frame:
@@ -337,6 +363,7 @@ class Routine:
         if gone:
             self.note(f"{gone} order{'' if gone == 1 else 's'} dropped")
             self.frame.issued = None
+            self.frame.began_t = None
         return gone
 
     def _advance(self, why: str) -> None:
@@ -351,6 +378,7 @@ class Routine:
         frame.issued_at = None
         frame.shoves = 0
         frame.shoving = ""
+        frame.began_t = None
         if frame.done() and len(self.frames) > 1:
             self.frames.pop()
             self.finished.append({"name": frame.name, "order": frame.order_id, "at_step": len(frame.steps)})
@@ -360,6 +388,7 @@ class Routine:
             self.note(f"{frame.name} done; back to {self.frame.name}"
                       + (" from the top" if frame.then == "restart" else ""))
             self.frame.issued = None
+            self.frame.began_t = None
 
     def _watches(self, ctx: senses.Context) -> dict[str, Any] | None:
         """A watch whose condition has just come to hold: its steps go on top,
@@ -395,6 +424,7 @@ class Routine:
             self.note(f"back on its routine after {self.paused_by} had it")
             self.paused_by = None
             self.frame.issued = None
+            self.frame.began_t = None
         if self.watch:
             self._watches(ctx)
         frame = self.frame
@@ -411,6 +441,15 @@ class Routine:
             return None
         if until == "load_empty" and self.kg <= 0.0 and asked is None and frame.issued is not None:
             self._advance("its hopper is empty")
+            return None
+        # A step bounded in seconds is done when its seconds are up, counted
+        # from when it was first issued -- not from the last of however many
+        # times a repeating step has been issued since, and not only while the
+        # last issue is still standing. A step asked again and again without
+        # ever finishing (a dock that cannot be made) ends here.
+        if isinstance(until, (int, float)) and not isinstance(until, bool) and frame.began_t is not None \
+                and float(ctx.t) - frame.began_t >= float(until):
+            self._advance(f"{until:g} s are up")
             return None
         if frame.issued is not None:
             if until == "arrived":
@@ -450,10 +489,6 @@ class Routine:
             if until == "done" and not frame.issued.get("failed"):
                 self._advance("done")
                 return None
-            if isinstance(until, (int, float)) and not isinstance(until, bool) \
-                    and float(ctx.t) - frame.issued_t >= float(until):
-                self._advance(f"{until:g} s are up")
-                return None
             if asked is not None:
                 return None                       # still doing the step
             if frame.issued is not None and not step.get("repeat"):
@@ -470,6 +505,8 @@ class Routine:
                 return None
         # Issue the step (again, for a repeating one).
         self.seq += 1
+        if frame.began_t is None:
+            frame.began_t = float(ctx.t)
         why = (f"its routine: {self.spec['description'].split(',')[0].lower()}" if frame.order_id is None
                and frame.name == "routine" else f"{frame.name}")
         call = tools.Call(step["do"], dict(step.get("args") or {}), by, why=why)

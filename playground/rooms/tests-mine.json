@@ -471,14 +471,32 @@
     "kind": "roam",
     "left": "left wheel",
     "name": "rover",
+    "ports": [
+     {
+      "at_mm": [
+       0.0,
+       1170.3,
+       -8433.1
+      ],
+      "body": "rover",
+      "flow": "out",
+      "holds": "hopper",
+      "name": "rover store",
+      "normal": [
+       0.0,
+       -0.11131793,
+       0.993784845
+      ]
+     }
+    ],
     "right": "right wheel",
     "routine": {
      "hopper_kg": 40.0,
      "kind": "custom",
      "places": {
-      "smelter intake": [
-       -3.0,
-       -8.0
+      "spoil heap": [
+       -0.5,
+       -7.5
       ],
       "vein": [
        2.0,
@@ -509,16 +527,28 @@
       },
       {
        "args": {
-        "place": "smelter intake"
+        "port": "smelter intake"
        },
        "do": "go_to",
        "retries": 3,
        "until": "arrived"
       },
       {
+       "args": {},
+       "do": "dock",
+       "repeat": true,
+       "until": 6
+      },
+      {
        "args": {
-        "place": "smelter intake"
+        "place": "spoil heap"
        },
+       "do": "go_to",
+       "retries": 3,
+       "until": "arrived"
+      },
+      {
+       "args": {},
        "do": "dump",
        "until": "load_empty"
       }
@@ -552,6 +582,40 @@
     "body": "smelter",
     "kind": "still",
     "name": "smelter",
+    "ports": [
+     {
+      "at_mm": [
+       -3000.0,
+       1303.6,
+       -9180.0
+      ],
+      "body": "smelter",
+      "flow": "in",
+      "holds": "smelter intake",
+      "name": "smelter intake",
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "at_mm": [
+       -3320.0,
+       1303.6,
+       -9500.0
+      ],
+      "body": "smelter",
+      "flow": "out",
+      "holds": "smelter output",
+      "name": "smelter outlet",
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ]
+     }
+    ],
     "routine": {
      "batch_kg": 5.0,
      "intake": "smelter intake",
@@ -565,6 +629,40 @@
     "body": "mill",
     "kind": "still",
     "name": "mill",
+    "ports": [
+     {
+      "at_mm": [
+       -6000.0,
+       2011.9,
+       -12680.0
+      ],
+      "body": "mill",
+      "flow": "in",
+      "holds": "mill intake",
+      "name": "mill intake",
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "at_mm": [
+       -6320.0,
+       2011.9,
+       -13000.0
+      ],
+      "body": "mill",
+      "flow": "out",
+      "holds": "workshop rack",
+      "name": "mill outlet",
+      "normal": [
+       -1.0,
+       0.0,
+       0.0
+      ]
+     }
+    ],
     "routine": {
      "batch_kg": 5.0,
      "intake": "mill intake",

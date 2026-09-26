@@ -1540,6 +1540,7 @@ class Handler(BaseHTTPRequestHandler):
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
                 app.brains.opened(room.spec)
+                app.brains.settle(opened)
                 opened["brains"]=app.brains.summaries()
                 return self.send(opened)
             if path=="/api/world/ask":
@@ -2401,13 +2402,19 @@ def _rejoin(app,scene):
     # Not read back from disk: this server holds it (kept means that).
     opened["kept"]=False
     opened["chat"]=room.chat[-20:]
-    # And what every machine is doing and carrying. NOT brains.opened(), which
-    # would throw away the routines this room has been running -- only what
-    # they say. A page that reloaded onto a room already running got no
-    # machines at all: the full open path seeds them, this one did not, and
-    # attach() afterwards only sends a machine whose state has MOVED, so the
-    # page waited for a change it had no baseline for. A rover digging away in
-    # front of you read as a rover doing nothing.
+    # And what every machine is doing and carrying, and where its mouths are.
+    # NOT brains.opened(), which would throw away the routines this room has
+    # been running -- only what they say. A page that reloaded onto a room
+    # already running got no machines at all: the full open path seeds them,
+    # this one did not, and attach() afterwards only sends a machine whose
+    # state has MOVED, so the page waited for a change it had no baseline for.
+    # A rover digging away in front of you read as a rover doing nothing.
+    #
+    # settle() for the same reason, and it is written for this case: "a room
+    # rejoined half way through gets its mouths where the machines have got
+    # to". attach() would send them a step later anyway; a step later is a
+    # frame of a device with no indicator on it.
+    app.brains.settle(opened)
     opened["brains"]=app.brains.summaries()
     return opened
 

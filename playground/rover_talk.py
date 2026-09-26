@@ -175,7 +175,10 @@ ORDER_INSTRUCTIONS = (
     "dump), asked_done (after back_off, hold_still, face, go_forward, turns, process), or done. A place must be "
     "one of PLACES or 'person'; a substance one of SUBSTANCES. Digging ore means go_to the deposit's place, "
     "dig until load_full, then go_to and dump where asked. Say nothing the machine cannot do: a machine that "
-    "goes nowhere can only process, hold_still.")
+    "goes nowhere can only process, hold_still. A step may name a `port` out of PORTS instead of a place: a "
+    "port is a mouth on another machine, where goods go into it or come out of it. Going to a machine means "
+    "go_to {port}; putting a load into a machine, or taking one out of it, is dock {port} with `until` a "
+    "number of seconds -- never dump or take, which are for heaps on the ground.")
 ORDER_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["steps", "say", "cannot"],
     "properties": {
@@ -183,8 +186,9 @@ ORDER_SCHEMA = {
             "type": "object", "additionalProperties": False, "required": ["do", "args", "until", "repeat"],
             "properties": {"do": {"type": "string"},
                            "args": {"type": "object", "additionalProperties": False,
-                                    "required": ["place", "substance", "kg", "for_s"],
+                                    "required": ["place", "port", "substance", "kg", "for_s"],
                                     "properties": {"place": {"type": ["string", "null"]},
+                                                   "port": {"type": ["string", "null"]},
                                                    "substance": {"type": ["string", "null"]},
                                                    "kg": {"type": ["number", "null"]},
                                                    "for_s": {"type": ["number", "null"]}}},
@@ -214,15 +218,54 @@ ORDER_PLAIN = [
 ]
 
 
+# How long an order spends at a dock before it goes on: a full hopper of goods
+# passes at machine_tools.DIG_S_PER_KG, so forty kilograms takes ten seconds,
+# and the rest is a couple of further tries for a machine that stopped a little
+# off the mouth. A dock step cannot end "when the hopper is empty", because
+# after a dock the soil a load came out of is still in it.
+ORDER_DOCK_S = 12.0
+
+
 def _places_of(brain: rover_brain.Brain) -> dict[str, Any]:
     return dict(brain.routine.places) if brain.routine is not None else {}
 
 
-def plain_order(said: str, places: dict[str, Any], substances: list[str]) -> list[dict[str, Any]] | None:
+def _ports_of(brain: rover_brain.Brain, program: dict[str, Any]) -> list[str]:
+    """The mouths a machine can be sent to: every other machine's, since its
+    own are not somewhere to go (machine_ports)."""
+    if getattr(brain, "ports", None) is None:
+        return []
+    mine = str(program.get("name") or brain.name)
+    return sorted(p.name for p in brain.ports.ports if p.machine != mine)
+
+
+def _through_ports(steps: list[dict[str, Any]], ports: list[str]) -> list[dict[str, Any]]:
+    """A step pointed at a port rather than a place. A machine does not dump
+    onto a mouth or take off one: it DOCKS. So a target that is one of the
+    room's ports becomes `port`, and a dump or a take there becomes a dock,
+    bounded in seconds."""
+    known = {name.lower(): name for name in ports}
+    for step in steps:
+        args = step.get("args") or {}
+        target = str(args.get("place") or "").strip().lower()
+        if not target or target not in known:
+            continue
+        args.pop("place")
+        args["port"] = known[target]
+        if step["do"] in ("dump", "take"):
+            step["do"] = "dock"
+            step["until"] = ORDER_DOCK_S
+            step["repeat"] = True
+    return steps
+
+
+def plain_order(said: str, places: dict[str, Any], substances: list[str],
+                ports: list[str] | None = None) -> list[dict[str, Any]] | None:
     """An order from plain words, for when no model can write one: a few
-    shapes, over the places and substances the machine knows."""
+    shapes, over the places, the substances and the ports the machine knows."""
     lowered = " ".join(said.lower().replace("?", "").replace(".", "").split())
-    known = {p.lower(): p for p in places} | {"person": "person", "me": "person"}
+    ports = list(ports or [])
+    known = {p.lower(): p for p in places} | {p.lower(): p for p in ports} | {"person": "person", "me": "person"}
     subs = {s.lower(): s for s in substances}
     for pattern, build in ORDER_PLAIN:
         m = re.search(pattern, lowered)
@@ -248,12 +291,13 @@ def plain_order(said: str, places: dict[str, Any], substances: list[str]) -> lis
                 else:
                     args["substance"] = subs[sub]
         if ok:
-            return steps
+            return _through_ports(steps, ports)
     return None
 
 
 def model_order(app: Any, said: str, program: dict[str, Any], places: dict[str, Any],
-                substances: list[str], recipes: list[str]) -> dict[str, Any] | None:
+                substances: list[str], recipes: list[str],
+                ports: list[str] | None = None) -> dict[str, Any] | None:
     """The chat's model writing an order as steps, or saying why it cannot;
     None without a key or on a fault."""
     api_key, model = getattr(app, "api_key", ""), getattr(app, "model", "")
@@ -261,7 +305,8 @@ def model_order(app: Any, said: str, program: dict[str, Any], places: dict[str, 
         return None
     payload = {"model": model, "store": False, "max_output_tokens": 600, "instructions": ORDER_INSTRUCTIONS,
                "input": json.dumps({"machine": rover_brain.kind_of(str(program.get("kind") or "roam")),
-                                    "PLACES": sorted(places), "SUBSTANCES": substances, "RECIPES": recipes,
+                                    "PLACES": sorted(places), "PORTS": list(ports or []),
+                                    "SUBSTANCES": substances, "RECIPES": recipes,
                                     "carries_kg": (program.get("routine") or {}).get("hopper_kg"),
                                     "the person said": said}, allow_nan=False),
                "text": {"format": {"type": "json_schema", "name": "order", "strict": True, "schema": ORDER_SCHEMA}}}
@@ -295,15 +340,17 @@ def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said
     if program.get("kind") == "still" and not re.search(r"(make|batch|batches|wait|hold)", said.lower()):
         return "I go nowhere: I can only make batches or wait."
     places = _places_of(brain)
+    ports = _ports_of(brain, program)
     substances = brain.goods.substances() if brain.goods is not None else []
     recipes = [r.get("name") for r in brain.goods.recipes] if brain.goods is not None else []
-    written = model_order(app, said, program, places, substances, recipes)
+    written = model_order(app, said, program, places, substances, recipes, ports)
     if written is None:
-        steps = plain_order(said, places, substances)
+        steps = plain_order(said, places, substances, ports)
         if steps is None:
             return ("I could not make a job of that. I can take: bring <substance> from <place> to <place>, dig "
                     "at <place> and dump it at <place>, go to <place>, make <n> batches. I know the places "
-                    + (", ".join(sorted(places)) or "none") + ".")
+                    + (", ".join(sorted(places)) or "none")
+                    + (" and the ports " + ", ".join(ports) if ports else "") + ".")
         say = ""
     elif written.get("cannot") or not written.get("steps"):
         return f"I cannot: {written.get('cannot') or 'there is nothing in that for me to do'}."
@@ -315,6 +362,9 @@ def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said
             place = step["args"].get("place")
             if place and place != "person" and place not in places:
                 raise ValueError(f"I know no place called {place}")
+            mouth = step["args"].get("port")
+            if mouth and mouth not in ports:
+                raise ValueError(f"I know no port called {mouth}")
     except ValueError as wrong:
         return f"I cannot: {str(wrong)[:160]}."
     if program.get("kind") == "still" and any(s["do"] not in ("process", "hold_still") for s in steps):

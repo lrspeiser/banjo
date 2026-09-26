@@ -41,6 +41,11 @@ DIG_DEPTH_M = 0.15
 # a minute).
 DIG_AHEAD_M = 1.3
 DUMP_RADIUS_M = 0.6
+# How long a machine stands still at a dock that has passed nothing, before it
+# is asked again: a declared game constant, long enough that its reflexes do
+# not drive it off between tries and short enough that a dock bounded in a few
+# seconds gets several of them.
+HOLD_AT_A_DOCK_S = 1.0
 
 
 @dataclass
@@ -72,8 +77,21 @@ def _behave(ctx: senses.Context, call: Call, doing: str, for_s: float, toward: l
 
 
 def _place(ctx: senses.Context, args: dict[str, Any]) -> tuple[list[float], str]:
-    """Where a tool is pointed: a named place the routine knows, the person,
-    a point, or a bearing and distance from the machine's front."""
+    """Where a tool is pointed: a port of another machine, a named place the
+    routine knows, the person, a point, or a bearing and distance from the
+    machine's front."""
+    if args.get("port"):
+        # A mouth on another device (machine_ports), where it is NOW: a
+        # machine sent to a port goes to the thing, not to a patch of ground,
+        # so a smelter moved is still found.
+        port = ctx.ports.by_name(str(args["port"])) if ctx.ports is not None else None
+        if port is None:
+            known = sorted(p.name for p in ctx.ports.ports) if ctx.ports is not None else []
+            raise ValueError(f"it knows no port called {args['port']!r}; the room's ports are "
+                             + (", ".join(known) if known else "none"))
+        if not port.settled():
+            raise ValueError(f"the port {port.name} has not been seen in the room yet")
+        return [port.at_m[0], port.at_m[2]], f"the {port.name}"
     if args.get("place"):
         places = (ctx.routine.places if ctx.routine is not None else {}) or {}
         if args["place"] == "person":
@@ -371,6 +389,78 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
             "drawn_j": round(drawn), "took_s": round(took_s, 1), "onto": output["name"]}
 
 
+def dock(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """Goods passed through a pair of mouths (docs/machine-world.md, "Devices
+    that pair"): from one of this machine's ports into a port of another
+    machine that it is docked to. Which of its ports, and which way the goods
+    go, follows from the machine's own ports -- an `out` port gives, an `in`
+    port takes -- so a rover standing at a smelter releases its ore without
+    being told where the smelter's intake is.
+
+    Nothing here is a place. A dock is to a THING: the two mouths have to be
+    within machine_ports.DOCK_M of each other and turned towards each other,
+    which is what the page draws in green. A dock that is not made says why and
+    does nothing.
+
+    It never answers `idle`, unlike `take` and `process`. An idle answer is one
+    the runner asks again next tick without counting it, and a step that is
+    only ever idle can never end -- a machine that has stopped a little too far
+    off would stand at the dock for ever. So this answers plainly either way,
+    and a routine bounds the step itself: `{"do": "dock", "until": 6,
+    "repeat": true}` is "spend six seconds passing what you can, then go on"."""
+    import machine_ports
+    if ctx.ports is None or not ctx.ports:
+        raise ValueError("this room has no ports on its machines")
+    machine = str(ctx.program.get("name") or "")
+    mine = [p for p in ctx.ports.of(machine) if p.settled()]
+    if not mine:
+        raise ValueError("this machine has no ports to dock with")
+    wanted = str(call.args.get("port") or "")
+    if wanted:
+        # Told which mouth to work through: one of its own, or the other
+        # machine's, in which case its own is whichever one could fit that.
+        named = ctx.ports.by_name(wanted)
+        if named is None:
+            raise ValueError(f"the room has no port called {wanted!r}")
+        mine = ([p for p in mine if p is named] if named.machine == machine
+                else [p for p in mine if p.flow != named.flow])
+        if not mine:
+            raise ValueError(f"this machine has no port that fits {wanted!r}")
+    said: list[str] = []
+    for port in mine:
+        docked, near, why, _ = ctx.ports.pair_of(port)
+        if docked is None:
+            said.append(f"{port.name} is docked to nothing"
+                        + (f" ({near.name}: {why})" if near is not None and why else ""))
+            continue
+        if wanted and ctx.ports.by_name(wanted).machine != machine and docked.name != wanted:
+            said.append(f"{port.name} is docked to {docked.name}, not to {wanted}")
+            continue
+        giving, taking = (port, docked) if port.flow == "out" else (docked, port)
+        passed = machine_ports.pass_goods(ctx.ports, giving, taking,
+                                          float(call.args["kg"]) if call.args.get("kg") is not None else None)
+        if not passed["moved"]:
+            said.append(f"{giving.name} passed nothing to {taking.name}: {passed['why']}")
+            continue
+        kg = sum(passed["moved"].values())
+        words = ", ".join(f"{v:.1f} kg of {k}" for k, v in passed["moved"].items())
+        # As long as a scoop of the same mass takes, so a dock is watchable
+        # rather than instant: the same declared rate the dig and take tools use.
+        took_s = max(0.5, kg * DIG_S_PER_KG)
+        _behave(ctx, call, "waiting", took_s)
+        if ctx.routine is not None:
+            ctx.routine.note(f"docked {port.name} to {docked.name}: {words}")
+        return {"did": f"passed {words} from {giving.name} into {taking.name}, in {took_s:.1f} s",
+                "moved": passed["moved"], "from": giving.name, "into": taking.name,
+                "load": ctx.routine.load_reading() if ctx.routine is not None and ctx.routine.carries() else None}
+    # Nothing passed, and it stands still for a moment before it is asked
+    # again. Without that its reflexes drive it off between tries and it
+    # wanders away from the very mouth it came to (measured in the mine: the
+    # rover was 5 m from the smelter by the end of its own dock step).
+    _behave(ctx, call, "waiting", HOLD_AT_A_DOCK_S)
+    return {"did": "passed nothing: " + "; ".join(said), "moved": {}}
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -393,6 +483,8 @@ _FOR_S = {"for_s": {"type": "number", "description": "for how many seconds",
                                {"value": 6.0, "words": "a while, six seconds"},
                                {"value": 12.0, "words": "a good while, twelve seconds"}]}}
 _WHERE = {"place": {"type": "string", "description": "a place it knows by name, or 'person'", "options": "places"},
+          "port": {"type": "string", "description": "a port on another machine, by name: where it is now",
+                   "options": "ports"},
           "point": {"type": "array", "items": {"type": "number"}, "description": "[x, z] in metres"},
           "bearing_deg": {"type": "number", "description": "degrees from its front, positive to its left",
                           "options": {"straight ahead": 0.0, "a little to its left": 30.0, "to its left": 90.0,
@@ -427,6 +519,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
                  "place it knows, or the nearest, or a new heap).", dump, {"place": _WHERE["place"]}),
     Tool("take", "Take goods off the stockpile within reach of it into its hopper: one substance, or "
                  "whatever is there.", take, {"place": _WHERE["place"], **_SUBSTANCE}),
+    Tool("dock", "Pass goods through its port into the port of the machine it is standing at: its store "
+                 "into the other's intake, or the other's outlet into its store. Their two mouths have to "
+                 "be close and turned towards each other.", dock, {"port": _WHERE["port"]}),
     Tool("process", "Work one batch of its recipe: its intake stockpile's goods into its output "
                     "stockpile's, drawing the work from its battery.", process, {}, for_deciders=False),
     Tool("carry_on", "Ask nothing more of it: its routine and its reflexes have it back.", carry_on, {}),
@@ -439,7 +534,8 @@ def catalogue(for_deciders: bool = True) -> list[dict[str, Any]]:
 
 
 def argument_questions(places: dict[str, Any] | None = None,
-                       substances: list[str] | None = None) -> dict[str, Any]:
+                       substances: list[str] | None = None,
+                       ports: list[str] | None = None) -> dict[str, Any]:
     """One typed question per argument a decider can fill, across the tools it
     may pick, keyed `arg_<name>`: asked in the same call as the tool, so a
     decider answers everything at once and only the picked tool's are read
@@ -468,6 +564,13 @@ def argument_questions(places: dict[str, Any] | None = None,
                             "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
                                             "is picked. `senses.goods` says what each stockpile holds.",
                             "criteria": {s: f"the substance called {s}" for s in substances}}
+            elif spec.get("options") == "ports":
+                if not ports:
+                    continue
+                out[key] = {"type": "choice",
+                            "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
+                                            "is picked. `senses.ports` says where each mouth is and what it takes.",
+                            "criteria": {p: f"the port called {p}" for p in ports}}
             elif isinstance(spec.get("options"), dict):
                 out[key] = {"type": "choice",
                             "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
@@ -482,7 +585,7 @@ def argument_questions(places: dict[str, Any] | None = None,
 
 
 def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any] | None = None,
-                  substances: list[str] | None = None) -> dict[str, Any]:
+                  substances: list[str] | None = None, ports: list[str] | None = None) -> dict[str, Any]:
     """The picked tool's arguments, from the answers to its argument questions:
     a choice's value, a score's nearest level. An argument not answered is
     left to the tool's own default."""
@@ -502,6 +605,10 @@ def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any
             choice = answer.get("choice")
             if substances and choice in substances:
                 args[name] = choice
+        elif spec.get("options") == "ports":
+            choice = answer.get("choice")
+            if ports and choice in ports:
+                args[name] = choice
         elif isinstance(spec.get("options"), dict):
             choice = answer.get("choice")
             if choice in spec["options"]:
@@ -513,10 +620,13 @@ def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any
             except (TypeError, ValueError):
                 continue
             args[name] = levels[index]["value"]
-    # A bearing without a place is a direction; a place makes the bearing moot.
-    if "place" in args:
+    # A bearing without a place is a direction; a place or a port, being
+    # somewhere already, makes the bearing moot.
+    if "place" in args or "port" in args:
         args.pop("bearing_deg", None)
         args.pop("distance_m", None)
+    if "port" in args:
+        args.pop("place", None)
     return args
 
 
@@ -524,7 +634,9 @@ def described(tool_name: str, args: dict[str, Any]) -> str:
     """A call in a few words: "go to the person", "turn left for 3 s"."""
     words = tool_name.replace("_", " ")
     bits = []
-    if args.get("place"):
+    if args.get("port"):
+        bits.append(f"the {args['port']}")
+    elif args.get("place"):
         bits.append(f"the {args['place']}" if args["place"] == "person" else str(args["place"]))
     elif "bearing_deg" in args:
         bits.append(f"{args.get('distance_m', 3):g} m at {args['bearing_deg']:+g} deg")

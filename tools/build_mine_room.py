@@ -52,6 +52,7 @@ import build_rover_room as rover_room   # noqa: E402
 import fracture_lab                     # noqa: E402
 import live_session                     # noqa: E402
 import machine_goods                    # noqa: E402
+import machine_ports                    # noqa: E402
 import machine_routine                  # noqa: E402
 import machine_senses                   # noqa: E402
 import rigid_assembly                   # noqa: E402
@@ -74,7 +75,20 @@ DRONE_AT = (-6.0, -9.0)
 MILL_AT = (-6.0, -13.0)
 MILL_INTAKE_AT = (-6.0, -11.5)
 RACK_AT = (-6.0, -14.5)
+SPOIL_AT = (-0.5, -7.5)            # where the rover tips the soil its ore came out of
 BLOCK_M = (0.6, 0.8, 0.6)          # a still machine's concrete block: x, y, z
+# A still machine's mouths (machine_ports): on the face each is served from,
+# half way up its block -- which is 0.40 m, the height a rover's deck stands at,
+# so a machine coming alongside meets it -- and standing 20 mm clear of the
+# concrete, so the ring the page draws is outside the block rather than in it.
+PORT_CLEAR_M = 0.02
+# The rover's own store mouth, in its own frame: at the front lip of its deck
+# (the deck runs 0.5 m either side of its middle and its top is 0.38 m up),
+# looking the way it drives. The rover has no bin drawn on it -- its hopper is
+# an account (machine_routine), not a body -- so this is where a bin's chute
+# would be.
+ROVER_PORT_LOCAL_M = (0.0, 0.45, 0.52)
+ROVER_PORT_FACES = (0.0, 0.0, 1.0)
 
 GOODS = {
     "deposits": [{"name": "copper vein", "substance": "copper ore", "at_m": list(VEIN_AT), "radius_m": 3.0,
@@ -88,21 +102,57 @@ GOODS = {
                 {"name": "draw wire", "in": {"copper": 1.0}, "out": {"copper wire": 0.98},
                  "work_j_per_kg": 500.0, "s_per_kg": 1.0}],
 }
-# The rover's job, in the routine language: its own steps.
+# The rover's job, in the routine language: its own steps. It goes to the
+# smelter's intake PORT, not to a patch of ground beside it, and releases its
+# ore through its own store port (docs/machine-world.md, "Devices that pair").
+# What is left in its hopper afterwards is the soil the ore came out of, which
+# the smelter has no use for, so that goes on the spoil heap on the way back --
+# the ore goes to a thing, the dirt goes to a place.
+#
+# Six seconds at the dock: a full hopper of ore passes at the same rate a
+# scoop is dug, 40 kg x 0.3 of grade x 0.25 s/kg = 3 s, and the other three
+# are two more tries at a second apiece for a machine that stopped a little
+# off. The step is bounded in seconds rather than by "until it is empty"
+# because the hopper is NOT empty after a dock: the spoil is still in it.
 ROVER_ROUTINE = {
     "kind": "custom", "hopper_kg": 40.0,
-    "places": {"vein": list(VEIN_AT), "smelter intake": list(SMELTER_INTAKE_AT)},
+    "places": {"vein": list(VEIN_AT), "spoil heap": list(SPOIL_AT)},
     "steps": [
         {"do": "go_to", "args": {"place": "vein"}, "until": "arrived", "retries": 3},
         {"do": "dig", "args": {}, "until": "load_full", "repeat": True},
         {"do": "back_off", "args": {"for_s": 1.5}, "until": "asked_done"},
-        {"do": "go_to", "args": {"place": "smelter intake"}, "until": "arrived", "retries": 3},
-        {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
+        {"do": "go_to", "args": {"port": "smelter intake"}, "until": "arrived", "retries": 3},
+        {"do": "dock", "args": {}, "until": 6, "repeat": True},
+        {"do": "go_to", "args": {"place": "spoil heap"}, "until": "arrived", "retries": 3},
+        {"do": "dump", "args": {}, "until": "load_empty"},
     ],
 }
 DRONE_ROUTINE = {"kind": "haul", "hopper_kg": 20.0,
                  "places": {"source": list(SMELTER_OUTPUT_AT), "destination": list(MILL_INTAKE_AT)}}
 STILL = {"capacity_j": 2.0e6, "charge_j": 2.0e6, "voltage_v": 48.0, "panel_area_m2": 0.3, "efficiency": 0.2}
+
+
+def ports_on_block(name: str, at: tuple[float, float], base: float,
+                   intake: str, output: str) -> list[dict]:
+    """A still machine's two mouths: where ore goes in, on the +z face, and
+    where what it makes comes out, on the -x face -- each turned outwards, so a
+    machine that comes alongside meets it face to face. Which face is which is
+    the room's choice: it puts the intake towards where the ore comes from and
+    the outlet towards the heap it fills.
+
+    Behind each mouth is the stockpile the machine already works between, so
+    the smelter's own recipe is untouched and a person can still see the heap.
+    """
+    x, z = at
+    y = base + BLOCK_M[1] / 2.0
+    out = BLOCK_M[2] / 2.0 + PORT_CLEAR_M
+    side = BLOCK_M[0] / 2.0 + PORT_CLEAR_M
+    return [{"name": f"{name} intake", "flow": "in", "body": name, "holds": intake,
+             "at_mm": [round(1000.0 * x, 1), round(1000.0 * y, 1), round(1000.0 * (z + out), 1)],
+             "normal": [0.0, 0.0, 1.0]},
+            {"name": f"{name} outlet", "flow": "out", "body": name, "holds": output,
+             "at_mm": [round(1000.0 * (x - side), 1), round(1000.0 * y, 1), round(1000.0 * z, 1)],
+             "normal": [-1.0, 0.0, 0.0]}]
 
 
 def block(ground: dict, name: str, at: tuple[float, float]) -> tuple[dict, list[float]]:
@@ -143,6 +193,17 @@ def compose(ground: dict) -> dict:
     spec = rover_room.compose(ground, "tests-dig")
     machines = spec["machines"]
     machines["programs"][0]["routine"] = ROVER_ROUTINE
+    # The rover's store mouth, in the room's frame where the room puts it down,
+    # exactly as its solar panel is: the playground carries it back into the
+    # rover's own frame the first time it sees the body, and after that it
+    # turns with the rover.
+    deck = next(b for b in spec["precise_rigid_bodies"] if b["name"] == "rover")
+    q = deck["orientation_wxyz"]
+    machines["programs"][0]["ports"] = [
+        {"name": "rover store", "flow": "out", "body": "rover", "holds": "hopper",
+         "at_mm": [round((deck["position_m"][k] + v) * 1000.0, 1)
+                   for k, v in enumerate(grounds._turn(q, ROVER_PORT_LOCAL_M))],
+         "normal": [round(v, 9) for v in grounds._turn(q, ROVER_PORT_FACES)]}]
     for name, at in (("smelter", SMELTER_AT), ("mill", MILL_AT)):
         body, top = block(ground, name, at)
         spec["bodies"].append(body)
@@ -154,6 +215,7 @@ def compose(ground: dict) -> dict:
         recipe, intake, output = (("smelt copper", "smelter intake", "smelter output") if name == "smelter"
                                   else ("draw wire", "mill intake", "workshop rack"))
         machines["programs"].append({"name": name, "kind": "still", "body": name, "store": f"{name} battery",
+                                     "ports": ports_on_block(name, at, top[1] - BLOCK_M[1], intake, output),
                                      "routine": {"kind": "process", "recipe": recipe, "intake": intake,
                                                  "output": output, "batch_kg": 5.0}})
     bodies, pins, made = drone(ground, DRONE_AT)
@@ -175,6 +237,12 @@ def watch(engine: Path, validated: dict) -> list[str]:
     faults: list[str] = []
     landed: list[tuple[str, float]] = []
     goods = machine_goods.Goods(validated, on_rack=lambda substance, kg: landed.append((substance, kg)))
+    # The room's mouths, kept as the server keeps them (rover_brain.Brains):
+    # they take their place on the bodies from the first poses and ride them
+    # after, and what is behind each is this room's own heaps and hoppers.
+    routines: dict[str, machine_routine.Routine] = {}
+    ports = machine_ports.Ports(validated,
+                                holder_for=machine_ports.holders_over(goods, routines.get))
     with tempfile.TemporaryDirectory() as tmp:
         session = live_session.Session(engine, validated, Path(tmp))
         try:
@@ -188,8 +256,9 @@ def watch(engine: Path, validated: dict) -> list[str]:
                 faults.extend(value if isinstance(value, list) else [value] if value else [])
             if faults:
                 return faults
-            routines = {name: machine_routine.Routine(name, machine_routine.declared_for(validated, name))
-                        for name in made["programs"]}
+            routines.update({name: machine_routine.Routine(name, machine_routine.declared_for(validated, name))
+                             for name in made["programs"]})
+            ports.follow((session.send(op="poses") or {}).get("bodies"))
             session.send(op="step", dt=DT, n=int(2.0 / DT))
             for seq, (name, program) in enumerate(made["programs"].items(), 1):
                 session.send(op="run", program=program, sender="builder", seq=seq, power=True)
@@ -199,13 +268,15 @@ def watch(engine: Path, validated: dict) -> list[str]:
             for tick in range(int(WATCH_S / (PER_QUARTER * DT))):
                 reply = session.send(op="step", dt=DT, n=PER_QUARTER)
                 machines = reply.get("machines") or {}
+                ports.follow(reply.get("bodies"))
                 t = float(reply.get("t", 0.0))
                 for name, program_id in made["programs"].items():
                     said = next((q for q in machines.get("programs") or [] if q.get("id") == program_id), None)
                     if said is None:
                         continue
                     ctx = machine_senses.Context(program=said, machines=machines, bodies=reply.get("bodies"),
-                                                 ask=session.send, routine=routines[name], t=t, goods=goods)
+                                                 ask=session.send, routine=routines[name], t=t, goods=goods,
+                                                 ports=ports)
                     did = routines[name].tick(ctx)
                     if did is not None:
                         log.append(f"{t:6.1f} s  {name}: {did.get('did', '')}")
@@ -221,6 +292,10 @@ def watch(engine: Path, validated: dict) -> list[str]:
                 print("    " + line[:160])
             if len(log) > 60:
                 print(f"    ... {len(log) - 60} more")
+            for row in ports.report():
+                print(f"  the {row['name']} ({row['flow']}, behind it {row['holds']}): "
+                      + (f"docked to {row['docked']}" if row.get("docked")
+                         else (f"near {row['near']} -- {row['why']}" if row.get("near") else "docked to nothing")))
             for pile in goods.stockpiles:
                 print(f"  {pile['name']}: " + (", ".join(f"{v:.2f} kg {k}" for k, v in (pile.get('holds') or {}).items())
                                                 or "nothing"))
