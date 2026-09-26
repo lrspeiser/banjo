@@ -1215,8 +1215,17 @@ function followMachines(machines) {
   world.machines = machines || null;
   drawMachines(world.machines);
   showMachinePanel();
-  dressMachines();
-  dressSensors();
+  // THE ARCS AND THE BEADS ARE OFF (the owner, 2026-09-26: "i don't like the
+  // green and yellow arcs on the screen ... what are the blue dots on lines
+  // in front the rover, they are confusing"). Both were world-space overlays
+  // explaining a machine to somebody who had not asked: dressMachines drew a
+  // yellow stripe on every turning part and a green arc for which way its
+  // motor runs, dressSensors a blue bead and a thread to the ground at each
+  // water sensor, amber when it saw water. What they said is now said in
+  // words on the machine's own line when you look at it, which is where the
+  // owner asked for it. The two functions are left in place, called by
+  // nothing, so that a machine being worked on by hand can have them back in
+  // one line.
 }
 
 // Who decides for each machine's program on what it meets, and what was
@@ -2848,6 +2857,19 @@ function detailsModel() {
       + (load ? ` · carrying ${got}, of ${Math.round(load.capacity_kg)} kg it can hold` : "");
     const said = r.notes && r.notes.length ? r.notes[r.notes.length - 1] : "";
     if (said) model.note = [model.note, said].filter(Boolean).join(" · ");
+    // And how it is doing, in words rather than as an arc over its wheels.
+    // Off its PROGRAM, not its controls: a control on the page is called
+    // "left wheel" and carries nothing saying which machine it drives, while
+    // a program carries `body` and `parts`, and the state worth reading.
+    const mine = programsNow().find((p) => p.name === lookingAt.split(":")[0].trim()
+      || p.body === lookingAt.split(":")[0].trim() || (p.parts || []).includes(lookingAt));
+    if (mine) {
+      const how = [];
+      if (mine.doing) how.push(mine.why ? `${mine.doing} — ${mine.why}` : mine.doing);
+      const wet = (mine.sensors || []).filter((x) => x.sees).length;
+      if (wet) how.push(`${wet === 1 ? "a water sensor sees" : wet + " water sensors see"} water`);
+      if (how.length) model.facts += ` · ${how.join(" · ")}`;
+    }
   }
   if (world.doing) model.note = `${world.doing}: doing it…`;
   return model;

@@ -2387,6 +2387,14 @@ def _rejoin(app,scene):
     # Not read back from disk: this server holds it (kept means that).
     opened["kept"]=False
     opened["chat"]=room.chat[-20:]
+    # And what every machine is doing and carrying. NOT brains.opened(), which
+    # would throw away the routines this room has been running -- only what
+    # they say. A page that reloaded onto a room already running got no
+    # machines at all: the full open path seeds them, this one did not, and
+    # attach() afterwards only sends a machine whose state has MOVED, so the
+    # page waited for a change it had no baseline for. A rover digging away in
+    # front of you read as a rover doing nothing.
+    opened["brains"]=app.brains.summaries()
     return opened
 
 
