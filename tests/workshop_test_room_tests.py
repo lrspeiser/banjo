@@ -151,6 +151,10 @@ class ALittleWorldAtTheBench(unittest.TestCase):
                               runs_path=root / "runs", store=room_store.RoomStore(root / "rooms"))
         for material in ("oak", "iron", "concrete", "glass"):
             workshop_library.set_rack(app, material, 500.0)
+        # And the goods its power parts are made of: a machine's motors and
+        # panels take copper and copper wire off the goods rack when it is made.
+        for substance in ("copper", "copper wire"):
+            workshop_library.set_goods(app, substance, 500.0)
         live.open(app, {"spec": out_there.spec})
         ctx = install.context(app, {})
         preview = install.preview(app, {"session": ctx["session"], "scene": "yard", "mode": "authoring",

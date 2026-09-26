@@ -106,6 +106,10 @@ def _label(kind: str, values: dict[str, Any], spec: Any) -> str:
 
 def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[str, Any]:
     engine_materials.synchronize_workshop_model()
+    # A template with joints and machines of its own (Assembly.overrides)
+    # opens with them, unless the person's own overrides are given.
+    if overrides in (None, {}) and (design.lineage or {}).get("component_overrides"):
+        overrides = design.lineage["component_overrides"]
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
     wire["component_overrides"] = workshop_components.checked_overrides(overrides)
@@ -151,6 +155,11 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
     spec = assembly(kind)
     root = assemble(kind, design_id=f"{kind}-g{generation}", purpose=purpose, parameters=base)
     checked = workshop_components.checked_overrides(overrides)
+    # A template with joints and machines of its own (Assembly.overrides) is
+    # spread with them when the person gives none: a machine's template says
+    # how it is fastened and what drives it, and that is what is opened.
+    if not checked and (root.lineage or {}).get("component_overrides"):
+        checked = workshop_components.checked_overrides(root.lineage["component_overrides"])
     # Parts a person put in stand where they were put. Sweeping the template's
     # numbers would move the template out from under them, so a built design is
     # one candidate, changed part by part.
@@ -196,6 +205,15 @@ def library(app: Any = None, body: Any = None,
             return {"schema": WORKSHOP_SCHEMA,
                     "rack": workshop_library.set_rack(
                         app, str(body.get("material") or ""), float(body.get("mass_kg")))}
+        if action == "set_goods":
+            # The other rack: what the workshop holds of the goods machines are
+            # made of -- copper, copper wire -- which the world fills by mining
+            # and smelting and which a machine's power parts spend when it is
+            # made. Settable here for the same reason the material rack is: a
+            # page, and a test, has to be able to say what is on the shelf.
+            return {"schema": WORKSHOP_SCHEMA,
+                    "goods": workshop_library.set_goods(
+                        app, str(body.get("substance") or ""), float(body.get("mass_kg")))}
         if action == "check_validity":
             import workshop_fitting
             kind = _kind(body, "custom")

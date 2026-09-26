@@ -963,6 +963,511 @@ Not built yet: seasons, since every day is an equinox's; the moon; clouds; the
 day's heat warming anything; a machine that plans for the night rather than
 running until it is low.
 
+## The Workshop's robot parts
+
+**Status, 2026-09-25.** A robot can be assembled on the bench from prebuilt
+components, its machines declared there in full, and installed into the
+room as the exact bodies on pins the room's own rover is made of, where its
+program, its senses, its routine and the chat all work on it as on the
+hand-written one. The owner's aim: the bench chat assembles it, the person
+brings it into the world and talks to it.
+
+**The components** are families in the Workshop's library
+(`mcp/workshop.py`, `MACHINE_FAMILIES`), so the bench chat can search,
+place and fasten them: `mount` (a bearing mount hung under a deck),
+`drive-wheel` (a wheel on its own short iron stub, which turns in a mount; a
+motor goes on the mount and the stub), `caster` (a swivel pin up into a
+mount, a fork, and a trailing wheel: six parts), `battery` (a box that holds
+a store), `solar-panel` (a glass collector facing up), `hopper` (a bin a dig
+routine fills). Every one is the room's rover's own, as
+`tools/build_rover_room.py` hand-writes it.
+
+**The rover template** (`mcp/workshop_products.py`, kind `rover`) composes
+them -- 17 parts -- and, being a machine, says everything about itself that
+a template of furniture leaves to the bench: every joint is authored (13
+fixed, 4 bearings: the two wheel stubs in their mounts, the swivel in the
+caster mount, the caster wheel on its pin), its machines are declared
+(battery, two motors, two controls named left and right wheel, a panel, a
+roam program with two water eyes half a metre ahead of the deck and a dig
+routine with a 40 kg hopper), and every part asks for the exact model. An
+assembly may carry such overrides now (`Assembly.overrides`), and the bench
+opens the template with them.
+
+**What a design can now declare** (`mcp/workshop_machines.py`): a program's
+`sensors` (a water eye at a point on a component, in the design's own
+metres, and its depth) and its `routine` (kind, hopper, what a scoop costs;
+the places it works between are the room's, given at install); a panel's
+`at_m` and `normal`, or the installer takes its component's top. The bench
+chat has `add_sensor` and `set_routine` beside `add_power_part` and
+`set_program`, and Check Validity says when a sensor sits on nothing or a
+dig routine has no hopper. A program's chassis is the body both wheels' pins
+turn on, not the alphabetically first. The design side allows only the
+program kinds the room has ("roam"), so nothing is refused at the door.
+
+**Installing it** (`playground/workshop_install.py`, `_preview_exact`): a
+design that asks for the exact model and has bearings or machines is
+compiled by `rigid_assembly` -- its fixed groups as compounds of their own
+parts, its bearings as pins -- set down facing +z at the point asked, lifted
+so nothing starts below the ground, and written into the room as
+`precise_rigid_bodies`, `joints`, actions, interaction points and a
+`machines` block in the room's own words: sensor and panel points carried
+from the design's frame to where it stands. A routine's places, when the
+install names none, are its dig site three metres ahead and its depot three
+metres behind, said in the receipt. A machine's names are kept apart from
+the room's -- a second rover's battery is "rover battery 2", its program
+"rover 2", and whatever names them follows -- since the room refuses two
+stores of one name and a design does not know the room. The staged world is
+checked as every install is: the old bodies exact, the new pins the
+design's, a machine counter allowed to begin counting, and a hinge's
+measured angle allowed a microradian (a pin between exact bodies that were
+moving when the world was saved reads a few hundred float ULPs off, and
+that refused every install into a room with a rover in it). Powering
+happens when the room is next opened, as for every installed machine.
+
+Seen on the page: the rover opened on the bench by its kind, checked by
+the bench chat (gpt-5-mini: "powered by a single energy store with two
+motors ... a roam program"), made with "Make it" into the rover room beside
+the room's own rover, and talked to there: "I am backing off: water ahead:
+its reflexes have it. My battery is at 100%." -- and "turn around and hold
+still" turned it round.
+
+Measured in `tests/workshop_rover_tests.py`, in the real engine: the rover
+from the bench, installed in the empty basin by the lake, compiled to five
+bodies on four pins, was powered as the room opened, roamed 14.1 m in 20 s
+turning away once, with 0 mm of water under any wheel; its routine knew its
+two places; opened to talk, it turned to the person and took "stop".
+
+Not built yet: the bench's Check Validity redraws are the lattice bench's
+and say nothing useful about an exact-body machine (the rover is checked by
+compiling, not redrawing); a way to set a routine's places from the page; a
+motor's own bench trial (`cart_roll` pushes a cart, it does not drive one);
+and any component beyond the rover's.
+
+## A machine's senses and its tools
+
+**Status, 2026-09-25.** A machine knows the world only through its senses,
+and whatever thinks for it works it only through its tools. The two are
+registries in the playground, `machine_senses.SENSES` and
+`machine_tools.TOOLS`, and everything above the engine's reflexes reads the
+one and calls the other: the routine a machine follows on its own, Jev or
+the chat's model picking what to do when something happens, a person
+talking to it. Nothing in that layer is a rover's; a new sense or tool is
+one entry, and a new kind of machine is what the engine reports of it plus
+a routine.
+
+**The senses**, each one named reading, with directions in degrees from the
+machine's front (positive to its left) and distances in metres, so every
+reader means the same thing by "turn left 40": `position` (where it is,
+its heading, its speed, what its program is doing and why); `slope` (its
+own tilt, and which way is downhill and uphill round it and how steep, from
+the ground surveyed on rings at 1.5, 3 and 6 m); `ground` (the surface
+under it and its layers); `water` (its sensors, the nearest water round it
+and which bearings are dry); `sun` (where it stands, its bearing from the
+machine's front, whether it is day, the hour); `battery` (share of full,
+joules, what charges it); `wheels`; `load` (its hopper); `places` (how far
+and which way each place it knows lies); `nearby` (things within eight
+metres); `person`; `struck`. The engine reports the program's position and
+heading now (`at_m`, `heading_deg`), so no reader does quaternion
+arithmetic. Senses that survey the ground or ask for the sun are read on
+demand, when something happens or a person asks, never every step.
+
+**The tools**, each one named action with a description a model can read,
+a schema for its arguments, and what to fill them with when whoever picks it
+gives none: `go_forward`, `back_off`,
+`turn_left`, `turn_right`, `hold_still`, `face` and `go_to` (a place it
+knows by name, the person, a point, or a bearing and distance), `dig`,
+`dump`, and `carry_on` (nothing more is asked: its routine and its reflexes
+have it back). The going tools are asks on the program (`behave`); a tool
+answers what it did, in words, and never invents an outcome -- what the
+machine then does is the world's answer, read back through the senses. A
+decider is asked which tool, among these names with these descriptions as
+the criteria, and the same call asks whether it is stuck and how urgent its
+battery is.
+
+**A decider fills the arguments too.** Each argument a decider can fill is
+a typed question of its own in the same call, keyed `arg_<name>`: a
+duration, a distance or a depth is a score over its declared levels ("a
+moment, a second and a half" ... "a good while, twelve seconds"); a
+direction is a choice of seven bearings from its front; a place is a choice
+among the places the machine knows and the person. Everything is asked at
+once and only the picked tool's answers are read -- one call however the
+decision branches, which is how Jev is meant to be used and costs the model
+nothing extra. Jev and the chat's model fill them the same way, since both
+answer choice and score questions. An argument a decider cannot fill this
+way -- a point in the world -- the routine and a person can. The decision's
+words say what was filled: "go to 3 m at +90 deg, for 6 s".
+
+**Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
+whose volume goes into the ground's one carried account. The `dig` tool
+takes one scoop of the ground 1.3 m ahead of the machine's centre (0.5 m
+wide, 0.15 m deep; closer, its caster swung into the hole when it turned to
+leave), moves what came out from the carried account into the machine's
+hopper with the engine's `ground_withdraw`, so the ground's ledger stays
+whole and the person's carrying is untouched, cuts the scoop to what the
+hopper has room for and puts the rest back where it came from, draws the
+scoop's work from the machine's battery (the new `draw` op:
+`LiveWorld::drawEnergy`, joules off its charge and onto its `given_j`, so
+its account closes), and holds the machine still for as long as the scoop
+takes. The work is DECLARED, not derived: `work_j_per_kg` on the routine, 50
+J/kg by default (lifting a kilogram half a metre is 5 J; breaking it out is
+several times that, docs/ground-work.md measures the hand's tools); so is
+the time, a quarter second a kilogram. `dump` returns the hopper to the
+carried account and heaps it on the ground ahead. The hopper is not saved
+with the world: a restart empties it.
+
+**A routine** is a list of steps, each one tool call with its arguments and
+what ends it, run by one generic runner (`machine_routine.Routine`) that
+knows nothing of digging: it issues the step's tool, waits until the world
+says the step is done -- the machine arrived (its `approaching` ask ended
+waiting), its hopper is full, its hopper is empty -- and goes on to the
+next, round again at the end; a `go_to` that runs out of time is tried
+again from where it stands, three times. The dig routine is five steps: go
+to the dig site; dig until full; back off from the hole; go to the depot;
+dump. It is declared on a
+program in the room's spec and checked by the validator:
+
+```
+"routine": {"kind": "dig", "places": {"dig site": [2.0, -6.5], "depot": [-2.5, -9.5]},
+            "hopper_kg": 40, "work_j_per_kg": 50}
+```
+
+The runner ticks before each step the page takes (`Brains.before`), on the
+program's last reported state. While someone else has the machine -- a
+decider on something that happened, a person talking to it, its own
+program resting for want of charge -- the routine waits and says who has
+it, and takes its step up again after. **An ask never drives it into the
+water**: asked to go somewhere and its sensors seeing water, its reflexes
+have it -- backing off, turning away -- until it has been going forward
+clear for two seconds, and then the ask has it back (the program's
+`interrupted`); turned back three times, it gives the ask up and says the
+water was in the way, so an ask pointed into the lake ends dry rather than
+with the machine turning on the spot at the shore. Measured in
+`tools/build_rover_room.py` for `/world?scene=tests-dig`: the rover went to
+its dig site, took 40 kg in one scoop drawing 2,000 J, carried it to the
+depot, dumped it and went back for more, in 122 s of the world at 24x
+realtime, dry, with the ground's carried account at 0.00 kg after the dump
+and its battery's account closed.
+
+**On the panel** a machine with a routine says which step it is on, what
+its hopper holds, how many loads it has delivered, and who has it when it
+waits. Talking to it, "dig" and "dump" are tools too.
+
+Checked by `tests/rover_roam_tests.cpp` and `tests/rover_brain_tests.py`
+(the senses and tools on a stand-in engine, the routine's steps and waits,
+the validator, and the tests-dig room in the real engine).
+
+Not built yet: a hopper saved with the world; a scoop that is a tool point
+on the machine driven into the ground by its motors, so the work is
+measured rather than declared (a tool point needs a lattice body, and the
+rover is exact bodies); a decider filling a point in the world (it fills
+places, bearings, distances, durations and depths); and resources beyond
+the ground's sand and soil.
+
+## What the rover decides by itself, and who it asks
+
+**Status, 2026-09-25.** The rover's reflexes still drive it: the engine's
+program reads its sensors and its slope before every step and works its
+wheels, and that never waits on anything. Above them, when something happens
+to it, a decision model is asked what it should do for the next couple of
+seconds, and its pick is done. The person can also click the rover and talk
+to it (below).
+
+**A program can be asked.** `LiveWorld::behave` (the runner's `behave` op,
+the session's the same) asks a program to do one thing for a while instead
+of deciding for itself: `going forward`, `backing off`, `turning left`,
+`turning right`, `waiting` (held on its brakes, still on), `facing` a point
+in the world (turning on the spot until its front is towards it, then
+waiting) or `approaching` one (facing, then going forward until it is within
+a metre, then waiting); for so many seconds, or until asked otherwise; by a
+sender and its count, stale as `run` is. It says why it was asked as its
+`why`, and when the while is up it goes on as it would have. Turned off, or
+run low, it drops the ask: those come first. A saved world gives it back
+doing what it was asked, as far in. Measured in `tests/rover_roam_tests.cpp`:
+asked to back off it went 0.62 m back in its second second (a controller
+told to reverse stops its wheel first); asked to face a point behind it, it
+turned on the spot to it in 12 s and, driven forward from there, went to it
+(cos 0.98).
+
+**Who is asked.** Jev, TypeSafe AI's decision model: it is sent a state and
+typed questions, and answers each with a typed value and a calibrated
+probability, in a fraction of a second; it cannot write a word, invent a
+number or call a tool, which is what makes it safe to put in the loop. One
+call (`playground/rover_brain.py`), whenever something happens to the
+rover -- water seen ahead, a wheel stalled, something striking it, the
+ground too steep, its battery getting low -- asks three things at once:
+what to do next, a choice among what its program can be asked (keep going,
+back off, turn left, turn right, hold still); whether it is stuck; how
+urgent its battery is. The state it reads is the program as the engine
+reports it, its wheels' controllers, what struck it, and the last few
+decisions: curated, not the whole step, since Jev reads 32k tokens and is
+paid by the one. A pick it gives at least 55% confidence goes to the program
+as a short ask (1.5 to 3 s) with Jev's words as its `why`; a less confident
+one is left to the reflexes, and the panel says so. The same thing happening
+again within 3 s is not asked about again.
+
+**Off the step.** The question is asked on a thread; the answer is applied
+before the next step the page takes (`Brains.before`, in the live act
+route), so the page's frame rate never waits on the network. The server
+hears every reply of the room for it (`app.reply_listeners`). Nothing is
+asked while the person is talking to it.
+
+**What a decider is asked is the machine's tools** (`machine_tools.TOOLS`,
+above): a choice among their names with their descriptions as the
+criteria, and the state it reads is the machine's senses. Nothing in the
+layer knows what a rover is; `rover_brain.KINDS` holds only the words for
+what each kind of program's machine is, for the question's preamble.
+
+**Or the chat's model.** The same typed questions can be put to the room's
+OpenAI model instead (`OpenAIDecider`): the Responses API with a strict JSON
+schema built from the questions, so it can answer nothing but probabilities
+over the options and levels, at its lightest reasoning (`minimal`), since a
+pick among five things needs no long thought. Its answers are read into
+Jev's shape -- the choice is the most probable option and the confidence is
+that probability; a score is the probability-weighted level -- so the rest of
+the layer does not know which decided. Measured 2026-09-25 on the rover
+state with water seen on its left: gpt-5-mini picked turn right at 95% in
+2.3 s, and sorted "come over here please" as come here in 1.7 s; gpt-5-nano
+answered in 1.1 s but called a 70% battery low and the rover stuck, so
+gpt-5-mini is the default (`OPENAI_DECIDER_MODEL` and
+`OPENAI_DECIDER_EFFORT` in `.env` change it). Slower than Jev's tenth of a
+second, and paid by the token; fine for events a few seconds apart.
+
+**On the panel** a machine with a program says who decides for it -- its
+reflexes, Jev, or the model -- and what was decided last, with the
+decider's confidence. `BANJO_DECIDER` in `.env` (jev, openai or reflex)
+says which decides when a room opens; without it, Jev when it has a key,
+else the model, else the reflexes. A decider without its key cannot be
+pressed, and its button says why.
+
+**The key.** `TYPESAFE_API_KEY` in the local `.env` (the same files the
+OpenAI key is read from) turns it on; `JEV_API_URL` there names another
+host that speaks the same API in place of `https://api.typesafe.ai/v1/systemone`:
+a reseller, a proxy, or `tests/scripted_jev_server.py`, which stands in for
+Jev without a key and answers as a sensible Jev might. Every check runs on
+that stand-in or on a Jev that is a function: nothing in the tests reaches
+the network. The request and answer shapes follow TypeSafe's published API;
+a live call with a working key has not been confirmed yet (the key to hand
+was refused by the API with 401).
+
+Checked by `tests/rover_roam_tests.cpp` (the ask) and
+`tests/rover_brain_tests.py`: in the tests-rover room with a Jev that always
+says back off, Jev was asked once at the water's edge ("water ahead on its
+right") and its pick was done -- the program said "Jev said back off (90%
+sure) when water ahead on its right" -- and the while up, its reflexes had it
+back.
+
+Not built yet: a routine beyond roaming (a rover that digs for something and
+brings it back), which is engine work -- a scoop on the rover and the
+machine driving it -- and then one more kind in the table; asking Jev when
+a person comes near, rather than only when they click; and a browser
+journey for the panel's switch and the chat.
+
+## Talking to the rover
+
+**Status, 2026-09-25.** Click the rover, open its panel, press "Talk to it".
+It stops what it is doing and turns to face the person (an ask on its
+program by the sender "talk": `facing` where they stand, until asked
+otherwise), and the chat opens with what it was doing, in its own words: "I
+am turning left: the person came to talk to it. My battery is at 80%; I rest
+below 25%. My sensors see no water ahead. I have turned away from things 3
+times." Every sentence it says of itself is drawn from its program as the
+engine reports it, never invented (`rover_talk.describe`).
+
+**What the person types** is sorted into what they mean by Jev -- one
+choice among stop, go on, come here, turn round, back off, what are you
+doing, why, or something else -- and each of those is done at once, to the
+program: stop is `waiting` until asked otherwise; go on lifts the ask; come
+here is `approaching` where they stand, for up to 30 s; turn round is
+`turning left` for 5 s; back off is `backing off` for 2.5 s; what and why
+are answered from its state, why with the last thing decided for it.
+Anything else goes to the chat's model (`OPENAI_MODEL`, the same one the
+room's chat uses), told to answer in one or two sentences in the rover's
+voice from that state alone and to change nothing; without an OpenAI key
+the rover says what it can take. Without a Jev key the sorting falls back to
+plain words. "Let it go on" lifts the ask, and its reflexes -- and Jev --
+have it back. Closing the panel does the same.
+
+Measured in `tests/rover_brain_tests.py`, in the real engine: opened to
+talk with the person 3 m behind it, the rover turned on the spot and waited
+facing them, and nothing that happened to it meanwhile was put to Jev; told
+"come here", it stopped 0.92 m from them 12 s on; told "stop", it held;
+closed, it went on. A machine that is off says so and does nothing.
+
+`POST /api/world/rover/talk {program, open | said | close, person}` and
+`POST /api/world/rover/brain {program, mode}` (reflex, jev or openai) are
+the two routes, on the room the page has open; the step reply carries
+`brains` whenever one has changed. What a person says is sorted by
+whichever decider is on, or by whichever has a key when the reflexes are.
+
+## A rover that flies
+
+**Status, 2026-09-25.** The same framework, on rotors instead of wheels. A
+machine that flies needs three things the rover did not, and nothing else:
+a part the air pushes on, a program that holds it up, and a Workshop
+template that puts them together. Everything above the program -- its
+senses, its tools, its routine, who decides for it and how a person talks
+to it -- is the rover's, untouched: a flying machine is a program of kind
+`hover` in the same tables the roam program sits in.
+
+**A rotor is a declared propeller on a motor's pin.** A motor can carry a
+`rotor` block: `thrust_n_per_rad2` and `drag_n_m_per_rad2`. Each step the
+engine reads the pin's rate w and puts a thrust of k w^2 on the pin's first
+body (the frame) along the pin at the pin's point, and a drag torque of k'
+w^2 on the disc against its spin, with its reaction on the frame -- which is
+how the machine yaws, and what its flight costs: the drag is the load the
+motor works against, so the battery pays for the lift. (Jolt's own hinge
+friction is applied only while the pin's motor is off, so drag as friction
+loaded nothing and the machine flew for free; it is a torque now.) The
+numbers are declared, as a motor's are: for the Workshop's drone, 17 kg of
+machine needs 170 N, 43 N a rotor at 62 rad/s (k = 0.011), and the induced
+power of 43 N on a 0.4 m disc is about 500 W (k' = 2.1e-3).
+
+**The hover program** holds the machine's centre `hover_m` above the ground
+under it and level, and takes the rover's asks -- going forward, backing
+off, turning, facing a point, approaching one, waiting -- done by leaning
+5 degrees and yawing, instead of by wheels. It reads its height and climb
+off the ground below its centre, its pitch and roll off its body; a height
+loop (a learnt share of the voltage for the weight, the error, the climb
+held to 1 m/s), an attitude loop (a lean of so many degrees to go, held
+level otherwise, and against its drift when it is holding a spot) and a yaw
+rate are mixed onto the four rotors by where each stands on the chassis --
+`rotors` names their controls in order round the machine from above -- and
+which way each spins. Nothing tells the program the machine's mass: the
+share of voltage that holds it is learnt from the height error. Low on
+charge it lands where it is and rests; turned off in the air, its rotors
+stop and it falls; a saved world gives it back flying.
+
+**The Workshop's drone** is the rover's deck, battery, panel, hopper and
+two water eyes on four arms with a rotor at the end of each -- a new
+`rotor` family: an iron stub up through a mount with a disc on top -- and
+four legs; 24 parts, 19 fixed joints and 4 bearings, all authored, and its
+machines declared: one store, four motors each with a rotor block, four
+controls, a panel, a hover program with the same dig routine. It compiles
+to five exact bodies on four vertical pins and installs through the same
+gate as the rover, taking its places three metres ahead and behind where
+it is set down. The bench chat's `set_program` takes `hover`, `rotors` and
+`hover_m`, and its `add_power_part` a motor's `rotor`.
+
+Measured in the real engine (`tests/drone_hover_tests.cpp`): turned on, the
+drone reached 1.5 m in 1.0 s and held between 1.507 and 1.513 m, tilting at
+most 0.25 degrees, its rotors at 59 rad/s; asked to go forward for 4 s it
+went 7.3 m the way it faced, its height between 1.496 and 1.5 m; asked to
+face a point to its left it turned to within 7 degrees; asked to approach a
+point 4 m off it stopped 0.98 m from it and hovered; ten seconds of flight
+drew 28 kJ from the battery, 66% of it taken by the air, and the account
+closed; turned off at 1.5 m it was on the ground five seconds on, and
+opened again from a save it was flying. The Workshop's drone
+(`tests/workshop_drone_tests.py`): installed in the basin and switched on,
+it rose and held 1.8 m over its landed height; stepped as the page steps the
+room, its routine flew it to its dig site, dug 20 kg, carried the load to
+its depot in the air and dumped it, one load in under 40 s of the world; a person
+opening its panel finds it 1.83 m up, holding 1.5 m, and can talk to it.
+
+What the drone showed of the framework: the senses' `position` reads a
+flying machine's height and climb, `wheels` reads its rotors in order; the
+routine, the talk and the deciders needed no change. Two things it turned
+up: the dig tool withdrew from the ground's account exactly what the scoop
+reported, and the report is rounded, so a 0.0125 m3 share of an 80 kg
+scoop was refused against 0.012499 m3 held, and the drone waited out its
+whole approach ask before trying again -- it takes what the account holds
+now; and the page's list of controls a program works did not include
+rotors, so a rotor click opened the rotor, not the drone.
+
+Not built: a landing pad or a place to land other than where it is; wind;
+a rotor's own inertia (the disc spins up as fast as the motor can turn it);
+a flying machine that carries a thing on a rope.
+
+## Raw materials into finished goods
+
+**Status, 2026-09-26.** Machines that make things out of what other machines
+dig, in one language a person or a model writes, on the same framework the
+rover and the drone run on. Open `/world?scene=tests-mine` and switch the
+four machines on from the Room tab: the rover digs copper ore out of a vein,
+the smelter makes copper of it, the drone flies the copper to the mill, the
+mill draws it into wire, and the wire lands on the Workshop's goods rack,
+where a machine built on the bench takes it.
+
+**The room's account of goods** is one block, `goods`, kept with the room and
+changed in place as machines work (`machine_goods`):
+
+- *Deposits*: a patch of ground where a scoop brings up ore with the soil --
+  its substance, where, how wide, its `grade` (the share of a scoop's mass
+  that is ore) and how much is there in all. What is taken is booked; a vein
+  runs out. The ore's share of a scoop's volume has left the ground for good,
+  exported as a material packet is, so the ground's own ledger stays whole.
+- *Stockpiles*: heaps of goods at a place, by substance and mass. A machine
+  dumps onto one or takes off one from within two metres of its edge; a dump
+  where there is none makes a heap. One marked `rack` is the Workshop's: what
+  lands there goes onto the Workshop's goods rack (`workshop_library`).
+- *Recipes*: what a machine that processes makes of what it is given, per
+  kilogram in -- what it takes, what comes out (no more mass than went in;
+  the rest is waste), the work it draws from its battery and the time it
+  takes. Nothing here is copper's: a substance is a name, and the room's
+  recipes are the only chemistry there is.
+
+**A machine that goes nowhere** is a program of kind `still`: it stands on a
+body, draws on a store of its own, has no wheels, and can only stand by,
+wait as asked, rest when its battery is low, or be off (`LiveWorld::
+decideStill`). What it makes is its routine, run by the playground over it.
+
+**Three more tools**, for any machine (`machine_tools`): `take` (goods off
+the stockpile it stands by, or the one at a place it knows, into its hopper,
+one substance or whatever is there), `process` (one batch of its recipe: the
+inputs off its intake stockpile, the work off its battery, the outputs onto
+its output stockpile, and a wait for as long as the batch takes) and `dump`,
+which now puts a load's goods onto the stockpile it stands by and its soil
+on the ground. The senses gained `goods`: every deposit and stockpile, how
+far and which way, what each holds, and the recipes. The deciders' argument
+questions gained a substance to take. A person can say "take", "make" and
+"dump" to any machine, and a still machine tells them it goes nowhere.
+
+**The routine language.** A routine was a named kind whose steps were written
+in code. It can now be written out: `kind: custom` with `steps`, each a tool,
+its arguments (a `place` by name), an `until` (arrived, asked_done,
+load_full, load_empty, done, or a number of seconds), `repeat` and
+`retries`, checked against the tools the machines have and the places the
+routine knows. Two more named kinds: `haul` (take at its source, carry to
+its destination, put it there; when the source pile is empty it goes with
+what it has) and `process` (its recipe, between its intake and output
+stockpiles, `batch_kg` at a time). A step with nothing to do yet -- nothing
+on the pile, nothing to work -- is asked again next time, quietly. The rover
+in the mine runs a custom routine: go to the vein, dig until full, back off,
+go to the smelter's intake, dump there. The bench chat's `set_routine` takes
+all of it, and `set_program` takes `still` with its store.
+
+**What machines are made of, beyond their matter.** A machine's power parts
+take goods off the Workshop's goods rack when it is made, by a declared
+table (`workshop_library.GOODS_PER`): a motor 0.05 kg of copper wire per
+newton-metre of stall torque and at least half a kilogram, a store a
+kilogram of copper per 100 kJ and at least half, a control a tenth of a
+kilogram of wire, a panel half a kilogram per square metre. "What it needs"
+lists them with the oak and the iron, and the install gate spends them in
+the same transaction, all or none. A rover takes 2.3 kg of copper wire and a
+kilogram of copper; without them the gate says so and keeps the design.
+
+Measured in the real engine (`tools/build_mine_room.py`, which refuses to
+write the room unless the chain closes): switched on together, the rover
+reached the vein 4 s in and dug a 40 kg scoop with 12 kg of copper ore in
+it; at 28 s it dumped the load on the smelter's intake, the soil on the
+ground and the ore on the pile; the smelter worked its first 5 kg batch into
+1.5 kg of copper at once, 10 kJ and 10 s; the drone, waiting at the output,
+took the copper and flew it to the mill's intake by 40 s; the mill drew it
+into 1.47 kg of copper wire, 750 J and 1.5 s, onto the rack stockpile, and
+the same 1.47 kg went onto the Workshop's goods rack. Every battery's
+account closed and the ground's carried account was back at 0.01 kg. The
+vein had 388 kg left of 400. Checked by `tests/goods_tests.py`.
+
+**On the bench**, a `bin` family and a `processor` template: a deck on legs with
+an intake bin and an output bin, a battery and a panel, and a still program
+with a process routine whose recipe is a parameter. Installed through the
+gate, its bins become stockpiles of the room's where they stand, and the
+recipe it brings is given to a room that lacks it; in the engine, 7 kg of
+ore put on its intake became 2.1 kg of copper on its output for 14 kJ.
+
+Not built: a hopper or a stockpile drawn on the
+page; a routine that changes with what it senses (a step's `until` is one
+condition, not a choice); a market or a price for goods.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

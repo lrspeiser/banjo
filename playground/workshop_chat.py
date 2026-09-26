@@ -510,21 +510,32 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "voltage_v": {"type": "number"},
                             "stall_torque_n_m": {"type": "number"}, "no_load_rpm": {"type": "number"},
                             "brake_torque_n_m": {"type": "number"},
+                            "rotor": {"type": "object", "additionalProperties": False,
+                                      "description": "for a motor that spins a rotor: a declared propeller, thrust "
+                                                     "k w^2 on the frame along the pin and drag k' w^2 on the disc",
+                                      "properties": {"thrust_n_per_rad2": {"type": "number"},
+                                                     "drag_n_m_per_rad2": {"type": "number"}}},
                             "area_m2": {"type": "number"}, "efficiency": {"type": "number"}}}},
         {"type": "function", "name": "set_program",
-         "description": "What the machine does on its own. 'drive' runs until something stops it; 'roam' "
-                        "wanders and turns away from water; 'sit' goes to a thing already standing in the "
-                        "world and holds a pose there. left and right name controls. climb_deg is "
-                        "the steepest ground it will take, rest_below the share of charge it stops at and "
-                        "rest_until the share it sets off again at. For 'sit': toward is the world's name "
-                        "for the thing it goes to, close_m how near its middle comes to that thing's middle "
-                        "across the ground, and pose/pose_deg the control it works when it gets there and "
-                        "the angle it turns that pin to. A product runs one program.",
+         "description": "What the machine does on its own. 'roam' wanders on two driven wheels and turns "
+                        "away from water: left and right name the wheels' controls, climb_deg the steepest "
+                        "ground it will take. 'sit' drives the same two wheels to a thing already standing in "
+                        "the world and holds a pose there: toward is the world's name for that thing, close_m "
+                        "how near its middle comes to that thing's middle across the ground, and pose/pose_deg "
+                        "the control it works when it gets there and the angle it turns that pin to. 'hover' "
+                        "flies on four rotors: rotors names their four controls in order round the machine "
+                        "from above, hover_m the height it holds its centre at. 'still' goes nowhere and draws "
+                        "on a store of its own. rest_below is the share of charge it stops (or lands) at and "
+                        "rest_until the share it sets off again at. A product runs one program.",
          "parameters": {"type": "object", "additionalProperties": False,
-                        "required": ["kind", "left", "right"],
+                        "required": ["kind"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam", "drive", "sit"]},
+                            "kind": {"type": "string", "enum": ["roam", "sit", "hover", "still"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
+                            "store": {"type": "string", "description": "for a still program: the store it draws "
+                                                                      "on; the machine stands on that store's part"},
+                            "rotors": {"type": "array", "items": {"type": "string"}, "minItems": 4, "maxItems": 4},
+                            "hover_m": {"type": "number", "minimum": 0.3, "maximum": 50},
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
                             "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
                             "rest_below": {"type": "number", "minimum": 0, "maximum": 1},
@@ -533,6 +544,52 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "close_m": {"type": "number", "minimum": 0.01, "maximum": 100},
                             "pose": {"type": "string"},
                             "pose_deg": {"type": "number", "minimum": -360, "maximum": 360}}}},
+        {"type": "function", "name": "add_sensor",
+         "description": "A water eye for the program: a point on a component, in the design's own metres "
+                        "(the floor at y = 0, its front towards +z, its left towards +x), that reads the depth "
+                        "of water under it; deeper than depth_m and the program turns away. The room's rover "
+                        "has two, half a metre ahead of its deck and 0.55 m either side of the middle. The "
+                        "program must be set first.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["on", "at_m"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["water"]},
+                            "on": {"type": "string", "description": "the component the point is on"},
+                            "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                            "depth_m": {"type": "number", "minimum": 0.001, "maximum": 10}}}},
+        {"type": "function", "name": "set_routine",
+         "description": "What the machine does on its own when nobody is telling it anything: 'dig' goes to "
+                        "its dig site, fills its hopper (hopper_kg), carries the load to its depot and dumps "
+                        "it, again and again; 'haul' takes what is on the stockpile at its source to its "
+                        "destination; 'process' works its intake stockpile into its output one by a recipe of "
+                        "the room's (recipe, intake, output name them; batch_kg is how much at a time); "
+                        "'custom' is steps of your own, each a tool (go_to, dig, dump, take, process, "
+                        "back_off, turn_left, turn_right, hold_still, face, go_forward) with args (a 'place' "
+                        "by name), an until (arrived, asked_done, load_full, load_empty, done, or seconds), "
+                        "repeat and retries; 'roam' wanders by its reflexes. The places it works between are "
+                        "the room's, given when it is installed. work_j_per_kg is what a scoop costs its "
+                        "battery. The program must be set first.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["dig", "haul", "process", "custom", "roam"]},
+                            "hopper_kg": {"type": "number", "minimum": 0.1, "maximum": 1000},
+                            "work_j_per_kg": {"type": "number", "minimum": 0, "maximum": 10000},
+                            "recipe": {"type": "string"}, "intake": {"type": "string"}, "output": {"type": "string"},
+                            "batch_kg": {"type": "number", "minimum": 0.01, "maximum": 1000},
+                            "recipes": {"type": "array", "maxItems": 8, "description": "recipes the machine brings "
+                                        "to a room that lacks them, per kilogram in: in and out map substances to "
+                                        "kilograms (no more out than in), work_j_per_kg and s_per_kg",
+                                        "items": {"type": "object", "additionalProperties": False,
+                                                  "required": ["name", "in", "out"],
+                                                  "properties": {"name": {"type": "string"},
+                                                                 "in": {"type": "object"}, "out": {"type": "object"},
+                                                                 "work_j_per_kg": {"type": "number"},
+                                                                 "s_per_kg": {"type": "number"}}}},
+                            "steps": {"type": "array", "maxItems": 24, "items": {
+                                "type": "object", "additionalProperties": False, "required": ["do"],
+                                "properties": {"do": {"type": "string"}, "args": {"type": "object"},
+                                               "until": {"anyOf": [{"type": "string"}, {"type": "number"}]},
+                                               "repeat": {"type": "boolean"},
+                                               "retries": {"type": "integer", "minimum": 0, "maximum": 20}}}}}}},
         {"type": "function", "name": "try_it_in_a_room",
          "description": "Make the design in a little room with real ground, gravity and a sky, let it run, and "
                         "say what happened. It is the world's own physics and the world's own way of making a "
@@ -971,7 +1028,7 @@ class _State:
                          "Appearance only: the mass, the joints and the bench results are unchanged."),
             })
 
-        if tool in ("add_power_part", "set_program"):
+        if tool in ("add_power_part", "set_program", "add_sensor", "set_routine"):
             record = dict(workshop_machines.of_overrides(self.overrides) or {})
             for key in ("stores", "motors", "panels", "controls", "programs"):
                 record[key] = list(record.get(key) or [])
@@ -981,9 +1038,30 @@ class _State:
                 record[{"store": "stores", "motor": "motors",
                         "panel": "panels", "control": "controls"}[kind]].append(fields)
                 said = f"added a {kind}"
-            else:
-                record["programs"] = [{k: v for k, v in args.items() if v is not None}]
+            elif tool == "set_program":
+                # A program set again keeps the sensors and the routine it had.
+                was = record["programs"][0] if record["programs"] else {}
+                program = {k: v for k, v in args.items() if v is not None}
+                for keep in ("sensors", "routine"):
+                    if keep in was:
+                        program[keep] = was[keep]
+                record["programs"] = [program]
                 said = f"it runs a {args.get('kind')} program"
+            elif tool == "add_sensor":
+                if not record["programs"]:
+                    raise ValueError("set the program first: a sensor is something the program reads")
+                program = dict(record["programs"][0])
+                program["sensors"] = list(program.get("sensors") or []) + [
+                    {k: v for k, v in args.items() if v is not None}]
+                record["programs"] = [program]
+                said = f"added a {args.get('kind') or 'water'} sensor on {args.get('on')}"
+            else:
+                if not record["programs"]:
+                    raise ValueError("set the program first: a routine is what the program does on its own")
+                program = dict(record["programs"][0])
+                program["routine"] = {k: v for k, v in args.items() if v is not None}
+                record["programs"] = [program]
+                said = f"its routine is to {args.get('kind')}"
             checked = workshop_machines.checked(record)
             self.overrides = {**self.overrides, workshop_machines.MACHINES_KEY: checked}
             self.design = workshop_components.apply_overrides(self.base, self.overrides)

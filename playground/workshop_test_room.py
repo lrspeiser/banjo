@@ -500,6 +500,14 @@ class Bench:
                 workshop_library.set_rack(self.app, material, 1000.0)
             except Exception:       # a material this build does not carry
                 pass
+        # And the goods a machine's power parts are made of, for the same
+        # reason: a rover whose motors want copper wire must be TRYABLE before
+        # anybody has drawn any.
+        for substance in ("copper", "copper wire", "iron ore", "copper ore"):
+            try:
+                workshop_library.set_goods(self.app, substance, 1000.0)
+            except Exception:       # a build without a goods rack
+                pass
         self.live.open(self.app, {"spec": self.room.spec})
         self.t_s = 0.0
         self.made: dict[str, Any] | None = None

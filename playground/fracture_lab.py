@@ -402,7 +402,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces", "interaction_points", "sun"}
+                         "interfaces", "interaction_points", "sun", "goods"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -785,7 +785,21 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         if not any(s["name"] == store for s in stores):
             raise ValueError(f"motor {i} draws on {store!r}, and there is no store called that")
         brake = _number(motor.get("brake_torque_n_m", 0.0), 0.0, 1e9, f"motor {i} brake_torque_n_m")
-        motors.append({"on": on, "store": store,
+        rotor = None
+        if motor.get("rotor") is not None:
+            # A DECLARED propeller on the pin (docs/machine-world.md, "A rover
+            # that flies"): thrust k w^2 on the pin's first body along the pin,
+            # drag k' w^2 on the disc and its reaction on the frame.
+            given = motor["rotor"]
+            if not isinstance(given, dict) or set(given) - {"thrust_n_per_rad2", "drag_n_m_per_rad2"}:
+                raise ValueError(f"motor {i} rotor is an object: thrust_n_per_rad2 and drag_n_m_per_rad2")
+            rotor = {"thrust_n_per_rad2": _number(given.get("thrust_n_per_rad2", 0.0), 0.0, 100.0,
+                                                  f"motor {i} rotor thrust_n_per_rad2"),
+                     "drag_n_m_per_rad2": _number(given.get("drag_n_m_per_rad2", 0.0), 0.0, 100.0,
+                                                  f"motor {i} rotor drag_n_m_per_rad2")}
+            if not rotor["thrust_n_per_rad2"] > 0.0:
+                raise ValueError(f"motor {i} rotor lifts nothing: thrust_n_per_rad2 above 0")
+        motors.append({"on": on, "store": store, **({"rotor": rotor} if rotor else {}),
                        "stall_torque_n_m": _number(motor.get("stall_torque_n_m", 0.0), 0.001, 1e9,
                                                    f"motor {i} stall_torque_n_m"),
                        "no_load_rpm": _number(motor.get("no_load_rpm", 0.0), 0.001, 1e6,
@@ -857,7 +871,7 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         if rope is not None:
             travel(made, rope, {})
         controls.append(made)
-    programs = _programs(machines.get("programs"), controls, named)
+    programs = _programs(machines.get("programs"), controls, named, stores)
     panels = _panels(machines.get("panels"), stores, named)
     return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {}),
             **({"programs": programs} if programs else {}), **({"panels": panels} if panels else {})}
@@ -942,10 +956,11 @@ def _panels(given: Any, stores: list[dict[str, Any]], named: set[str]) -> list[d
     return out
 
 
-PROGRAM_KINDS = ("roam", "sit")
+PROGRAM_KINDS = ("roam", "sit", "hover", "still")
 
 
-def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> list[dict[str, Any]]:
+def _programs(given: Any, controls: list[dict[str, Any]], named: set[str],
+              stores: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """A room's machine programs (docs/machine-world.md, "One autonomous
     creature"): each works the controllers of a machine's left and right
     wheels, named as the room names them, on the part both turn on, with its
@@ -968,19 +983,27 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
-                                  "rest_below", "rest_until", "toward", "close_m", "pose", "pose_deg"}
+                                  "rest_below", "rest_until", "routine", "toward", "close_m", "pose",
+                                  "pose_deg", "rotors", "hover_m", "store"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power, sensors, rest_below, rest_until, and for a 'sit' program "
-                             f"toward, close_m, pose and pose_deg")
+                             f"setting, climb_deg, power, sensors, rest_below, rest_until, routine; for a sit "
+                             f"program toward, close_m, pose and pose_deg; for a hover program rotors and "
+                             f"hover_m; and for a still program its store")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
         kind = program.get("kind", "roam")
         if kind not in PROGRAM_KINDS:
-            raise ValueError(f"program {name!r} is of kind {kind!r}; the kinds there are are "
-                             f"{' and '.join(repr(k) for k in PROGRAM_KINDS)}")
+            raise ValueError(f"program {name!r} is of kind {kind!r}; the kinds there are: "
+                             + ", ".join(repr(k) for k in PROGRAM_KINDS))
         body = str(program.get("body", ""))
+        if kind == "hover":
+            out.append(_hover_program(program, name, body, controls, named, out))
+            continue
+        if kind == "still":
+            out.append(_still_program(program, name, body, named, out, stores))
+            continue
         wheels = []
         for side in ("left", "right"):
             control = next((c for c in controls if c["name"] == str(program.get(side, ""))), None)
@@ -1038,8 +1061,153 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         sensors = _sensors(program.get("sensors"), name, named, stops=False)
         if sensors:
             made["sensors"] = sensors
+        if program.get("routine") is not None:
+            made["routine"] = _routine(program["routine"], name)
         out.append(made)
     return out
+
+
+def _still_program(program: dict[str, Any], name: str, body: str, named: set[str], out: list[dict[str, Any]],
+                   stores: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """A program for a machine that goes nowhere (docs/machine-world.md, "Raw
+    materials into finished goods"): a smelter, a mill. It stands on `body`,
+    draws on `store` -- a store of the room's, by name -- and has no wheels;
+    what it makes is its routine, which the playground runs over it."""
+    for key in ("left", "right", "rotors", "climb_deg", "hover_m"):
+        if key in program:
+            raise ValueError(f"program {name!r} goes nowhere: it has no {key}")
+    store = " ".join(str(program.get("store") or "").split())
+    if not store:
+        raise ValueError(f"program {name!r} goes nowhere and draws on a store: say which, by name")
+    if stores is not None and not any(s.get("name") == store for s in stores):
+        raise ValueError(f"program {name!r} draws on the store {store!r}, and there is none")
+    if body not in named:
+        raise ValueError(f"program {name!r} stands on {body!r}, and there is no such thing in the room")
+    if any(o.get("kind") == "still" and o.get("body") == body for o in out):
+        raise ValueError(f"program {name!r}: {body!r} already has a program that goes nowhere")
+    made: dict[str, Any] = {"name": name, "kind": "still", "body": body, "store": store, "setting": 1.0,
+                            "power": bool(program.get("power", False))}
+    if program.get("rest_below"):
+        below = _number(program["rest_below"], 0.001, 0.99, f"program {name!r} rest_below")
+        made["rest_below"] = below
+        made["rest_until"] = _number(program.get("rest_until", min(1.0, below + 0.5)), below + 0.001, 1.0,
+                                     f"program {name!r} rest_until")
+    sensors = _sensors(program.get("sensors"), name, named, stops=False)
+    if sensors:
+        made["sensors"] = sensors
+    if program.get("routine") is not None:
+        made["routine"] = _routine(program["routine"], name)
+    return made
+
+
+def _hover_program(program: dict[str, Any], name: str, body: str, controls: list[dict[str, Any]],
+                   named: set[str], out: list[dict[str, Any]]) -> dict[str, Any]:
+    """A program that flies (docs/machine-world.md, "A rover that flies"):
+    four rotors' controllers, named in order round the machine from above,
+    each on a rotor's pin through the chassis; the height it holds its centre
+    at; the rest a program has."""
+    for key in ("left", "right", "climb_deg"):
+        if key in program:
+            raise ValueError(f"program {name!r} hovers: it has rotors, not {key}")
+    rotors = program.get("rotors")
+    if not isinstance(rotors, list) or len(rotors) != 4:
+        raise ValueError(f"program {name!r} hovers on four rotors, named in order round the machine from above")
+    made_rotors = []
+    for k, given in enumerate(rotors):
+        control = next((c for c in controls if c["name"] == str(given)), None)
+        if control is None:
+            raise ValueError(f"program {name!r} rotor {k + 1} is the controller {given!r}, and there is none")
+        if "top_out_mm" in control:
+            raise ValueError(f"program {name!r}: {control['name']!r} works a hoist, not a rotor")
+        if body not in control["on"]:
+            raise ValueError(f"program {name!r}: {control['name']!r} does not turn a rotor on {body!r}")
+        if control["name"] in made_rotors or any(control["name"] in (o.get("left"), o.get("right"), *(o.get("rotors") or []))
+                                                 for o in out):
+            raise ValueError(f"program {name!r}: {control['name']!r} is worked twice")
+        made_rotors.append(control["name"])
+    made: dict[str, Any] = {"name": name, "kind": "hover", "rotors": made_rotors, "body": body,
+                            "setting": _number(program.get("setting", 1.0), 0.01, 1.0, f"program {name!r} setting"),
+                            "hover_m": _number(program.get("hover_m", 1.5), 0.3, 50.0, f"program {name!r} hover_m"),
+                            "power": bool(program.get("power", False))}
+    if program.get("rest_below"):
+        below = _number(program["rest_below"], 0.001, 0.99, f"program {name!r} rest_below")
+        made["rest_below"] = below
+        made["rest_until"] = _number(program.get("rest_until", min(1.0, below + 0.5)), below + 0.001, 1.0,
+                                     f"program {name!r} rest_until")
+    sensors = _sensors(program.get("sensors"), name, named, stops=False)
+    if sensors:
+        made["sensors"] = sensors
+    if program.get("routine") is not None:
+        made["routine"] = _routine(program["routine"], name)
+    return made
+
+
+def _routine(given: Any, name: str) -> dict[str, Any]:
+    """What a machine does on its own (docs/machine-world.md, "A machine's
+    senses and its tools"; machine_routine.ROUTINES): its kind, the places it
+    knows by name in the room's metres, what its hopper carries, and what a
+    scoop's work costs its battery. The engine is not told any of it; the
+    playground runs it over the program."""
+    import machine_routine
+    if not isinstance(given, dict):
+        raise ValueError(f"program {name!r} routine is an object: kind, places, hopper_kg, work_j_per_kg, and for "
+                         f"a custom routine steps, for a process routine recipe, intake, output, batch_kg")
+    unknown = set(given) - {"kind", "places", "hopper_kg", "work_j_per_kg", "steps", "recipe", "intake", "output",
+                            "batch_kg"}
+    if unknown:
+        raise ValueError(f"program {name!r} routine cannot say {sorted(unknown)}: it holds kind, places, "
+                         f"hopper_kg, work_j_per_kg, steps, recipe, intake, output and batch_kg")
+    kind = str(given.get("kind") or "roam")
+    spec = machine_routine.ROUTINES.get(kind)
+    if spec is None:
+        raise ValueError(f"program {name!r} routine is of kind {kind!r}; the kinds there are: "
+                         f"{', '.join(sorted(machine_routine.ROUTINES))}")
+    places_given = given.get("places") or {}
+    if not isinstance(places_given, dict) or len(places_given) > 16:
+        raise ValueError(f"program {name!r} routine places is a map of at most 16 names to [x, z]")
+    places: dict[str, list[float]] = {}
+    for place, xz in places_given.items():
+        place = " ".join(str(place).split())[:40]
+        if not place or not isinstance(xz, (list, tuple)) or len(xz) != 2:
+            raise ValueError(f"program {name!r} routine place {place!r} is [x, z] in metres")
+        places[place] = [_number(xz[0], -1000.0, 1000.0, f"routine place {place!r} x"),
+                         _number(xz[1], -1000.0, 1000.0, f"routine place {place!r} z")]
+    missing = [p for p in spec["places"] if p not in places]
+    if missing:
+        raise ValueError(f"program {name!r} routine {kind!r} needs the places {spec['places']}; "
+                         f"it lacks {missing}")
+    made: dict[str, Any] = {"kind": kind}
+    if places:
+        made["places"] = places
+    if "hopper_kg" in spec["needs"] and not given.get("hopper_kg"):
+        raise ValueError(f"program {name!r} routine {kind!r} needs a hopper: hopper_kg above 0")
+    if given.get("hopper_kg") is not None:
+        made["hopper_kg"] = _number(given["hopper_kg"], 0.1, 1000.0, f"program {name!r} routine hopper_kg")
+    if given.get("work_j_per_kg") is not None:
+        made["work_j_per_kg"] = _number(given["work_j_per_kg"], 0.0, 10000.0,
+                                        f"program {name!r} routine work_j_per_kg")
+    # A routine of its own steps (machine_routine.checked_steps), and the
+    # places its steps name must be places it knows.
+    if kind == "custom":
+        made["steps"] = machine_routine.checked_steps(given.get("steps"))
+        for step in made["steps"]:
+            place = step["args"].get("place")
+            if place and place != "person" and place not in places:
+                raise ValueError(f"program {name!r} routine step {step['do']} goes to {place!r}, a place it does "
+                                 f"not know; it knows {sorted(places) or 'none'}")
+    elif given.get("steps") is not None:
+        raise ValueError(f"program {name!r} routine {kind!r} has its steps written already; steps are for a "
+                         f"custom routine")
+    # A machine that processes: which recipe, between which stockpiles.
+    for key in ("recipe", "intake", "output"):
+        if given.get(key) is not None:
+            made[key] = " ".join(str(given[key]).split())[:64]
+        elif key in spec["needs"]:
+            raise ValueError(f"program {name!r} routine {kind!r} needs {key}: the name of "
+                             + ("a recipe of the room's" if key == "recipe" else "a stockpile of the room's"))
+    if given.get("batch_kg") is not None:
+        made["batch_kg"] = _number(given["batch_kg"], 0.01, 1000.0, f"program {name!r} routine batch_kg")
+    return made
 
 
 def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list[dict[str, Any]]:
@@ -2187,6 +2355,14 @@ def validate(spec: Any) -> dict[str, Any]:
             result["sun"] = normalise_sun(result["sun"])
         else:
             result.pop("sun", None)
+        # And its goods (machine_goods): what is in the ground beyond sand and
+        # soil, what lies in heaps, and how one thing is made into another;
+        # only in a room that has them.
+        if result.get("goods"):
+            import machine_goods
+            result["goods"] = machine_goods.checked(result["goods"])
+        else:
+            result.pop("goods", None)
         # The structures its chat declared, each with what it must do and its
         # parts (docs/building-from-language.md). Like the machines, only in a
         # room that has one: a room without keeps the document it had.

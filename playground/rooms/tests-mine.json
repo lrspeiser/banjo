@@ -1,0 +1,1430 @@
+{
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    13000.0,
+    2820.8,
+    13000.0
+   ],
+   "material": "concrete",
+   "name": "post",
+   "shape": "box",
+   "size_mm": [
+    150.0,
+    900.0,
+    150.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -3000.0,
+    1303.6,
+    -9500.0
+   ],
+   "material": "concrete",
+   "name": "smelter",
+   "shape": "box",
+   "size_mm": [
+    600.0,
+    800.0,
+    600.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -6000.0,
+    2011.9,
+    -13000.0
+   ],
+   "material": "concrete",
+   "name": "mill",
+   "shape": "box",
+   "size_mm": [
+    600.0,
+    800.0,
+    600.0
+   ]
+  }
+ ],
+ "cell_m": 0.05,
+ "goods": {
+  "deposits": [
+   {
+    "at_m": [
+     2.0,
+     -6.5
+    ],
+    "grade": 0.3,
+    "name": "copper vein",
+    "radius_m": 3.0,
+    "reserve_kg": 400.0,
+    "substance": "copper ore"
+   }
+  ],
+  "recipes": [
+   {
+    "in": {
+     "copper ore": 1.0
+    },
+    "name": "smelt copper",
+    "out": {
+     "copper": 0.3
+    },
+    "s_per_kg": 2.0,
+    "work_j_per_kg": 2000.0
+   },
+   {
+    "in": {
+     "copper": 1.0
+    },
+    "name": "draw wire",
+    "out": {
+     "copper wire": 0.98
+    },
+    "s_per_kg": 1.0,
+    "work_j_per_kg": 500.0
+   }
+  ],
+  "stockpiles": [
+   {
+    "at_m": [
+     -3.0,
+     -8.0
+    ],
+    "name": "smelter intake",
+    "radius_m": 1.0
+   },
+   {
+    "at_m": [
+     -4.5,
+     -9.5
+    ],
+    "name": "smelter output",
+    "radius_m": 1.0
+   },
+   {
+    "at_m": [
+     -6.0,
+     -11.5
+    ],
+    "name": "mill intake",
+    "radius_m": 1.0
+   },
+   {
+    "at_m": [
+     -6.0,
+     -14.5
+    ],
+    "name": "workshop rack",
+    "rack": true,
+    "radius_m": 1.0
+   }
+  ]
+ },
+ "joints": [
+  {
+   "a": "rover",
+   "at_mm": [
+    192.5,
+    975.6483430862427,
+    -9300.200281690708
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: left wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover",
+   "at_mm": [
+    -192.5,
+    975.6483430862427,
+    -9300.200281690708
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: right wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover",
+   "at_mm": [
+    0.0,
+    1046.7935190095568,
+    -8587.85320059692
+   ],
+   "axis": [
+    0.0,
+    0.9937848451788276,
+    0.11131792979072887
+   ],
+   "b": "rover: caster",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "rover: caster",
+   "at_mm": [
+    0.0,
+    824.90208040587,
+    -8673.083415159517
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "b": "rover: caster wheel",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "drone",
+   "at_mm": [
+    -6000.0,
+    1274.4023914337158,
+    -9600.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "drone-1",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "drone",
+   "at_mm": [
+    -6000.0,
+    1274.4023914337158,
+    -8400.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "drone-2",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "drone",
+   "at_mm": [
+    -5400.0,
+    1274.4023914337158,
+    -9000.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "drone-3",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  },
+  {
+   "a": "drone",
+   "at_mm": [
+    -6600.0,
+    1274.4023914337158,
+    -9000.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "b": "drone-4",
+   "friction_n_m": 0.0,
+   "kind": "hinge",
+   "lower_deg": -180.0,
+   "upper_deg": 180.0
+  }
+ ],
+ "machines": {
+  "controls": [
+   {
+    "name": "left wheel",
+    "on": [
+     "rover",
+     "rover: left wheel"
+    ]
+   },
+   {
+    "name": "right wheel",
+    "on": [
+     "rover",
+     "rover: right wheel"
+    ]
+   },
+   {
+    "name": "front rotor",
+    "on": [
+     "drone",
+     "drone-2"
+    ]
+   },
+   {
+    "name": "right rotor",
+    "on": [
+     "drone",
+     "drone-4"
+    ]
+   },
+   {
+    "name": "back rotor",
+    "on": [
+     "drone",
+     "drone-1"
+    ]
+   },
+   {
+    "name": "left rotor",
+    "on": [
+     "drone",
+     "drone-3"
+    ]
+   }
+  ],
+  "motors": [
+   {
+    "brake_torque_n_m": 40.0,
+    "no_load_rpm": 60.0,
+    "on": [
+     "rover",
+     "rover: left wheel"
+    ],
+    "stall_torque_n_m": 20.0,
+    "store": "rover battery"
+   },
+   {
+    "brake_torque_n_m": 40.0,
+    "no_load_rpm": 60.0,
+    "on": [
+     "rover",
+     "rover: right wheel"
+    ],
+    "stall_torque_n_m": 20.0,
+    "store": "rover battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 1432.0,
+    "on": [
+     "drone",
+     "drone-2"
+    ],
+    "rotor": {
+     "drag_n_m_per_rad2": 0.0021,
+     "thrust_n_per_rad2": 0.011
+    },
+    "stall_torque_n_m": 40.0,
+    "store": "drone battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 1432.0,
+    "on": [
+     "drone",
+     "drone-4"
+    ],
+    "rotor": {
+     "drag_n_m_per_rad2": 0.0021,
+     "thrust_n_per_rad2": 0.011
+    },
+    "stall_torque_n_m": 40.0,
+    "store": "drone battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 1432.0,
+    "on": [
+     "drone",
+     "drone-1"
+    ],
+    "rotor": {
+     "drag_n_m_per_rad2": 0.0021,
+     "thrust_n_per_rad2": 0.011
+    },
+    "stall_torque_n_m": 40.0,
+    "store": "drone battery"
+   },
+   {
+    "brake_torque_n_m": 0.0,
+    "no_load_rpm": 1432.0,
+    "on": [
+     "drone",
+     "drone-3"
+    ],
+    "rotor": {
+     "drag_n_m_per_rad2": 0.0021,
+     "thrust_n_per_rad2": 0.011
+    },
+    "stall_torque_n_m": 40.0,
+    "store": "drone battery"
+   }
+  ],
+  "panels": [
+   {
+    "area_m2": 0.2,
+    "at_mm": [
+     0.0,
+     1174.2,
+     -9006.3
+    ],
+    "body": "rover",
+    "efficiency": 0.2,
+    "name": "solar panel",
+    "normal": [
+     0.0,
+     0.993784845,
+     0.11131793
+    ],
+    "store": "rover battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -3000.0,
+     1703.6,
+     -9500.0
+    ],
+    "body": "smelter",
+    "efficiency": 0.2,
+    "name": "smelter panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "smelter battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -6000.0,
+     2411.9,
+     -13000.0
+    ],
+    "body": "mill",
+    "efficiency": 0.2,
+    "name": "mill panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "mill battery"
+   },
+   {
+    "area_m2": 0.045,
+    "at_mm": [
+     -6000.0,
+     1299.4,
+     -9150.0
+    ],
+    "body": "drone",
+    "efficiency": 0.2,
+    "name": "solar panel 2",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "drone battery"
+   }
+  ],
+  "programs": [
+   {
+    "body": "rover",
+    "climb_deg": 8.0,
+    "kind": "roam",
+    "left": "left wheel",
+    "name": "rover",
+    "right": "right wheel",
+    "routine": {
+     "hopper_kg": 40.0,
+     "kind": "custom",
+     "places": {
+      "smelter intake": [
+       -3.0,
+       -8.0
+      ],
+      "vein": [
+       2.0,
+       -6.5
+      ]
+     },
+     "steps": [
+      {
+       "args": {
+        "place": "vein"
+       },
+       "do": "go_to",
+       "retries": 3,
+       "until": "arrived"
+      },
+      {
+       "args": {},
+       "do": "dig",
+       "repeat": true,
+       "until": "load_full"
+      },
+      {
+       "args": {
+        "for_s": 1.5
+       },
+       "do": "back_off",
+       "until": "asked_done"
+      },
+      {
+       "args": {
+        "place": "smelter intake"
+       },
+       "do": "go_to",
+       "retries": 3,
+       "until": "arrived"
+      },
+      {
+       "args": {
+        "place": "smelter intake"
+       },
+       "do": "dump",
+       "until": "load_empty"
+      }
+     ]
+    },
+    "sensors": [
+     {
+      "at_mm": [
+       550.0,
+       1027.5,
+       -7966.1
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water"
+     },
+     {
+      "at_mm": [
+       -550.0,
+       1027.5,
+       -7966.1
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water"
+     }
+    ],
+    "setting": 1.0
+   },
+   {
+    "body": "smelter",
+    "kind": "still",
+    "name": "smelter",
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "smelter intake",
+     "kind": "process",
+     "output": "smelter output",
+     "recipe": "smelt copper"
+    },
+    "store": "smelter battery"
+   },
+   {
+    "body": "mill",
+    "kind": "still",
+    "name": "mill",
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "mill intake",
+     "kind": "process",
+     "output": "workshop rack",
+     "recipe": "draw wire"
+    },
+    "store": "mill battery"
+   },
+   {
+    "body": "drone",
+    "hover_m": 1.5,
+    "kind": "hover",
+    "name": "drone",
+    "rotors": [
+     "front rotor",
+     "right rotor",
+     "back rotor",
+     "left rotor"
+    ],
+    "routine": {
+     "hopper_kg": 20.0,
+     "kind": "haul",
+     "places": {
+      "destination": [
+       -6.0,
+       -11.5
+      ],
+      "source": [
+       -4.5,
+       -9.5
+      ]
+     }
+    },
+    "sensors": [
+     {
+      "at_mm": [
+       -5700.0,
+       1269.4,
+       -8450.0
+      ],
+      "body": "drone",
+      "depth_mm": 3.0,
+      "kind": "water"
+     },
+     {
+      "at_mm": [
+       -6300.0,
+       1269.4,
+       -8450.0
+      ],
+      "body": "drone",
+      "depth_mm": 3.0,
+      "kind": "water"
+     }
+    ],
+    "setting": 1.0
+   }
+  ],
+  "stores": [
+   {
+    "body": "rover",
+    "capacity_j": 100000.0,
+    "charge_j": 100000.0,
+    "name": "rover battery",
+    "voltage_v": 24.0
+   },
+   {
+    "body": "smelter",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "smelter battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "mill",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "mill battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "drone",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "drone battery",
+    "voltage_v": 48.0
+   }
+  ]
+ },
+ "plasticity": "on",
+ "precise_rigid_bodies": [
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.36,
+      0.0
+     ],
+     "dimensions_m": [
+      0.7,
+      0.04,
+      1.0
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.385,
+      -0.05
+     ],
+     "dimensions_m": [
+      0.4,
+      0.01,
+      0.5
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    },
+    {
+     "center_local_m": [
+      0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.0345,
+      0.18,
+      0.0345
+     ],
+     "name": "left mount"
+    },
+    {
+     "center_local_m": [
+      -0.1925,
+      0.25,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.0345,
+      0.18,
+      0.0345
+     ],
+     "name": "right mount"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.325,
+      0.38
+     ],
+     "dimensions_m": [
+      0.1,
+      0.03,
+      0.1
+     ],
+     "name": "caster mount"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover: left wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.26,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.2,
+      0.03
+     ],
+     "material": "iron",
+     "name": "stub",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "rover: right wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      -0.26,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.03,
+      0.2,
+      0.03
+     ],
+     "material": "iron",
+     "name": "stub",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      -0.38,
+      0.16,
+      -0.32
+     ],
+     "dimensions_m": [
+      0.32,
+      0.06,
+      0.32
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "rover: caster",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.3,
+      0.38
+     ],
+     "dimensions_m": [
+      0.08,
+      0.02,
+      0.08
+     ],
+     "name": "top"
+    },
+    {
+     "center_local_m": [
+      0.035,
+      0.18,
+      0.335
+     ],
+     "dimensions_m": [
+      0.012,
+      0.22,
+      0.05
+     ],
+     "name": "left cheek"
+    },
+    {
+     "center_local_m": [
+      -0.035,
+      0.18,
+      0.335
+     ],
+     "dimensions_m": [
+      0.012,
+      0.22,
+      0.05
+     ],
+     "name": "right cheek"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08,
+      0.32
+     ],
+     "dimensions_m": [
+      0.012,
+      0.082,
+      0.012
+     ],
+     "name": "pin",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "rover: caster wheel",
+   "orientation_wxyz": [
+    0.9984450022857613,
+    0.05574564925253087,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.08,
+      0.32
+     ],
+     "dimensions_m": [
+      0.16,
+      0.04,
+      0.16
+     ],
+     "name": "wheel",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865476
+     ],
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    0.0,
+    0.781021030324597,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "drone",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.235,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5,
+      0.03,
+      0.5
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.235,
+      0.41
+     ],
+     "dimensions_m": [
+      0.03,
+      0.31999999999999995,
+      0.03
+     ],
+     "name": "front arm",
+     "rotation_wxyz": [
+      0.5,
+      0.5,
+      0.5,
+      0.5
+     ]
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.235,
+      0.6
+     ],
+     "dimensions_m": [
+      0.06,
+      0.06,
+      0.06
+     ],
+     "name": "front mount"
+    },
+    {
+     "center_local_m": [
+      -0.41,
+      0.235,
+      0.0
+     ],
+     "dimensions_m": [
+      0.03,
+      0.31999999999999995,
+      0.03
+     ],
+     "name": "right arm",
+     "rotation_wxyz": [
+      0.7071067811865476,
+      0.0,
+      0.0,
+      0.7071067811865475
+     ]
+    },
+    {
+     "center_local_m": [
+      -0.6,
+      0.235,
+      0.0
+     ],
+     "dimensions_m": [
+      0.06,
+      0.06,
+      0.06
+     ],
+     "name": "right mount"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.235,
+      -0.41
+     ],
+     "dimensions_m": [
+      0.03,
+      0.31999999999999995,
+      0.03
+     ],
+     "name": "back arm",
+     "rotation_wxyz": [
+      0.5,
+      -0.5,
+      -0.5,
+      0.5
+     ]
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.235,
+      -0.6
+     ],
+     "dimensions_m": [
+      0.06,
+      0.06,
+      0.06
+     ],
+     "name": "back mount"
+    },
+    {
+     "center_local_m": [
+      0.41,
+      0.235,
+      0.0
+     ],
+     "dimensions_m": [
+      0.03,
+      0.31999999999999995,
+      0.03
+     ],
+     "name": "left arm",
+     "rotation_wxyz": [
+      4.3297802811774664e-17,
+      0.7071067811865475,
+      0.7071067811865476,
+      4.3297802811774664e-17
+     ]
+    },
+    {
+     "center_local_m": [
+      0.6,
+      0.235,
+      0.0
+     ],
+     "dimensions_m": [
+      0.06,
+      0.06,
+      0.06
+     ],
+     "name": "left mount"
+    },
+    {
+     "center_local_m": [
+      0.2,
+      0.11,
+      0.2
+     ],
+     "dimensions_m": [
+      0.03,
+      0.22,
+      0.03
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.2,
+      0.11,
+      0.2
+     ],
+     "dimensions_m": [
+      0.03,
+      0.22,
+      0.03
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.2,
+      0.11,
+      -0.2
+     ],
+     "dimensions_m": [
+      0.03,
+      0.22,
+      0.03
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.2,
+      0.11,
+      -0.2
+     ],
+     "dimensions_m": [
+      0.03,
+      0.22,
+      0.03
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.28,
+      0.1
+     ],
+     "dimensions_m": [
+      0.2,
+      0.06,
+      0.18
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.255,
+      -0.15
+     ],
+     "dimensions_m": [
+      0.3,
+      0.01,
+      0.15
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.3,
+      -0.025
+     ],
+     "dimensions_m": [
+      0.2,
+      0.1,
+      0.2
+     ],
+     "name": "hopper"
+    }
+   ],
+   "position_m": [
+    -6.0,
+    1.0394023914337158,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "drone-1",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.265,
+      -0.6
+     ],
+     "dimensions_m": [
+      0.02,
+      0.12,
+      0.02
+     ],
+     "material": "iron",
+     "name": "back rotor stub",
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.32999999999999996,
+      -0.6
+     ],
+     "dimensions_m": [
+      0.4,
+      0.01,
+      0.4
+     ],
+     "name": "back rotor",
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    -6.0,
+    1.0394023914337158,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "drone-2",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.265,
+      0.6
+     ],
+     "dimensions_m": [
+      0.02,
+      0.12,
+      0.02
+     ],
+     "material": "iron",
+     "name": "front rotor stub",
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.32999999999999996,
+      0.6
+     ],
+     "dimensions_m": [
+      0.4,
+      0.01,
+      0.4
+     ],
+     "name": "front rotor",
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    -6.0,
+    1.0394023914337158,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "drone-3",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.6,
+      0.265,
+      0.0
+     ],
+     "dimensions_m": [
+      0.02,
+      0.12,
+      0.02
+     ],
+     "material": "iron",
+     "name": "left rotor stub",
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      0.6,
+      0.32999999999999996,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.01,
+      0.4
+     ],
+     "name": "left rotor",
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    -6.0,
+    1.0394023914337158,
+    -9.0
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "drone-4",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      -0.6,
+      0.265,
+      0.0
+     ],
+     "dimensions_m": [
+      0.02,
+      0.12,
+      0.02
+     ],
+     "material": "iron",
+     "name": "right rotor stub",
+     "shape": "cylinder"
+    },
+    {
+     "center_local_m": [
+      -0.6,
+      0.32999999999999996,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.01,
+      0.4
+     ],
+     "name": "right rotor",
+     "shape": "cylinder"
+    }
+   ],
+   "position_m": [
+    -6.0,
+    1.0394023914337158,
+    -9.0
+   ]
+  }
+ ],
+ "sun": {
+  "azimuth_deg": 200.0,
+  "elevation_deg": 50.0,
+  "irradiance_w_m2": 1000.0
+ },
+ "terrain": {
+  "generate": {
+   "cell_m": 0.25,
+   "kind": "basin",
+   "lake_level_m": 0.35,
+   "nx": 128,
+   "nz": 128,
+   "sand_m": 0.0
+  }
+ }
+}

@@ -1950,6 +1950,23 @@ double JoltWorld::inertiaAbout(MatterBodyId body_id, const Vec3 &axis_world) con
     return static_cast<double>(n.Dot(inertia.Multiply3x3(n)));
 }
 
+void JoltWorld::addForce(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &at_world_m) {
+    if (!std::isfinite(force_n.x + force_n.y + force_n.z) || !std::isfinite(at_world_m.x + at_world_m.y + at_world_m.z))
+        throw std::invalid_argument("a force and where it acts are finite");
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) return;
+    impl_->physics_->GetBodyInterface().AddForce(found->second, toJolt(force_n), toJoltPosition(at_world_m),
+                                                 JPH::EActivation::Activate);
+}
+
+void JoltWorld::addTorque(MatterBodyId body_id, const Vec3 &torque_n_m) {
+    if (!std::isfinite(torque_n_m.x + torque_n_m.y + torque_n_m.z))
+        throw std::invalid_argument("a torque is finite");
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) return;
+    impl_->physics_->GetBodyInterface().AddTorque(found->second, toJolt(torque_n_m), JPH::EActivation::Activate);
+}
+
 void JoltWorld::setDamping(MatterBodyId body_id, double linear_per_s, double angular_per_s) {
     if (!(linear_per_s >= 0.0) || !(angular_per_s >= 0.0) || !std::isfinite(linear_per_s + angular_per_s))
         throw std::invalid_argument("damping is a share of the speed per second, zero or more");

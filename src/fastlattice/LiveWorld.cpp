@@ -1013,6 +1013,27 @@ struct LiveWorld::Impl {
         // is going to.
         bool go_after_stop{};
         std::uint64_t told{};
+        // Asked to drive somewhere and its sensors saw water: its reflexes
+        // have it -- backing off, turning away -- until it is going forward
+        // clear again, and then the ask has it back. An ask never drives it
+        // into the water.
+        bool interrupted{};
+        // How many times its reflexes have taken it since it was last asked:
+        // three, and it gives the ask up, since the water is in the way.
+        unsigned interruptions{};
+        // Hovering: where each rotor's pin is in the chassis's own level, the
+        // way each spins (+1 or -1), the height its centre stood at when it was
+        // made (where it lands), the height term's memory, and its motion as
+        // the last kept step left it.
+        std::vector<Vec3> rotor_local;
+        std::vector<int> spins;
+        double last_dt_s{};
+        // The spot it hovers over, kept from when it began to wait there.
+        Vec3 hold_at{};
+        bool holding{};
+        double landed_height_m{};
+        double hover_i{};
+        Vec3 velocity{}, spin{};
     };
     std::vector<Program> programs;
     unsigned next_program{1};
@@ -1086,6 +1107,29 @@ struct LiveWorld::Impl {
                 continue;
             }
             m.at_before = world->jointState(pin->rigid).at;
+            // A rotor: the air's drag on the pin, and the thrust on its frame
+            // for the step to come, both from the spin the last step left it.
+            const double omega_rotor = world->hingeRate(pin->rigid);
+            if (s.rotor_thrust_n_per_rad2 > 0.0 || s.rotor_drag_n_m_per_rad2 > 0.0) {
+                const auto frame = index_of.find(pin->a);
+                const auto disc = index_of.find(pin->b);
+                if (frame != index_of.end() && inWorld(frame->second) && disc != index_of.end() &&
+                    inWorld(disc->second)) {
+                    const RigidSnapshot at = world->snapshot(body_of[frame->second]);
+                    const Vec3 axis = normalized(at.orientation_world.rotate(pin->axis_local_a));
+                    const Vec3 point = at.center_of_mass_world_m + at.orientation_world.rotate(pin->point_local_a);
+                    world->addForce(body_of[frame->second],
+                                    axis * (s.rotor_thrust_n_per_rad2 * omega_rotor * omega_rotor), point);
+                    // The air's drag on the disc, against its spin, and its
+                    // reaction on the frame: a torque, not the pin's friction,
+                    // which Jolt applies only while the pin's motor is off, so
+                    // a driven rotor would spin against nothing and lift for
+                    // free.
+                    const double drag = s.rotor_drag_n_m_per_rad2 * omega_rotor * std::abs(omega_rotor);
+                    world->addTorque(body_of[disc->second], axis * (-drag));
+                    world->addTorque(body_of[frame->second], axis * drag);
+                }
+            }
             // What a motor turns runs in bearings: its losses are the pin's
             // friction and the motor's windings. The engine's slight drag on
             // every moving piece but a ball -- 0.02 of its speed a second, a
@@ -1163,6 +1207,11 @@ struct LiveWorld::Impl {
             turn -= kTurn * std::round(turn / kTurn);
             s.turned_rad += turn;
             s.speed_rad_s = world->hingeRate(pin->rigid);
+            if (s.rotor_thrust_n_per_rad2 > 0.0 || s.rotor_drag_n_m_per_rad2 > 0.0) {
+                const double w2 = s.speed_rad_s * s.speed_rad_s;
+                s.thrust_n = s.rotor_thrust_n_per_rad2 * w2;
+                s.air_j += s.rotor_drag_n_m_per_rad2 * w2 * std::abs(s.speed_rad_s) * dt_s;
+            }
             const double torque =
                 m.drove || m.coasted_on_friction ? world->hingeMotorImpulse(pin->rigid) / dt_s : 0.0;
             const double work = torque * turn;
@@ -1684,6 +1733,7 @@ struct LiveWorld::Impl {
     // The store a program's machine runs on: the one its left wheel's motor
     // draws on.
     [[nodiscard]] LiveEnergyStore *storeOfProgram(const Program &p) {
+        if (p.said.store != 0) return energyStoreById(p.said.store);
         const Control *left = controlById(p.said.left);
         const Motor *motor = left != nullptr ? motorById(left->said.motor) : nullptr;
         return motor != nullptr ? energyStoreById(motor->said.store) : nullptr;
@@ -1712,6 +1762,16 @@ struct LiveWorld::Impl {
         p.said.pitch_deg = std::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
         p.said.roll_deg = std::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
         p.heading_rad = std::atan2(forward.x, forward.z);
+        p.said.at_m = at.center_of_mass_world_m;
+        p.velocity = at.linear_velocity_m_s;
+        p.spin = at.angular_velocity_rad_s;
+        p.said.climb_m_s = at.linear_velocity_m_s.y;
+        const double ground = environment ? environment->terrain().heightAt(at.center_of_mass_world_m.x,
+                                                                             at.center_of_mass_world_m.z)
+                                          : 0.0;
+        p.said.height_m = at.center_of_mass_world_m.y - ground;
+        p.said.heading_deg = p.heading_rad * kDegPerRad;
+        if (p.said.heading_deg < 0.0) p.said.heading_deg += 360.0;
         // How far what it goes to is, and which way off its nose: both across
         // the ground, because a machine on wheels goes across the ground. A
         // thing that is not there any more stays at the last reading it had,
@@ -1744,11 +1804,242 @@ struct LiveWorld::Impl {
     // it has turned at least as far as it was turning for and nothing is in its
     // way ahead -- or kTurnMostS has passed, when it goes on regardless. Before
     // every step; nothing is timed here (settlePrograms).
+    // What a hovering machine does next (LiveProgram, "hover"): its centre
+    // held hover_m above the ground under it and level, moving by leaning --
+    // the same asks as a rover's, done with thrust. Off, its rotors are off
+    // and it falls: a machine that flies on its power. Low, it lands where it
+    // is and rests on its brakes until charged. A height loop (a share of the
+    // voltage for the weight, learnt; the error; the climb) and an attitude
+    // loop (a lean of kLeanDeg to go; the rate) are mixed onto the four
+    // rotors by where each stands on the chassis and which way it spins.
+    void decideHover(Program &p, double dt_s) {
+        constexpr double kPi = 3.14159265358979323846;
+        constexpr double kDegPerRad = 180.0 / kPi;
+        constexpr double kLeanDeg = 5.0;
+        constexpr double kYawDegS = 40.0;
+        constexpr double kFacedDeg = 6.0;
+        constexpr double kNearM = 1.0;
+        constexpr double kLandedM = 0.06;
+        LiveProgram &s = p.said;
+        std::vector<Control *> rotors;
+        for (unsigned id : s.rotors)
+            if (Control *c = controlById(id)) rotors.push_back(c);
+        if (rotors.size() != s.rotors.size() || rotors.size() != p.rotor_local.size()) {
+            s.doing = "stopped";
+            s.why = "its rotors' controllers are gone";
+            return;
+        }
+        const auto into = [&](const char *doing, std::string why) {
+            if (s.doing != doing) {
+                s.doing_s = 0.0;
+                s.turned_deg = 0.0;
+            }
+            s.doing = doing;
+            s.why = std::move(why);
+        };
+        const auto tellAll = [&](bool power, const std::vector<double> &settings) {
+            for (std::size_t i = 0; i < rotors.size(); ++i) {
+                LiveControl &now = rotors[i]->said;
+                const int direction = power ? p.spins[i] : 0;
+                const double setting = power ? std::clamp(settings[i], 0.0, 1.0) : now.setting;
+                if (now.power == power && now.direction == direction && std::abs(now.setting - setting) < 1e-9)
+                    continue;
+                tell(*rotors[i], power, direction, setting, "program " + s.name, ++p.told);
+            }
+        };
+        const std::vector<double> none(rotors.size(), 0.0);
+        // Asks run out; a low battery drops them; off drops everything.
+        const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
+        if (!s.asked.empty() && (!s.power || low || (s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s))) {
+            const bool done = s.power && !low;
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+            if (done) into("waiting", "it has done what it was asked, and hovers");
+        }
+        if (!s.power) {
+            into("stopped", "off");
+            tellAll(false, none);
+            p.hover_i = 0.0;
+            return;
+        }
+        const bool landed = s.height_m <= p.landed_height_m + kLandedM && std::abs(s.climb_m_s) < 0.05;
+        if (s.doing == "resting") {
+            if (s.charge_share >= s.rest_until) {
+                into("waiting", "its battery is charged again, and it takes off");
+            } else {
+                s.why = landed ? "its battery is low, so it rests on the ground where it landed"
+                               : "its battery is low, so it comes down to rest";
+                if (landed) {
+                    tellAll(false, none);
+                    return;
+                }
+            }
+        } else if (low) {
+            into("resting", "its battery is low, so it comes down to rest");
+            ++s.rests;
+        } else if (s.doing == "stopped") {
+            into("waiting", "hovering");
+        }
+        // What it is asked, in its doing.
+        double lean_deg = 0.0, yaw_deg_s = 0.0;
+        if (!s.asked.empty() && s.doing != "resting") {
+            if (s.asked == "facing" || s.asked == "approaching") {
+                const double dx = s.asked_toward_m.x - s.at_m.x, dz = s.asked_toward_m.z - s.at_m.z;
+                const double away = std::sqrt(dx * dx + dz * dz);
+                double off = std::atan2(dx, dz) - p.heading_rad;
+                while (off > kPi) off -= 2.0 * kPi;
+                while (off <= -kPi) off += 2.0 * kPi;
+                const double off_deg = off * kDegPerRad;
+                if (s.asked == "approaching" && away <= kNearM) {
+                    into("waiting", s.asked_why);
+                } else if (std::abs(off_deg) > kFacedDeg &&
+                           !(s.asked == "approaching" && s.doing == "going forward" && std::abs(off_deg) < 3.0 * kFacedDeg)) {
+                    into(off_deg > 0.0 ? "turning left" : "turning right", s.asked_why);
+                    p.turn_sign = off_deg > 0.0 ? 1 : -1;
+                    yaw_deg_s = std::clamp(off_deg, -kYawDegS, kYawDegS);
+                } else if (s.asked == "approaching") {
+                    into("going forward", s.asked_why);
+                    lean_deg = -kLeanDeg;
+                    yaw_deg_s = std::clamp(off_deg, -kYawDegS, kYawDegS);
+                } else {
+                    into("waiting", s.asked_why);
+                }
+            } else {
+                into(s.asked.c_str(), s.asked_why);
+                if (s.asked == "going forward") lean_deg = -kLeanDeg;
+                else if (s.asked == "backing off") lean_deg = kLeanDeg;
+                else if (s.asked == "turning left") yaw_deg_s = kYawDegS;
+                else if (s.asked == "turning right") yaw_deg_s = -kYawDegS;
+                if (s.asked == "turning left") p.turn_sign = 1;
+                if (s.asked == "turning right") p.turn_sign = -1;
+            }
+        } else if (s.doing != "resting") {
+            into("waiting", "hovering");
+        }
+        // The chassis's own axes in the world, and its rates about them: nose
+        // up is a turn about its left axis the negative way, its left side up
+        // a turn about its front, and a turn to the left a turn about up.
+        const auto found = index_of.find(s.body);
+        if (found == index_of.end() || !inWorld(found->second)) return;
+        const RigidSnapshot at = world->snapshot(body_of[found->second]);
+        const Vec3 forward = at.orientation_world.rotate(p.forward_local);
+        const Vec3 left = at.orientation_world.rotate(p.left_local);
+        const Vec3 up = cross(forward, left);
+        const double pitch_rate = -dot(p.spin, left) * kDegPerRad;
+        const double roll_rate = dot(p.spin, forward) * kDegPerRad;
+        const double yaw_rate = dot(p.spin, up) * kDegPerRad;
+        // The height loop: a target of hover_m, or the ground to land; the
+        // climb held to kClimbM_S either way.
+        constexpr double kHoverShare = 0.6, kHeightP = 0.25, kHeightD = 0.35, kHeightI = 0.04, kClimbM_S = 1.0;
+        const double target = s.doing == "resting" ? p.landed_height_m : p.landed_height_m + s.hover_m;
+        const double error = target - s.height_m;
+        const double climb_wanted = std::clamp(2.0 * error, -kClimbM_S, kClimbM_S);
+        if (s.doing != "resting" && std::abs(error) < 0.5)
+            p.hover_i = std::clamp(p.hover_i + kHeightI * error * dt_s, -0.3, 0.3);
+        double collective = kHoverShare + p.hover_i + kHeightP * error + kHeightD * (climb_wanted - s.climb_m_s);
+        if (s.doing == "resting") collective = std::min(collective, kHoverShare + p.hover_i - 0.05);
+        // Holding its spot: not asked to go, it leans against the way it
+        // drifts and back towards where it began to wait. Nose up slows it
+        // going forward and brings it back from ahead, its left side up the
+        // same from the left, the way a pilot does.
+        constexpr double kHoldDegPerM_S = 6.0, kHoldDegPerM = 4.0, kHoldMostDeg = 6.0;
+        Vec3 level_forward = forward, level_left = left;
+        level_forward.y = level_left.y = 0.0;
+        level_forward = normalized(level_forward);
+        level_left = normalized(level_left);
+        const double v_forward = dot(p.velocity, level_forward), v_left = dot(p.velocity, level_left);
+        if (s.doing == "waiting") {
+            if (!p.holding) {
+                p.hold_at = s.at_m;
+                p.holding = true;
+            }
+        } else {
+            p.holding = false;
+        }
+        const Vec3 off_spot = p.holding ? s.at_m - p.hold_at : Vec3{};
+        const double d_forward = dot(off_spot, level_forward), d_left = dot(off_spot, level_left);
+        double lean_target = lean_deg, roll_target = 0.0;
+        if (lean_deg == 0.0)
+            lean_target = std::clamp(kHoldDegPerM_S * v_forward + kHoldDegPerM * d_forward, -kHoldMostDeg, kHoldMostDeg);
+        roll_target = std::clamp(kHoldDegPerM_S * v_left + kHoldDegPerM * d_left, -kHoldMostDeg, kHoldMostDeg);
+        // The attitude loop: lean as asked or as holding needs; turn as asked.
+        constexpr double kAngleP = 0.012, kRateD = 0.0035, kYawP = 0.004;
+        const double pitch_cmd = kAngleP * (lean_target - s.pitch_deg) - kRateD * pitch_rate;
+        const double roll_cmd = kAngleP * (roll_target - s.roll_deg) - kRateD * roll_rate;
+        const double yaw_cmd = kYawP * (yaw_deg_s - yaw_rate);
+        double reach = 0.0;
+        for (const Vec3 &r : p.rotor_local) reach = std::max(reach, std::max(std::abs(r.x), std::abs(r.z)));
+        if (reach < 1e-6) reach = 1.0;
+        std::vector<double> settings(rotors.size());
+        for (std::size_t i = 0; i < rotors.size(); ++i) {
+            const Vec3 &r = p.rotor_local[i];
+            settings[i] = collective + pitch_cmd * (r.z / reach) + roll_cmd * (r.x / reach) - yaw_cmd * p.spins[i];
+        }
+        tellAll(true, settings);
+    }
+
+    // A machine that goes nowhere (a "still" program): on, it stands by;
+    // asked to wait, it waits, for as long as it was asked; its battery low,
+    // it rests until charged; off, it is stopped. Nothing is told to any
+    // controller: what it does with its power is the routine over it.
+    void decideStill(Program &p) {
+        LiveProgram &s = p.said;
+        const auto into = [&](const char *doing, std::string why) {
+            if (s.doing != doing) {
+                s.doing_s = 0.0;
+                s.turned_deg = 0.0;
+            }
+            s.doing = doing;
+            s.why = std::move(why);
+        };
+        const auto dropAsk = [&]() {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+        };
+        if (!s.power) {
+            dropAsk();
+            into("stopped", "off");
+            return;
+        }
+        const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
+        if (s.doing == "resting") {
+            if (s.charge_share < s.rest_until) return;
+            into("standing by", "its battery is charged again");
+        } else if (low) {
+            dropAsk();
+            into("resting", "its battery is low, so it rests until it is charged");
+            ++s.rests;
+            return;
+        }
+        if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
+            dropAsk();
+            into("standing by", "it has done what it was asked");
+        }
+        if (!s.asked.empty()) {
+            into("waiting", s.asked_why);
+            return;
+        }
+        if (s.doing != "standing by") into("standing by", "ready");
+    }
+
     void decideProgram(Program &p) {
         if (p.said.kind == "sit") {
             decideSit(p);
             return;
         }
+        if (p.said.kind == "hover") {
+            decideHover(p, p.last_dt_s > 0.0 ? p.last_dt_s : 1.0 / 240.0);
+            return;
+        }
+        if (p.said.kind == "still") {
+            decideStill(p);
+            return;
+        }
+        constexpr double kPi = 3.14159265358979323846;
         constexpr double kBackOffS = 1.2;
         constexpr double kTurnMostS = 6.0;
         constexpr double kSideTurnDeg = 50.0;
@@ -1816,10 +2107,100 @@ struct LiveWorld::Impl {
             return "its battery is low, and nothing is charging it";
         };
         const bool low = s.rest_below > 0.0 && s.charge_share < s.rest_below;
-        if (!s.power) {
+        // Asked to do something (LiveWorld::behave): that, until it has done it
+        // for as long as it was asked, and then on as it would have. Turned
+        // off or run low it drops the ask: it cannot do it anyway.
+        const auto askDone = [&](const char *why) {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+            into("going forward", why);
+        };
+        if (!s.asked.empty() && (!s.power || low)) {
+            s.asked.clear();
+            s.asked_why.clear();
+            s.asked_by.clear();
+            s.asked_for_s = s.asked_s = 0.0;
+        }
+        const bool driving_ask = s.asked == "going forward" || s.asked == "approaching" || s.asked == "facing";
+        constexpr double kClearBeforeAskS = 2.0;
+        constexpr unsigned kInterruptionsMost = 3;
+        if (!s.asked.empty() && !p.interrupted && driving_ask && (water_left || water_right)) {
+            // As the roaming reflex meets water: back off first, whatever it
+            // was doing -- a turn on the spot where it saw the water swings
+            // the caster in -- and then turn away from the side that saw it.
+            p.interrupted = true;
+            ++p.interruptions;
+            // And turn well away -- the ask was driving it AT the water, so
+            // a glancing turn leaves a wheel at the edge.
+            if (water_left && water_right) {
+                into("backing off", "water ahead: its reflexes have it");
+                p.then_turn = alternate;
+            } else if (water_left) {
+                into("backing off", "water ahead on its left: its reflexes have it");
+                p.then_turn = -1;
+            } else {
+                into("backing off", "water ahead on its right: its reflexes have it");
+                p.then_turn = 1;
+            }
+            p.turn_least_deg = kBackedTurnDeg;
+        }
+        // The ask has it back only after a couple of seconds of clear going:
+        // turned back towards the water at once, it would turn on the spot at
+        // the shore and its caster would go in.
+        if (p.interrupted && (s.asked.empty() || (s.doing == "going forward" && !water_left && !water_right &&
+                                                  s.doing_s >= kClearBeforeAskS)))
+            p.interrupted = false;
+        if (!s.asked.empty() && !p.interrupted && p.interruptions >= kInterruptionsMost) {
+            p.interruptions = 0;
+            askDone("the water was in the way of what it was asked, so it gave it up and goes on");
+        } else if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
+            askDone("it has done what it was asked, and goes on");
+        } else if (!s.asked.empty() && !p.interrupted) {
+            constexpr double kFacedDeg = 6.0;
+            constexpr double kNearM = 1.0;
+            // The same ask again is the same doing: doing_s and turned_deg run on.
+            const auto stay = [&](const char *doing) {
+                if (s.doing != doing) into(doing, s.asked_why);
+                else s.why = s.asked_why;
+            };
+            if (s.asked == "facing" || s.asked == "approaching") {
+                // Which way, and how far, its front is from where it was asked
+                // to look: positive is to its left, as heading is measured.
+                const auto found = index_of.find(s.body);
+                Vec3 at{};
+                if (found != index_of.end() && inWorld(found->second))
+                    at = world->snapshot(body_of[found->second]).center_of_mass_world_m;
+                const double dx = s.asked_toward_m.x - at.x, dz = s.asked_toward_m.z - at.z;
+                const double away = std::sqrt(dx * dx + dz * dz);
+                double off = std::atan2(dx, dz) - p.heading_rad;
+                while (off > kPi) off -= 2.0 * kPi;
+                while (off < -kPi) off += 2.0 * kPi;
+                const double off_deg = off * 180.0 / kPi;
+                if (s.asked == "approaching" && away <= kNearM) stay("waiting");
+                else if (std::abs(off_deg) > kFacedDeg && !(s.asked == "approaching" && s.doing == "going forward" &&
+                                                            std::abs(off_deg) < 3.0 * kFacedDeg)) {
+                    const char *doing = off_deg > 0.0 ? "turning left" : "turning right";
+                    if (s.doing != doing) {
+                        into(doing, s.asked_why);
+                        p.turn_sign = off_deg > 0.0 ? 1 : -1;
+                        p.turn_least_deg = std::abs(off_deg);
+                    } else {
+                        s.why = s.asked_why;
+                    }
+                } else if (s.asked == "approaching") {
+                    stay("going forward");
+                } else {
+                    stay("waiting");
+                }
+            } else {
+                stay(s.asked.c_str());
+            }
+        } else if (!s.power) {
             if (s.doing != "stopped") into("stopped", "off");
-        } else if (s.doing == "stopped") {
-            into("going forward", "nothing in its way");
+        } else if (s.doing == "stopped" || s.doing == "waiting") {
+            into("going forward", p.interrupted ? "its reflexes have it: water ahead" : "nothing in its way");
         } else if (s.doing == "resting") {
             if (s.charge_share >= s.rest_until) into("going forward", "its battery is charged again");
             else s.why = resting();
@@ -1849,7 +2230,10 @@ struct LiveWorld::Impl {
                 turn(s.roll_deg > 0.0 ? -1 : 1, kClimbTurnDeg, "the ground here is steeper than it climbs");
             }
         } else if (s.doing == "backing off") {
-            if (s.doing_s >= kBackOffS || stalled(*left) || stalled(*right)) {
+            // Taken from an ask that was driving it at the water, it backs
+            // off twice as far before it turns: it may be at the very edge.
+            const double back_off_s = p.interrupted ? 2.0 * kBackOffS : kBackOffS;
+            if (s.doing_s >= back_off_s || stalled(*left) || stalled(*right)) {
                 const std::string why = s.why;
                 turn(p.then_turn, p.turn_least_deg, why);
             }
@@ -2042,8 +2426,10 @@ struct LiveWorld::Impl {
         for (Program &p : programs) {
             const double was = p.heading_rad;
             readProgram(p);
+            p.last_dt_s = dt_s;
             if (!p.said.power) continue;
             p.said.doing_s += dt_s;
+            if (!p.said.asked.empty()) p.said.asked_s += dt_s;
             if (p.said.doing == "turning left" || p.said.doing == "turning right") {
                 double turned = p.heading_rad - was;
                 while (turned > kPi) turned -= 2.0 * kPi;
@@ -4587,6 +4973,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         motor.said.work_j = numberFrom(o.at("work_j"));
         motor.said.heat_j = numberFrom(o.at("heat_j"));
         motor.said.drawn_j = numberFrom(o.at("drawn_j"));
+        motor.said.rotor_thrust_n_per_rad2 = o.contains("rotor_thrust_n_per_rad2") ? numberFrom(o.at("rotor_thrust_n_per_rad2")) : 0.0;
+        motor.said.rotor_drag_n_m_per_rad2 = o.contains("rotor_drag_n_m_per_rad2") ? numberFrom(o.at("rotor_drag_n_m_per_rad2")) : 0.0;
+        motor.said.air_j = o.contains("air_j") ? numberFrom(o.at("air_j")) : 0.0;
         motor.said.friction_heat_j = numberFrom(o.at("friction_heat_j"));
         // Carried: its command, brake and account, while its pin and its store
         // came back and the host still declares it the same way.
@@ -4683,8 +5072,15 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.close_m = o.contains("close_m") ? numberFrom(o.at("close_m")) : 0.0;
         p.said.pose = o.value("pose", 0U);
         p.said.pose_deg = o.contains("pose_deg") ? numberFrom(o.at("pose_deg")) : 0.0;
-        if (p.said.kind != "roam" && p.said.kind != "sit")
+        if (p.said.kind != "roam" && p.said.kind != "sit" && p.said.kind != "hover" &&
+            p.said.kind != "still")
             throw std::invalid_argument("a saved program is not of a kind this engine knows");
+        for (const nlohmann::json &r : o.value("rotors", nlohmann::json::array())) p.said.rotors.push_back(r.get<unsigned>());
+        for (const nlohmann::json &r : o.value("rotor_local", nlohmann::json::array())) p.rotor_local.push_back(vecFrom(r));
+        for (const nlohmann::json &r : o.value("spins", nlohmann::json::array())) p.spins.push_back(r.get<int>());
+        p.said.hover_m = o.value("hover_m", 0.0);
+        p.landed_height_m = o.value("landed_height_m", 0.0);
+        p.hover_i = o.value("hover_i", 0.0);
         for (const nlohmann::json &q : o.at("sensors")) {
             LiveSensor sensor;
             sensor.kind = q.at("kind").get<std::string>();
@@ -4711,14 +5107,27 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.rest_below = o.contains("rest_below") ? numberFrom(o.at("rest_below")) : 0.0;
         p.said.rest_until = o.contains("rest_until") ? numberFrom(o.at("rest_until")) : 0.0;
         p.said.rests = o.value("rests", 0U);
+        p.said.asked = o.value("asked", std::string{});
+        p.said.asked_why = o.value("asked_why", std::string{});
+        p.said.asked_by = o.value("asked_by", std::string{});
+        p.said.asked_for_s = o.contains("asked_for_s") ? numberFrom(o.at("asked_for_s")) : 0.0;
+        p.said.asked_s = o.contains("asked_s") ? numberFrom(o.at("asked_s")) : 0.0;
+        if (o.contains("asked_toward_m")) p.said.asked_toward_m = vecFrom(o.at("asked_toward_m"));
+        p.said.store = o.value("store", 0U);
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
         p.turn_least_deg = numberFrom(o.at("turn_least_deg"));
         p.then_turn = o.at("then_turn").get<int>() < 0 ? -1 : 1;
         p.go_after_stop = o.value("go_after_stop", false);
         p.told = o.at("told").get<std::uint64_t>();
+        p.interrupted = o.value("interrupted", false);
+        p.interruptions = o.value("interruptions", 0U);
         if (carrying) {
             const bool declared = kept(asked.programs, p.said.id);
-            const bool wheels = impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
+            // A "still" program stands on its store and has no wheels at all;
+            // every other kind stands on the two it drives.
+            const bool wheels = p.said.kind == "still"
+                                    ? impl.energyStoreById(p.said.store) != nullptr
+                                    : impl.controlById(p.said.left) != nullptr && impl.controlById(p.said.right) != nullptr;
             // A "sit" program also needs what it goes to and, where it has one,
             // the controller it holds its pose with: without either it is a
             // machine told to go to nothing.
@@ -5973,7 +6382,10 @@ unsigned LiveWorld::energyStore(const std::string &name, const std::string &body
 }
 
 unsigned LiveWorld::motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
-                          double brake_torque_n_m) {
+                          double brake_torque_n_m, double rotor_thrust_n_per_rad2, double rotor_drag_n_m_per_rad2) {
+    if (!(rotor_thrust_n_per_rad2 >= 0.0) || !std::isfinite(rotor_thrust_n_per_rad2) ||
+        !(rotor_drag_n_m_per_rad2 >= 0.0) || !std::isfinite(rotor_drag_n_m_per_rad2))
+        return 0;
     for (const auto &c : impl_->circuits) if (c.store() == store) return 0;
     const Impl::SceneJoint *pin = impl_->motorPin(joint);
     if (pin == nullptr || pin->kind != JoltWorld::JointKind::Hinge) return 0;
@@ -5990,6 +6402,8 @@ unsigned LiveWorld::motor(unsigned joint, unsigned store, double stall_torque_n_
     m.said.stall_torque_n_m = stall_torque_n_m;
     m.said.no_load_rad_s = no_load_rad_s;
     m.said.brake_torque_n_m = brake_torque_n_m;
+    m.said.rotor_thrust_n_per_rad2 = rotor_thrust_n_per_rad2;
+    m.said.rotor_drag_n_m_per_rad2 = rotor_drag_n_m_per_rad2;
     m.said.state = impl_->stateToBe(m.said);
     impl_->motors.push_back(m);
     return m.said.id;
@@ -6020,6 +6434,16 @@ bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
 }
 
 std::vector<LiveEnergyStore> LiveWorld::energyStores() const { return impl_->energy_stores; }
+
+std::string LiveWorld::drawEnergy(unsigned store, double joules) {
+    LiveEnergyStore *s = impl_->energyStoreById(store);
+    if (s == nullptr) return "there is no store " + std::to_string(store);
+    if (!std::isfinite(joules) || joules < 0.0) return "joules drawn are a number from 0";
+    if (joules > s->charge_j + 1e-9) return "the store holds less than that";
+    s->charge_j = std::max(0.0, s->charge_j - joules);
+    s->given_j += joules;
+    return "drawn";
+}
 
 unsigned LiveWorld::circuit(const std::string &declaration) {
     auto c = machines::Circuit::read(nlohmann::json::parse(declaration));
@@ -6141,9 +6565,37 @@ std::vector<LiveControl> LiveWorld::controls() const {
     return out;
 }
 
+unsigned LiveWorld::stillProgram(const std::string &name, const std::string &body, unsigned store, double rest_below,
+                                 double rest_until) {
+    Impl &I = *impl_;
+    if (!(rest_below >= 0.0 && rest_below < 1.0) || (rest_below > 0.0 && !(rest_until > rest_below && rest_until <= 1.0)))
+        return 0;
+    if (I.energyStoreById(store) == nullptr) return 0;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+    for (const Impl::Program &other : I.programs)
+        if (other.said.kind == "still" && other.said.body == body) return 0;
+    Impl::Program p{};
+    p.forward_local = Vec3{0.0, 0.0, 1.0};
+    p.left_local = Vec3{1.0, 0.0, 0.0};
+    p.said.id = I.next_program++;
+    p.said.name = name.empty() ? "program " + std::to_string(p.said.id) : name;
+    p.said.kind = "still";
+    p.said.store = store;
+    p.said.body = body;
+    p.said.setting = 1.0;
+    p.said.climb_deg = 90.0;
+    p.said.rest_below = rest_below;
+    p.said.rest_until = rest_below > 0.0 ? rest_until : 0.0;
+    I.readProgram(p);
+    I.programs.push_back(std::move(p));
+    return I.programs.back().said.id;
+}
+
 unsigned LiveWorld::program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                             const std::string &body, double setting, double climb_deg, double rest_below,
-                            double rest_until) {
+                            double rest_until, const std::vector<unsigned> &rotors, double hover_m) {
+    if (kind == "hover") return hoverProgram(name, body, setting, rest_below, rest_until, rotors, hover_m);
     return program(name, kind, left, right, body, setting, climb_deg, rest_below, rest_until,
                    SitOrders());
 }
@@ -6226,6 +6678,59 @@ unsigned LiveWorld::program(const std::string &name, const std::string &kind, un
     return I.programs.back().said.id;
 }
 
+unsigned LiveWorld::hoverProgram(const std::string &name, const std::string &body, double setting,
+                                 double rest_below, double rest_until, const std::vector<unsigned> &rotors,
+                                 double hover_m) {
+    Impl &I = *impl_;
+    if (rotors.size() != 4 || !(setting > 0.0 && setting <= 1.0) || !(hover_m > 0.0 && hover_m <= 50.0)) return 0;
+    if (!(rest_below >= 0.0 && rest_below < 1.0) || (rest_below > 0.0 && !(rest_until > rest_below && rest_until <= 1.0)))
+        return 0;
+    const auto chassis = I.index_of.find(body);
+    if (chassis == I.index_of.end() || !I.inWorld(chassis->second)) return 0;
+    const RigidSnapshot at = I.world->snapshot(I.body_of[chassis->second]);
+    Impl::Program p{};
+    for (unsigned id : rotors) {
+        if (std::count(rotors.begin(), rotors.end(), id) != 1) return 0;
+        Impl::Control *c = I.controlById(id);
+        if (c == nullptr || c->said.rope != 0) return 0;
+        for (const Impl::Program &other : I.programs)
+            if (other.said.left == id || other.said.right == id ||
+                std::find(other.said.rotors.begin(), other.said.rotors.end(), id) != other.said.rotors.end())
+                return 0;
+        const Impl::Motor *m = I.motorById(c->said.motor);
+        const Impl::SceneJoint *pin = m != nullptr ? I.motorPin(m->said.joint) : nullptr;
+        if (pin == nullptr || (pin->a != body && pin->b != body) || !(m->said.rotor_thrust_n_per_rad2 > 0.0)) return 0;
+        // Where the pin stands on the chassis, in its own level.
+        const std::string other = pin->a == body ? pin->b : pin->a;
+        const auto part = I.index_of.find(other);
+        if (part == I.index_of.end() || !I.inWorld(part->second)) return 0;
+        const RigidSnapshot rotor = I.world->snapshot(I.body_of[part->second]);
+        Vec3 local = conjugateOf(at.orientation_world).rotate(rotor.center_of_mass_world_m - at.center_of_mass_world_m);
+        local.y = 0.0;
+        p.rotor_local.push_back(local);
+        p.spins.push_back(p.spins.size() % 2 == 0 ? 1 : -1);
+    }
+    // Its front is its own +z and its left its own +x, as it was drawn.
+    p.forward_local = Vec3{0.0, 0.0, 1.0};
+    p.left_local = Vec3{1.0, 0.0, 0.0};
+    p.said.id = I.next_program++;
+    p.said.name = name.empty() ? "program " + std::to_string(p.said.id) : name;
+    p.said.kind = "hover";
+    p.said.left = rotors[0];
+    p.said.right = rotors[1];
+    p.said.rotors = rotors;
+    p.said.body = body;
+    p.said.setting = setting;
+    p.said.climb_deg = 90.0;
+    p.said.hover_m = hover_m;
+    p.said.rest_below = rest_below;
+    p.said.rest_until = rest_below > 0.0 ? rest_until : 0.0;
+    I.readProgram(p);
+    p.landed_height_m = p.said.height_m;
+    I.programs.push_back(std::move(p));
+    return I.programs.back().said.id;
+}
+
 bool LiveWorld::programSense(unsigned program, const std::string &kind, const std::string &body,
                              const Vec3 &point_world_m, double depth_m) {
     Impl &I = *impl_;
@@ -6283,6 +6788,55 @@ std::string LiveWorld::run(unsigned program, const ProgramCommand &command) {
     p->said.sender = command.sender;
     p->said.seq = command.seq;
     // What it will do, said at once, and its wheels told.
+    impl_->decideProgram(*p);
+    return "applied";
+}
+
+std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
+    Impl::Program *p = nullptr;
+    for (Impl::Program &each : impl_->programs)
+        if (each.said.id == program) p = &each;
+    if (p == nullptr) return "there is no program " + std::to_string(program);
+    if (ask.sender.size() > 64) return "a sender's name is 64 characters at most";
+    static const char *const kAsks[] = {"going forward", "backing off", "turning left", "turning right",
+                                        "waiting",       "facing",      "approaching",  ""};
+    if (std::find(std::begin(kAsks), std::end(kAsks), ask.doing) == std::end(kAsks))
+        return "a program can be asked to be going forward, backing off, turning left, turning right, waiting, "
+               "facing or approaching, or asked nothing (\"\")";
+    if (!std::isfinite(ask.for_s) || ask.for_s < 0.0 || ask.for_s > 60.0)
+        return "a program is asked for from 0 s (until asked otherwise) to 60 s";
+    if (ask.why.size() > 200) return "why it was asked is 200 characters at most";
+    if (p->said.kind == "still" && !ask.doing.empty() && ask.doing != "waiting")
+        return "a machine that goes nowhere can only be asked to be waiting, or asked nothing (\"\")";
+    const bool needs_toward = ask.doing == "facing" || ask.doing == "approaching";
+    if (needs_toward && (!ask.has_toward || !std::isfinite(ask.toward_m.x) || !std::isfinite(ask.toward_m.z)))
+        return "facing and approaching need a point in the world to look toward";
+    if (ask.seq != 0) {
+        for (std::size_t i = 0; i < p->seen.size(); ++i) {
+            if (p->seen[i].first != ask.sender) continue;
+            if (ask.seq <= p->seen[i].second) return "stale";
+            p->seen.erase(p->seen.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+        p->seen.emplace_back(ask.sender, ask.seq);
+        constexpr std::size_t kSendersKept = 8;
+        if (p->seen.size() > kSendersKept) p->seen.erase(p->seen.begin());
+    }
+    LiveProgram &s = p->said;
+    p->interruptions = 0;
+    p->interrupted = false;
+    s.asked = ask.doing;
+    s.asked_why = ask.doing.empty() ? std::string{} : ask.why.empty() ? "it was asked to" : ask.why;
+    s.asked_by = ask.doing.empty() ? std::string{} : ask.sender;
+    s.asked_for_s = ask.doing.empty() ? 0.0 : ask.for_s;
+    s.asked_s = 0.0;
+    s.asked_toward_m = needs_toward ? ask.toward_m : Vec3{};
+    if (ask.doing.empty() && s.power && s.doing != "resting") {
+        // Asked nothing more: it decides again from going forward, as it does
+        // from stopped, rather than from whatever it was asked last.
+        s.doing = "stopped";
+    }
+    impl_->readProgram(*p);
     impl_->decideProgram(*p);
     return "applied";
 }
@@ -14215,6 +14769,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"work_j", savedNumber(m.said.work_j)},
                           {"heat_j", savedNumber(m.said.heat_j)},
                           {"drawn_j", savedNumber(m.said.drawn_j)},
+                          {"rotor_thrust_n_per_rad2", savedNumber(m.said.rotor_thrust_n_per_rad2)},
+                          {"rotor_drag_n_m_per_rad2", savedNumber(m.said.rotor_drag_n_m_per_rad2)},
+                          {"air_j", savedNumber(m.said.air_j)},
                           {"friction_heat_j", savedNumber(m.said.friction_heat_j)}});
     doc["motors"] = std::move(motors);
     doc["circuits"] = nlohmann::json::parse(circuits());
@@ -14272,6 +14829,16 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"close_m", savedNumber(p.said.close_m)},
                                 {"pose", p.said.pose},
                                 {"pose_deg", savedNumber(p.said.pose_deg)},
+                                {"rotors", p.said.rotors},
+                                {"rotor_local", [&] {
+                                     nlohmann::json out = nlohmann::json::array();
+                                     for (const Vec3 &r : p.rotor_local) out.push_back(savedVec(r));
+                                     return out;
+                                 }()},
+                                {"spins", p.spins},
+                                {"hover_m", savedNumber(p.said.hover_m)},
+                                {"landed_height_m", savedNumber(p.landed_height_m)},
+                                {"hover_i", savedNumber(p.hover_i)},
                                 {"sensors", std::move(sensors)},
                                 {"forward_local", savedVec(p.forward_local)},
                                 {"left_local", savedVec(p.left_local)},
@@ -14287,11 +14854,20 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"rest_below", savedNumber(p.said.rest_below)},
                                 {"rest_until", savedNumber(p.said.rest_until)},
                                 {"rests", p.said.rests},
+                                {"asked", p.said.asked},
+                                {"asked_why", p.said.asked_why},
+                                {"asked_by", p.said.asked_by},
+                                {"asked_for_s", savedNumber(p.said.asked_for_s)},
+                                {"asked_s", savedNumber(p.said.asked_s)},
+                                {"asked_toward_m", savedVec(p.said.asked_toward_m)},
+                                {"store", p.said.store},
                                 {"turn_sign", p.turn_sign},
                                 {"turn_least_deg", savedNumber(p.turn_least_deg)},
                                 {"then_turn", p.then_turn},
                                 {"go_after_stop", p.go_after_stop},
-                                {"told", p.told}});
+                                {"told", p.told},
+                                {"interrupted", p.interrupted},
+                                {"interruptions", p.interruptions}});
         }
         doc["programs"] = std::move(programs);
         doc["next_program"] = I.next_program;

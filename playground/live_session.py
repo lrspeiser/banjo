@@ -140,6 +140,11 @@ def _told_control(control: dict[str, Any]) -> tuple[Any, Any, Any]:
     return control.get("power"), control.get("direction"), control.get("setting")
 
 
+# What a program can be asked to do for a while (LiveWorld::behave), and ""
+# for nothing more: it decides for itself again.
+ASKS = ("going forward", "backing off", "turning left", "turning right", "waiting", "facing", "approaching", "")
+
+
 def _made_program(program: dict[str, Any]) -> dict[str, Any]:
     """A machine's program as it is made -- its kind, its wheels, its body,
     its setting and climb, its sensors -- without whether it was told to run,
@@ -1103,11 +1108,14 @@ class Live:
                                    else f"no store called {motor.get('store', '')!r}"))
                 continue
             try:
+                rotor = motor.get("rotor") or {}
                 answer = session.send(
                     op="motor", joint=joint, store=store,
                     stall_torque_n_m=float(motor.get("stall_torque_n_m", 0.0)),
                     no_load_rad_s=float(motor.get("no_load_rpm", 0.0)) * 3.141592653589793 / 30.0,
-                    brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)))
+                    brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)),
+                    rotor_thrust_n_per_rad2=float(rotor.get("thrust_n_per_rad2", 0.0)),
+                    rotor_drag_n_m_per_rad2=float(rotor.get("drag_n_m_per_rad2", 0.0)))
                 if answer.get("motor") is not None:
                     motor_ids[tuple(on)] = answer.get("motor")
                 if made is not None and answer.get("motor") is not None:
@@ -1192,28 +1200,52 @@ class Live:
         control_ids = dict((made or {}).get("controls") or {})
         for program in machines.get("programs") or []:
             name = str(program.get("name", ""))
-            left, right = control_ids.get(str(program.get("left"))), control_ids.get(str(program.get("right")))
-            if left is None or right is None:
-                problems.append(f"the program {name} has no controller for its "
-                                f"{'left' if left is None else 'right'} wheel")
-                continue
-            # A "sit" program also says what it goes to, how near it wants to
-            # be, and the controller and angle of the pose it holds there.
-            pose = control_ids.get(str(program.get("pose"))) if program.get("pose") else None
-            if program.get("pose") and pose is None:
-                problems.append(f"the program {name} has no controller to hold its pose with")
-                continue
+            kind = str(program.get("kind", "roam"))
+            extra: dict[str, Any] = {}
+            if kind == "hover":
+                rotors = [control_ids.get(str(r)) for r in program.get("rotors") or []]
+                if len(rotors) != 4 or any(r is None for r in rotors):
+                    problems.append(f"the program {name} has no controller for one of its rotors")
+                    continue
+                left, right = rotors[0], rotors[1]
+                extra = {"rotors": rotors, "hover_m": float(program.get("hover_m", 1.5))}
+            elif kind == "still":
+                store_ids = dict((made or {}).get("stores") or {})
+                for s in ((session.state or {}).get("machines") or {}).get("stores") or []:
+                    if isinstance(s, dict) and s.get("name") and isinstance(s.get("id"), int):
+                        store_ids.setdefault(str(s["name"]), s["id"])
+                store_id = store_ids.get(str(program.get("store")))
+                if store_id is None:
+                    problems.append(f"the program {name} draws on a store that is not there: {program.get('store')}")
+                    continue
+                left = right = 0
+                extra = {"store": store_id}
+            else:
+                rotors = []
+                left, right = control_ids.get(str(program.get("left"))), control_ids.get(str(program.get("right")))
+                if left is None or right is None:
+                    problems.append(f"the program {name} has no controller for its "
+                                    f"{'left' if left is None else 'right'} wheel")
+                    continue
+                # A "sit" program also says what it goes to, how near it wants
+                # to be, and the controller and angle of the pose it holds
+                # there. It drives, so it comes through here with the rest.
+                if kind == "sit":
+                    pose = control_ids.get(str(program.get("pose"))) if program.get("pose") else None
+                    if program.get("pose") and pose is None:
+                        problems.append(f"the program {name} has no controller to hold its pose with")
+                        continue
+                    extra = {"toward": str(program.get("toward", "")),
+                             "close_m": float(program.get("close_m", 0.0)),
+                             "pose": int(pose or 0),
+                             "pose_deg": float(program.get("pose_deg", 0.0))}
             try:
-                answer = session.send(op="program", name=name, kind=str(program.get("kind", "roam")),
+                answer = session.send(op="program", name=name, kind=kind,
                                       left=left, right=right, body=str(program.get("body", "")),
                                       setting=float(program.get("setting", 1.0)),
                                       climb_deg=float(program.get("climb_deg", 8.0)),
                                       rest_below=float(program.get("rest_below", 0.0)),
-                                      rest_until=float(program.get("rest_until", 0.0)),
-                                      toward=str(program.get("toward", "")),
-                                      close_m=float(program.get("close_m", 0.0)),
-                                      pose=int(pose or 0),
-                                      pose_deg=float(program.get("pose_deg", 0.0)))
+                                      rest_until=float(program.get("rest_until", 0.0)), **extra)
             except Exception as error:
                 problems.append(f"the program {name} would not go on: {error}")
                 continue
@@ -1701,6 +1733,41 @@ class Live:
                 raise LiveError("run says power: true or false")
             return session.send(op="run", program=program, sender=str(body.get("sender") or "")[:64], seq=seq,
                                 power=body["power"])
+        if op == "behave":
+            # A machine's program asked to do something for a while instead of
+            # deciding for itself (docs/machine-world.md, "Talking to the
+            # rover"): {program, sender, seq, doing, why, for_s, toward}, by a
+            # sender and its count as run is; answered with the program as it
+            # now stands. `doing` is one of the things a program can be asked,
+            # or "" to ask nothing more.
+            try:
+                program = int(body.get("program"))
+                seq = int(body.get("seq", 0))
+                for_s = float(body.get("for_s", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError("behave needs a program's number, a count that is a whole number, and for_s "
+                                "in seconds") from None
+            if seq < 0:
+                raise LiveError("a command's count is a whole number from 0")
+            doing = str(body.get("doing") or "")
+            if doing not in ASKS:
+                raise LiveError("a program can be asked to be " + ", ".join(a for a in ASKS if a) +
+                                ", or asked nothing (\"\")")
+            if not (math.isfinite(for_s) and 0.0 <= for_s <= 60.0):
+                raise LiveError("a program is asked for from 0 s (until asked otherwise) to 60 s")
+            command = {"op": "behave", "program": program, "sender": str(body.get("sender") or "")[:64],
+                       "seq": seq, "doing": doing, "why": str(body.get("why") or "")[:200], "for_s": for_s}
+            toward = body.get("toward")
+            if toward is not None:
+                if not isinstance(toward, list) or len(toward) != 3:
+                    raise LiveError("toward is a point in the world: three numbers")
+                point = [float(v) for v in toward]
+                if not all(math.isfinite(v) for v in point):
+                    raise LiveError("toward was given a number that is not one")
+                command["toward"] = point
+            elif doing in ("facing", "approaching"):
+                raise LiveError("facing and approaching need a point in the world to look toward")
+            return session.send(**command)
         if op == "heat":
             # Kindling, a torch, a stove: external work into a body or a gas
             # region, from now. Whether it lights anything is the engine's
@@ -1759,6 +1826,32 @@ class Live:
                                 soil_m3=soil, from_carried=True)
         if op == "survey":
             return session.send(op="survey", at=xz("at"))
+        if op == "sun":
+            # The room's sun as it stands, whether or not it has a day.
+            return session.send(op="sun")
+        if op == "draw":
+            # Energy taken from a store for work the world does not otherwise
+            # account for: a machine's scoop biting the ground, declared by
+            # its routine (machine_tools). {store, joules}, answered with the
+            # store as it now stands.
+            try:
+                store, joules = int(body.get("store")), float(body.get("joules", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError("draw needs a store's number and joules") from None
+            if not (math.isfinite(joules) and 0.0 <= joules <= 1.0e7):
+                raise LiveError("joules drawn are from 0 to 10 MJ")
+            return session.send(op="draw", store=store, joules=joules)
+        if op in ("ground_withdraw", "ground_return"):
+            # Ground carried moved out into a packet, or a packet's worth put
+            # back into what is carried: how a machine's hopper is kept apart
+            # from what the person carries (machine_tools).
+            try:
+                sand, soil = float(body.get("sand_m3", 0.0)), float(body.get("soil_m3", 0.0))
+            except (TypeError, ValueError):
+                raise LiveError(f"{op} needs sand_m3 and soil_m3") from None
+            if not all(math.isfinite(v) and 0.0 <= v <= 100.0 for v in (sand, soil)):
+                raise LiveError("a packet holds from 0 to 100 cubic metres of each")
+            return session.send(op=op, sand_m3=sand, soil_m3=soil)
         if op in ("environment", "environment_state", "terrain"):
             return session.send(op=op, full=bool(body.get("full", False)))
         if op == "discharge":

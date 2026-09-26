@@ -79,6 +79,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
 import build_explore_world as grounds   # noqa: E402  the ground, and standing things on it
 import fracture_lab                     # noqa: E402
 import live_session                     # noqa: E402
+import machine_routine                  # noqa: E402
+import machine_senses                   # noqa: E402
 import rigid_assembly                   # noqa: E402
 
 ROOMS = ROOT / "playground" / "rooms"
@@ -108,8 +110,14 @@ PANEL = {"area_m2": 0.2, "efficiency": 0.2}
 # degrees up at noon; the room begins at four in the afternoon.
 DAY_SUN = {"day_s": 240.0, "noon_elevation_deg": 60.0, "hour": 16.0, "irradiance_w_m2": 1000.0}
 # Each room's battery and how its program rests, and a sun of its own.
+# The dig room's places, in the basin's metres: the dig site north-east of
+# where the rover starts, on the floor short of the lake; the depot south-west
+# of it. A 40 kg hopper, and a scoop's work at the default 50 J/kg.
+DIG_ROUTINE = {"kind": "dig", "places": {"dig site": [2.0, -6.5], "depot": [-2.5, -9.5]}, "hopper_kg": 40.0}
+DIG_WATCH_S = 300.0
 ROOM_KINDS = {
     "tests-rover": {"capacity_j": 100000.0, "charge_j": 100000.0},
+    "tests-dig": {"capacity_j": 100000.0, "charge_j": 100000.0, "routine": DIG_ROUTINE},
     "tests-solar": {"capacity_j": 5000.0, "charge_j": 1400.0, "rest_below": 0.25, "rest_until": 0.6},
     "tests-day": {"capacity_j": 5000.0, "charge_j": 3500.0, "rest_below": 0.25, "rest_until": 0.4,
                   "sun": DAY_SUN},
@@ -231,7 +239,7 @@ def compose(ground: dict, kind: str) -> dict:
     panel_at = [round((bodies[0]["position_m"][k] + v) * 1000.0, 1)
                 for k, v in enumerate(grounds._turn(q, PANEL_AT_LOCAL_M))]
     facing = [round(v, 9) for v in grounds._turn(q, (0.0, 1.0, 0.0))]
-    rest = {k: battery[k] for k in ("rest_below", "rest_until") if k in battery}
+    rest = {k: battery[k] for k in ("rest_below", "rest_until", "routine") if k in battery}
     machines = {
         "stores": [{"name": "rover battery", "body": "rover", "capacity_j": battery["capacity_j"],
                     "charge_j": battery["charge_j"], "voltage_v": MACHINE["voltage_v"]}],
@@ -255,6 +263,78 @@ def compose(ground: dict, kind: str) -> dict:
 
 def pose(poses: dict, name: str) -> dict:
     return next(b for b in poses.get("bodies") or [] if b.get("name") == name)
+
+
+def dig(engine: Path, validated: dict) -> list[str]:
+    """Open the dig room as the playground does and run the rover's routine
+    over its program, as the server does before each step the page takes
+    (rover_brain.Brains.before): it must reach its dig site, fill its hopper,
+    carry the load to its depot and dump it within DIG_WATCH_S, dry, with
+    the ground's carried account back at nothing and its battery's account
+    closed, the scoop's work included."""
+    faults: list[str] = []
+    wheels = ("rover: left wheel", "rover: right wheel", "rover: caster wheel")
+    declared = validated["machines"]["programs"][0]["routine"]
+    with tempfile.TemporaryDirectory() as tmp:
+        session = live_session.Session(engine, validated, Path(tmp))
+        try:
+            pins = validated.get("joints") or []
+            hung = live_session.Live._hang(session, pins)
+            made: dict = {}
+            hung.update(live_session.Live._power(session, validated.get("machines") or {}, pins, made=made))
+            hung.update(live_session.Live._sun(session, validated.get("sun")))
+            for key in ("joint_problems", "machine_problems", "sun_problem"):
+                value = hung.get(key)
+                faults.extend(value if isinstance(value, list) else [value] if value else [])
+            if faults:
+                return faults
+            program = made["programs"]["rover"]
+            session.send(op="step", dt=DT, n=int(2.0 / DT))
+            session.send(op="run", program=program, sender="builder", seq=1, power=True)
+            routine = machine_routine.Routine("rover", declared)
+            said: dict = {}
+            wettest, wet_at, wall, seconds, order = 0.0, "", time.monotonic(), DIG_WATCH_S, []
+            for tick in range(int(DIG_WATCH_S / (PER_QUARTER * DT))):
+                reply = session.send(op="step", dt=DT, n=PER_QUARTER)
+                machines = reply.get("machines") or {}
+                said = next((q for q in machines.get("programs") or [] if q.get("id") == program), said)
+                ctx = machine_senses.Context(program=said, machines=machines, bodies=reply.get("bodies"),
+                                             ask=session.send, routine=routine, t=reply.get("t", 0.0))
+                did = routine.tick(ctx)
+                if did is not None:
+                    order.append(did.get("did", ""))
+                poses = session.send(op="poses")
+                for name in wheels:
+                    w = pose(poses, name)["position_m"]
+                    water = (session.send(op="survey", at=[w[0], w[2]]).get("survey") or {}).get("water")
+                    if water and water.get("depth_m", 0.0) > wettest:
+                        wettest, wet_at = water["depth_m"], f"{name} while {said.get('doing')} ({said.get('why')})"
+                if routine.trips >= 1 and routine.step % len(routine.spec["steps"]) == 1:
+                    seconds = (tick + 1) * PER_QUARTER * DT
+                    break
+            pace = seconds / (time.monotonic() - wall)
+            reply = session.send(op="step", dt=DT, n=1)
+            store = ((reply.get("machines") or {}).get("stores") or [{}])[0]
+            carried = (session.send(op="ground_work").get("carried") or {})
+            load = routine.load_reading()
+            print(f"  ran its routine for {seconds:.0f} s at {pace:.0f}x realtime: {load['trips']} trip(s), "
+                  f"{load['delivered_kg']:.1f} kg delivered, {load['kg']:.1f} kg in its hopper now; the battery "
+                  f"gave {store.get('given_j', 0):.0f} J; the ground's carried account holds "
+                  f"{carried.get('total_kg', 0):.2f} kg; at most {wettest * 1000:.0f} mm of water under a wheel")
+            print("  it did: " + "; ".join(o for o in order if o)[:900])
+            print("  its notes: " + " | ".join(routine.notes))
+            began = ROOM_KINDS["tests-dig"]["charge_j"]
+            if abs(store.get("charge_j", 0) - (began + store.get("taken_j", 0) - store.get("given_j", 0))) > 1e-3:
+                faults.append("its battery's account does not close")
+            if routine.trips < 1:
+                faults.append(f"in {DIG_WATCH_S:.0f} s it did not deliver a load: {routine.summary()}")
+            if carried.get("total_kg", 0) > 0.5:
+                faults.append(f"the ground's carried account holds {carried.get('total_kg'):.2f} kg after the dump")
+            if wettest > 0.003:
+                faults.append(f"it had {wettest * 1000:.0f} mm of water under its {wet_at}")
+        finally:
+            session.close()
+    return faults
 
 
 def roam(engine: Path, validated: dict, kind: str) -> list[str]:
@@ -401,7 +481,7 @@ def main() -> int:
         spec = compose(ground, kind)
         validated = fracture_lab.validate(spec)
         print("Opening it and letting the rover go ...")
-        faults = roam(engine, validated, kind)
+        faults = dig(engine, validated) if kind == "tests-dig" else roam(engine, validated, kind)
         if faults:
             for fault in faults:
                 print(f"  REFUSED: {fault}", file=sys.stderr)

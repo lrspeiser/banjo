@@ -892,6 +892,12 @@ class WorkshopBrowserRegression(unittest.TestCase):
               headers:{{'Content-Type':'application/json','X-Banjo-Token':status.csrf_token}},
               body:JSON.stringify({{action:'set_rack',material,mass_kg:{mass_kg}}})}});
           }}
+          // And the goods a machine's power parts take off the goods rack.
+          for (const substance of ['copper','copper wire']) {{
+            await fetch('/api/workshop/library',{{method:'POST',
+              headers:{{'Content-Type':'application/json','X-Banjo-Token':status.csrf_token}},
+              body:JSON.stringify({{action:'set_goods',substance,mass_kg:{mass_kg}}})}});
+          }}
           return 1;}})()""")
 
     def install_api(self, path, body):

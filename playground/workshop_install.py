@@ -417,9 +417,13 @@ def _joint_readouts_match(before: list, after: list) -> bool:
             # Jolt recomputes this diagnostic from the SAME restored poses in
             # single precision. One measured case differs by one float32 ULP.
             # Bound only that derived angle; limits, anchors, reference frames,
-            # motor state and every other serialized field remain exact.
+            # motor state and every other serialized field remain exact. A
+            # pin between exact bodies that were moving when the world was
+            # saved reads a few hundred ULPs off (measured 1.3e-7 rad on the
+            # rover's caster), so a microradian is allowed as well: less than
+            # a ten-thousandth of a degree, and a readout, not a declaration.
             x, y = ah.pop("at"), bh.pop("at")
-            if abs(float_code(x)-float_code(y)) > 4:
+            if abs(float_code(x)-float_code(y)) > 4 and abs(float(x) - float(y)) > 1e-6:
                 return False
         if a != b:
             return False
@@ -742,7 +746,9 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         # The world numbers what it makes, so bringing a motor or a store moves
         # that counter on. It may go forward and never back: a counter that fell
         # would mean an id about to be handed out twice.
-        if str(key).startswith("next") and type(was) is int and type(now) is int and now >= was:
+        if str(key).startswith("next") and type(now) is int and (was is None or (type(was) is int and now >= was)):
+            # Absent before: the first of its kind was just made, and the
+            # world began to count them.
             continue
         # And a counter can begin here. A room with no panel in it has no panel
         # counter at all, so installing the first solar thing the bench ever
@@ -828,6 +834,15 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift, removed=frozense
         elif matter.get("schema") == workshop_rigid.SCHEMA:
             _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
             precise_rigid.verify(saved, matter, root)
+        elif matter.get("schema") == "banjo.rigid-assembly.v1":
+            # Exact bodies on pins: each is there, exact, with the mass its
+            # parts have; and the pins are the design's.
+            _preserved(snapshot, saved, root, added_joints=matter["joints"])
+            have = {b["name"]: b for b in saved["bodies"]}
+            for body in matter["bodies"]:
+                found = have.get(body["name"])
+                if found is None or found.get("mechanical_model") != precise_rigid.MODEL:
+                    raise ValueError("Native precise rigid body is missing or not exact: " + body["name"])
         else:
             _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
             sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
@@ -866,7 +881,7 @@ def _with_needs(app: Any, design: Any, answer: dict[str, Any]) -> dict[str, Any]
 
 
 def preview(app: Any, body: Any) -> dict[str, Any]:
-    body = _object(body, {"session", "scene", "mode", "candidate", "position_m", "replace"})
+    body = _object(body, {"session", "scene", "mode", "candidate", "position_m", "replace", "places"})
     if body.get("mode") != "authoring":
         raise ValueError("Choose authoring mode explicitly. Inventory-funded fabrication is not implemented; no resources have been charged")
     pos = body.get("position_m")
@@ -893,13 +908,12 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         else:
             taking_out: list[str] = []
         models = workshop_rigid.requested_models(design, overrides)
-        if models == {"rigid"} and workshop_articulation.has_bearings(design):
-            # Finalized, and it has something that turns: exact bodies on real
-            # pins. compile_rigid makes one compound of one material and cannot
-            # carry a mechanism at all, so this is the only way a machine is
-            # made of its own parts at their own size.
-            return _with_needs(app, design, _replaces(app, _kept(app, _preview_exact(app, room, live, old, design, overrides,
-                                                                      pos, body["candidate"]), design, overrides), taking_out))
+        if models == {"rigid"} and (workshop_articulation.has_bearings(design) or workshop_machines.of(design)):
+            # A machine, or anything on pins, asked for exactly: exact bodies
+            # on pins, as the room's rover is made (rigid_assembly).
+            return _with_needs(app, design, _replaces(app, _kept(app, _preview_exact(
+                app, room, live, old, design, overrides, pos, body.get("candidate"),
+                body.get("places")), design, overrides), taking_out))
         if models == {"rigid"}:
             return _with_needs(app, design, _replaces(app, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
                                                   design, overrides), taking_out))
@@ -993,6 +1007,32 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
 
 
 
+def _lies_on_top_of(artifact, shift, h, body_name):
+    """Where a panel on this body sits, and which way it looks.
+
+    The bench says a panel is ON a component, because that is what a person is
+    looking at; a room asks for a place and a facing, as the rover's own panel
+    has (tools/build_rover_room.py). So it lies in the middle of that body's top
+    face, looking up -- an installed product is set down without turning, so its
+    up is the world's up.
+
+    Nothing did this before, and the room refused every one of them: "panel
+    'solar panel' needs at_mm and normal as three numbers each". A design could
+    declare a panel and could never be made.
+    """
+    cells: set = set()
+    for group in artifact["groups"]:
+        if group["root_body"] == body_name:
+            cells |= sparse._grid_set(group["matter"])
+    if not cells:
+        raise ValueError(f"a panel is on {body_name!r}, which has no matter of its own to sit on")
+    placed = [tuple(g[a] + shift[a] for a in range(3)) for g in cells]
+    across = [((min(p[a] for p in placed) + max(p[a] for p in placed) + 1) * 0.5 * h) for a in (0, 2)]
+    top = (max(p[1] for p in placed) + 1) * h
+    return ([round(across[0] * 1000.0, 1), round(top * 1000.0, 1), round(across[1] * 1000.0, 1)],
+            [0.0, 1.0, 0.0])
+
+
 def _preview_articulated(app, room, live, old, design, overrides, pos, candidate):
     h = float(old.spec["cell_m"])
     prefix = "workshop-" + uuid.uuid4().hex[:16]
@@ -1020,7 +1060,9 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     made = workshop_machines.installed(design, artifact["component_to_body"])
     for panel in made.get("panels") or []:
         panel["at_mm"], panel["normal"] = _lies_on_top_of(artifact, shift, h, panel["body"])
-    _named_apart(made, room.spec)
+    # Kept apart from what the room already holds, and it hands back a copy
+    # rather than changing what it was given.
+    made = _named_apart(spec.get("machines") or {}, made)
     if made:
         machines = deepcopy(spec.get("machines") or {})
         for kind, rows in made.items():
@@ -1055,119 +1097,144 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     return answer
 
 
-def _named_apart(made, spec):
-    """A machine keeps the name it was given, unless the room has it already.
+def _default_places(pos, routine):
+    """Where a routine works when the install names no places: its dig site
+    three metres ahead (+z) of where it is set down, its depot three metres
+    behind. Said in the receipt, so the person can move them."""
+    import machine_routine
+    spec = machine_routine.ROUTINES.get(routine.get("kind") or "roam") or {}
+    out = {}
+    for i, name in enumerate(spec.get("places") or []):
+        out[name] = [round(pos[0], 3), round(pos[1] + (3.0 if i == 0 else -3.0), 3)]
+    return out
 
-    The bench names things for the person looking at one design: "battery",
-    "left motor", "solar panel". A room holds everything at once, and asks for
-    a name of its own -- so making a second cart failed outright, "store 1
-    needs a name of its own", once the first one's battery was in there.
 
-    The second one is "battery 2", and what named the first by name -- a motor
-    drawing on it, a panel charging it, a program working a wheel's controller
-    or the one it holds its pose with -- follows the rename. What a "sit"
-    program goes TOWARD is not renamed: that is the room's name for something
-    else, already there.
-    """
-    taken = {str(row["name"]) for rows in (spec.get("machines") or {}).values()
-             if isinstance(rows, list) for row in rows
-             if isinstance(row, dict) and row.get("name")}
-    renamed: dict[str, str] = {}
-    for kind in ("stores", "controls", "motors", "panels", "programs"):
-        for row in made.get(kind) or []:
-            was = str(row.get("name") or "")
-            if not was:
-                continue
-            now, n = was, 2
-            while now in taken:
-                now, n = f"{was} {n}", n + 1
-            if now != was:
-                renamed[was] = now
-                row["name"] = now
-            taken.add(now)
-    if not renamed:
-        return
-    for kind in ("motors", "panels"):
-        for row in made.get(kind) or []:
-            if row.get("store") in renamed:
-                row["store"] = renamed[row["store"]]
+def _goods_for(spec, made, design, frame, pos):
+    """A machine that processes (docs/machine-world.md, "Raw materials into
+    finished goods"): its intake and its output are stockpiles of the room's.
+    Named after a component of the design (a bin), each is made where that
+    part stands, under the machine's own name; named otherwise, where the
+    machine is set down, a metre and a half ahead and behind. The recipes the
+    routine brings are given to the room where it lacks them."""
+    import machine_goods
     for program in made.get("programs") or []:
+        routine = program.get("routine")
+        if not isinstance(routine, dict):
+            continue
+        recipes = routine.pop("recipes", None) or []
+        if routine.get("kind") != "process" and not recipes:
+            continue
+        goods = spec.get("goods")
+        if not isinstance(goods, dict):
+            goods = spec["goods"] = {"deposits": [], "stockpiles": [], "recipes": []}
+        for key in ("deposits", "stockpiles", "recipes"):
+            goods.setdefault(key, [])
+        parts = {p.name: p for p in getattr(design, "parts", [])}
+        for role, ahead in (("intake", 1.5), ("output", -1.5)):
+            name = routine.get(role)
+            if not name:
+                continue
+            if any(s.get("name") == name for s in goods["stockpiles"]):
+                continue                             # the room's own, by name
+            part = parts.get(name)
+            if part is not None:
+                at = frame[0](part.center_m)
+                xz = [round(float(at[0]), 3), round(float(at[2]), 3)]
+                pile_name = f"{program['name']} {name}"
+            else:
+                xz = [round(float(pos[0]), 3), round(float(pos[1]) + ahead, 3)]
+                pile_name = name
+            n, base = 1, pile_name
+            while any(s.get("name") == pile_name for s in goods["stockpiles"]):
+                n += 1
+                pile_name = f"{base} {n}"
+            goods["stockpiles"].append({"name": pile_name, "at_m": xz, "radius_m": 1.0, "holds": {}})
+            routine[role] = pile_name
+        for recipe in recipes:
+            if not any(r.get("name") == recipe.get("name") for r in goods["recipes"]):
+                goods["recipes"].append(deepcopy(recipe))
+        if routine.get("recipe") and not any(r.get("name") == routine["recipe"] for r in goods["recipes"]):
+            raise ValueError(f"the room has no recipe called {routine['recipe']!r}; declare it on the routine "
+                             f"(recipes) or pick one the room knows: "
+                             + (", ".join(repr(r.get("name")) for r in goods["recipes"]) or "none"))
+        spec["goods"] = machine_goods.checked(goods)
+
+
+def _named_apart(existing, made):
+    """A machine's names, kept apart from the room's: a second rover's battery
+    is "rover battery 2", its program "rover 2", and whatever names them --
+    a motor its store, a program its wheels' controls -- follows. The room
+    refuses two stores of one name, and a design does not know the room."""
+    taken = {kind: {row.get("name") for row in existing.get(kind) or [] if isinstance(row, dict)}
+             for kind in ("stores", "controls", "programs", "panels")}
+    renamed = {}
+    out = deepcopy(made)
+    for kind in ("stores", "controls", "programs", "panels"):
+        for row in out.get(kind) or []:
+            name = row.get("name")
+            if name is None:
+                continue
+            new, n = name, 1
+            while new in taken[kind]:
+                n += 1
+                new = f"{name} {n}"
+            taken[kind].add(new)
+            if new != name:
+                renamed[(kind, name)] = new
+                row["name"] = new
+    for motor in out.get("motors") or []:
+        motor["store"] = renamed.get(("stores", motor.get("store")), motor.get("store"))
+    for panel in out.get("panels") or []:
+        panel["store"] = renamed.get(("stores", panel.get("store")), panel.get("store"))
+    for program in out.get("programs") or []:
         for side in ("left", "right", "pose"):
-            if program.get(side) in renamed:
-                program[side] = renamed[program[side]]
+            if side in program:
+                program[side] = renamed.get(("controls", program.get(side)), program.get(side))
+        # What a "sit" program goes TOWARD is not renamed: that is the room's
+        # name for something else, standing there already.
+        if program.get("rotors"):
+            program["rotors"] = [renamed.get(("controls", r), r) for r in program["rotors"]]
+    return out
 
 
-def _lies_on_top_of(artifact, shift, h, body_name):
-    """Where a panel on this body sits, and which way it looks.
-
-    The bench says a panel is ON a component, because that is what a person is
-    looking at; a room asks for a place and a facing, as the rover's own panel
-    has (tools/build_rover_room.py). So it lies in the middle of that body's top
-    face, looking up -- an installed product is set down without turning, so its
-    up is the world's up.
-
-    Nothing did this before, and the room refused every one of them: "panel
-    'solar panel' needs at_mm and normal as three numbers each". A design could
-    declare a panel and could never be made.
-    """
-    cells: set = set()
-    for group in artifact["groups"]:
-        if group["root_body"] == body_name:
-            cells |= sparse._grid_set(group["matter"])
-    if not cells:
-        raise ValueError(f"a panel is on {body_name!r}, which has no matter of its own to sit on")
-    placed = [tuple(g[a] + shift[a] for a in range(3)) for g in cells]
-    across = [((min(p[a] for p in placed) + max(p[a] for p in placed) + 1) * 0.5 * h) for a in (0, 2)]
-    top = (max(p[1] for p in placed) + 1) * h
-    return ([round(across[0] * 1000.0, 1), round(top * 1000.0, 1), round(across[1] * 1000.0, 1)],
-            [0.0, 1.0, 0.0])
-
-
-def _preview_exact(app, room, live, old, design, overrides, pos, candidate):
-    """A finalized machine: its own parts at their own size, on real pins.
-
-    The lattice paths cannot carry a part thinner than two cells -- 80 mm at the
-    bench's grid, 100 mm in a 50 mm room -- because a thinner one is lost
-    between its neighbours. Finalized, the same design is compiled to exact
-    compounds instead: one per group of parts fixed together, each part its true
-    shape, rotation and material, with a floor of 1 mm, and each bearing a real
-    hinge between two of them. That is what the rover in the world is made of,
-    and why its caster's cheeks can be 12 mm in a room of 50 mm cells.
-
-    Nothing is voxelised, so nothing here can break by fracture: a blow that
-    would break a lattice body against one of these is declined and said so.
-    """
-    prefix = "workshop-" + uuid.uuid4().hex[:16]
-    artifact = rigid_assembly.compile_design(design, overrides, root=prefix)
+def _preview_exact(app, room, live, old, design, overrides, pos, candidate, places):
+    """A design installed as exact rigid bodies on pins (rigid_assembly): its
+    rigid groups as compounds of their own parts, its bearings as hinges, and
+    what drives it in the room's own words, sensors and panels carried from the
+    design's frame to where it stands. Set down at `pos` facing +z, lifted so
+    nothing starts below the ground."""
+    import rigid_assembly
     saved = _snapshot(live)
     if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
-        raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not "
-                         "declare support")
-    # Set down where it was asked for, then lifted so its lowest part stands
-    # 2 mm clear of the ground under its whole footprint: the owner's rule that
-    # nothing starts below the ground.
-    at = [float(pos[0]), 0.0, float(pos[1])]
-    flat = rigid_assembly.placed(artifact, at)
-    lift = 0.002
+        raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not declare support")
+    root = "workshop-" + uuid.uuid4().hex[:16]
+    artifact = rigid_assembly.compile_design(design, overrides, root=root)
+    flat = rigid_assembly.placed(artifact, [pos[0], 0.0, pos[1]], 0.0, 0.0)
+    lift = 0.0
     for low, lo, hi in rigid_assembly.footprint(flat):
-        lift = max(lift, _terrain_floor(old, ([lo[0], low, lo[1]], [hi[0], low, hi[1]])) + .002 - low)
-    at[1] = lift
-    placed = rigid_assembly.placed(artifact, at)
-    bodies, pins = rigid_assembly.scene_bodies(placed), rigid_assembly.scene_joints(placed)
-
+        floor = _terrain_floor(old, ((lo[0], low, lo[1]), (hi[0], low, hi[1]))) if room.spec.get("terrain") else 0.0
+        lift = max(lift, floor + 0.002 - low)
+    origin = [pos[0], lift, pos[1]]
+    set_down = rigid_assembly.placed(artifact, origin, 0.0, 0.0)
+    bodies = rigid_assembly.scene_bodies(set_down)
+    pins = rigid_assembly.scene_joints(set_down)
+    actions, points = rigid_assembly.room_entries(design, set_down)
+    # Points and directions of the design's frame in the room's: set down
+    # facing +z with no turn, a point moves by the origin and a direction is
+    # unchanged.
+    frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)], lambda d: [float(v) for v in d])
+    record = workshop_machines.of(design)
+    routine = ((record.get("programs") or [{}])[0]).get("routine") if record else None
+    if routine and not places:
+        places = _default_places(pos, routine)
+    if places is not None and (not isinstance(places, dict) or len(places) > 16):
+        raise ValueError("places maps at most 16 names to [x, z] in the room's metres")
+    made = workshop_machines.installed(design, set_down["component_to_body"], frame, places)
     spec = deepcopy(room.spec)
-    spec["precise_rigid_bodies"] = (spec.get("precise_rigid_bodies") or []) + bodies
-    spec["joints"] = (spec.get("joints") or []) + pins
-    from mcp import core_use, interaction_points
-    root = artifact["component_to_body"][design.parameters["primary_use_component"]]
-    where = next(b for b in placed["bodies"] if b["name"] == root)
-    spec["actions"] = (spec.get("actions") or []) + [core_use.installed(design, root)]
-    spec["interaction_points"] = (spec.get("interaction_points") or []) + [
-        interaction_points.installed(design, root, where["_centre_m"])]
-    made = workshop_machines.installed(design, artifact["component_to_body"])
-    for panel in made.get("panels") or []:
-        panel["at_mm"], panel["normal"] = _on_top_of_an_exact_body(placed, panel["body"])
-    _named_apart(made, room.spec)
+    made = _named_apart(spec.get("machines") or {}, made)
+    spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + bodies
+    for field, extra in (("joints", pins), ("actions", actions), ("interaction_points", points)):
+        spec[field] = (spec.get(field) or []) + extra
     if made:
         machines = deepcopy(spec.get("machines") or {})
         for kind, rows in made.items():
@@ -1175,61 +1242,47 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate):
                 continue
             machines[kind] = (machines.get(kind) or []) + rows
         spec["machines"] = machines
-
-    # Admission before anything is staged, and nothing may be put where
-    # something already stands.
+        _goods_for(spec, made, design, frame, pos)
+    # Admission before any new process; this does not rewrite old declarations.
     normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
     spec["precise_rigid_bodies"] = normalised
-    mine = normalised[-len(bodies):]
-    lows = [precise_rigid.bounds(b["parts"], b["position_m"], b["orientation_wxyz"]) for b in mine]
-    bounds = ([min(b[0][a] for b in lows) for a in range(3)], [max(b[1][a] for b in lows) for a in range(3)])
-    for existing in saved["bodies"]:
-        if "parked" in existing:
+    new_names = {b["name"] for b in bodies}
+    for body in normalised:
+        if body["name"] not in new_names:
             continue
-        lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
-        if all(bounds[0][a] < hi[a]+.001 and bounds[1][a] > lo[a]-.001 for a in range(3)):
-            raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
+        bounds = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+        for existing in saved["bodies"]:
+            if "parked" in existing:
+                continue
+            lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
+            if all(bounds[0][a] < hi[a]+.001 and bounds[1][a] > lo[a]-.001 for a in range(3)):
+                raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
     fracture_lab.validate(spec)
-    roots = {b["name"] for b in bodies}
-    # Staged and cached as PLACED: its pins are where the engine will have
-    # them, not where the design drew them, or the check that nothing moved an
-    # added hinge compares two different frames.
-    staged, _ = _stage(app, live, old, spec, saved, placed, roots, None)
+    roots = set(new_names)
+    staged, _ = _stage(app, live, old, spec, saved, set_down, roots, None)
     staged.session.close()
     token = uuid.uuid4().hex
+    mass = sum(sum(rigid_assembly._mass(p) for p in design.parts if p.name in b["_components"]) for b in set_down["bodies"])
     answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
               "scene": room.scene, "session": old.id, "mode": "authoring", "root_body": root,
-              "root_bodies": sorted(roots), "component_to_body": artifact["component_to_body"],
-              "source_joints": artifact["source_joints"], "design_id": design.design_id,
+              "root_bodies": sorted(roots), "component_to_body": set_down["component_to_body"],
+              "source_joints": set_down["source_joints"], "design_id": design.design_id,
               "mechanical_model": precise_rigid.MODEL, "cell_size_m": float(old.spec["cell_m"]),
-              "cells": 0, "collision_boxes": sum(len(b["parts"]) for b in mine),
-              "mass_kg": sum(rigid_assembly._mass(p) for p in design.parts),
-              "requested_position_m": pos, "placement_grid": None,
-              "applied_translation_m": list(at), "bounds_m": bounds,
-              "engine_grid_verified": False, "native_precise_geometry_verified": True,
-              "existing_state_preserved": True, "resources_charged": False, "strength_certified": False,
-              "expires_in_s": PREVIEW_TTL_S,
-              "limits": "Finalized: exact parts on ideal pins, nothing voxelised. It cannot break by fracture, "
-                        "and bearing strength, wear and friction are uncalibrated."}
+              "cells": 0, "mass_kg": round(mass, 4), "requested_position_m": pos,
+              "placement_grid": None, "applied_translation_m": origin, "machines": made,
+              "places": places or {}, "engine_grid_verified": False,
+              "native_precise_geometry_verified": True, "existing_state_preserved": True,
+              "resources_charged": False, "strength_certified": False, "expires_in_s": PREVIEW_TTL_S,
+              "limits": "Exact bodies on ideal pins: no bearing strength, wear or friction; no internal failure. "
+                        + precise_rigid.LIMITS}
     cache = _preview_cache(app)
     while len(cache) >= MAX_PREVIEWS:
         del cache[next(iter(cache))]
     cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
                     "source_hash": _hash([saved, room.spec, _inventory(room)]),
-                    "spec": spec, "matter": placed, "root": roots, "shift": None,
+                    "spec": spec, "matter": set_down, "root": roots, "shift": None,
                     "candidate_hash": _hash(candidate)}
     return answer
-
-
-def _on_top_of_an_exact_body(placed, body_name):
-    """Where a panel on this body sits, and which way it looks: the middle of
-    its top face, looking up, as _lies_on_top_of does for a lattice one."""
-    body = next((b for b in placed["bodies"] if b["name"] == body_name), None)
-    if body is None:
-        raise ValueError(f"a panel is on {body_name!r}, which this design does not make")
-    lo, hi = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
-    return ([round((lo[0]+hi[0]) * 500.0, 1), round(hi[1] * 1000.0, 1), round((lo[2]+hi[2]) * 500.0, 1)],
-            [0.0, 1.0, 0.0])
 
 
 def _preview_rigid(app, room, live, old, design, overrides, pos):

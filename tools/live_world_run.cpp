@@ -420,7 +420,9 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
 nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json parts = nlohmann::json::array();
     for (const nlohmann::json &c : controls) {
-        if (c.at("id") != p.left && c.at("id") != p.right && c.at("id") != p.pose) continue;
+        if (c.at("id") != p.left && c.at("id") != p.right && c.at("id") != p.pose &&
+            std::find(p.rotors.begin(), p.rotors.end(), c.at("id").get<unsigned>()) == p.rotors.end())
+            continue;
         for (const nlohmann::json &part : c.at("parts"))
             if (std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
     }
@@ -449,6 +451,13 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"turns", p.turns},
             {"pitch_deg", tidy(p.pitch_deg)},
             {"roll_deg", tidy(p.roll_deg)},
+            {"at_m", {tidy(p.at_m.x), tidy(p.at_m.y), tidy(p.at_m.z)}},
+            {"heading_deg", tidy(p.heading_deg)},
+            {"rotors", p.rotors},
+            {"hover_m", tidy(p.hover_m)},
+            {"store", p.store},
+            {"height_m", tidy(p.height_m)},
+            {"climb_m_s", tidy(p.climb_m_s)},
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},
@@ -462,7 +471,14 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"pose", p.pose},
             {"pose_deg", tidy(p.pose_deg)},
             {"pose_at_deg", tidy(p.pose_at_deg)},
-            {"speed_m_s", tidy(p.speed_m_s)}};
+            {"speed_m_s", tidy(p.speed_m_s)},
+            // What it was asked to do for a while, or null when it decides
+            // for itself (LiveWorld::behave).
+            {"asked", p.asked.empty() ? nlohmann::json{}
+                                      : nlohmann::json{{"doing", p.asked}, {"why", p.asked_why}, {"by", p.asked_by},
+                                                       {"for_s", tidy(p.asked_for_s)}, {"s", tidy(p.asked_s)},
+                                                       {"toward_m", {tidy(p.asked_toward_m.x), tidy(p.asked_toward_m.y),
+                                                                     tidy(p.asked_toward_m.z)}}}}};
 }
 
 // What a break cost, as a host reads it (LiveBreakCost): the bonds the lattice
@@ -586,6 +602,10 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                                  {"work_j", tidy(m.work_j)},
                                  {"heat_j", tidy(m.heat_j)},
                                  {"drawn_j", tidy(m.drawn_j)},
+                                 {"rotor_thrust_n_per_rad2", tidy(m.rotor_thrust_n_per_rad2)},
+                                 {"rotor_drag_n_m_per_rad2", tidy(m.rotor_drag_n_m_per_rad2)},
+                                 {"thrust_n", tidy(m.thrust_n)},
+                                 {"air_j", tidy(m.air_j)},
                                  {"friction_heat_j", tidy(m.friction_heat_j)}});
     }
     out["circuits"] = nlohmann::json::parse(world.circuits());
@@ -2115,7 +2135,8 @@ int main(int argc, char **argv) {
                     const unsigned motor = world->motor(
                         command.at("joint").get<unsigned>(), command.at("store").get<unsigned>(),
                         command.value("stall_torque_n_m", 0.0), command.value("no_load_rad_s", 0.0),
-                        command.value("brake_torque_n_m", 0.0));
+                        command.value("brake_torque_n_m", 0.0), command.value("rotor_thrust_n_per_rad2", 0.0),
+                        command.value("rotor_drag_n_m_per_rad2", 0.0));
                     if (motor == 0)
                         throw std::invalid_argument(
                             "a motor goes on a pin with none, wired to a store, with a stall torque and an "
@@ -2134,6 +2155,18 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true},
                         {"circuits", nlohmann::json::parse(world->circuits())}}.dump() << std::endl;
                     continue;
+                } else if (op == "draw") {
+                    // Energy taken from a store for work the world does not
+                    // otherwise account for (LiveWorld::drawEnergy): {store,
+                    // joules}; answered with the store as it now stands.
+                    const unsigned id = command.at("store").get<unsigned>();
+                    const std::string answer = world->drawEnergy(id, command.value("joules", 0.0));
+                    if (answer != "drawn") throw std::invalid_argument(answer);
+                    reply["drawn"] = command.value("joules", 0.0);
+                    const nlohmann::json machines = machinesOf(*world);
+                    if (machines.is_object() && machines.contains("stores"))
+                        for (const nlohmann::json &each : machines.at("stores"))
+                            if (each.at("id") == id) reply["store"] = each;
                 } else if (op == "drive") {
                     // What a motor is told: a command from -1 to 1, and its brake.
                     if (!world->driveMotor(command.at("motor").get<unsigned>(), command.value("command", 0.0),
@@ -2224,31 +2257,56 @@ int main(int argc, char **argv) {
                             "above 0 and at most 1");
                     reply["solar_panel"] = made;
                 } else if (op == "program") {
-                    // A program for a machine (LiveProgram): of a kind ("roam"
-                    // or "sit"), working the controllers of its left and right
-                    // wheels, on a body both turn on; it starts off. A "sit"
-                    // one also says what it goes to, how near it wants to be,
-                    // and the controller and angle of the pose it holds there.
+                    // A program for a machine (LiveProgram): of a kind ("roam",
+                    // "sit", "hover" or "still"), working the controllers of its
+                    // left and right wheels, on a body both turn on; it starts
+                    // off. A "sit" one also says what it goes to, how near it
+                    // wants to be, and the controller and angle of the pose it
+                    // holds there; a "hover" one its rotors and the height it
+                    // keeps; a "still" one its store, and it has no wheels.
                     LiveWorld::SitOrders sit;
                     sit.toward = command.value("toward", std::string{});
                     sit.close_m = command.value("close_m", 0.0);
                     sit.pose = command.value("pose", 0U);
                     sit.pose_deg = command.value("pose_deg", 0.0);
-                    const unsigned made = world->program(
+                    std::vector<unsigned> rotors;
+                    if (command.contains("rotors"))
+                        for (const nlohmann::json &r : command.at("rotors")) rotors.push_back(r.get<unsigned>());
+                    // Two overloads, and one call takes one of them: the orders
+                    // or the rotors. There is no signature with both, because
+                    // GCC cannot default a nested aggregate before the class is
+                    // complete.
+                    const std::string kind = command.value("kind", std::string{});
+                    const unsigned made =
+                        kind == "still"
+                        ? world->stillProgram(command.value("name", std::string{}), command.value("body", std::string{}),
+                                              command.value("store", 0U), command.value("rest_below", 0.0),
+                                              command.value("rest_until", 0.0))
+                        : kind == "sit"
+                        ? world->program(command.value("name", std::string{}), kind,
+                                         command.value("left", 0U), command.value("right", 0U),
+                                         command.value("body", std::string{}), command.value("setting", 1.0),
+                                         command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
+                                         command.value("rest_until", 0.0), sit)
+                        : world->program(
                         command.value("name", std::string{}), command.value("kind", std::string{}),
-                        command.at("left").get<unsigned>(), command.at("right").get<unsigned>(),
+                        command.value("left", 0U), command.value("right", 0U),
                         command.value("body", std::string{}), command.value("setting", 1.0),
                         command.value("climb_deg", 8.0), command.value("rest_below", 0.0),
-                        command.value("rest_until", 0.0), sit);
+                        command.value("rest_until", 0.0), rotors, command.value("hover_m", 0.0));
                     if (made == 0)
                         throw std::invalid_argument(
                             "a program is of kind \"roam\" or \"sit\", on two shafts' controllers that no program "
                             "works yet, "
                             "each on a pin through the body it names, with a setting above 0 and no more than 1, "
                             "a climb above 0 and below 60 degrees, and a rest_until above its rest_below and no "
-                            "more than 1; a \"sit\" one goes toward another body in the world, within a close_m "
-                            "above 0 and up to 100, holding a pose controller that is there and is neither wheel's "
-                            "at a pose_deg within a turn either way, and it does not rest");
+                            "more than 1; a \"sit\" one goes toward another body in the world, within a "
+                            "close_m above 0 and up to 100, holding a pose controller that is there and is "
+                            "neither wheel's at a pose_deg within a turn either way, and it does not rest; or "
+                            "of kind \"hover\", on four rotors' controllers (round the machine from above, "
+                            "front-left first), each on a rotor's pin through the body it names, with a hover_m "
+                            "above 0 and at most 50; or of kind \"still\", on a body that is in the world with "
+                            "a store that is there, one still program to a body");
                     reply["program"] = made;
                 } else if (op == "run") {
                     // A program turned on or off, by a sender and its count,
@@ -2261,6 +2319,31 @@ int main(int argc, char **argv) {
                     const std::string answer = world->run(id, told);
                     if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
                     reply["ran"] = answer;
+                    const nlohmann::json machines = machinesOf(*world);
+                    if (machines.is_object() && machines.contains("programs"))
+                        for (const nlohmann::json &each : machines.at("programs"))
+                            if (each.at("id") == id) reply["program"] = each;
+                } else if (op == "behave") {
+                    // A program asked to do something for a while instead of
+                    // deciding for itself (LiveWorld::behave): {program, sender,
+                    // seq, doing, why, for_s, toward: [x, y, z]}; answered as
+                    // run is, with the program as it now stands.
+                    LiveWorld::ProgramAsk ask;
+                    ask.sender = command.value("sender", std::string{});
+                    ask.seq = command.value("seq", std::uint64_t{0});
+                    ask.doing = command.value("doing", std::string{});
+                    ask.why = command.value("why", std::string{});
+                    ask.for_s = command.value("for_s", 0.0);
+                    if (command.contains("toward") && command.at("toward").is_array() &&
+                        command.at("toward").size() == 3) {
+                        const nlohmann::json &t = command.at("toward");
+                        ask.has_toward = true;
+                        ask.toward_m = Vec3{t.at(0).get<double>(), t.at(1).get<double>(), t.at(2).get<double>()};
+                    }
+                    const unsigned id = command.at("program").get<unsigned>();
+                    const std::string answer = world->behave(id, ask);
+                    if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
+                    reply["asked"] = answer;
                     const nlohmann::json machines = machinesOf(*world);
                     if (machines.is_object() && machines.contains("programs"))
                         for (const nlohmann::json &each : machines.at("programs"))

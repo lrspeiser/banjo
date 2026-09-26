@@ -157,6 +157,10 @@ class NativeInstallation(unittest.TestCase):
         import workshop_library
         for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber'):
             workshop_library.set_rack(self.app, _material, 500.0)
+        # And the goods its machines take (workshop_library.GOODS_PER): a
+        # machine's power parts come off the goods rack when it is made.
+        for _substance in ("copper", "copper wire"):
+            workshop_library.set_goods(self.app, _substance, 500.0)
         self.open()
 
     def open(self,spec=None):

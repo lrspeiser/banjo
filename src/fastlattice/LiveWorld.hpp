@@ -570,6 +570,19 @@ struct LiveMotor {
     // Since it was made.
     double turned_rad{};          // the whole turn, not wrapped at +-180 degrees
     double work_j{}, heat_j{}, drawn_j{}, friction_heat_j{};
+    // A rotor on the pin (docs/machine-world.md, "A rover that flies"): a
+    // DECLARED propeller. Spinning at w, it lifts its pin's a body with
+    // rotor_thrust_n_per_rad2 * w^2 along the pin's axis, whichever way it
+    // spins, and loads the pin with rotor_drag_n_m_per_rad2 * w^2 of friction,
+    // whose reaction turns the frame the other way -- how a machine on four
+    // rotors yaws. Momentum theory's T = k w^2 and Q = k' w^2, with k and k'
+    // declared to the machine, not derived from a blade; zero for a plain
+    // motor. What the thrust does to the frame is not charged to the store
+    // beyond the drag the motor works against: declare k' so that drag power
+    // is the induced power (P = T^1.5 / sqrt(2 rho A)) and the account is fair.
+    double rotor_thrust_n_per_rad2{}, rotor_drag_n_m_per_rad2{};
+    double thrust_n{};            // the last kept step
+    double air_j{};               // what the drag took, since it was made
 };
 
 // What a controller senses (docs/machine-world.md, "One autonomous creature"):
@@ -722,6 +735,11 @@ struct LiveProgram {
     double turned_deg{};
     unsigned turns{};
     double pitch_deg{}, roll_deg{};
+    // Where its chassis is and which way its front faces, as the last kept
+    // step left it: the heading is degrees round from the world's +z towards
+    // +x, the way a compass reads with +z as north.
+    Vec3 at_m{};
+    double heading_deg{};
     // Its battery's share of full, as the last kept step left it, and how many
     // times it has stopped to rest.
     double charge_share{};
@@ -733,6 +751,40 @@ struct LiveProgram {
     // fast the machine itself is going across the ground -- which is not what
     // its wheels read, because a wheel held on its brake can skid.
     double toward_m{}, bearing_deg{}, pose_at_deg{}, speed_m_s{};
+    // What it was asked to do instead of deciding for itself (LiveWorld::behave):
+    // by a person at its panel, or by whatever thinks for it on what it meets.
+    // `asked` is "going forward", "backing off", "turning left", "turning
+    // right", "waiting" (held on its brakes, still on), "facing" (turning on
+    // the spot until its front is towards `asked_toward_m`, then waiting) or
+    // "approaching" (facing, then going forward until it is within a metre of
+    // it, then waiting); "" when nothing is asked and it decides for itself.
+    // It does what it was asked for `asked_for_s` seconds -- 0 for until it is
+    // asked otherwise -- and then goes on as it would have. Its battery low,
+    // or turned off, it drops what it was asked: those come first.
+    // A "hover" program's machine (docs/machine-world.md, "A rover that
+    // flies"): four rotors' controllers, in order round the machine from
+    // above -- front-left, front-right, back-right, back-left -- spun
+    // alternately one way and the other, on pins up through the chassis
+    // whose own +z is its front and +x its left. It holds its centre
+    // `hover_m` above the ground under it, level, and moves by leaning: the
+    // same asks as a rover's, done with thrust instead of wheels. Its battery
+    // low, it lands and rests where it is.
+    std::vector<unsigned> rotors;
+    double hover_m{};
+    double height_m{};            // its centre above the ground under it, as the last kept step left it
+    // A "still" program's machine (docs/machine-world.md, "Raw materials into
+    // finished goods"): a machine that goes nowhere -- a smelter, a mill --
+    // with a store of its own and no wheels. It stands by, rests when its
+    // battery is low, and can be asked to wait; what it makes is the
+    // playground's routine over it, drawing on its store.
+    unsigned store{};
+    double climb_m_s{};           // how fast it is rising
+    std::string asked;
+    std::string asked_why;        // why, in a person's words, shown as its `why`
+    std::string asked_by;         // who asked
+    double asked_for_s{};
+    double asked_s{};             // how long it has been doing what it was asked
+    Vec3 asked_toward_m{};        // where it faces or approaches, for those two
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -1572,7 +1624,8 @@ public:
     // the pin or the store is not there, the pin is not a hinge, the pin has a
     // motor already, or the numbers are not a motor's.
     unsigned motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
-                   double brake_torque_n_m = 0.0);
+                   double brake_torque_n_m = 0.0, double rotor_thrust_n_per_rad2 = 0.0,
+                   double rotor_drag_n_m_per_rad2 = 0.0);
     // What a motor is told: a command from -1 to 1, and whether its brake is
     // on. The brake is friction on the pin, so it holds only while the motor
     // is not driving -- a command of zero. False if there is no such motor.
@@ -1581,6 +1634,12 @@ public:
     // its size as the setting -- so the controller's limits still hold.
     bool driveMotor(unsigned motor, double command, bool brake = false);
     [[nodiscard]] std::vector<LiveEnergyStore> energyStores() const;
+    // Energy taken from a store for work the world does not otherwise account
+    // for -- a machine's scoop biting the ground, say -- by whatever does the
+    // work: joules out of its charge and onto its given_j, so its ledger
+    // stays whole. "drawn", or why not: no such store, not a number, or more
+    // than it holds (then nothing is taken).
+    std::string drawEnergy(unsigned store, double joules);
     [[nodiscard]] std::vector<LiveMotor> motors() const;
     // Attach a bounded DC/thermal circuit to one existing store and ALL its
     // motors. Additive only: inspection/reopening cannot reset state.
@@ -1659,9 +1718,13 @@ public:
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting, double climb_deg,
                      double rest_below, double rest_until, const SitOrders &sit);
+    // A "still" program: a machine that goes nowhere, on `body`, with `store`.
+    unsigned stillProgram(const std::string &name, const std::string &body, unsigned store, double rest_below,
+                          double rest_until);
     unsigned program(const std::string &name, const std::string &kind, unsigned left, unsigned right,
                      const std::string &body, double setting = 1.0, double climb_deg = 8.0,
-                     double rest_below = 0.0, double rest_until = 0.0);
+                     double rest_below = 0.0, double rest_until = 0.0,
+                     const std::vector<unsigned> &rotors = {}, double hover_m = 0.0);
     // A sensor on a program's machine, as sense() puts one on a controller's:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out
@@ -1677,6 +1740,26 @@ public:
     // "applied" or "stale", as operate() says; anything else is why it is not
     // a command.
     std::string run(unsigned program, const ProgramCommand &command);
+    // What a program is asked to do for a while instead of deciding for itself
+    // (LiveProgram::asked): `doing` is one of the things it can be asked, or ""
+    // to ask nothing more and let it decide again; `for_s` from 0 (until asked
+    // otherwise) to 60; `toward` where "facing" and "approaching" look, in the
+    // world; `why` in a person's words, 200 characters at most. Stale as run()
+    // says. It answers at once: what it now does is said before the next step.
+    struct ProgramAsk {
+        std::string sender;
+        std::uint64_t seq{};
+        std::string doing;
+        std::string why;
+        double for_s{};
+        bool has_toward{};
+        Vec3 toward_m{};
+    };
+    std::string behave(unsigned program, const ProgramAsk &ask);
+    // A "hover" program on four rotors' controllers (LiveProgram::rotors), its
+    // centre hover_m above the ground; program() with kind "hover" comes here.
+    unsigned hoverProgram(const std::string &name, const std::string &body, double setting, double rest_below,
+                          double rest_until, const std::vector<unsigned> &rotors, double hover_m);
     [[nodiscard]] std::vector<LiveProgram> programs() const;
     // The room's sun (LiveSun): `elevation_deg` above the horizon, from 0 to 90,
     // `azimuth_deg` round from +z towards +x, shining `irradiance_w_m2` on a

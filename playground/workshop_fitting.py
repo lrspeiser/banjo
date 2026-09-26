@@ -153,19 +153,42 @@ def concepts(design: Any) -> list[dict[str, Any]]:
             if tuple(sorted(control["turns"])) not in turning_pairs:
                 wrong.append(f"{control['name']} works a joint that does not turn")
         for program in machines.get("programs") or []:
+            if program.get("kind") == "still":
+                if not any(s["name"] == program.get("store") for s in machines.get("stores") or []):
+                    wrong.append(f"the program draws on {program.get('store')}, which is not a store here")
+                continue
+            if program.get("kind") == "hover":
+                rotor_motors = {tuple(sorted(m["turns"])) for m in machines.get("motors") or [] if m.get("rotor")}
+                for k, name in enumerate(program.get("rotors") or []):
+                    if name not in controls:
+                        wrong.append(f"the program's rotor {k + 1} is {name}, which is not a control here")
+                    elif tuple(sorted(next(c for c in machines["controls"] if c["name"] == name)["turns"])) not in rotor_motors:
+                        wrong.append(f"the program's rotor {k + 1}, {name}, works a pin with no rotor on it")
+                continue
             for side in ("left", "right"):
                 if program[side] not in controls:
                     wrong.append(f"the program's {side} is {program[side]}, which is not a control here")
+            for sensor in program.get("sensors") or []:
+                if sensor["on"] not in names:
+                    wrong.append(f"a sensor sits on {sensor['on']}, which is not here")
+            routine = program.get("routine") or {}
+            if routine.get("kind") == "dig" and not routine.get("hopper_kg"):
+                wrong.append("its routine digs but it has no hopper")
         said.append({"concept": "what drives it is wired to what is there",
                      "ok": not wrong,
                      "says": workshop_machines.described(design)["says"] if not wrong
                              else "; ".join(wrong[:3])})
 
-        driven = any(machines.get("motors"))
+        driven = any(machines.get("motors") or [])
+        # A machine that goes nowhere (a still program) is driven by nothing
+        # and is a machine all the same: what it does is its routine.
+        still = any(p.get("kind") == "still" for p in machines.get("programs") or [])
         said.append({"concept": "if it is powered, something can move it",
-                     "ok": not machines.get("programs") or driven,
+                     "ok": not machines.get("programs") or driven or still,
                      "says": ("it runs a program but no motor drives anything"
-                              if machines.get("programs") and not driven else
+                              if machines.get("programs") and not driven and not still else
+                              "it goes nowhere: a still program, working its routine where it stands"
+                              if still and not driven else
                               "nothing is powered" if not driven else
                               f"{len(machines['motors'])} motor(s) drive it")})
 
@@ -264,7 +287,9 @@ def _compiled(design: Any, overrides: dict[str, Any], cell_m: float, root: str) 
         # which is the point of finalizing. A machine goes through the assembly
         # compiler, which can carry several materials, turned parts and real
         # pins; anything simpler is one exact compound.
-        if workshop_articulation.has_bearings(design):
+        if workshop_articulation.has_bearings(design) or workshop_machines.of(design):
+            # A machine asked for exactly is drawn as installation draws it:
+            # exact bodies on pins, each part its own material (rigid_assembly).
             import rigid_assembly
             rigid_assembly.compile_design(design, overrides, root=root)
             return

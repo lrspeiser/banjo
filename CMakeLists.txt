@@ -1165,6 +1165,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_rover_roam_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_rover_roam_tests)
             add_test(NAME banjo_rover_roam_tests COMMAND banjo_rover_roam_tests)
+            add_executable(banjo_drone_hover_tests tests/drone_hover_tests.cpp)
+            target_link_libraries(banjo_drone_hover_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_drone_hover_tests)
+            add_test(NAME banjo_drone_hover_tests COMMAND banjo_drone_hover_tests)
 
             # Solar panels: a room's sun, and what a panel on a part puts into the
             # store it is wired to -- square on, at an angle, in shade, and full.
@@ -1500,6 +1504,42 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_DAY_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/day_room_tests.py -v)
     set_tests_properties(banjo_day_room_tests PROPERTIES TIMEOUT 180)
+    # And what thinks for the rover, and talking to it: what is made of Jev's
+    # answers, a decision applied before the next step, and the chat's open,
+    # say and close working the tests-rover room's program, with a scripted Jev.
+    add_test(NAME banjo_rover_brain_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_brain_tests.py -v)
+    set_tests_properties(banjo_rover_brain_tests PROPERTIES TIMEOUT 300)
+    # And the Workshop's robot parts: the rover assembled from the library's
+    # components, the bench chat's sensor and routine tools, and the rover
+    # installed into a room as exact bodies on pins, roaming dry.
+    add_test(NAME banjo_workshop_rover_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_rover_tests.py -v)
+    set_tests_properties(banjo_workshop_rover_tests PROPERTIES TIMEOUT 300)
+    # And a rover that flies: the drone from the same library on four rotors,
+    # installed through the same gate, lifting to its height and flying to
+    # its places.
+    add_test(NAME banjo_workshop_drone_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_drone_tests.py -v)
+    set_tests_properties(banjo_workshop_drone_tests PROPERTIES TIMEOUT 300)
+    # And raw materials into finished goods: the room's account of goods, the
+    # routine language, a machine that goes nowhere, the goods rack, and the
+    # mine in the real engine: ore to wire on the Workshop's rack.
+    add_test(NAME banjo_goods_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
+    set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
     # And what a break costs: the room's failure law reaching the engine, and
     # the account the world gives of a break in the tests-break room.
     add_test(NAME banjo_break_room_tests
