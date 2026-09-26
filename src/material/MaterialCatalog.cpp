@@ -158,8 +158,23 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.damping_ratio = 0.01;
         material.strength_variation = 0.08;
         material.calibration.activation_energy_scale = 2.0;
-        material.calibration.damage_strain_multiplier = 6.0;
-        material.calibration.break_strain_multiplier = 12.0;
+        // Purely elastic to fracture, so it breaks AT its strength and not at
+        // some multiple of it: "unlike metals, which deform before breaking,
+        // ceramics are purely elastic in nature and will fracture upon
+        // reaching their maximum" (Precision Ceramics, flexural strength of
+        // advanced ceramics). The declared 300 MPa is in the measured band for
+        // high alumina -- a Weibull fit to 94% alumina flexural specimens gives
+        // a characteristic strength of 356 MPa (Kammler et al., Int. J. Appl.
+        // Ceram. Technol. 19 (2022)) -- so the strength stands and the
+        // multiplier goes.
+        //
+        // It was 6x/12x, which put failure at 3,600 MPa and made an alumina
+        // table shrug off a 20 kg block dropped 5 m: about 414 MPa of bending
+        // by hand, over what alumina takes and nowhere near what the lattice
+        // was asking. Nobody had measured the 12; this is the same correction
+        // glass had, for the same reason.
+        material.calibration.damage_strain_multiplier = 0.9;
+        material.calibration.break_strain_multiplier = 1.0;
         // Stiffer than steel and less lossy: below iron.
         setContact(material, 0.50, 0.38, 0.0003, 0.06);
         break;
@@ -167,6 +182,16 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material = baseMaterial("oak", MaterialModel::RigidOnly, 700.0, 12.0e9, 0.35);
         material.yield_strength_pa = 45.0e6;
         material.tensile_strength_pa = 90.0e6;
+        // 52 MPa is compression parallel to the grain -- white oak crushes at
+        // 51.3 (7,440 lbf/in^2, the Wood Database's clear-wood figures at 12%
+        // moisture). It keeps the SHARED break multiplier of 2, and that is
+        // not an accident worth tidying away: a wooden beam's extreme fibre
+        // reaches about twice its crushing strength before it ruptures,
+        // because the compression face yields and the neutral axis shifts.
+        // 2 x 51.3 = 103 against white oak's measured modulus of rupture of
+        // 102.3 MPa. The bending answer is calibrated; PURE TENSION is not,
+        // and is twice as strong as oak's 90 MPa, because one multiplier
+        // serves all three modes.
         material.compressive_strength_pa = 52.0e6;
         material.shear_strength_pa = 11.0e6;
         material.hardness_pa = 35.0e6;
@@ -202,8 +227,23 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.damping_ratio = 0.025;
         material.strength_variation = 0.18;
         material.calibration.activation_energy_scale = 1.5;
-        material.calibration.damage_strain_multiplier = 5.0;
-        material.calibration.break_strain_multiplier = 10.0;
+        // Brittle at every rate this engine runs at. Ice is ductile only below
+        // its ductile-to-brittle transition, about 1e-4 per second in tension
+        // for freshwater ice at -10 C (Schulson, The Structure and Mechanical
+        // Behavior of Ice, JOM 51 (1999)); a dropped block or a struck plate
+        // loads it orders faster than that, so it snaps rather than creeps and
+        // it snaps at its strength. The declared 1 MPa sits in the measured
+        // 0.7-3.1 MPa band for tensile strength.
+        //
+        // It was 5x/10x, which put failure at 10 MPa in tension and 50 in
+        // compression -- ice as strong as concrete. Not measured by anybody;
+        // the same correction glass had.
+        //
+        // What this does NOT model: the ductile side. A load left standing on
+        // ice for minutes is exactly the regime where real ice creeps, and
+        // there is no creep here, so a slow answer is the brittle one.
+        material.calibration.damage_strain_multiplier = 0.9;
+        material.calibration.break_strain_multiplier = 1.0;
         // No measurement found: iron's, scaled by elastic hysteresis for ice's
         // stiffness and loss (about four to five times).
         setContact(material, 0.10, 0.03, 0.002, 0.12);

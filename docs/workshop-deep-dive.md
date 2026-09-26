@@ -482,6 +482,63 @@ what rigid means.
 All of it is pinned in `EveryMaterialGivesWaySomewhere`, including the ceramic
 exception, written into the test rather than left out of it.
 
+## 1e3. Ceramic and ice, and why oak was already right
+
+**Changed (2026-09-26), against sources, the way glass was.** Two of the three
+materials I said needed this did; the third did not, and I had the wrong one.
+
+**I misread the catalogue.** In 1e2 I wrote that oak breaks at ten times its
+strength. It does not -- the 5x/10x pair belongs to ICE, and I attributed it to
+oak from a grep that landed in the wrong `case`. Oak uses the shared default
+of 2, and that turns out to be exactly right, for a reason worth keeping:
+
+> A wooden beam's extreme fibre reaches about twice its crushing strength
+> before it ruptures, because the compression face yields and the neutral axis
+> shifts. White oak crushes at 51.3 MPa and its measured modulus of rupture is
+> 102.3 -- a ratio of 1.99. The catalogue's 52 MPa is the crushing strength, so
+> 2 x 52 = 104 MPa is the bending answer, against a measured 102.
+
+So oak's bending is calibrated. Its **pure tension is not**: one multiplier
+serves all three modes, so oak in tension breaks at 180 MPa where the real
+number is 90. Said here because nothing else says it.
+
+**Alumina ceramic: 6x/12x to 0.9/1.0.** *"Unlike metals, which deform before
+breaking, ceramics are purely elastic in nature and will fracture upon reaching
+their maximum"* -- there is no plastic reserve for a multiplier to stand for.
+The declared 300 MPa sits in the measured band (a Weibull fit to 94% alumina
+flexural specimens gives a characteristic strength of 356 MPa), so the strength
+stands and the multiplier goes.
+
+**Freshwater ice: 5x/10x to 0.9/1.0.** Ice is ductile only below its
+ductile-to-brittle transition, about 1e-4 per second in tension at -10 C. A
+dropped block loads it orders of magnitude faster, so every case this engine
+runs is the brittle one. The declared 1 MPa sits in the measured 0.7-3.1 MPa
+band. What this does NOT model is the ductile side: a load left standing on ice
+for minutes is exactly where real ice creeps, and there is no creep here.
+
+**The matrix now.** A resting 2,000 kg is 28.9 MPa of bending in the top:
+
+| material | takes | breaks at | a weight on it | 20 kg dropped |
+|---|---|---|---|---|
+| oak | 52 MPa | 104 (2x) | held to 2,000 kg | dented at 5 m |
+| iron | 250 | 500 (2x) | held to 2,000 | dented at 5 m |
+| aluminum | 250 | 500 (2x) | held to 2,000 | dented at 5 m |
+| glass | 45 | 45 (1x) | held to 2,000 | broke at 2 m |
+| **alumina ceramic** | 300 | **300 (1x)** | held to 2,000 | **broke at 5 m** (held from 5 m before) |
+| rubber | 15 | 30 (2x) | cannot say at 1,200 | held from 5 m |
+| **ice** | 1 | **1 (1x)** | cannot say at 100 | broke at 2 m |
+| concrete | 3 | 6 (2x) | cannot say at 300 | broke at 2 m |
+
+Ceramic still takes a real blow: a metre does nothing, five metres shatters it,
+which is what 300 MPa is for. Ice's coarse behaviour did not move, because a
+drop onto a one-cell top fails in local compression rather than bending and its
+compressive limit went 50 MPa to 5.
+
+**What it cost: one test, mine.** `test_alumina_ceramic_is_the_one_that_shrugs_
+it_off` was named for a bug, and now asserts the opposite. 161 of 161 ctest
+suites pass. The kettle tests that fail alongside are main's -- shown twice,
+once by stashing this calibration and once on a clean worktree of origin/main.
+
 ## 1e. An ice table held two tonnes
 
 **Fixed (2026-09-25).** The owner asked whether a weight that big really cannot

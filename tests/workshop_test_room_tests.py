@@ -387,19 +387,23 @@ class EveryMaterialGivesWaySomewhere(unittest.TestCase):
     top on four 60 mm legs, 1.1 m between leg centres:
 
         material    declared  the lattice  a weight on it   20 kg dropped
-        oak            52 MPa    520 (10x)  held to 2000 kg  dented at 5 m
+        oak            52 MPa    104  (2x)  held to 2000 kg  dented at 5 m
         iron          250        500  (2x)  held to 2000     dented at 5 m
         aluminum      250        500  (2x)  held to 2000     dented at 5 m
         glass          45         45  (1x)  held to 2000     BROKE at 2 m
-        ceramic       300       3600 (12x)  held to 2000     held from 5 m
+        ceramic       300        300  (1x)  held to 2000     BROKE at 5 m
         rubber         15         30  (2x)  cannot say 1200  held from 5 m
-        ice             1          2  (2x)  cannot say 100   BROKE at 2 m
+        ice             1          1  (1x)  cannot say 100   BROKE at 2 m
         concrete        3          6  (2x)  cannot say 300   BROKE at 2 m
 
     Brittle breaks, ductile dents, and the resting load flags exactly the three
-    materials weaker than the bending it puts in the top. Alumina ceramic is
-    the one that does nothing, for the reason glass used to: a break multiplier
-    of 12 nobody has measured.
+    materials weaker than the bending it puts in the top.
+
+    The three at 1x are the ones with no plastic reserve for a multiplier to
+    stand for. Oak's 2 is not an oversight: a wooden beam's extreme fibre
+    reaches about twice its crushing strength before it ruptures, because the
+    compression face yields and the neutral axis shifts, and 2 x 51.3 = 103
+    against white oak's measured modulus of rupture of 102.3 MPa.
     """
 
     #: What the top carries in bending with a weight set in the middle of it:
@@ -449,6 +453,7 @@ class EveryMaterialGivesWaySomewhere(unittest.TestCase):
     def test_brittle_breaks_and_ductile_dents(self):
         """A blow has to leave a mark on everything that is not ceramic."""
         for material, expected in (("glass", "broke"), ("ice", "broke"), ("concrete", "broke"),
+                                   ("alumina ceramic", "broke"),
                                    ("oak", "dented"), ("iron", "dented"), ("aluminum", "dented")):
             with self.subTest(material=material):
                 did = bench.try_it(self.app, self.a_table(material, "blow"),
@@ -456,21 +461,25 @@ class EveryMaterialGivesWaySomewhere(unittest.TestCase):
                 print(f"    20 kg from 5 m on {material:10} -> {bench._outcome(did)}")
                 self.assertEqual(expected, bench._outcome(did))
 
-    def test_alumina_ceramic_is_the_one_that_shrugs_it_off(self):
-        """Not an accident and not yet fixed, so it is written down.
+    def test_alumina_ceramic_breaks_now_that_it_breaks_at_its_strength(self):
+        """It used to shrug off everything.
 
-        Alumina breaks at 300 MPa and the lattice removes its bonds at TWELVE
-        times that strain -- 3,600 MPa -- for the same reason glass sat at
-        twice 45 until somebody looked. 20 kg from 5 m puts about 414 MPa of
-        bending in that top by hand, which is over what alumina takes and
-        nowhere near what this lattice asks of it. Nobody has measured a
-        multiplier for alumina, so nobody has changed it.
+        Alumina goes at 300 MPa and the lattice removed its bonds at TWELVE
+        times that strain -- 3,600 MPa -- so a 5 m drop putting about 414 MPa
+        of bending in the top did nothing at all. Nobody had measured the 12.
+        Ceramics are purely elastic to fracture, with no plastic reserve for a
+        multiplier to stand for, so it breaks AT its strength like glass.
         """
         did = bench.try_it(self.app, self.a_table("alumina ceramic", "shrug"),
                            load_kg=20, from_m=5.0, seconds=1.5)
-        print(f"    20 kg from 5 m on alumina ceramic -> {bench._outcome(did)} (known, see #glass)")
-        self.assertEqual("held", bench._outcome(did))
-        self.assertEqual([], did["broke"])
+        print(f"    20 kg from 5 m on alumina ceramic -> {bench._outcome(did)}")
+        self.assertEqual("broke", bench._outcome(did))
+        self.assertTrue(did["broke"])
+        # And it still takes a real blow to do it: a metre does nothing, which
+        # is what 300 MPa of strength is for.
+        gentle = bench.try_it(self.app, self.a_table("alumina ceramic", "gentle"),
+                              load_kg=20, from_m=1.0, seconds=1.5)
+        self.assertEqual("held", bench._outcome(gentle))
 
     def test_nothing_bends_sags_or_buckles(self):
         """There is no folding-under in this world, and that is architecture.
