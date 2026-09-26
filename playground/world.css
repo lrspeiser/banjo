@@ -292,7 +292,11 @@ kbd {
 .mp-chat-log li.you { align-self: flex-end; background: #243a2a; }
 .mp-chat-log li .who { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
 #mp-chat-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
-#mp-chat-say { min-width: 0; }
+/* Light text on a dark box, as the room's own ask box is: the machine's
+   chat box was the browser's white, with the same light ink on it. */
+#mp-chat-say { min-width: 0; background: #0a1013; color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 7px 10px; font: inherit; }
+#mp-chat-say:focus { outline: 2px solid var(--z); outline-offset: 1px; }
+input[type="range"] { background: transparent; }
 
 /* 3. The tabs. They used to take a fixed 27vh whatever was in them, so an empty
    Notes tab held back a third of the side view from the chat above it. They now
