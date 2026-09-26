@@ -108,6 +108,11 @@ def spec_digest(spec: Any) -> str:
     for key in ("terrain", "water"):
         if isinstance(plain.get(key), dict) and not plain[key]:
             del plain[key]
+    # The room's account of goods (machine_goods) is what machines have dug,
+    # heaped and made, kept beside the world and changed as they work: not
+    # what the world is made of. Measured 2026-09-26: an empty block written
+    # at open made a funded room refuse its own saved world.
+    plain.pop("goods", None)
     text = json.dumps(plain, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
