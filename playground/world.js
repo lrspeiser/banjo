@@ -2823,6 +2823,32 @@ function detailsModel() {
       if (rows[i][1] === "heat it") rows.splice(i, 1);
     }
   }
+  // WHAT A MACHINE IS DOING AND WHAT IS IN IT, ON THE THING ITSELF.
+  // Its routine used to be shown only in the machine panel, a second click
+  // away behind the other panes, so a rover that had just dug 12 kg of copper
+  // ore read exactly like one that had done nothing at all -- the owner,
+  // 2026-09-26: "i can't see what its trying to do, did it dig? did it get
+  // something? nothing visual happens". A machine's parts are named
+  // "rover: left wheel", so the program is what stands before the colon.
+  //
+  // The NAME comes from the aim and not from the body, because a body entry
+  // in world.bodies has no name on it at all -- the name is the map's key.
+  // Reading focused.name gave undefined, the lookup asked for "" every time,
+  // and the line silently never appeared however right everything else was.
+  const lookingAt = String(held?.name || world.aim?.name || "");
+  const running = lookingAt && world.brains
+    ? world.brains.get(lookingAt.split(":")[0].trim()) : null;
+  if (running && running.routine && running.routine.of) {
+    const r = running.routine, load = r.load || null;
+    const got = load && load.goods_kg && Object.keys(load.goods_kg).length
+      ? Object.entries(load.goods_kg).map(([what, kg]) => `${(+kg).toFixed(1)} kg of ${what}`).join(", ")
+      : load && load.kg > 0.05 ? `${load.kg.toFixed(1)} kg of soil and sand`
+        : "nothing yet";
+    model.facts += ` · ${r.doing || "idle"}`
+      + (load ? ` · carrying ${got}, of ${Math.round(load.capacity_kg)} kg it can hold` : "");
+    const said = r.notes && r.notes.length ? r.notes[r.notes.length - 1] : "";
+    if (said) model.note = [model.note, said].filter(Boolean).join(" · ");
+  }
   if (world.doing) model.note = `${world.doing}: doing it…`;
   return model;
 }

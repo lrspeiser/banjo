@@ -558,6 +558,9 @@ class Brains:
         self._deciders = deciders
         self.brains: dict[str, Brain] = {}
         self.modes: dict[str, str] = {}            # kept across rooms, by name
+        #: What the page was last told each machine was showing (_showing), so
+        #: a hopper filling reaches it and an unchanged machine costs nothing.
+        self._sent: dict[str, tuple] = {}
         self.spec: dict[str, Any] | None = None    # the room's, for what each program's routine is
         self.person: dict[str, Any] | None = None  # where the person last said they stood
         # The room's goods ledger (machine_goods.Goods), over the spec's own
@@ -589,10 +592,20 @@ class Brains:
         for name, brain in self.brains.items():
             self.modes[name] = brain.mode
         self.brains.clear()
+        self._sent.clear()
         self.spec = spec
         import machine_goods
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
+        # A brain for every program the room declares, now, so that the page
+        # is told what each machine is doing and carrying the moment the room
+        # opens. Made only when the first step ran, `summaries()` at open
+        # returned nothing and the page's own list of them stayed empty until
+        # a routine happened to change step -- which is tens of seconds, and
+        # is why a machine looked like it was doing nothing at all.
+        for program in ((spec or {}).get("machines") or {}).get("programs") or []:
+            if isinstance(program, dict) and program.get("name"):
+                self.of(str(program["name"]))
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})
@@ -647,11 +660,31 @@ class Brains:
                     _log.info("banjo: the routine of %s: %s", brain.name, did.get("did"))
                 brain.report_finished()
 
+    def _showing(self, brain: Brain) -> tuple:
+        """What a person watching a machine would notice changing about it.
+
+        `changed` alone is set when a routine TAKES a step, which is once every
+        tens of seconds; between those the hopper fills kilogram by kilogram
+        and the page hears none of it. Somebody watching to see whether their
+        rover dug anything is watching exactly this.
+        """
+        r = brain.routine.summary()
+        load = r.get("load") or {}
+        return (r.get("step"), r.get("doing"), r.get("on"), r.get("paused_by"),
+                round(float(load.get("kg") or 0.0), 2), load.get("trips"),
+                tuple(sorted((k, round(float(v), 2)) for k, v in (load.get("goods_kg") or {}).items())),
+                len(r.get("notes") or []))
+
     def attach(self, body: Any, answer: Any) -> None:
         """On a step's answer, the brains the page has not heard the latest of."""
         if not isinstance(body, dict) or body.get("op") != "step" or not isinstance(answer, dict):
             return
-        changed = [b for b in self.brains.values() if b.changed]
+        changed = []
+        for brain in self.brains.values():
+            showing = self._showing(brain)
+            if brain.changed or self._sent.get(brain.name) != showing:
+                changed.append(brain)
+                self._sent[brain.name] = showing
         if not changed:
             return
         answer["brains"] = [b.summary() for b in changed]

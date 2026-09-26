@@ -21,8 +21,8 @@
    "anchored": true,
    "center_mm": [
     -7880.0,
-    1268.3,
-    -3000.0
+    1268.8,
+    -1750.0
    ],
    "material": "concrete",
    "name": "smelter",
@@ -383,8 +383,8 @@
     "area_m2": 0.3,
     "at_mm": [
      -7880.0,
-     1668.3,
-     -3000.0
+     1668.8,
+     -1750.0
     ],
     "body": "smelter",
     "efficiency": 0.2,

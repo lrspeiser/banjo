@@ -104,9 +104,22 @@ def compose(ground: dict, world: dict) -> dict:
             {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
         ]}
 
-    # The smelter: a block by its own intake, with a battery, a panel and the
-    # program that works one recipe between two heaps.
-    at = middle
+    # The smelter: a block BESIDE the line between its two heaps, with a
+    # battery, a panel and the program that works one recipe between them.
+    #
+    # NOT ON THE LINE. Stood at the midpoint it is exactly what anything
+    # driving from one heap to the other runs into: the rover came back with
+    # a full hopper, met 600 mm of concrete nose-first, and sat against it for
+    # 180 seconds re-issuing the same order, because go_to steers straight at
+    # where it is going and knows nothing of what is between. A metre and a
+    # quarter to the side still reaches both heaps -- 1.95 m to each against
+    # machine_goods' 2 m of reach past their 0.8 m edge -- and leaves the way
+    # between them open.
+    span = math.hypot(rack[0] - intake[0], rack[1] - intake[1]) or 1.0
+    side = (-(rack[1] - intake[1]) / span, (rack[0] - intake[0]) / span)
+    beside = [(middle[0] + s * 1.25 * side[0], middle[1] + s * 1.25 * side[1]) for s in (1.0, -1.0)]
+    dry = [p for p in beside if not ws.wet_near(ground, p[0], p[1], 0.8)]
+    at = min(dry or beside, key=lambda p: ws.flatness(ground, p[0], p[1], 0.8))
     body, top = mine.block(ground, "smelter", at)
     spec["bodies"].append(body)
     still = mine.STILL
