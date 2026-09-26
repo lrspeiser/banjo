@@ -1509,6 +1509,15 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_brain_tests.py -v)
     set_tests_properties(banjo_rover_brain_tests PROPERTIES TIMEOUT 300)
+    # And the Workshop's robot parts: the rover assembled from the library's
+    # components, the bench chat's sensor and routine tools, and the rover
+    # installed into a room as exact bodies on pins, roaming dry.
+    add_test(NAME banjo_workshop_rover_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_rover_tests.py -v)
+    set_tests_properties(banjo_workshop_rover_tests PROPERTIES TIMEOUT 300)
     # And what a break costs: the room's failure law reaching the engine, and
     # the account the world gives of a break in the tests-break room.
     add_test(NAME banjo_break_room_tests

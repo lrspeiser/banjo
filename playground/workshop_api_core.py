@@ -104,6 +104,10 @@ def _label(kind: str, values: dict[str, Any], spec: Any) -> str:
 
 def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[str, Any]:
     engine_materials.synchronize_workshop_model()
+    # A template with joints and machines of its own (Assembly.overrides)
+    # opens with them, unless the person's own overrides are given.
+    if overrides in (None, {}) and (design.lineage or {}).get("component_overrides"):
+        overrides = design.lineage["component_overrides"]
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
     wire["component_overrides"] = workshop_components.checked_overrides(overrides)

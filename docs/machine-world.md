@@ -849,6 +849,73 @@ Not built yet: seasons, since every day is an equinox's; the moon; clouds; the
 day's heat warming anything; a machine that plans for the night rather than
 running until it is low.
 
+## The Workshop's robot parts
+
+**Status, 2026-09-25.** A robot can be assembled on the bench from prebuilt
+components, its machines declared there in full, and installed into the
+room as the exact bodies on pins the room's own rover is made of, where its
+program, its senses, its routine and the chat all work on it as on the
+hand-written one. The owner's aim: the bench chat assembles it, the person
+brings it into the world and talks to it.
+
+**The components** are families in the Workshop's library
+(`mcp/workshop.py`, `MACHINE_FAMILIES`), so the bench chat can search,
+place and fasten them: `mount` (a bearing mount hung under a deck),
+`drive-wheel` (a wheel on its own short iron stub, which turns in a mount; a
+motor goes on the mount and the stub), `caster` (a swivel pin up into a
+mount, a fork, and a trailing wheel: six parts), `battery` (a box that holds
+a store), `solar-panel` (a glass collector facing up), `hopper` (a bin a dig
+routine fills). Every one is the room's rover's own, as
+`tools/build_rover_room.py` hand-writes it.
+
+**The rover template** (`mcp/workshop_products.py`, kind `rover`) composes
+them -- 17 parts -- and, being a machine, says everything about itself that
+a template of furniture leaves to the bench: every joint is authored (13
+fixed, 4 bearings: the two wheel stubs in their mounts, the swivel in the
+caster mount, the caster wheel on its pin), its machines are declared
+(battery, two motors, two controls named left and right wheel, a panel, a
+roam program with two water eyes half a metre ahead of the deck and a dig
+routine with a 40 kg hopper), and every part asks for the exact model. An
+assembly may carry such overrides now (`Assembly.overrides`), and the bench
+opens the template with them.
+
+**What a design can now declare** (`mcp/workshop_machines.py`): a program's
+`sensors` (a water eye at a point on a component, in the design's own
+metres, and its depth) and its `routine` (kind, hopper, what a scoop costs;
+the places it works between are the room's, given at install); a panel's
+`at_m` and `normal`, or the installer takes its component's top. The bench
+chat has `add_sensor` and `set_routine` beside `add_power_part` and
+`set_program`, and Check Validity says when a sensor sits on nothing or a
+dig routine has no hopper. A program's chassis is the body both wheels' pins
+turn on, not the alphabetically first. The design side allows only the
+program kinds the room has ("roam"), so nothing is refused at the door.
+
+**Installing it** (`playground/workshop_install.py`, `_preview_exact`): a
+design that asks for the exact model and has bearings or machines is
+compiled by `rigid_assembly` -- its fixed groups as compounds of their own
+parts, its bearings as pins -- set down facing +z at the point asked, lifted
+so nothing starts below the ground, and written into the room as
+`precise_rigid_bodies`, `joints`, actions, interaction points and a
+`machines` block in the room's own words: sensor and panel points carried
+from the design's frame to where it stands. A routine's places, when the
+install names none, are its dig site three metres ahead and its depot three
+metres behind, said in the receipt. The staged world is checked as every
+install is: the old bodies exact, the new pins the design's, a machine
+counter allowed to begin counting. Powering happens when the room is next
+opened, as for every installed machine.
+
+Measured in `tests/workshop_rover_tests.py`, in the real engine: the rover
+from the bench, installed in the empty basin by the lake, compiled to five
+bodies on four pins, was powered as the room opened, roamed 14.1 m in 20 s
+turning away once, with 0 mm of water under any wheel; its routine knew its
+two places; opened to talk, it turned to the person and took "stop".
+
+Not built yet: the bench's Check Validity redraws are the lattice bench's
+and say nothing useful about an exact-body machine (the rover is checked by
+compiling, not redrawing); a way to set a routine's places from the page; a
+motor's own bench trial (`cart_roll` pushes a cart, it does not drive one);
+and any component beyond the rover's.
+
 ## A machine's senses and its tools
 
 **Status, 2026-09-25.** A machine knows the world only through its senses,

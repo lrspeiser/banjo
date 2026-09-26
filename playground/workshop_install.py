@@ -494,7 +494,9 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         # The world numbers what it makes, so bringing a motor or a store moves
         # that counter on. It may go forward and never back: a counter that fell
         # would mean an id about to be handed out twice.
-        if str(key).startswith("next") and type(was) is int and type(now) is int and now >= was:
+        if str(key).startswith("next") and type(now) is int and (was is None or (type(was) is int and now >= was)):
+            # Absent before: the first of its kind was just made, and the
+            # world began to count them.
             continue
         raise ValueError(f"Staging changed existing {key}; installation refused")
     bg, ag = before.get("material_geometry"), after.get("material_geometry")
@@ -542,6 +544,15 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift):
         elif matter.get("schema") == workshop_rigid.SCHEMA:
             _preserved(snapshot, saved, root)
             precise_rigid.verify(saved, matter, root)
+        elif matter.get("schema") == "banjo.rigid-assembly.v1":
+            # Exact bodies on pins: each is there, exact, with the mass its
+            # parts have; and the pins are the design's.
+            _preserved(snapshot, saved, root, added_joints=matter["joints"])
+            have = {b["name"]: b for b in saved["bodies"]}
+            for body in matter["bodies"]:
+                found = have.get(body["name"])
+                if found is None or found.get("mechanical_model") != precise_rigid.MODEL:
+                    raise ValueError("Native precise rigid body is missing or not exact: " + body["name"])
         else:
             _preserved(snapshot, saved, root)
             sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
@@ -580,7 +591,7 @@ def _with_needs(app: Any, design: Any, answer: dict[str, Any]) -> dict[str, Any]
 
 
 def preview(app: Any, body: Any) -> dict[str, Any]:
-    body = _object(body, {"session", "scene", "mode", "candidate", "position_m"})
+    body = _object(body, {"session", "scene", "mode", "candidate", "position_m", "places"})
     if body.get("mode") != "authoring":
         raise ValueError("Choose authoring mode explicitly. Inventory-funded fabrication is not implemented; no resources have been charged")
     pos = body.get("position_m")
@@ -592,6 +603,11 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
         models = workshop_rigid.requested_models(design, overrides)
+        if models == {"rigid"} and (workshop_articulation.has_bearings(design) or workshop_machines.of(design)):
+            # A machine, or anything on pins, asked for exactly: exact bodies
+            # on pins, as the room's rover is made (rigid_assembly).
+            return _with_needs(app, design, _preview_exact(app, room, live, old, design, overrides, pos,
+                                                           body.get("candidate"), body.get("places")))
         if models == {"rigid"}:
             return _with_needs(app, design, _preview_rigid(app, room, live, old, design, overrides, pos))
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
@@ -738,6 +754,104 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
                     "source_hash":_hash([saved,room.spec,_inventory(room)]),
                     "spec":spec, "matter":artifact, "root":roots, "shift":shift,
                     "candidate_hash":_hash(candidate)}
+    return answer
+
+
+def _default_places(pos, routine):
+    """Where a routine works when the install names no places: its dig site
+    three metres ahead (+z) of where it is set down, its depot three metres
+    behind. Said in the receipt, so the person can move them."""
+    import machine_routine
+    spec = machine_routine.ROUTINES.get(routine.get("kind") or "roam") or {}
+    out = {}
+    for i, name in enumerate(spec.get("places") or []):
+        out[name] = [round(pos[0], 3), round(pos[1] + (3.0 if i == 0 else -3.0), 3)]
+    return out
+
+
+def _preview_exact(app, room, live, old, design, overrides, pos, candidate, places):
+    """A design installed as exact rigid bodies on pins (rigid_assembly): its
+    rigid groups as compounds of their own parts, its bearings as hinges, and
+    what drives it in the room's own words, sensors and panels carried from the
+    design's frame to where it stands. Set down at `pos` facing +z, lifted so
+    nothing starts below the ground."""
+    import rigid_assembly
+    saved = _snapshot(live)
+    if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
+        raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not declare support")
+    root = "workshop-" + uuid.uuid4().hex[:16]
+    artifact = rigid_assembly.compile_design(design, overrides, root=root)
+    flat = rigid_assembly.placed(artifact, [pos[0], 0.0, pos[1]], 0.0, 0.0)
+    lift = 0.0
+    for low, lo, hi in rigid_assembly.footprint(flat):
+        floor = _terrain_floor(old, ((lo[0], low, lo[1]), (hi[0], low, hi[1]))) if room.spec.get("terrain") else 0.0
+        lift = max(lift, floor + 0.002 - low)
+    origin = [pos[0], lift, pos[1]]
+    set_down = rigid_assembly.placed(artifact, origin, 0.0, 0.0)
+    bodies = rigid_assembly.scene_bodies(set_down)
+    pins = rigid_assembly.scene_joints(set_down)
+    actions, points = rigid_assembly.room_entries(design, set_down)
+    # Points and directions of the design's frame in the room's: set down
+    # facing +z with no turn, a point moves by the origin and a direction is
+    # unchanged.
+    frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)], lambda d: [float(v) for v in d])
+    record = workshop_machines.of(design)
+    routine = ((record.get("programs") or [{}])[0]).get("routine") if record else None
+    if routine and not places:
+        places = _default_places(pos, routine)
+    if places is not None and (not isinstance(places, dict) or len(places) > 16):
+        raise ValueError("places maps at most 16 names to [x, z] in the room's metres")
+    made = workshop_machines.installed(design, set_down["component_to_body"], frame, places)
+    spec = deepcopy(room.spec)
+    spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + bodies
+    for field, extra in (("joints", pins), ("actions", actions), ("interaction_points", points)):
+        spec[field] = (spec.get(field) or []) + extra
+    if made:
+        machines = deepcopy(spec.get("machines") or {})
+        for kind, rows in made.items():
+            if kind == "schema":
+                continue
+            machines[kind] = (machines.get(kind) or []) + rows
+        spec["machines"] = machines
+    # Admission before any new process; this does not rewrite old declarations.
+    normalised = precise_rigid.normalise(spec["precise_rigid_bodies"], spec)
+    spec["precise_rigid_bodies"] = normalised
+    new_names = {b["name"] for b in bodies}
+    for body in normalised:
+        if body["name"] not in new_names:
+            continue
+        bounds = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+        for existing in saved["bodies"]:
+            if "parked" in existing:
+                continue
+            lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
+            if all(bounds[0][a] < hi[a]+.001 and bounds[1][a] > lo[a]-.001 for a in range(3)):
+                raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
+    fracture_lab.validate(spec)
+    roots = set(new_names)
+    staged, _ = _stage(app, live, old, spec, saved, set_down, roots, None)
+    staged.session.close()
+    token = uuid.uuid4().hex
+    mass = sum(sum(rigid_assembly._mass(p) for p in design.parts if p.name in b["_components"]) for b in set_down["bodies"])
+    answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
+              "scene": room.scene, "session": old.id, "mode": "authoring", "root_body": root,
+              "root_bodies": sorted(roots), "component_to_body": set_down["component_to_body"],
+              "source_joints": set_down["source_joints"], "design_id": design.design_id,
+              "mechanical_model": precise_rigid.MODEL, "cell_size_m": float(old.spec["cell_m"]),
+              "cells": 0, "mass_kg": round(mass, 4), "requested_position_m": pos,
+              "placement_grid": None, "applied_translation_m": origin, "machines": made,
+              "places": places or {}, "engine_grid_verified": False,
+              "native_precise_geometry_verified": True, "existing_state_preserved": True,
+              "resources_charged": False, "strength_certified": False, "expires_in_s": PREVIEW_TTL_S,
+              "limits": "Exact bodies on ideal pins: no bearing strength, wear or friction; no internal failure. "
+                        + precise_rigid.LIMITS}
+    cache = _preview_cache(app)
+    while len(cache) >= MAX_PREVIEWS:
+        del cache[next(iter(cache))]
+    cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
+                    "source_hash": _hash([saved, room.spec, _inventory(room)]),
+                    "spec": spec, "matter": set_down, "root": roots, "shift": None,
+                    "candidate_hash": _hash(candidate)}
     return answer
 
 

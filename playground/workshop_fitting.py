@@ -156,6 +156,12 @@ def concepts(design: Any) -> list[dict[str, Any]]:
             for side in ("left", "right"):
                 if program[side] not in controls:
                     wrong.append(f"the program's {side} is {program[side]}, which is not a control here")
+            for sensor in program.get("sensors") or []:
+                if sensor["on"] not in names:
+                    wrong.append(f"a sensor sits on {sensor['on']}, which is not here")
+            routine = program.get("routine") or {}
+            if routine.get("kind") == "dig" and not routine.get("hopper_kg"):
+                wrong.append("its routine digs but it has no hopper")
         said.append({"concept": "what drives it is wired to what is there",
                      "ok": not wrong,
                      "says": workshop_machines.described(design)["says"] if not wrong

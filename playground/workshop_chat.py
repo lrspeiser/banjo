@@ -318,12 +318,35 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "parameters": {"type": "object", "additionalProperties": False,
                         "required": ["kind", "left", "right"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam", "drive"]},
+                            "kind": {"type": "string", "enum": ["roam"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
                             "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
                             "rest_below": {"type": "number", "minimum": 0, "maximum": 1},
                             "rest_until": {"type": "number", "minimum": 0, "maximum": 1}}}},
+        {"type": "function", "name": "add_sensor",
+         "description": "A water eye for the program: a point on a component, in the design's own metres "
+                        "(the floor at y = 0, its front towards +z, its left towards +x), that reads the depth "
+                        "of water under it; deeper than depth_m and the program turns away. The room's rover "
+                        "has two, half a metre ahead of its deck and 0.55 m either side of the middle. The "
+                        "program must be set first.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["on", "at_m"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["water"]},
+                            "on": {"type": "string", "description": "the component the point is on"},
+                            "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                            "depth_m": {"type": "number", "minimum": 0.001, "maximum": 10}}}},
+        {"type": "function", "name": "set_routine",
+         "description": "What the machine does on its own when nobody is telling it anything: 'dig' goes to "
+                        "its dig site, fills its hopper (hopper_kg), carries the load to its depot and dumps "
+                        "it, again and again; 'roam' wanders by its reflexes. The places it works between are "
+                        "the room's, given when it is installed. work_j_per_kg is what a scoop costs its "
+                        "battery. The program must be set first.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["kind"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["dig", "roam"]},
+                            "hopper_kg": {"type": "number", "minimum": 0.1, "maximum": 1000},
+                            "work_j_per_kg": {"type": "number", "minimum": 0, "maximum": 10000}}}},
         {"type": "function", "name": "check_validity",
          "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
@@ -514,7 +537,7 @@ class _State:
                          "Appearance only: the mass, the joints and the bench results are unchanged."),
             })
 
-        if tool in ("add_power_part", "set_program"):
+        if tool in ("add_power_part", "set_program", "add_sensor", "set_routine"):
             record = dict(workshop_machines.of_overrides(self.overrides) or {})
             for key in ("stores", "motors", "panels", "controls", "programs"):
                 record[key] = list(record.get(key) or [])
@@ -524,9 +547,30 @@ class _State:
                 record[{"store": "stores", "motor": "motors",
                         "panel": "panels", "control": "controls"}[kind]].append(fields)
                 said = f"added a {kind}"
-            else:
-                record["programs"] = [{k: v for k, v in args.items() if v is not None}]
+            elif tool == "set_program":
+                # A program set again keeps the sensors and the routine it had.
+                was = record["programs"][0] if record["programs"] else {}
+                program = {k: v for k, v in args.items() if v is not None}
+                for keep in ("sensors", "routine"):
+                    if keep in was:
+                        program[keep] = was[keep]
+                record["programs"] = [program]
                 said = f"it runs a {args.get('kind')} program"
+            elif tool == "add_sensor":
+                if not record["programs"]:
+                    raise ValueError("set the program first: a sensor is something the program reads")
+                program = dict(record["programs"][0])
+                program["sensors"] = list(program.get("sensors") or []) + [
+                    {k: v for k, v in args.items() if v is not None}]
+                record["programs"] = [program]
+                said = f"added a {args.get('kind') or 'water'} sensor on {args.get('on')}"
+            else:
+                if not record["programs"]:
+                    raise ValueError("set the program first: a routine is what the program does on its own")
+                program = dict(record["programs"][0])
+                program["routine"] = {k: v for k, v in args.items() if v is not None}
+                record["programs"] = [program]
+                said = f"its routine is to {args.get('kind')}"
             checked = workshop_machines.checked(record)
             self.overrides = {**self.overrides, workshop_machines.MACHINES_KEY: checked}
             self.design = workshop_components.apply_overrides(self.base, self.overrides)

@@ -92,6 +92,119 @@ def _build_cart(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.W
     return parts
 
 
+# ---------------------------------------------------------------------------
+# The rover (docs/machine-world.md, "The Workshop's robot parts"): the machine
+# tools/build_rover_room.py hand-writes, assembled from the library's own
+# components, with every joint authored and its machines declared, so the bench
+# chat can open it, change it, and install it as exact bodies on pins.
+# ---------------------------------------------------------------------------
+
+ROVER_PARAMETERS = (
+    w.Parameter("width_m", "m", 0.7, 0.3, 2.0),
+    w.Parameter("depth_m", "m", 1.0, 0.4, 3.0),
+    w.Parameter("deck_height_m", "m", 0.38, 0.2, 1.0, about="the deck's top above the floor"),
+    w.Parameter("top_thickness_m", "m", 0.04, 0.01, 0.1),
+    w.Parameter("wheel_diameter_m", "m", 0.32, 0.1, 1.0),
+    w.Parameter("wheel_width_m", "m", 0.06, 0.02, 0.2),
+    w.Parameter("wheel_inset_m", "m", 0.18, 0.05, 1.0, about="the drive wheels' axle forward of the back edge"),
+    w.Parameter("capacity_j", "J", 100000.0, 100.0, 1e8),
+    w.Parameter("charge_j", "J", 100000.0, 0.0, 1e8),
+    w.Parameter("hopper_kg", "kg", 40.0, 1.0, 500.0),
+    w.Parameter("material", "", "oak", choices=("oak", "iron")),
+)
+ROVER_MOTOR = {"stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
+ROVER_SENSOR_DEPTH_M = 0.003
+
+
+def _build_rover(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    material = str(values["material"])
+    width, depth = float(values["width_m"]), float(values["depth_m"])
+    deck_y, top_t = float(values["deck_height_m"]), float(values["top_thickness_m"])
+    wheel_d, wheel_w = float(values["wheel_diameter_m"]), float(values["wheel_width_m"])
+    under = deck_y - top_t
+    hub_y = wheel_d / 2.0
+    axle_z = -depth / 2.0 + float(values["wheel_inset_m"])
+    if under <= hub_y + 0.02:
+        raise ValueError("rover deck_height_m must leave room above the wheels' axle")
+    parts: list[w.WirePart] = []
+    parts += library.make("surface", name="deck", material=material, at_m=(0.0, deck_y, 0.0),
+                          parameters={"width_m": width, "thickness_m": top_t, "depth_m": depth,
+                                      "profile": "square"}).parts
+    mount_h = under - hub_y
+    mount_x = width / 2.0 - 0.1575
+    for side, sx in (("left", 1.0), ("right", -1.0)):
+        parts += library.make("mount", name=f"{side} mount", material=material,
+                              at_m=(sx * mount_x, under - mount_h / 2.0, axle_z),
+                              parameters={"height_m": mount_h}).parts
+        parts += library.make("drive-wheel", name=f"{side} wheel", material=material,
+                              at_m=(sx * (mount_x + 0.1875), hub_y, axle_z),
+                              parameters={"diameter_m": wheel_d, "width_m": wheel_w, "side": sx}).parts
+    caster_z = depth / 2.0 - 0.12
+    parts += library.make("mount", name="caster mount", material=material,
+                          at_m=(0.0, under - 0.015, caster_z), parameters={"section_m": 0.10, "height_m": 0.03}).parts
+    parts += library.make("caster", name="caster", material="iron", at_m=(0.0, under - 0.03, caster_z),
+                          parameters={}).parts
+    parts += library.make("solar-panel", name="solar panel", material="glass", at_m=(0.0, deck_y, -depth * 0.25),
+                          parameters={"width_m": min(0.4, width - 0.1), "depth_m": min(0.4, depth * 0.4)}).parts
+    parts += library.make("battery", name="battery", material=material, at_m=(0.0, deck_y, depth * 0.10),
+                          parameters={}).parts
+    parts += library.make("hopper", name="hopper", material=material, at_m=(0.0, deck_y, depth * 0.35),
+                          parameters={}).parts
+    return parts
+
+
+def _rover_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    """Every joint, what drives it, and the exact model for every part."""
+    from . import workshop_construction, workshop_machines
+    joints = []
+
+    def joint(kind, a, b):
+        joints.append({"id": f"joint-{len(joints) + 1}", "kind": kind, "a": a, "b": b,
+                       "method": "bearing" if kind == "bearing" else "bonded"})
+
+    for name in ("solar panel", "left mount", "right mount", "caster mount", "battery", "hopper"):
+        joint("fixed", "deck", name)
+    for side in ("left", "right"):
+        joint("bearing", f"{side} mount", f"{side} wheel stub")
+        joint("fixed", f"{side} wheel stub", f"{side} wheel")
+    joint("bearing", "caster mount", "caster swivel")
+    joint("fixed", "caster swivel", "caster plate")
+    joint("fixed", "caster plate", "caster left cheek")
+    joint("fixed", "caster plate", "caster right cheek")
+    joint("fixed", "caster left cheek", "caster pin")
+    joint("fixed", "caster right cheek", "caster pin")
+    joint("bearing", "caster pin", "caster wheel")
+    construction = {"schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+                    "joints": joints, "added": [], "removed": []}
+    depth = float(values["depth_m"])
+    deck_y = float(values["deck_height_m"])
+    machines = workshop_machines.checked({
+        "stores": [{"name": "rover battery", "in": "battery", "capacity_j": values["capacity_j"],
+                    "charge_j": values["charge_j"], "voltage_v": 24.0}],
+        "motors": [{"name": f"{side} motor", "turns": [f"{side} mount", f"{side} wheel stub"],
+                    "store": "rover battery", **ROVER_MOTOR} for side in ("left", "right")],
+        "controls": [{"name": f"{side} wheel", "turns": [f"{side} mount", f"{side} wheel stub"]}
+                     for side in ("left", "right")],
+        "panels": [{"name": "solar panel", "on": "solar panel", "store": "rover battery", "area_m2": 0.2,
+                    "efficiency": 0.2}],
+        "programs": [{"kind": "roam", "left": "left wheel", "right": "right wheel", "setting": 1.0, "climb_deg": 8.0,
+                      # Its water eyes: half a metre ahead of the deck, 0.55 m
+                      # either side of the middle, as the room's rover has them.
+                      "sensors": [{"kind": "water", "on": "deck", "at_m": [sx * 0.55, deck_y - 0.02, depth / 2.0 + 0.5],
+                                   "depth_m": ROVER_SENSOR_DEPTH_M} for sx in (1.0, -1.0)],
+                      "routine": {"kind": "dig", "hopper_kg": values["hopper_kg"]}}],
+    })
+    out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,
+                           workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _rover_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{"kind": "cart_roll", "push_speed_m_s": 1.0, "duration_s": 1.5}]
+
+
 def _kettle_capacity_l(values: dict[str, Any]) -> float:
     width = float(values["width_m"]); depth = float(values["depth_m"])
     height = float(values["vessel_height_m"]); wall = float(values["wall_thickness_m"])
@@ -178,10 +291,17 @@ def install() -> None:
             w.Parameter("material", "", "iron", choices=("iron", "aluminium", "steel")),
         ), _build_kettle, _kettle_trials)
 
+    existing["rover"] = w.Assembly(
+        "rover", "roam, dig and carry on its own",
+        "A deck on two driven wheels and a caster, with a battery, a solar panel, a hopper and two water eyes: "
+        "the room's rover, as exact bodies on pins, with its program and its dig routine.",
+        ROVER_PARAMETERS, _build_rover, _rover_trials, _rover_overrides)
+
     ordered, seen = [], set()
     for assembly in w.ASSEMBLIES:
         ordered.append(existing[assembly.name]); seen.add(assembly.name)
     if "kettle" not in seen: ordered.append(existing["kettle"])
+    if "rover" not in seen: ordered.append(existing["rover"])
     w.ASSEMBLIES = tuple(ordered)
     w._BY_NAME = {assembly.name: assembly for assembly in w.ASSEMBLIES}
     _INSTALLED = True

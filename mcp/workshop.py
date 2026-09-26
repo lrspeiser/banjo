@@ -403,6 +403,125 @@ def _wheel(*, name: str, at_m: Iterable[float], material: str, diameter_m: float
     return Component(parts=[part], anchors={"hub": at})
 
 
+# ---------------------------------------------------------------------------
+# A machine's components (docs/machine-world.md, "The Workshop's robot parts"):
+# what a robot is put together from, each a component the bench chat can
+# search, place and fasten -- a bearing mount, a driven wheel on its stub, a
+# caster, a battery, a solar panel, a hopper. Every one is the rover's own, as
+# tools/build_rover_room.py hand-writes it, so a machine assembled from them
+# is the machine the room has run since September 22.
+# ---------------------------------------------------------------------------
+
+def _mount(*, name: str, at_m: Iterable[float], material: str, section_m: float,
+           height_m: float) -> Component:
+    """A bearing mount: a block hung under a deck, a shaft through it."""
+    at = _finite3("at_m", at_m)
+    part = WirePart(name=name, role="bearing_mount", size_m=(section_m, height_m, section_m),
+                    center_m=at, material=material, family="mount")
+    return Component(parts=[part], anchors={"centre": at, "top": (at[0], at[1] + height_m / 2, at[2]),
+                                            "bottom": (at[0], at[1] - height_m / 2, at[2])})
+
+
+def _drive_wheel(*, name: str, at_m: Iterable[float], material: str, diameter_m: float,
+                 width_m: float, stub_diameter_m: float, stub_length_m: float, side: float) -> Component:
+    """A driven wheel on its own short iron stub, which turns in a mount:
+    the stub reaches inward from the wheel's hub, along x, `side` +1 for the
+    machine's left (+x) and -1 for its right. A motor goes on the pair mount
+    and stub; the wheel is fixed to the stub."""
+    at = _finite3("at_m", at_m)
+    s = 1.0 if float(side) >= 0 else -1.0
+    stub_centre = (at[0] - s * (width_m / 2 + stub_length_m / 2 - 0.02), at[1], at[2])
+    stub = WirePart(name=f"{name} stub", role="axle", size_m=(stub_diameter_m, stub_length_m, stub_diameter_m),
+                    center_m=stub_centre, material="iron", rotation_deg=rotation_onto((1.0, 0.0, 0.0)),
+                    shape="cylinder", family="drive-wheel")
+    wheel = WirePart(name=name, role="wheel", size_m=(diameter_m, width_m, diameter_m), center_m=at,
+                     material=material, rotation_deg=rotation_onto((1.0, 0.0, 0.0)), shape="cylinder",
+                     family="drive-wheel")
+    return Component(parts=[stub, wheel], anchors={"hub": at, "stub_centre": stub_centre})
+
+
+def _caster(*, name: str, at_m: Iterable[float], material: str, diameter_m: float,
+            width_m: float, trail_m: float) -> Component:
+    """A caster: a swivel pin standing up into a mount, a plate under the
+    mount, two cheeks down from the plate, a pin across them, and a wheel on
+    the pin, trailing `trail_m` behind the swivel's axis so it swings round to
+    follow. `at_m` is the swivel's axis at the plate's top; the wheel's
+    material is `material`, the rest iron (a light caster wheel sank into the
+    ground under a heavy machine: tools/build_rover_room.py)."""
+    x, y, z = _finite3("at_m", at_m)
+    r = diameter_m / 2
+    swivel = WirePart(name=f"{name} swivel", role="axle", size_m=(0.02, 0.06, 0.02), center_m=(x, y + 0.02, z),
+                      material="iron", shape="cylinder", family="caster")
+    plate = WirePart(name=f"{name} plate", role="post", size_m=(0.08, 0.02, 0.08), center_m=(x, y - 0.01, z),
+                     material="iron", family="caster")
+    cheek_h = y - 0.02 - r
+    cheeks = [WirePart(name=f"{name} {side} cheek", role="post", size_m=(0.012, cheek_h, 0.05),
+                       center_m=(x + sx * 0.035, y - 0.02 - cheek_h / 2, z - trail_m + 0.015),
+                       material="iron", family="caster")
+              for side, sx in (("left", 1.0), ("right", -1.0))]
+    pin = WirePart(name=f"{name} pin", role="axle", size_m=(0.012, 0.082, 0.012), center_m=(x, r, z - trail_m),
+                   material="iron", rotation_deg=rotation_onto((1.0, 0.0, 0.0)), shape="cylinder", family="caster")
+    wheel = WirePart(name=f"{name} wheel", role="wheel", size_m=(diameter_m, width_m, diameter_m),
+                     center_m=(x, r, z - trail_m), material=material, rotation_deg=rotation_onto((1.0, 0.0, 0.0)),
+                     shape="cylinder", family="caster")
+    return Component(parts=[swivel, plate, *cheeks, pin, wheel],
+                     anchors={"swivel_top": (x, y + 0.05, z), "hub": (x, r, z - trail_m)})
+
+
+def _block(role: str, family: str):
+    """A box that sits on something: a battery, a hopper."""
+    def build(*, name: str, at_m: Iterable[float], material: str, width_m: float, height_m: float,
+              depth_m: float) -> Component:
+        bottom = _finite3("at_m", at_m)
+        centre = (bottom[0], bottom[1] + height_m / 2, bottom[2])
+        part = WirePart(name=name, role=role, size_m=(width_m, height_m, depth_m), center_m=centre,
+                        material=material, family=family)
+        return Component(parts=[part], anchors={"bottom": bottom, "top": (bottom[0], bottom[1] + height_m, bottom[2]),
+                                                "centre": centre})
+    return build
+
+
+def _solar_panel(*, name: str, at_m: Iterable[float], material: str, width_m: float, depth_m: float,
+                 thickness_m: float) -> Component:
+    """A flat glass collector lying on a deck, facing up."""
+    bottom = _finite3("at_m", at_m)
+    centre = (bottom[0], bottom[1] + thickness_m / 2, bottom[2])
+    part = WirePart(name=name, role="panel", size_m=(width_m, thickness_m, depth_m), center_m=centre,
+                    material="glass", family="solar-panel")
+    return Component(parts=[part], anchors={"bottom": bottom, "top": (bottom[0], bottom[1] + thickness_m, bottom[2])})
+
+
+MACHINE_FAMILIES = (
+    Family("mount", "bearing_mount", "A bearing mount: a block hung under a deck that a wheel's stub turns in.",
+           (Parameter("section_m", "m", 0.0345, 0.02, 0.2), Parameter("height_m", "m", 0.18, 0.02, 0.6)),
+           _mount, offers=("centre", "top", "bottom")),
+    Family("drive-wheel", "wheel", "A driven wheel on its own short iron stub, which turns in a mount; a motor "
+                                   "goes on the mount and the stub.",
+           (Parameter("diameter_m", "m", 0.32, 0.05, 1.2), Parameter("width_m", "m", 0.06, 0.01, 0.4),
+            Parameter("stub_diameter_m", "m", 0.03, 0.008, 0.1), Parameter("stub_length_m", "m", 0.20, 0.05, 0.6),
+            Parameter("side", "", 1.0, -1.0, 1.0, about="+1 on the machine's left (+x), -1 on its right")),
+           _drive_wheel, offers=("hub", "stub_centre")),
+    Family("caster", "wheel", "A caster: a swivel pin up into a mount, a fork, and a trailing wheel that swings "
+                              "round to follow.",
+           (Parameter("diameter_m", "m", 0.16, 0.05, 0.6), Parameter("width_m", "m", 0.04, 0.01, 0.2),
+            Parameter("trail_m", "m", 0.06, 0.0, 0.3)),
+           _caster, offers=("swivel_top", "hub")),
+    Family("battery", "post", "A battery: a box on the deck that holds joules (declare the store on it).",
+           (Parameter("width_m", "m", 0.2, 0.05, 1.0), Parameter("height_m", "m", 0.06, 0.02, 0.5),
+            Parameter("depth_m", "m", 0.18, 0.05, 1.0)),
+           _block("post", "battery"), offers=("bottom", "top", "centre")),
+    Family("solar-panel", "panel", "A flat glass collector on the deck, facing up (declare the panel on it).",
+           (Parameter("width_m", "m", 0.4, 0.05, 2.0), Parameter("depth_m", "m", 0.4, 0.05, 2.0),
+            Parameter("thickness_m", "m", 0.01, 0.004, 0.05)),
+           _solar_panel, offers=("bottom", "top")),
+    Family("hopper", "post", "A hopper: a bin on the deck that a dig routine fills (declare hopper_kg on the "
+                             "routine).",
+           (Parameter("width_m", "m", 0.3, 0.05, 1.5), Parameter("height_m", "m", 0.15, 0.03, 1.0),
+            Parameter("depth_m", "m", 0.3, 0.05, 1.5)),
+           _block("post", "hopper"), offers=("bottom", "top", "centre")),
+)
+
+
 LIBRARY_FAMILIES = (
     Family("leg", "leg",
            "A standing member. Straight, splayed out to a wider base, or tapered.",
@@ -458,6 +577,7 @@ LIBRARY_FAMILIES = (
            (Parameter("diameter_m", "m", 0.3, 0.02, 2.0),
             Parameter("width_m", "m", 0.05, 0.005, 0.5)),
            _wheel, offers=("hub",)),
+    *MACHINE_FAMILIES,
     Family("handle", "handle", "A bar to pull or lift by.",
            (Parameter("width_m", "m", 0.03, 0.005, 0.2),
             Parameter("depth_m", "m", 0.03, 0.005, 0.2)),
@@ -707,6 +827,10 @@ class Assembly:
     parameters: tuple[Parameter, ...]
     build: Callable[[ComponentLibrary, dict[str, Any]], list[WirePart]]
     trials: Callable[[dict[str, Any]], list[dict[str, Any]]]
+    # What the template says of itself beyond its parts: how they are fastened
+    # (@construction), what drives it (@machines), how each is modelled. A
+    # machine's template authors every joint, so nothing is inferred.
+    overrides: Callable[[dict[str, Any], list[WirePart]], dict[str, Any]] | None = None
 
     def defaults(self) -> dict[str, Any]:
         return {p.name: p.default for p in self.parameters}
@@ -1011,13 +1135,16 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
         from mcp import interaction_points
         values["interaction_points"] = interaction_points.checked(points)
     parts = spec.build(library, values)
+    lineage: dict[str, Any] = {"components": _component_counts(parts)}
+    if spec.overrides is not None and parts:
+        lineage["component_overrides"] = spec.overrides(values, parts)
     design = WorkshopDesign(
         design_id=design_id or kind,
         purpose=purpose or spec.purpose,
         parts=parts,
         kind=kind,
         parameters=values,
-        lineage={"components": _component_counts(parts)},
+        lineage=lineage,
         tests=spec.trials(values),
     )
     # A template with no parts of its own is only the ground a construction is
