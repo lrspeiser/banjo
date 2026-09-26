@@ -30,7 +30,7 @@ MACHINES_KEY = "@machines"
 SCHEMA = "banjo.workshop-machines.v1"
 # The room's program kinds: "roam" is the one there is (playground/fracture_lab
 # PROGRAM_KINDS); a "drive" program was allowed here and refused at the door.
-PROGRAM_KINDS = ("roam",)
+PROGRAM_KINDS = ("roam", "hover")
 SENSOR_KINDS = ("water",)
 ROUTINE_KINDS = ("dig", "roam")
 MAX_EACH = 32
@@ -110,6 +110,13 @@ def checked(value: Any) -> dict[str, Any]:
         "stall_torque_n_m": _number(row.get("stall_torque_n_m"), "stall_torque_n_m", 0.001, 1e6),
         "no_load_rpm": _number(row.get("no_load_rpm"), "no_load_rpm", 0.01, 1e5),
         "brake_torque_n_m": _number(row.get("brake_torque_n_m"), "brake_torque_n_m", 0.0, 1e6, default=0.0),
+        # A rotor on the pin: a declared propeller (docs/machine-world.md, "A
+        # rover that flies").
+        **({"rotor": {"thrust_n_per_rad2": _number((row.get("rotor") or {}).get("thrust_n_per_rad2"),
+                                                   "a rotor's thrust_n_per_rad2", 1e-6, 100.0),
+                      "drag_n_m_per_rad2": _number((row.get("rotor") or {}).get("drag_n_m_per_rad2"),
+                                                   "a rotor's drag_n_m_per_rad2", 0.0, 100.0, default=0.0)}}
+           if row.get("rotor") else {}),
     } for row in _rows(value.get("motors"), "motors")]
 
     out["panels"] = [{
@@ -137,11 +144,17 @@ def checked(value: Any) -> dict[str, Any]:
         kind = str(row.get("kind") or "").strip()
         if kind not in PROGRAM_KINDS:
             raise ValueError("a program's kind is " + " or ".join(PROGRAM_KINDS))
-        program = {"kind": kind,
-                   "left": _name(row.get("left"), "a program's left control"),
-                   "right": _name(row.get("right"), "a program's right control"),
-                   "setting": _number(row.get("setting"), "setting", 0.0, 1.0, default=1.0)}
-        if row.get("climb_deg") is not None:
+        program: dict[str, Any] = {"kind": kind, "setting": _number(row.get("setting"), "setting", 0.0, 1.0, default=1.0)}
+        if kind == "hover":
+            rotors = row.get("rotors")
+            if not isinstance(rotors, list) or len(rotors) != 4:
+                raise ValueError("a hover program names four rotor controls, in order round the machine from above")
+            program["rotors"] = [_name(r, "a rotor control") for r in rotors]
+            program["hover_m"] = _number(row.get("hover_m"), "hover_m", 0.3, 50.0, default=1.5)
+        else:
+            program["left"] = _name(row.get("left"), "a program's left control")
+            program["right"] = _name(row.get("right"), "a program's right control")
+        if row.get("climb_deg") is not None and kind != "hover":
             program["climb_deg"] = _number(row.get("climb_deg"), "climb_deg", 0.0, 89.0)
         if row.get("rest_below") is not None:
             program["rest_below"] = _number(row.get("rest_below"), "rest_below", 0.0, 1.0)
@@ -296,7 +309,8 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
         out["motors"] = [{"on": [body(m["turns"][0], "a motor"), body(m["turns"][1], "a motor")],
                           "store": m["store"], "stall_torque_n_m": m["stall_torque_n_m"],
                           "no_load_rpm": m["no_load_rpm"],
-                          "brake_torque_n_m": m["brake_torque_n_m"]} for m in record["motors"]]
+                          "brake_torque_n_m": m["brake_torque_n_m"],
+                          **({"rotor": dict(m["rotor"])} if m.get("rotor") else {})} for m in record["motors"]]
     if record.get("panels"):
         out["panels"] = []
         for p in record["panels"]:
@@ -314,14 +328,17 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
     if record.get("programs"):
         program = dict(record["programs"][0])
         controls = {c["name"]: c for c in record.get("controls") or []}
-        left, right = controls.get(program["left"]), controls.get(program["right"])
-        # Its chassis: the body both wheels' pins turn on -- the mounts are
-        # components of their own, but one body with the deck.
-        shared = ({body(c, "a control") for c in left["turns"]} & {body(c, "a control") for c in right["turns"]}
-                  if left and right else set())
-        if len(shared) != 1:
-            raise ValueError("a program's chassis is the one body both its wheels' pins turn on; "
-                             f"{program['left']!r} and {program['right']!r} share "
+        # Its chassis: the one body every drive's pin turns on -- the mounts
+        # are components of their own, but one body with the deck.
+        drives = program.get("rotors") if program["kind"] == "hover" else [program["left"], program["right"]]
+        shared: set[str] | None = None
+        for name in drives:
+            control = controls.get(name)
+            bodies = {body(c, "a control") for c in control["turns"]} if control else set()
+            shared = bodies if shared is None else shared & bodies
+        if not shared or len(shared) != 1:
+            raise ValueError("a program's chassis is the one body every drive's pin turns on; "
+                             + ", ".join(repr(d) for d in drives) + " share "
                              + (", ".join(sorted(shared)) if shared else "nothing"))
         chassis = next(iter(shared))
         made: dict[str, Any] = {k: v for k, v in program.items() if k not in ("sensors", "routine")}

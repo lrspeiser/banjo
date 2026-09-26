@@ -785,7 +785,21 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         if not any(s["name"] == store for s in stores):
             raise ValueError(f"motor {i} draws on {store!r}, and there is no store called that")
         brake = _number(motor.get("brake_torque_n_m", 0.0), 0.0, 1e9, f"motor {i} brake_torque_n_m")
-        motors.append({"on": on, "store": store,
+        rotor = None
+        if motor.get("rotor") is not None:
+            # A DECLARED propeller on the pin (docs/machine-world.md, "A rover
+            # that flies"): thrust k w^2 on the pin's first body along the pin,
+            # drag k' w^2 on the disc and its reaction on the frame.
+            given = motor["rotor"]
+            if not isinstance(given, dict) or set(given) - {"thrust_n_per_rad2", "drag_n_m_per_rad2"}:
+                raise ValueError(f"motor {i} rotor is an object: thrust_n_per_rad2 and drag_n_m_per_rad2")
+            rotor = {"thrust_n_per_rad2": _number(given.get("thrust_n_per_rad2", 0.0), 0.0, 100.0,
+                                                  f"motor {i} rotor thrust_n_per_rad2"),
+                     "drag_n_m_per_rad2": _number(given.get("drag_n_m_per_rad2", 0.0), 0.0, 100.0,
+                                                  f"motor {i} rotor drag_n_m_per_rad2")}
+            if not rotor["thrust_n_per_rad2"] > 0.0:
+                raise ValueError(f"motor {i} rotor lifts nothing: thrust_n_per_rad2 above 0")
+        motors.append({"on": on, "store": store, **({"rotor": rotor} if rotor else {}),
                        "stall_torque_n_m": _number(motor.get("stall_torque_n_m", 0.0), 0.001, 1e9,
                                                    f"motor {i} stall_torque_n_m"),
                        "no_load_rpm": _number(motor.get("no_load_rpm", 0.0), 0.001, 1e6,
@@ -942,7 +956,7 @@ def _panels(given: Any, stores: list[dict[str, Any]], named: set[str]) -> list[d
     return out
 
 
-PROGRAM_KINDS = ("roam",)
+PROGRAM_KINDS = ("roam", "hover")
 
 
 def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> list[dict[str, Any]]:
@@ -961,17 +975,22 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
         if not isinstance(program, dict):
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
-                                  "rest_below", "rest_until", "routine"}
+                                  "rest_below", "rest_until", "routine", "rotors", "hover_m"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
-                             f"setting, climb_deg, power, sensors, rest_below, rest_until and routine")
+                             f"setting, climb_deg, power, sensors, rest_below, rest_until, routine, and for a "
+                             f"hover program rotors and hover_m")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
         kind = program.get("kind", "roam")
         if kind not in PROGRAM_KINDS:
-            raise ValueError(f"program {name!r} is of kind {kind!r}; the only kind there is yet is 'roam'")
+            raise ValueError(f"program {name!r} is of kind {kind!r}; the kinds there are: "
+                             + ", ".join(repr(k) for k in PROGRAM_KINDS))
         body = str(program.get("body", ""))
+        if kind == "hover":
+            out.append(_hover_program(program, name, body, controls, named, out))
+            continue
         wheels = []
         for side in ("left", "right"):
             control = next((c for c in controls if c["name"] == str(program.get(side, ""))), None)
@@ -1006,6 +1025,48 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str]) -> li
             made["routine"] = _routine(program["routine"], name)
         out.append(made)
     return out
+
+
+def _hover_program(program: dict[str, Any], name: str, body: str, controls: list[dict[str, Any]],
+                   named: set[str], out: list[dict[str, Any]]) -> dict[str, Any]:
+    """A program that flies (docs/machine-world.md, "A rover that flies"):
+    four rotors' controllers, named in order round the machine from above,
+    each on a rotor's pin through the chassis; the height it holds its centre
+    at; the rest a program has."""
+    for key in ("left", "right", "climb_deg"):
+        if key in program:
+            raise ValueError(f"program {name!r} hovers: it has rotors, not {key}")
+    rotors = program.get("rotors")
+    if not isinstance(rotors, list) or len(rotors) != 4:
+        raise ValueError(f"program {name!r} hovers on four rotors, named in order round the machine from above")
+    made_rotors = []
+    for k, given in enumerate(rotors):
+        control = next((c for c in controls if c["name"] == str(given)), None)
+        if control is None:
+            raise ValueError(f"program {name!r} rotor {k + 1} is the controller {given!r}, and there is none")
+        if "top_out_mm" in control:
+            raise ValueError(f"program {name!r}: {control['name']!r} works a hoist, not a rotor")
+        if body not in control["on"]:
+            raise ValueError(f"program {name!r}: {control['name']!r} does not turn a rotor on {body!r}")
+        if control["name"] in made_rotors or any(control["name"] in (o.get("left"), o.get("right"), *(o.get("rotors") or []))
+                                                 for o in out):
+            raise ValueError(f"program {name!r}: {control['name']!r} is worked twice")
+        made_rotors.append(control["name"])
+    made: dict[str, Any] = {"name": name, "kind": "hover", "rotors": made_rotors, "body": body,
+                            "setting": _number(program.get("setting", 1.0), 0.01, 1.0, f"program {name!r} setting"),
+                            "hover_m": _number(program.get("hover_m", 1.5), 0.3, 50.0, f"program {name!r} hover_m"),
+                            "power": bool(program.get("power", False))}
+    if program.get("rest_below"):
+        below = _number(program["rest_below"], 0.001, 0.99, f"program {name!r} rest_below")
+        made["rest_below"] = below
+        made["rest_until"] = _number(program.get("rest_until", min(1.0, below + 0.5)), below + 0.001, 1.0,
+                                     f"program {name!r} rest_until")
+    sensors = _sensors(program.get("sensors"), name, named, stops=False)
+    if sensors:
+        made["sensors"] = sensors
+    if program.get("routine") is not None:
+        made["routine"] = _routine(program["routine"], name)
+    return made
 
 
 def _routine(given: Any, name: str) -> dict[str, Any]:

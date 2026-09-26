@@ -1374,7 +1374,7 @@ const isProgram = (m) => !!m && typeof m.doing === "string";
 // works: that machine is offered as its program, not wheel by wheel.
 function machinesOfPart(name) {
   const programs = programsNow().filter((p) => (p.parts || []).includes(name));
-  const worked = new Set(programsNow().flatMap((p) => [p.left, p.right]));
+  const worked = new Set(programsNow().flatMap((p) => [p.left, p.right, ...(p.rotors || [])]));
   return [...programs, ...controlsNow().filter((c) => !worked.has(c.id) && (c.parts || []).includes(name))];
 }
 
@@ -1548,7 +1548,14 @@ function showProgramPanel(p) {
   setPressed("mp-on", p.power);
   setPressed("mp-off", !p.power);
   setText("mp-enabled", p.power ? "On" : "Off");
-  const wheels = {
+  const wheels = p.kind === "hover" ? {
+    "going forward": "leaning forward on its rotors",
+    "backing off": "leaning back on its rotors",
+    "turning left": "its rotors turning it left",
+    "turning right": "its rotors turning it right",
+    "waiting": "hovering on its spot",
+    "resting": "down on the ground, its rotors off",
+  } : {
     "going forward": "both wheels forward",
     "backing off": "both wheels back",
     "turning left": "left wheel back, right wheel forward",
@@ -1566,7 +1573,8 @@ function showProgramPanel(p) {
     return `${s.side > 0 ? "left" : s.side < 0 ? "right" : "middle"} ${mm > 0 ? `${mm} mm of water` : "dry"}`;
   });
   const battery = `its battery ${Math.round((p.charge_share || 0) * 100)}%`
-    + (p.rest_below > 0 ? ` (it rests below ${Math.round(p.rest_below * 100)}%)` : "");
+    + (p.rest_below > 0 ? ` (it rests below ${Math.round(p.rest_below * 100)}%)` : "")
+    + (p.kind === "hover" ? ` · ${(p.height_m || 0).toFixed(2)} m up, holding ${p.hover_m} m` : "");
   setText("mp-measured", `${battery} · ${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
     + (sensors.length ? ` · its water sensors: ${sensors.join(", ")}` : ""));
   setText("mp-condition", p.power ? (p.why || "nothing in its way") : "off");

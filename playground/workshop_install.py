@@ -801,7 +801,10 @@ def _named_apart(existing, made):
         panel["store"] = renamed.get(("stores", panel.get("store")), panel.get("store"))
     for program in out.get("programs") or []:
         for side in ("left", "right"):
-            program[side] = renamed.get(("controls", program.get(side)), program.get(side))
+            if side in program:
+                program[side] = renamed.get(("controls", program.get(side)), program.get(side))
+        if program.get("rotors"):
+            program["rotors"] = [renamed.get(("controls", r), r) for r in program["rotors"]]
     return out
 
 

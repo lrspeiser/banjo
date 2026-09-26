@@ -144,9 +144,14 @@ def sense_position(ctx: Context) -> dict[str, Any]:
         if b.get("name") == ctx.program.get("body"):
             v = b.get("velocity_m_s") or [0, 0, 0]
             speed = round(math.hypot(float(v[0]), float(v[2])), 2)
-    return {"x_m": round(ax, 2), "z_m": round(az, 2), "heading_deg": round(ctx.heading(), 1), "speed_m_s": speed,
-            "doing": ctx.program.get("doing"), "why": ctx.program.get("why"),
-            "for_s": ctx.program.get("doing_s"), "asked": ctx.program.get("asked")}
+    out = {"x_m": round(ax, 2), "z_m": round(az, 2), "heading_deg": round(ctx.heading(), 1), "speed_m_s": speed,
+           "doing": ctx.program.get("doing"), "why": ctx.program.get("why"),
+           "for_s": ctx.program.get("doing_s"), "asked": ctx.program.get("asked")}
+    if ctx.program.get("kind") == "hover":
+        out["height_above_ground_m"] = round(float(ctx.program.get("height_m") or 0.0), 2)
+        out["climb_m_s"] = round(float(ctx.program.get("climb_m_s") or 0.0), 2)
+        out["holds_height_m"] = ctx.program.get("hover_m")
+    return out
 
 
 def sense_slope(ctx: Context) -> dict[str, Any]:
@@ -223,10 +228,15 @@ def sense_battery(ctx: Context) -> dict[str, Any]:
 
 
 def sense_wheels(ctx: Context) -> dict[str, Any]:
+    """What drives it: a rover's two wheels, a flying machine's rotors in
+    order round it."""
     controls = _controls(ctx)
     out = []
-    for side in ("left", "right"):
-        c = controls.get(ctx.program.get(side)) or {}
+    drives = ([(f"rotor {i + 1}", ident) for i, ident in enumerate(ctx.program.get("rotors") or [])]
+              if ctx.program.get("kind") == "hover" else
+              [(side, ctx.program.get(side)) for side in ("left", "right")])
+    for side, ident in drives:
+        c = controls.get(ident) or {}
         out.append({"side": side, "condition": c.get("condition", ""), "speed_rpm": c.get("speed_rpm", 0.0),
                     "told": {"power": c.get("power"), "direction": c.get("direction"), "setting": c.get("setting")}})
     return {"wheels": out, "stalled": [w["side"] for w in out if str(w["condition"]).startswith("stalled")],

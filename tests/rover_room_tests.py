@@ -59,7 +59,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 fracture_lab.validate(room)
 
-        refused(lambda m, p: p.update(kind="hunt"), "only kind there is yet is 'roam'")
+        refused(lambda m, p: p.update(kind="hunt"), "the kinds there are: 'roam', 'hover'")
         refused(lambda m, p: p.update(left="front wheel"), "there is none")
         refused(lambda m, p: p.update(right="left wheel"), "are one")
         refused(lambda m, p: p.update(body="post"), "does not turn a wheel on 'post'")

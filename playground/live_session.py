@@ -1108,11 +1108,14 @@ class Live:
                                    else f"no store called {motor.get('store', '')!r}"))
                 continue
             try:
+                rotor = motor.get("rotor") or {}
                 answer = session.send(
                     op="motor", joint=joint, store=store,
                     stall_torque_n_m=float(motor.get("stall_torque_n_m", 0.0)),
                     no_load_rad_s=float(motor.get("no_load_rpm", 0.0)) * 3.141592653589793 / 30.0,
-                    brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)))
+                    brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)),
+                    rotor_thrust_n_per_rad2=float(rotor.get("thrust_n_per_rad2", 0.0)),
+                    rotor_drag_n_m_per_rad2=float(rotor.get("drag_n_m_per_rad2", 0.0)))
                 if answer.get("motor") is not None:
                     motor_ids[tuple(on)] = answer.get("motor")
                 if made is not None and answer.get("motor") is not None:
@@ -1197,18 +1200,29 @@ class Live:
         control_ids = dict((made or {}).get("controls") or {})
         for program in machines.get("programs") or []:
             name = str(program.get("name", ""))
-            left, right = control_ids.get(str(program.get("left"))), control_ids.get(str(program.get("right")))
-            if left is None or right is None:
-                problems.append(f"the program {name} has no controller for its "
-                                f"{'left' if left is None else 'right'} wheel")
-                continue
+            kind = str(program.get("kind", "roam"))
+            if kind == "hover":
+                rotors = [control_ids.get(str(r)) for r in program.get("rotors") or []]
+                if len(rotors) != 4 or any(r is None for r in rotors):
+                    problems.append(f"the program {name} has no controller for one of its rotors")
+                    continue
+                left, right = rotors[0], rotors[1]
+            else:
+                rotors = []
+                left, right = control_ids.get(str(program.get("left"))), control_ids.get(str(program.get("right")))
+                if left is None or right is None:
+                    problems.append(f"the program {name} has no controller for its "
+                                    f"{'left' if left is None else 'right'} wheel")
+                    continue
             try:
-                answer = session.send(op="program", name=name, kind=str(program.get("kind", "roam")),
+                answer = session.send(op="program", name=name, kind=kind,
                                       left=left, right=right, body=str(program.get("body", "")),
                                       setting=float(program.get("setting", 1.0)),
                                       climb_deg=float(program.get("climb_deg", 8.0)),
                                       rest_below=float(program.get("rest_below", 0.0)),
-                                      rest_until=float(program.get("rest_until", 0.0)))
+                                      rest_until=float(program.get("rest_until", 0.0)),
+                                      **({"rotors": rotors, "hover_m": float(program.get("hover_m", 1.5))}
+                                         if kind == "hover" else {}))
             except Exception as error:
                 problems.append(f"the program {name} would not go on: {error}")
                 continue

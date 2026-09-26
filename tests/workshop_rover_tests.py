@@ -79,10 +79,14 @@ class TheRoverIsInTheCatalogue(unittest.TestCase):
                                                    program["routine"]["kind"], program["routine"]["hopper_kg"]))
         self.assertEqual([0.55, 0.36, 1.0], program["sensors"][0]["at_m"])
         self.assertTrue(all(overrides[p.name] == {"mechanics": {"model": "rigid"}} for p in design.parts))
-        # It opens on the bench with those overrides, whoever opens it.
+        # It opens on the bench with those overrides, whoever opens it. (The
+        # Workshop's database sits beside the runs directory, so the runs
+        # directory is a directory of its own: the system's temp directory put
+        # it at the root of CI's filesystem, unwritable.)
         import workshop_api_core
-        wire = workshop_api_core._candidate(SimpleNamespace(runs_path=Path(tempfile.gettempdir())), design,
-                                            w.assembly("rover"))
+        with tempfile.TemporaryDirectory() as tmp:
+            wire = workshop_api_core._candidate(SimpleNamespace(runs_path=Path(tmp) / "runs"), design,
+                                                w.assembly("rover"))
         self.assertIn(workshop_machines.MACHINES_KEY, wire["component_overrides"])
 
     def test_it_compiles_to_the_rooms_rover_five_bodies_on_four_pins(self):

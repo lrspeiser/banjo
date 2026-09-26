@@ -1045,7 +1045,19 @@ void Environment::putBack(double sand_m3, double soil_m3) {
     carried_.soil_m3 = std::max(0.0, carried_.soil_m3 - soil_m3);
 }
 
+// A packet is asked for in the numbers a reply reported, and a reply is
+// rounded (0.05 m3 of 0.04999... carried; a 0.0125 m3 share of a scoop of
+// 0.012499...): a hair over what the account holds is what the account holds,
+// as a heap made from what is carried allows (live_world_run's deposit).
+constexpr double kLedgerSlackM3 = 1.0e-9;
+
+static double heldOrRefused(double asked_m3, double held_m3) {
+    return asked_m3 > held_m3 && asked_m3 <= held_m3 + kLedgerSlackM3 ? held_m3 : asked_m3;
+}
+
 std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
+    sand_m3 = heldOrRefused(sand_m3, carried_.sand_m3);
+    soil_m3 = heldOrRefused(soil_m3, carried_.soil_m3);
     if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
         sand_m3+soil_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3)
         throw std::invalid_argument("transfer needs positive finite quantities already carried");
@@ -1066,6 +1078,8 @@ std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
 void Environment::returnCarried(double sand_m3, double soil_m3, double carried_objects_kg) {
     if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
         throw std::invalid_argument("invalid carried object mass");
+    sand_m3 = heldOrRefused(sand_m3, exported_.sand_m3-returned_.sand_m3);
+    soil_m3 = heldOrRefused(soil_m3, exported_.soil_m3-returned_.soil_m3);
     if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
         sand_m3+soil_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
         soil_m3>exported_.soil_m3-returned_.soil_m3)

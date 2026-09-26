@@ -481,6 +481,21 @@ def _block(role: str, family: str):
     return build
 
 
+def _rotor(*, name: str, at_m: Iterable[float], material: str, diameter_m: float, thickness_m: float,
+           stub_diameter_m: float, stub_length_m: float) -> Component:
+    """A rotor: an iron stub standing up through a mount, with a disc on top
+    that the air pushes against. A motor with a rotor block goes on the pair
+    mount and stub. `at_m` is the mount's centre; the stub is fixed to the
+    disc and turns in the mount."""
+    x, y, z = _finite3("at_m", at_m)
+    stub = WirePart(name=f"{name} stub", role="axle", size_m=(stub_diameter_m, stub_length_m, stub_diameter_m),
+                    center_m=(x, y + stub_length_m / 2 - 0.03, z), material="iron", shape="cylinder", family="rotor")
+    disc = WirePart(name=name, role="wheel", size_m=(diameter_m, thickness_m, diameter_m),
+                    center_m=(x, y + stub_length_m - 0.03 + thickness_m / 2, z), material=material,
+                    shape="cylinder", family="rotor")
+    return Component(parts=[stub, disc], anchors={"hub": (x, disc.center_m[1], z), "mount": (x, y, z)})
+
+
 def _solar_panel(*, name: str, at_m: Iterable[float], material: str, width_m: float, depth_m: float,
                  thickness_m: float) -> Component:
     """A flat glass collector lying on a deck, facing up."""
@@ -514,6 +529,11 @@ MACHINE_FAMILIES = (
            (Parameter("width_m", "m", 0.4, 0.05, 2.0), Parameter("depth_m", "m", 0.4, 0.05, 2.0),
             Parameter("thickness_m", "m", 0.01, 0.004, 0.05)),
            _solar_panel, offers=("bottom", "top")),
+    Family("rotor", "wheel", "A rotor: an iron stub up through a mount with a disc on top that the air pushes "
+                             "against; a motor with a rotor block goes on the mount and the stub.",
+           (Parameter("diameter_m", "m", 0.4, 0.1, 2.0), Parameter("thickness_m", "m", 0.01, 0.004, 0.05),
+            Parameter("stub_diameter_m", "m", 0.02, 0.008, 0.06), Parameter("stub_length_m", "m", 0.12, 0.06, 0.4)),
+           _rotor, offers=("hub", "mount")),
     Family("hopper", "post", "A hopper: a bin on the deck that a dig routine fills (declare hopper_kg on the "
                              "routine).",
            (Parameter("width_m", "m", 0.3, 0.05, 1.5), Parameter("height_m", "m", 0.15, 0.03, 1.0),

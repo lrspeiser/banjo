@@ -153,6 +153,14 @@ def concepts(design: Any) -> list[dict[str, Any]]:
             if tuple(sorted(control["turns"])) not in turning_pairs:
                 wrong.append(f"{control['name']} works a joint that does not turn")
         for program in machines.get("programs") or []:
+            if program.get("kind") == "hover":
+                rotor_motors = {tuple(sorted(m["turns"])) for m in machines.get("motors") or [] if m.get("rotor")}
+                for k, name in enumerate(program.get("rotors") or []):
+                    if name not in controls:
+                        wrong.append(f"the program's rotor {k + 1} is {name}, which is not a control here")
+                    elif tuple(sorted(next(c for c in machines["controls"] if c["name"] == name)["turns"])) not in rotor_motors:
+                        wrong.append(f"the program's rotor {k + 1}, {name}, works a pin with no rotor on it")
+                continue
             for side in ("left", "right"):
                 if program[side] not in controls:
                     wrong.append(f"the program's {side} is {program[side]}, which is not a control here")

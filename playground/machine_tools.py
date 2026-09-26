@@ -172,9 +172,12 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
         # More than the hopper holds: the rest goes back on the ground where it came from.
         share = room / kg
         back_sand, back_soil = sand * (1.0 - share), soil * (1.0 - share)
-        _act(ctx, op="deposit", at=point, radius_m=width, sand_m3=back_sand, soil_m3=back_soil, from_carried=True)
+        reply = _act(ctx, op="deposit", at=point, radius_m=width, sand_m3=back_sand, soil_m3=back_soil,
+                     from_carried=True)
         sand, soil, kg = sand * share, soil * share, room
-    # Out of what is carried, into the hopper's account.
+    # Out of what is carried, into the hopper's account. (The scoop's reply is
+    # rounded and the account is exact; the engine takes a hair over what it
+    # holds as what it holds, Environment::withdrawCarried.)
     if sand > 0.0 or soil > 0.0:
         _act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
     r.load_in(sand, soil, kg)
@@ -200,11 +203,15 @@ def dump(ctx: senses.Context, call: Call) -> dict[str, Any]:
     r = ctx.routine
     if r is None or not r.carries():
         raise ValueError("it has no hopper to empty")
-    sand, soil, kg = r.load_out()
+    sand, soil, kg = r.sand_m3, r.soil_m3, r.kg
     if kg <= 0.0:
         return {"did": "dumped nothing: its hopper is empty"}
     point = senses.point_ahead(ctx, float(call.args.get("ahead_m", DIG_AHEAD_M)))
+    # The ground takes it back first; a hopper emptied before a refusal read
+    # 0 of 20 kg while the load was still out of the ground (the drone's
+    # first dump, 2026-09-25).
     _act(ctx, op="ground_return", sand_m3=sand, soil_m3=soil)
+    r.load_out()
     reply = _act(ctx, op="deposit", at=point, radius_m=float(call.args.get("radius_m", DUMP_RADIUS_M)),
                  sand_m3=sand, soil_m3=soil, from_carried=True)
     r.delivered(sand, soil, kg)

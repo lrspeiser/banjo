@@ -309,17 +309,26 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "voltage_v": {"type": "number"},
                             "stall_torque_n_m": {"type": "number"}, "no_load_rpm": {"type": "number"},
                             "brake_torque_n_m": {"type": "number"},
+                            "rotor": {"type": "object", "additionalProperties": False,
+                                      "description": "for a motor that spins a rotor: a declared propeller, thrust "
+                                                     "k w^2 on the frame along the pin and drag k' w^2 on the disc",
+                                      "properties": {"thrust_n_per_rad2": {"type": "number"},
+                                                     "drag_n_m_per_rad2": {"type": "number"}}},
                             "area_m2": {"type": "number"}, "efficiency": {"type": "number"}}}},
         {"type": "function", "name": "set_program",
-         "description": "What the machine does on its own. 'drive' runs until something stops it; 'roam' "
-                        "wanders and turns away from water. left and right name controls. climb_deg is "
-                        "the steepest ground it will take, rest_below the share of charge it stops at and "
-                        "rest_until the share it sets off again at. A product runs one program.",
+         "description": "What the machine does on its own. 'roam' wanders on two driven wheels and turns away "
+                        "from water: left and right name the wheels' controls, climb_deg the steepest ground it "
+                        "will take. 'hover' flies on four rotors: rotors names their four controls in order "
+                        "round the machine from above, hover_m the height it holds its centre at. rest_below "
+                        "is the share of charge it stops (or lands) at and rest_until the share it sets off "
+                        "again at. A product runs one program.",
          "parameters": {"type": "object", "additionalProperties": False,
-                        "required": ["kind", "left", "right"],
+                        "required": ["kind"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["roam"]},
+                            "kind": {"type": "string", "enum": ["roam", "hover"]},
                             "left": {"type": "string"}, "right": {"type": "string"},
+                            "rotors": {"type": "array", "items": {"type": "string"}, "minItems": 4, "maxItems": 4},
+                            "hover_m": {"type": "number", "minimum": 0.3, "maximum": 50},
                             "setting": {"type": "number", "minimum": 0, "maximum": 1},
                             "climb_deg": {"type": "number", "minimum": 0, "maximum": 89},
                             "rest_below": {"type": "number", "minimum": 0, "maximum": 1},

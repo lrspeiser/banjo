@@ -1185,6 +1185,84 @@ the two routes, on the room the page has open; the step reply carries
 `brains` whenever one has changed. What a person says is sorted by
 whichever decider is on, or by whichever has a key when the reflexes are.
 
+## A rover that flies
+
+**Status, 2026-09-25.** The same framework, on rotors instead of wheels. A
+machine that flies needs three things the rover did not, and nothing else:
+a part the air pushes on, a program that holds it up, and a Workshop
+template that puts them together. Everything above the program -- its
+senses, its tools, its routine, who decides for it and how a person talks
+to it -- is the rover's, untouched: a flying machine is a program of kind
+`hover` in the same tables the roam program sits in.
+
+**A rotor is a declared propeller on a motor's pin.** A motor can carry a
+`rotor` block: `thrust_n_per_rad2` and `drag_n_m_per_rad2`. Each step the
+engine reads the pin's rate w and puts a thrust of k w^2 on the pin's first
+body (the frame) along the pin at the pin's point, and a drag torque of k'
+w^2 on the disc against its spin, with its reaction on the frame -- which is
+how the machine yaws, and what its flight costs: the drag is the load the
+motor works against, so the battery pays for the lift. (Jolt's own hinge
+friction is applied only while the pin's motor is off, so drag as friction
+loaded nothing and the machine flew for free; it is a torque now.) The
+numbers are declared, as a motor's are: for the Workshop's drone, 17 kg of
+machine needs 170 N, 43 N a rotor at 62 rad/s (k = 0.011), and the induced
+power of 43 N on a 0.4 m disc is about 500 W (k' = 2.1e-3).
+
+**The hover program** holds the machine's centre `hover_m` above the ground
+under it and level, and takes the rover's asks -- going forward, backing
+off, turning, facing a point, approaching one, waiting -- done by leaning
+5 degrees and yawing, instead of by wheels. It reads its height and climb
+off the ground below its centre, its pitch and roll off its body; a height
+loop (a learnt share of the voltage for the weight, the error, the climb
+held to 1 m/s), an attitude loop (a lean of so many degrees to go, held
+level otherwise, and against its drift when it is holding a spot) and a yaw
+rate are mixed onto the four rotors by where each stands on the chassis --
+`rotors` names their controls in order round the machine from above -- and
+which way each spins. Nothing tells the program the machine's mass: the
+share of voltage that holds it is learnt from the height error. Low on
+charge it lands where it is and rests; turned off in the air, its rotors
+stop and it falls; a saved world gives it back flying.
+
+**The Workshop's drone** is the rover's deck, battery, panel, hopper and
+two water eyes on four arms with a rotor at the end of each -- a new
+`rotor` family: an iron stub up through a mount with a disc on top -- and
+four legs; 24 parts, 19 fixed joints and 4 bearings, all authored, and its
+machines declared: one store, four motors each with a rotor block, four
+controls, a panel, a hover program with the same dig routine. It compiles
+to five exact bodies on four vertical pins and installs through the same
+gate as the rover, taking its places three metres ahead and behind where
+it is set down. The bench chat's `set_program` takes `hover`, `rotors` and
+`hover_m`, and its `add_power_part` a motor's `rotor`.
+
+Measured in the real engine (`tests/drone_hover_tests.cpp`): turned on, the
+drone reached 1.5 m in 1.0 s and held between 1.507 and 1.513 m, tilting at
+most 0.25 degrees, its rotors at 59 rad/s; asked to go forward for 4 s it
+went 7.3 m the way it faced, its height between 1.496 and 1.5 m; asked to
+face a point to its left it turned to within 7 degrees; asked to approach a
+point 4 m off it stopped 0.98 m from it and hovered; ten seconds of flight
+drew 28 kJ from the battery, 66% of it taken by the air, and the account
+closed; turned off at 1.5 m it was on the ground five seconds on, and
+opened again from a save it was flying. The Workshop's drone
+(`tests/workshop_drone_tests.py`): installed in the basin and switched on,
+it rose and held 1.8 m over its landed height; stepped as the page steps the
+room, its routine flew it to its dig site, dug 20 kg, carried the load to
+its depot in the air and dumped it, one load in under 40 s of the world; a person
+opening its panel finds it 1.83 m up, holding 1.5 m, and can talk to it.
+
+What the drone showed of the framework: the senses' `position` reads a
+flying machine's height and climb, `wheels` reads its rotors in order; the
+routine, the talk and the deciders needed no change. Two things it turned
+up: the dig tool withdrew from the ground's account exactly what the scoop
+reported, and the report is rounded, so a 0.0125 m3 share of an 80 kg
+scoop was refused against 0.012499 m3 held, and the drone waited out its
+whole approach ask before trying again -- it takes what the account holds
+now; and the page's list of controls a program works did not include
+rotors, so a rotor click opened the rotor, not the drone.
+
+Not built: a landing pad or a place to land other than where it is; wind;
+a rotor's own inertia (the disc spins up as fast as the motor can turn it);
+a flying machine that carries a thing on a rope.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

@@ -64,6 +64,8 @@ DECISIONS_KEPT = 12
 KINDS: dict[str, str] = {
     "roam": "a small battery machine with a driven wheel on each side and a caster in front, working on its "
             "own by a lake",
+    "hover": "a small battery machine that flies on four rotors, holding a height above the ground and moving "
+             "by leaning, working on its own by a lake; it cannot roll, and off its rotors it falls",
 }
 ALSO_QUESTIONS: dict[str, Any] = {
     "stuck": {

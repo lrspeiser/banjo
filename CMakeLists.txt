@@ -1522,6 +1522,15 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_rover_tests.py -v)
     set_tests_properties(banjo_workshop_rover_tests PROPERTIES TIMEOUT 300)
+    # And a rover that flies: the drone from the same library on four rotors,
+    # installed through the same gate, lifting to its height and flying to
+    # its places.
+    add_test(NAME banjo_workshop_drone_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_drone_tests.py -v)
+    set_tests_properties(banjo_workshop_drone_tests PROPERTIES TIMEOUT 300)
     # And what a break costs: the room's failure law reaching the engine, and
     # the account the world gives of a break in the tests-break room.
     add_test(NAME banjo_break_room_tests
