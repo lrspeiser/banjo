@@ -879,7 +879,7 @@ demand, when something happens or a person asks, never every step.
 
 **The tools**, each one named action with a description a model can read,
 a schema for its arguments, and what to fill them with when whoever picks it
-gives none (Jev picks a name and nothing more): `go_forward`, `back_off`,
+gives none: `go_forward`, `back_off`,
 `turn_left`, `turn_right`, `hold_still`, `face` and `go_to` (a place it
 knows by name, the person, a point, or a bearing and distance), `dig`,
 `dump`, and `carry_on` (nothing more is asked: its routine and its reflexes
@@ -889,6 +889,19 @@ machine then does is the world's answer, read back through the senses. A
 decider is asked which tool, among these names with these descriptions as
 the criteria, and the same call asks whether it is stuck and how urgent its
 battery is.
+
+**A decider fills the arguments too.** Each argument a decider can fill is
+a typed question of its own in the same call, keyed `arg_<name>`: a
+duration, a distance or a depth is a score over its declared levels ("a
+moment, a second and a half" ... "a good while, twelve seconds"); a
+direction is a choice of seven bearings from its front; a place is a choice
+among the places the machine knows and the person. Everything is asked at
+once and only the picked tool's answers are read -- one call however the
+decision branches, which is how Jev is meant to be used and costs the model
+nothing extra. Jev and the chat's model fill them the same way, since both
+answer choice and score questions. An argument a decider cannot fill this
+way -- a point in the world -- the routine and a person can. The decision's
+words say what was filled: "go to 3 m at +90 deg, for 6 s".
 
 **Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
 whose volume goes into the ground's one carried account. The `dig` tool
@@ -952,9 +965,9 @@ the validator, and the tests-dig room in the real engine).
 Not built yet: a hopper saved with the world; a scoop that is a tool point
 on the machine driven into the ground by its motors, so the work is
 measured rather than declared (a tool point needs a lattice body, and the
-rover is exact bodies); a decider that fills a tool's arguments (a point, a
-bearing) rather than picking a name; and resources beyond the ground's
-sand and soil.
+rover is exact bodies); a decider filling a point in the world (it fills
+places, bearings, distances, durations and depths); and resources beyond
+the ground's sand and soil.
 
 ## What the rover decides by itself, and who it asks
 

@@ -67,6 +67,7 @@ def jev_says(pick: str, confidence: float = 0.9):
             return answers
         return {"next": {"type": "choice", "choice": pick, "confidence": confidence,
                          "probabilities": {pick: confidence}},
+                "arg_for_s": {"type": "score", "score": 0.0},
                 "stuck": {"type": "noul", "noul": 0.1},
                 "battery": {"type": "score", "score": 0.0,
                             "legend": {"0": "fine: plenty", "1": "low: getting low", "2": "urgent: nearly flat"}}}
@@ -107,8 +108,8 @@ class WhatHappensToIt(unittest.TestCase):
 class WhatIsMadeOfJevsAnswer(unittest.TestCase):
     def test_a_confident_pick_is_an_ask_and_an_unsure_one_is_not(self):
         sure = rover_brain.decide(jev_says("back_off", 0.81)(None, rover_brain.QUESTIONS), "water ahead on its left")
-        self.assertEqual({"tool": "back_off", "args": {},
-                          "why": "Jev said back off (81% sure) when water ahead on its left"}, sure["call"])
+        self.assertEqual({"tool": "back_off", "args": {"for_s": 1.5},
+                          "why": "Jev said back off for 1.5 s (81% sure) when water ahead on its left"}, sure["call"])
         self.assertEqual(("back_off", 0.81, 0.1, "fine"), (sure["pick"], sure["confidence"], sure["stuck"], sure["battery"]))
         unsure = rover_brain.decide(jev_says("hold_still", 0.4)(None, rover_brain.QUESTIONS), "x")
         self.assertIsNone(unsure["call"])
@@ -121,10 +122,45 @@ class WhatIsMadeOfJevsAnswer(unittest.TestCase):
         questions = rover_brain.questions_for("roam")
         self.assertEqual([t["name"] for t in machine_tools.catalogue()], list(questions["next"]["criteria"]))
         self.assertIn("dig", questions["next"]["criteria"])
-        self.assertEqual({"next", "stuck", "battery"}, set(questions))
+        self.assertEqual({"next", "stuck", "battery", "arg_for_s", "arg_place", "arg_bearing_deg", "arg_distance_m",
+                          "arg_depth_m"}, set(questions))
         self.assertIn("a lake", questions["next"]["instructions"])
         # An unknown kind is asked as a rover is, rather than nothing.
         self.assertEqual(questions, rover_brain.questions_for("hunt"))
+        # Every argument a decider fills is a typed question in the same call:
+        # a duration or a depth a score over its levels, a direction a choice,
+        # a place a choice among what the machine knows and the person.
+        self.assertEqual("score", questions["arg_for_s"]["type"])
+        self.assertEqual(["a moment, a second and a half", "a few seconds, three", "a while, six seconds",
+                          "a good while, twelve seconds"], questions["arg_for_s"]["criteria"])
+        self.assertEqual("choice", questions["arg_bearing_deg"]["type"])
+        self.assertIn("to its left", questions["arg_bearing_deg"]["criteria"])
+        self.assertEqual(["person"], list(questions["arg_place"]["criteria"]))
+        with_places = rover_brain.questions_for("roam", {"dig site": [1, 2], "depot": [3, 4]})
+        self.assertEqual(["dig site", "depot", "person"], list(with_places["arg_place"]["criteria"]))
+
+    def test_the_picked_tools_arguments_are_read_from_the_answers(self):
+        answers = {"next": {"choice": "go_to", "confidence": 0.9},
+                   "arg_place": {"choice": "depot", "confidence": 0.8},
+                   "arg_bearing_deg": {"choice": "to its left", "confidence": 0.5},
+                   "arg_distance_m": {"score": 1.2}, "arg_for_s": {"score": 2.6}, "arg_depth_m": {"score": 2.0}}
+        places = {"dig site": [1, 2], "depot": [3, 4]}
+        self.assertEqual({"place": "depot", "for_s": 12.0}, machine_tools.arguments_for("go_to", answers, places),
+                         "a place makes the bearing and distance moot")
+        answers["arg_place"] = {"choice": "moon"}
+        self.assertEqual({"bearing_deg": 90.0, "distance_m": 3.0, "for_s": 12.0},
+                         machine_tools.arguments_for("go_to", answers, places), "a place it does not know is no place")
+        self.assertEqual({"depth_m": 0.3}, machine_tools.arguments_for("dig", answers, places))
+        self.assertEqual({"for_s": 12.0}, machine_tools.arguments_for("turn_left", answers, places))
+        self.assertEqual({}, machine_tools.arguments_for("dump", answers, places))
+        self.assertEqual({}, machine_tools.arguments_for("go_to", {"next": {"choice": "go_to"}}, places),
+                         "unanswered, the tool's own defaults stand")
+        decision = rover_brain.decide(answers, "the person came near", "roam", "Jev", places)
+        self.assertEqual({"tool": "go_to", "args": {"bearing_deg": 90.0, "distance_m": 3.0, "for_s": 12.0},
+                          "why": "Jev said go to 3 m at +90 deg, for 12 s (90% sure) when the person came near"},
+                         decision["call"])
+        self.assertEqual("go to the person", machine_tools.described("go_to", {"place": "person"}))
+        self.assertEqual("dig 0.3 m deep", machine_tools.described("dig", {"depth_m": 0.3}))
 
     def test_the_state_a_decider_reads_is_the_senses(self):
         machines = {"controls": [{"id": 1, "condition": "", "speed_rpm": 40.0, "power": True, "direction": 1,
@@ -179,10 +215,10 @@ class TheBrainOffTheStep(unittest.TestCase):
         self.assertEqual([], sent, "only a step applies what was decided")
         brains.before(app, {"session": "s", "op": "step"})
         self.assertEqual([{"session": "s", "op": "behave", "program": 1, "sender": "jev",
-                           "doing": "turning right", "for_s": 2.5,
-                           "why": "Jev said turn right (70% sure) when water ahead on its left"}], sent)
+                           "doing": "turning right", "for_s": 1.5,
+                           "why": "Jev said turn right for 1.5 s (70% sure) when water ahead on its left"}], sent)
         [decision] = brain.decisions
-        self.assertEqual(("asked to be turning right for 2.5 s", "turn_right"), (decision["applied"], decision["pick"]))
+        self.assertEqual(("asked to be turning right for 1.5 s", "turn_right"), (decision["applied"], decision["pick"]))
         answer = {}
         brains.attach({"op": "step"}, answer)
         self.assertEqual("rover", answer["brains"][0]["name"])
@@ -254,7 +290,8 @@ class TheModelAsADecider(unittest.TestCase):
 
     def test_the_schema_admits_only_the_answers_asked_for(self):
         schema = rover_brain.answer_schema(rover_brain.questions_for("roam"))
-        self.assertEqual(["next", "stuck", "battery"], schema["required"])
+        self.assertEqual(["next", "arg_for_s", "arg_place", "arg_bearing_deg", "arg_distance_m", "arg_depth_m",
+                          "stuck", "battery"], schema["required"])
         self.assertEqual([t["name"] for t in machine_tools.catalogue()],
                          schema["properties"]["next"]["properties"]["choice"]["enum"])
         self.assertEqual(["0", "1", "2"], schema["properties"]["battery"]["properties"]["probabilities"]["required"])
@@ -278,7 +315,8 @@ class TheModelAsADecider(unittest.TestCase):
         self.assertTrue(answers["battery"]["legend"]["1"].startswith("low"))
         decision = rover_brain.decide(answers, "water ahead on its left", "roam", "OpenAI (gpt-5-mini)")
         self.assertEqual("back_off", decision["call"]["tool"])
-        self.assertEqual("OpenAI (gpt-5-mini): back off (70% sure) when water ahead on its left", decision["said"])
+        self.assertEqual("OpenAI (gpt-5-mini): back off for 1.5 s (70% sure) when water ahead on its left", decision["said"],
+                         "the model answers every question, so an unanswered score reads as its lowest level")
         self.assertEqual("low", decision["battery"])
 
     def test_the_model_is_called_and_read_through_the_responses_api(self):

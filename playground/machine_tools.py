@@ -225,11 +225,28 @@ class Tool:
     for_deciders: bool = True
 
 
-_FOR_S = {"for_s": {"type": "number", "description": "for how many seconds, 0 for until asked otherwise"}}
-_WHERE = {"place": {"type": "string", "description": "a place it knows by name, or 'person'"},
+# An argument a decider fills is asked as a question of its own in the same
+# call: `levels` (ordered, low to high) makes it a score, `options` (a name
+# for each value) a choice, and `options: "places"` a choice among the places
+# the machine knows and the person. An argument with neither -- a point in
+# the world -- a decider cannot fill; the routine and a person can.
+_FOR_S = {"for_s": {"type": "number", "description": "for how many seconds",
+                    "levels": [{"value": 1.5, "words": "a moment, a second and a half"},
+                               {"value": 3.0, "words": "a few seconds, three"},
+                               {"value": 6.0, "words": "a while, six seconds"},
+                               {"value": 12.0, "words": "a good while, twelve seconds"}]}}
+_WHERE = {"place": {"type": "string", "description": "a place it knows by name, or 'person'", "options": "places"},
           "point": {"type": "array", "items": {"type": "number"}, "description": "[x, z] in metres"},
-          "bearing_deg": {"type": "number", "description": "degrees from its front, positive to its left"},
-          "distance_m": {"type": "number"}}
+          "bearing_deg": {"type": "number", "description": "degrees from its front, positive to its left",
+                          "options": {"straight ahead": 0.0, "a little to its left": 30.0, "to its left": 90.0,
+                                      "behind it, round to the left": 150.0, "behind it, round to the right": -150.0,
+                                      "to its right": -90.0, "a little to its right": -30.0}},
+          "distance_m": {"type": "number", "description": "how far, metres",
+                         "levels": [{"value": 1.0, "words": "close, a metre"}, {"value": 3.0, "words": "a few metres"},
+                                    {"value": 6.0, "words": "some way, six metres"}]}}
+_DIG = {"depth_m": {"type": "number", "description": "how deep the scoop bites, metres",
+                    "levels": [{"value": 0.08, "words": "a shallow scrape"}, {"value": 0.15, "words": "a scoop"},
+                               {"value": 0.3, "words": "a deep bite"}]}}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in (
     Tool("go_forward", "Keep going forward for a while: the way ahead is clear.", go_forward, _FOR_S),
@@ -246,7 +263,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
     Tool("go_to", "Go to a place it knows, the person, a point or a bearing, and stop a metre off.", go_to,
          {**_WHERE, **_FOR_S}),
     Tool("dig", "Take one scoop of the ground ahead into its hopper, drawing the work from its battery.", dig,
-         {"depth_m": {"type": "number"}, "width_m": {"type": "number"}}),
+         _DIG),
     Tool("dump", "Empty its hopper onto the ground ahead of it.", dump, {}),
     Tool("carry_on", "Ask nothing more of it: its routine and its reflexes have it back.", carry_on, {}),
 )}
@@ -255,6 +272,90 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
 def catalogue(for_deciders: bool = True) -> list[dict[str, Any]]:
     return [{"name": t.name, "description": t.description, "params": t.params}
             for t in TOOLS.values() if t.for_deciders or not for_deciders]
+
+
+def argument_questions(places: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One typed question per argument a decider can fill, across the tools it
+    may pick, keyed `arg_<name>`: asked in the same call as the tool, so a
+    decider answers everything at once and only the picked tool's are read
+    (a place is a choice among the places the machine knows and the person;
+    `bearing_deg` a choice of directions; a duration or a depth a score)."""
+    out: dict[str, Any] = {}
+    for tool in TOOLS.values():
+        if not tool.for_deciders:
+            continue
+        for name, spec in tool.params.items():
+            key = f"arg_{name}"
+            if key in out:
+                continue
+            uses = ", ".join(t.name for t in TOOLS.values() if t.for_deciders and name in t.params)
+            if spec.get("options") == "places":
+                names = [str(p) for p in (places or {})] + ["person"]
+                out[key] = {"type": "choice",
+                            "instructions": f"`{name}` for {uses}: where it should go or look, if that tool is "
+                                            "picked. `senses.places` says how far and which way each lies.",
+                            "criteria": {n: ("the person, where they stand" if n == "person" else f"the place called {n}")
+                                         for n in names}}
+            elif isinstance(spec.get("options"), dict):
+                out[key] = {"type": "choice",
+                            "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
+                                            "is picked.",
+                            "criteria": {words: f"{name} = {value:g}" for words, value in spec["options"].items()}}
+            elif spec.get("levels"):
+                out[key] = {"type": "score",
+                            "instructions": f"`{name}` for {uses}: {spec.get('description', name)}, if that tool "
+                                            "is picked.",
+                            "criteria": [level["words"] for level in spec["levels"]]}
+    return out
+
+
+def arguments_for(tool_name: str, answers: dict[str, Any], places: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The picked tool's arguments, from the answers to its argument questions:
+    a choice's value, a score's nearest level. An argument not answered is
+    left to the tool's own default."""
+    tool = TOOLS.get(tool_name)
+    if tool is None:
+        return {}
+    args: dict[str, Any] = {}
+    for name, spec in tool.params.items():
+        answer = answers.get(f"arg_{name}")
+        if not isinstance(answer, dict):
+            continue
+        if spec.get("options") == "places":
+            choice = answer.get("choice")
+            if choice == "person" or (places and choice in places):
+                args[name] = choice
+        elif isinstance(spec.get("options"), dict):
+            choice = answer.get("choice")
+            if choice in spec["options"]:
+                args[name] = spec["options"][choice]
+        elif spec.get("levels") and answer.get("score") is not None:
+            levels = spec["levels"]
+            try:
+                index = min(len(levels) - 1, max(0, round(float(answer["score"]))))
+            except (TypeError, ValueError):
+                continue
+            args[name] = levels[index]["value"]
+    # A bearing without a place is a direction; a place makes the bearing moot.
+    if "place" in args:
+        args.pop("bearing_deg", None)
+        args.pop("distance_m", None)
+    return args
+
+
+def described(tool_name: str, args: dict[str, Any]) -> str:
+    """A call in a few words: "go to the person", "turn left for 3 s"."""
+    words = tool_name.replace("_", " ")
+    bits = []
+    if args.get("place"):
+        bits.append(f"the {args['place']}" if args["place"] == "person" else str(args["place"]))
+    elif "bearing_deg" in args:
+        bits.append(f"{args.get('distance_m', 3):g} m at {args['bearing_deg']:+g} deg")
+    if "depth_m" in args:
+        bits.append(f"{args['depth_m']:g} m deep")
+    if "for_s" in args:
+        bits.append(f"for {args['for_s']:g} s")
+    return words + (" " + ", ".join(bits) if bits else "")
 
 
 def run(ctx: senses.Context, call: Call) -> dict[str, Any]:

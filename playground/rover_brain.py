@@ -90,9 +90,12 @@ def kind_of(kind: str) -> str:
     return KINDS.get(kind) or KINDS["roam"]
 
 
-def questions_for(kind: str) -> dict[str, Any]:
+def questions_for(kind: str, places: dict[str, Any] | None = None) -> dict[str, Any]:
     """The questions asked of a machine of this kind, in one call: which tool
-    next, from the tools a decider may pick; and the rest."""
+    next, from the tools a decider may pick; each argument a decider can fill,
+    as a question of its own (machine_tools.argument_questions); and the
+    rest. Everything is asked at once and only the picked tool's arguments
+    are read: one call, however the decision branches."""
     criteria = {t["name"]: t["description"] for t in tools.catalogue(for_deciders=True)}
     return {
         "next": {
@@ -104,6 +107,7 @@ def questions_for(kind: str) -> dict[str, Any]:
                              "it to its routine and its reflexes."),
             "criteria": criteria,
         },
+        **tools.argument_questions(places),
         **ALSO_QUESTIONS,
     }
 
@@ -360,7 +364,8 @@ situations = senses.situations
 _side = senses._side
 
 
-def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "Jev") -> dict[str, Any]:
+def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "Jev",
+           places: dict[str, Any] | None = None) -> dict[str, Any]:
     """The answers as a decision: which tool to call, or none, and what the
     panel says of it. A choice under CONFIDENCE_LEAST is left to the reflexes
     and the routine; a score or a noul the answer lacks is simply not said."""
@@ -380,12 +385,14 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "
         out["call"] = None
         out["said"] = f"{who} gave no tool it has ({pick or 'nothing'}); its reflexes have it"
         return out
-    words = pick.replace("_", " ")
+    args = tools.arguments_for(pick, answers, places)
+    words = tools.described(pick, args)
+    out["args"] = args
     if confidence < CONFIDENCE_LEAST:
         out["call"] = None
         out["said"] = f"{who} would {words} ({round(100 * confidence)}% sure): too unsure, so its reflexes have it"
         return out
-    out["call"] = {"tool": pick, "args": {},
+    out["call"] = {"tool": pick, "args": args,
                    "why": f"{who} said {words} ({round(100 * confidence)}% sure) when {event}"[:200]}
     out["said"] = f"{who}: {words} ({round(100 * confidence)}% sure) when {event}"
     return out
@@ -468,16 +475,18 @@ class Brain:
         # the question goes on another, with the state in hand.
         state = state_of(self.context(engine), event, [d for d in self.decisions if d.get("said")])
         kind = str(program.get("kind") or "roam")
-        thread = threading.Thread(target=self._think, args=(state, event, kind, ask or self.client.ask, self.who),
+        places = dict(self.routine.places) if self.routine is not None else {}
+        thread = threading.Thread(target=self._think,
+                                  args=(state, event, kind, ask or self.client.ask, self.who, places),
                                   daemon=True, name=f"banjo-brain-{self.name}")
         thread.start()
 
     def _think(self, state: dict[str, Any], event: str, kind: str, ask: Callable[..., dict[str, Any]],
-               who: str = "Jev") -> None:
+               who: str = "Jev", places: dict[str, Any] | None = None) -> None:
         began = time.monotonic()
         try:
-            answers = ask(state, questions_for(kind))
-            decision = decide(answers, event, kind, who)
+            answers = ask(state, questions_for(kind, places))
+            decision = decide(answers, event, kind, who, places)
         except Exception as failed:               # a fault upstream never stops the room
             decision = {"event": event, "pick": None, "confidence": 0.0, "call": None,
                         "said": f"{who} was not asked to the end ({str(failed)[:80]}); its reflexes have it"}
