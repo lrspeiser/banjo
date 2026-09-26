@@ -79,6 +79,29 @@ class Drive:
     def root(self) -> str:
         return str(self.made.get("root_body") or "")
 
+    @staticmethod
+    def energy(reading: dict[str, Any]) -> dict[str, Any] | None:
+        """What the thing's battery holds and what it is spending right now
+        (docs/machine-world.md): the store, what its motors are asking of it
+        this step and what its panels are putting back. A machine switched
+        off, or standing on the ground with its rotors stopped, asks for
+        nothing, and this says so."""
+        stores = reading.get("stores") or []
+        if not stores:
+            return None
+        store = stores[0]
+        ident = store.get("id")
+        using = sum(float(m.get("power_w") or 0.0) for m in reading.get("motors") or []
+                    if m.get("store") == ident)
+        taking = sum(float(p.get("power_w") or 0.0) for p in reading.get("panels") or []
+                     if p.get("store") == ident)
+        charge, capacity = float(store.get("charge_j") or 0.0), float(store.get("capacity_j") or 0.0)
+        net = using - taking
+        return {"name": store.get("name"), "charge_j": round(charge, 1), "capacity_j": round(capacity, 1),
+                "share": round(charge / capacity, 4) if capacity > 0 else None,
+                "using_w": round(using, 1), "taking_w": round(taking, 1),
+                "left_s": round(charge / net, 1) if net > 1e-6 else None}
+
     def ask(self, doing: str) -> None:
         """What the keys say, put to the thing once per change."""
         if doing == self.asked:
@@ -116,6 +139,7 @@ class Drive:
         program = (reading.get("programs") or [None])[0]
         body = (reading.get("bodies") or {}).get(self.root) or {}
         return {"frames": fresh, "t_s": round(self.t_s, 3), "asked": self.asked,
+                "energy": self.energy(reading),
                 "doing": (program or {}).get("doing"), "why": (program or {}).get("why"),
                 "at_m": body.get("at_m"), "speed_m_s": body.get("speed_m_s"), "turn_deg": body.get("turn_deg"),
                 "fell_over": bool(body.get("turn_deg", 0.0) >= rooms.FELL_OVER_DEG),
@@ -151,7 +175,7 @@ def start(app: Any, body: dict[str, Any]) -> dict[str, Any]:
             "kind": (drive.programs[0].get("kind") if drive.programs else None),
             "program": (drive.programs[0].get("name") if drive.programs else None),
             "wheels": list(drive.wheels) if drive.wheels else [],
-            "root_body": drive.root, "recording": began,
+            "root_body": drive.root, "recording": began, "energy": drive.energy(drive.room.reading()),
             "keys": {"forward": "W or up", "back": "S or down", "left": "A or left", "right": "D or right",
                      **({"up": "Space", "down": "Shift+Space"} if drive.flies else {})}}
 

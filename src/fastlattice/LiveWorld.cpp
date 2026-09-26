@@ -1931,6 +1931,18 @@ struct LiveWorld::Impl {
         } else if (s.doing != "resting") {
             into("waiting", "hovering");
         }
+        // Asked all the way down and sitting on the ground: it has landed. A
+        // landed machine does not go on holding its rotors up against the
+        // floor -- the ground carries it -- so they stop, and what it spends
+        // falls to nothing until it is asked up again (the owner, 2026-09-26:
+        // "if you ... land something the energy use should drop"). Rising
+        // lifts the height it holds off zero and the rotors come back.
+        if (s.hover_m <= kLandedM && landed && s.doing != "resting") {
+            into("landed", "it is on the ground, its rotors stopped");
+            tellAll(false, none);
+            p.hover_i = 0.0;
+            return;
+        }
         // The chassis's own axes in the world, and its rates about them: nose
         // up is a turn about its left axis the negative way, its left side up
         // a turn about its front, and a turn to the left a turn about up.
