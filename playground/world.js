@@ -1229,6 +1229,18 @@ function followBrains(brains) {
   if (machinePanel.of === "program") showMachinePanel();
 }
 
+// Every mouth on every machine, as the last step left it (machine_ports): the
+// playground sends them with each step, because a mouth moves with the machine
+// that carries it. Nothing said means this reply carried none, which is not the
+// same as a room with no ports -- that is said as an empty list, when the room
+// opens.
+world.ports = [];
+function followPorts(ports) {
+  if (ports === undefined) return;
+  world.ports = Array.isArray(ports) ? ports : [];
+  dressPorts();
+}
+
 // What a machine's controller was told, in a person's words.
 function commandedWords(c) {
   const hoist = c.kind === "hoist";
@@ -1929,6 +1941,57 @@ function dressSensors() {
     mark.bead.geometry.dispose();
     mark.thread.geometry.dispose();
     sensorMarks.delete(key);
+  }
+}
+
+// Where goods go into a device and where they come out (docs/machine-world.md,
+// "Devices that pair"): a ring at the mouth, lying in the plane of its face,
+// with a cone through it pointing the way the goods go -- out along the face
+// for a port that gives, back into the device for one that takes. So which end
+// of a smelter is its intake is there on the smelter, and the rover's store
+// shows at the front of its deck and turns with it.
+//
+// The ring is steel while nothing is alongside, amber while another mouth is
+// near but the two are not paired -- too far apart, or turned away -- and green
+// while they are docked and goods can pass. The playground works out which
+// (machine_ports.Ports) and says so with every step, so the page and the
+// machine never disagree about whether a dock is made: what is drawn green is
+// exactly what the dock tool would move goods through.
+const PORT_IDLE = new THREE.MeshStandardMaterial({ color: 0x9fb3c8, emissive: 0x1b2733, roughness: 0.5 });
+const PORT_NEAR = new THREE.MeshStandardMaterial({ color: 0xf0b429, emissive: 0x4a3510, roughness: 0.5 });
+const PORT_DOCKED = new THREE.MeshStandardMaterial({ color: 0x7ee08a, emissive: 0x1f4424, roughness: 0.45 });
+const PORT_R = 0.09;               // the mouth's ring: a hand's width across
+const portMarks = new Map();       // port name -> { ring, cone }
+
+function dressPorts() {
+  const seen = new Set();
+  for (const p of world.ports || []) {
+    if (!Array.isArray(p.at_m) || p.at_m.length !== 3) continue;
+    if (!Array.isArray(p.normal) || p.normal.length !== 3) continue;
+    seen.add(p.name);
+    let mark = portMarks.get(p.name);
+    if (!mark) {
+      mark = { ring: new THREE.Mesh(new THREE.TorusGeometry(PORT_R, 0.012, 8, 24), PORT_IDLE),
+               cone: new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.11, 14), PORT_IDLE) };
+      scene.add(mark.ring, mark.cone);
+      portMarks.set(p.name, mark);
+    }
+    const along = new THREE.Vector3(p.normal[0], p.normal[1], p.normal[2]).normalize();
+    const at = new THREE.Vector3(p.at_m[0], p.at_m[1], p.at_m[2]);
+    mark.ring.position.copy(at);
+    mark.ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), along);
+    const way = p.flow === "out" ? along : along.clone().negate();
+    mark.cone.position.copy(at).addScaledVector(way, 0.07);
+    mark.cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), way);
+    const paint = p.docked ? PORT_DOCKED : (p.near ? PORT_NEAR : PORT_IDLE);
+    if (mark.ring.material !== paint) mark.ring.material = mark.cone.material = paint;
+  }
+  for (const [name, mark] of portMarks) {
+    if (seen.has(name)) continue;
+    scene.remove(mark.ring, mark.cone);
+    mark.ring.geometry.dispose();
+    mark.cone.geometry.dispose();
+    portMarks.delete(name);
   }
 }
 
@@ -5615,6 +5678,7 @@ async function tick() {
     previewShot();
     followMachines(state.machines);
     followBrains(state.brains);
+    followPorts(state.ports);
     // A sun with a day moves with every step the engine takes.
     if (state.sun) lightFromSun(state.sun);
     drawRopes();
@@ -6658,6 +6722,7 @@ async function open({ again = false } = {}) {
     followMachines(data.machines);
   world.brains.clear();
   followBrains(data.brains);
+    followPorts(data.ports || []);
     lightFromSun(data.sun);
     drawRopes();
     clearHeat();
@@ -6780,6 +6845,12 @@ window.banjoRoom = {
   // Each sensor's bead as drawn: where, and whether it is showing water seen.
   sensorMarks: () => [...sensorMarks].map(([key, m]) => ({
     key, at: m.bead.position.toArray(), sees: m.bead.material === SENSOR_SEES })),
+  // Each port's ring as drawn: where, which way its mouth looks, and what it
+  // is saying -- idle, near, or docked.
+  portMarks: () => [...portMarks].map(([name, m]) => ({
+    name, at: m.ring.position.toArray(),
+    says: m.ring.material === PORT_DOCKED ? "docked"
+      : m.ring.material === PORT_NEAR ? "near" : "idle" })),
   // The room's light as drawn: the sun's lamp, how bright and from where, the
   // sky's, and the sun the engine last said.
   light: () => ({ key: key.intensity, from: key.position.toArray(), sky: sky.intensity, sun: world.sun }),

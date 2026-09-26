@@ -95,7 +95,7 @@ def kind_of(kind: str) -> str:
 
 
 def questions_for(kind: str, places: dict[str, Any] | None = None,
-                  substances: list[str] | None = None) -> dict[str, Any]:
+                  substances: list[str] | None = None, ports: list[str] | None = None) -> dict[str, Any]:
     """The questions asked of a machine of this kind, in one call: which tool
     next, from the tools a decider may pick; each argument a decider can fill,
     as a question of its own (machine_tools.argument_questions); and the
@@ -112,7 +112,7 @@ def questions_for(kind: str, places: dict[str, Any] | None = None,
                              "it to its routine and its reflexes."),
             "criteria": criteria,
         },
-        **tools.argument_questions(places, substances),
+        **tools.argument_questions(places, substances, ports),
         **ALSO_QUESTIONS,
     }
 
@@ -370,7 +370,8 @@ _side = senses._side
 
 
 def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "Jev",
-           places: dict[str, Any] | None = None, substances: list[str] | None = None) -> dict[str, Any]:
+           places: dict[str, Any] | None = None, substances: list[str] | None = None,
+           ports: list[str] | None = None) -> dict[str, Any]:
     """The answers as a decision: which tool to call, or none, and what the
     panel says of it. A choice under CONFIDENCE_LEAST is left to the reflexes
     and the routine; a score or a noul the answer lacks is simply not said."""
@@ -390,7 +391,7 @@ def decide(answers: dict[str, Any], event: str, kind: str = "roam", who: str = "
         out["call"] = None
         out["said"] = f"{who} gave no tool it has ({pick or 'nothing'}); its reflexes have it"
         return out
-    args = tools.arguments_for(pick, answers, places, substances)
+    args = tools.arguments_for(pick, answers, places, substances, ports)
     words = tools.described(pick, args)
     out["args"] = args
     if confidence < CONFIDENCE_LEAST:
@@ -421,6 +422,7 @@ class Brain:
         self.mode = mode if mode == "reflex" or mode in deciders else "reflex"
         self.routine = routines.Routine(name, declared)
         self.goods: Any = None                     # the room's goods ledger (machine_goods.Goods), shared
+        self.ports: Any = None                     # the room's ports (machine_ports.Ports), shared
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
         self.bodies: list[dict[str, Any]] | None = None
@@ -455,7 +457,7 @@ class Brain:
         """Its senses' view of the world as the last step left it."""
         return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
                               routine=self.routine, person=self.person, impacts=self.impacts, t=self.t,
-                              goods=self.goods)
+                              goods=self.goods, ports=self.ports)
 
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
                 t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
@@ -495,8 +497,12 @@ class Brain:
         began = time.monotonic()
         try:
             substances = self.goods.substances() if self.goods is not None else None
-            answers = ask(state, questions_for(kind, places, substances))
-            decision = decide(answers, event, kind, who, places, substances)
+            # The mouths of every machine but its own: a decider can send it to
+            # one or dock at one, and its own are not somewhere to go.
+            mouths = ([p.name for p in self.ports.ports if p.machine != self.name]
+                      if self.ports is not None else None)
+            answers = ask(state, questions_for(kind, places, substances, mouths))
+            decision = decide(answers, event, kind, who, places, substances, mouths)
         except Exception as failed:               # a fault upstream never stops the room
             decision = {"event": event, "pick": None, "confidence": 0.0, "call": None,
                         "said": f"{who} was not asked to the end ({str(failed)[:80]}); its reflexes have it"}
@@ -564,6 +570,10 @@ class Brains:
         # block, shared by every brain; and what a stockpile marked as the
         # Workshop's rack does with what lands on it (the server sets it).
         self.goods: Any = None
+        # And the room's ports (machine_ports.Ports): the mouths declared on
+        # its machines, riding the bodies the engine reports, and which of them
+        # are docked to which.
+        self.ports: Any = None
         self.on_rack: Callable[[str, float], None] | None = None
         #: What a batch of a recipe was: the server turns it into evidence.
         self.on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None
@@ -581,7 +591,15 @@ class Brains:
             brain = self.brains[name] = Brain(name, deciders, self.modes.get(name, default),
                                               routines.declared_for(self.spec, name))
             brain.goods = self.goods
+            brain.ports = self.ports
         return brain
+
+    def holder_for(self, port: Any) -> Any:
+        """What is behind a mouth, over this room's goods and its brains: the
+        machine's own load for a port that says "hopper", else the room's heap
+        of that name (machine_ports.holders_over)."""
+        import machine_ports
+        return machine_ports.holders_over(self.goods, lambda name: self.of(name).routine)(port)
 
     def opened(self, spec: dict[str, Any] | None = None) -> None:
         """A room opened: what was observed of the last one is forgotten, the
@@ -591,8 +609,23 @@ class Brains:
         self.brains.clear()
         self.spec = spec
         import machine_goods
+        import machine_ports
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
+        self.ports = machine_ports.Ports(spec if isinstance(spec, dict) else None, holder_for=self.holder_for)
+
+    def settle(self, opened: Any) -> None:
+        """The room as it opens: every mouth rides to where its body actually
+        stands before the first step, so the page draws the indicators at once
+        rather than a frame later. Where each mouth sits ON its body was
+        already worked out from the spec (machine_ports.as_made), so this is
+        only the riding, and a room rejoined half way through gets its mouths
+        where the machines have got to."""
+        if self.ports is None or not isinstance(opened, dict):
+            return
+        self.ports.follow(opened.get("bodies"))
+        if self.ports:
+            opened["ports"] = self.ports.report()
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})
@@ -612,6 +645,10 @@ class Brains:
         # session's own send, which this listener is already inside of (its
         # lock is reentrant), so a survey costs one line each.
         engine = getattr(session, "send", None)
+        # The mouths ride the bodies: a reply carries only the bodies that
+        # changed, and Ports.follow merges them into what it knows.
+        if self.ports is not None and bodies is not None:
+            self.ports.follow(bodies)
         for program in machines["programs"]:
             if isinstance(program, dict) and program.get("name"):
                 brain = self.of(str(program["name"]))
@@ -651,6 +688,13 @@ class Brains:
         """On a step's answer, the brains the page has not heard the latest of."""
         if not isinstance(body, dict) or body.get("op") != "step" or not isinstance(answer, dict):
             return
+        # Every mouth, every step, for the page to draw the indicator on the
+        # device: where it is now, and whether it is docked. Unlike the brains
+        # this is not sent only when it changes -- a mouth moves with the
+        # machine that carries it, so it is different on almost every step, and
+        # it is a handful of small rows.
+        if self.ports is not None and self.ports:
+            answer["ports"] = self.ports.report()
         changed = [b for b in self.brains.values() if b.changed]
         if not changed:
             return

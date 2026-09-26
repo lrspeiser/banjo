@@ -1533,6 +1533,7 @@ class Handler(BaseHTTPRequestHandler):
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
                 app.brains.opened(room.spec)
+                app.brains.settle(opened)
                 opened["brains"]=app.brains.summaries()
                 return self.send(opened)
             if path=="/api/world/ask":

@@ -1540,6 +1540,15 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
     set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
+    # And devices that pair: the mouths goods go into a machine through and
+    # come out of, the rule that pairs two of them, and the mine's rover
+    # docking its store to the smelter's intake port in the real engine.
+    add_test(NAME banjo_ports_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ports_tests.py -v)
+    set_tests_properties(banjo_ports_tests PROPERTIES TIMEOUT 600)
     # And a routine that responds: conditions, when/unless, watches, and
     # standing requests -- orders run before the round and reported.
     add_test(NAME banjo_routine_language_tests

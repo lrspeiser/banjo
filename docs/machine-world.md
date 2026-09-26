@@ -1526,6 +1526,170 @@ Not built: a condition on a whole routine ("only by day"); a decider asked
 what to do when an order cannot be done; a person's order carried across a
 restart (orders live with the brain, not the room).
 
+## Devices that pair
+
+The owner, 2026-09-26:
+
+> "devices that are paired should be defined that way when built. for instance
+> the smelter should have a port where new ore goes in and a port where
+> finished goods exit. the rover has a port for where it stores the ore and
+> those two ports match up so it can release its ore to the smelter. it should
+> be clear where the port is on a device with some indicator."
+
+**Status, 2026-09-26.** A machine declares its ports when it is built. The
+mine's rover drives to the smelter's intake port -- the mouth on the smelter,
+not a patch of ground beside it -- and releases its ore through its own store
+port, and the page draws a ring on each mouth that goes green the moment the
+two are paired.
+
+**What was wrong.** A transfer was to a PLACE. A machine within two metres of a
+heap on the ground could dump onto it or take off it, and that was all: nothing
+on a machine said "ore goes in here", nothing said a rover's store and a
+smelter's intake belonged together, and nothing was drawn, so a person watching
+could not see why a transfer did or did not happen. The rover's job named the
+heap, so the ore and the spoil went to the same spot because that was the only
+thing a dump could aim at.
+
+**A port is a mouth on a device** (`playground/machine_ports.py`), declared on
+its program in the room's spec, on one of its parts, so it moves with it:
+
+```json
+"ports": [{"name": "smelter intake", "flow": "in", "body": "smelter",
+           "at_mm": [-3000, 1100, -9180], "normal": [0, 0, 1],
+           "holds": "smelter intake", "goods": ["copper ore"]}]
+```
+
+- `flow` is `"in"` (it takes goods) or `"out"` (it gives them). A mouth is one
+  way; a device with a two-way mouth declares two ports at the same point.
+- `fitting` is the coupling, the way a hose fits one tap and not another. Two
+  ports pair only when theirs match. `"goods"` is the only one so far, and it
+  is what a port that says none is given. Power and heat are their own systems
+  and go nowhere near here.
+- `body`, `at_mm` and `normal` are where the mouth is and which way it looks,
+  in the room's own millimetres as the room is made, exactly as a solar panel's
+  are. Where that lies on the body is worked out the first time the body is
+  seen, and after that the mouth rides the body: the rover's store turns with
+  the rover, an anchored smelter's does not move at all.
+- `holds` says what is BEHIND the mouth: `"hopper"`, the machine's own load, or
+  the name of one of the room's stockpiles.
+- `goods` are the substances it will take or give; none means anything.
+
+**A port does not replace a stockpile. It docks to what one holds.** This was
+the design choice, and the reason is that the two are different things. A heap
+on the ground is a place in the world a person can walk up to and see, that a
+dump can make where there was none, that the Workshop's rack can be, and that a
+still machine's recipe works between. A port is geometry and a contract: where
+the mouth is, which way it faces, what it will accept. Making a port hold goods
+itself would have meant a second ledger, a smelter whose ore is nowhere in the
+world, and rewriting every room that dumps and takes by place. So a port
+decides WHETHER and WHERE, and a hopper or a heap is WHAT HOLDS. The smelter's
+intake port passes ore onto the same "smelter intake" heap its own recipe eats
+from, and nothing about the recipe changed.
+
+**Two ports pair** when one gives and the other takes, their fittings match,
+they are no further apart than a dock, their two faces are opposed within the
+allowance, and neither is behind the other. They must belong to different
+machines: a device does not feed itself.
+
+- **1.2 m, the dock.** A declared game constant, not a clearance off a real
+  coupling. It is set by what a machine can do: one told to go to a point stops
+  about a metre short of it (the `approaching` ask stops within a metre, and
+  0.92 m, 0.98 m and 0.62 m are measured above in real rooms), so mouths that
+  had to touch could never be brought together by a machine that drives to
+  them. A person can still carry two things closer by hand, and then they dock.
+- **60 degrees, the facing.** How far from exactly mouth to mouth the two faces
+  may be turned. A game constant too, and deliberately loose: a machine that
+  drives at a thing stops about 3.4 degrees off square and lets itself drift 8
+  degrees on the way (both measured above), so past ten degrees is already
+  slack -- but a mouth need not be on the machine's nose and the ground is not
+  level, and a dock a machine can see and reach and still not make is the one
+  thing a person watching cannot forgive. 90 degrees would have the mouths at
+  right angles, where nothing could pass.
+- **Neither behind the other.** A half turn each way: the other mouth has to be
+  somewhere in front of this one's face. That is what refuses a machine that
+  has driven past.
+
+**The first rule was wrong, and the page showed it.** It asked instead that
+each face look ALONG the line joining the two mouths, within the same 60
+degrees, with the number derived from how far to one side a machine may stop.
+In the mine the rover came alongside the smelter with its mouth 0.53 m from the
+intake and was refused at 69 degrees. The derivation had used the full 1.2 m
+dock; a dock actually happens at half a metre, and over half a metre a third of
+a metre of lateral offset -- which a machine that stops within a metre of a
+point has every right to -- swings that line by 30 degrees, and both mouths
+swing. The line between two mouths is a worse measure of anything the closer
+they get. Which way they look is not, so that is what the rule asks now.
+
+**The transfer** is a tool, `dock`: goods from one of the machine's ports into
+the port it is paired with -- its store into the other's intake, or the other's
+outlet into its store -- whichever of its own mouths fits. What moves is what
+the giver holds that the giver gives and the taker takes, as much as the taker
+has room for. Nothing here is a place: a routine step is `{"do": "dock"}` and a
+`go_to` can name a `port` instead of a place, so a machine is sent to a thing.
+A person can say it too ("go to the smelter intake"), and an order that would
+have dumped onto a port docks at it instead.
+
+`dock` never answers "idle", unlike `take` and `process`. An idle answer is one
+the runner asks again next tick without counting it, and a step that is only
+ever idle can never end -- a machine that stopped a little too far off would
+stand at the dock for ever. It answers plainly either way and a routine bounds
+the step in seconds. Fixing that turned up a bug in the runner itself: a
+repeating step reset its clock on every issue, so its seconds were never up. A
+step bounded in seconds is now counted from when it was first issued.
+
+**The indicator** (`playground/world.js`, `dressPorts`): a ring at each mouth,
+lying in the plane of its face, with a cone through it pointing the way the
+goods go -- out along the face for a port that gives, back into the device for
+one that takes. So which end of a smelter is its intake is there on the
+smelter. The ring is steel while nothing is alongside, amber while another
+mouth is near but the two are not paired, and green while they are docked. The
+playground works out which and sends it with every step, so the page and the
+machine never disagree: what is drawn green is exactly what `dock` would move
+goods through. The `ports` sense says the same in words, with the reason a
+near mouth is not paired ("they are 0.39 m apart but turned 72 deg off each
+other, and a dock allows 60").
+
+**The mine's rover** now has a store port at the front lip of its deck, and the
+smelter and the mill each have an intake on the face the ore comes from and an
+outlet on the face their heap is on. Its routine goes to the smelter's intake
+PORT, docks, and then carries the spoil -- what is left in the hopper once the
+ore has gone, which the smelter has no use for -- to a spoil heap on the way
+back. The ore goes to a thing and the dirt goes to a place.
+
+Measured in the real engine (`tools/build_mine_room.py`, which refuses to write
+the room unless the chain closes, and `tests/ports_tests.py`):
+
+- the rover dug 40 kg with 12 kg of copper ore in it, reached the smelter's
+  intake port and passed all 12 kg through it in 3.0 s at 29 s of the world;
+  the smelter worked its first 5 kg batch at once, and copper wire reached the
+  Workshop's rack at 41 s. Every battery's account closed and the ground's
+  carried account was back at 0.01 kg;
+- the rover's mouth moved 2.98 m with the rover in 15 s of driving, while the
+  smelter's stayed within 50 mm of where the room put it;
+- in the page, with the four machines switched on and the room stepped as a
+  person steps it, the rover's store and the smelter's intake both went green
+  the moment they paired, and both rings went back to amber with the reason
+  written out as the rover pulled away ("they are 1.25 m apart, and a dock is
+  1.2 m").
+
+**What is NOT modelled.** There is no chute, no pipe, no hose and no valve in
+the physics. Nothing is drawn between two paired mouths, no body travels along
+one, and the goods are booked out of one holder and into the other in the same
+call. A port carries goods only: no force, no heat, no charge, no readings. It
+holds nothing itself. It does not open or shut, it cannot be blocked, jammed or
+leak, and nothing about it wears out. Two mouths pair however much of the
+machine stands between them: nothing checks that the way is clear. A dock costs
+no energy -- the giving machine's battery pays nothing for it -- where a scoop
+does; it takes time only, at the same declared quarter-second a kilogram a
+scoop takes.
+
+**Not built:** a port on a body with no program (every port belongs to a
+machine); a port that carries anything but goods; the drone hauling through the
+smelter's outlet port, which it cannot reach -- it hovers 1.8 m up and the
+outlet is 0.4 m off the ground, four times the dock apart, so it still takes
+off the heap; a dock that a person can make by hand; a port drawn on the
+Workshop bench, so a machine built there declares none.
+
 ## After the hoist
 
 These follow the owner's analysis. Each is a milestone of its own, and each is

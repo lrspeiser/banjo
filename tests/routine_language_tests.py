@@ -271,8 +271,12 @@ class InTheMine(unittest.TestCase):
         rover = self.brains.of("rover")
         person = {"standing_m": [8.0, 1.0, -9.0], "facing": [-1, 0, 0]}
         said = rover_talk.talk(self.app, {"program": "rover", "said": "go to the smelter intake", "person": person})
-        self.assertTrue(said["reply"].startswith("Will do: go to smelter intake"), said["reply"])
+        # "the smelter intake" is a PORT on the smelter now, not a place the
+        # rover knows (docs/machine-world.md, "Devices that pair"), so the order
+        # sends it to the mouth itself.
+        self.assertTrue(said["reply"].startswith("Will do: go to the smelter intake"), said["reply"])
         self.assertEqual(1, len(rover.routine.orders()))
+        self.assertEqual("smelter intake", rover.routine.frames[-1].steps[0]["args"]["port"])
         self.step(60, person=person, until=lambda: any(t.get("order_done") for t in rover.talk))
         done = [t["said"] for t in rover.talk if t.get("order_done")]
         print(f"\n    the rover: {done}; notes: {list(rover.routine.notes)[-4:]}")
