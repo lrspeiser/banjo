@@ -885,6 +885,7 @@ class Bench:
                 "could_not_say": self.unanswered(), "failures": list(self.failures),
                 "stores": machines.get("stores") or [],
                 "panels": machines.get("panels") or [],
+                "motors": machines.get("motors") or [],
                 "controls": machines.get("controls") or [],
                 "programs": machines.get("programs") or []}
 

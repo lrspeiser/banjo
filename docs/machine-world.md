@@ -1410,6 +1410,23 @@ body, draws on a store of its own, has no wheels, and can only stand by,
 wait as asked, rest when its battery is low, or be off (`LiveWorld::
 decideStill`). What it makes is its routine, run by the playground over it.
 
+**Rising and descending are tools too** (`machine_tools`): `rise` and
+`descend`, with how long to do it for, so a routine, a decider or a person
+talking can tell a flying machine to climb over something or come down,
+not only a person at the keys. A machine on wheels is told it does not
+fly, and does nothing.
+
+**What a machine is spending.** Its panel in the world, and the Lab's
+drive box, both say what its battery holds and what it is spending right
+now: the joules it has of its capacity, the watts its motors are asking of
+it this step (`LiveMotor::power_w`), the watts its panels are putting back,
+and how long that leaves at this rate. A machine switched off asks for
+nothing. A flying machine asked all the way down sets itself on the ground
+and stops its rotors -- a landed machine is carried by the ground, not by
+its rotors -- so its draw falls to nothing until it is asked up again.
+Measured: the drone hovering asks 2.84 kW of its 2 MJ battery, about twelve
+minutes; landed it asks nothing; asked up again it spends again.
+
 **Three more tools**, for any machine (`machine_tools`): `take` (goods off
 the stockpile it stands by, or the one at a place it knows, into its hopper,
 one substance or whatever is there), `process` (one batch of its recipe: the

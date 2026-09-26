@@ -131,6 +131,21 @@ def turn_right(ctx: senses.Context, call: Call) -> dict[str, Any]:
     return _behave(ctx, call, "turning right", float(call.args.get("for_s", 2.5)))
 
 
+def rise(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """Up, while it is asked: a flying machine's height loop holds the height
+    it reaches (LiveWorld::decideHover)."""
+    if ctx.program.get("kind") != "hover":
+        raise ValueError("it does not fly: only a machine on rotors rises or descends")
+    return _behave(ctx, call, "rising", float(call.args.get("for_s", 2.0)))
+
+
+def descend(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """Down, while it is asked; held all the way, it sets itself on the ground."""
+    if ctx.program.get("kind") != "hover":
+        raise ValueError("it does not fly: only a machine on rotors rises or descends")
+    return _behave(ctx, call, "descending", float(call.args.get("for_s", 2.0)))
+
+
 def hold_still(ctx: senses.Context, call: Call) -> dict[str, Any]:
     return _behave(ctx, call, "waiting", float(call.args.get("for_s", 3.0)))
 
@@ -509,6 +524,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
                        "clear.", turn_right, _FOR_S),
     Tool("hold_still", "Hold still on its brakes: it is unclear what is happening, a person is close, or moving "
                        "would make things worse.", hold_still, _FOR_S),
+    Tool("rise", "Climb, if it flies: over something in the way, or to see further. It holds the height it "
+                 "reaches. A machine on wheels cannot.", rise, _FOR_S),
+    Tool("descend", "Come down, if it flies: to reach the ground, or under something. Held long enough it "
+                    "lands. A machine on wheels cannot.", descend, _FOR_S),
     Tool("face", "Turn on the spot until its front is towards a place, the person, a point or a bearing.", face,
          {**_WHERE, **_FOR_S}),
     Tool("go_to", "Go to a place it knows, the person, a point or a bearing, and stop a metre off.", go_to,

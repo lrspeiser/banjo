@@ -1405,6 +1405,38 @@ function controlsNow() {
   return (world.machines && world.machines.controls) || [];
 }
 
+// What a machine's battery holds and what it is spending right now
+// (docs/machine-world.md): its store, the watts its motors are asking of it
+// this step, and the watts its panels are putting back. Switched off, or
+// standing with its motors stopped, it asks for nothing and the panel says
+// so -- which is how you see that landing a flying machine costs less than
+// holding it up.
+function energyOf(p) {
+  const m = world.machines || {};
+  let ident = p.store || 0;
+  if (!ident) {
+    const first = (p.rotors && p.rotors[0]) || p.left;
+    const control = (m.controls || []).find((c) => c.id === first);
+    const motor = control && (m.motors || []).find((x) => x.id === control.motor);
+    ident = motor ? motor.store : 0;
+  }
+  const store = (m.stores || []).find((s) => s.id === ident);
+  if (!store) return null;
+  const using = (m.motors || []).filter((x) => x.store === ident).reduce((sum, x) => sum + (x.power_w || 0), 0);
+  const taking = (m.panels || []).filter((x) => x.store === ident).reduce((sum, x) => sum + (x.power_w || 0), 0);
+  return { store, using, taking, net: using - taking };
+}
+const joulesSaid = (j) => (j >= 1e6 ? `${(j / 1e6).toFixed(2)} MJ` : j >= 1e3 ? `${(j / 1e3).toFixed(1)} kJ` : `${Math.round(j)} J`);
+const wattsSaid = (w) => (w >= 1000 ? `${(w / 1000).toFixed(2)} kW` : w >= 10 ? `${Math.round(w)} W` : `${w.toFixed(1)} W`);
+const forHowLong = (s) => (s >= 3600 ? `${(s / 3600).toFixed(1)} hours` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`);
+function spendingSaid(power) {
+  if (!power) return "";
+  const using = power.using > 0.05 ? `using ${wattsSaid(power.using)}` : "using nothing";
+  const taking = power.taking > 0.05 ? `, taking in ${wattsSaid(power.taking)}` : "";
+  const left = power.net > 0.05 ? `, ${forHowLong(power.store.charge_j / power.net)} left at that` : "";
+  return ` · ${using}${taking}${left}`;
+}
+
 // A machine's programs (docs/machine-world.md, "One autonomous creature"):
 // each works the controllers of a machine's wheels, from what its sensors read.
 function programsNow() {
@@ -1604,6 +1636,7 @@ function showProgramPanel(p) {
     "waiting": "hovering on its spot",
     "rising": "climbing on its rotors",
     "descending": "coming down on its rotors",
+    "landed": "on the ground, its rotors stopped",
     "resting": "down on the ground, its rotors off",
   } : {
     "going forward": "both wheels forward",
@@ -1622,8 +1655,11 @@ function showProgramPanel(p) {
     const mm = Math.round((s.reading_m || 0) * 1000);
     return `${s.side > 0 ? "left" : s.side < 0 ? "right" : "middle"} ${mm > 0 ? `${mm} mm of water` : "dry"}`;
   });
+  const power = energyOf(p);
   const battery = `its battery ${Math.round((p.charge_share || 0) * 100)}%`
-    + (p.rest_below > 0 ? ` (it rests below ${Math.round(p.rest_below * 100)}%)` : "")
+    + (power ? ` (${joulesSaid(power.store.charge_j)} of ${joulesSaid(power.store.capacity_j)})` : "")
+    + (p.rest_below > 0 ? `, resting below ${Math.round(p.rest_below * 100)}%` : "")
+    + spendingSaid(power)
     + (p.kind === "hover" ? ` · ${(p.height_m || 0).toFixed(2)} m up, holding ${p.hover_m} m` : "");
   setText("mp-measured", `${battery} · ${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
     + (sensors.length ? ` · its water sensors: ${sensors.join(", ")}` : ""));
