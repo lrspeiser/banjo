@@ -447,7 +447,7 @@ class InTheRealEngine(unittest.TestCase):
         self.assertIn(state["event"], events)
         self.assertIn("nearest_water", state["senses"]["water"], "the senses were read with the engine at hand")
         self.assertIn("downhill_bearing_deg", state["senses"]["slope"])
-        self.assertEqual({"next", "stuck", "battery"}, set(questions))
+        self.assertLessEqual({"next", "stuck", "battery", "arg_for_s", "arg_place"}, set(questions))
         # The program said Jev asked it, and, the while up, its reflexes had it
         # back: no ask stands two seconds on.
         program = self.program()
