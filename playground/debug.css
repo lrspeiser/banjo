@@ -1,0 +1,126 @@
+/* Debug: the bench the coding agents work from.
+
+   base.css holds the palette, the type scale and the controls; this file is
+   only the layout of a centred document. Nothing here is part of the game --
+   a person playing never opens this page, so it spends no effort on looking
+   like a room and all of it on being read quickly. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 1rem 4rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--t-read);
+  line-height: 1.5;
+}
+
+.dbg-top, main { max-width: 68rem; margin: 0 auto; }
+
+.dbg-top {
+  display: grid;
+  gap: .3rem;
+  padding: 1.6rem 0 1.1rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.4rem;
+}
+.dbg-top h1 { margin: 0; font-size: 1.5rem; font-weight: 650; color: var(--ink-strong); }
+.dbg-sub { margin: 0; max-width: 54rem; color: var(--dim); }
+.dbg-nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .55rem; }
+.dbg-nav a {
+  padding: .35rem .65rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  color: var(--ink);
+}
+.dbg-nav a:hover { border-color: var(--accent); text-decoration: none; }
+
+section { margin-bottom: 2.2rem; }
+section > h2 {
+  margin: 0 0 .2rem;
+  font-size: var(--t-head);
+  font-weight: 650;
+  color: var(--ink-strong);
+}
+section > p.note { margin: 0 0 .85rem; color: var(--dim); max-width: 54rem; }
+
+/* A grid of measured values: the label above, the value below, tabular. */
+.dbg-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: .7rem;
+  margin: 0;
+  padding: .85rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.dbg-facts > div { display: grid; gap: .1rem; min-width: 0; }
+.dbg-facts dt { font-size: var(--t-label); letter-spacing: var(--label-track); text-transform: uppercase; color: var(--dim); font-weight: 500; }
+.dbg-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* The rooms. One click each is the whole point, so they are targets first. */
+.dbg-group { margin-bottom: 1.1rem; }
+.dbg-group h3 {
+  margin: 0 0 .45rem;
+  font-size: var(--t-label);
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 500;
+}
+.dbg-rooms { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.dbg-rooms a {
+  display: inline-block;
+  padding: .33rem .6rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--t-small);
+}
+.dbg-rooms a:hover { border-color: var(--accent); background: var(--surface-lift); text-decoration: none; }
+
+/* A QA suite. */
+.dbg-suites { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+.dbg-suite {
+  display: grid;
+  gap: .5rem;
+  align-content: start;
+  /* A grid item is min-width:auto by default, so a card holding a select of
+     long case names grows past its track instead of shrinking the select.
+     Mechanics QA ("support-glass -- Support and cargo") did exactly that. */
+  min-width: 0;
+  padding: .9rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.dbg-suite h3 { margin: 0; font-size: var(--t-read); font-weight: 650; color: var(--ink-strong); }
+.dbg-suite .why { margin: 0; color: var(--dim); font-size: var(--t-small); }
+.dbg-suite dl.dbg-facts { padding: 0; border: 0; background: none; gap: .5rem; }
+.dbg-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; min-width: 0; }
+.dbg-row select { min-width: 0; max-width: 100%; flex: 1 1 9rem; }
+.dbg-links { margin: 0; font-size: var(--t-small); }
+.dbg-said { min-height: 1.2rem; font-size: var(--t-small); color: var(--dim); }
+.dbg-results { margin: 0; padding: 0; list-style: none; display: grid; gap: .25rem; font-size: var(--t-small); }
+.dbg-results li { display: flex; gap: .5rem; justify-content: space-between; border-top: 1px solid var(--line); padding-top: .25rem; }
+.dbg-results li span:first-child { overflow-wrap: anywhere; }
+.dbg-results li span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The routes, for driving any of this without a browser. */
+.dbg-routes { margin: 0; padding: 0; list-style: none; display: grid; gap: .3rem; }
+.dbg-routes li { display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: .6rem; align-items: baseline; }
+.dbg-routes code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--t-small);
+  color: var(--accent-dim);
+  overflow-wrap: anywhere;
+}
+.dbg-routes span { color: var(--dim); font-size: var(--t-small); }
+
+@media (max-width: 640px) {
+  .dbg-routes li { grid-template-columns: 1fr; gap: .1rem; }
+}

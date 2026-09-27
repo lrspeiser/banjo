@@ -49,15 +49,23 @@ The owner, 2026-09-24: "I don't want 10 different places. I want the main world
 and a workshop/lab where time freezes and you can craft items and test them and
 so forth. Remove all other code paths and consolidate everything in these two."
 
-Today there is **one page and 22 scenes**. `/` and `/world` are the world, and
-the bench is a tab in it at `/world?workshop=1`. The other six pages -- the
-fracture lab, the Explorer, `/qa`, `/mechanics-qa`, `/tool-qa` and
+Today there is **one page for playing and 26 scenes**. `/` and `/world` are
+the world, and the bench is a tab in it at `/world?workshop=1`. The other six
+pages -- the fracture lab, the Explorer, `/qa`, `/mechanics-qa`, `/tool-qa` and
 `/fabrication` -- were taken out; their rooms are still reachable as
 `/world?scene=<name>` and their measurements are made by `scripts/` in CI.
-Of the scenes, `world.html` offers two on its menu and the other twenty are
-reachable only by typing a URL.
+Of the scenes, `world.html` offers two on its menu and the other twenty-four
+are reachable only by typing a URL -- or from Debug, which lists them all.
 
-The target is two:
+**Debug is the third address, and it is not the game.** `/debug`, linked from
+the world's header, is the bench the coding agents work from: every room one
+click away, what `/api/status` says the engine is set up with, and the three QA
+suites with what each contains, whether it can run here and a button for one
+case. It exists so that the next debugging screen has somewhere to go other
+than a page of its own, which is how there came to be seven. A person playing
+never needs it.
+
+The target is two places to play in, and one to work from:
 
 - **The world** -- `/world`. One place you walk around in.
 - **The Workshop** -- `/world?workshop=1`. Time frozen. Craft a thing, finalize

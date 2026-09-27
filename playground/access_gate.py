@@ -90,8 +90,10 @@ def _install_world_csp_hashes() -> None:
     server.py owns the ordinary response header and access_gate owns the hosted
     login response. Both ultimately call BaseHTTPRequestHandler.send_header, so
     wrapping it here keeps the policies aligned without duplicating the hashes
-    in two places. Only /world and /world.html are changed, and only the
-    script-src and style-src directives are extended.
+    in two places. Only the three addresses that serve world.html are changed --
+    and / is one of them: the front door IS the world page, so leaving it out
+    left the root serving a page whose own bootstrap the browser then refused.
+    Only the script-src and style-src directives are extended.
     """
     wanted = {
         "script-src 'self'": _world_inline_hashes(r'<script\s+type=["\']module["\']>(.*?)</script>'),
@@ -107,7 +109,7 @@ def _install_world_csp_hashes() -> None:
     def send_header(handler: Any, keyword: str, value: str) -> None:
         if keyword.lower() == "content-security-policy":
             path = urlsplit(getattr(handler, "path", "")).path
-            if path in {"/world", "/world.html"}:
+            if path in {"/", "/world", "/world.html"}:
                 for needle, hashes in wanted.items():
                     missing = [h for h in hashes if h not in value]
                     if missing and needle in value:

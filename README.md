@@ -870,7 +870,8 @@ It listens on `127.0.0.1` only and keeps its rooms in
 |---|---|
 | `/` and `/world` | the main world, with the chat and the side panel |
 | `/world?workshop=1` | the bench: design one product at a time, drive it, and make it |
-| `/world?scene=<room>` | any of the 25 rooms ([the list](docs/what-works-where.md#the-rooms)) |
+| `/world?scene=<room>` | any of the 26 rooms ([the list](docs/what-works-where.md#the-rooms)) |
+| `/debug` | not the game: every room one click away, what the engine reports, the QA suites |
 
 That is the whole site. The Explorer, the fabrication page, the three QA pages
 and the older fracture lab were taken out: what a person opens is the world,
@@ -879,6 +880,14 @@ there as `/world?scene=explore` and `/world?scene=fabrication`, and the
 measurements the QA pages drew are made by `scripts/material_qa.py`,
 `scripts/mechanics_qa.py`, `scripts/tool_qa.py` and `scripts/fabrication_qa.py`
 in CI, which never needed a browser to do it.
+
+What did need a screen is on **`/debug`**, linked from the world's header and
+from nowhere else. It is one page, and it is where any screen built for
+debugging goes from now on: the alternative is a page per job, which is how
+there came to be seven. It lists every room as a link, says what `/api/status`
+reports the engine is set up with, and shows the three QA suites -- how many
+cases each holds, whether it can run here, and a button for one case when you
+want it now and watched rather than in CI.
 
 The main world stands on a generated valley with a river and a pond, and holds
 a latched gate, a portcullis on a winch, a self-closing door, a bell on a rope,

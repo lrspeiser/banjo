@@ -29,6 +29,10 @@ Current native ABI: **25**. World MCP is **1.14.0**; platform MCP is **1.17.0**.
 - **[../gameplay.md](../gameplay.md)** — finite-resource expedition, world time, drying process, HTTP/Python/MCP operations and persistence boundaries.
 - **[mcp.md](mcp.md)** — the MCP server, so Claude or ChatGPT can run
   experiments instead of guessing at them.
+- **[debug.md](debug.md)** — `/debug`, the bench the coding agents work
+  from: every room one click away, what the engine reports about itself,
+  the four QA suites, and the HTTP routes to drive all of it without a
+  browser. Read it before building a screen of your own.
 - **[../cutting-model.md](../cutting-model.md)** — blades: an edge declared on a
   body, a hand with bounded force and torque to swing it, and the contact law
   that decides what an edge does to what it meets and what that costs.
