@@ -470,8 +470,11 @@ class InTheRealEngine(unittest.TestCase):
         person = {"standing_m": behind, "facing": [v[0] / speed, 0, v[2] / speed]}
         opened = rover_talk.talk(self.app, {"program": "rover", "open": True, "person": person})
         self.assertEqual(("facing", "talk"), (opened["program"]["asked"]["doing"], opened["program"]["asked"]["by"]))
-        self.assertIn(opened["program"]["doing"], ("turning left", "turning right"))
-        self.assertTrue(opened["reply"].startswith("I am turning"), opened["reply"])
+        # It was going somewhere when they spoke, so it stops before it turns:
+        # turning with its wheels opposed has no braking, and one that turns
+        # while still moving coasts off its way (LiveWorld, decideProgram).
+        self.assertIn(opened["program"]["doing"], ("stopping", "turning left", "turning right"))
+        self.assertTrue(opened["reply"].startswith(("I am stopping", "I am turning")), opened["reply"])
         self.assertEqual([("rover", True)], [(t["who"], t.get("opened", False)) for t in opened["talk"]])
         # While they talk, nothing that happens to it is asked about.
         self.step_as_the_page_does(14.0)
