@@ -5,7 +5,7 @@ measured; this is what has not been done yet. Keep it current: when something
 lands, move it up and say what was measured; when something is found to be
 missing, put it in.
 
-Last touched 2026-09-27, branch `agent/fracture-truth` (pushed, not merged).
+Last touched 2026-09-27, branch `agent/fracture-truth`, merged to main as `6825cd4`.
 
 ## Ready to try
 
