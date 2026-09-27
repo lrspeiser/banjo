@@ -6,6 +6,8 @@ The recorded material impact range, HTTP endpoints and five platform MCP tools a
 
 Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](../primary-use.md) for programming, API payloads, bounds and compatibility.
 
+Watching a run rather than driving one: **[Debug](debug.md)** — `/debug` on a running playground server. Every room one click away, what the engine reports about itself, the four QA suites, and the HTTP routes behind them. That is the screen; this file is the vocabulary a model uses instead.
+
 A model asked "does a glass ball break if I drop it two metres onto concrete"
 will give you a confident paragraph. This gives it a way to find out.
 
@@ -768,6 +770,8 @@ the right frame:
 > something broke unless a tool reported that it did.**
 
 That last line is the point of the whole thing.
+
+The same server's HTTP side reports what it is set up with at `GET /api/status` — engine, studio, chat model, and what the build will not claim — and [Debug](debug.md) is that read as a page. When a tool call fails for a reason that is not about matter, it is usually one of those saying no.
 
 ## Bounds
 

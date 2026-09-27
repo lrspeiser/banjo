@@ -112,24 +112,37 @@ async function showRooms() {
 
 // ---- The QA suites ---------------------------------------------------------
 
+// kind "cases" has a catalogue and runs one case you pick; kind "fixed" has no
+// catalogue at all and runs its whole suite in one go, in a subprocess under a
+// budget. Fabrication is the second kind, which is why it has no picker.
 const SUITES = [
   {
     id: "material-qa",
+    kind: "cases",
     title: "Material QA",
     why: "A plate of one material struck at one speed, against the band it is expected to fall in.",
     needs: "banjo_fast_lattice_run beside the engine",
   },
   {
     id: "mechanics-qa",
+    kind: "cases",
     title: "Mechanics QA",
     why: "Whole-body trials: what holds, what carries, what gives way.",
     needs: "the native live world runner",
   },
   {
     id: "tool-qa",
+    kind: "cases",
     title: "Tool QA",
     why: "A tool into ground: what the head does and what the ground does back.",
     needs: "the native live world runner",
+  },
+  {
+    id: "fabrication-qa",
+    kind: "fixed",
+    title: "Fabrication QA",
+    why: "Finite stock through the Workshop against the native engine: what was spent, what was made, and whether the books balance.",
+    needs: "the native live runner and the shared library beside it",
   },
 ];
 
@@ -177,50 +190,66 @@ async function showSuite(suite) {
   runs.className = "dbg-results";
   card.append(head, why, facts, row, said, runs);
 
-  let catalog;
-  try {
-    catalog = await get(`/api/${suite.id}`);
-  } catch (err) {
-    facts.replaceChildren(fact("Catalog", String(err.message || err), "bad"));
-    return card;
-  }
-
-  const cases = catalog.cases || [];
-  const hash = catalog.suite_hash || catalog.fixture_hash || "—";
-  const runnable = Boolean(catalog.engine_available);
-  facts.replaceChildren(
-    fact("Cases", cases.length),
-    fact("Can run here", yesNo(runnable), goodBad(runnable)),
-    fact("Suite hash", String(hash).slice(0, 12)),
-  );
-
-  const pick = document.createElement("select");
-  pick.setAttribute("aria-label", `Which ${suite.title} case`);
-  for (const entry of cases) {
-    const option = document.createElement("option");
-    option.value = entry.id;
-    option.textContent = caseLabel(entry);
-    pick.append(option);
-  }
+  let pick = null;
   const run = document.createElement("button");
   run.type = "button";
-  run.textContent = "Run this case";
-  row.append(pick, run);
+
+  if (suite.kind === "fixed") {
+    // It reports what it can do only by being asked to run, so the card says
+    // what it is and what it costs rather than guessing at readiness.
+    facts.replaceChildren(
+      fact("Cases", "its whole fixed suite"),
+      fact("Budget", "120 s"),
+      fact("Started by", "an empty body"),
+    );
+    run.textContent = "Run the suite";
+    row.append(run);
+  } else {
+    let catalog;
+    try {
+      catalog = await get(`/api/${suite.id}`);
+    } catch (err) {
+      facts.replaceChildren(fact("Catalog", String(err.message || err), "bad"));
+      return card;
+    }
+
+    const cases = catalog.cases || [];
+    const hash = catalog.suite_hash || catalog.fixture_hash || "—";
+    const runnable = Boolean(catalog.engine_available);
+    facts.replaceChildren(
+      fact("Cases", cases.length),
+      fact("Can run here", yesNo(runnable), goodBad(runnable)),
+      fact("Suite hash", String(hash).slice(0, 12)),
+    );
+
+    pick = document.createElement("select");
+    pick.setAttribute("aria-label", `Which ${suite.title} case`);
+    for (const entry of cases) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = caseLabel(entry);
+      pick.append(option);
+    }
+    run.textContent = "Run this case";
+    row.append(pick, run);
+
+    if (!runnable) {
+      run.disabled = true;
+      said.textContent = `Not built here — needs ${suite.needs}.`;
+    }
+  }
 
   // Its own line, not another item in the row: at a middling card width the
   // row would rather clip this than wrap it, and a clipped link is a bug you
   // only see at one window size.
-  const catalogLine = document.createElement("p");
-  catalogLine.className = "dbg-links";
-  const catalogLink = document.createElement("a");
-  catalogLink.href = `/api/${suite.id}`;
-  catalogLink.textContent = "catalog JSON";
-  catalogLine.append(catalogLink);
-  card.insertBefore(catalogLine, said);
-
-  if (!runnable) {
-    run.disabled = true;
-    said.textContent = `Not built here — needs ${suite.needs}.`;
+  if (suite.kind !== "fixed") {
+    const catalogLine = document.createElement("p");
+    catalogLine.className = "dbg-links";
+    const catalogLink = document.createElement("a");
+    catalogLink.href = `/api/${suite.id}`;
+    catalogLink.textContent = "catalog JSON";
+    catalogLine.append(catalogLink);
+    card.insertBefore(catalogLine, said);
   }
 
   const refresh = async () => {
@@ -236,10 +265,10 @@ async function showSuite(suite) {
 
   run.addEventListener("click", async () => {
     run.disabled = true;
-    said.textContent = `Running ${pick.value}…`;
+    said.textContent = pick ? `Running ${pick.value}…` : "Running the suite…";
     said.className = "dbg-said";
     try {
-      const started = await post(`/api/${suite.id}/run`, { case_ids: [pick.value] });
+      const started = await post(`/api/${suite.id}/run`, pick ? { case_ids: [pick.value] } : {});
       const id = started.id;
       // The run is a thread on the server; the report is the only truth about
       // it, so this asks for the report rather than assuming the thread's pace.
@@ -287,6 +316,7 @@ const ROUTES = [
   ["GET /api/mechanics-qa", "The whole-body trials, each with its document."],
   ["GET /api/tool-qa", "The tool-into-ground cases."],
   ["GET /api/fabrication-qa/runs", "Fabrication runs on this server."],
+  ["POST /api/fabrication-qa/run", "Start the fabrication suite: an empty body, {}."],
   ["GET /api/<suite>/runs/<id>", "One run's report. <suite> is material-qa, mechanics-qa or tool-qa."],
   ["POST /api/world/open", "Open a room: {\"scene\": \"world\"}."],
   ["POST /api/live/act", "Step it: {\"session\", \"op\": \"step\", \"dt\", \"n\"}."],

@@ -776,6 +776,14 @@ class PlaygroundHttpTests(PlaygroundTestCase):
         # never has to know an address to find either.
         self.assertIn(b'href="/world?workshop=1"', home)
         self.assertIn(b'href="/debug"', home)
+        # Debug offers every room as a link, and reads them from here rather
+        # than holding a list of its own that SCENES could move out from under.
+        import world_room
+
+        status, _, scenes = self.request("GET", "/api/scenes")
+        self.assertEqual(status, 200)
+        self.assertEqual(scenes["scenes"], sorted(world_room.SCENES))
+        self.assertIn("world", scenes["scenes"])
         # The experiment console, the Explorer, the fabrication page and the
         # three QA pages were taken out. Their APIs remain; their pages do not.
         for path in ("/.env", "/../.env", "/%2e%2e/.env", "/server.py", "/unknown",
