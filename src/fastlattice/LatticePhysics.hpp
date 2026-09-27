@@ -265,6 +265,13 @@ struct StepSettings {
     // material/Material.hpp CompiledBrittleMaterial::yield_stretch.
     Real plastic_yield_stretch;
     Real plastic_hardening;
+    // Half the cell size: how far the outermost fibre of a sheet one cell
+    // thick is from its mid-surface, which is what turns the curvature of that
+    // sheet into a strain (plateBendingStrain). Zero switches plate bending
+    // off and leaves every strain exactly what it was; it does nothing at all
+    // where a neighbourhood spans three directions, which is every body two
+    // cells thick or more.
+    Real plate_half_thickness;
     ContactSettings<Real> contact;
     NodeContactSettings<Real> node_contact;
     SupportSet<Real> support;
@@ -518,12 +525,267 @@ BANJO_HD int symmetricPseudoInverse3(const Real m[9], Real out[9], Real unmeasur
 }
 
 // ---------------------------------------------------------------------------
+// Plate bending for a sheet one cell thick.
+//
+// A neighbourhood that lies in a plane measures the deformation of that plane
+// and nothing else: the rest covariance is rank 2, R+ truncates the direction
+// through the sheet, and F is the identity along it. That is the right
+// statement for the data -- there is no second layer of nodes to tell it what
+// happens through the thickness -- and it is exactly why a plate struck flat
+// was nearly untouched. Hitting a plate loads it in BENDING, and the membrane
+// strain above is blind to bending: measured, a 300 x 300 x 20 mm glass plate
+// at 20 mm cells lost 40 bonds to a blow that took 902 out of the same plate
+// 40 mm thick, and came apart only when a lone cell happened to lose its last
+// bond.
+//
+// The curvature is recoverable from the same neighbours, because how far each
+// has moved OUT of the plane is exactly what a plate's bending puts there.
+// Fitted in two stages, both weighted as the strain is:
+//
+//   1. the tilt: the best linear fit of the out-of-plane displacement against
+//      the rest offset, a = R+ (sum w (d.n) r). A rigid rotation moves every
+//      neighbour out of the plane by an amount exactly linear in its offset,
+//      so this stage absorbs all of it and leaves nothing -- which is what
+//      makes the curvature below invariant under rigid motion, the property
+//      the in-plane projection was introduced to protect.
+//   2. the curvature: what the tilt does not explain, fitted as the quadratic
+//      w = (1/2) r^T K r over the three independent components of K. The
+//      normal matrix is symmetric 3x3, so the same truncating pseudo-inverse
+//      serves; a node with too few neighbours to determine a curvature gets
+//      zero along the directions its neighbours never sample, rather than a
+//      number invented out of rounding.
+//
+// A plate of thickness h bends its outermost fibre by (h/2) * K. The fibre in
+// TENSION is the one taken, |K| rather than K: which face of the sheet the
+// stored normal points out of is arbitrary, and a signed term would make the
+// answer depend on it. Seven of the eight materials fail in tension first, and
+// for the three that are weaker in compression (oak, aluminium, rubber) this
+// is the conservative side of the truth rather than the exact one.
+//
+// Adds the bending strain to `e`, the six components of E in (xx, yy, zz, xy,
+// xz, yz) order. Nothing here runs for a neighbourhood that spans all three
+// directions: a body two cells thick or more measures its own bending.
+// ---------------------------------------------------------------------------
+// How much of the out-of-plane motion the curvature fit has to explain before
+// it is read as bending. One is a perfect quadratic; a sheet in the middle of
+// shattering is far below this.
+template <typename Real>
+BANJO_HD constexpr Real plateFitShare() { return Real(0.9); }
+
+template <typename Real>
+BANJO_HD void plateBendingStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool direct,
+                                 Real half_thickness, Real yield_stretch,
+                                 const V3<Real> &xi, Real *e) {
+    const std::uint32_t N = L.node_count, D = L.max_degree;
+
+    // Is this node in a sheet, or is it a solid node that fracture has stripped
+    // down to a plane? The live neighbourhood cannot tell the two apart -- both
+    // are rank 2 -- and they are not the same thing: matter one cell thick was
+    // always a sheet and its bending is real, while a node whose neighbours
+    // have been broken away is a piece of something thicker and has no plate to
+    // bend. Measured on the 40 mm plate, which is two cells thick and needs
+    // none of this: judging by the live set alone moved it from 13 pieces to 26
+    // at 3 m, because nodes that had lost bonds started being read as sheets
+    // halfway through the cascade.
+    //
+    // So the question is asked of the REST neighbourhood -- every bond the node
+    // was built with, alive or not. That is a property of the shape and does
+    // not move as the run goes on, and it gives a sheet a steady normal even
+    // where it has begun to come apart.
+    Real rest_cov[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    BANJO_UNROLL
+    for (std::uint32_t k = 0; k < D; ++k) {
+        const std::uint32_t slot = k * N + i;
+        if (L.nbr_bond[slot] == kNoBond) continue;
+        const Real w = L.nbr_weight[slot];
+        if (w <= Real(0)) continue;
+        const V3<Real> r = load3(L.nbr_rest, slot);
+        const Real rr[3] = {r.x, r.y, r.z};
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col) rest_cov[row * 3 + col] += w * rr[row] * rr[col];
+    }
+    Real rest_inv[9], flat[3];
+    if (symmetricPseudoInverse3(rest_cov, rest_inv, flat) >= 3) return;  // solid, not a sheet
+    const V3<Real> normal = v3<Real>(flat[0], flat[1], flat[2]);
+    if (!(length2(normal) > Real(0))) return;
+    // The shape says whether there is a plate and which way it faces. Every sum
+    // below is over the LIVE neighbours, so the fits they feed use the live
+    // pseudo-inverse that matches them: solving a live sum against the rest
+    // geometry's inverse understates the tilt by exactly the bonds that have
+    // gone, and what it leaves behind reads as curvature. That fed itself --
+    // the 20 mm plate came apart into 210 of its 225 cells from 3 m.
+    const Real *inv = L.rinv + 9 * i;
+
+    // Stage 1: the tilt, from the same sum the strain is built out of.
+    Real rhs[3] = {0, 0, 0};
+    BANJO_UNROLL
+    for (std::uint32_t k = 0; k < D; ++k) {
+        const std::uint32_t slot = k * N + i;
+        const std::uint32_t j = L.nbr_bond[slot];
+        const bool present = j != kNoBond;
+        const std::uint32_t other = present ? L.nbr_other[slot] : i;
+        const Real w = (present && L.nbr_alive[slot]) ? L.nbr_weight[slot] : Real(0);
+        const V3<Real> rest = present ? load3(L.nbr_rest, slot) : v3<Real>(0, 0, 0);
+        const V3<Real> xo = direct ? position(L, other) : load3(L.u, other);
+        const V3<Real> d = direct ? (xo - xi) - rest : xo - xi;
+        const Real out = w * dot(d, normal);
+        rhs[0] += out * rest.x;
+        rhs[1] += out * rest.y;
+        rhs[2] += out * rest.z;
+    }
+    Real tilt[3];
+    for (int row = 0; row < 3; ++row) {
+        Real s = Real(0);
+        for (int k = 0; k < 3; ++k) s += inv[row * 3 + k] * rhs[k];
+        tilt[row] = s;
+    }
+
+    // An in-plane frame, from whichever axis the normal leans on least, so the
+    // two directions are well separated however the sheet is oriented.
+    const Real ax = normal.x < Real(0) ? -normal.x : normal.x;
+    const Real ay = normal.y < Real(0) ? -normal.y : normal.y;
+    const Real az = normal.z < Real(0) ? -normal.z : normal.z;
+    const V3<Real> axis = (ax <= ay && ax <= az) ? v3<Real>(1, 0, 0)
+                        : (ay <= az)             ? v3<Real>(0, 1, 0)
+                                                 : v3<Real>(0, 0, 1);
+    V3<Real> e1 = cross(normal, axis);
+    const Real e1len = length(e1);
+    if (!(e1len > Real(0))) return;
+    e1 = (Real(1) / e1len) * e1;
+    const V3<Real> e2 = cross(normal, e1);
+
+    // Stage 2: the curvature, over what the tilt leaves behind.
+    Real A[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    Real g[3] = {0, 0, 0};
+    Real out_of_plane2 = Real(0);   // sum w s^2, for how much of it the fit explains
+    BANJO_UNROLL
+    for (std::uint32_t k = 0; k < D; ++k) {
+        const std::uint32_t slot = k * N + i;
+        const std::uint32_t j = L.nbr_bond[slot];
+        const bool present = j != kNoBond;
+        const std::uint32_t other = present ? L.nbr_other[slot] : i;
+        const Real w = (present && L.nbr_alive[slot]) ? L.nbr_weight[slot] : Real(0);
+        const V3<Real> rest = present ? load3(L.nbr_rest, slot) : v3<Real>(0, 0, 0);
+        const V3<Real> xo = direct ? position(L, other) : load3(L.u, other);
+        const V3<Real> d = direct ? (xo - xi) - rest : xo - xi;
+        const Real left = dot(d, normal) -
+                          (tilt[0] * rest.x + tilt[1] * rest.y + tilt[2] * rest.z);
+        const Real p1 = dot(rest, e1), p2 = dot(rest, e2);
+        // (1/2) r^T K r written against (Kxx, Kxy, Kyy).
+        const Real psi[3] = {Real(0.5) * p1 * p1, p1 * p2, Real(0.5) * p2 * p2};
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) A[row * 3 + col] += w * psi[row] * psi[col];
+            g[row] += w * psi[row] * left;
+        }
+        out_of_plane2 += w * left * left;
+    }
+    // Solving this one needs a harder floor than the rest covariance does. Its
+    // entries go as the fourth power of a rest offset, so its eigenvalues span
+    // a far wider range, and the shared floor -- a billionth of the largest --
+    // will happily invert a direction the neighbours have barely sampled. At a
+    // corner, or at a node whose bonds have gone, that turns rounding into
+    // curvature: measured on a 20 mm iron plate on piers, where nothing had
+    // failed at half this term's size, the whole plate came apart into every
+    // one of its 225 cells at full size. A direction has to be sampled to
+    // within a thousandth of the best-sampled one before a curvature is read
+    // along it; below that the honest answer is that the neighbours do not
+    // determine one.
+    Real eigenvalues[3], axes[9];
+    symmetricEigen3(A, eigenvalues, axes);
+    Real biggest = absR(eigenvalues[0]);
+    for (int k = 1; k < 3; ++k) biggest = absR(eigenvalues[k]) > biggest ? absR(eigenvalues[k]) : biggest;
+    const Real determined = Real(1.0e-3) * biggest;
+    Real c[3] = {0, 0, 0};
+    int along = 0;
+    for (int k = 0; k < 3; ++k) {
+        if (!(eigenvalues[k] > determined)) continue;
+        ++along;
+        Real projected = Real(0);
+        for (int row = 0; row < 3; ++row) projected += axes[row * 3 + k] * g[row];
+        const Real amount = projected / eigenvalues[k];
+        for (int row = 0; row < 3; ++row) c[row] += amount * axes[row * 3 + k];
+    }
+    if (along < 1) return;
+
+    // Is this neighbourhood BENDING, or is it coming apart?
+    //
+    // A plate that bends moves its neighbours out of plane by a tilt and a
+    // quadratic and nothing else, so the fit explains nearly all of what it
+    // sees. A lattice in the middle of shattering moves them every way at
+    // once, and a quadratic put through that returns a large curvature which
+    // is not bending at all -- and which then breaks more bonds, which makes
+    // the next fit worse. Measured: the fracture lab's own 10 mm plate on
+    // piers, eight pieces on the reference, came apart into 138 with pieces of
+    // pieces of pieces five deep, and the two live lanes stopped agreeing on
+    // what was in the world.
+    //
+    // For a least-squares fit the part of the sum of squares the fit explains
+    // is c . g, so this costs one dot product. Below this share, the
+    // neighbours are not describing a bending plate and none is claimed.
+    const Real explained = c[0] * g[0] + c[1] * g[1] + c[2] * g[2];
+    if (!(explained > plateFitShare<Real>() * out_of_plane2)) return;
+
+    // |K| of the symmetric 2x2 [[c0, c1], [c1, c2]], through its own trace and
+    // the split of its eigenvalues: K = (tr/2) I + disc * n, where n has
+    // eigenvalues +-1, so |K| = alpha I + (beta / disc) * (K - (tr/2) I).
+    const Real half_trace = Real(0.5) * (c[0] + c[2]);
+    const Real det = c[0] * c[2] - c[1] * c[1];
+    Real under = half_trace * half_trace - det;
+    if (under < Real(0)) under = Real(0);
+    const Real disc = sqrtR(under);
+    const Real l1 = half_trace + disc, l2 = half_trace - disc;
+    const Real a1 = l1 < Real(0) ? -l1 : l1, a2 = l2 < Real(0) ? -l2 : l2;
+    // The fibre strains themselves, and what a material that YIELDS will let
+    // its outermost fibre carry elastically.
+    //
+    // Past first yield a section does not go on straining its surface
+    // elastically: it yields there and the extra curvature goes into permanent
+    // rotation, which is a dent and not a crack. Without the cap this term
+    // drives the failure criterion straight past the yield -- it does not feed
+    // the bonds' own plastic return, which is axial -- and a ductile plate
+    // cracks where it should bend. Measured: the Workshop's oak, iron and
+    // aluminium tables, which dent under 20 kg from 5 m, came back "held",
+    // because the surface fibre broke bonds that were then all put back; and a
+    // 20 mm iron plate on piers came apart into every one of its 225 cells.
+    // Zero -- every material that declares no yield strength -- is no cap at
+    // all, so glass, ceramic, ice and concrete crack from the fibre as before.
+    const Real most = yield_stretch > Real(0) ? yield_stretch : Real(-1);
+    Real s1 = half_thickness * a1, s2 = half_thickness * a2;
+    if (most > Real(0)) {
+        if (s1 > most) s1 = most;
+        if (s2 > most) s2 = most;
+    }
+    const Real alpha = Real(0.5) * (s1 + s2), beta = Real(0.5) * (s1 - s2);
+    const Real scale = disc > Real(0) ? beta / disc : Real(0);
+    const Real b11 = alpha + scale * (c[0] - half_trace);
+    const Real b12 = scale * c[1];
+    const Real b22 = alpha + scale * (c[2] - half_trace);
+
+    // Into the frame E is kept in: B11 e1(x)e1 + B12 (e1(x)e2 + e2(x)e1) +
+    // B22 e2(x)e2, written out over the six stored components.
+    const Real u1[3] = {e1.x, e1.y, e1.z}, u2[3] = {e2.x, e2.y, e2.z};
+    const int rows[6] = {0, 1, 2, 0, 0, 1};
+    const int cols[6] = {0, 1, 2, 1, 2, 2};
+    for (int q = 0; q < 6; ++q)
+        e[q] += b11 * u1[rows[q]] * u1[cols[q]] + b22 * u2[rows[q]] * u2[cols[q]] +
+                b12 * (u1[rows[q]] * u2[cols[q]] + u2[rows[q]] * u1[cols[q]]);
+}
+
+// ---------------------------------------------------------------------------
 // Nonlocal node strain (BondFailure.cpp calculateNodeStrains).
 // Recomputes the cached inverse rest covariance when the node is dirty, then
 // stores E for this node. Returns nothing; node_valid says whether E exists.
+//
+// `plate_half_thickness` is half the cell size: the distance from the
+// mid-surface of a sheet one cell thick to the fibre that fails first. It is
+// used only where the neighbourhood is coplanar, and zero switches plate
+// bending off, which is what every test written before it does. See
+// plateBendingStrain below for what it is for.
 // ---------------------------------------------------------------------------
 template <typename Real>
-BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool direct) {
+BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool direct,
+                         Real plate_half_thickness = Real(0),
+                         Real plate_yield_stretch = Real(0)) {
     const std::uint32_t N = L.node_count, D = L.max_degree;
     if (L.node_dirty[i]) {
         Real rest_cov[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -629,6 +891,11 @@ BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool dir
         for (int q = 0; q < 6; ++q)
             e[q] += -un[rows[q]] * a[cols[q]] - a[rows[q]] * un[cols[q]] +
                     s * un[rows[q]] * un[cols[q]];
+        // And what the plane cannot hold: the bending of a sheet one cell
+        // thick, which is all that is left of a blow struck flat at it once
+        // the projection above has removed everything out of the plane.
+        if (plate_half_thickness > Real(0))
+            plateBendingStrain(L, i, direct, plate_half_thickness, plate_yield_stretch, xi, e);
     }
     for (int q = 0; q < 6; ++q) L.strain[6 * i + q] = e[q];
 }

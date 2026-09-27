@@ -326,7 +326,9 @@ private:
         const std::uint32_t N = L_.node_count, B = L_.bond_count;
         phase_clock_ = std::chrono::steady_clock::now();
         if (dirty_start_) {
-            forEach(N, [&](std::uint32_t i, unsigned thread) { nodeStrain(views_[thread], i, direct); });
+            forEach(N, [&](std::uint32_t i, unsigned thread) {
+            nodeStrain(views_[thread], i, direct, S_.plate_half_thickness,
+                       S_.plastic_yield_stretch); });
             mark(1);
             forEach(B, [&](std::uint32_t j, unsigned thread) {
                 if (L_.alive[j]) bondStartSample(views_[thread], j, direct);
@@ -416,7 +418,9 @@ private:
             nodeContactPass(L_, S_, status_.node_contact);
             mark(15);
         }
-        forEach(N, [&](std::uint32_t i, unsigned thread) { nodeStrain(views_[thread], i, direct); });
+        forEach(N, [&](std::uint32_t i, unsigned thread) {
+            nodeStrain(views_[thread], i, direct, S_.plate_half_thickness,
+                       S_.plastic_yield_stretch); });
         mark(11);
         for (Scratch &scratch : scratch_) {
             scratch.tensile = scratch.compressive = scratch.shear = scratch.plastic = 0.0F;

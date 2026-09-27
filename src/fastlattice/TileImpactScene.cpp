@@ -274,6 +274,18 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.audit_energy = r.audit_energy ? 1 : 0;
     s.plastic_yield_stretch = setup.compiled.yield_stretch;
     s.plastic_hardening = setup.compiled.plastic_hardening_ratio;
+    // Plate bending is OFF in the world (docs/plate-bending.md). Half a cell --
+    // the outermost fibre of matter one cell thick -- is what switches it on,
+    // and the term itself is built, tested and measured; what is not settled is
+    // its effect on a plate that is ALREADY breaking, where a curvature fitted
+    // through a shattering neighbourhood is the crack's and not the plate's and
+    // feeds itself. Measured: the fracture lab's 10 mm plate on piers went from
+    // eight pieces to 138, five levels of pieces-of-pieces deep, and the two
+    // live lanes stopped agreeing on what was in the world
+    // (tests/live_lanes_agree_tests.py). Four ways of telling bending from
+    // shattering were measured and none separated them; the numbers are in the
+    // note. Switched on by setting this to 0.5 * cell size.
+    s.plate_half_thickness = 0.0;
     // Node-node contact. The cell is a cube of side `cell`; its contact sphere
     // is the inscribed one, the same radius the support planes hold a cell
     // centre above a surface with, so two cells touch exactly one cell apart --

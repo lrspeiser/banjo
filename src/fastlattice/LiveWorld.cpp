@@ -9629,6 +9629,9 @@ std::size_t LiveWorld::applyPending() {
     // rather than from the shape it was authored as.
     double dent_m = 0.0;
     Vec3 dent_at{};
+    // The deepest set each body took, so the put-back below can tell a body
+    // that came out as it went in from one that is now a different shape.
+    std::unordered_map<std::size_t, double> set_of_body;
     for (std::size_t k = 0; k < island_state.bond_count; ++k) {
         const std::uint32_t o = island.schedule.bond_order[k];
         const std::uint32_t parent_bond = island.parent_bond.empty()
@@ -9678,6 +9681,21 @@ std::size_t LiveWorld::applyPending() {
             if (!ran.alive) world.alive = false;
         }
         const double set_here = std::abs(island_state.plastic_extension[k]);
+        // Whose set it is. A body that took one is not the shape it was, so it
+        // must not be laid back out below however the admission went -- the
+        // put-back is for a body that came out of the run as it went in, and a
+        // dented one did not.
+        if (set_here > 0.0 && island.matter.asset != nullptr &&
+            o < island.matter.asset->bonds.size()) {
+            const BondRest &bond = island.matter.asset->bonds[o];
+            if (bond.node_a < island.parent_node.size() && bond.node_b < island.parent_node.size()) {
+                const auto owner = body_of_node.find(island.parent_node[bond.node_a]);
+                const auto other = body_of_node.find(island.parent_node[bond.node_b]);
+                if (owner != body_of_node.end() && other != body_of_node.end() &&
+                    owner->second == other->second)
+                    set_of_body[owner->second] = std::max(set_of_body[owner->second], set_here);
+            }
+        }
         if (set_here > dent_m) {
             dent_m = set_here;
             // Where it happened: the middle of the bond that took the set. In
@@ -9734,38 +9752,51 @@ std::size_t LiveWorld::applyPending() {
     // beams (tests/thermal_geometry_tests.cpp), a 212 kg iron block that had
     // been through several runs in the 30 ms before, its cells by then 0.13 m
     // from where its box touched a piece, came out of the next at 188 m/s.
+    // Nobody admitted means nobody may keep what the run did, so EVERY body in
+    // the island is laid back out -- the same reasoning that took this guard
+    // off the bond put-back above, and the same hole. Skipping the loop when
+    // the set was empty switched the protection off in exactly the island where
+    // nothing had cleared a breaking bar, which is the only way the set ends up
+    // empty: measured on a 20 mm iron plate on piers, struck well under iron's
+    // bar, whose cells came back where a run had left them and entered the next
+    // run holding 12 MJ of stretch, then 890 GJ, at a bond stretch of 2,144.
     std::unordered_map<std::size_t, std::pair<LiveBodyPose, std::size_t>> held_pose;
-    if (!job.may_break.empty()) {
-        for (const std::size_t body : island_bodies) {
-            if (body >= impl_->nodes_of.size() || impl_->nodes_of[body].empty()) continue;
-            if (job.may_break.count(impl_->nodes_of[body].front())) continue;
-            const auto before = poses_before.find(body);
-            if (before == poses_before.end()) continue;
-            std::vector<std::size_t> mine;
-            double mass = 0.0;
-            Vec3 middle{}, laid{};
-            for (std::size_t local = 0; local < island.parent_node.size() && local < island.matter.nodes.size();
-                 ++local) {
-                const auto owner = body_of_node.find(island.parent_node[local]);
-                if (owner == body_of_node.end() || owner->second != body) continue;
-                const double m = island.matter.nodes[local].mass_kg;
-                mine.push_back(local);
-                mass += m;
-                middle = middle + m * island.matter.nodes[local].position_world_m;
-                laid = laid + m * before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
-            }
-            if (mine.empty() || !(mass > 0.0)) continue;
-            middle = (1.0 / mass) * middle;
-            laid = (1.0 / mass) * laid;
-            for (const std::size_t local : mine) {
-                ActiveNodeState &node = island.matter.nodes[local];
-                const Vec3 at = middle - laid +
-                                before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
-                node.previous_position_world_m = node.previous_position_world_m + (at - node.position_world_m);
-                node.position_world_m = at;
-            }
-            held_pose.emplace(body, std::make_pair(impl_->described[body], mine.size()));
+    for (const std::size_t body : island_bodies) {
+        if (body >= impl_->nodes_of.size() || impl_->nodes_of[body].empty()) continue;
+        if (job.may_break.count(impl_->nodes_of[body].front())) continue;
+        // A body that took a permanent set keeps what the run made of it: the
+        // dent IS the answer, and laying its cells back out would throw the
+        // shape away and leave only the record of it.
+        if (const auto took = set_of_body.find(body);
+            took != set_of_body.end() && job.yield_extension > 0.0 &&
+            took->second > 2.0 * job.yield_extension)
+            continue;
+        const auto before = poses_before.find(body);
+        if (before == poses_before.end()) continue;
+        std::vector<std::size_t> mine;
+        double mass = 0.0;
+        Vec3 middle{}, laid{};
+        for (std::size_t local = 0; local < island.parent_node.size() && local < island.matter.nodes.size();
+             ++local) {
+            const auto owner = body_of_node.find(island.parent_node[local]);
+            if (owner == body_of_node.end() || owner->second != body) continue;
+            const double m = island.matter.nodes[local].mass_kg;
+            mine.push_back(local);
+            mass += m;
+            middle = middle + m * island.matter.nodes[local].position_world_m;
+            laid = laid + m * before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
         }
+        if (mine.empty() || !(mass > 0.0)) continue;
+        middle = (1.0 / mass) * middle;
+        laid = (1.0 / mass) * laid;
+        for (const std::size_t local : mine) {
+            ActiveNodeState &node = island.matter.nodes[local];
+            const Vec3 at = middle - laid +
+                            before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
+            node.previous_position_world_m = node.previous_position_world_m + (at - node.position_world_m);
+            node.position_world_m = at;
+        }
+        held_pose.emplace(body, std::make_pair(impl_->described[body], mine.size()));
     }
 
     // It broke, or it bent. Either way it is not what it was, so replace it.

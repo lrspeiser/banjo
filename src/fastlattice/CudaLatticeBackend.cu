@@ -287,7 +287,8 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         }
         mark(0); // capture and loop overhead since the previous substep's end
         if (*dirty_flag) {
-            for (unsigned i = nb + tid; i < ne; i += nthreads) nodeStrain(L, i, direct);
+            for (unsigned i = nb + tid; i < ne; i += nthreads)
+            nodeStrain(L, i, direct, S.plate_half_thickness, S.plastic_yield_stretch);
             sync();
             mark(1);
             for (unsigned j = bb + tid; j < be; j += nthreads)
@@ -416,7 +417,8 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
             sync();
             mark(15);
         }
-        for (unsigned i = nb + tid; i < ne; i += nthreads) nodeStrain(L, i, direct);
+        for (unsigned i = nb + tid; i < ne; i += nthreads)
+            nodeStrain(L, i, direct, S.plate_half_thickness, S.plastic_yield_stretch);
         sync();
         mark(11);
         for (unsigned j = bb + tid; j < be; j += nthreads) {

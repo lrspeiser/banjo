@@ -121,7 +121,7 @@ private:
         (void)step;
         phase_clock_ = std::chrono::steady_clock::now();
         if (dirty_start_) {
-            for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct);
+            for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct, S_.plate_half_thickness, S_.plastic_yield_stretch);
             mark(1);
             for (std::uint32_t j = 0; j < B; ++j)
                 if (L_.alive[j]) bondStartSample(L_, j, direct);
@@ -194,7 +194,7 @@ private:
             nodeContactPass(L_, S_, status_.node_contact);
             mark(15);
         }
-        for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct);
+        for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct, S_.plate_half_thickness, S_.plastic_yield_stretch);
         mark(11);
         bool any_failed = false;
         const bool first_failure_round = status_.broken_bonds == 0;

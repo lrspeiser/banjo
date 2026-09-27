@@ -230,6 +230,7 @@ template <typename Real>
     out.audit_energy = s.audit_energy;
     out.plastic_yield_stretch = static_cast<Real>(s.plastic_yield_stretch);
     out.plastic_hardening = static_cast<Real>(s.plastic_hardening);
+    out.plate_half_thickness = static_cast<Real>(s.plate_half_thickness);
     out.node_contact.mode = s.node_contact.mode;
     out.node_contact.radius = static_cast<Real>(s.node_contact.radius);
     out.node_contact.skin = static_cast<Real>(s.node_contact.skin);

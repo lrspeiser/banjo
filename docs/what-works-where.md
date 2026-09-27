@@ -28,6 +28,7 @@ The labels:
 | Denting: iron, aluminium, oak and rubber take a permanent set | World, Test room | on in every room; in `/world?scene=tests-motion` an iron ball hits an aluminium plate at 30 m/s as the room opens |
 | Breaking under a steady load (statics) | Test room | `/world?scene=courtyard`: load the thin concrete shelf. `/world?scene=armoury`: notch the loaded batten |
 | A thing's bar for breaking depends on how big it is | World | automatic (`admitRefracture`); small chips stop shattering on every landing |
+| Matter one cell thick answering a blow struck flat at it | Code only | the curvature term is built and tested and switched off in the world; it destabilises a plate that is already breaking ([plate-bending.md](plate-bending.md)) |
 | Foresight and background fracture | World | automatic |
 | Cells colliding with each other while something breaks | World | automatic |
 | Heat weakening what breaks | World | heat a plank or beam, then load or hit it |

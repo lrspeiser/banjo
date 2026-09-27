@@ -173,10 +173,9 @@ pieces.
 
 And here is what that produces. A 100 mm ball of each material, starting just
 above a concrete floor at a given speed, 20 mm cells, half a second of world
-time — measured on **26 September 2026** against `main` at `7044df7`. Run it
-yourself in about eight minutes: `python scripts/drop-ladder.py`, which drives
-the engine through the same [Python binding](#use-the-engine-from-a-program)
-you would.
+time — measured on **27 September 2026**. Run it yourself in about eight
+minutes: `python scripts/drop-ladder.py`, which drives the engine through the
+same [Python binding](#use-the-engine-from-a-program) you would.
 
 | | 5 m/s | 10 | 20 | 40 | 80 |
 |---|---|---|---|---|---|
@@ -193,10 +192,11 @@ Nothing in that table was chosen. Rubber never breaks because its modulus is
 four orders of magnitude below iron's; concrete comes apart at walking pace
 because its tensile strength is 3 MPa; the piece counts stop rising with speed
 because past a point the ball is already as broken as that grid can represent.
-Held and broken are stable; **the counts are not**. A rerun moves most of them
-by a piece or two, and the weakest — concrete and ice, which come apart into
-dozens — by considerably more. They do not settle as the grid is refined
-either, which is one of the things this engine cannot yet claim.
+Held and broken are stable — runs of the whole ladder agree on every one of the
+forty cells. **The counts are not.** Most repeat exactly; concrete and ice,
+which come apart into dozens, swing by up to a factor of two between runs. Nor
+do the counts settle as the grid is refined, which is one of the things this
+engine cannot yet claim.
 
 | Before | After |
 |---|---|
@@ -260,9 +260,22 @@ then the charge is the material's own at every cell size.
 
 **Limits worth knowing:** nothing is calibrated against laboratory data; piece
 counts do not converge; one break is worked out at a time (up to 16 wait in a
-queue); past about 2,000 bodies the world quietly stops being able to break
-anything; and a plate one cell thick has almost no bending stiffness, so at
-40 mm cells a pane needs to be at least 80 mm thick to bend properly.
+queue); and past about 2,000 bodies the world quietly stops being able to break
+anything.
+
+**Matter one cell thick cannot answer a blow struck flat at it.** A sheet one
+cell thick has every node's neighbourhood in one plane, so the strain the
+engine can state is the stretching of that plane — and hitting a plate flat
+loads it in *bending*, which that strain is blind to. A 20 mm glass plate at
+20 mm cells loses 40 bonds to a blow that takes 902 out of the same plate
+40 mm thick, and never comes apart: what the piece count reports is whether one
+20 mm cell happened to lose its last bond, which is why the same plate breaks
+from 3 m and 7 m and not from 4, 5, 8 or 10. A plate on piers is fine — in-plane
+tension across the span is something a coplanar neighbourhood can see — and so
+is anything two cells thick or more. A term that recovers the curvature from
+the same neighbours is built and tested, and is **switched off**: it fixes this
+case and destabilises a plate that is already breaking.
+[plate-bending.md](docs/plate-bending.md) has the measurements both ways.
 
 ---
 
@@ -1087,14 +1100,6 @@ Handling: two hands, grip and use points.
 - Using "Manufacture parts" locks the main world: once starting stock is set up
   on `/fabrication?scene=world`, the server treats the world as a funded room
   and refuses the chat, heating, grabbing, throwing, sweeping and latch release.
-- A pane that cannot bend breaks at some heights and not others. A
-  300 × 20 × 300 mm glass pane lying flat on the floor — one cell thick at
-  20 mm cells, so it has almost no bending stiffness — survives a 100 mm iron
-  ball dropped from 1, 2, 4, 5 and 10 m, and comes apart into two pieces from
-  3 m and 7 m. Whether a fully supported plate should break under that blow at
-  all is a fair question; that it breaks at two heights in the middle of the
-  range is not. (This was the README's own C example until 26 September, when
-  re-running it turned this up.)
 - Bonds reach across a one-cell gap (`buildBonds`, `src/matter/Lattice.cpp`), so
   two sides of a slot are joined through it.
 - A crack inside a body that stays whole heals on its next run. A fix is
@@ -1158,7 +1163,7 @@ right.** Start with these:
 | Cutting and handling | [cutting-model.md](docs/cutting-model.md), [interaction-profiles.md](docs/interaction-profiles.md), [placement-and-interaction-points.md](docs/placement-and-interaction-points.md) |
 | The bench and products | [workshop-mode.md](docs/workshop-mode.md), [workshop-deep-dive.md](docs/workshop-deep-dive.md), [product-framework.md](docs/product-framework.md) |
 | Building from language | [building-from-language.md](docs/building-from-language.md) |
-| Breaking: what it costs, and what is not calibrated | [what-a-break-costs.md](docs/what-a-break-costs.md), [criterion-energy-scaled-checkpoint.md](docs/criterion-energy-scaled-checkpoint.md), [glass-drop-benchmark.md](docs/glass-drop-benchmark.md) |
+| Breaking: what it costs, and what is not calibrated | [what-a-break-costs.md](docs/what-a-break-costs.md), [plate-bending.md](docs/plate-bending.md), [criterion-energy-scaled-checkpoint.md](docs/criterion-energy-scaled-checkpoint.md), [glass-drop-benchmark.md](docs/glass-drop-benchmark.md) |
 | Every mechanic and its evidence | [mechanics-scorecard.md](docs/mechanics-scorecard.md) |
 | The pages and HTTP routes | [playground/README.md](playground/README.md) |
 | Hosting | [deploy.md](docs/deploy.md) |
