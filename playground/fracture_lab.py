@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
 import core_use  # noqa: E402
 import interaction_points  # noqa: E402
+import engine_materials  # noqa: E402
 
 GRAVITY_M_S2 = 9.81
 REALTIME_LIMIT = 1.1
@@ -402,7 +403,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces", "interaction_points", "sun", "goods", "sight"}
+                         "interfaces", "interaction_points", "sun", "goods", "sight", "skins"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -1552,6 +1553,96 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
     return out
 
 
+SKIN_FIELDS = {"body", "color", "roughness", "metalness"}
+# One to a body, so this is a bound on the room rather than on the finishes:
+# well over what a room's object budget allows, and small enough that a
+# malformed request cannot arrive as a megabyte of them.
+MAX_SKINS = 400
+
+
+# How metallic a thing that is not a metal may be drawn. Not zero, because a
+# varnish or a glaze puts a little specular sheen on wood and clay and the
+# number is the honest way to say so; nowhere near enough to read as metal.
+DIELECTRIC_METALNESS = 0.05
+
+
+def normalise_skins(skins: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """How a thing in the room is FINISHED (banjo.product-skin.v1, the appearance
+    of it).
+
+    A skin says what a body looks like -- its colour, and how polished or matt
+    it is -- and it is carried out of the Workshop that made the product and
+    into the room it was installed in, so a thing keeps the finish somebody gave
+    it at the bench instead of arriving as the plain colour of its material.
+
+    IT TOUCHES NOTHING PHYSICAL, and the fields here are the whole of why that
+    is true rather than a promise: colour and polish are all a skin can say. The
+    mass, the strength, the matter, the temperature and every measurement the
+    room reports are the MATERIAL's and are not reachable from here. Shape is
+    not here either, and for the same reason -- a skin that changed a shape
+    would change what the engine is colliding. Changing a shape is `physical` on
+    the bench (mcp/workshop_visual.py), which recompiles the matter and says the
+    measurements are stale; it is not something a finish can smuggle in.
+
+    One skin to a body, for a body that is in the room, and something to say.
+    """
+    if not isinstance(skins, list):
+        raise ValueError("skins must be a list")
+    if len(skins) > MAX_SKINS:
+        raise ValueError(f"at most {MAX_SKINS} skins in a room")
+    named = {str(body.get("name", "")) for body in bodies}
+    made_of = {str(body.get("name", "")): str(body.get("material") or "") for body in bodies}
+    out: list[dict[str, Any]] = []
+    already: set[str] = set()
+    for i, skin in enumerate(skins):
+        if not isinstance(skin, dict):
+            raise ValueError(f"skin {i} must be an object")
+        unknown = set(skin) - SKIN_FIELDS
+        if unknown:
+            raise ValueError(f"skin {i} cannot say {sorted(unknown)}")
+        body = str(skin.get("body", ""))
+        if body not in named:
+            raise ValueError(f"skin {i} is for {body!r}, and there is nothing called that")
+        if body in already:
+            raise ValueError(f"{body!r} is given more than one skin, and it has one surface")
+        already.add(body)
+        made: dict[str, Any] = {"body": body}
+        if skin.get("color") is not None:
+            colour = " ".join(str(skin["color"]).split())
+            if not colour or len(colour) > 32:
+                raise ValueError(f"skin {i}: a colour is 1 to 32 characters")
+            made["color"] = colour
+        for field in ("roughness", "metalness"):
+            if skin.get(field) is None:
+                continue
+            made[field] = _number(skin[field], 0.0, 1.0, f"skin {i} {field}")
+        # A FINISH IS A FINISH OF THE MATERIAL THE THING IS BUILT OF (the owner,
+        # 2026-09-26). Colour and polish are things you do to a surface: you can
+        # stain oak, paint it, sand it or lacquer it, and it is still oak, which
+        # is why its grain still runs through whatever you put on it. How
+        # metallic it is, is not something you do to a surface -- it is whether
+        # light leaves the stuff by reflecting off it or by scattering inside
+        # it, and that is what the thing IS. So a finish may take it DOWN, since
+        # painting a steel bracket really does cover the metal with a paint that
+        # is not one, and may never take it up: there is no lacquer that makes
+        # oak conduct. Without this the room could be made to draw a drone as
+        # anodised aluminium while saying "oak, 12.04 kg" about it, which is a
+        # room saying two things at once.
+        if "metalness" in made:
+            material = made_of.get(body, "")
+            ceiling = 1.0 if engine_materials.conducts(material) else DIELECTRIC_METALNESS
+            if made["metalness"] > ceiling:
+                raise ValueError(
+                    f"skin {i}: {body!r} is made of {material or 'something that is not a metal'}, "
+                    f"so it cannot be finished {made['metalness']:g} metallic. A finish is a finish "
+                    f"OF what the thing is built of -- stain it, paint it, polish it, but it will "
+                    f"not become a metal. At most {ceiling:g}.")
+        if len(made) == 1:
+            raise ValueError(f"skin {i} says nothing about how {body!r} looks")
+        out.append(made)
+    return out
+
+
 def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
                            joints: list[dict[str, Any]],
                            tool_points: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -2466,6 +2557,11 @@ def validate(spec: Any) -> dict[str, Any]:
                                                         result["tool_points"])
         result["actions"] = normalise_actions(result.get("actions") or [],
                                                result["bodies"] + result.get("precise_rigid_bodies", []))
+        if result.get("skins"):
+            result["skins"] = normalise_skins(result["skins"],
+                                              result["bodies"] + result.get("precise_rigid_bodies", []))
+        else:
+            result.pop("skins", None)
         result["interaction_points"] = interaction_points.normalise(
             result.get("interaction_points", []), result["bodies"] + result.get("precise_rigid_bodies", []))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],

@@ -1225,6 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/base.css":"base.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
+                "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]

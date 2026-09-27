@@ -32,6 +32,7 @@ jobs:
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
+          python3 tests/room_skins_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
@@ -105,6 +106,9 @@ jobs:
         run: |
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
+          node --check playground/cellmesh.js
+          node --check playground/surfaces.js
+          python3 tests/cellmesh_tests.py -v
           python3 tests/playground_tests.py -v
           python3 tests/chat_tool_parity_tests.py -v
           python3 tests/playground_control_tests.py -v
