@@ -1599,7 +1599,9 @@ function showProgramPanel(p) {
     "backing off": "both wheels back",
     "turning left": "left wheel back, right wheel forward",
     "turning right": "left wheel forward, right wheel back",
+    "stopping": "both wheels held on their brakes, to turn from rest",
     "resting": "both wheels held on their brakes",
+    "stuck": "it cannot get itself out, and its wheels are held",
   };
   const doing = p.doing.charAt(0).toUpperCase() + p.doing.slice(1);
   setText("mp-commanded", p.power ? `${doing}: ${wheels[p.doing] || "stopped"}` : "Nothing: it is off");

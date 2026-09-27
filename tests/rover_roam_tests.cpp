@@ -833,6 +833,170 @@ void askIt(LiveWorld &world, unsigned program, const std::string &doing, double 
     if (said != "applied") throw std::runtime_error("the program did not take the ask: " + said);
 }
 
+// One wall across the flat floor, a metre and a half in front of where the
+// rover is built: it drives into it, and nothing it watches says so.
+TileImpactRequest walledRoom() {
+    TileImpactRequest request = flatRoom();
+    SceneBody wall;
+    wall.name = "wall";
+    wall.shape = BodyShape::Box;
+    wall.material = MaterialPreset::Concrete;
+    wall.dimensions_m = {8.0, 0.6, 0.3};
+    wall.center_m = {0.0, 0.3, 1.5};
+    wall.anchored = true;
+    request.bodies.push_back(wall);
+    return request;
+}
+
+void itFreesItselfFromAWallItDroveIntoAndRoamsOn() {
+    const auto world = LiveWorld::open(walledRoom());
+    const Pins pins = pinUp(*world);
+    const Machine m = fit(*world, pins);
+    const unsigned program = world->program("rover", "roam", m.left, m.right, "rover", 1.0, 8.0);
+    if (program == 0) throw std::runtime_error("the rover's program would not go on");
+    for (int i = 0; i < 240; ++i) tick(*world);   // settle onto its caster
+    runIt(*world, program, true, 1);
+    // Nobody asks it anything: roaming, it goes forward, and the wall is in
+    // front of it. Its wheels never stall against the wall, so only getting
+    // nowhere finds it.
+    bool stalled_ever = false;
+    double nowhere_s = 0.0, freed_after_s = 0.0;
+    std::string said_backing;
+    Vec3 against{};
+    for (int i = 0; i < 120 * 240; ++i) {
+        tick(*world);
+        const LiveProgram said = programOf(*world, program);
+        nowhere_s = std::max(nowhere_s, said.stuck_s);
+        for (const LiveControl &c : world->controls())
+            if ((c.id == m.left || c.id == m.right) && c.condition.rfind("stalled", 0) == 0) stalled_ever = true;
+        if (said.stucks == 1 && said_backing.empty()) {
+            said_backing = said.doing + ": " + said.why;
+            against = said.at_m;
+        }
+        // Free once it is two metres from where it stuck, and roaming again.
+        if (said.stucks >= 1 && said.doing == "going forward" && length(said.at_m - against) > 2.0) {
+            freed_after_s = static_cast<double>(i) * kDt;
+            break;
+        }
+    }
+    const LiveProgram said = programOf(*world, program);
+    const double from_wall = 1.5 - said.at_m.z;
+    std::cout << "    driven into a wall while roaming: it got nowhere for " << nowhere_s << " s, then "
+              << said_backing << "; " << freed_after_s << " s in it is " << said.doing << " again, " << from_wall
+              << " m back from the wall, having backed out " << said.stucks << " time(s)\n";
+    require(!stalled_ever, "no wheel ever stalled against the wall: nothing watching a motor could see this");
+    require(said_backing.find("not getting anywhere") != std::string::npos,
+            "it backed itself out and said why: " + said_backing);
+    require(freed_after_s > 0.0 && said.doing == "going forward",
+            "it got itself out and roams on: " + said.doing + ", " + said.why);
+    require(from_wall > 0.5, "well back from the wall: " + std::to_string(from_wall) + " m");
+    require(said.stucks <= 2, "it took one back-out, or two: " + std::to_string(said.stucks));
+    // Clear of it, it is not still counting that place against itself: the next
+    // thing in its way gets the same patience as the first.
+    require(said.stuck_s < 1.0, "and is getting somewhere again: " + std::to_string(said.stuck_s) + " s");
+}
+
+// A pen of anchored concrete round where the rover is built, 1.6 m inside its
+// walls: it can turn in there and go nowhere. Nothing a machine watches says
+// this -- its wheels turn freely against the wall, its motors are not
+// overloaded, no sensor sees anything -- so only getting nowhere finds it.
+TileImpactRequest pennedRoom() {
+    TileImpactRequest request = flatRoom();
+    const auto wall = [](const std::string &name, Vec3 size, Vec3 at) {
+        SceneBody b;
+        b.name = name;
+        b.shape = BodyShape::Box;
+        b.material = MaterialPreset::Concrete;
+        b.dimensions_m = {size.x, size.y, size.z};
+        b.center_m = {at.x, at.y, at.z};
+        b.anchored = true;
+        return b;
+    };
+    request.bodies.push_back(wall("wall ahead", {1.95, 0.6, 0.15}, {0.0, 0.3, 0.875}));
+    request.bodies.push_back(wall("wall behind", {1.95, 0.6, 0.15}, {0.0, 0.3, -0.875}));
+    request.bodies.push_back(wall("wall left", {0.15, 0.6, 1.95}, {0.875, 0.3, 0.0}));
+    request.bodies.push_back(wall("wall right", {0.15, 0.6, 1.95}, {-0.875, 0.3, 0.0}));
+    return request;
+}
+
+void itBacksOutOfWhereItGetsNowhereAndSaysWhenItCannot() {
+    const auto world = LiveWorld::open(pennedRoom());
+    const Pins pins = pinUp(*world);
+    const Machine m = fit(*world, pins);
+    const unsigned program = world->program("rover", "roam", m.left, m.right, "rover", 1.0, 8.0);
+    if (program == 0) throw std::runtime_error("the rover's program would not go on");
+    for (int i = 0; i < 240; ++i) tick(*world);   // settle onto its caster
+    runIt(*world, program, true, 1);
+    // Asked to go to a point six metres beyond the wall: it cannot, and no
+    // wheel will ever stall telling it so.
+    const Vec3 beyond{0.0, 0.0, 6.0};
+    askIt(*world, program, "approaching", 0.0, 2, "the test sent it through a wall", &beyond);
+    const Vec3 began = posed(world->poses(), "rover").position_m;
+    double nowhere_s = 0.0, backed_out_after_s = 0.0, gave_up_after_s = 0.0, went_m = 0.0;
+    std::string said_backing, said_stuck;
+    for (int i = 0; i < 180 * 240; ++i) {
+        tick(*world);
+        const LiveProgram said = programOf(*world, program);
+        nowhere_s = std::max(nowhere_s, said.stuck_s);
+        went_m = std::max(went_m, length(posed(world->poses(), "rover").position_m - began));
+        if (backed_out_after_s == 0.0 && said.stucks > 0) {
+            backed_out_after_s = static_cast<double>(i) * kDt;
+            said_backing = said.doing + ": " + said.why;
+        }
+        if (said.doing == "stuck") {
+            gave_up_after_s = static_cast<double>(i) * kDt;
+            said_stuck = said.why;
+            break;
+        }
+    }
+    LiveProgram said = programOf(*world, program);
+    std::cout << "    penned in: it got nowhere for " << nowhere_s << " s, backed out after " << backed_out_after_s
+              << " s (" << said_backing << "), gave up after " << gave_up_after_s << " s (" << said_stuck
+              << "); it never got further than " << went_m << " m from where it began\n";
+    require(backed_out_after_s > 0.0 && said_backing.find("not getting anywhere") != std::string::npos,
+            "it backed itself out and said why: " + said_backing);
+    require(said.doing == "stuck" && said.why.find("cannot get itself out") != std::string::npos,
+            "a few tries on it stops and says it cannot get itself out: " + said.doing + ": " + said.why);
+    require(said.stucks == 3, "after three tries, not more: " + std::to_string(said.stucks));
+    require(said.asked.empty(), "and it has given up the ask it could not do");
+    require(went_m < 1.5, "it never got out of the pen: " + std::to_string(went_m) + " m");
+    // Stuck, its wheels are held, not driving.
+    for (const LiveControl &c : world->controls())
+        if (c.id == m.left || c.id == m.right)
+            require(c.direction == 0, "stuck, its " + c.name + " is held, not driving");
+    // And it stays stuck rather than butting the wall again: no more tries, and
+    // it does not wander off from where it gave up.
+    const Vec3 gave_up_at = posed(world->poses(), "rover").position_m;
+    for (int i = 0; i < 40 * 240; ++i) tick(*world);
+    said = programOf(*world, program);
+    require(said.doing == "stuck" && said.stucks == 3,
+            "forty seconds on it is still stuck, and has not tried again: " + said.doing + ", " +
+                std::to_string(said.stucks));
+    require(length(posed(world->poses(), "rover").position_m - gave_up_at) < 0.1, "and has not moved");
+    // Saved where it gave up and opened again, it is still given up: it has not
+    // moved, and it still knows what getting clear of that place would be.
+    std::string why;
+    const std::string saved = world->snapshot(why);
+    require(!saved.empty(), "the world would not save: " + why);
+    if (!saved.empty()) {
+        const auto again = LiveWorld::open(pennedRoom(), saved);
+        const LiveProgram is = programOf(*again, program);
+        require(is.doing == "stuck" && is.stucks == 3 && is.why.find("cannot get itself out") != std::string::npos,
+                "opened again, it is still stuck: " + is.doing + ", " + is.why);
+        for (int i = 0; i < 20 * 240; ++i) tick(*again);
+        require(programOf(*again, program).doing == "stuck", "and stays stuck rather than starting over");
+    }
+    // Being stuck does not make it deaf: asked to back off, it backs off, so a
+    // person who comes to get it out can.
+    askIt(*world, program, "backing off", 4.0, 3, "a person came to get it out");
+    said = programOf(*world, program);
+    require(said.doing == "backing off" && said.why == "a person came to get it out",
+            "asked to back off where it is stuck, it does: " + said.doing + ", " + said.why);
+    for (int i = 0; i < 240; ++i) tick(*world);
+    require(programOf(*world, program).doing == "backing off", "and goes on doing it");
+    std::cout << "    asked to back off where it gave up: " << programOf(*world, program).doing << "\n";
+}
+
 void itDoesWhatItIsAskedForAWhile() {
     Rover r = roverOnTheShore();
     LiveWorld &world = *r.world;
@@ -897,8 +1061,24 @@ void itDoesWhatItIsAskedForAWhile() {
     const Vec3 behind = here.position_m + 3.0 * outward;
     askIt(world, r.program, "facing", 0.0, 5, "the person came to talk to it", &behind);
     said = programOf(world, r.program);
+    // Moving when it was asked, it stops first: turning with its wheels
+    // opposed has no braking, so one that turns while it is still going
+    // coasts off its way while it spins.
+    require(said.doing == "stopping" || said.doing == "turning left" || said.doing == "turning right",
+            "asked to face what is behind it, it stops to turn on the spot: " + said.doing);
+    double stopped_for_s = 0.0;
+    for (int i = 0; i < 3 * 240; ++i) {
+        tick(world);
+        stopped_for_s += kDt;
+        const std::string doing = programOf(world, r.program).doing;
+        if (doing == "turning left" || doing == "turning right") break;
+    }
+    said = programOf(world, r.program);
+    std::cout << "    asked to face a point behind it: it stopped for " << stopped_for_s << " s, then "
+              << said.doing << "\n";
     require(said.doing == "turning left" || said.doing == "turning right",
-            "asked to face what is behind it, it turns on the spot: " + said.doing);
+            "and then turns on the spot: " + said.doing);
+    require(stopped_for_s < 2.5, "without dawdling: " + std::to_string(stopped_for_s) + " s");
     double turned_s = 0.0;
     for (int i = 0; i < 16 * 240; ++i) {
         tick(world);
@@ -982,6 +1162,9 @@ int main() {
         {"it goes to the stool and sits on it", itGoesToTheStoolAndSitsOnIt},
         {"it does what it is asked for a while", itDoesWhatItIsAskedForAWhile},
         {"an ask never drives it into the water", anAskNeverDrivesItIntoTheWater},
+        {"it frees itself from a wall it drove into and roams on", itFreesItselfFromAWallItDroveIntoAndRoamsOn},
+        {"it backs out of where it gets nowhere, and says when it cannot",
+         itBacksOutOfWhereItGetsNowhereAndSaysWhenItCannot},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;

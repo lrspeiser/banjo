@@ -1013,13 +1013,37 @@ struct LiveWorld::Impl {
         // is going to.
         bool go_after_stop{};
         std::uint64_t told{};
+        // How fast it is swinging round (LiveProgram::turning_deg_s), smoothed
+        // over kYawSmoothS so one step's jitter is not read as a swing.
+        double yaw_deg_s{};
+        // Where it stood when the getting-nowhere window began
+        // (LiveProgram::stuck_s).
+        Vec3 stuck_from{};
+        double stuck_s{};
+        // Back-outs at this one place, and where the first of them began:
+        // getting well clear of there is what ends them.
+        unsigned stuck_tries{};
+        Vec3 stuck_tried_from{};
+        // How long it backs out for once more after the turn, when it is
+        // getting itself out: reverse, turn, reverse again.
+        double back_again_for_s{};
+        // How long this back-off lasts, when it is a back-out from getting
+        // nowhere rather than a step away from water: zero for the usual one.
+        double back_off_for_s{};
         // Asked to drive somewhere and its sensors saw water: its reflexes
         // have it -- backing off, turning away -- until it is going forward
         // clear again, and then the ask has it back. An ask never drives it
         // into the water.
         bool interrupted{};
-        // How many times its reflexes have taken it since it was last asked:
-        // three, and it gives the ask up, since the water is in the way.
+        // And what interrupted it: "water" or "nowhere".
+        std::string interrupted_by{};
+        // How many times WATER has taken it since it was last asked: three, and
+        // it gives the ask up, since the water is in the way. Getting nowhere
+        // does not count here. Backing out of something and carrying on is the
+        // whole point of that reflex, and a machine that truly cannot get out
+        // stops and says so on its own (kStuckTriesMost) -- counted together,
+        // one water scare and two back-outs made a machine abandon a haul it
+        // could have finished, and it roamed for the rest of the run.
         unsigned interruptions{};
         // Hovering: where each rotor's pin is in the chassis's own level, the
         // way each spins (+1 or -1), the height its centre stood at when it was
@@ -1931,6 +1955,36 @@ struct LiveWorld::Impl {
         } else if (s.doing != "resting") {
             into("waiting", "hovering");
         }
+        // Getting nowhere with what it was asked: a machine that flies climbs
+        // over the thing in its way rather than backing round it, two metres at
+        // a time. After five of them -- ten metres above where it stuck -- it
+        // holds where it is and says it cannot get past. It never stops its
+        // rotors for this, whatever is in the way, because a flyer that gives
+        // up in the air falls.
+        constexpr double kLiftM = 2.0;
+        constexpr unsigned kLiftsMost = 5;
+        if (p.stuck_tries > 0 && clearedBy(p) > kClearM) p.stuck_tries = 0;
+        if (!s.asked.empty() && s.doing != "resting" && s.doing != "landed" &&
+            p.stuck_s >= (p.stuck_tries > 0 ? kStuckAgainS : kStuckS)) {
+            if (p.stuck_tries == 0) p.stuck_tried_from = s.at_m;
+            p.stuck_s = 0.0;
+            if (p.stuck_tries >= kLiftsMost) {
+                s.asked.clear();
+                s.asked_why.clear();
+                s.asked_by.clear();
+                s.asked_for_s = s.asked_s = 0.0;
+                lean_deg = yaw_deg_s = 0.0;
+                into("waiting", "it cannot get past what is in its way: it climbed " +
+                                    std::to_string(p.stuck_tries) + " times and got no further");
+            } else {
+                ++p.stuck_tries;
+                ++s.stucks;
+                s.hover_m = std::clamp(s.hover_m + kLiftM, 0.0, kHighestHoverM);
+                // Not a doing of its own: it goes on doing what it was asked,
+                // two metres higher, and says why its held height moved.
+                s.why = "it is not getting anywhere, so it climbs over what is in its way";
+            }
+        }
         // Asked all the way down and sitting on the ground: it has landed. A
         // landed machine does not go on holding its rotors up against the
         // floor -- the ground carries it -- so they stop, and what it spends
@@ -2051,6 +2105,25 @@ struct LiveWorld::Impl {
         if (s.doing != "standing by") into("standing by", "ready");
     }
 
+    // Getting nowhere (LiveProgram::stuck_s): how long a machine may be told
+    // to go somewhere and stay inside kStuckM of where it was told before it
+    // does something about it; how long once it has already tried and is still
+    // there; how many tries a machine that drives makes at one place before it
+    // stops and says it cannot (a flyer counts its own lifts); and how far off
+    // is clear of that place. A machine that drives backs out of where it is
+    // getting nowhere, a machine that flies climbs over it.
+    static constexpr double kStuckS = 20.0;
+    static constexpr double kStuckAgainS = 5.0;
+    static constexpr unsigned kStuckTriesMost = 3;
+    static constexpr double kClearM = 2.0;
+    // How far it has got from where it kept getting nowhere, across the ground.
+    // Flat, where the sense that finds it counts height too: a flyer told to
+    // rise and rising is getting somewhere, but a flyer that has only climbed
+    // is still over the thing in its way.
+    static double clearedBy(const Program &p) {
+        const Vec3 away = p.said.at_m - p.stuck_tried_from;
+        return std::sqrt(away.x * away.x + away.z * away.z);
+    }
     void decideProgram(Program &p) {
         if (p.said.kind == "sit") {
             decideSit(p);
@@ -2069,6 +2142,11 @@ struct LiveWorld::Impl {
         constexpr double kTurnMostS = 6.0;
         constexpr double kSideTurnDeg = 50.0;
         constexpr double kBackedTurnDeg = 110.0;
+        // How long it backs out for, times the attempt: further every time.
+        // Measured 2026-09-26 on the mine's rover against its own spoil heap:
+        // a second of reverse barely rocks it, four turn it, and it takes six
+        // to pull clear -- so a back-out is not the step away from water.
+        constexpr double kBackOutS = 4.0;
         constexpr double kClimbTurnDeg = 90.0;
         LiveProgram &s = p.said;
         Control *left = controlById(s.left);
@@ -2100,6 +2178,43 @@ struct LiveWorld::Impl {
             return c.tripped && c.said.condition.rfind("stalled", 0) == 0;
         };
         const int alternate = s.turns % 2 == 0 ? 1 : -1;
+        // How long it has been getting nowhere before it acts: less once it has
+        // already backed out of here and not got clear.
+        const auto patience = [&]() { return p.stuck_tries > 0 ? kStuckAgainS : kStuckS; };
+        // What it does about getting nowhere: back out, further each time, and
+        // turn the other way, as it does from water. Its own spoil heap does
+        // this, and so does a rock, a ditch, a wall or a hole it dug: the
+        // wheels turn freely the whole time, so nothing watching a motor sees
+        // it. After a few tries at one place it stops and says it cannot get
+        // itself out, rather than butting the same thing all day. True when it
+        // is backing out, false when it has given up.
+        const auto backOut = [&]() {
+            if (p.stuck_tries == 0) p.stuck_tried_from = s.at_m;
+            p.stuck_s = 0.0;
+            if (p.stuck_tries >= kStuckTriesMost) {
+                s.asked.clear();
+                s.asked_why.clear();
+                s.asked_by.clear();
+                s.asked_for_s = s.asked_s = 0.0;
+                p.interrupted = false;
+                p.interrupted_by.clear();
+                p.back_off_for_s = p.back_again_for_s = 0.0;
+                into("stuck", "it cannot get itself out: it has backed out of here " +
+                                  std::to_string(p.stuck_tries) + " times and is still here");
+                return false;
+            }
+            ++p.stuck_tries;
+            ++s.stucks;
+            into("backing off", "it is not getting anywhere, so it backs out");
+            p.then_turn = alternate;
+            p.turn_least_deg = kBackedTurnDeg;
+            // Reverse, turn, reverse again: measured 2026-09-26 on the mine's
+            // rover against its own spoil heap, reversing alone barely rocked
+            // it and reversing again after the turn pulled it clear. Further
+            // every time it tries.
+            p.back_off_for_s = p.back_again_for_s = kBackOutS * static_cast<double>(p.stuck_tries);
+            return true;
+        };
         // What charges its battery: a solar panel wired to it with the sun on it.
         const LiveEnergyStore *store = storeOfProgram(p);
         const auto charging = [&]() {
@@ -2148,6 +2263,13 @@ struct LiveWorld::Impl {
             s.asked_by.clear();
             s.asked_for_s = s.asked_s = 0.0;
         }
+        // Well clear of where it kept getting nowhere: it is out, whether its
+        // own back-out did it or something else moved it.
+        if (p.stuck_tries > 0 && clearedBy(p) > kClearM) {
+            p.stuck_tries = 0;
+            p.back_again_for_s = 0.0;
+            if (s.doing == "stuck") into("going forward", "it is clear of where it was stuck, so it goes on");
+        }
         const bool driving_ask = s.asked == "going forward" || s.asked == "approaching" || s.asked == "facing";
         constexpr double kClearBeforeAskS = 2.0;
         constexpr unsigned kInterruptionsMost = 3;
@@ -2170,21 +2292,39 @@ struct LiveWorld::Impl {
                 p.then_turn = 1;
             }
             p.turn_least_deg = kBackedTurnDeg;
+            p.interrupted_by = "water";
+            p.back_off_for_s = 0.0;
+        }
+        // Told to go somewhere and getting nowhere: the same interruption. An
+        // ask holds it through everything below, so without this a machine in
+        // a hole spins its wheels at the place it was told to go for as long as
+        // the ask lasts -- measured 2026-09-26 in the mine, 54 s of it.
+        if (!s.asked.empty() && !p.interrupted && driving_ask && p.stuck_s >= patience() && backOut()) {
+            p.interrupted = true;
+            p.interrupted_by = "nowhere";
         }
         // The ask has it back only after a couple of seconds of clear going:
         // turned back towards the water at once, it would turn on the spot at
         // the shore and its caster would go in.
         if (p.interrupted && (s.asked.empty() || (s.doing == "going forward" && !water_left && !water_right &&
-                                                  s.doing_s >= kClearBeforeAskS)))
+                                                  s.doing_s >= kClearBeforeAskS))) {
             p.interrupted = false;
+            p.interrupted_by.clear();
+        }
         if (!s.asked.empty() && !p.interrupted && p.interruptions >= kInterruptionsMost) {
             p.interruptions = 0;
+            p.interrupted_by.clear();
             askDone("the water was in the way of what it was asked, so it gave it up and goes on");
         } else if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
             askDone("it has done what it was asked, and goes on");
         } else if (!s.asked.empty() && !p.interrupted) {
             constexpr double kFacedDeg = 6.0;
             constexpr double kNearM = 1.0;
+            // What counts as stopped before it turns, and how long it waits for
+            // that before turning anyway: on a slope it may never come to a
+            // complete stand.
+            constexpr double kStoppedM_S = 0.15;
+            constexpr double kStopMostS = 1.5;
             // The same ask again is the same doing: doing_s and turned_deg run on.
             const auto stay = [&](const char *doing) {
                 if (s.doing != doing) into(doing, s.asked_why);
@@ -2203,17 +2343,42 @@ struct LiveWorld::Impl {
                 while (off > kPi) off -= 2.0 * kPi;
                 while (off < -kPi) off += 2.0 * kPi;
                 const double off_deg = off * 180.0 / kPi;
+                // It stops before it turns on the spot, and again before it goes
+                // on: a machine turning with its wheels opposed has no braking
+                // at all -- the two push against each other and nothing pushes
+                // back along its way -- so one that is still moving coasts while
+                // it spins. Measured on the mine's rover: it sailed 50 degrees
+                // past the mark and then travelled 1.6 m at up to 80 degrees off
+                // its way while it came round, and a metre of that was northward
+                // every trip, which is how a haul over dry ground walked into the
+                // lake. Turning from rest it goes where it is pointed. This is
+                // the same stop-turn-go a machine holding a pose does
+                // (decideSit), which is why that one lands on its mark.
+                const bool needs_turn = std::abs(off_deg) > kFacedDeg &&
+                    !(s.asked == "approaching" && s.doing == "going forward" && std::abs(off_deg) < 3.0 * kFacedDeg);
+                const char *want = off_deg > 0.0 ? "turning left" : "turning right";
+                const bool turning_now = s.doing == "turning left" || s.doing == "turning right";
+                const auto turnToward = [&]() {
+                    into(want, s.asked_why);
+                    p.turn_sign = off_deg > 0.0 ? 1 : -1;
+                    p.turn_least_deg = std::abs(off_deg);
+                };
                 if (s.asked == "approaching" && away <= kNearM) stay("waiting");
-                else if (std::abs(off_deg) > kFacedDeg && !(s.asked == "approaching" && s.doing == "going forward" &&
-                                                            std::abs(off_deg) < 3.0 * kFacedDeg)) {
-                    const char *doing = off_deg > 0.0 ? "turning left" : "turning right";
-                    if (s.doing != doing) {
-                        into(doing, s.asked_why);
-                        p.turn_sign = off_deg > 0.0 ? 1 : -1;
-                        p.turn_least_deg = std::abs(off_deg);
-                    } else {
-                        s.why = s.asked_why;
-                    }
+                else if (s.doing == "stopping") {
+                    // Stopped, or as stopped as it is going to get: from rest it
+                    // turns towards the mark, or goes at it.
+                    if (s.speed_m_s > kStoppedM_S && s.doing_s < kStopMostS) s.why = s.asked_why;
+                    else if (needs_turn) turnToward();
+                    else if (s.asked == "approaching") into("going forward", s.asked_why);
+                    else into("waiting", s.asked_why);
+                } else if (needs_turn && turning_now && s.doing == want) {
+                    s.why = s.asked_why;
+                } else if (needs_turn && s.speed_m_s > kStoppedM_S) {
+                    into("stopping", s.asked_why);
+                } else if (needs_turn) {
+                    turnToward();
+                } else if (turning_now) {
+                    into("stopping", s.asked_why);
                 } else if (s.asked == "approaching") {
                     stay("going forward");
                 } else {
@@ -2233,6 +2398,11 @@ struct LiveWorld::Impl {
             // Whatever it is doing: it stops where it is, on its brakes.
             into("resting", resting());
             ++s.rests;
+        } else if (p.stuck_s >= patience() && s.doing != "backing off" && s.doing != "stuck") {
+            // Getting nowhere with nobody asking it anything: the same
+            // back-out. A back-out is not re-triggered by this, so one that is
+            // itself getting nowhere runs its course and turns instead.
+            backOut();
         } else if (s.doing == "going forward") {
             if (water_left && water_right) {
                 into("backing off", "water ahead");
@@ -2257,18 +2427,36 @@ struct LiveWorld::Impl {
         } else if (s.doing == "backing off") {
             // Taken from an ask that was driving it at the water, it backs
             // off twice as far before it turns: it may be at the very edge.
-            const double back_off_s = p.interrupted ? 2.0 * kBackOffS : kBackOffS;
-            if (s.doing_s >= back_off_s || stalled(*left) || stalled(*right)) {
+            // A back-out from getting nowhere runs its own length, and is not
+            // cut short by wheels that stop: wheels that stop are what being
+            // stuck looks like.
+            const double back_off_s = p.back_off_for_s > 0.0 ? p.back_off_for_s
+                                    : p.interrupted ? 2.0 * kBackOffS : kBackOffS;
+            const bool backing_out = p.back_off_for_s > 0.0;
+            if (s.doing_s >= back_off_s || (!backing_out && (stalled(*left) || stalled(*right)))) {
                 const std::string why = s.why;
+                p.back_off_for_s = 0.0;
                 turn(p.then_turn, p.turn_least_deg, why);
             }
         } else if (s.doing == "turning left" || s.doing == "turning right") {
             const bool clear = !water_left && !water_right && s.pitch_deg <= s.climb_deg &&
                                std::abs(s.roll_deg) <= s.climb_deg;
-            if (clear && s.turned_deg >= p.turn_least_deg)
-                into("going forward", "nothing in its way");
-            else if (s.doing_s >= kTurnMostS)
-                into("going forward", "it could not turn clear in time, so it goes on");
+            const bool turned = clear && s.turned_deg >= p.turn_least_deg;
+            if (turned || s.doing_s >= kTurnMostS) {
+                if (p.back_again_for_s > 0.0) {
+                    // The second half of getting itself out: it has reversed and
+                    // turned, and now reverses again, away along its new line.
+                    p.back_off_for_s = p.back_again_for_s;
+                    p.back_again_for_s = 0.0;
+                    into("backing off", "it turned where it was stuck, and backs out again");
+                    p.then_turn = alternate;
+                    p.turn_least_deg = kSideTurnDeg;
+                } else if (turned) {
+                    into("going forward", "nothing in its way");
+                } else {
+                    into("going forward", "it could not turn clear in time, so it goes on");
+                }
+            }
         }
         tellWheels(p, *left, *right);
     }
@@ -2452,15 +2640,41 @@ struct LiveWorld::Impl {
             const double was = p.heading_rad;
             readProgram(p);
             p.last_dt_s = dt_s;
+            // Getting nowhere: told to be going somewhere, and still inside a
+            // small circle around where it stood when it was told. The circle
+            // is the measure, not standing still and not the wheels: in a hole
+            // it drives, rocks and turns the whole time, and gets nowhere.
+            // Leaving the circle opens a new one; so does anything that is not
+            // trying to go (waiting, digging, resting, stopped, off).
+            constexpr double kStuckM = 0.5;
+            const std::string &doing = p.said.doing;
+            const bool trying = p.said.power &&
+                (doing == "going forward" || doing == "backing off" || doing == "turning left" ||
+                 doing == "turning right" || doing == "rising" || doing == "descending");
+            if (!trying || length(p.said.at_m - p.stuck_from) > kStuckM) {
+                p.stuck_s = 0.0;
+                p.stuck_from = p.said.at_m;
+            } else {
+                p.stuck_s += dt_s;
+            }
+            p.said.stuck_s = p.stuck_s;
+            // How fast it is swinging round: the swing a turn carries on with
+            // after the wheels stop pushing it, which is what aiming its nose
+            // has to allow for.
+            double turned = p.heading_rad - was;
+            while (turned > kPi) turned -= 2.0 * kPi;
+            while (turned < -kPi) turned += 2.0 * kPi;
+            if (dt_s > 0.0) {
+                constexpr double kYawSmoothS = 0.1;
+                const double now = turned * kDegPerRad / dt_s;
+                p.yaw_deg_s += (now - p.yaw_deg_s) * std::min(1.0, dt_s / kYawSmoothS);
+            }
+            p.said.turning_deg_s = p.yaw_deg_s;
             if (!p.said.power) continue;
             p.said.doing_s += dt_s;
             if (!p.said.asked.empty()) p.said.asked_s += dt_s;
-            if (p.said.doing == "turning left" || p.said.doing == "turning right") {
-                double turned = p.heading_rad - was;
-                while (turned > kPi) turned -= 2.0 * kPi;
-                while (turned < -kPi) turned += 2.0 * kPi;
+            if (p.said.doing == "turning left" || p.said.doing == "turning right")
                 p.said.turned_deg += p.turn_sign * turned * kDegPerRad;
-            }
         }
     }
 
@@ -5132,6 +5346,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.rest_below = o.contains("rest_below") ? numberFrom(o.at("rest_below")) : 0.0;
         p.said.rest_until = o.contains("rest_until") ? numberFrom(o.at("rest_until")) : 0.0;
         p.said.rests = o.value("rests", 0U);
+        p.said.stucks = o.value("stucks", 0U);
+        // Where it kept getting nowhere, so a machine that gave up there comes
+        // back given up -- it has not moved -- and still knows what getting
+        // clear of that place would be.
+        p.stuck_tries = o.value("stuck_tries", 0U);
+        if (o.contains("stuck_tried_from")) p.stuck_tried_from = vecFrom(o.at("stuck_tried_from"));
         p.said.asked = o.value("asked", std::string{});
         p.said.asked_why = o.value("asked_why", std::string{});
         p.said.asked_by = o.value("asked_by", std::string{});
@@ -14884,6 +15104,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"rest_below", savedNumber(p.said.rest_below)},
                                 {"rest_until", savedNumber(p.said.rest_until)},
                                 {"rests", p.said.rests},
+                                {"stucks", p.said.stucks},
+                                {"stuck_tries", p.stuck_tries},
+                                {"stuck_tried_from", savedVec(p.stuck_tried_from)},
                                 {"asked", p.said.asked},
                                 {"asked_why", p.said.asked_why},
                                 {"asked_by", p.said.asked_by},
