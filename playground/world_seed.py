@@ -119,6 +119,18 @@ class Works:
     recipe: str
     takes: str
     charge_kg: float
+    #: Whether the world STANDS this machine at the start, or only lays out
+    #: its yard -- the two heaps, and the loan on the intake -- for a machine
+    #: you build yourself.
+    #:
+    #: The owner, 2026-09-26: a new game arrives with a copper smelter and a
+    #: wire mill working, and the rest are what you build when you can power
+    #: them. This is not a tuning knob. Making heat real made power real: a
+    #: furnace draws 5 kW warming up and loses 3.2 kW just holding copper
+    #: heat, and the valley's whole solar output is 840 W. Eight machines
+    #: stood at once emptied the farm in two minutes and left the valley
+    #: cold for good. Two that run beats eight that die at noon.
+    stands: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,8 +201,8 @@ LIES_ABOUT: tuple[Heap, ...] = (
 #: A charge is a few batches of the recipe's own batch size (machine_routine
 #: BATCH_KG is 5 kg), which is enough to be watched and not enough to live on.
 WORKS: tuple[Works, ...] = (
-    Works("smelter", "smelt copper", "copper ore", 20.0),
-    Works("mill", "draw wire", "copper", 10.0),
+    Works("smelter", "smelt copper", "copper ore", 20.0, stands=True),
+    Works("mill", "draw wire", "copper", 10.0, stands=True),
     Works("clay kiln", "fire ceramic", "clay", 20.0),
     Works("lime kiln", "burn lime", "limestone", 20.0),
     Works("iron smelter", "smelt iron", "iron ore", 20.0),

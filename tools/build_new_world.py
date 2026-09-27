@@ -157,9 +157,18 @@ def compose(ground: dict, world: dict) -> dict:
             {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
         ]}
 
-    # EVERY WORKS THE GENERATOR PLACED, not only the smelter. The ladder has
-    # nine rungs and six of them are learned by WATCHING a machine work, so a
-    # room with one machine in it is a room where six rungs cannot be reached.
+    # EVERY WORKS GETS ITS YARD; TWO OF THEM GET A MACHINE. Each works has
+    # its two heaps laid out and its intake charged, and the smelter and the
+    # mill are stood in theirs. The other six yards wait with their ore
+    # beside them for a machine you build.
+    #
+    # The ladder is still reachable and is reached a better way. Six of its
+    # nine rungs are learned by WATCHING a machine work, and that still
+    # happens -- you build the kiln, you run it, you learn firing. What you
+    # no longer get is six techniques handed over by a world that stood the
+    # machines for you. The bootstrap holds because a furnace is not its
+    # recipe: the starting smelter's chamber reaches 1687 C, so it will smelt
+    # iron at 1538 as readily as copper if that is what you feed it.
     heaps = {p["name"]: p for p in goods["stockpiles"]}
 
     # THE YARD'S POWER, before the machines that run off it. The owner,
@@ -185,6 +194,25 @@ def compose(ground: dict, world: dict) -> dict:
         intake_name, output_name = ws.heaps_of(works)
         if intake_name not in heaps or output_name not in heaps:
             continue                      # the generator found no ground for it
+        # ITS LOAN goes on the intake whether or not a machine stands over
+        # it, so a yard you build into has its first few batches waiting.
+        # Read off the recipe, in the proportions it takes: charging one
+        # named substance gave the concrete mixer 10 kg of cement and no
+        # sand, and mixing concrete takes 0.15 of one to 0.85 of the other,
+        # so it sat on a full heap and made nothing. Every other recipe here
+        # has a single input, which is why that showed up exactly once.
+        #
+        # The generator keeps this off the goods block on purpose -- a charge
+        # is not a supply, and a proof that counted it said you could reach
+        # everything without ever digging.
+        takes = ws.CHAIN_BY_NAME[works.recipe].takes
+        whole = sum(takes.values()) or 1.0
+        if works.charge_kg > 0:
+            holds = heaps[intake_name].setdefault("holds", {})
+            for substance, share in takes.items():
+                holds[substance] = round(works.charge_kg * share / whole, 3)
+        if not works.stands:
+            continue                      # its yard is laid out; you build the machine
         # BESIDE THE LINE BETWEEN ITS TWO HEAPS, never on it. Stood at the
         # midpoint a machine is exactly what anything driving from one heap to
         # the other runs into: the rover came back with a full hopper, met
@@ -230,22 +258,6 @@ def compose(ground: dict, world: dict) -> dict:
         spec["joints"] += pins
         for key in ("stores", "motors", "panels", "controls", "programs"):
             spec["machines"][key] = spec["machines"].get(key, []) + list(made.get(key) or [])
-        # ITS LOAN. The generator keeps this off the goods block on purpose --
-        # a charge is not a supply, and a proof that counted it said you could
-        # reach everything without ever digging. The room is where it belongs:
-        # enough to be watched working once, and then it waits for you.
-        # ITS LOAN, read off the recipe. Whatever the recipe takes, in the
-        # proportions it takes it. Charging one named substance gave the
-        # concrete mixer 10 kg of cement and no sand, and mixing concrete
-        # takes 0.15 of one to 0.85 of the other -- so it sat on a full heap
-        # and made nothing. Every other recipe here has a single input, which
-        # is why that showed up exactly once.
-        takes = ws.CHAIN_BY_NAME[works.recipe].takes
-        whole = sum(takes.values()) or 1.0
-        if works.charge_kg > 0:
-            holds = heaps[intake_name].setdefault("holds", {})
-            for substance, share in takes.items():
-                holds[substance] = round(works.charge_kg * share / whole, 3)
 
     # BOTH MACHINES ARE RUNNING WHEN THE ROOM OPENS. A program that does not
     # say `power` opens stopped and waits to be switched on by hand, which is
