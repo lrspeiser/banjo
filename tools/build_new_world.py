@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
@@ -66,6 +67,21 @@ ARRIVE_AT = (0.0, 0.0)
 #: cent shorter in each direction, which is nothing to look at and everything
 #: to the budget: that is what a cube law does.
 WORKS_BLOCK_M = (0.5, 0.65, 0.5)
+
+#: WHAT EACH THING STANDING IN A NEW GAME WAS BUILT FROM: its name in the
+#: world against the Workshop kind it is an instance of. Declared rather
+#: than inferred from the name, because "solar farm" is not a kind and
+#: "clay kiln" is not either -- both are processors and a rover is a rover.
+#: The rule the owner set ("nothing in the world that is not buildable in
+#: the workshop") is checked against this, so anything stood here without
+#: saying what built it fails the check rather than passing quietly.
+def built_from() -> dict:
+    import world_seed as seed
+    made = {"rover": "rover", "solar farm": "solar-array"}
+    for works in seed.WORKS:
+        made[works.machine] = "processor"
+    return made
+
 
 #: The seed a new game starts from until somebody asks for another. The
 #: generator re-seeds past a bad roll on its own, so this is where it starts
@@ -145,6 +161,25 @@ def compose(ground: dict, world: dict) -> dict:
     # nine rungs and six of them are learned by WATCHING a machine work, so a
     # room with one machine in it is a room where six rungs cannot be reached.
     heaps = {p["name"]: p for p in goods["stockpiles"]}
+
+    # THE YARD'S POWER, before the machines that run off it. The owner,
+    # 2026-09-26: "we can add a solar farm next to these machines and also
+    # provide battery charging that way for all devices."
+    #
+    # It stands clear of the yard's own heaps so nothing drives into it, and
+    # every machine below is wired to ITS store rather than the one each
+    # carries. There is no store-to-store transfer in the engine -- a panel
+    # charges a store and that is all -- so one shared store is what "all
+    # devices" can mean, and every panel in the yard charges it.
+    farm_at = _clear_of(ground, middle, 4.0, away_from=intake)
+    farm_bodies, farm_pins, farm_made, _ = a_built_thing(ground, "solar-array", "solar farm", farm_at)
+    farm_made = workshop_install._named_apart(spec["machines"], farm_made)
+    spec["precise_rigid_bodies"] += farm_bodies
+    spec["joints"] += farm_pins
+    for key in ("stores", "motors", "panels", "controls", "programs"):
+        spec["machines"][key] = spec["machines"].get(key, []) + list(farm_made.get(key) or [])
+    the_grid = (farm_made.get("stores") or [{}])[0].get("name")
+
     for works in ws.WORKS:
         name = works.machine
         intake_name, output_name = ws.heaps_of(works)
@@ -172,6 +207,17 @@ def compose(ground: dict, world: dict) -> dict:
         # Its names kept apart from every other machine's, as the install gate
         # keeps them: eight processors all call their battery "battery".
         made = workshop_install._named_apart(spec["machines"], made)
+        # ON THE FARM'S STORE, not its own. Its own battery is still built --
+        # it is part of the processor the Workshop makes -- and it holds
+        # nothing, which is the honest state of it: the engine has no way to
+        # move charge from one store to another, so either the design wants a
+        # variant with no battery or the engine wants a wire between stores.
+        # Both are worth doing and neither is this change.
+        if the_grid:
+            for program in made.get("programs") or []:
+                program["store"] = the_grid
+            for panel in made.get("panels") or []:
+                panel["store"] = the_grid
         spec["precise_rigid_bodies"] += bodies
         spec["joints"] += pins
         for key in ("stores", "motors", "panels", "controls", "programs"):
@@ -205,6 +251,33 @@ def compose(ground: dict, world: dict) -> dict:
     return spec
 
 
+def a_built_thing(ground: dict, kind: str, name: str,
+                  at: tuple[float, float]) -> tuple[list[dict], list[dict], Any, Any]:
+    """Any Workshop kind, stood on the ground where it goes.
+
+    THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
+    exact bodies, seat it on the highest ground under its whole footprint,
+    and let workshop_machines read its stores, panels and programs off the
+    design. Nothing here is made up for the world -- if the Workshop cannot
+    build it, it cannot stand here either, which is the rule.
+    """
+    design = w.assemble(kind, design_id=name)
+    candidate = {"kind": kind, "design_id": name, "parameters": {},
+                 "component_overrides": design.lineage["component_overrides"]}
+    design, overrides = workshop_components.design_from_spec(candidate)
+    artifact = rigid_assembly.compile_design(design, overrides, root=name)
+    x, z = at
+    flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, 0.0)
+    lift = max(grounds.ground_under(ground, lo, hi) - low
+               for low, lo, hi in rigid_assembly.footprint(flat))
+    stood = rigid_assembly.placed(artifact, [x, lift, z], 0.0, 0.0)
+    origin = [x, lift, z]
+    frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)],
+             lambda d: [float(v) for v in d])
+    made = workshop_machines.installed(design, artifact["component_to_body"], frame, {})
+    return rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made, design
+
+
 def a_processor(ground: dict, name: str, at: tuple[float, float],
                 routine: dict) -> tuple[list[dict], list[dict], dict]:
     """The Workshop's own processor, stood on the ground where it goes.
@@ -219,23 +292,10 @@ def a_processor(ground: dict, name: str, at: tuple[float, float],
     mine's block costs 2,304 cells at 50 mm; a compiled design is precise
     rigid bodies, which the lattice never sees.
     """
-    design = w.assemble("processor", design_id=name)
-    candidate = {"kind": "processor", "design_id": name, "parameters": {},
-                 "component_overrides": design.lineage["component_overrides"]}
-    design, overrides = workshop_components.design_from_spec(candidate)
-    artifact = rigid_assembly.compile_design(design, overrides, root=name)
-    x, z = at
-    flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, 0.0)
-    lift = max(grounds.ground_under(ground, lo, hi) - low
-               for low, lo, hi in rigid_assembly.footprint(flat))
-    stood = rigid_assembly.placed(artifact, [x, lift, z], 0.0, 0.0)
-    origin = [x, lift, z]
-    frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)],
-             lambda d: [float(v) for v in d])
-    made = workshop_machines.installed(design, artifact["component_to_body"], frame, {})
+    bodies, pins, made, _ = a_built_thing(ground, "processor", name, at)
     for program in made.get("programs") or []:
         program["routine"] = dict(routine)
-    return rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made
+    return bodies, pins, made
 
 
 def _nearest(deposits: list[dict], substance: str, to: tuple[float, float]) -> dict:

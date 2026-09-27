@@ -15,6 +15,7 @@ The product graph still decides physics from component semantics:
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import workshop as w
@@ -346,6 +347,107 @@ PROCESSOR_RECIPES = {
 }
 
 
+SOLAR_ARRAY_PARAMETERS = (
+    w.Parameter("panels", "", 6.0, 1.0, 24.0, about="how many panels on the frame"),
+    w.Parameter("panel_w_m", "m", 0.9, 0.2, 2.0, about="each panel across"),
+    w.Parameter("panel_d_m", "m", 0.6, 0.2, 2.0, about="each panel deep"),
+    w.Parameter("frame_height_m", "m", 0.6, 0.2, 2.5),
+    # A store big enough to carry a yard through a night. The sun sets in
+    # this world (docs, the sun's day), so a farm that holds only what it
+    # makes in an hour stops everything it feeds at dusk.
+    w.Parameter("capacity_j", "J", 2.0e7, 100.0, 1e10),
+    w.Parameter("charge_j", "J", 2.0e6, 0.0, 1e10),
+    w.Parameter("efficiency", "", 0.2, 0.05, 0.35,
+                about="what share of the sunlight on a panel becomes power"),
+    w.Parameter("material", "", "oak", choices=("oak", "iron")),
+)
+
+
+def _build_solar_array(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    """A frame on four legs with a FIELD of panels on it, and a battery under.
+
+    Rows and columns, squared off. Six panels 0.9 m across in one row is a
+    5.7 m frame and a surface is allowed 4 m, so a line stops being buildable
+    at about four panels; a grid grows both ways and stays inside it.
+
+    All facing up. The engine reads a panel's own normal against the sun, and
+    tilting the frame would be claiming a tracking mount nobody has built.
+    """
+    material = str(values["material"])
+    count = max(1, int(round(float(values["panels"]))))
+    pw, pd = float(values["panel_w_m"]), float(values["panel_d_m"])
+    high = float(values["frame_height_m"])
+    gap = 0.06
+    # As square as the count allows, then narrowed until the frame fits what
+    # a surface may be. Refusing would be worse: a farm somebody asked for
+    # twenty panels of is a farm four panels deep, not an error.
+    bay = 0.5                                # a bay at one end for the battery
+    across = max(1, math.ceil(math.sqrt(count)))
+    while across > 1 and across * pw + (across - 1) * gap + bay + 0.12 > 3.9:
+        across -= 1
+    down = math.ceil(count / across)
+    span = across * pw + (across - 1) * gap
+    deep = down * pd + (down - 1) * gap
+    wide = span + bay + 0.12
+    under = high - 0.04                      # what the legs reach, as a processor's do
+    parts: list[w.WirePart] = []
+    parts += library.make("surface", name="frame", material=material, at_m=(0.0, high, 0.0),
+                          parameters={"width_m": round(wide, 4), "thickness_m": 0.04,
+                                      "depth_m": round(min(3.9, deep + 0.12), 4),
+                                      "profile": "square"}).parts
+    for i, (sx, sz) in enumerate(((1, 1), (-1, 1), (1, -1), (-1, -1)), 1):
+        parts.append(w.strut(name=f"leg-{i}", role="leg",
+                             from_m=(sx * wide * 0.45, 0.0, sz * deep * 0.45),
+                             to_m=(sx * wide * 0.45, under, sz * deep * 0.45),
+                             section_m=(0.05, 0.05), material=material, family="leg"))
+    # The panels fill the frame from its left edge, leaving the bay clear.
+    left = -wide / 2.0 + 0.06 + pw / 2.0
+    front = -(deep - pd) / 2.0
+    for i in range(count):
+        row, column = divmod(i, across)
+        parts += library.make("solar-panel", name=f"panel-{i + 1}", material="glass",
+                              at_m=(left + column * (pw + gap), high, front + row * (pd + gap)),
+                              parameters={"width_m": pw, "depth_m": pd}).parts
+    # ON the frame, at its height, like everything else a frame carries. Hung
+    # below it the compound had a part touching nothing and the engine
+    # refused the whole scene: "precise compound parts must meet".
+    parts += library.make("battery", name="battery", material=material,
+                          at_m=(wide / 2.0 - bay / 2.0 - 0.06, high, 0.0),
+                          parameters={"width_m": 0.4, "height_m": 0.25, "depth_m": 0.4}).parts
+    return parts
+
+
+def _solar_array_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    from . import workshop_construction, workshop_machines
+    count = max(1, int(round(float(values["panels"]))))
+    area = round(float(values["panel_w_m"]) * float(values["panel_d_m"]), 4)
+    held = [f"leg-{i}" for i in range(1, 5)] + [f"panel-{i}" for i in range(1, count + 1)] + ["battery"]
+    joints = [{"id": f"joint-{i + 1}", "kind": "fixed", "a": "frame", "b": b, "method": "bonded"}
+              for i, b in enumerate(held)]
+    machines = workshop_machines.checked({
+        "stores": [{"name": "array battery", "in": "battery", "capacity_j": values["capacity_j"],
+                    "charge_j": values["charge_j"], "voltage_v": 48.0}],
+        "motors": [], "controls": [], "programs": [],
+        # Every panel on the one store. That is the whole point of a farm:
+        # capacity where it is wanted, not a panel per machine.
+        "panels": [{"name": f"panel-{i + 1}", "on": f"panel-{i + 1}", "store": "array battery",
+                    "area_m2": area, "efficiency": float(values["efficiency"])}
+                   for i in range(count)],
+    })
+    out: dict[str, Any] = {
+        workshop_construction.CONSTRUCTION_KEY: {
+            "schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+            "joints": joints, "added": [], "removed": []},
+        workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _solar_array_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    return []
+
+
 def _build_processor(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
     material = str(values["material"])
     side, deck_y, top_t = float(values["deck_m"]), float(values["deck_height_m"]), float(values["top_thickness_m"])
@@ -515,7 +617,16 @@ def install() -> None:
               "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "intake bin"}})
     if "rover" not in seen: ordered.append(existing["rover"])
     if "drone" not in seen: ordered.append(existing["drone"])
+    existing["solar-array"] = w.Assembly(
+        "solar-array", "make power for a whole yard",
+        "A frame on four legs carrying a row of panels, with one battery under it that every panel charges "
+        "and anything nearby can draw on: the farm, as exact bodies, so a yard is not eight machines each "
+        "carrying its own.",
+        SOLAR_ARRAY_PARAMETERS, _build_solar_array, _solar_array_trials, _solar_array_overrides,
+        uses={"primary_use_component": "frame",
+              "interaction_point_components": {"deck": "frame", "grip": "frame", "use": "battery"}})
     if "processor" not in seen: ordered.append(existing["processor"])
+    if "solar-array" not in seen: ordered.append(existing["solar-array"])
     w.ASSEMBLIES = tuple(ordered)
     w._BY_NAME = {assembly.name: assembly for assembly in w.ASSEMBLIES}
     _INSTALLED = True

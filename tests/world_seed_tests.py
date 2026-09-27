@@ -337,18 +337,29 @@ class EverythingInItCouldBeBuilt(unittest.TestCase):
         return {word.strip(" .'\"") for word in listed.replace(" and ", ",").split(",") if word.strip()}
 
     def test_every_machine_in_it_is_a_kind_the_workshop_can_build(self):
+        """Both ends of it: everything standing says what built it, and what
+        built it is a kind the Workshop knows.
+
+        By KIND and not by name. A machine is named for its job -- "clay
+        kiln", "iron smelter", "solar farm" -- and none of those is a kind;
+        they are processors and a solar array. Matching names caught the farm
+        for the wrong reason and would have gone on catching every new one.
+        """
+        import importlib
+        sys.path.insert(0, str(ROOT / "tools"))
+        built_from = importlib.import_module("build_new_world").built_from()
+
         known = self.kinds_the_workshop_knows()
         self.assertIn("processor", known, f"the Workshop should know a processor: {sorted(known)}")
         standing = sorted({b["name"].split(":")[0] for b in self.room.get("precise_rigid_bodies") or []})
         self.assertTrue(standing, "the room has no machines in it at all")
         for name in standing:
             with self.subTest(name):
-                # A machine is named for its job -- "clay kiln", "iron
-                # smelter" -- and built from a kind. The kind is what has to
-                # be buildable, and every works here is a processor.
-                self.assertTrue(
-                    name in known or name in {w.machine for w in ws.WORKS},
-                    f"{name!r} stands in a new game and is not something the Workshop builds")
+                self.assertIn(name, built_from,
+                              f"{name!r} stands in a new game and nothing says what built it")
+                self.assertIn(built_from[name], known,
+                              f"{name!r} is built from {built_from[name]!r}, "
+                              f"which the Workshop cannot make")
 
     def test_nothing_is_left_standing_that_nobody_could_build(self):
         """A plain box is a box somebody drew, not a thing anybody made.

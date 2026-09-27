@@ -501,6 +501,108 @@
     "store": "rover battery"
    },
    {
+    "area_m2": 0.54,
+    "at_mm": [
+     -12550.0,
+     1551.1,
+     -5330.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-1",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -11590.0,
+     1551.1,
+     -5330.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-2",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -10630.0,
+     1551.1,
+     -5330.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-3",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -12550.0,
+     1551.1,
+     -4670.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-4",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -11590.0,
+     1551.1,
+     -4670.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-5",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -10630.0,
+     1551.1,
+     -4670.0
+    ],
+    "body": "solar farm",
+    "efficiency": 0.2,
+    "name": "panel-6",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
     "area_m2": 0.1944,
     "at_mm": [
      -8240.0,
@@ -515,7 +617,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -532,7 +634,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 2"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -549,7 +651,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 3"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -566,7 +668,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 4"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -583,7 +685,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 5"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -600,7 +702,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 6"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -617,7 +719,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 7"
+    "store": "array battery"
    },
    {
     "area_m2": 0.1944,
@@ -634,7 +736,7 @@
      1.0,
      0.0
     ],
-    "store": "processor battery 8"
+    "store": "array battery"
    }
   ],
   "programs": [
@@ -735,7 +837,7 @@
      "recipe": "smelt copper"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "mill",
@@ -750,7 +852,7 @@
      "recipe": "draw wire"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "clay kiln",
@@ -765,7 +867,7 @@
      "recipe": "fire ceramic"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "lime kiln",
@@ -780,7 +882,7 @@
      "recipe": "burn lime"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "iron smelter",
@@ -795,7 +897,7 @@
      "recipe": "smelt iron"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "glass furnace",
@@ -810,7 +912,7 @@
      "recipe": "melt glass"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "concrete mixer",
@@ -825,7 +927,7 @@
      "recipe": "mix concrete"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    },
    {
     "body": "aluminium cell",
@@ -840,7 +942,7 @@
      "recipe": "smelt aluminium"
     },
     "setting": 1.0,
-    "store": "processor battery"
+    "store": "array battery"
    }
   ],
   "stores": [
@@ -850,6 +952,13 @@
     "charge_j": 100000.0,
     "name": "rover battery",
     "voltage_v": 24.0
+   },
+   {
+    "body": "solar farm",
+    "capacity_j": 20000000.0,
+    "charge_j": 2000000.0,
+    "name": "array battery",
+    "voltage_v": 48.0
    },
    {
     "body": "smelter",
@@ -1224,6 +1333,186 @@
     -5.38,
     0.8419337290543211,
     -1.27
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "solar farm",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.58,
+      0.0
+     ],
+     "dimensions_m": [
+      3.44,
+      0.04,
+      1.38
+     ],
+     "name": "frame"
+    },
+    {
+     "center_local_m": [
+      1.5480000000000003,
+      0.27999999999999997,
+      0.5670000000000001
+     ],
+     "dimensions_m": [
+      0.05,
+      0.5599999999999999,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -1.5480000000000003,
+      0.27999999999999997,
+      0.5670000000000001
+     ],
+     "dimensions_m": [
+      0.05,
+      0.5599999999999999,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      1.5480000000000003,
+      0.27999999999999997,
+      -0.5670000000000001
+     ],
+     "dimensions_m": [
+      0.05,
+      0.5599999999999999,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -1.5480000000000003,
+      0.27999999999999997,
+      -0.5670000000000001
+     ],
+     "dimensions_m": [
+      0.05,
+      0.5599999999999999,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      -1.2100000000000002,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-1"
+    },
+    {
+     "center_local_m": [
+      -0.2500000000000002,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-2"
+    },
+    {
+     "center_local_m": [
+      0.7099999999999997,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-3"
+    },
+    {
+     "center_local_m": [
+      -1.2100000000000002,
+      0.605,
+      0.3299999999999999
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-4"
+    },
+    {
+     "center_local_m": [
+      -0.2500000000000002,
+      0.605,
+      0.3299999999999999
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-5"
+    },
+    {
+     "center_local_m": [
+      0.7099999999999997,
+      0.605,
+      0.3299999999999999
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-6"
+    },
+    {
+     "center_local_m": [
+      1.4100000000000001,
+      0.725,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.25,
+      0.4
+     ],
+     "name": "battery"
+    }
+   ],
+   "position_m": [
+    -11.34,
+    0.9411298294067383,
+    -5.0
    ]
   },
   {
