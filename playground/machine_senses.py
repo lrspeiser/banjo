@@ -152,6 +152,14 @@ def sense_position(ctx: Context) -> dict[str, Any]:
     out = {"x_m": round(ax, 2), "z_m": round(az, 2), "heading_deg": round(ctx.heading(), 1), "speed_m_s": speed,
            "doing": ctx.program.get("doing"), "why": ctx.program.get("why"),
            "for_s": ctx.program.get("doing_s"), "asked": ctx.program.get("asked")}
+    # Getting nowhere: how long it has been told to go somewhere and stayed
+    # where it was, and how many times it has tried to get itself out of this
+    # place. Not a stall -- in a hole or against a wall its wheels turn freely.
+    nowhere = float(ctx.program.get("stuck_s") or 0.0)
+    if nowhere > 0.5:
+        out["not_getting_anywhere_for_s"] = round(nowhere, 1)
+    if int(ctx.program.get("stucks") or 0) > 0:
+        out["tried_to_get_out_times"] = int(ctx.program.get("stucks") or 0)
     if ctx.program.get("kind") == "hover":
         out["height_above_ground_m"] = round(float(ctx.program.get("height_m") or 0.0), 2)
         out["climb_m_s"] = round(float(ctx.program.get("climb_m_s") or 0.0), 2)
@@ -403,7 +411,12 @@ def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dic
     if not now.get("power"):
         return []
     out: list[str] = []
+    was = before or {}
     parts = set(now.get("parts") or [])
+    if int(now.get("stucks") or 0) > int(was.get("stucks") or 0):
+        out.append("it was not getting anywhere, so it is getting itself out")
+    if now.get("doing") == "stuck" and was.get("doing") != "stuck":
+        out.append("it cannot get itself out of where it is")
     for i in impacts:
         if i.get("struck") in parts and i.get("by") not in parts:
             out.append(f"{i.get('by')} struck it at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
@@ -411,7 +424,6 @@ def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dic
             out.append(f"it ran into {i.get('struck')} at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
     if now.get("asked"):
         return out
-    was = before or {}
     seen_was = {_side(s) for s in was.get("sensors") or [] if s.get("sees")}
     for s in now.get("sensors") or []:
         if s.get("sees") and _side(s) not in seen_was:
