@@ -649,7 +649,8 @@ off from its own panel. The one kind so far, "roam":
   that stands in for a bump sensor.
 - Where it has been told to go somewhere and has got nowhere for 20 s, it backs
   itself out, and after a few tries stops and says it cannot ("When a machine
-  cannot get out").
+  cannot get out"). It also takes care not to dig itself in ("Working a place
+  without digging yourself in").
 - It turns until it has turned at least as far as it meant to and nothing is
   in its way, or for 6 s at most.
 - Turned off, it stops on its brakes.
@@ -740,6 +741,9 @@ older reflex, backing off where its wheels make no progress, and so has the
 same blind spot: its wheels turn freely in a hole. A "still" machine is never
 told to go anywhere.
 
+Getting out of a hole is the reflex; not digging one is the other half, and that
+is below.
+
 Measured in the engine (`tests/rover_roam_tests.cpp`,
 `tests/drone_hover_tests.cpp`):
 
@@ -751,8 +755,64 @@ Measured in the engine (`tests/rover_roam_tests.cpp`,
 
 What it does not do is plan a way round. Told to approach a point through a
 wall, a machine that drives backs out, turns away, and is turned straight back
-at the wall by the ask; three of those and it gives the ask up, as it does with
-water. Getting itself out is not finding a route.
+at the wall by the ask. Getting itself out is not finding a route.
+
+Getting nowhere does not count against the three water scares that make a
+machine give up what it was asked. Backing out of something and carrying on is
+the whole point of the reflex, and a machine that truly cannot get out stops and
+says so on its own; counted together, one water scare and two back-outs made a
+machine abandon a haul it could have finished, and it roamed for the rest of the
+run.
+
+### Working a place without digging yourself in
+
+A machine cannot drive out of a hole as deep as its wheels are tall, and the
+holes in its way are its own. So how a machine works a place is a rule of the
+world, not a setting on a routine (`machine_tools`, all of it measured on the
+mine's rover, 2026-09-26):
+
+- **It bites the place it was sent to, never its own nose.** The `dig` tool
+  takes a `place`, and a routine that digs passes its dig site. Biting 1.3 m
+  straight ahead instead put a crater wherever the machine happened to stop and
+  whichever way it was pointing: four trips to one vein left four holes 10 to
+  18 cm deep spread over 2 m of ground it had to cross, and on the fifth the
+  rover stood on the rim of one and could not get out.
+- **It stands off the place.** `go_to` takes `stop_at_m` -- how far from the
+  place to stop, since the place is about to become a pit -- and a machine told
+  to stop "a metre off" rolls on while its brakes take hold, measured down to
+  0.2 m. The dig routine stands 2.0 m off, which puts it between 1.2 m and
+  2.0 m out: inside what it can reach, outside what it is digging.
+- **It will not dig the ground under itself.** Closer than 1.2 m to the spot and
+  it backs off first and says so, rather than digging where its own wheels are.
+- **Each spot is scooped once.** A bite goes into the highest ground of the
+  place it can reach, and only while that ground is still within 30 mm of the
+  ground around: so the working spreads across the place, the way an open pit
+  is worked, and no hole is ever deepened. Biting always at the middle of a
+  place instead sank a shaft 600 mm deep and 1.1 m across in ten minutes, which
+  a machine on 160 mm wheels can only fall into.
+- **Worked out is said, not scraped at.** Once every spot it can reach is down
+  past that, the tool says the place is worked out and its routine goes on with
+  what it has. Scraping the same exhausted spot brought up 3.8 kg, then 2.2,
+  then 0.6, and would have gone on for ever.
+
+What one scoop leaves is not a trap: driven at a hole 0.5 m wide and 150 mm
+deep, the rover crosses it. What traps it is the same spot bitten over and over.
+
+Measured over ten minutes of the mine, the same engine both ways:
+
+| | biting its own nose | working the place |
+|---|---|---|
+| loads delivered | 2 | 2 |
+| the working's radius | 2.3 m | 0.6 m |
+| deepest cut | 183 mm | 192 mm |
+| time stuck, unable to move | 342 s | none |
+
+Over twenty minutes it delivered 3 loads, emptied the vein, put 7.1 kg of
+copper wire on the Workshop's rack, gave up no trip, and was never once stuck.
+What holds the load count down is not the digging: 288 s of those 1,200 went on
+its water reflex turning it away on the haul between the vein and the smelter,
+which is the next thing to look at.
+
 
 It can be worked in the page at `/world?scene=tests-rover`. That is a test room
 off the menu, built by `tools/build_rover_room.py`, which lets the rover roam a
@@ -1170,10 +1230,12 @@ way -- a point in the world -- the routine and a person can. The decision's
 words say what was filled: "go to 3 m at +90 deg, for 6 s".
 
 **Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
-whose volume goes into the ground's one carried account. The `dig` tool
-takes one scoop of the ground 1.3 m ahead of the machine's centre (0.5 m
-wide, 0.15 m deep; closer, its caster swung into the hole when it turned to
-leave), moves what came out from the carried account into the machine's
+whose volume goes into the ground's one carried account. The `dig` tool takes
+one scoop 0.5 m wide and 0.15 m deep, at the place it was sent to work or, told
+no place, 1.3 m ahead of the machine's centre (closer, its caster swung into the
+hole when it turned to leave); how it chooses the spot is "Working a place
+without digging yourself in" below. It moves what came out from the carried
+account into the machine's
 hopper with the engine's `ground_withdraw`, so the ground's ledger stays
 whole and the person's carrying is untouched, cuts the scoop to what the
 hopper has room for and puts the rest back where it came from, draws the

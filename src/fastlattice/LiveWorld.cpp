@@ -1034,8 +1034,13 @@ struct LiveWorld::Impl {
         bool interrupted{};
         // And what interrupted it: "water" or "nowhere".
         std::string interrupted_by{};
-        // How many times its reflexes have taken it since it was last asked:
-        // three, and it gives the ask up, since the water is in the way.
+        // How many times WATER has taken it since it was last asked: three, and
+        // it gives the ask up, since the water is in the way. Getting nowhere
+        // does not count here. Backing out of something and carrying on is the
+        // whole point of that reflex, and a machine that truly cannot get out
+        // stops and says so on its own (kStuckTriesMost) -- counted together,
+        // one water scare and two back-outs made a machine abandon a haul it
+        // could have finished, and it roamed for the rest of the run.
         unsigned interruptions{};
         // Hovering: where each rotor's pin is in the chassis's own level, the
         // way each spins (+1 or -1), the height its centre stood at when it was
@@ -2293,7 +2298,6 @@ struct LiveWorld::Impl {
         // the ask lasts -- measured 2026-09-26 in the mine, 54 s of it.
         if (!s.asked.empty() && !p.interrupted && driving_ask && p.stuck_s >= patience() && backOut()) {
             p.interrupted = true;
-            ++p.interruptions;
             p.interrupted_by = "nowhere";
         }
         // The ask has it back only after a couple of seconds of clear going:
@@ -2306,10 +2310,8 @@ struct LiveWorld::Impl {
         }
         if (!s.asked.empty() && !p.interrupted && p.interruptions >= kInterruptionsMost) {
             p.interruptions = 0;
-            const bool nowhere = p.interrupted_by == "nowhere";
             p.interrupted_by.clear();
-            askDone(nowhere ? "it could not get anywhere near what it was asked, so it gave it up and goes on"
-                            : "the water was in the way of what it was asked, so it gave it up and goes on");
+            askDone("the water was in the way of what it was asked, so it gave it up and goes on");
         } else if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
             askDone("it has done what it was asked, and goes on");
         } else if (!s.asked.empty() && !p.interrupted) {

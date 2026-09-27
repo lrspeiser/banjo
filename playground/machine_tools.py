@@ -33,13 +33,40 @@ WORK_J_PER_KG = 50.0
 # How long a scoop takes, per kilogram, so a load of twenty takes five
 # seconds: declared, so a dig is watchable rather than instant.
 DIG_S_PER_KG = 0.25
+# How fast it backs off, near enough to reckon a back-off by: measured on the
+# mine's rover, which reversed 0.62 m in its second second of it.
+BACK_OFF_M_S = 0.6
 DIG_WIDTH_M = 0.5
 DIG_DEPTH_M = 0.15
-# Where the scoop bites, ahead of the machine's centre: clear of a caster at
-# its front, which swings into a hole dug closer when the machine turns to
-# leave (measured on the page: a rover turning in place at its own hole for
-# a minute).
+# Where the scoop bites when nothing says where: ahead of the machine's centre,
+# clear of a caster at its front, which swings into a hole dug closer when the
+# machine turns to leave (measured on the page: a rover turning in place at its
+# own hole for a minute).
 DIG_AHEAD_M = 1.3
+# How far out it can reach a place it was sent to work, and how close it will
+# let itself be to the spot it is about to bite. It will not dig the ground it
+# is standing on, because it cannot drive out of what it digs: a scoop is 150 mm
+# deep and a caster wheel 160 mm across, so any scoop of its own is a trap, and
+# on a slope it does not even have to be a whole one.
+DIG_REACH_M = 2.0
+DIG_CLEAR_M = 1.2
+# And where it stands to work a place: inside its reach, outside the working, and
+# chosen for where a machine told to stop actually stops. Told to stop a metre
+# off something, the mine's rover came to rest anywhere from 0.2 m to 1.0 m from
+# it, because it rolls on while its brakes take hold; told to stand 2.0 m off, it
+# came to rest 1.6 m off, inside the window between DIG_CLEAR_M and DIG_REACH_M
+# that it may dig in. Nearer than that and it backs off before it digs.
+DIG_STAND_M = 2.0
+# How fresh the ground a bite goes into must be, and how wide the working may
+# spread. Each spot is scooped ONCE: a bite only goes into ground still within
+# this of the ground around it, so the working spreads across the place and no
+# hole is ever deepened. Measured on the mine's rover: driven at one, it crosses
+# a scoop 0.5 m wide and 150 mm deep without trouble, but scoop after scoop into
+# the one spot sank a shaft 600 mm deep and 1.1 m across, and a machine on
+# 160 mm wheels can only fall into that. Once every spot it can reach has been
+# worked, the place is worked out and it says so.
+DIG_FRESH_M = 0.03
+DIG_SPREAD_M = 0.4
 DUMP_RADIUS_M = 0.6
 
 
@@ -140,10 +167,32 @@ def face(ctx: senses.Context, call: Call) -> dict[str, Any]:
 
 
 def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """Asked to go to a place and stop a metre off it; `stop_at_m` stops it that
+    far from the place instead, by aiming it at a point short of the place on the
+    line it is coming in on.
+
+    A machine working the ground needs this: the place it is sent to becomes the
+    pit it digs, and "a metre off" is not clear of a pit -- told to stop a metre
+    from the vein, the mine's rover rolled in to 0.1 m of it while its brakes
+    took hold, into a 12 cm hole of its own, and could not get out. Standing
+    short of its work, it can reach the pit without being in it."""
     point, name = _place(ctx, call.args)
-    out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), point)
-    out["did"] = f"asked to go to {name}, and stop a metre off"
-    out["target"] = point
+    # It stops a metre off whatever it is aimed at, so to stand further out it is
+    # aimed a metre nearer than that.
+    stand = max(0.0, float(call.args.get("stop_at_m", 0.0)))
+    short = max(0.0, stand - NEAR_M)
+    aim, ax, az = list(point), *ctx.at()
+    if short > 0.0:
+        away = math.hypot(point[0] - ax, point[1] - az)
+        # Already inside it: the point short of the place is behind the machine,
+        # and going to it takes it back out, which is what it needs.
+        if away > 1e-6:
+            aim = [point[0] + (ax - point[0]) * short / away, point[1] + (az - point[1]) * short / away]
+    out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim)
+    out["did"] = (f"asked to go to {name}, and stand {stand:.1f} m off it" if stand > 0.0
+                  else f"asked to go to {name}, and stop a metre off")
+    out["target"] = aim
+    out["place_at"] = point
     return out
 
 
@@ -158,6 +207,99 @@ def carry_on(ctx: senses.Context, call: Call) -> dict[str, Any]:
 
 # ---- the ground --------------------------------------------------------------
 
+def _around_m(ctx: senses.Context, middle: list[float], radius_m: float) -> float:
+    """How high the ground stands round a place, read on a ring outside anything
+    worked there: the middle of the ring's readings, so one reading on a slope or
+    in a rut does not stand for the lot."""
+    heights = []
+    for i in range(8):
+        turn = i * math.pi / 4.0
+        x, z = middle[0] + radius_m * math.sin(turn), middle[1] + radius_m * math.cos(turn)
+        here = ctx.survey(x, z) or {}
+        if "ground_m" in here:
+            heights.append(float(here["ground_m"] or 0.0))
+    if not heights:
+        return 0.0
+    heights.sort()
+    return heights[len(heights) // 2]
+
+
+def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
+    """Where it could put this bite: the middle of the place and rings out to the
+    spread, keeping only what the machine can reach without standing on it, and
+    preferring the far side of the place to the near one.
+
+    The far side is the ground it is not about to drive over. It comes at a place
+    from wherever the depot happens to be that trip, so working away from itself
+    keeps this trip's approach clean, and the side it worked last trip is behind
+    it now."""
+    ax, az = ctx.at()
+    to_middle = math.hypot(middle[0] - ax, middle[1] - az)
+    near, far = [], []
+    for radius in (0.0, DIG_SPREAD_M / 2.0, DIG_SPREAD_M):
+        turns = 1 if radius == 0.0 else 8
+        for i in range(turns):
+            turn = i * 2.0 * math.pi / turns
+            spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
+            off = math.hypot(spot[0] - ax, spot[1] - az)
+            if DIG_CLEAR_M <= off <= DIG_REACH_M:
+                (far if off >= to_middle - 0.05 else near).append(spot)
+    return far or near
+
+
+def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
+    """Where a scoop bites, or why it does not.
+
+    Told a place to work, it bites at the HIGHEST ground of that place it can
+    reach without standing on it, and once even the highest is DIG_DEEPEST_M
+    below the ground around, the place is worked out and it says so. Told
+    nothing, it bites straight ahead of it, as a machine being driven by hand
+    does.
+
+    Both halves of that were learned in the mine (docs/machine-world.md, "When a
+    machine cannot get out"). Biting at its own nose put a crater wherever the
+    machine happened to stop and whichever way it was pointing: four trips to one
+    vein left four holes 10 to 18 cm deep spread over 2 m, and on the fifth the
+    rover stood on the rim of one and could not get out. Biting always at the
+    middle of the place put every scoop in one spot instead: a shaft 600 mm deep
+    and 1.1 m across, which a machine on 160 mm wheels can only fall into. Going
+    for the high ground spreads the working out and keeps it shallow, the way an
+    open pit is worked, and the cap means a machine never digs itself a hole it
+    cannot drive out of.
+    """
+    if not args.get("place") and args.get("point") is None:
+        return {"point": senses.point_ahead(ctx, float(args.get("ahead_m", DIG_AHEAD_M)))}
+    middle, named = _place(ctx, args)
+    ax, az = ctx.at()
+    off = math.hypot(middle[0] - ax, middle[1] - az)
+    if off > DIG_REACH_M + 1e-6:
+        raise ValueError(f"{named} is {off:.1f} m off, beyond the {DIG_REACH_M:.1f} m it can reach; "
+                         "it must go there first")
+    if off < DIG_CLEAR_M:
+        # Standing over the place. Told to go somewhere, a machine stops "a
+        # metre off" and then rolls on while its brakes take hold -- measured
+        # 0.2 m from the vein -- so where it stopped is no guide to what it may
+        # dig, and it gets off the spot before working it.
+        return {"back_off_m": DIG_CLEAR_M + 0.3 - off,
+                "why": f"it is {off:.1f} m from {named} and will not dig the ground under itself"}
+    around = _around_m(ctx, middle, DIG_SPREAD_M + 0.5)
+    best, high = None, None
+    for spot in _spots(ctx, middle):
+        here = ctx.survey(spot[0], spot[1]) or {}
+        if "ground_m" not in here:
+            continue
+        ground = float(here["ground_m"] or 0.0)
+        if high is None or ground > high:
+            best, high = spot, ground
+    if best is None:
+        return {"why": f"it cannot reach any of {named} from where it stands"}
+    down_mm = (around - high) * 1000.0
+    if down_mm > DIG_FRESH_M * 1000.0:
+        return {"why": f"{named} is worked out: the highest ground of it it can reach is {down_mm:.0f} mm down "
+                       f"already, and it will not dig one hole deeper"}
+    return {"point": best}
+
+
 def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     """One scoop of the ground ahead of it into its hopper: the engine's dig,
     the volume moved out of what is carried into the hopper's account, the
@@ -168,7 +310,14 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     if r.load_full():
         return {"did": "dug nothing: its hopper is full", "load": r.load_reading()}
     store = senses._store(ctx)
-    point = senses.point_ahead(ctx, float(call.args.get("ahead_m", DIG_AHEAD_M)))
+    bite = _bite(ctx, call.args)
+    if bite.get("back_off_m"):
+        _behave(ctx, call, "backing off", max(1.0, float(bite["back_off_m"]) / BACK_OFF_M_S))
+        return {"did": f"dug nothing yet: {bite['why']}, so it backs off first", "load": r.load_reading()}
+    if not bite.get("point"):
+        return {"did": f"dug nothing: {bite.get('why', 'there is nothing to dig there')}", "idle": True,
+                "load": r.load_reading()}
+    point = bite["point"]
     depth = min(float(call.args.get("depth_m", DIG_DEPTH_M)), 1.0)
     width = min(float(call.args.get("width_m", DIG_WIDTH_M)), 2.0)
     # The battery must have the work in it before the ground is touched: a
@@ -181,7 +330,11 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     kg = float(dug.get("kg") or 0.0)
     sand, soil = float(dug.get("sand_m3") or 0.0), float(dug.get("soil_m3") or 0.0)
     if kg <= 0.0:
-        return {"did": "dug nothing: nothing came out of the ground there", "dug": dug}
+        # Worked out, not broken: a spot gives about five loads and then
+        # crumbs, so the machine stops scraping and goes on with what it has
+        # (machine_routine reads `idle`). Someone who wants more moves the site.
+        return {"did": "dug nothing: the ground here is worked out", "idle": True, "dug": dug,
+                "load": r.load_reading()}
     room = r.load_room_kg()
     if kg > room + 1e-6:
         # More than the hopper holds: the rest goes back on the ground where it came from.
@@ -190,9 +343,18 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
         reply = _act(ctx, op="deposit", at=point, radius_m=width, sand_m3=back_sand, soil_m3=back_soil,
                      from_carried=True)
         sand, soil, kg = sand * share, soil * share, room
-    # Out of what is carried, into the hopper's account. (The scoop's reply is
-    # rounded and the account is exact; the engine takes a hair over what it
-    # holds as what it holds, Environment::withdrawCarried.)
+    # Out of what is carried and into the hopper's account, clamped to what the
+    # account holds: the scoop's reply is rounded and the account is exact, and
+    # on a scoop of a few grams the rounding is the whole of it -- asking for a
+    # hair more than is there refused the dig outright ("transfer needs positive
+    # finite quantities already carried", Environment::withdrawCarried).
+    carried = reply.get("carried")
+    if isinstance(carried, dict):
+        sand = min(sand, float(carried.get("sand_m3") or 0.0))
+        soil = min(soil, float(carried.get("soil_m3") or 0.0))
+        if sand + soil <= 0.0:
+            return {"did": "dug nothing: the ground here is worked out", "idle": True, "dug": dug,
+                    "load": r.load_reading()}
     if sand > 0.0 or soil > 0.0:
         _act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
     # What the scoop brought up from a deposit besides soil (machine_goods):
@@ -418,7 +580,13 @@ _WHERE = {"place": {"type": "string", "description": "a place it knows by name, 
                                     {"value": 6.0, "words": "some way, six metres"}]}}
 _SUBSTANCE = {"substance": {"type": "string", "description": "which substance to take, or none for whatever "
                                                              "is there", "options": "substances"}}
-_DIG = {"depth_m": {"type": "number", "description": "how deep the scoop bites, metres",
+# How far off a machine told to approach something stops (LiveWorld, kNearM).
+NEAR_M = 1.0
+_SHORT = {"stop_at_m": {"type": "number", "description": "how far from the place to stop, metres, when a metre "
+                                                         "is too close: ground it is working, or anything it "
+                                                         "must reach without standing on"}}
+_DIG = {"place": _WHERE["place"],
+        "depth_m": {"type": "number", "description": "how deep the scoop bites, metres",
                     "levels": [{"value": 0.08, "words": "a shallow scrape"}, {"value": 0.15, "words": "a scoop"},
                                {"value": 0.3, "words": "a deep bite"}]}}
 
@@ -438,10 +606,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
                     "lands. A machine on wheels cannot.", descend, _FOR_S),
     Tool("face", "Turn on the spot until its front is towards a place, the person, a point or a bearing.", face,
          {**_WHERE, **_FOR_S}),
-    Tool("go_to", "Go to a place it knows, the person, a point or a bearing, and stop a metre off.", go_to,
-         {**_WHERE, **_FOR_S}),
-    Tool("dig", "Take one scoop of the ground ahead into its hopper, drawing the work from its battery.", dig,
-         _DIG),
+    Tool("go_to", "Go to a place it knows, the person, a point or a bearing, and stop a metre off, or stand "
+                  "further out if it is told how far off to stop.", go_to, {**_WHERE, **_FOR_S, **_SHORT}),
+    Tool("dig", "Take one scoop into its hopper, drawing the work from its battery: at the place it is working, "
+                "if it is given one, and otherwise straight ahead of it.", dig, _DIG),
     Tool("dump", "Empty its hopper ahead of it: soil onto the ground, goods onto the stockpile there (a "
                  "place it knows, or the nearest, or a new heap).", dump, {"place": _WHERE["place"]}),
     Tool("take", "Take goods off the stockpile within reach of it into its hopper: one substance, or "

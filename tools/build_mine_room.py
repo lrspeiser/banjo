@@ -53,6 +53,7 @@ import fracture_lab                     # noqa: E402
 import live_session                     # noqa: E402
 import machine_goods                    # noqa: E402
 import machine_routine                  # noqa: E402
+import machine_tools                    # noqa: E402
 import machine_senses                   # noqa: E402
 import rigid_assembly                   # noqa: E402
 import workshop_install                 # noqa: E402
@@ -93,8 +94,9 @@ ROVER_ROUTINE = {
     "kind": "custom", "hopper_kg": 40.0,
     "places": {"vein": list(VEIN_AT), "smelter intake": list(SMELTER_INTAKE_AT)},
     "steps": [
-        {"do": "go_to", "args": {"place": "vein"}, "until": "arrived", "retries": 3},
-        {"do": "dig", "args": {}, "until": "load_full", "repeat": True},
+        {"do": "go_to", "args": {"place": "vein", "stop_at_m": machine_tools.DIG_STAND_M},
+         "until": "arrived", "retries": 3},
+        {"do": "dig", "args": {"place": "vein"}, "until": "load_full", "repeat": True},
         {"do": "back_off", "args": {"for_s": 1.5}, "until": "asked_done"},
         {"do": "go_to", "args": {"place": "smelter intake"}, "until": "arrived", "retries": 3},
         {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
