@@ -814,6 +814,35 @@ mine's rover, 2026-09-26):
 What one scoop leaves is not a trap: driven at a hole 0.5 m wide and 150 mm
 deep, the rover crosses it. What traps it is the same spot bitten over and over.
 
+**A machine that flies digs too.** The Workshop's drone template has declared a
+dig routine with a 20 kg hopper all along, and one load of it was tested, so
+nothing had to be added to say it. What had to be added was the working of it:
+
+- **It works the ground under it.** A flyer hovers over the place and scoops
+  down, so it keeps no stand-off at all and nothing it digs is under its wheels;
+  the reach is still measured across the ground, so it has to be over the place
+  to reach it. It keeps the rest of the rules -- the high ground, one scoop a
+  spot, worked out said rather than scraped at -- because the hole it leaves is
+  in everyone's way, not only its own.
+- **A machine out of reach goes back to the place.** Refusing outright left a
+  routine sat on a dig step for the rest of the run, because the step that took
+  the machine there is behind it: a drone given a dig routine wandered 4.8 m off
+  the vein and said "it must go there first" for four minutes. It now asks itself
+  to go to where it should stand and digs on the next go. That holds for a
+  machine on wheels as much as one in the air.
+- **A flyer leans back to arrive.** It has no brakes but its own rotors, and
+  leaning forward the whole way in it sails past what it was sent to: measured at
+  4.4 m/s over a 13 m flight, it "arrived" within a metre and then carried 8 m
+  beyond the vein before it could turn round, the best part of a minute every
+  trip. It leans back once what it has left to go is less than the way it would
+  carry on at the speed it is going.
+
+Measured on the mine's drone, its haul routine swapped for a dig, over five
+minutes: 2 loads becomes 7, and it ends the run hovering 0.7 m from the vein
+rather than 15 m away. Checked by `tests/workshop_drone_tests.py`, which now
+follows it over several trips and fails if it sits out of reach of the ground it
+is working.
+
 Measured over ten minutes of the mine, the same engine both ways:
 
 | | biting its own nose | working the place |

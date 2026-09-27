@@ -64,6 +64,8 @@ ROUTINES: dict[str, dict[str, Any]] = {
             # ground from beside its own hole, never from in it. And it bites at
             # the site, not at its nose, so every scoop deepens the one pit
             # instead of leaving a crater wherever it stopped (machine_tools).
+            # go_to keeps no stand-off for a machine that flies: it hovers
+            # over what it works (machine_tools.stands_off_m).
             {"do": "go_to", "args": {"place": "dig site", "stop_at_m": tools.DIG_STAND_M},
              "until": "arrived", "retries": 3},
             {"do": "dig", "args": {"place": "dig site"}, "until": "load_full", "repeat": True},
