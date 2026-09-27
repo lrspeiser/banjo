@@ -807,8 +807,9 @@ Measured over ten minutes of the mine, the same engine both ways:
 | deepest cut | 183 mm | 192 mm |
 | time stuck, unable to move | 342 s | none |
 
-Over twenty minutes it delivered 3 loads, emptied the vein, put 7.1 kg of
-copper wire on the Workshop's rack, gave up no trip, and was never once stuck.
+Over twenty minutes it delivered 3 loads, took 33 kg of ore out of the vein's
+400, put 7.1 kg of copper wire on the Workshop's rack, gave up no trip and was
+never once stuck.
 What holds the load count down is not the digging: 288 s of those 1,200 went on
 its water reflex turning it away on the haul between the vein and the smelter,
 which is the next thing to look at.
