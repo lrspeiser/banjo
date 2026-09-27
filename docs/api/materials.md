@@ -28,6 +28,35 @@ Glass being **22× stronger in compression than tension** is why it shatters in
 bending and crushes hard. Concrete's 3 MPa tensile is why it is so easy to break
 and comes apart into so many pieces.
 
+### The multiplier on top of the number
+
+A declared strength is not on its own where a bond goes. Each material carries a
+`break_strain_multiplier`, and the bond is removed at that multiple of the strain
+the strength implies. The shared default is **2**, which stands for a plastic
+reserve: a ductile material keeps carrying load past the point where it stops
+springing back.
+
+A material with no plastic reserve has no business with a reserve multiplier, so
+as of 25-26 September 2026 **glass, alumina ceramic and freshwater ice set it to
+1.0** (damage begins at 0.9, a softening band for the solver rather than strength
+the material does not have). For those three the declared strength IS where they
+go. Before that change every pane of glass in this world broke at 90 MPa while
+its label said annealed 45; ceramic ran at 12x and ice at 10x.
+
+**Oak keeps 2, and for oak it is right** -- but only in bending. A wooden beam's
+extreme fibre reaches about twice its crushing strength before it ruptures,
+because the compression face yields and the neutral axis shifts: white oak
+crushes at 51.3 MPa and its measured modulus of rupture is 102.3, a ratio of
+1.99, and the catalogue's 52 MPa is the crushing strength. One multiplier serves
+all three modes, so **oak's PURE TENSION is not calibrated**: the engine takes it
+to 180 MPa where the table above says 90, and where the real number is 90. Design
+around oak in bending, not oak in pure tension.
+
+One more limit worth knowing before you size anything: **a section one cell thick
+cannot bend**, so it has no bending strength to report and the engine will not
+pretend otherwise. Give anything you mean to load in bending at least two cells
+through its thickness.
+
 ## What they actually do
 
 A 100 mm ball of each, dropped onto a concrete floor:
@@ -38,12 +67,25 @@ A 100 mm ball of each, dropped onto a concrete floor:
 | aluminium | 26.4 | 47.8 | held · held · held · **dent** · broke |
 | oak | 10.4 | 13.7 | held · held · held · **dent** · broke |
 | rubber | 29.0 | 100.7 | never broke at any speed tried |
-| glass | — | 8.7 | held · held · broke · broke · broke |
-| ceramic | — | 264.8 | brittle, and very tough |
+| glass | — | 8.7 † | held · held · broke · broke · broke |
+| ceramic | — | 264.8 † | brittle, and was very tough |
 | concrete | — | 0.7 | brittle, and very weak |
-| ice | — | 2.3 | brittle, and very weak |
+| ice | — | 2.3 † | brittle, and very weak |
 
 Ductile materials bend and then break. Brittle ones are whole or in pieces.
+
+**† These three were measured before the multiplier changed** and are the only
+numbers on this page that the engine no longer produces. Glass, ceramic and ice
+all went to a 1.0 multiplier on 25-26 September 2026, so each now breaks at a
+LOWER speed than its figure here -- ceramic by a long way, since it was running
+at 12x. The ball drop has not been run again, and rather than put a number here
+that nobody measured, here is what was measured, on tables rather than balls:
+a 20 kg iron block on a 40 mm **glass** table held to 4 m before and breaks at
+2 m now, in 14 pieces; a 20 kg block from 5 m now shatters a **ceramic** table
+that used to do nothing whatever; **ice** breaks at 2 m. The workings are in
+[workshop-deep-dive.md](../workshop-deep-dive.md), and the current full impact
+range -- eight materials, three thicknesses, four speeds, struck rather than
+dropped -- is in [material-qa-baseline.json](../evidence/material-qa-baseline.json).
 
 ### Bouncing
 

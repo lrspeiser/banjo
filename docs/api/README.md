@@ -36,6 +36,17 @@ Current native ABI: **25**. World MCP is **1.14.0**; platform MCP is **1.17.0**.
   and sand, and rivers and ponds on it: a valley generated once by drainage and
   erosion, a shallow-water solver, digging that disturbs only what it touches,
   and bodies that float, drift and dam by displaced volume and drag.
+- **[../machine-world.md](../machine-world.md)** — machines that work on their
+  own: a battery, a motor on a pin, a solar panel that only pays when the sun is
+  up, senses, tools, and the programs and routines that send one to a place and
+  get it out again when it is getting nowhere. What the Workshop declares to
+  build one is [workshop.md](workshop.md), "What drives it".
+- **[../workshop-deep-dive.md](../workshop-deep-dive.md)** — where the material
+  strengths were argued out against the standards, including the September 2026
+  corrections to glass, ceramic and ice, and why a one-cell section reports no
+  bending strength.
+- **[../rolling-resistance.md](../rolling-resistance.md)** — friction in a pin
+  and under a wheel: what stops a thing that nothing is pushing.
 - **[../building-on-banjo.md](../building-on-banjo.md)** — a shorter
   orientation, and the honest list of what is not built in.
 

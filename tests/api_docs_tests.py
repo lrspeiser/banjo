@@ -27,6 +27,7 @@ import banjo_mcp    # noqa: E402
 WORLD_TOOLS = {tool["name"] for tool in banjo_mcp.TOOLS}
 
 from mcp import workshop_mcp_tools, workshop_platform, material_qa_tools, physics_trial_tools  # noqa: E402
+from mcp import workshop_machines  # noqa: E402
 import banjo_platform_mcp  # noqa: E402
 
 DOCS = ROOT / "docs" / "api"
@@ -88,6 +89,33 @@ class TheDocsNameEverything(unittest.TestCase):
         self.assertEqual(offered, documented,
                          f"Workshop MCP/docs drift: missing={sorted(offered-documented)}, "
                          f"extra={sorted(documented-offered)}")
+
+    def test_every_machine_field_and_kind_is_documented(self):
+        """What a client may declare under `@machines`, named in the Workshop doc.
+
+        The tool list is already guarded, but a machine is not a tool: new physics
+        arrives here as a new FIELD or KIND on a key that already exists -- a rotor
+        that makes a thing fly, a hover program, a routine that digs -- and no tool
+        name changes when it does, so nothing else would notice the doc going stale.
+        The fields are read from the checker itself rather than listed here, because
+        a list here would go stale in exactly the same way.
+        """
+        doc = (DOCS / "workshop.md").read_text(encoding="utf-8")
+        self.assertIn(workshop_machines.MACHINES_KEY, doc)
+        self.assertIn(workshop_machines.SCHEMA, doc)
+
+        source = (ROOT / "mcp" / "workshop_machines.py").read_text(encoding="utf-8")
+        declarable = set(re.findall(r'(?:row|value|s|v)\.get\("([a-z_0-9]+)"', source))
+        self.assertGreater(len(declarable), 30, "the fields are no longer read this way")
+        missing = sorted(field for field in declarable if f"`{field}`" not in doc)
+        self.assertEqual([], missing,
+                         f"docs/api/workshop.md does not name these @machines fields: {missing}")
+
+        kinds = (workshop_machines.PROGRAM_KINDS + workshop_machines.ROUTINE_KINDS
+                 + workshop_machines.SENSOR_KINDS)
+        unnamed = sorted(kind for kind in set(kinds) if f"`{kind}`" not in doc)
+        self.assertEqual([], unnamed,
+                         f"docs/api/workshop.md does not name these machine kinds: {unnamed}")
 
     def test_platform_mcp_is_world_plus_workshop_without_name_collisions(self):
         workshop = {tool["name"] for tool in workshop_mcp_tools.TOOLS}

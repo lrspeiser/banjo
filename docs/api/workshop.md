@@ -235,6 +235,101 @@ part, which is set on the floor at the middle:
 `custom` is not among the `assemblies` the bench lists, because on its own it
 has no parts to show.
 
+### What drives it
+
+A design says what a thing is made of and how its parts are fastened. This says
+what makes it go. It travels the same way `@construction` does, inside
+`component_overrides` under the reserved key `"@machines"`, so a client that
+already round-trips the overrides carries it without learning a new field.
+Schema `banjo.workshop-machines.v1`; at most 32 of each kind; the top-level
+fields are exactly `schema`, `stores`, `motors`, `panels`, `controls` and
+`programs`, and anything else is refused by name.
+
+Everything is named by COMPONENT, because that is what a person is looking at on
+the bench. A motor names the two components its pin joins, exactly as the room
+names a motor by the two things its pin joins; installing turns those into the
+bodies the compiler made.
+
+```json
+"component_overrides": {
+  "@machines": {
+    "schema": "banjo.workshop-machines.v1",
+    "stores":   [{"name": "battery", "in": "deck", "capacity_j": 5000, "charge_j": 5000, "voltage_v": 24}],
+    "panels":   [{"name": "solar panel", "on": "deck", "store": "battery", "area_m2": 0.25, "efficiency": 0.2}],
+    "motors":   [{"name": "left motor", "turns": ["bearing-mount-11", "axle-1-stub-1"], "store": "battery",
+                  "stall_torque_n_m": 20, "no_load_rpm": 60, "brake_torque_n_m": 40}],
+    "controls": [{"name": "left wheel", "turns": ["bearing-mount-11", "axle-1-stub-1"]}],
+    "programs": [{"kind": "roam", "left": "left wheel", "right": "right wheel",
+                  "rest_below": 0.25, "rest_until": 0.6,
+                  "sensors": [{"kind": "water", "on": "deck", "at_m": [0.2, 0, 0.3], "depth_m": 0.003}]}]
+  }
+}
+```
+
+**A store** sits `in` a component and holds joules: `capacity_j` 1 to 1e12,
+`charge_j` from 0 (default 0), `voltage_v` 0.1 to 1e5 (default 24). A store told
+to hold more than it can is refused before anything is built.
+
+**A motor** names the two components its pin joins in `turns`, the `store` it
+draws on, `stall_torque_n_m` 0.001 to 1e6 and `no_load_rpm` 0.01 to 1e5, and
+optionally `brake_torque_n_m` (default 0). That pin must be a BEARING: a motor
+on a joint bonded solid is refused by name, because a bonded joint cannot turn.
+A motor may carry a `rotor` -- a declared propeller -- as
+`{"thrust_n_per_rad2": 1e-6..100, "drag_n_m_per_rad2": 0..100}`, which is what
+makes a machine fly.
+
+**A panel** is a solar panel: it sits `on` a component, charges a `store`, and
+has `area_m2` 1e-4 to 1e4 and `efficiency` 0.001 to 1 (default 0.2). `at_m` and
+`normal` say where on its component it lies and which way it faces, in the
+design's frame; left out, the installer takes the component's top. What it
+collects depends on where the sun is, so a panel is only as good as the hour.
+
+**A control** is the named handle for a pin, and it is how anything works a
+motor: the page's panel, the room's chat and the API all operate a control or a
+program, and a program works controls by name. Nothing commands a motor
+directly, so a motor with no control on its pin can never be told anything --
+Check Validity adds one rather than leaving it dead, and says so among its
+changes.
+
+**A program** is what the machine does on its own, and a product runs at most
+one. Its `kind` is `roam`, `sit`, `hover` or `still`, with `setting` 0 to 1
+(default 1):
+
+| kind | what it does | what it needs |
+|---|---|---|
+| `roam` | wanders and turns away from water | `left`, `right` controls |
+| `sit` | drives to a thing the room already holds | `left`, `right`, `toward` (the room's name for it), `close_m` 0.01..100 (default 1), optional `pose` control with `pose_deg` -360..360 (default 90) |
+| `hover` | flies and holds a height | `rotors`: exactly four rotor controls, in order round the machine from above, and `hover_m` 0.3..50 (default 1.5) |
+| `still` | stays put and keeps its charge | `store` |
+
+Any program may add `climb_deg` 0 to 89, the steepest ground it will take (not
+`hover`), and a resting pair: `rest_below` is the share of charge it stops at and
+`rest_until` the share it sets off again at. `rest_until` needs `rest_below` and
+may not be below it -- a machine rests until it holds MORE than it rested at.
+
+**Sensors** -- `sensors`, at most 8 per program -- are what it reads: `kind`
+`water`, `on` a
+component, `at_m` three numbers, and `depth_m` 0.001 to 10 (default 0.003). A
+roaming machine turns away from what its sensors see rather than driving into it.
+
+**A routine** is the work a machine does between places, declared on the program
+as `routine`. Its `kind` is `dig`, `haul`, `process`, `custom` or `roam`:
+
+- `dig` and `haul` each need a `hopper_kg` above 0 (0.1 to 1000).
+- `process` needs a `recipe` and an `intake` and an `output`, each a name the
+  room knows; `batch_kg` 0.01 to 1000 says how much it does at a time.
+- `custom` IS its `steps`, a list of `{do, args, until, repeat, retries}`; the
+  other kinds have their steps written already, and giving steps to them is
+  refused.
+- `places` maps at most 16 names to `[x, z]` in the room's metres, within
+  +/-1000, and is how a machine is told where to work. `work_j_per_kg` 0 to
+  10000 is what a scoop costs. `watch` is a list of `{when, do, then}`, and
+  `recipes` are the recipes it brings to a room that lacks them.
+
+A machine that gets nowhere notices and gets itself out; which machines have that
+reflex, and everything the world does with all of this once it is installed, is in
+[machine-world.md](../machine-world.md).
+
 ### Which joint a push would break first
 
 The `force_probe` bench test (`/api/workshop/plan` with `bench_test`) takes
@@ -354,7 +449,7 @@ These operations are pure product engineering and do not alter the live world.
 
 ## MCP server
 
-Platform MCP **1.2.0** also exposes the world circuit tools and full-state
+Platform MCP **1.17.0** also exposes the world circuit tools and full-state
 checkpoint tools documented in [machine-networks.md](machine-networks.md).
 `install_circuit` compiles a supplied ProductGraph and binds one operating
 network to already-created world stores/motors. This is separate from Workshop
