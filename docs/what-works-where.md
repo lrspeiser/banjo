@@ -70,11 +70,19 @@ body that stays whole.
 | Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`), with no link to the world's heat |
 | Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |
 | Circuit heat, manufacturing heat | Code only, Page | machine circuits; the manufacturing page's station heat |
+| An electric furnace with a real inside: a chamber of gas its element heats and its lining leaks | World | `/world?scene=new-game`: the copper smelter. Click it; its routine line says "heating for smelt copper: 917 C of 1085 C" as it warms |
+| What a lining can reach: `ambient + P/U`, so 40 mm cannot burn lime and 80 mm smelts iron | World, Chat | build an electric furnace on the bench with a thin lining: it is refused, with the temperature it would top out at |
+| A recipe that will not run until its machine is at temperature | World | the six hot recipes; a furnace left alone is cold again within a minute |
+| Hot gas in a room made of exact (Workshop-built) bodies | World | every furnace the bench builds |
 
 **Not built:** freezing or boiling in the world; fires that go out; thermal
 expansion; smoke, flame gas and airflow; heat into water or into the ground;
 friction, impact, cutting or motor work turning into heat; gas pressure on a
-container's walls.
+container's walls; heat on an exact body (a gas region beside it, yes; the
+body itself, no); thermal mass in a furnace's lining, so its warm-up is
+hundreds of times faster than a real one's even though its steady state is
+right; a furnace door that opens, or a charge that is hot rather than a
+chamber that is.
 
 ## Water
 

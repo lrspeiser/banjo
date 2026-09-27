@@ -5,7 +5,7 @@ measured; this is what has not been done yet. Keep it current: when something
 lands, move it up and say what was measured; when something is found to be
 missing, put it in.
 
-Last touched 2026-09-24, branch `agent/fracture-truth` (pushed, not merged).
+Last touched 2026-09-27, branch `agent/fracture-truth` (pushed, not merged).
 
 ## Ready to try
 
@@ -26,6 +26,16 @@ These work and are watchable. `python playground/server.py --port <p> --engine
   plank; every break reports what it cost.
 - **A rover that roams by itself** -- `/world?scene=tests-rover`, and the same
   rover on solar (`tests-solar`) and through a night (`tests-day`).
+- **An electric furnace** -- `/world?scene=new-game`. Click the copper
+  smelter: it heats its chamber before it works, and says how far it has got.
+  The lining decides what it can reach (`ambient + P/U`), the bench refuses a
+  furnace that cannot reach its recipe, and one left alone is cold in a
+  minute. Measured: 60 litres of chamber air, 3.0 W/K of lining, 5 kW of
+  element, 1687 C at the top; smelting 7 kg of ore costs 144 kJ, of which
+  130 kJ is getting hot.
+- **A person's order beats the water reflex** -- tell a rover in its chat to
+  drive into the lake and it goes: 58.7 mm of water under a wheel against
+  0.29 mm when the same ask is its own. Lift the order and it backs out.
 - **The Workshop** -- `/world?workshop=1`. Ask the chat for something, Check it,
   Make it, Back to the world. The rack at the bottom holds the stock a design
   spends; a design short of stock is refused until the rack has it.
