@@ -3783,7 +3783,23 @@ addEventListener("keydown", (e) => {
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
   // Esc while placing: the copy goes, and the thing stays in the hand.
-  if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
+  // Esc while a throw is aimed is how you change your mind: wound up, it comes
+  // down and stays in the hand; otherwise it is put back down where the ghost
+  // shows. Never a throw -- there is no key that throws by accident.
+  //
+  // It goes AHEAD of stopping a placement, because a throwable thing in the
+  // hand always has a placing ghost up the moment it is picked up: Esc would
+  // otherwise only ever dismiss the ghost, and a second Esc would be needed to
+  // put the thing back, which is not what one key meaning "never mind" does.
+  if (e.code === "Escape" && world.held?.throwable
+      && ["ready", "preparing", "blocked"].includes(world.use.mode)) {
+    if (world.use.mode === "preparing") cancelWindUp();
+    else {
+      if (world.placing) stopPlacing(true);
+      intend(() => putDown(false));
+    }
+  }
+  else if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
   // Esc closes a machine's panel when nothing else is using it -- and not
   // while the mouse is looking round, where Esc gives the mouse back first.
   else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
@@ -3905,19 +3921,50 @@ function primaryAction(name) {
   return offered.find((a) => a.primary) || offered[0] || { label: "Inspect", steps: [{ do: "inspect" }] };
 }
 
+// Whether a thing's own primary action does nothing but set it down. The one
+// step called "place" is the shape pressPrimary already knew, because that is
+// what it hands to placeHere; now it is also the only action a throw is allowed
+// to go in front of. Nothing offered at all counts as nothing in the way.
+function wouldOnlySetItDown(name) {
+  if (!actionsFor(name).length) return true;
+  const program = primaryAction(name);
+  return program.steps?.length === 1 && program.steps[0].do === "place";
+}
+
 function pressPrimary() {
   if (!world.session) return false;
   if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
   const name = world.held?.name || world.aim?.name;
-  if (name && actionsFor(name).length) {
+  // A throw takes the button ahead of the held thing's OWN action, but only
+  // when that action does nothing but set it down (the owner, 2026-09-26).
+  // Every block in the valley has "Set it down" on it, so clicking used to put
+  // the block at your feet and the aim arc could never throw it at all.
+  // Anything with a real use in the hand keeps the button -- the mace still
+  // swings, a tool still works, a bow still draws -- and setting down is still
+  // on E, in the side view, and now on Esc.
+  const aimingAThrow = !!world.held && world.held.throwable && name === world.held.name
+    && ["ready", "blocked"].includes(world.use.mode) && wouldOnlySetItDown(name);
+  if (!aimingAThrow && name && actionsFor(name).length) {
     const program = primaryAction(name);
     if (world.held && program.steps?.length === 1 && program.steps[0].do === "place") intend(placeHere);
     else runAction(name, 0, true);
     return true;
   }
-  if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) startWindUp();
+  if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) {
+    // Refused before the wind-up only when the hand cannot make the throw at
+    // all: winding up something you cannot throw spends the wind-up and tells
+    // you nothing. Pointing somewhere it would not land is NOT refused here --
+    // the wind-up is half of how a throw is aimed, and the ring moves further
+    // out as it fills, so the way to reach a far target is to hold on.
+    const seen = world.use.preview;
+    if (seen && !seen.possible) {
+      lastAction(seen.why || `${titled(world.held.name)} cannot be thrown from here.`, "refused");
+      return true;
+    }
+    startWindUp();
+  }
   else if (world.held?.bow && world.use.mode === "bow-ready") intend("draw");
   else if (world.held?.pick) tools.press();
   else if (name) runAction(name, 0, true);
@@ -4692,9 +4739,9 @@ function startWindUp() {
   showUse();
 }
 
-function cancelWindUp() {
+function cancelWindUp(said) {
   Object.assign(world.use, { mode: "ready", asked: 0 });
-  lastAction(`Lowered ${world.use.name}.`);
+  lastAction(said || `Lowered ${world.use.name}.`, said ? "refused" : "did");
   showUse();
 }
 
@@ -4702,6 +4749,17 @@ async function letFly() {
   const use = world.use;
   const entry = world.held && world.bodies.get(world.held.name);
   if (!entry || use.mode !== "preparing") return;
+  // Grey means no. A throw leaves the hand only while the room can see it come
+  // down where the crosshair is asking for; letting go on grey lowers it and
+  // says why, and it stays in the hand. That is the whole of the aiming: move
+  // the ring onto what you want and it goes green.
+  if (!use.preview || !use.preview.onTarget) {
+    cancelWindUp(use.preview && !use.preview.possible && use.preview.why
+      ? use.preview.why
+      : "It would not come down where you are pointing, so it was not thrown."
+        + " Move the ring onto what you want, or hold on longer.");
+    return;
+  }
   const grip = use.grip || entry.mesh.position.clone();
   const reached = use.reached || 0;
   // The stroke the arc on screen was drawn from, if it is the one just shown;
@@ -4722,8 +4780,13 @@ async function letFly() {
 
 // Put it down: lowered by the same hand onto what is under it, and let go of
 // when it gets there. A carried thing is set down as it always was.
-async function putDown() {
-  if (placementEligible()) { await placeHere(); return; }
+async function putDown(placing = true) {
+  // `placing` false lowers it onto what is under it and lets go there, without
+  // going through a placement. Esc uses that: a placement can be refused for
+  // want of a clear spot -- "no clear receiving point or ground in front" --
+  // and a key that means "never mind" must not be something the room can turn
+  // down and leave the thing still in your hand.
+  if (placing && placementEligible()) { await placeHere(); return; }
   const held = world.held;
   if (!held) return;
   if (held.pick) {
@@ -5139,13 +5202,42 @@ function letGoOf(hand) {
   showUse();
 }
 
+// Where the crosshair is asking for: the point on whatever it is on, or the
+// ground where it meets the ground. Nothing when it is on the sky.
+function askedFor() {
+  if (world.aim && world.aim.point_m) return world.aim.point_m;
+  return world.groundAim || null;
+}
+
+// How near the landing has to be to what is asked for to count as on target:
+// half a metre close to, and a twentieth of the way out further off, because a
+// metre at twenty paces is the same aim as half a metre at ten.
+const ON_TARGET_M = 0.5, ON_TARGET_SHARE = 0.05;
+
+// Whether the flight the engine foresees comes down where the crosshair is
+// asking for. Hitting the very thing under the crosshair counts wherever on it
+// the throw lands -- if you meant the crate and the crate is what it hits, you
+// hit what you meant.
+function landsWhereAsked(flight) {
+  if (!flight || !flight.hit || !flight.hit_point_m) return false;
+  const asked = askedFor();
+  if (!asked) return false;                     // pointing at the sky
+  if (world.aim && world.aim.name && flight.hit_name === world.aim.name) return true;
+  const away = Math.hypot(flight.hit_point_m[0] - asked[0], flight.hit_point_m[1] - asked[1],
+                          flight.hit_point_m[2] - asked[2]);
+  const reach = Math.hypot(asked[0] - camera.position.x, asked[1] - camera.position.y,
+                           asked[2] - camera.position.z);
+  return away <= ON_TARGET_M + ON_TARGET_SHARE * reach;
+}
+
 // Where the throw would go if it were let go of now: the engine's own preview
 // of this hand on this thing, a few times a second, redrawn as the view and the
 // wind-up change. It moves nothing.
 let previewBusy = false, previewAt = 0;
 async function previewThrow() {
   const use = world.use;
-  if (!world.held || !world.held.throwable || (use.mode !== "ready" && use.mode !== "preparing")) {
+  if (!world.held || !world.held.throwable
+      || !["ready", "preparing", "blocked"].includes(use.mode)) {
     aimArc.hide();
     return;
   }
@@ -5157,7 +5249,7 @@ async function previewThrow() {
     // The very stroke letFly would send now, let go of at its end.
     const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
     const seen = await act("preview_stroke", Object.assign({ horizon_s: 4 }, stroke));
-    if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
+    if (world.use !== use || !["ready", "preparing", "blocked"].includes(use.mode)) return;
     const v = seen.let_go_velocity_m_s || [0, 0, 0];
     use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
                     speed: Math.hypot(v[0], v[1], v[2]),
@@ -5169,8 +5261,17 @@ async function previewThrow() {
     // came down 2.25 m to the side of the ring, and one let go halfway through
     // the wind-up 1 m past it. The engine starts the stroke from wherever the
     // thing is when it is thrown.
-    use.aimed = use.preview.possible ? { stroke, at: performance.now() } : null;
-    if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
+    use.preview.onTarget = use.preview.possible && landsWhereAsked(seen.flight);
+    // The stroke on screen is the one letFly sends, and it is only kept while
+    // the arc is green, because green is the only state that throws.
+    use.aimed = use.preview.onTarget ? { stroke, at: performance.now() } : null;
+    if (use.preview.possible) {
+      aimArc.show(seen.flight, use.preview.onTarget);
+    } else {
+      // No throw, so no flight to draw: the spot asked for, marked grey.
+      const asked = askedFor();
+      if (asked) aimArc.mark(asked); else aimArc.hide();
+    }
     showUse();
   } catch { /* the next tick asks again */ } finally { previewBusy = false; }
 }
@@ -7443,6 +7544,15 @@ window.banjoRoom = {
                      inHand: li.classList.contains("in-hand") })) }),
   doChoice, nextChoice, toTheBag, fromSlot, showTab,
   arcShown: () => aimArc.group.visible,
+  // What the aim arc is saying, which is the whole of how a throw is aimed:
+  // whether it is up, whether it has drawn a flight or only marked the spot,
+  // and whether it is green -- green being the only state that throws.
+  aiming: () => ({ shown: aimArc.group.visible, line: aimArc.line.visible,
+                   ring: aimArc.ring.visible, onTarget: !!aimArc.onTarget,
+                   colour: aimArc.material.color.getHex(),
+                   mode: world.use.mode,
+                   possible: !!(world.use.preview && world.use.preview.possible),
+                   why: (world.use.preview && world.use.preview.why) || "" }),
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
