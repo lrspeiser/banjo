@@ -113,6 +113,10 @@ def spec_digest(spec: Any) -> str:
     # what the world is made of. Measured 2026-09-26: an empty block written
     # at open made a funded room refuse its own saved world.
     plain.pop("goods", None)
+    # And what has been seen of it (machine_sight): the same sort of thing, and
+    # for the same reason -- a room learns what is where as machines get about
+    # it, and a world saved after they have is still that room's world.
+    plain.pop("sight", None)
     text = json.dumps(plain, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

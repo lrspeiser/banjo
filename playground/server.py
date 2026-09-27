@@ -1540,6 +1540,10 @@ class Handler(BaseHTTPRequestHandler):
                 opened["chat"]=room.chat[-20:]
                 app.brains.opened(room.spec)
                 opened["brains"]=app.brains.summaries()
+                # So the page draws the ground that is known and leaves the rest
+                # dark from the first frame, before anything has stepped.
+                if app.brains.sight is not None and app.brains.sight.nx:
+                    opened["sight"]=app.brains.sight.shown()
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
@@ -2393,6 +2397,10 @@ def _rejoin(app,scene):
     # Not read back from disk: this server holds it (kept means that).
     opened["kept"]=False
     opened["chat"]=room.chat[-20:]
+    # And what has been seen of the room, so a page that rejoins draws the
+    # ground that is known and leaves the rest dark, as it did before.
+    sight=getattr(getattr(app,'brains',None),'sight',None)
+    if sight is not None and sight.nx: opened["sight"]=sight.shown()
     return opened
 
 

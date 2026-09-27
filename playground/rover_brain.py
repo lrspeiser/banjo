@@ -421,6 +421,7 @@ class Brain:
         self.mode = mode if mode == "reflex" or mode in deciders else "reflex"
         self.routine = routines.Routine(name, declared)
         self.goods: Any = None                     # the room's goods ledger (machine_goods.Goods), shared
+        self.sight: Any = None                     # what has been seen of the room (machine_sight.Sight)
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
         self.bodies: list[dict[str, Any]] | None = None
@@ -455,7 +456,7 @@ class Brain:
         """Its senses' view of the world as the last step left it."""
         return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
                               routine=self.routine, person=self.person, impacts=self.impacts, t=self.t,
-                              goods=self.goods)
+                              goods=self.goods, sight=self.sight)
 
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
                 t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
@@ -564,6 +565,9 @@ class Brains:
         # block, shared by every brain; and what a stockpile marked as the
         # Workshop's rack does with what lands on it (the server sets it).
         self.goods: Any = None
+        # And what has been seen of it (machine_sight.Sight), so a machine's
+        # senses answer about the ground someone has been to and no more.
+        self.sight: Any = None
         self.on_rack: Callable[[str, float], None] | None = None
         #: What a batch of a recipe was: the server turns it into evidence.
         self.on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None
@@ -581,6 +585,7 @@ class Brains:
             brain = self.brains[name] = Brain(name, deciders, self.modes.get(name, default),
                                               routines.declared_for(self.spec, name))
             brain.goods = self.goods
+            brain.sight = self.sight
         return brain
 
     def opened(self, spec: dict[str, Any] | None = None) -> None:
@@ -591,8 +596,10 @@ class Brains:
         self.brains.clear()
         self.spec = spec
         import machine_goods
+        import machine_sight
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
+        self.sight = machine_sight.Sight(spec) if isinstance(spec, dict) else None
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})
@@ -648,9 +655,19 @@ class Brains:
                 brain.report_finished()
 
     def attach(self, body: Any, answer: Any) -> None:
-        """On a step's answer, the brains the page has not heard the latest of."""
+        """On a step's answer: what the room has been seen of now, and the brains
+        the page has not heard the latest of."""
         if not isinstance(body, dict) or body.get("op") != "step" or not isinstance(answer, dict):
             return
+        # What everything in the room can see from where this step left it
+        # (machine_sight). Here rather than in the server, because this runs
+        # after every step either way -- the page's and a test's.
+        if self.sight is not None and self.sight.nx:
+            found = self.sight.looked(answer.get("machines"), self.person)
+            shown = self.sight.shown()
+            if found:
+                shown["found_cells"] = found
+            answer["sight"] = shown
         changed = [b for b in self.brains.values() if b.changed]
         if not changed:
             return

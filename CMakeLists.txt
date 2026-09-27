@@ -1548,6 +1548,14 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/routine_language_tests.py -v)
     set_tests_properties(banjo_routine_language_tests PROPERTIES TIMEOUT 600)
+    # And what has been seen of a room: the record, what reveals it, the senses
+    # held to it, and a survey of somewhere nobody has been.
+    add_test(NAME banjo_sight_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_ROVER_LIVE_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sight_tests.py -v)
+    set_tests_properties(banjo_sight_tests PROPERTIES TIMEOUT 600)
     # And driving a thing at the bench with the keys: the little world kept
     # open and stepped as the keys arrive.
     add_test(NAME banjo_workshop_drive_tests

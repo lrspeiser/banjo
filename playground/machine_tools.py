@@ -452,6 +452,122 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
             "drawn_j": round(drawn), "load": r.load_reading()}
 
 
+# How wide a survey looks by default, and the most it will take in at once: a
+# machine says what is known of a patch of ground, not of the whole room.
+SURVEY_M = 6.0
+SURVEY_MOST_M = 20.0
+
+
+def survey(ctx: senses.Context, call: Call) -> dict[str, Any]:
+    """What is known of a place: the lie of the ground there, what is on it, and
+    how much of it nobody has seen.
+
+    This REPORTS; it does not reveal. What reveals ground is being there
+    (machine_sight), so a machine asked about somewhere nobody has been says so
+    rather than reading the answer out of the room's document -- which is the
+    point of it, because a place worth going to is one it cannot answer about
+    yet."""
+    if call.args.get("place") or call.args.get("point") is not None or call.args.get("bearing_deg") is not None:
+        middle, named = _place(ctx, call.args)
+    else:
+        ax, az = ctx.at()
+        middle, named = [ax, az], "where it stands"
+    radius = min(max(1.0, float(call.args.get("radius_m", SURVEY_M))), SURVEY_MOST_M)
+    sight = ctx.sight if (ctx.sight is not None and ctx.sight.nx) else None
+    step = max(0.5, radius / 3.0)
+    across = int(2.0 * radius / step) + 1
+    known, unseen, off_the_edge = 0, 0, 0
+    surfaces: dict[str, int] = {}
+    high = low = None
+    steepest, deepest_water = 0.0, 0.0
+    for j in range(across):
+        for i in range(across):
+            x = middle[0] - radius + i * step
+            z = middle[1] - radius + j * step
+            if math.hypot(x - middle[0], z - middle[1]) > radius:
+                continue
+            if sight is not None and not sight.knows(x, z):
+                unseen += 1
+                continue
+            here = ctx.survey(x, z) or {}
+            if "ground_m" not in here:
+                off_the_edge += 1
+                continue
+            known += 1
+            ground = float(here["ground_m"] or 0.0)
+            high = ground if high is None else max(high, ground)
+            low = ground if low is None else min(low, ground)
+            surface = str(here.get("surface") or "soil")
+            surfaces[surface] = surfaces.get(surface, 0) + 1
+            steepest = max(steepest, float(here.get("slope_deg") or 0.0))
+            deepest_water = max(deepest_water, float((here.get("water") or {}).get("depth_m") or 0.0))
+    # What is in it, of what is known: the room's goods, and anything standing
+    # there that is not part of this machine.
+    deposits, heaps = [], []
+    if ctx.goods is not None:
+        for row in ctx.goods.deposits:
+            at = row.get("at_m") or [0.0, 0.0]
+            if math.hypot(float(at[0]) - middle[0], float(at[-1]) - middle[1]) > radius + float(row.get("radius_m") or 0.0):
+                continue
+            if sight is not None and not sight.knows(float(at[0]), float(at[-1])):
+                continue
+            deposits.append({"name": row.get("name"), "substance": row.get("substance"),
+                             "left_kg": round(ctx.goods.reserve_kg(row), 1)})
+        for row in ctx.goods.stockpiles:
+            at = row.get("at_m") or [0.0, 0.0]
+            if math.hypot(float(at[0]) - middle[0], float(at[-1]) - middle[1]) > radius:
+                continue
+            if sight is not None and not sight.knows(float(at[0]), float(at[-1])):
+                continue
+            heaps.append({"name": row.get("name"), "holds": {k: round(v, 1) for k, v in (row.get("holds") or {}).items()}})
+    mine = set(ctx.program.get("parts") or []) | {ctx.program.get("body")}
+    things = []
+    for body in ctx.bodies or []:
+        name = body.get("name")
+        at = body.get("position_m")
+        if not name or name in mine or not isinstance(at, (list, tuple)) or len(at) < 3:
+            continue
+        if math.hypot(float(at[0]) - middle[0], float(at[2]) - middle[1]) > radius:
+            continue
+        if sight is not None and not sight.knows(float(at[0]), float(at[2])):
+            continue
+        things.append({"what": name, "material": body.get("material")})
+    cells = known + unseen + off_the_edge
+    share = (known / (known + unseen)) if (known + unseen) else 1.0
+    out: dict[str, Any] = {
+        "place": named, "at_m": [round(middle[0], 2), round(middle[1], 2)], "radius_m": radius,
+        "known_share": round(share, 2), "spots_read": known, "spots_not_seen": unseen,
+        "deposits": deposits, "heaps": heaps, "things": things[:12],
+    }
+    if known:
+        out["ground"] = {"surface": max(surfaces, key=surfaces.get) if surfaces else None,
+                         "highest_m": round(high or 0.0, 2), "lowest_m": round(low or 0.0, 2),
+                         "steepest_deg": round(steepest, 1),
+                         "deepest_water_m": round(deepest_water, 3)}
+    # And in words, because a person and a model read the same answer.
+    if not known and unseen:
+        out["did"] = f"surveyed {named}: nobody has been near it, so nothing is known of it"
+    else:
+        words = [f"surveyed {named}"]
+        if out.get("ground"):
+            g = out["ground"]
+            words.append(f"{g['surface']} ground, {g['lowest_m']:.2f} to {g['highest_m']:.2f} m, "
+                         f"steepest {g['steepest_deg']:.0f} deg")
+            if g["deepest_water_m"] > 0.003:
+                words.append(f"water up to {round(1000 * g['deepest_water_m'])} mm")
+        if deposits:
+            words.append("in it: " + ", ".join(f"{d['name']} ({d['left_kg']:.0f} kg of {d['substance']} left)"
+                                               for d in deposits))
+        if heaps:
+            words.append("heaps: " + ", ".join(d["name"] for d in heaps))
+        if things:
+            words.append(f"{len(things)} thing{'' if len(things) == 1 else 's'} standing there")
+        if unseen:
+            words.append(f"{round(100 * (1.0 - share))}% of it not seen yet")
+        out["did"] = "; ".join(words)
+    return out
+
+
 def _pile_for(ctx: senses.Context, args: dict[str, Any]) -> tuple[dict[str, Any] | None, list[float]]:
     """The stockpile a tool works: the one at the place named (a place the
     routine knows, such as "source": the stockpile is the one within half a
@@ -684,6 +800,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
                  "whatever is there.", take, {"place": _WHERE["place"], **_SUBSTANCE}),
     Tool("process", "Work one batch of its recipe: its intake stockpile's goods into its output "
                     "stockpile's, drawing the work from its battery.", process, {}, for_deciders=False),
+    Tool("survey", "Say what is known of a place, or of where it stands: the ground there, what is on it, and "
+                   "how much of it nobody has seen yet. It reports; going there is what reveals it.",
+         survey, {**_WHERE, "radius_m": {"type": "number", "description": "how wide to look, metres"}}),
     Tool("carry_on", "Ask nothing more of it: its routine and its reflexes have it back.", carry_on, {}),
 )}
 
