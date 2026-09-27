@@ -582,6 +582,10 @@ class Brains:
         #: What the page was last told each machine was showing (_showing), so
         #: a hopper filling reaches it and an unchanged machine costs nothing.
         self._sent: dict[str, tuple] = {}
+        #: And what it was last told the room's heaps and ore hold (holders()),
+        #: for the same reason: the account changes only when something is
+        #: dug, dumped, taken or made, and between those it costs nothing.
+        self._goods_sent: str | None = None
         self.spec: dict[str, Any] | None = None    # the room's, for what each program's routine is
         self.person: dict[str, Any] | None = None  # where the person last said they stood
         # The room's goods ledger (machine_goods.Goods), over the spec's own
@@ -619,6 +623,22 @@ class Brains:
         import machine_ports
         return machine_ports.holders_over(self.goods, lambda name: self.of(name).routine)(port)
 
+    def _goods_now(self) -> dict[str, Any]:
+        """The room's heaps and its ore as they stand, marked as told."""
+        holds = self.goods.holders()
+        self._goods_sent = json.dumps(holds, sort_keys=True)
+        return holds
+
+    def _goods_moved(self) -> dict[str, Any] | None:
+        """The same, but only when something in it has moved since the page
+        was last told; None when nothing has."""
+        holds = self.goods.holders()
+        mark = json.dumps(holds, sort_keys=True)
+        if mark == self._goods_sent:
+            return None
+        self._goods_sent = mark
+        return holds
+
     def opened(self, spec: dict[str, Any] | None = None) -> None:
         """A room opened: what was observed of the last one is forgotten, the
         modes are kept, and the room's spec says what each routine is."""
@@ -626,6 +646,7 @@ class Brains:
             self.modes[name] = brain.mode
         self.brains.clear()
         self._sent.clear()
+        self._goods_sent = None
         self.spec = spec
         import machine_goods
         import machine_ports
@@ -658,6 +679,13 @@ class Brains:
         self.ports.follow(opened.get("bodies"))
         if self.ports:
             opened["ports"] = self.ports.report()
+        # And what every heap and every patch of ore in the room holds, so the
+        # page's slots are filled in before the first step rather than at the
+        # first thing that moves. Always on an open, even when it is empty: a
+        # room whose piles are all empty is a room with piles, and the page
+        # would otherwise leave the last room's slots standing over this one.
+        if self.goods is not None:
+            opened["goods"] = self._goods_now()
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
         return lambda **command: app.live.act({"session": session_id, **command})
@@ -743,6 +771,15 @@ class Brains:
         # it is a handful of small rows.
         if self.ports is not None and self.ports:
             answer["ports"] = self.ports.report()
+        # What the room's heaps and its ore hold, when it has changed since
+        # the page was last told. This one IS only sent on a change: a heap
+        # sits still, and the account moves only when something is dug,
+        # dumped, taken or made -- but when it moves it is the whole point of
+        # watching, so nothing is held back for a tick.
+        if self.goods is not None:
+            holds = self._goods_moved()
+            if holds is not None:
+                answer["goods"] = holds
         changed = []
         for brain in self.brains.values():
             showing = self._showing(brain)

@@ -251,23 +251,78 @@ kbd {
               text-transform: uppercase; color: var(--dim); font-weight: 500; }
 #details-last.refused #details-last-text { color: var(--warm); }
 
-/* A machine's panel: over the view at the bottom left, clear of the side view,
-   like the front of an appliance. Pressed buttons are lit; a machine that is
-   off has its drive buttons greyed, since off its brake holds it. */
+/* A machine's panel: in the side view, under the conversation, in the same
+   column as everything else the room says (the owner, 2026-09-26: "there are
+   too many windows open, have it open on the right under the chat"). It used
+   to float over the room at the bottom left, which covered the very thing it
+   was about and made a second window to keep track of; nothing of what it
+   does changed in the move. Pressed buttons are lit; a machine that is off has
+   its drive buttons greyed, since off its brake holds it.
+
+   It takes what it needs and does not shrink (flex 0 0 auto): the column has
+   four things stacked in it while a machine is open instead of three, and
+   something has to give. Measured, before these rules: in a 960x600 window the
+   panel came out 84 px tall -- its own On button was below its own fold -- and
+   with a floor instead of a fixed size it came out at exactly that floor,
+   because the tabs grow and it does not. So the panel is the one that keeps
+   its size, up to a little under half the column, and the other three give:
+   the conversation to a floor of its own, the tabs to their strip and a row or
+   two, and what you are looking at to whatever is left, since it is about the
+   crosshair and the crosshair is not what you are doing while you have a
+   machine's controls open. All four scroll. */
 #machine-panel {
-  position: fixed; left: 14px; bottom: 14px; z-index: 7; width: min(310px, calc(100vw - var(--panel-w) - 28px));
-  display: grid; gap: 8px; padding: 10px 12px 12px; font-size: 12px; color: var(--ink);
-  background: rgb(16 23 27 / .95); border: 1px solid var(--edge); border-radius: 10px;
-  box-shadow: 0 10px 30px rgb(0 0 0 / .45);
+  flex: 0 0 auto; max-height: 44vh; overflow-y: auto;
+  display: grid; gap: 8px; padding: 10px 16px 12px; font-size: 12px; color: var(--ink);
+  border-bottom: 1px solid var(--edge);
 }
 #machine-panel[hidden] { display: none; }
-@media (max-width: 700px) {
-  #machine-panel {
-    width: min(310px, calc(100vw - 28px));
-    max-height: calc(100vh - 28px);
-    overflow-y: auto;
-  }
+body.machine-open #talk { min-height: 14vh; }
+body.machine-open #details { flex: 0 1 auto; min-height: 0; max-height: 20vh; }
+body.machine-open #tabs { min-height: 96px; }
+
+/* Slots: what anything that can hold something is holding (the owner,
+   2026-09-26: "also have slots for anything that can hold things and show the
+   material being held it is so we can see it happen more as it goes").
+   A machine's hopper, a heap on the ground and the ore still in the ground are
+   drawn the same way, because the only difference between them is where they
+   are: a name, and one small square per substance with that substance's mass.
+   The same rules serve the Room tab's list of every holder and the machine
+   panel's list of the open machine's own. */
+.holds { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+.hold { display: grid; gap: 4px; }
+.hold-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+             gap: 2px 10px; margin: 0; }
+.hold-name { color: var(--ink-strong); font-weight: 600; overflow-wrap: anywhere; }
+/* Not the tracked capitals the other labels in this column use: this line
+   carries a mouth's whole state on a machine's panel ("rover store · goods
+   out · docked to smelter intake"), and a sentence of capitals is a shout. */
+.hold-of { color: var(--dim); font-size: var(--t-small); }
+/* The same bar the details pane uses for a draw or a wind-up: how full, for a
+   holder that HAS a full -- a hopper, a seam's reserve. A heap has none. */
+.hold .meter-bar { flex: none; width: 100%; }
+.hold .meter-bar[hidden] { display: none; }
+.hold-slots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.hold-slot {
+  display: flex; align-items: center; gap: 6px; padding: 2px 7px;
+  border: 1px solid var(--edge); border-radius: 5px; background: rgb(255 255 255 / .04);
+  transition: background .45s ease-out, border-color .45s ease-out;
 }
+/* The substance's own square. The colour is a tint from its name, not a
+   measurement of anything (world.js substanceColour). */
+.hold-slot i { flex: none; width: 10px; height: 10px; border-radius: 2px; background: var(--c, #9aa6ae); }
+.hold-slot span { color: var(--dim); }
+.hold-slot b { color: var(--ink-strong); font-weight: 650; font-variant-numeric: tabular-nums; }
+.hold-slot.none { color: var(--dim); font-style: italic; }
+/* It moved since the last step: green for more in it, amber for less, for a
+   second or so. A number changing is easy to miss; a slot lighting up is not,
+   and watching the ore leave one holder and arrive in the next is the whole
+   reason these are on the page. */
+.hold-slot.up { background: rgb(126 224 138 / .22); border-color: #5f9a63; transition: none; }
+.hold-slot.down { background: rgb(240 180 41 / .2); border-color: var(--warm); transition: none; }
+@media (prefers-reduced-motion: reduce) { .hold-slot { transition: none; } }
+.mp-holds { padding-top: 7px; border-top: 1px solid var(--edge); }
+.mp-holds .holds { margin: 0; }
+#holds-note { margin: 7px 0 0; color: var(--dim); font-size: 11px; line-height: 1.45; }
 .mp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .mp-kind { margin: 0; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
 #mp-name { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.25; text-wrap: balance; }
@@ -296,7 +351,8 @@ kbd {
             padding-top: 7px; border-top: 1px solid var(--edge); }
 .mp-brain .mp-seg { grid-template-columns: 1.2fr 1fr 1fr; }
 /* A display of their own would beat the hidden attribute's; hidden wins. */
-.mp-brain[hidden], .mp-chat[hidden], .mp-decided[hidden], #mp-talk[hidden] { display: none; }
+.mp-brain[hidden], .mp-chat[hidden], .mp-decided[hidden], .mp-holds[hidden],
+#mp-talk[hidden] { display: none; }
 .mp-routine { color: var(--ink); }
 .mp-decided { margin: 0; color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
 .mp-decided.attention { color: var(--ink); }
