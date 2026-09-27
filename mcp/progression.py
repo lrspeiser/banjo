@@ -620,18 +620,36 @@ def what_is_next(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
         for route in (technique.get("earned_by") or {}).get("any_of") or []:
             routes.append({"id": route.get("id"), "says": route.get("says", ""),
                            "done": all(_met(journal, need) for need in route.get("all_of") or [])})
-        opens = sorted({design["id"] for design in registry.designs.values()
-                        for way in design["routes"]["any_of"]
-                        for need in way.get("all_of") or []
-                        if need.get("technique") == technique["id"]})
+        # `would_open` stays a list of ids because that is what it has always
+        # been and what is asserted of it. The names go beside it: a rung that
+        # says "it would let you make 1 thing" tells nobody why they should
+        # want it, and the name is the whole of the reason.
+        opens_named = opened_by(registry, technique["id"])
+        opens = [o["id"] for o in opens_named]
         out.append({"technique": technique["id"], "name": technique["name"],
                     "describes": technique.get("describes", ""),
                     "within_reach": not needs and bool(routes),
                     "first_learn": needs, "earned_by": routes,
-                    "would_open": opens,
+                    "would_open": opens, "opens_named": opens_named,
                     "taught_only": not routes and not needs})
     out.sort(key=lambda row: (not row["within_reach"], row["technique"]))
     return out
+
+
+def opened_by(registry: Registry, technique: str) -> list[dict[str, str]]:
+    """The designs a technique is a condition of, by id and by name.
+
+    Read from the registry and not from what anybody knows, so it says the
+    same thing before and after the technique is learned. `what_is_next` uses
+    it for a rung you have not got; the notebook uses it for one you just did,
+    which is the moment somebody most wants to be told what it was for.
+    """
+    opens = sorted({design["id"] for design in registry.designs.values()
+                    for way in design["routes"]["any_of"]
+                    for need in way.get("all_of") or []
+                    if need.get("technique") == technique})
+    return [{"id": ident, "name": registry.designs[ident]["name"]}
+            for ident in opens if ident in registry.designs]
 
 
 def notebook(journal: Journal, registry: Registry) -> dict[str, Any]:
@@ -667,6 +685,7 @@ def notebook(journal: Journal, registry: Registry) -> dict[str, Any]:
     return {"revision": data["revision"],
             "techniques": [{"id": t, "name": registry.techniques[t]["name"],
                             "since": (data["techniques"][t] or {}).get("since"),
+                            "opens_named": opened_by(registry, t),
                             "learned_from": ((data["techniques"][t] or {}).get("source")
                                              or {}).get("kind")}
                            for t in sorted(data["techniques"]) if t in registry.techniques],

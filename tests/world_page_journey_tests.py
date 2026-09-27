@@ -1085,6 +1085,94 @@ class ClickingWithTheMouse(PageJourney):
         self.assertTrue(self.js("document.getElementById('machine-panel').hidden"),
                         "a drag across the rover opened its panel; that was a look, not a click")
 
+
+class LearningSomethingIsSaidWhereYouAreLooking(PageJourney):
+    """A card over the world, and the next rung under the details.
+
+    The owner asked for "achievement unlock messages when a robot or user does
+    something new ... and goals that use those new skills". Both were built
+    and neither could be felt: learning said itself into the room's
+    conversation, where the next thing a smelter reported pushed it out of
+    sight, and the ladder was drawn in the Notes tab, one of five.
+
+    The journal starts empty here because this class keeps its own rooms
+    folder, so the smelter working in front of the page TEACHES something and
+    the card has to appear for it.
+    """
+
+    def turn_the_machines_on(self):
+        return self.page.evaluate("""(async () => {
+            const w = window.banjoRoom.world;
+            const token = (await fetch("/api/status").then((r) => r.json())).csrf_token;
+            let seq = 500, on = [];
+            for (const p of (w.machines?.programs || [])) {
+                await fetch("/api/world/machine", {method: "POST",
+                    headers: {"Content-Type": "application/json", "X-Banjo-Token": token},
+                    body: JSON.stringify({session: w.session, program: p.id,
+                                          sender: "test", seq: ++seq, power: true})});
+                on.push(p.name);
+            }
+            return on.join(", ");
+        })()""", timeout=60, await_promise=True)
+
+    def test_a_technique_learned_shows_a_card_and_the_next_rung(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-mine"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-mine' && "
+                                      "banjoRoom.ready()", 300), "the mine room did not open")
+        # Nothing known yet, and nothing announced on the way in: a card at
+        # page load for something learned last week would be noise.
+        # self.js cannot await; the notebook comes over the wire.
+        known = json.loads(self.page.evaluate(
+            "(async () => JSON.stringify((await fetch('/api/knowledge').then((r) => r.json()))"
+            ".techniques.map((t) => t.name)))()", timeout=30, await_promise=True))
+        self.assertEqual([], known, f"this journal should start empty, not {known}")
+        self.assertTrue(self.js("document.getElementById('unlocked').hidden"),
+                        "a card was shown before anything had been learned")
+
+        self.turn_the_machines_on()
+        # The smelter working in front of the page is what teaches it.
+        self.assertTrue(self.wait_for("!document.getElementById('unlocked').hidden", 180),
+                        f"nothing was said over the world when a technique was learned: {self.situation()}")
+        card = self.js("[document.getElementById('unlocked-what').textContent, "
+                       "document.getElementById('unlocked-opens').textContent]")
+        print(f"\n   the card said {card[0]!r} / {card[1]!r}", flush=True)
+        self.assertIn("learned:", card[0].lower())
+        # And it says what the technique opened. Read off the technique, not
+        # off the ladder: a rung leaves the ladder the moment it is learned.
+        self.assertTrue(card[1], "the card did not say what the new skill was for")
+
+        # And the ladder is under the details, not a tab away.
+        self.assertTrue(self.wait_for("!document.getElementById('next-step').hidden", 60),
+                        f"the next rung is not shown: {self.situation()}")
+        line = self.js("document.getElementById('next-step').textContent")
+        print(f"   and the next rung reads {line!r}", flush=True)
+        self.assertIn("next:", line.lower())
+        # It names what it would open, rather than counting it. "It would let
+        # you make 1 thing you cannot make yet" is not a reason to want it.
+        self.assertNotIn("thing you cannot make", line,
+                         "the rung counts what it opens instead of naming it")
+
+    def test_the_card_goes_away_by_itself(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-mine"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "the room did not open")
+        # Shown by hand rather than waiting for a second technique: what is
+        # under test here is that it clears itself, not what raises it.
+        self.page.evaluate("""(() => {
+            const box = document.getElementById("unlocked");
+            box.hidden = false;
+            document.getElementById("unlocked-what").textContent = "You can now test things";
+            return true; })()""")
+        self.assertFalse(self.js("document.getElementById('unlocked').hidden"))
+        # It does not cover the crosshair or the side panel: over the world,
+        # near the top, clear of both.
+        room = self.js("""(() => {
+            const b = document.getElementById("unlocked").getBoundingClientRect();
+            const p = document.getElementById("panel").getBoundingClientRect();
+            const c = document.getElementById("crosshair").getBoundingClientRect();
+            return [b.right <= p.left + 1, b.bottom < c.top, b.top >= 0]; })()""")
+        self.assertEqual([True, True, True], room,
+                         "the card is over the panel, over the crosshair, or off the top")
+
 class ARoverRoamsTheShore(PageJourney):
     """The machine world's autonomous creature, its second step
     (docs/machine-world.md), in the tests-rover room: a rover with a motor on

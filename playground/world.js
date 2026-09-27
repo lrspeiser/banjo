@@ -6661,6 +6661,55 @@ function adoptRebuilt(answer) {
 // the hand's steps in the running room with the hand's own strength, which
 // this page keeps running and draws, and a stand step as turn_object. No model
 // is asked. A step that cannot be done stops the action, with why.
+// WHAT A RUNG WOULD OPEN, by name. "It would let you make 1 thing you cannot
+// make yet" tells nobody why they should want it; "It would let you make a
+// copper mill" is the reason. The names come from the server (opens_named);
+// would_open stays a list of ids, which is what it has always been.
+function opensSays(rung, have) {
+  const opens = (rung && rung.opens_named) || [];
+  if (!opens.length) return "";
+  // "make one-piece wooden pick" is not English. An article, unless the name
+  // already carries one or is plural.
+  const article = (name) => (/^(a |an |the )/i.test(name) || /s$/i.test(name) ? ""
+                             : /^[aeiou]/i.test(name) ? "an " : "a ");
+  const names = opens.map((o) => article(o.name) + o.name.toLowerCase());
+  const said = names.length === 1 ? names[0]
+    : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  return `It ${have ? "lets" : "would let"} you make ${said}.`;
+}
+
+// A card over the world, for a moment. Not the conversation: the conversation
+// is where the machines talk, and they talk far more than you learn.
+let unlockedFor = null;
+function unlocked(what, opens) {
+  const box = $("unlocked");
+  if (!box) return;
+  $("unlocked-what").textContent = what;
+  $("unlocked-opens").textContent = opens;
+  box.hidden = false;
+  clearTimeout(unlockedFor);
+  unlockedFor = setTimeout(() => { box.hidden = true; }, 9000);
+}
+
+// The nearest rung, under what you are looking at. One line, because the
+// whole ladder is still in Notes and the owner has said there are too many
+// panes; clicking it opens that tab.
+function showNextStep(book) {
+  const line = $("next-step");
+  if (!line) return;
+  const step = (book.next || []).find((n) => n.within_reach);
+  if (!step) { line.hidden = true; return; }
+  const way = (step.earned_by || []).find((e) => !e.done) || (step.earned_by || [])[0];
+  const opens = opensSays(step);
+  line.replaceChildren();
+  const b = document.createElement("b");
+  b.textContent = `Next: ${step.name}.`;
+  line.append(b, document.createTextNode(` ${way && way.says ? way.says : ""}${opens ? " " + opens : ""}`));
+  line.hidden = false;
+}
+
+$("next-step")?.addEventListener("click", () => $("tab-notes")?.click());
+
 // What the person knows (docs/knowledge-and-progression.md): the notebook the
 // server keeps from what the engine measured their own tools doing. What was
 // found or shown, each claim with its scope, what is blocked and by what, and
@@ -6684,9 +6733,17 @@ function showNotebook(book, fresh) {
   }
   for (const t of book.techniques || []) {
     rows.push(["known", `You know ${t.name}.`]);
-    // Said once, when it happens. Learning something and being told nothing
-    // is the same as not learning it.
-    if (fresh && !notebookSeen.has(`t:${t.id}`)) say("world", `Notebook: you know ${t.name} now.`);
+    // Said once, when it happens, OVER THE WORLD and not into the
+    // conversation. It was said in the conversation, where the next thing a
+    // smelter reported pushed it out of sight -- learning something and being
+    // told nothing where you are looking is the same as not learning it.
+    if (fresh && !notebookSeen.has(`t:${t.id}`)) {
+      // "You can now smelting copper" is not English, and a technique's name
+      // cannot be conjugated into one. And what it OPENS is read off the
+      // technique and not off `next`: the moment it is learned it leaves that
+      // list, which is exactly when somebody wants to know what it was for.
+      unlocked(`Learned: ${t.name}`, opensSays(t, true) || "");
+    }
     notebookSeen.add(`t:${t.id}`);
   }
   // What is one step away, and what it would open. Without this a person can
@@ -6697,16 +6754,14 @@ function showNotebook(book, fresh) {
       continue;
     }
     const way = (step.earned_by || []).find((e) => !e.done) || (step.earned_by || [])[0];
-    const opens = (step.would_open || []).length
-      ? ` It would let you make ${step.would_open.length} thing`
-        + `${step.would_open.length === 1 ? "" : "s"} you cannot make yet.`
-      : "";
-    rows.push(["next", `Next: ${step.name}. ${way ? way.says : ""}${opens}`]);
+    const opens = opensSays(step);
+    rows.push(["next", `Next: ${step.name}. ${way ? way.says : ""}${opens ? " " + opens : ""}`]);
   }
   for (const b of book.blocked || []) {
     rows.push(["blocked", `Making ${b.name.toLowerCase()} yourself is blocked: ${b.because.join("; ")}.`]);
   }
   for (const n of book.not_modelled || []) rows.push(["noted", `Not modelled yet: ${n}.`]);
+  showNextStep(book);
   $("notebook-list").replaceChildren(...rows.map(([kind, text]) => {
     const li = document.createElement("li");
     li.className = `nb-${kind}`;
