@@ -458,6 +458,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"store", p.store},
             {"height_m", tidy(p.height_m)},
             {"climb_m_s", tidy(p.climb_m_s)},
+            {"stuck_s", tidy(p.stuck_s)},
+            {"stucks", p.stucks},
             {"rest_below", tidy(p.rest_below)},
             {"rest_until", tidy(p.rest_until)},
             {"charge_share", tidy(p.charge_share)},

@@ -86,6 +86,45 @@ class Conditions(unittest.TestCase):
         self.assertEqual("pile has (place depot, kg 3)", conditions.described({"is": "pile_has", "place": "depot", "kg": 3}))
         self.assertTrue(all(c["description"] for c in conditions.catalogue()))
 
+    def test_getting_nowhere_is_read_off_the_program_and_told_to_a_brain(self):
+        """A machine held by the world reads as getting nowhere, which is not a
+        stall: in a hole or against a wall its wheels turn freely, so nothing
+        that watches a motor sees it (docs/machine-world.md, "When a machine
+        cannot get out")."""
+        r = machine_routine.Routine("m", {"kind": "custom", "hopper_kg": 10.0, "places": {},
+                                          "steps": [{"do": "hold_still", "until": 1}]})
+        going = context(r, program={"doing": "going forward", "stuck_s": 8.2, "stucks": 1})
+        self.assertTrue(conditions.holds(going, "getting_nowhere"))
+        self.assertTrue(conditions.holds(going, {"is": "getting_nowhere", "seconds": 8}))
+        self.assertFalse(conditions.holds(going, {"is": "getting_nowhere", "seconds": 20}))
+        self.assertFalse(conditions.holds(going, "stuck"), "still trying is not stuck")
+        self.assertFalse(conditions.holds(going, "stalled"), "and no wheel has stalled")
+        # What a decider is given to read.
+        said = senses.sense_position(going)
+        self.assertEqual(8.2, said["not_getting_anywhere_for_s"])
+        self.assertEqual(1, said["tried_to_get_out_times"])
+        moving = context(r, program={"doing": "going forward", "stuck_s": 0.0, "stucks": 0})
+        self.assertNotIn("not_getting_anywhere_for_s", senses.sense_position(moving),
+                         "a machine getting somewhere says nothing about it")
+        gave_up = context(r, program={"doing": "stuck", "stuck_s": 0.0, "stucks": 3})
+        self.assertTrue(conditions.holds(gave_up, "stuck"))
+        self.assertFalse(conditions.holds(gave_up, "getting_nowhere"), "stopped, it is not trying and going nowhere")
+        # And what a brain is told: on the rising edge of each, and while
+        # something is asking it to do something, as a knock is.
+        was = {"power": True, "doing": "going forward", "stucks": 0}
+        now = {"power": True, "doing": "backing off", "stucks": 1,
+               "asked": {"by": "routine", "doing": "approaching"}}
+        self.assertEqual(["it was not getting anywhere, so it is getting itself out"],
+                         senses.situations(was, now, {"controls": []}, []))
+        self.assertEqual([], senses.situations(now, dict(now), {"controls": []}, []),
+                         "and only once for each try")
+        # Giving up does not count as another try, so only the one event.
+        tried = {"power": True, "doing": "backing off", "stucks": 3}
+        self.assertEqual(["it cannot get itself out of where it is"],
+                         senses.situations(tried, {"power": True, "doing": "stuck", "stucks": 3}, {"controls": []}, []))
+        self.assertEqual([], senses.situations({"power": True, "doing": "stuck", "stucks": 3},
+                                              {"power": True, "doing": "stuck", "stucks": 3}, {"controls": []}, []))
+
 
 class TheRunner(unittest.TestCase):
     def test_when_and_unless_skip_a_step_as_it_is_issued(self):

@@ -647,6 +647,9 @@ off from its own panel. The one kind so far, "roam":
   one side, it turns towards the lower side.
 - Where its wheels stop for want of progress, it backs off and turns. For now
   that stands in for a bump sensor.
+- Where it has been told to go somewhere and has got nowhere for 20 s, it backs
+  itself out, and after a few tries stops and says it cannot ("When a machine
+  cannot get out").
 - It turns until it has turned at least as far as it meant to and nothing is
   in its way, or for 6 s at most.
 - Turned off, it stops on its brakes.
@@ -681,6 +684,69 @@ water:
   inside the line the front takes.
 - **A slope to the side counts.** Checking only the slope ahead, it ran along
   a steep contour and spiralled up towards the basin's rim.
+
+### When a machine cannot get out
+
+A machine can be held by the world without anything it watches saying so. In
+the mine on 2026-09-26 the rover stood at one spot for 232 s of a 7-minute run,
+driving and turning the whole time and going nowhere: it had dug 1.3 m ahead of
+itself, on ground it then had to drive over, and sat against the spoil heap of
+its own hole on a slope. Its wheels turned freely, so the motors were never
+overloaded and the stall that stands in for a bump sensor never tripped; no
+water sensor saw anything; its battery was full. Every layer above -- the
+routine's three tries, the deciders, Jev -- was told only that it was
+"approaching" the vein, which it was, for four minutes.
+
+So a machine has a sense of getting nowhere, and a reflex about it.
+
+**The sense.** While it is told to be going somewhere -- going forward, backing
+off, turning either way, rising, descending -- the engine keeps where it stood
+when it was told, and how long it has been inside half a metre of there. Getting
+out of that circle opens a new one. Anything that is not trying to go (waiting,
+digging, resting, stopped, off) clears it. The circle is the measure, not
+standing still and not the wheels: in a hole a machine drives, rocks and turns
+busily and gets nowhere, so the first thing tried -- reset the moment it moved
+or turned five degrees -- never fired at all. The program reports it as
+`stuck_s`, and how many times it has tried to get out as `stucks`; the senses
+give a routine or a decider `not_getting_anywhere_for_s` and
+`tried_to_get_out_times`, the conditions `getting_nowhere` (seconds, 5 by
+default) and `stuck`, and a brain the events "it was not getting anywhere, so it
+is getting itself out" and "it cannot get itself out of where it is" -- both
+said even while something is asking it to do something, as a knock is, because
+both happen to it rather than being anything it chose.
+
+**The reflex, for a machine that drives.** Twenty seconds of getting nowhere and
+it backs out: reverse, turn 110 degrees, reverse again along the new line.
+Reversing alone barely rocked it; reversing again after the turn pulled it
+clear. It reverses 4 s, then 8, then 12, turning the other way each time, and
+once it has tried it waits only 5 s before trying again rather than 20. Three
+tries at one place and it stops, holds its wheels, and says "it cannot get
+itself out". Getting two metres from that place, by its own back-out or because
+something else moved it, ends the episode and gives the next thing in its way
+the same patience as the first. Being stuck does not make it deaf: asked to do
+something it does it, so a person who comes to get it out can.
+
+**The reflex, for a machine that flies.** It climbs over what is in its way
+rather than backing round it: two metres on the height it holds, up to five
+times. Then it holds where it is and says it cannot get past. It never stops its
+rotors for this, whatever is in the way, because a flyer that gives up in the
+air falls. Climbing is getting somewhere for the sense -- a flyer told to rise
+and rising is not stuck -- but not for the place, which is measured across the
+ground: without that, a walled-in drone climbed a metre at a time for ever.
+
+Measured in the engine (`tests/rover_roam_tests.cpp`,
+`tests/drone_hover_tests.cpp`):
+
+| | |
+|---|---|
+| driven into a wall while roaming | nowhere for 20 s, one back-out, roaming again 6.5 s later, 5.4 m back from the wall; no wheel ever stalled |
+| penned in 1.6 m of concrete, told to go through it | three back-outs, stuck after 45 s, never further than 0.30 m from where it began, then obeyed a person |
+| a drone walled in a 14 m shaft | climbed from 1.5 m to 11.5 m in five lifts, then held, never coming below 1.75 m |
+
+What it does not do is plan a way round. Told to approach a point through a
+wall, a machine that drives backs out, turns away, and is turned straight back
+at the wall by the ask; three of those and it gives the ask up, as it does with
+water. Getting itself out is not finding a route.
 
 It can be worked in the page at `/world?scene=tests-rover`. That is a test room
 off the menu, built by `tools/build_rover_room.py`, which lets the rover roam a
@@ -1497,7 +1563,8 @@ the deciders read, in words a person or a model writes: `hopper_full`,
 `battery_above` (a share), `pile_empty` and `pile_has` (the stockpile at a
 place it knows, or by name, or within reach; a substance, a mass),
 `water_ahead`, `person_near` (metres), `at_place`, `night`, `day`,
-`stalled`, `struck`, `resting`, `asked_by_someone`; and `not`, `all`, `any`
+`stalled`, `getting_nowhere` (seconds), `stuck`, `struck`, `resting`,
+`asked_by_someone`; and `not`, `all`, `any`
 over them. A condition that needs what the machine lacks is false, never a
 fault. A new one is one entry in CONDITIONS.
 

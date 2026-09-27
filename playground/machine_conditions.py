@@ -158,6 +158,15 @@ def resting(ctx, args):
     return ctx.program.get("doing") == "resting"
 
 
+def getting_nowhere(ctx, args):
+    seconds = float(args.get("seconds") or 5.0)
+    return float(ctx.program.get("stuck_s") or 0.0) >= seconds
+
+
+def stuck(ctx, args):
+    return ctx.program.get("doing") == "stuck"
+
+
 def asked_by_someone(ctx, args):
     asked = ctx.program.get("asked")
     return isinstance(asked, dict) and asked.get("by") not in (None, "routine")
@@ -184,6 +193,10 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in (
     Condition("night", "The room's sun is down.", night, {}),
     Condition("day", "The room's sun is up.", day, {}),
     Condition("stalled", "A wheel or a rotor has stalled.", stalled, {}),
+    Condition("getting_nowhere", "It has been told to go somewhere and has not moved for `seconds` (5 by default). "
+                                 "Not the same as stalled: in a hole or against a wall its wheels turn freely.",
+              getting_nowhere, {"seconds": "seconds, optional"}),
+    Condition("stuck", "It has tried to get itself out of where it is and cannot, and has stopped.", stuck, {}),
     Condition("struck", "Something struck it, or it ran into something, this step.", struck, {}),
     Condition("resting", "Its program is resting for want of charge.", resting, {}),
     Condition("asked_by_someone", "Someone other than its routine has it: a person, a decider.", asked_by_someone, {}),
@@ -225,7 +238,7 @@ def checked(given: Any, depth: int = 0) -> Any:
     for key, value in given.items():
         if key == "is":
             continue
-        if key in ("kg", "share", "m", "within_m"):
+        if key in ("kg", "share", "m", "within_m", "seconds"):
             try:
                 out[key] = float(value)
             except (TypeError, ValueError):

@@ -319,6 +319,96 @@ void itRisesAndDescends() {
     require(down > -0.05, "and not through the floor");
 }
 
+// A shaft round it, fourteen metres of anchored concrete and 2.6 m across
+// inside: it can hover in there and get nowhere, and the ten metres it will
+// climb do not clear the walls. A wall on one side alone is not this test -- a flyer
+// leaning on one wall slides along it, and sliding along a wall is getting
+// somewhere.
+TileImpactRequest shaftRoom() {
+    TileImpactRequest request = flatRoom();
+    const auto wall = [](const std::string &name, Vec3 size, Vec3 at) {
+        SceneBody b;
+        b.name = name;
+        b.shape = BodyShape::Box;
+        b.material = MaterialPreset::Concrete;
+        b.dimensions_m = {size.x, size.y, size.z};
+        b.center_m = {at.x, at.y, at.z};
+        b.anchored = true;
+        return b;
+    };
+    request.bodies.push_back(wall("wall ahead", {3.2, 14.0, 0.3}, {0.0, 7.0, 1.45}));
+    request.bodies.push_back(wall("wall behind", {3.2, 14.0, 0.3}, {0.0, 7.0, -1.45}));
+    request.bodies.push_back(wall("wall left", {0.3, 14.0, 3.2}, {1.45, 7.0, 0.0}));
+    request.bodies.push_back(wall("wall right", {0.3, 14.0, 3.2}, {-1.45, 7.0, 0.0}));
+    return request;
+}
+
+void itClimbsOverWhatIsInItsWayAndSaysWhenItCannot() {
+    Drone d;
+    d.world = LiveWorld::open(shaftRoom());
+    d.store = d.world->energyStore("battery", "drone", kCapacity, kCapacity, 48.0, 0.0);
+    std::vector<unsigned> rotors;
+    for (int i = 0; i < 4; ++i) {
+        const Vec3 r = kRotorAt[i];
+        d.pins[i] = d.world->hinge("drone", std::string("drone: ") + kRotors[i] + " rotor", Vec3{r.x, kMountY, r.z},
+                                   {0.0, 1.0, 0.0});
+        d.motors[i] = d.world->motor(d.pins[i], d.store, kStall, kNoLoad, 0.0, kThrust, kDrag);
+        d.controls[i] = d.world->control(std::string(kRotors[i]) + " rotor", d.motors[i]);
+        rotors.push_back(d.controls[i]);
+    }
+    d.program = d.world->program("drone", "hover", 0, 0, "drone", 1.0, 8.0, 0.0, 0.0, rotors, kHoverM);
+    if (d.program == 0) throw std::runtime_error("the hover program would not go on");
+    LiveWorld &world = *d.world;
+    for (int i = 0; i < 240; ++i) tick(world);
+    runIt(world, d.program, true, 1);
+    // Up to the height it holds, and then asked for a point on the other side
+    // of the wall: it cannot get there at this height.
+    for (int i = 0; i < 12 * 240; ++i) tick(world);
+    const double held_first = programOf(world, d.program).hover_m;
+    const Vec3 beyond{0.0, 0.0, 8.0};
+    askIt(world, d.program, "approaching", 0.0, 2, &beyond);
+    double climbed_after_s = 0.0, gave_up_after_s = 0.0, lowest_m = 1.0e9;
+    std::string said_climbing, said_gave_up;
+    unsigned lifts = 0;
+    for (int i = 0; i < 200 * 240; ++i) {
+        tick(world);
+        const LiveProgram said = programOf(world, d.program);
+        lowest_m = std::min(lowest_m, said.height_m);
+        if (said.stucks > lifts) {
+            lifts = said.stucks;
+            if (climbed_after_s == 0.0) {
+                climbed_after_s = static_cast<double>(i) * kDt;
+                said_climbing = said.why;
+            }
+        }
+        if (said.asked.empty() && said.why.find("cannot get past") != std::string::npos) {
+            gave_up_after_s = static_cast<double>(i) * kDt;
+            said_gave_up = said.why;
+            break;
+        }
+    }
+    const LiveProgram said = programOf(world, d.program);
+    std::cout << "    walled in: it climbed after " << climbed_after_s << " s (" << said_climbing
+              << "), from holding " << held_first << " m to " << said.hover_m << " m; gave up after "
+              << gave_up_after_s << " s (" << said_gave_up << "); it never came below " << lowest_m << " m\n";
+    require(lifts == 5 && said.hover_m > held_first + 9.5,
+            "it climbed five times, two metres each: " + std::to_string(lifts) + " lifts, holding " +
+                std::to_string(said.hover_m) + " m");
+    require(said_climbing.find("climbs over what is in its way") != std::string::npos,
+            "and said why it climbed: " + said_climbing);
+    require(gave_up_after_s > 0.0 && said.doing == "waiting",
+            "then it holds where it is and says it cannot get past: " + said.doing + ", " + said.why);
+    require(said.asked.empty(), "and has given up the ask it could not do");
+    // Whatever is in its way, it never stops its rotors: a flyer that gives up
+    // in the air falls.
+    require(lowest_m > 0.5, "it stayed in the air throughout: down to " + std::to_string(lowest_m) + " m");
+    for (int i = 0; i < 10 * 240; ++i) tick(world);
+    const LiveProgram after = programOf(world, d.program);
+    require(after.doing == "waiting" && after.height_m > 0.5,
+            "ten seconds on it is still flying, holding where it is: " + after.doing + ", " +
+                std::to_string(after.height_m) + " m");
+}
+
 void itsAccountCloses() {
     Drone d = droneOnTheFloor();
     LiveWorld &world = *d.world;
@@ -374,6 +464,8 @@ int main() {
         {"it goes where it is asked", itGoesWhereItIsAsked},
         {"it rises and descends when it is asked to", itRisesAndDescends},
         {"its account closes", itsAccountCloses},
+        {"it climbs over what is in its way, and says when it cannot",
+         itClimbsOverWhatIsInItsWayAndSaysWhenItCannot},
         {"turned off it comes down, and saved it flies on", turnedOffItComesDownAndSavedItFliesOn},
     };
     for (const auto &[name, test] : tests) {
