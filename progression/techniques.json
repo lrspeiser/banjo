@@ -97,6 +97,200 @@
           }
         ]
       }
+    },
+    {
+      "id": "firing-ceramic",
+      "version": 1,
+      "name": "Firing ceramic",
+      "describes": "Turning clay into a hard ceramic with heat, in a kiln that holds a batch",
+      "prerequisites": {
+        "all_of": []
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-fires-clay",
+            "says": "Watch a kiln fire clay into ceramic, once.",
+            "all_of": [
+              {
+                "design": "clay-kiln",
+                "demonstrated": true,
+                "test": "fires-clay"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "burning-lime",
+      "version": 1,
+      "name": "Burning lime",
+      "describes": "Driving the gas out of limestone with heat to leave cement",
+      "prerequisites": {
+        "all_of": []
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-burns-limestone",
+            "says": "Watch a lime kiln burn limestone into cement, once.",
+            "all_of": [
+              {
+                "design": "lime-kiln",
+                "demonstrated": true,
+                "test": "burns-limestone"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mixing-concrete",
+      "version": 1,
+      "name": "Mixing concrete",
+      "describes": "Working cement and sand together into concrete",
+      "prerequisites": {
+        "all_of": [
+          "burning-lime"
+        ]
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-mixes-concrete",
+            "says": "Watch a mixer work cement and sand into concrete, once.",
+            "all_of": [
+              {
+                "design": "concrete-mixer",
+                "demonstrated": true,
+                "test": "mixes-concrete"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "smelting-iron",
+      "version": 1,
+      "name": "Smelting iron",
+      "describes": "Working iron ore into iron, at a heat well past what copper asks for",
+      "prerequisites": {
+        "all_of": [
+          "smelting-copper"
+        ]
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-smelts-iron-ore",
+            "says": "Watch an iron smelter work iron ore into iron, once.",
+            "all_of": [
+              {
+                "design": "iron-smelter",
+                "demonstrated": true,
+                "test": "smelts-iron-ore"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "melting-glass",
+      "version": 1,
+      "name": "Melting glass",
+      "describes": "Melting sand into glass in a furnace that holds its heat",
+      "prerequisites": {
+        "all_of": [
+          "smelting-copper"
+        ]
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-melts-sand",
+            "says": "Watch a furnace melt sand into glass, once.",
+            "all_of": [
+              {
+                "design": "glass-furnace",
+                "demonstrated": true,
+                "test": "melts-sand"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "smelting-aluminium",
+      "version": 1,
+      "name": "Smelting aluminium",
+      "describes": "Winning aluminium out of bauxite by passing a current through it, which takes more work per kilogram than anything else here",
+      "prerequisites": {
+        "all_of": [
+          "drawing-wire"
+        ]
+      },
+      "learn_from": [
+        "lesson",
+        "teacher",
+        "document",
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "watched-wins-aluminium",
+            "says": "Watch an aluminium cell win metal out of bauxite, once.",
+            "all_of": [
+              {
+                "design": "aluminium-cell",
+                "demonstrated": true,
+                "test": "wins-aluminium"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

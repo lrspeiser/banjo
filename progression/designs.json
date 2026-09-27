@@ -265,6 +265,456 @@
           }
         }
       ]
+    },
+    {
+      "id": "clay-kiln",
+      "revision": 1,
+      "name": "Clay kiln",
+      "purpose": {
+        "function": "fire clay into ceramic, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.5,
+              0.5,
+              0.5
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "fire ceramic"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "firing-ceramic"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "fires-clay",
+          "action": "work a batch of fire ceramic",
+          "target": {
+            "substance": "clay"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lime-kiln",
+      "revision": 1,
+      "name": "Lime kiln",
+      "purpose": {
+        "function": "burn limestone into cement, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.5,
+              0.6,
+              0.5
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "burn lime"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "burning-lime"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "burns-limestone",
+          "action": "work a batch of burn lime",
+          "target": {
+            "substance": "limestone"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "concrete-mixer",
+      "revision": 1,
+      "name": "Concrete mixer",
+      "purpose": {
+        "function": "work cement and sand into concrete, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.6,
+              0.5,
+              0.6
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "mix concrete"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "mixing-concrete"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "mixes-concrete",
+          "action": "work a batch of mix concrete",
+          "target": {
+            "substance": "cement"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "iron-smelter",
+      "revision": 1,
+      "name": "Iron smelter",
+      "purpose": {
+        "function": "work iron ore into iron, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.5,
+              0.6,
+              0.5
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "smelt iron"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "smelting-iron"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "smelts-iron-ore",
+          "action": "work a batch of smelt iron",
+          "target": {
+            "substance": "iron ore"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "glass-furnace",
+      "revision": 1,
+      "name": "Glass furnace",
+      "purpose": {
+        "function": "melt sand into glass, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.6,
+              0.5,
+              0.6
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "melt glass"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "melting-glass"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "melts-sand",
+          "action": "work a batch of melt glass",
+          "target": {
+            "substance": "sand"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "aluminium-cell",
+      "revision": 1,
+      "name": "Aluminium cell",
+      "purpose": {
+        "function": "win aluminium out of bauxite, a batch at a time",
+        "claim": "intended, not guaranteed"
+      },
+      "construction": {
+        "one_piece": false,
+        "material_class": "metal",
+        "parts": [
+          {
+            "role": "deck",
+            "size_m": [
+              1.2,
+              0.08,
+              1.2
+            ]
+          },
+          {
+            "role": "bin",
+            "size_m": [
+              0.6,
+              0.6,
+              0.6
+            ]
+          }
+        ]
+      },
+      "components": [
+        {
+          "role": "body",
+          "requires": {
+            "material_class": "metal",
+            "state": "sound"
+          }
+        }
+      ],
+      "machine": {
+        "program": "still",
+        "recipe": "smelt aluminium"
+      },
+      "routes": {
+        "any_of": [
+          {
+            "id": "found-whole",
+            "obtain": "the whole machine, found"
+          },
+          {
+            "id": "built-on-the-bench",
+            "all_of": [
+              {
+                "component": "body"
+              },
+              {
+                "technique": "smelting-aluminium"
+              }
+            ]
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "wins-aluminium",
+          "action": "work a batch of smelt aluminium",
+          "target": {
+            "substance": "bauxite"
+          },
+          "passes_when": {
+            "made_kg": ">0"
+          }
+        }
+      ]
     }
   ]
 }

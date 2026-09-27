@@ -626,13 +626,24 @@ def what_is_next(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
         # want it, and the name is the whole of the reason.
         opens_named = opened_by(registry, technique["id"])
         opens = [o["id"] for o in opens_named]
+        # Whether it stands on something. A rung that asked for nothing was
+        # always available and always will be; one whose prerequisites you
+        # have JUST met is the thread you are on.
+        stood_on = bool((technique.get("prerequisites") or {}).get("all_of"))
         out.append({"technique": technique["id"], "name": technique["name"],
+                    "builds_on_what_you_know": stood_on and not needs,
                     "describes": technique.get("describes", ""),
                     "within_reach": not needs and bool(routes),
                     "first_learn": needs, "earned_by": routes,
                     "would_open": opens, "opens_named": opens_named,
                     "taught_only": not routes and not needs})
-    out.sort(key=lambda row: (not row["within_reach"], row["technique"]))
+    # Within reach first; then the rungs that stand on something you have
+    # only just learned, before the ones that were open from the beginning.
+    # Sorted by id alone, a player who had just smelted copper was told the
+    # next thing to do was burn lime -- true, available, and nothing to do
+    # with what they were in the middle of. Drawing wire is the thread.
+    out.sort(key=lambda row: (not row["within_reach"], not row["builds_on_what_you_know"],
+                              row["technique"]))
     return out
 
 
