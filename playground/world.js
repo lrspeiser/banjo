@@ -1599,6 +1599,7 @@ function showProgramPanel(p) {
     "backing off": "both wheels back",
     "turning left": "left wheel back, right wheel forward",
     "turning right": "left wheel forward, right wheel back",
+    "stopping": "both wheels held on their brakes, to turn from rest",
     "resting": "both wheels held on their brakes",
     "stuck": "it cannot get itself out, and its wheels are held",
   };

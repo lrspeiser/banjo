@@ -66,7 +66,12 @@ DIG_STAND_M = 2.0
 # 160 mm wheels can only fall into that. Once every spot it can reach has been
 # worked, the place is worked out and it says so.
 DIG_FRESH_M = 0.03
-DIG_SPREAD_M = 0.4
+# How far apart the spots it considers are, and how wide the working spreads
+# where the place is not a deposit with a width of its own: a scoop's own
+# width, so the spots cover the ground without overlapping much, and never
+# narrower than one step or a place would have only its middle to give.
+DIG_STEP_M = 0.5
+DIG_SPREAD_M = DIG_STEP_M
 DUMP_RADIUS_M = 0.6
 
 
@@ -224,6 +229,24 @@ def _around_m(ctx: senses.Context, middle: list[float], radius_m: float) -> floa
     return heights[len(heights) // 2]
 
 
+def _spread_m(ctx: senses.Context, middle: list[float]) -> float:
+    """How wide the working may spread round a place: as wide as the deposit it
+    is in, where it is in one, and otherwise a scoop or two.
+
+    A spot gives one scoop, so how much a machine can take from a place before
+    it is worked out is how many spots the place has. Held to half a metre, the
+    mine's vein gave three loads and then the rover spent nine tenths of a
+    twenty-minute run on a dig step it could not do; the vein is 3 m across, and
+    working the width of it is both what a miner does and what keeps the machine
+    busy."""
+    if ctx.goods is None:
+        return DIG_SPREAD_M
+    deposit = ctx.goods.deposit_at(middle[0], middle[1])
+    if deposit is None:
+        return DIG_SPREAD_M
+    return max(DIG_SPREAD_M, float(deposit.get("radius_m") or 0.0))
+
+
 def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
     """Where it could put this bite: the middle of the place and rings out to the
     spread, keeping only what the machine can reach without standing on it, and
@@ -235,9 +258,13 @@ def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
     it now."""
     ax, az = ctx.at()
     to_middle = math.hypot(middle[0] - ax, middle[1] - az)
+    spread = _spread_m(ctx, middle)
+    radii = [0.0]
+    while radii[-1] + DIG_STEP_M <= spread + 1e-6:
+        radii.append(round(radii[-1] + DIG_STEP_M, 3))
     near, far = [], []
-    for radius in (0.0, DIG_SPREAD_M / 2.0, DIG_SPREAD_M):
-        turns = 1 if radius == 0.0 else 8
+    for radius in radii:
+        turns = 1 if radius == 0.0 else max(8, int(2.0 * math.pi * radius / DIG_STEP_M))
         for i in range(turns):
             turn = i * 2.0 * math.pi / turns
             spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
@@ -282,7 +309,7 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
         # dig, and it gets off the spot before working it.
         return {"back_off_m": DIG_CLEAR_M + 0.3 - off,
                 "why": f"it is {off:.1f} m from {named} and will not dig the ground under itself"}
-    around = _around_m(ctx, middle, DIG_SPREAD_M + 0.5)
+    around = _around_m(ctx, middle, _spread_m(ctx, middle) + 0.5)
     best, high = None, None
     for spot in _spots(ctx, middle):
         here = ctx.survey(spot[0], spot[1]) or {}

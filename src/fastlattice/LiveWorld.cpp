@@ -1013,6 +1013,9 @@ struct LiveWorld::Impl {
         // is going to.
         bool go_after_stop{};
         std::uint64_t told{};
+        // How fast it is swinging round (LiveProgram::turning_deg_s), smoothed
+        // over kYawSmoothS so one step's jitter is not read as a swing.
+        double yaw_deg_s{};
         // Where it stood when the getting-nowhere window began
         // (LiveProgram::stuck_s).
         Vec3 stuck_from{};
@@ -2317,6 +2320,11 @@ struct LiveWorld::Impl {
         } else if (!s.asked.empty() && !p.interrupted) {
             constexpr double kFacedDeg = 6.0;
             constexpr double kNearM = 1.0;
+            // What counts as stopped before it turns, and how long it waits for
+            // that before turning anyway: on a slope it may never come to a
+            // complete stand.
+            constexpr double kStoppedM_S = 0.15;
+            constexpr double kStopMostS = 1.5;
             // The same ask again is the same doing: doing_s and turned_deg run on.
             const auto stay = [&](const char *doing) {
                 if (s.doing != doing) into(doing, s.asked_why);
@@ -2335,17 +2343,42 @@ struct LiveWorld::Impl {
                 while (off > kPi) off -= 2.0 * kPi;
                 while (off < -kPi) off += 2.0 * kPi;
                 const double off_deg = off * 180.0 / kPi;
+                // It stops before it turns on the spot, and again before it goes
+                // on: a machine turning with its wheels opposed has no braking
+                // at all -- the two push against each other and nothing pushes
+                // back along its way -- so one that is still moving coasts while
+                // it spins. Measured on the mine's rover: it sailed 50 degrees
+                // past the mark and then travelled 1.6 m at up to 80 degrees off
+                // its way while it came round, and a metre of that was northward
+                // every trip, which is how a haul over dry ground walked into the
+                // lake. Turning from rest it goes where it is pointed. This is
+                // the same stop-turn-go a machine holding a pose does
+                // (decideSit), which is why that one lands on its mark.
+                const bool needs_turn = std::abs(off_deg) > kFacedDeg &&
+                    !(s.asked == "approaching" && s.doing == "going forward" && std::abs(off_deg) < 3.0 * kFacedDeg);
+                const char *want = off_deg > 0.0 ? "turning left" : "turning right";
+                const bool turning_now = s.doing == "turning left" || s.doing == "turning right";
+                const auto turnToward = [&]() {
+                    into(want, s.asked_why);
+                    p.turn_sign = off_deg > 0.0 ? 1 : -1;
+                    p.turn_least_deg = std::abs(off_deg);
+                };
                 if (s.asked == "approaching" && away <= kNearM) stay("waiting");
-                else if (std::abs(off_deg) > kFacedDeg && !(s.asked == "approaching" && s.doing == "going forward" &&
-                                                            std::abs(off_deg) < 3.0 * kFacedDeg)) {
-                    const char *doing = off_deg > 0.0 ? "turning left" : "turning right";
-                    if (s.doing != doing) {
-                        into(doing, s.asked_why);
-                        p.turn_sign = off_deg > 0.0 ? 1 : -1;
-                        p.turn_least_deg = std::abs(off_deg);
-                    } else {
-                        s.why = s.asked_why;
-                    }
+                else if (s.doing == "stopping") {
+                    // Stopped, or as stopped as it is going to get: from rest it
+                    // turns towards the mark, or goes at it.
+                    if (s.speed_m_s > kStoppedM_S && s.doing_s < kStopMostS) s.why = s.asked_why;
+                    else if (needs_turn) turnToward();
+                    else if (s.asked == "approaching") into("going forward", s.asked_why);
+                    else into("waiting", s.asked_why);
+                } else if (needs_turn && turning_now && s.doing == want) {
+                    s.why = s.asked_why;
+                } else if (needs_turn && s.speed_m_s > kStoppedM_S) {
+                    into("stopping", s.asked_why);
+                } else if (needs_turn) {
+                    turnToward();
+                } else if (turning_now) {
+                    into("stopping", s.asked_why);
                 } else if (s.asked == "approaching") {
                     stay("going forward");
                 } else {
@@ -2625,15 +2658,23 @@ struct LiveWorld::Impl {
                 p.stuck_s += dt_s;
             }
             p.said.stuck_s = p.stuck_s;
+            // How fast it is swinging round: the swing a turn carries on with
+            // after the wheels stop pushing it, which is what aiming its nose
+            // has to allow for.
+            double turned = p.heading_rad - was;
+            while (turned > kPi) turned -= 2.0 * kPi;
+            while (turned < -kPi) turned += 2.0 * kPi;
+            if (dt_s > 0.0) {
+                constexpr double kYawSmoothS = 0.1;
+                const double now = turned * kDegPerRad / dt_s;
+                p.yaw_deg_s += (now - p.yaw_deg_s) * std::min(1.0, dt_s / kYawSmoothS);
+            }
+            p.said.turning_deg_s = p.yaw_deg_s;
             if (!p.said.power) continue;
             p.said.doing_s += dt_s;
             if (!p.said.asked.empty()) p.said.asked_s += dt_s;
-            if (p.said.doing == "turning left" || p.said.doing == "turning right") {
-                double turned = p.heading_rad - was;
-                while (turned > kPi) turned -= 2.0 * kPi;
-                while (turned < -kPi) turned += 2.0 * kPi;
+            if (p.said.doing == "turning left" || p.said.doing == "turning right")
                 p.said.turned_deg += p.turn_sign * turned * kDegPerRad;
-            }
         }
     }
 

@@ -650,7 +650,8 @@ off from its own panel. The one kind so far, "roam":
 - Where it has been told to go somewhere and has got nowhere for 20 s, it backs
   itself out, and after a few tries stops and says it cannot ("When a machine
   cannot get out"). It also takes care not to dig itself in ("Working a place
-  without digging yourself in").
+  without digging yourself in"), and it stops before it turns on the spot
+  ("Following a line instead of weaving off it").
 - It turns until it has turned at least as far as it meant to and nothing is
   in its way, or for 6 s at most.
 - Turned off, it stops on its brakes.
@@ -784,12 +785,16 @@ mine's rover, 2026-09-26):
   2.0 m out: inside what it can reach, outside what it is digging.
 - **It will not dig the ground under itself.** Closer than 1.2 m to the spot and
   it backs off first and says so, rather than digging where its own wheels are.
-- **Each spot is scooped once.** A bite goes into the highest ground of the
-  place it can reach, and only while that ground is still within 30 mm of the
-  ground around: so the working spreads across the place, the way an open pit
-  is worked, and no hole is ever deepened. Biting always at the middle of a
-  place instead sank a shaft 600 mm deep and 1.1 m across in ten minutes, which
-  a machine on 160 mm wheels can only fall into.
+- **Each spot is scooped once, and the working is as wide as the place.** A bite
+  goes into the highest ground of the place the machine can reach, and only while
+  that ground is still within 30 mm of the ground around: so the working spreads
+  across the place, the way an open pit is worked, and no hole is ever deepened.
+  How wide it spreads is the deposit's own width where the place is in one, and
+  half a metre where it is not. Biting always at the middle instead sank a shaft
+  600 mm deep and 1.1 m across in ten minutes, which a machine on 160 mm wheels
+  can only fall into; holding the width to half a metre gave three loads and
+  then nothing, and the machine spent nine tenths of a twenty-minute run on a
+  dig step it could not do.
 - **Worked out is said, not scraped at.** Once every spot it can reach is down
   past that, the tool says the place is worked out and its routine goes on with
   what it has. Scraping the same exhausted spot brought up 3.8 kg, then 2.2,
@@ -802,14 +807,68 @@ Measured over ten minutes of the mine, the same engine both ways:
 
 | | biting its own nose | working the place |
 |---|---|---|
-| loads delivered | 2 | 2 |
-| the working's radius | 2.3 m | 0.6 m |
-| deepest cut | 183 mm | 192 mm |
-| time stuck, unable to move | 342 s | none |
+| loads delivered | 1 | 6 |
+| the working's radius | 1.1 m | 3.3 m |
+| deepest cut | 185 mm | 140 mm |
+| time stuck, unable to move | 62 s | none |
 
-Over twenty minutes it delivered 3 loads, took 33 kg of ore out of the vein's
-400, put 7.1 kg of copper wire on the Workshop's rack, gave up no trip and was
-never once stuck.
+Wider and shallower is the point of it: an open pit a machine drives over,
+rather than a shaft it falls into.
+
+Over twenty minutes it delivered 8 loads, took 69 kg of ore out of the vein's
+400, put 18.2 kg of copper wire on the Workshop's rack, gave up no trip, never
+had to back itself out, and was never once stuck.
+
+### Following a line instead of weaving off it
+
+A machine that turns with a driven wheel each side has no braking while it
+turns: the two wheels push against each other and nothing pushes back along its
+way, so one that starts a turn while it is still moving coasts onward through
+the whole turn. Measured on the mine's rover, told to go from the vein to the
+smelter over dry ground: it spun up to 108 degrees a second, sailed 50 degrees
+past the mark, and then travelled 1.6 m at up to 80 degrees off its way while it
+came round. A metre of that was northward every trip, and after a few trips it
+was standing in the lake's shallows with its water reflex turning it away, which
+is how a haul over dry ground gets nowhere near the ground it was about to
+cross.
+
+So a machine asked to go to a place or to face one **stops before it turns on
+the spot, and stops again before it goes on**. Both stops hold its wheels on
+their brakes, and it turns from rest, where it goes where it is pointed. What
+counts as stopped is a sixth of a metre a second, and it waits at most a second
+and a half for that, because on a slope it may never come to a complete stand.
+This is the same stop-turn-go a machine holding a pose has always done
+(`decideSit`), which is why that one lands on its mark, and the roaming reflexes
+are untouched: getting clear of water or of a hole it is stuck in is still one
+decisive turn at full effort.
+
+Two things tried first and thrown away, both measured:
+
+- **Aiming at where the nose will be** rather than where it is, by the swing it
+  already has. It reads well and it does not work: the doing it goes into brakes
+  the swing it just predicted would carry on, so the machine stopped 35 degrees
+  off the mark and called itself faced.
+- **Easing the turn as it closes**, at six tenths and then three tenths of its
+  effort. At three tenths it could not come round on rough ground at all: it got
+  itself stuck seven times in twenty minutes where it had been twice, and
+  delivered nothing.
+
+What it took, over twenty minutes of the mine each time:
+
+| | before | after |
+|---|---|---|
+| loads delivered | 3 | 8 |
+| copper wire on the Workshop's rack | 7.1 kg | 18.2 kg |
+| time its reflexes had it for water | 288 s | 35 s |
+| times it had to back itself out | 2 | none |
+| time stuck, unable to move | none | none |
+
+The haul was never the whole of it. Nine tenths of the twenty minutes had gone
+on a dig step the machine could not do, because a place half a metre wide gives
+three loads and is then worked out, and a machine on a step it cannot finish
+roams while it waits. A place now spreads as wide as the deposit it is in, and
+the mine's vein is 3 m across.
+
 What holds the load count down is not the digging: 288 s of those 1,200 went on
 its water reflex turning it away on the haul between the vein and the smelter,
 which is the next thing to look at.

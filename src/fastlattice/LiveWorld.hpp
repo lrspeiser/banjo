@@ -755,6 +755,10 @@ struct LiveProgram {
     // and whenever it is not trying to.
     double stuck_s{};
     unsigned stucks{};
+    // How fast it is swinging round, degrees a second, positive the way a left
+    // turn takes it. A machine carries its swing after its wheels stop pushing,
+    // so anything aiming its nose has to aim where the nose will be.
+    double turning_deg_s{};
     // A "sit" program, as the last kept step left it: how far away what it goes
     // to is, across the ground, from its chassis's middle to that body's; which
     // way that is off its nose, its own left counting positive, degrees; where

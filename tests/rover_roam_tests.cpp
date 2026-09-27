@@ -1061,8 +1061,24 @@ void itDoesWhatItIsAskedForAWhile() {
     const Vec3 behind = here.position_m + 3.0 * outward;
     askIt(world, r.program, "facing", 0.0, 5, "the person came to talk to it", &behind);
     said = programOf(world, r.program);
+    // Moving when it was asked, it stops first: turning with its wheels
+    // opposed has no braking, so one that turns while it is still going
+    // coasts off its way while it spins.
+    require(said.doing == "stopping" || said.doing == "turning left" || said.doing == "turning right",
+            "asked to face what is behind it, it stops to turn on the spot: " + said.doing);
+    double stopped_for_s = 0.0;
+    for (int i = 0; i < 3 * 240; ++i) {
+        tick(world);
+        stopped_for_s += kDt;
+        const std::string doing = programOf(world, r.program).doing;
+        if (doing == "turning left" || doing == "turning right") break;
+    }
+    said = programOf(world, r.program);
+    std::cout << "    asked to face a point behind it: it stopped for " << stopped_for_s << " s, then "
+              << said.doing << "\n";
     require(said.doing == "turning left" || said.doing == "turning right",
-            "asked to face what is behind it, it turns on the spot: " + said.doing);
+            "and then turns on the spot: " + said.doing);
+    require(stopped_for_s < 2.5, "without dawdling: " + std::to_string(stopped_for_s) + " s");
     double turned_s = 0.0;
     for (int i = 0; i < 16 * 240; ++i) {
         tick(world);
