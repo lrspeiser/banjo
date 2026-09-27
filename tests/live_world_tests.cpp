@@ -946,7 +946,17 @@ void aSecondBreakDoesNotStopTheClock() {
     // nothing is being worked out, ask. That is what produces the cascade --
     // a pane comes apart, its pieces land, and they want to break too, which is
     // the only way a second break ever turns up while the first is running.
-    const auto live = LiveWorld::open(paneAndBall(3.0));
+    // Ten metres, not three. What this test needs is a CASCADE -- a pane that
+    // comes apart, whose pieces land and want to break in their turn -- and
+    // three metres stopped reliably producing one once a sheet one cell thick
+    // could answer a blow in bending (docs/plate-bending.md): the first break
+    // takes more of the energy and leaves smaller pieces, and a smaller piece
+    // has a higher bar to clear (admitRefracture). Measured over five runs at
+    // three metres it captured a second break 0 to 1 times and failed one run
+    // in three; at ten it captures one every time, with and without bending.
+    // The assertion below is untouched -- it is the scene that has to keep
+    // making the situation the fix exists for.
+    const auto live = LiveWorld::open(paneAndBall(10.0));
     // Foresight off: a cascade of pieces landing on pieces is exactly what it
     // cannot see coming, and this is about what happens when it does not.
     live->foreseeCollisions(0.0);

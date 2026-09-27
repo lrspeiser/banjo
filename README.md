@@ -105,14 +105,17 @@ lands. It makes the bar depend on size: a 40 mm oak cube needs 8.5 m/s, a
 120 mm one only 4.9, because the crack a piece has to open shrinks as the
 square of its size while what it carries shrinks as the cube.
 
-| 100 mm iron ball onto a 300 × 40 × 300 mm glass pane | threshold | result |
+| 100 mm iron ball onto a 300 × 40 × 300 mm glass pane, 20 mm cells | threshold | result |
 |---|---|---|
 | dropped 0.06 m (0.9 m/s at impact) | 4.5 m/s | below the threshold; holds |
 | dropped 1.5 m (5.4 m/s) | 4.5 m/s | above the threshold, but still holds |
-| dropped 10 m (13.9 m/s) | 4.5 m/s | breaks into 78 pieces |
+| dropped 10 m (13.9 m/s) | 4.5 m/s | breaks into 48 pieces |
 
 The test is deliberately generous: passing it means a break is *possible*, not
-certain. The lattice still decides.
+certain. The lattice still decides. Holds and breaks are the claim here; the
+piece count is not, and it depends on the grid — the same blow gives 48 pieces
+at 20 mm cells and 38 at 10 mm. Each of those repeats exactly, which it did not
+before 27 September.
 
 | Before | After |
 |---|---|
@@ -185,18 +188,23 @@ same [Python binding](#use-the-engine-from-a-program) you would.
 | rubber | held | held | held | held | held |
 | glass | held | 6 pieces | 29 pieces | 12 pieces | 12 pieces |
 | ceramic | held | held | held | 29 pieces | 12 pieces |
-| concrete | 44 pieces | 24 pieces | 29 pieces | 16 pieces | 25 pieces |
-| ice | 30 pieces | 16 pieces | 12 pieces | 13 pieces | 12 pieces |
+| concrete | 44 pieces | 26 pieces | 33 pieces | 16 pieces | 25 pieces |
+| ice | 41 pieces | 16 pieces | 12 pieces | 32 pieces | 12 pieces |
 
 Nothing in that table was chosen. Rubber never breaks because its modulus is
 four orders of magnitude below iron's; concrete comes apart at walking pace
 because its tensile strength is 3 MPa; the piece counts stop rising with speed
 because past a point the ball is already as broken as that grid can represent.
-Held and broken are stable — runs of the whole ladder agree on every one of the
-forty cells. **The counts are not.** Most repeat exactly; concrete and ice,
-which come apart into dozens, swing by up to a factor of two between runs. Nor
-do the counts settle as the grid is refined, which is one of the things this
-engine cannot yet claim.
+**And it repeats now.** Five runs of the whole ladder agree on all forty cells,
+piece for piece — including concrete and ice, which come apart into dozens and
+used to swing by up to a factor of two between runs. That was not a property of
+the materials; it was that contacts reached the fracture judgement in the order
+Jolt's worker threads happened to finish, so two equally hard contacts were
+broken apart by whichever thread won ([the world repeating
+itself](docs/plate-bending.md)). What the counts still do not do is settle as
+the grid is refined, which remains one of the things this engine cannot claim.
+The numbers above were measured on 27 September; a count published before that
+was taken without the contact order and will not all match.
 
 | Before | After |
 |---|---|
@@ -263,19 +271,34 @@ counts do not converge; one break is worked out at a time (up to 16 wait in a
 queue); and past about 2,000 bodies the world quietly stops being able to break
 anything.
 
-**Matter one cell thick cannot answer a blow struck flat at it.** A sheet one
-cell thick has every node's neighbourhood in one plane, so the strain the
-engine can state is the stretching of that plane — and hitting a plate flat
-loads it in *bending*, which that strain is blind to. A 20 mm glass plate at
-20 mm cells loses 40 bonds to a blow that takes 902 out of the same plate
-40 mm thick, and never comes apart: what the piece count reports is whether one
-20 mm cell happened to lose its last bond, which is why the same plate breaks
-from 3 m and 7 m and not from 4, 5, 8 or 10. A plate on piers is fine — in-plane
-tension across the span is something a coplanar neighbourhood can see — and so
-is anything two cells thick or more. A term that recovers the curvature from
-the same neighbours is built and tested, and is **switched off**: it fixes this
-case and destabilises a plate that is already breaking.
-[plate-bending.md](docs/plate-bending.md) has the measurements both ways.
+**Matter one cell thick can answer a blow struck flat at it, since
+27 September.** A sheet one cell thick has every node's neighbourhood in one
+plane, so the strain the engine could state was the stretching of that plane —
+and hitting a plate flat loads it in *bending*, which that strain was blind to.
+A 20 mm glass plate at 20 mm cells lost 40 bonds to a blow that took 902 out of
+the same plate 40 mm thick and never came apart; what the piece count reported
+was whether one 20 mm cell had happened to lose its last bond, which is why the
+same plate broke from 3 m and 7 m and not from 10 — and "broke" meant a 0.02 kg
+chip off 4.5 kg. The curvature is recoverable from the same neighbours — how far
+each has moved *out* of the plane — and a plate of thickness h strains its
+outermost fibre by half that thickness times the curvature. **From 6 m up that
+plate now comes apart properly, into 2, 3, 4, 4 and 5 pieces from 6 to 10 m:**
+more pieces for a harder blow, which is the thing the term was written for. A
+body two cells thick never reads bending at any node, because its neighbours
+span three directions and it measures its own; what changes for thicker matter
+is only that a *fragment* of it can end up one cell thick, and then this applies
+to the fragment.
+
+**Below 6 m it is still not right, and the rest of the ladder is worth knowing
+before you quote a piece count.** Dropped 3 m or 5 m the plate stays whole,
+while 4 m between them gives 16 pieces — and that is not one blow: the ball
+first turns round with the plate intact and shatters it 0.8 s later, coming back
+down on it. Above 10 m the counts fall again, to 4 and 3, which repeats and is
+not explained. And a plate *bridged between piers* — which was never blind,
+since tension across a span is in the plane — now disintegrates almost
+completely where it used to come apart into tens of pieces.
+[plate-bending.md](docs/plate-bending.md) has all of it measured, and
+`python scripts/plate-ladder.py` is the ladder itself, to run.
 
 ---
 
@@ -1101,11 +1124,27 @@ Handling: two hands, grip and use points.
 
 **Known defects.**
 
-- **CI on `main` is red**, and has been since the `agent/fracture-truth` merge
-  on 26 September. Two tests in `tests/workshop_bench_engine_tests.py` fail —
-  both about a kettle holding water and heat. The C++ suites are not what is
-  failing; it is that one Python step. The nightly long-physics job is a
-  separate, older failure: it has failed every night since 14 September.
+- **The material range no longer matches its recorded baseline.**
+  `scripts/material_qa.py` compares 96 impact cases against
+  `docs/evidence/material-qa-baseline.json`; 81 reproduce it exactly, and 15 do
+  not — all twelve ice cases and ceramic at 30 m/s. The baseline was recorded on
+  19 September from a checkout its own provenance marks as dirty, so it is the
+  baseline that is stale rather than the engine that is wrong, but until someone
+  re-records it that step fails. It is not plate bending: the same 15 cases
+  differ with that term on and off.
+  CI has never reported this, and still does not: it lives in a step that fails
+  earlier and then skips the eight steps after it. Until 28 September what failed
+  first was two kettle tests in `tests/workshop_bench_engine_tests.py`; those are
+  fixed, and the same step now fails on browser page journeys
+  (`tests/world_page_journey_tests.py`, `tests/workshop_browser_tests.py` — five
+  failures and four errors of 79: nothing drawn to its design, a machine panel
+  that does not open, a room that does not start again, an install that says the
+  world changed after preview). So the material range, the mechanics regression,
+  the physics trial contracts and the headless fracture handoff are all still
+  unrun by CI. Run them by hand until that step is green.
+- **The nightly long-physics job has failed every night since 14 September.**
+  It runs the seven tests CI's own gate excludes (`-LE "long|performance"`), so
+  a green CI says nothing about them.
 - Using "Manufacture parts" locks the main world: once starting stock is set up
   on `/fabrication?scene=world`, the server treats the world as a funded room
   and refuses the chat, heating, grabbing, throwing, sweeping and latch release.
