@@ -19,6 +19,8 @@ import { BINDINGS, isKey, isButton, keyOf, controls, holdPoint, windUpPoint,
          windUpReached, throwStroke, placeStroke, throwable, handHelp, AimArc,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
+import { cellSurface } from "/cellmesh.js";
+import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 
@@ -193,6 +195,19 @@ const canvas = $("stage");
 canvas.addEventListener("webglcontextlost", () => noteError("the WebGL context was lost"));
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// Lit the way a camera sees it rather than the way the numbers add up. With no
+// tone curve a bright surface clips to flat white and takes its shape with it,
+// which is why polished iron read as a grey cut-out; with one, the highlight
+// rolls off and the shape survives it.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+// The sun casts a shadow, and nothing else does. A second casting lamp doubles
+// what every frame draws, and a room lit from four sides has no shadow anybody
+// believes anyway. What this buys is the cue the room never had: a thing
+// standing on the ground looks like it is ON the ground, and a thing that is
+// not quite touching looks like that too.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070b0d);
 scene.fog = new THREE.Fog(0x0a1116, 18, 55);
@@ -229,19 +244,166 @@ camera.position.set(0, EYE, 2.6);
 // Lit so that a dark rubber ball on a dark floor is still an object. The sky
 // light does most of it, because a room lit by one lamp has half of every
 // object in shadow and the shape of a thing is what you are trying to see.
-const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 1.5);
+//
+// The sky's share of that is smaller than it was, because the sky is now also
+// something to REFLECT (skyEnvironment) and the two would otherwise be counted
+// twice. The sun's is larger, because it is the one that casts and a shadow
+// only reads as a shadow when the light making it leads.
+const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 0.85);
 scene.add(sky);
-const key = new THREE.DirectionalLight(0xfff2dd, 1.6);
+const key = new THREE.DirectionalLight(0xfff2dd, 2.0);
 key.position.set(4, 8, 5);
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x8cc0ff, 0.6);
+// A directional light shines from its position towards its target, so the
+// target has to be in the scene for the light to be aimed at all.
+scene.add(key.target);
+const rim = new THREE.DirectionalLight(0x8cc0ff, 0.45);
 rim.position.set(-6, 4, -5);
 scene.add(rim);
-const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+const fill = new THREE.DirectionalLight(0xffffff, 0.22);
 fill.position.set(0, 2, 8);
 scene.add(fill);
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
+
+// The sun's shadow, and why it follows the person.
+//
+// One lamp over a sixty-metre valley spreads its shadow map so thin that a
+// cart's wheel and the daylight under it land in the same texel, and the whole
+// thing turns to mud. So the shadow is drawn for a box a few strides across
+// that is kept over whoever is looking: what is near enough to matter is
+// sharp, and what is beyond the box is drawn unshadowed, which at that
+// distance nobody reads as missing.
+const SHADOW_REACH_M = 15;     // half the box, each side of the person
+const SHADOW_LAMP_M = 45;      // how far off the lamp stands along the sun
+const SHADOW_AHEAD_M = 5;      // the box set this far ahead of the view
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -SHADOW_REACH_M;
+key.shadow.camera.right = SHADOW_REACH_M;
+key.shadow.camera.top = SHADOW_REACH_M;
+key.shadow.camera.bottom = -SHADOW_REACH_M;
+key.shadow.camera.near = 1;
+key.shadow.camera.far = SHADOW_LAMP_M + 55;
+// Acne against peter-panning. The bias moves the depth comparison and the
+// normal bias moves the sample along the surface's own normal; a cell wall
+// forty millimetres thick needs the second one or it stripes itself in its own
+// shadow, and too much of the first lifts every shadow off its object's feet.
+key.shadow.bias = -0.0004;
+key.shadow.normalBias = 0.03;
+key.shadow.camera.updateProjectionMatrix();
+
+const SUN_TOWARD = new THREE.Vector3(0, 1, 0);
+const SUN_OVER = new THREE.Vector3(), SUN_LEFT = new THREE.Vector3();
+const SUN_FRAME = new THREE.Matrix4();
+const SUN_RIGHT = new THREE.Vector3(), SUN_UP = new THREE.Vector3();
+const ORIGIN = new THREE.Vector3(), STRAIGHT_UP = new THREE.Vector3(0, 1, 0);
+const SIDEWAYS = new THREE.Vector3(0, 0, 1);
+
+function followSun() {
+  // Whoever moved the lamp last says where the sun is: the day (lightFromSun),
+  // an expedition (gameplay.js), or the room's own default. All of them mean
+  // its position as a DIRECTION from the middle of the room, so that is how it
+  // is read -- and then the lamp is moved to stand over the person, because a
+  // shadow map has to be spent where somebody is looking.
+  if (!key.position.equals(SUN_LEFT) && key.position.lengthSq() > 1e-9)
+    SUN_TOWARD.copy(key.position).normalize();
+  // Under the horizon it lights nothing, and a shadow map drawn for a lamp of
+  // no brightness is a sixth of a frame spent on nothing at all.
+  key.castShadow = key.intensity > 0.02 && SUN_TOWARD.y > 0.04;
+  if (!key.castShadow) return;
+  SUN_OVER.copy(camera.position).addScaledVector(forwardVector().setY(0).normalize(),
+                                                 SHADOW_AHEAD_M);
+  // Snapped to the shadow map's own grid. A box that slides with the person by
+  // less than a texel makes every shadow edge crawl, which reads as the room
+  // being unsteady rather than as the person walking; stepped a whole texel at
+  // a time it holds still.
+  SUN_FRAME.lookAt(SUN_TOWARD, ORIGIN,
+                   Math.abs(SUN_TOWARD.y) > 0.99 ? SIDEWAYS : STRAIGHT_UP);
+  SUN_RIGHT.setFromMatrixColumn(SUN_FRAME, 0);
+  SUN_UP.setFromMatrixColumn(SUN_FRAME, 1);
+  const texel = 2 * SHADOW_REACH_M / key.shadow.mapSize.x;
+  const across = Math.round(SUN_OVER.dot(SUN_RIGHT) / texel) * texel;
+  const up = Math.round(SUN_OVER.dot(SUN_UP) / texel) * texel;
+  const along = SUN_OVER.dot(SUN_TOWARD);
+  SUN_OVER.copy(ORIGIN).addScaledVector(SUN_RIGHT, across)
+          .addScaledVector(SUN_UP, up).addScaledVector(SUN_TOWARD, along);
+  key.position.copy(SUN_OVER).addScaledVector(SUN_TOWARD, SHADOW_LAMP_M);
+  SUN_LEFT.copy(key.position);
+  key.target.position.copy(SUN_OVER);
+  key.target.updateMatrixWorld();
+}
+
+// Something for a polished surface to reflect.
+//
+// Metalness has no meaning without an environment. A mirror with nothing
+// around it is black, which is why iron at 0.92 metal read as a flat grey
+// cut-out and glass read as a tinted sheet: they were reflecting a room that
+// was not there. This gives them the cheapest honest one there is -- the
+// room's own sky over the room's own ground, blurred to nothing but a gradient
+// -- and rebuilds it only when the sky changes colour, which under a day is a
+// few times a minute and otherwise never.
+const SKY_ACROSS = 32;
+const skyPixels = new Uint8Array(SKY_ACROSS * (SKY_ACROSS / 2) * 4);
+const skySource = new THREE.DataTexture(skyPixels, SKY_ACROSS, SKY_ACROSS / 2);
+skySource.mapping = THREE.EquirectangularReflectionMapping;
+skySource.colorSpace = THREE.SRGBColorSpace;
+// A DataTexture is uploaded without a flip, so its first row is what the
+// sampler reads at v = 0 -- and three.js puts v = 0 at the BOTTOM of an
+// equirectangular sky (equirectUv: v = asin(dir.y)/PI + 0.5). Row zero is
+// therefore straight down, and the last row is straight up.
+skySource.flipY = false;
+let skyBlur = null;
+let skyMade = "";
+const skyAbove = new THREE.Color(), skyBelow = new THREE.Color();
+const skyBand = new THREE.Color(), skyRGB = { r: 0, g: 0, b: 0 };
+
+function skyEnvironment() {
+  // Built from what the room is lit BY, and not from what is drawn behind it.
+  // A room without a day has a near-black backdrop and a bright sky light over
+  // it, and reflecting the backdrop would tell every polished surface in the
+  // place that it was standing in the dark -- which is exactly the flat grey
+  // this was meant to fix. The hemisphere light is the room's own statement
+  // about what is overhead and what is underfoot, so that is what it reflects.
+  const lit = Math.min(1, sky.intensity);
+  const mark = `${sky.color.getHex()}:${GROUND_COLOURS[1].getHex()}:${lit.toFixed(2)}`;
+  if (mark === skyMade) return;
+  skyMade = mark;
+  skyAbove.copy(sky.color).multiplyScalar(lit);
+  // Underfoot is the ground the room is actually standing on, dimmed the way
+  // the sky's own downward colour is: bare soil throws back soil.
+  skyBelow.copy(GROUND_COLOURS[1]).lerp(sky.groundColor, 0.45).multiplyScalar(lit);
+  const rows = SKY_ACROSS / 2;
+  for (let y = 0; y < rows; ++y) {
+    // Row zero is straight down and the last row straight up (see flipY).
+    const up = y / (rows - 1);
+    skyBand.copy(skyBelow).lerp(skyAbove, up * up * (3 - 2 * up));
+    // Written as the bytes of an sRGB texture, which is what it is tagged as.
+    // Handing it the working colour space's own numbers would bake the sky in
+    // about half as bright as it looks.
+    skyBand.getRGB(skyRGB, THREE.SRGBColorSpace);
+    for (let x = 0; x < SKY_ACROSS; ++x) {
+      const at = (y * SKY_ACROSS + x) * 4;
+      skyPixels[at] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.r)));
+      skyPixels[at + 1] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.g)));
+      skyPixels[at + 2] = Math.round(255 * Math.min(1, Math.max(0, skyRGB.b)));
+      skyPixels[at + 3] = 255;
+    }
+  }
+  skySource.needsUpdate = true;
+  const made = skyPMREM().fromEquirectangular(skySource);
+  if (skyBlur) skyBlur.dispose();
+  skyBlur = made;
+  scene.environment = made.texture;
+  // Enough to put something in a reflection and not so much that it washes the
+  // lamps out: the sun and the sky still say where the light comes from.
+  scene.environmentIntensity = 0.6;
+}
+
+let pmrem = null;
+function skyPMREM() {
+  if (!pmrem) pmrem = new THREE.PMREMGenerator(renderer);
+  return pmrem;
+}
 // The sky's light at night, and the rim's: dim, but enough to see what is in
 // the room by.
 const SKY_NIGHT = 0.4, RIM_NIGHT = 0.3;
@@ -356,6 +518,7 @@ const floor = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x1b2429, roughness: 0.95, metalness: 0.0 }));
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = -0.002;   // just under the grid, so the lines stay visible
+floor.receiveShadow = true;
 scene.add(floor);
 
 // ---------------------------------------------------------------------------
@@ -526,8 +689,12 @@ function drawTerrain(block) {
   geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
-  ground.mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.96, metalness: 0.0 }));
+  ground.mesh = new THREE.Mesh(geometry, dress(new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.96, metalness: 0.0 }), "ground"));
+  // The ground catches what the room drops on it, and casts too: a valley
+  // whose own hills throw no shade at a low sun is a valley with no shape.
+  ground.mesh.castShadow = true;
+  ground.mesh.receiveShadow = true;
   scene.add(ground.mesh);
 
   // The water: the same points, lifted to the surface where there is water
@@ -541,6 +708,10 @@ function drawTerrain(block) {
   ground.water = new THREE.Mesh(wet, new THREE.MeshStandardMaterial({
     vertexColors: true, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05,
     depthWrite: false }));
+  // Water catches a shadow and throws none: what a surface does to the light
+  // going through it is refraction, and drawing it as a shadow would be a
+  // picture of something that is not happening.
+  ground.water.receiveShadow = true;
   ground.water.renderOrder = 2;
   scene.add(ground.water);
 
@@ -907,15 +1078,168 @@ const MATERIAL_LOOK = {
 //
 // Glass is glass. Two shards off the same pane want the same material object,
 // and then they also batch instead of forcing a state change between them.
+//
+// Two of them, in fact. A body drawn as the hull of its cells carries its
+// corner shading in the mesh itself (cellmesh.js), and a material that reads
+// that attribute is not the same material as one that does not -- so glass
+// drawn as a hull and glass drawn as a box are two shared materials rather
+// than one, and each still batches with its own kind.
 const MATERIALS = new Map();
-function look(material) {
-  const had = MATERIALS.get(material);
+const SHADED = new Map();
+function look(material, shaded = false) {
+  const kept = shaded ? SHADED : MATERIALS;
+  const had = kept.get(material);
   if (had) return had;
   const m = MATERIAL_LOOK[material] || { color: 0x9aa6ae, rough: 0.6, metal: 0.1 };
   const options = { color: m.color, roughness: m.rough, metalness: m.metal };
   if (m.clear) { options.transparent = true; options.opacity = 1 - m.clear * 0.55; }
-  const made = new THREE.MeshStandardMaterial(options);
-  MATERIALS.set(material, made);
+  if (shaded) options.vertexColors = true;
+  // Dressed with the substance's own grain (surfaces.js). It is the shared
+  // material that is dressed, not the body, so every oak thing in the room
+  // still batches together and the grain costs one shader for the lot.
+  const made = dress(new THREE.MeshStandardMaterial(options), material);
+  kept.set(material, made);
+  return made;
+}
+
+// The shape a thing was DRAWN TO, as against the cells it is made of.
+//
+// A room describes a thing as the boxes somebody laid out -- each with a size,
+// a place, a turn and a `join` saying which of them are one thing -- and the
+// engine compiles those onto its grid and collides the cells. The cells are the
+// matter; the boxes are the design; and the difference between them is the
+// voxelisation, up to sqrt(3)/2 of a cell, which is 34.6 mm at the forty the
+// rooms use. A raked strut is the case that shows it: a board set at an angle
+// becomes a staircase of cells, and the staircase is what the page drew.
+//
+// So a thing that is still WHOLE is drawn as the shape it was drawn to. A thing
+// that has broken is drawn from its cells, because the moment it comes apart
+// the boxes stop describing it -- which is the same rule the hull already
+// follows and the reason the hull is still there.
+//
+// NOTHING HERE IS A CLAIM ABOUT THE MATTER. The room says what it says, the
+// engine collides what it collides, and the drawn shape is checked against the
+// cells before it is used: if it does not sit where the matter sits, to within
+// a cell, it is not drawn and the cells are.
+const OUTLINE_SLACK_CELLS = 1.6;
+
+function rememberOutlines(spec) {
+  world.outlines = new Map();
+  const grouped = new Map();
+  for (const row of (spec && spec.bodies) || []) {
+    if (!row || String(row.shape || "box") !== "box") continue;
+    if (!Array.isArray(row.size_mm) || !Array.isArray(row.center_mm)) continue;
+    if (!row.size_mm.every(Number.isFinite) || !row.center_mm.every(Number.isFinite)) continue;
+    const of = String(row.join || row.name || "");
+    if (!of) continue;
+    let held = grouped.get(of);
+    if (!held) grouped.set(of, held = []);
+    held.push(row);
+  }
+  for (const [name, rows] of grouped) {
+    // Where the thing's middle is, weighted by how much of it each box is --
+    // the engine reports a body about its centre of mass, and a group of one
+    // material has its centre of mass where its volume is.
+    let bulk = 0, mx = 0, my = 0, mz = 0;
+    for (const row of rows) {
+      const v = row.size_mm[0] * row.size_mm[1] * row.size_mm[2];
+      bulk += v;
+      mx += v * row.center_mm[0]; my += v * row.center_mm[1]; mz += v * row.center_mm[2];
+    }
+    if (!(bulk > 0)) continue;
+    const mid = [mx / bulk / 1000, my / bulk / 1000, mz / bulk / 1000];
+    const parts = rows.map((row) => {
+      const turn = new THREE.Quaternion();
+      const spin = Array.isArray(row.rotation_deg) ? row.rotation_deg : [0, 0, 0];
+      // The room turns a box z first (Rx.Ry.Rz), which is what three.js means
+      // by an XYZ euler. If it were not, the shape would sit askew on its own
+      // matter and the check below would refuse to draw it.
+      turn.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(spin[0] || 0),
+                                        THREE.MathUtils.degToRad(spin[1] || 0),
+                                        THREE.MathUtils.degToRad(spin[2] || 0), "XYZ"));
+      return { shape: "box",
+               dimensions_m: row.size_mm.map((v) => v / 1000),
+               center_local_m: [row.center_mm[0] / 1000 - mid[0],
+                                row.center_mm[1] / 1000 - mid[1],
+                                row.center_mm[2] / 1000 - mid[2]],
+               rotation_wxyz: [turn.w, turn.x, turn.y, turn.z],
+               material: row.material };
+    });
+    if (parts.length > 64) continue;   // preciseGeometry will not take more
+    world.outlines.set(name, { parts, cells: null,
+                               mixed: new Set(parts.map((p) => p.material)).size > 1 });
+  }
+}
+
+// Does the shape it was drawn to sit where its matter is? The cells' box and
+// the design's box, in the body's own frame, agreeing to within a cell and a
+// half at both ends of every axis. This is what catches a thing that has lost
+// matter, a frame worked out wrongly, and a turn read the wrong way round --
+// all three of which draw perfectly well and are all three wrong.
+function sitsOnItsMatter(parts, cells, h) {
+  const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+  for (const at of cells)
+    for (let d = 0; d < 3; ++d) {
+      if (at[d] - h / 2 < low[d]) low[d] = at[d] - h / 2;
+      if (at[d] + h / 2 > high[d]) high[d] = at[d] + h / 2;
+    }
+  const box = new THREE.Box3();
+  const corner = new THREE.Vector3(), turn = new THREE.Quaternion(), matrix = new THREE.Matrix4();
+  const at = new THREE.Vector3(), size = new THREE.Vector3(1, 1, 1);
+  for (const part of parts) {
+    const q = part.rotation_wxyz;
+    turn.set(q[1], q[2], q[3], q[0]).normalize();
+    matrix.compose(at.fromArray(part.center_local_m), turn, size);
+    const d = part.dimensions_m;
+    for (let c = 0; c < 8; ++c) {
+      corner.set((c & 1 ? 0.5 : -0.5) * d[0], (c & 2 ? 0.5 : -0.5) * d[1],
+                 (c & 4 ? 0.5 : -0.5) * d[2]).applyMatrix4(matrix);
+      box.expandByPoint(corner);
+    }
+  }
+  const slack = OUTLINE_SLACK_CELLS * h;
+  const ends = [[box.min.x, box.min.y, box.min.z], [box.max.x, box.max.y, box.max.z]];
+  for (let d = 0; d < 3; ++d)
+    if (Math.abs(ends[0][d] - low[d]) > slack || Math.abs(ends[1][d] - high[d]) > slack)
+      return false;
+  return true;
+}
+
+// The shape this body should be drawn to, or nothing when it should be drawn
+// from its cells.
+function outlineFor(body) {
+  const held = world.outlines && world.outlines.get(body.name);
+  if (!held) return null;
+  const cells = body.cells_local_m;
+  // The first sight of it is what "whole" means; losing matter after that is
+  // what breaking looks like from here.
+  if (held.cells === null) held.cells = cells.length;
+  if (cells.length < held.cells) return null;
+  return sitsOnItsMatter(held.parts, cells, world.cellSize) ? held : null;
+}
+
+// What one body is drawn with: the shared material of its substance, or, when
+// the Workshop gave it a finish, a material wearing that finish.
+//
+// Kept by the FINISH rather than by the body, so that everything wearing the
+// same one shares a material -- a skinned pane that shatters into seventy
+// shards is still one material and one draw call, and a room does not compile
+// a shader in the middle of a break.
+const SKINNED = new Map();
+function lookFor(name, material, shaded = false) {
+  const skin = world.skins && world.skins.get(name);
+  if (!skin) return look(material, shaded);
+  const key = `${material}|${shaded ? 1 : 0}|${skin.color || ""}`
+    + `|${skin.roughness ?? ""}|${skin.metalness ?? ""}`;
+  const had = SKINNED.get(key);
+  if (had) return had;
+  const made = dressedClone(look(material, shaded));
+  // A colour the bench let through that this page cannot read is not worth
+  // losing the thing over: it keeps its material's own.
+  if (skin.color) { try { made.color.set(skin.color); } catch { /* keep its own */ } }
+  if (typeof skin.roughness === "number") made.roughness = skin.roughness;
+  if (typeof skin.metalness === "number") made.metalness = skin.metalness;
+  SKINNED.set(key, made);
   return made;
 }
 
@@ -1044,11 +1368,19 @@ function buildMesh(body) {
     const parts = body.rigid_parts_local;
     if (!Array.isArray(parts) || !parts.length || parts.length > 64)
       throw new Error("Precise rigid geometry is missing; refusing to draw a substitute bounding box.");
-    const mixed = new Set(parts.map(part => part.material || body.material)).size > 1;
-    let material = look(body.material);
+    // A thing of several materials draws each part in the colour of what that
+    // part is made of -- an iron axle through oak wheels shows as that. A
+    // FINISH that names a colour overrules it and paints the whole thing:
+    // somebody has said what this machine looks like and meant all of it. A
+    // finish that says only how polished it is leaves every part the colour of
+    // its own material and changes the shine.
+    const finish = world.skins && world.skins.get(body.name);
+    const mixed = new Set(parts.map(part => part.material || body.material)).size > 1
+      && !(finish && finish.color);
+    let material = lookFor(body.name, body.material);
     if (mixed) {
       // Its own, so colouring its parts touches no other body of that stuff.
-      material = material.clone();
+      material = dressedClone(material);
       material.vertexColors = true;
       material.color.set(0xffffff);
     }
@@ -1063,9 +1395,40 @@ function buildMesh(body) {
   // asking, then throw both away for anything drawn from its cells -- which is
   // every piece of everything that ever breaks.
   if (Array.isArray(body.cells_local_m) && body.cells_local_m.length) {
-    // Drawn from its cells: one instanced cube per cell, carried by the body's
-    // own pose, so it stays one pose on the wire and one draw call on screen.
-    const cloud = new THREE.InstancedMesh(cellCube(), look(body.material),
+    // Drawn from its cells -- as the outside surface of them where that can be
+    // built honestly (cellmesh.js), and as cubes where it cannot. Either way it
+    // is one mesh carried by the body's own pose, so it stays one pose on the
+    // wire and one draw call on screen.
+    //
+    // The surface is the same matter: it stands on the cell boundaries the
+    // engine is colliding, it is not smoothed, and where the mesher will not
+    // vouch for it the cubes come back, which are always right.
+    // Drawn to the shape it was drawn to, while it still is that shape.
+    const drawn = outlineFor(body);
+    if (drawn) {
+      try {
+        const mesh = new THREE.Mesh(preciseGeometry(drawn.parts, body.material, drawn.mixed),
+                                    lookFor(body.name, body.material));
+        mesh.userData.drawnToDesign = true;
+        mesh.userData.hullCells = body.cells_local_m.length;
+        return mesh;
+      } catch { /* not a shape this can draw: its cells, then */ }
+    }
+    const hull = cellSurface(body.cells_local_m, world.cellSize);
+    if (hull) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(hull.positions, 3));
+      geometry.setAttribute("normal", new THREE.Float32BufferAttribute(hull.normals, 3));
+      geometry.setAttribute("color", new THREE.Float32BufferAttribute(hull.shades, 3));
+      const hulled = new THREE.Mesh(geometry, lookFor(body.name, body.material, true));
+      hulled.userData.shaded = true;
+      hulled.userData.hullQuads = hull.quads;
+      hulled.userData.hullFaces = hull.faces;
+      hulled.userData.hullCells = body.cells_local_m.length;
+      hulled.userData.hullBent = !!hull.bent;
+      return hulled;
+    }
+    const cloud = new THREE.InstancedMesh(cellCube(), lookFor(body.name, body.material),
                                           body.cells_local_m.length);
     for (let i = 0; i < body.cells_local_m.length; ++i) {
       const c = body.cells_local_m[i];
@@ -1085,7 +1448,7 @@ function buildMesh(body) {
     : new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4),
                             dented ? 12 : 1, dented ? 12 : 1, dented ? 12 : 1);
   if (dented) pressDent(geometry, body);
-  return new THREE.Mesh(geometry, look(body.material));
+  return new THREE.Mesh(geometry, lookFor(body.name, body.material));
 }
 
 // Take a mesh out of the scene and give back what only it was using.
@@ -1140,6 +1503,10 @@ function draw(state) {
     if (!held || dentChanged || reshaped || (body.cells_local_m && !held.fromCells) || (body.mechanical_model === "precise-rigid-v1" && !held.fromPrecise)) {
       if (held) forget(held.mesh);
       const mesh = buildMesh(body);
+      // Everything the engine is carrying casts and catches the sun. This is
+      // the one place a body's mesh is made, so it is the one place to say so.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       scene.add(mesh);
       held = { mesh, fromPrecise: body.mechanical_model === "precise-rigid-v1", fromCells: !!(body.cells_local_m && body.cells_local_m.length),
                dentMm: body.dent_mm || 0 };
@@ -3783,7 +4150,23 @@ addEventListener("keydown", (e) => {
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
   // Esc while placing: the copy goes, and the thing stays in the hand.
-  if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
+  // Esc while a throw is aimed is how you change your mind: wound up, it comes
+  // down and stays in the hand; otherwise it is put back down where the ghost
+  // shows. Never a throw -- there is no key that throws by accident.
+  //
+  // It goes AHEAD of stopping a placement, because a throwable thing in the
+  // hand always has a placing ghost up the moment it is picked up: Esc would
+  // otherwise only ever dismiss the ghost, and a second Esc would be needed to
+  // put the thing back, which is not what one key meaning "never mind" does.
+  if (e.code === "Escape" && world.held?.throwable
+      && ["ready", "preparing", "blocked"].includes(world.use.mode)) {
+    if (world.use.mode === "preparing") cancelWindUp();
+    else {
+      if (world.placing) stopPlacing(true);
+      intend(() => putDown(false));
+    }
+  }
+  else if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
   // Esc closes a machine's panel when nothing else is using it -- and not
   // while the mouse is looking round, where Esc gives the mouse back first.
   else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
@@ -3905,19 +4288,50 @@ function primaryAction(name) {
   return offered.find((a) => a.primary) || offered[0] || { label: "Inspect", steps: [{ do: "inspect" }] };
 }
 
+// Whether a thing's own primary action does nothing but set it down. The one
+// step called "place" is the shape pressPrimary already knew, because that is
+// what it hands to placeHere; now it is also the only action a throw is allowed
+// to go in front of. Nothing offered at all counts as nothing in the way.
+function wouldOnlySetItDown(name) {
+  if (!actionsFor(name).length) return true;
+  const program = primaryAction(name);
+  return program.steps?.length === 1 && program.steps[0].do === "place";
+}
+
 function pressPrimary() {
   if (!world.session) return false;
   if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
   const name = world.held?.name || world.aim?.name;
-  if (name && actionsFor(name).length) {
+  // A throw takes the button ahead of the held thing's OWN action, but only
+  // when that action does nothing but set it down (the owner, 2026-09-26).
+  // Every block in the valley has "Set it down" on it, so clicking used to put
+  // the block at your feet and the aim arc could never throw it at all.
+  // Anything with a real use in the hand keeps the button -- the mace still
+  // swings, a tool still works, a bow still draws -- and setting down is still
+  // on E, in the side view, and now on Esc.
+  const aimingAThrow = !!world.held && world.held.throwable && name === world.held.name
+    && ["ready", "blocked"].includes(world.use.mode) && wouldOnlySetItDown(name);
+  if (!aimingAThrow && name && actionsFor(name).length) {
     const program = primaryAction(name);
     if (world.held && program.steps?.length === 1 && program.steps[0].do === "place") intend(placeHere);
     else runAction(name, 0, true);
     return true;
   }
-  if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) startWindUp();
+  if (world.held?.throwable && ["ready", "blocked"].includes(world.use.mode)) {
+    // Refused before the wind-up only when the hand cannot make the throw at
+    // all: winding up something you cannot throw spends the wind-up and tells
+    // you nothing. Pointing somewhere it would not land is NOT refused here --
+    // the wind-up is half of how a throw is aimed, and the ring moves further
+    // out as it fills, so the way to reach a far target is to hold on.
+    const seen = world.use.preview;
+    if (seen && !seen.possible) {
+      lastAction(seen.why || `${titled(world.held.name)} cannot be thrown from here.`, "refused");
+      return true;
+    }
+    startWindUp();
+  }
   else if (world.held?.bow && world.use.mode === "bow-ready") intend("draw");
   else if (world.held?.pick) tools.press();
   else if (name) runAction(name, 0, true);
@@ -4692,9 +5106,9 @@ function startWindUp() {
   showUse();
 }
 
-function cancelWindUp() {
+function cancelWindUp(said) {
   Object.assign(world.use, { mode: "ready", asked: 0 });
-  lastAction(`Lowered ${world.use.name}.`);
+  lastAction(said || `Lowered ${world.use.name}.`, said ? "refused" : "did");
   showUse();
 }
 
@@ -4702,6 +5116,17 @@ async function letFly() {
   const use = world.use;
   const entry = world.held && world.bodies.get(world.held.name);
   if (!entry || use.mode !== "preparing") return;
+  // Grey means no. A throw leaves the hand only while the room can see it come
+  // down where the crosshair is asking for; letting go on grey lowers it and
+  // says why, and it stays in the hand. That is the whole of the aiming: move
+  // the ring onto what you want and it goes green.
+  if (!use.preview || !use.preview.onTarget) {
+    cancelWindUp(use.preview && !use.preview.possible && use.preview.why
+      ? use.preview.why
+      : "It would not come down where you are pointing, so it was not thrown."
+        + " Move the ring onto what you want, or hold on longer.");
+    return;
+  }
   const grip = use.grip || entry.mesh.position.clone();
   const reached = use.reached || 0;
   // The stroke the arc on screen was drawn from, if it is the one just shown;
@@ -4722,8 +5147,13 @@ async function letFly() {
 
 // Put it down: lowered by the same hand onto what is under it, and let go of
 // when it gets there. A carried thing is set down as it always was.
-async function putDown() {
-  if (placementEligible()) { await placeHere(); return; }
+async function putDown(placing = true) {
+  // `placing` false lowers it onto what is under it and lets go there, without
+  // going through a placement. Esc uses that: a placement can be refused for
+  // want of a clear spot -- "no clear receiving point or ground in front" --
+  // and a key that means "never mind" must not be something the room can turn
+  // down and leave the thing still in your hand.
+  if (placing && placementEligible()) { await placeHere(); return; }
   const held = world.held;
   if (!held) return;
   if (held.pick) {
@@ -5139,13 +5569,42 @@ function letGoOf(hand) {
   showUse();
 }
 
+// Where the crosshair is asking for: the point on whatever it is on, or the
+// ground where it meets the ground. Nothing when it is on the sky.
+function askedFor() {
+  if (world.aim && world.aim.point_m) return world.aim.point_m;
+  return world.groundAim || null;
+}
+
+// How near the landing has to be to what is asked for to count as on target:
+// half a metre close to, and a twentieth of the way out further off, because a
+// metre at twenty paces is the same aim as half a metre at ten.
+const ON_TARGET_M = 0.5, ON_TARGET_SHARE = 0.05;
+
+// Whether the flight the engine foresees comes down where the crosshair is
+// asking for. Hitting the very thing under the crosshair counts wherever on it
+// the throw lands -- if you meant the crate and the crate is what it hits, you
+// hit what you meant.
+function landsWhereAsked(flight) {
+  if (!flight || !flight.hit || !flight.hit_point_m) return false;
+  const asked = askedFor();
+  if (!asked) return false;                     // pointing at the sky
+  if (world.aim && world.aim.name && flight.hit_name === world.aim.name) return true;
+  const away = Math.hypot(flight.hit_point_m[0] - asked[0], flight.hit_point_m[1] - asked[1],
+                          flight.hit_point_m[2] - asked[2]);
+  const reach = Math.hypot(asked[0] - camera.position.x, asked[1] - camera.position.y,
+                           asked[2] - camera.position.z);
+  return away <= ON_TARGET_M + ON_TARGET_SHARE * reach;
+}
+
 // Where the throw would go if it were let go of now: the engine's own preview
 // of this hand on this thing, a few times a second, redrawn as the view and the
 // wind-up change. It moves nothing.
 let previewBusy = false, previewAt = 0;
 async function previewThrow() {
   const use = world.use;
-  if (!world.held || !world.held.throwable || (use.mode !== "ready" && use.mode !== "preparing")) {
+  if (!world.held || !world.held.throwable
+      || !["ready", "preparing", "blocked"].includes(use.mode)) {
     aimArc.hide();
     return;
   }
@@ -5157,7 +5616,7 @@ async function previewThrow() {
     // The very stroke letFly would send now, let go of at its end.
     const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
     const seen = await act("preview_stroke", Object.assign({ horizon_s: 4 }, stroke));
-    if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
+    if (world.use !== use || !["ready", "preparing", "blocked"].includes(use.mode)) return;
     const v = seen.let_go_velocity_m_s || [0, 0, 0];
     use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
                     speed: Math.hypot(v[0], v[1], v[2]),
@@ -5169,8 +5628,17 @@ async function previewThrow() {
     // came down 2.25 m to the side of the ring, and one let go halfway through
     // the wind-up 1 m past it. The engine starts the stroke from wherever the
     // thing is when it is thrown.
-    use.aimed = use.preview.possible ? { stroke, at: performance.now() } : null;
-    if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
+    use.preview.onTarget = use.preview.possible && landsWhereAsked(seen.flight);
+    // The stroke on screen is the one letFly sends, and it is only kept while
+    // the arc is green, because green is the only state that throws.
+    use.aimed = use.preview.onTarget ? { stroke, at: performance.now() } : null;
+    if (use.preview.possible) {
+      aimArc.show(seen.flight, use.preview.onTarget);
+    } else {
+      // No throw, so no flight to draw: the spot asked for, marked grey.
+      const asked = askedFor();
+      if (asked) aimArc.mark(asked); else aimArc.hide();
+    }
     showUse();
   } catch { /* the next tick asks again */ } finally { previewBusy = false; }
 }
@@ -5198,6 +5666,11 @@ function rememberProfiles(spec) {
   // The actions the room's chat gave its things (offer_actions), each
   // {body, label, steps}: in the side view's details when the crosshair is on it.
   world.actions = (spec && spec.actions) || [];
+  // The finish the Workshop gave a thing, carried into the room with it
+  // (fracture_lab.normalise_skins): its colour and how polished it is, and
+  // nothing else -- never a shape, and never anything the engine reads.
+  world.skins = new Map(((spec && spec.skins) || []).map((s) => [String(s.body), s]));
+  rememberOutlines(spec);
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
   // And the tools that work the ground (swing-and-lever), which tools.js holds.
@@ -5549,7 +6022,8 @@ function glow(name, tK) {
   const charred = entry ? (heat.char.get(name) || 0) : 0;
   if (!g && !(charred > 0.001)) {
     if (own) {
-      if (entry && entry.mesh.material === own) entry.mesh.material = look(entry.material);
+      if (entry && entry.mesh.material === own)
+        entry.mesh.material = lookFor(name, entry.material, entry.mesh.userData.shaded);
       own.dispose();
       heat.glowing.delete(name);
     }
@@ -5560,11 +6034,12 @@ function glow(name, tK) {
   let mine = own;
   if (!mine || entry.mesh.material !== mine) {
     if (mine) mine.dispose();
-    mine = look(entry.material).clone();
+    mine = dressedClone(lookFor(name, entry.material, entry.mesh.userData.shaded));
     entry.mesh.material = mine;
     heat.glowing.set(name, mine);
   }
-  mine.color.copy(look(entry.material).color).lerp(CHARCOAL, clamp(0.85 * charred, 0, 0.85));
+  mine.color.copy(lookFor(name, entry.material).color)
+    .lerp(CHARCOAL, clamp(0.85 * charred, 0, 0.85));
   if (g) {
     mine.emissive.copy(g.color);
     mine.emissiveIntensity = g.intensity;
@@ -6402,6 +6877,8 @@ function frame() {
   animateWater(now);
   stepFoam(dt);
   workbench.advance(now);
+  followSun();
+  skyEnvironment();
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -6441,7 +6918,7 @@ function heldInTheWay() {
 function ghostOf(material) {
   let ghost = ghosts.get(material);
   if (!ghost) {
-    ghost = material.clone();
+    ghost = dressedClone(material);
     ghost.transparent = true;
     ghost.opacity = 0.28;
     ghost.depthWrite = false;
@@ -7443,9 +7920,69 @@ window.banjoRoom = {
                      inHand: li.classList.contains("in-hand") })) }),
   doChoice, nextChoice, toTheBag, fromSlot, showTab,
   arcShown: () => aimArc.group.visible,
+  // What the aim arc is saying, which is the whole of how a throw is aimed:
+  // whether it is up, whether it has drawn a flight or only marked the spot,
+  // and whether it is green -- green being the only state that throws.
+  aiming: () => ({ shown: aimArc.group.visible, line: aimArc.line.visible,
+                   ring: aimArc.ring.visible, onTarget: !!aimArc.onTarget,
+                   colour: aimArc.material.color.getHex(),
+                   mode: world.use.mode,
+                   possible: !!(world.use.preview && world.use.preview.possible),
+                   why: (world.use.preview && world.use.preview.why) || "" }),
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
+  // The grain each substance is drawn with (surfaces.js): what is dressed, and
+  // a way to turn the whole room's grain down, which is how a picture of the
+  // difference is taken and how a test tells a grain that is really being
+  // drawn from one that is not.
+  grain: grainState, showGrain,
+  // The finishes the room came with, and what a body is actually drawn with.
+  skins: () => [...(world.skins || new Map()).values()],
+  drawnWith: (name) => {
+    const held = world.bodies.get(name);
+    if (!held) return null;
+    const m = held.mesh.material;
+    return { color: `#${m.color.getHexString()}`, roughness: m.roughness,
+             metalness: m.metalness, grainOf: m.userData.grainOf || null,
+             shared: m === look(held.material, !!held.mesh.userData.shaded) };
+  },
+  // How the bodies made of cells are actually drawn, which is not something a
+  // picture can be asked: `hulls` are the ones drawn as their outside surface
+  // (cellmesh.js) and `cubes` the ones the mesher would not vouch for and
+  // handed back. `triangles` is what they cost against `asCubes`, what the
+  // same cells would have cost drawn one cube each.
+  hullsDrawn: () => {
+    let hulls = 0, cubes = 0, cells = 0, triangles = 0, designs = 0;
+    for (const held of world.bodies.values()) {
+      const mesh = held.mesh;
+      if (mesh.isInstancedMesh && mesh.geometry === cellGeometry) {
+        ++cubes;
+        cells += mesh.count;
+        triangles += 12 * mesh.count;
+      } else if (mesh.userData.drawnToDesign) {
+        ++designs;
+        cells += mesh.userData.hullCells || 0;
+        triangles += mesh.geometry.attributes.position.count / 3;
+      } else if (mesh.userData.shaded) {
+        ++hulls;
+        cells += mesh.userData.hullCells || 0;
+        triangles += mesh.geometry.attributes.position.count / 3;
+      }
+    }
+    return { hulls, cubes, designs, cells, triangles, asCubes: 12 * cells,
+             shadows: renderer.shadowMap.enabled, sunCasts: key.castShadow,
+             environment: !!scene.environment, toneMapping: renderer.toneMapping };
+  },
+  // What one body of cells came out as: the faces its cells expose, the
+  // rectangles those merged into, and the triangles drawn for it.
+  hullOf: (name) => {
+    const held = world.bodies.get(name);
+    if (!held || !held.mesh.userData.shaded) return null;
+    return { faces: held.mesh.userData.hullFaces, quads: held.mesh.userData.hullQuads,
+             cells: held.mesh.userData.hullCells, bent: !!held.mesh.userData.hullBent,
+             triangles: held.mesh.geometry.attributes.position.count / 3 };
+  },
   // What the heat drawing was last given, and what it drew from it.
   heatState: () => heat.last,
   // What heat has left of what things can carry, as the engine last said it.

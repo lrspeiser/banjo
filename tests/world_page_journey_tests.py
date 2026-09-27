@@ -1417,6 +1417,542 @@ class ABreakSaysWhatItCost(PageJourney):
         self.no_page_errors("after the plank broke")
 
 
+class AThrowIsAimedBeforeItIsMade(PageJourney):
+    """Aiming a throw with the mouse (the owner, 2026-09-26): "if it is possible
+    to throw there the line/circle should be green, if not it should be gray and
+    you can't click to throw. you can also hit something like esc to just undo
+    and put it back vs. throwing it."
+
+    The engine was already foreseeing the whole throw and the page was already
+    drawing it; what it would not say was whether to let go. Now the arc is
+    green while the throw can be made AND the foreseen landing is where the
+    crosshair is asking for, and grey when it is not -- and grey does not throw.
+
+    In the Explore valley, because every block in it has "Set it down" authored
+    on its primary button, which used to take the click before the throw ever
+    saw it. A throw now goes ahead of an action that does nothing but set the
+    thing down, and ahead of nothing else."""
+
+    SCENE = "explore"
+    # A block per test. These share a server and a server holds ONE room, so a
+    # block one test has thrown is not where the next one would find it; the
+    # valley has eight and they are identical but for what they are made of.
+    # Light enough for one hand, each of them. A block the hand cannot swing at
+    # all is grey wherever you point it, which is a different thing and belongs
+    # to the arc's own case, not to the one about where it would land.
+    BLOCKS = {"arc": "ceramic block", "grey": "oak block",
+              "green": "rubber block", "escape": "aluminium block"}
+class ADrawingOfTheMatterItIsMadeOf:
+    """What both of the rooms below check about a hull.
+
+    A body made of cells is drawn as the outside surface of those cells
+    (playground/cellmesh.js). The page used to draw one solid cube per cell, so
+    a body was a pile of blocks with every buried face of every one of them
+    drawn as well. The hull is a picture of the SAME matter, and this says so in
+    the only way that settles it: the volume the drawing encloses is the volume
+    of the cells the engine is colliding. A hull with a hole in it, a face wound
+    inside out, or a surface smoothed off the cell boundaries all fail that, and
+    all three draw perfectly well.
+
+    Exactly, while the body is still on its grid. A body that has moved -- and a
+    piece just broken off something has moved a long way -- is drawn where its
+    cells have got to, so its volume follows the matter rather than the grid and
+    the check is that it is near, not that it is exact. Past a third of a cell
+    the grid can no longer say which cell is beside which; then the mesher hands
+    the body back and the page draws cubes, which are always right."""
+
+    HULLS = """(() => {
+      const r = banjoRoom, h = r.world.cellSize, out = [];
+      for (const [name, held] of r.world.bodies) {
+        const mesh = held.mesh;
+        if (!mesh.userData.shaded) continue;
+        const p = mesh.geometry.attributes.position.array;
+        let volume = 0;
+        for (let t = 0; t < p.length; t += 9) {
+          const ax = p[t], ay = p[t+1], az = p[t+2];
+          const ux = p[t+3]-ax, uy = p[t+4]-ay, uz = p[t+5]-az;
+          const vx = p[t+6]-ax, vy = p[t+7]-ay, vz = p[t+8]-az;
+          volume += (ax*(uy*vz - uz*vy) + ay*(uz*vx - ux*vz) + az*(ux*vy - uy*vx)) / 6;
+        }
+        out.push({name, cells: mesh.userData.hullCells, quads: mesh.userData.hullQuads,
+                  bent: !!mesh.userData.hullBent, triangles: p.length / 9, volume,
+                  matter: mesh.userData.hullCells * h * h * h});
+      }
+      return out;
+    })()"""
+
+    def open_world(self, scene):
+        """The scene named, never whatever was left standing: a server holds
+        ONE room, so a class that wants a room of its own asks for it by name
+        and gets a server of its own to ask on."""
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene={scene}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{scene}'"
+                                      " && banjoRoom.ready()", 300),
+                        f"the {scene} room did not open")
+
+    def wait_for_hulls(self, many=1, timeout_s=180):
+        # A body's cells only travel when the set of bodies can have changed, so
+        # a room that has just opened is a room whose geometry is still coming.
+        self.assertTrue(self.wait_for(f"banjoRoom.hullsDrawn().hulls >= {many}", timeout_s),
+                        f"fewer than {many} bodies were ever drawn as a hull:"
+                        f" {self.js('banjoRoom.hullsDrawn()')}")
+
+    def each_piece_holds_what_it_is_made_of(self, hulls):
+        for piece in hulls:
+            with self.subTest(piece["name"]):
+                self.assertGreater(piece["cells"], 0)
+                if piece["bent"]:
+                    self.assertGreater(piece["volume"], 0.6 * piece["matter"])
+                    self.assertLess(piece["volume"], 1.4 * piece["matter"])
+                else:
+                    # A LITTLE less than its cells, and never more. A hull has
+                    # its edges taken off (cellmesh.BEVEL), which really does
+                    # cost volume: about a sixteenth of a single cell, and far
+                    # less of a bigger body, because an edge is a length and a
+                    # body is a volume. What this is still looking for -- a face
+                    # missing, a face wound inside out, a surface moved off the
+                    # cell boundaries -- is out by a whole cell or more.
+                    self.assertLessEqual(piece["volume"], piece["matter"] * 1.0001,
+                                         f"{piece['name']} encloses more than it is made of")
+                    self.assertGreater(
+                        piece["volume"], 0.88 * piece["matter"],
+                        f"{piece['name']} is drawn as {piece['volume']:.9f} m3 "
+                        f"of matter and is made of {piece['matter']:.9f}")
+
+
+class ARoomWhereThingsStandOnTheGround(ADrawingOfTheMatterItIsMadeOf, PageJourney):
+    """The Explore valley -- one of everything the engine makes -- lit so that
+    what is standing on the ground looks like it is standing on it, and with
+    its lattice furniture drawn as its own surface rather than as cubes.
+
+    Nothing in here is moving, which is the point: this is the room where a
+    hull must come out exactly on the cell boundaries."""
+
+    SCENE = "explore"
+
+    def test_the_room_is_lit_with_a_sun_that_casts(self):
+        self.open_world(self.SCENE)
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().sunCasts", 60),
+                        "the sun never began casting")
+        lit = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   {lit}", flush=True)
+        self.assertTrue(lit["shadows"], "the shadow map is off")
+        self.assertTrue(lit["environment"], "there is nothing for a polished surface to reflect")
+        # ACESFilmicToneMapping. Without a tone curve a bright surface clips to
+        # white and takes its shape with it.
+        self.assertEqual(lit["toneMapping"], 4)
+        self.no_page_errors("with the room lit")
+
+class ThePiecesOfABreakAreDrawnAsTheyAre(ADrawingOfTheMatterItIsMadeOf, PageJourney):
+    """The break room, where the plank comes apart under the falling ball.
+
+    The pieces are the hard case and the room has both kinds in it: some still
+    close enough to their grid to mesh, some thrown so far off it by the break
+    that no grid can say which cell is beside which, which are handed back and
+    drawn as cubes. Either way the drawing holds the matter it is made of."""
+
+    def test_the_pieces_are_drawn_as_the_matter_they_are(self):
+        self.open_world("tests-break")
+        self.wait_for_hulls(2)
+        hulls = self.js(self.HULLS)
+        drawn = self.js("banjoRoom.hullsDrawn()")
+        bent = [p["name"] for p in hulls if p["bent"]]
+        print(f"\n   {drawn['hulls']} pieces as hulls ({len(bent)} of them bent),"
+              f" {drawn['cubes']} thrown about too far to mesh and drawn as cubes",
+              flush=True)
+        self.assertGreaterEqual(len(hulls), 2)
+        # NOT cheaper than cubes here, and that is worth writing down. A hull
+        # saves on a big body because most of its cells are buried; a chip of
+        # one or two cells has nothing buried to save, and taking the edges off
+        # what little it has costs more than the cubes would have. It is still
+        # a few thousand triangles for a plank in pieces, which is nothing --
+        # but if this ever climbs past a few times the cubes, something has
+        # gone wrong rather than merely been paid for.
+        self.assertLess(drawn["triangles"], 4 * drawn["asCubes"])
+        self.each_piece_holds_what_it_is_made_of(hulls)
+        self.no_page_errors("after the plank broke")
+
+
+class ASubstanceLooksLikeWhatItIs(PageJourney):
+    """Every substance is drawn with its own grain (playground/surfaces.js).
+
+    Each material used to be one flat colour at one roughness, so oak was a
+    brown swatch and concrete a grey one and a wooden table and a concrete one
+    differed only in hue. Each now carries a little noise, worked out in the
+    body's OWN space so that it is solid rather than wrapped on -- a face that
+    was on the outside and a face just broken open are cut from the same block.
+
+    The way to check a surface has detail on it is to measure the detail: read
+    the pixels back off the drawing buffer and look at how much they vary. A
+    flat swatch lit by one sun varies smoothly and hardly at all across a small
+    patch; a grained one varies several times as much. And because this is
+    arithmetic on colour and roughness in a fragment shader, turning it off and
+    on must leave every number the room reports exactly where it was."""
+
+    SCENE = "explore"
+
+    # Renders once and reads a patch out of the middle of the drawing buffer,
+    # in the same turn so nothing has swapped it. `spread` is how much the
+    # pixels in that patch differ from one another -- the detail on whatever
+    # fills the middle of the view.
+    PATCH = """(() => {
+      const r = banjoRoom;
+      r.renderer.render(r.scene, r.camera);
+      const gl = r.renderer.getContext();
+      const w = 96, h = 96;
+      const px = new Uint8Array(w * h * 4);
+      gl.readPixels(Math.floor((gl.drawingBufferWidth - w) / 2),
+                    Math.floor((gl.drawingBufferHeight - h) / 2),
+                    w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let sum = 0, sq = 0;
+      const n = px.length / 4;
+      for (let i = 0; i < px.length; i += 4) {
+        const v = (px[i] + px[i + 1] + px[i + 2]) / 3;
+        sum += v; sq += v * v;
+      }
+      const mean = sum / n;
+      return { mean, spread: Math.sqrt(Math.max(0, sq / n - mean * mean)) };
+    })()"""
+
+    # What the room says about itself, which the grain must not touch.
+    FACTS = """(() => [...banjoRoom.world.bodies].map(([n, h]) => [
+      n, h.material, h.mesh.position.toArray().map((v) => v.toFixed(6)).join(","),
+    ]).sort())()"""
+
+    def open_valley(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={self.SCENE}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{self.SCENE}'"
+                                      " && banjoRoom.ready()", 300), "the valley did not open")
+        # These share a server and a server holds ONE room, so the hand can
+        # still have in it whatever the last journey was carrying.
+        if self.js("!!banjoRoom.world.held"):
+            self.page.evaluate("banjoRoom.dropIt(); true")
+            self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                            f"the hand would not let go of what was left in it: {self.situation()}")
+
+    def take_the_block(self, which):
+        block = self.BLOCKS[which]
+        at = self.position(block)
+        self.assertIsNotNone(at, f"there is no {block} in the valley")
+        x, y, z = at
+        q = json.dumps(block)
+        ground = self.js(f"banjoRoom.groundAt({x}, {z + 1.0})") or 0.0
+        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z + 1.0}); "
+                           f"banjoRoom.lookAt({x}, {y}, {z}); true")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {q}", 30),
+                        f"the crosshair never found {block}: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for(f"banjoRoom.world.held && banjoRoom.world.held.name === {q}"
+                                      " && banjoRoom.world.held.throwable", 60),
+                        f"E did not pick up {block} as something throwable: {self.situation()}")
+        self.assertTrue(self.when_idle(), "the hand was still busy")
+        return x, y, z
+
+    def look_at_the_ground(self, x, z, far):
+        self.page.evaluate(f"banjoRoom.lookAt({x}, 0, {z - far}); true")
+        time.sleep(2.2)          # the preview is asked a few times a second
+        return self.js("banjoRoom.aiming()")
+
+    def hold_the_button(self, seconds):
+        for kind, buttons in (("mousePressed", 1), ("mouseReleased", 0)):
+            if kind == "mouseReleased":
+                time.sleep(seconds)
+            self.page.send("Input.dispatchMouseEvent",
+                           {"type": kind, "x": 400, "y": 350, "button": "left",
+                            "buttons": buttons, "clickCount": 1})
+
+    def press_escape(self):
+        for kind in ("keyDown", "keyUp"):
+            self.page.send("Input.dispatchKeyEvent",
+                           {"type": kind, "key": "Escape", "code": "Escape",
+                            "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27})
+            time.sleep(0.05)
+
+    def test_the_arc_goes_green_where_the_throw_would_land_and_grey_where_it_would_not(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("arc")
+        near = self.look_at_the_ground(x, z, 2)
+        far = self.look_at_the_ground(x, z, 18)
+        print(f"\n   2 m: {near}\n  18 m: {far}", flush=True)
+        # The arc is up either way. It used to vanish when the throw would not
+        # work, which reads as the page having stopped rather than as an answer.
+        for state in (near, far):
+            self.assertTrue(state["shown"], "the arc is not up at all")
+        self.assertTrue(near["onTarget"], "a throw at the ground two metres off is not on target")
+        self.assertFalse(far["onTarget"], "a throw at the ground eighteen metres off is on target")
+        self.assertNotEqual(near["colour"], far["colour"], "both read the same colour")
+        self.no_page_errors("while aiming a throw")
+
+    def test_grey_does_not_throw_and_says_why(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("grey")
+        self.assertFalse(self.look_at_the_ground(x, z, 18)["onTarget"])
+        # Wound all the way up and let go: the wind-up is NOT refused for being
+        # off target, because the ring moves further out as it fills and that is
+        # how you reach something far off. Letting go on grey is.
+        self.hold_the_button(1.4)
+        self.assertTrue(self.wait_for("(banjoRoom.world.use.mode === 'ready')", 30),
+                        "it did not come back down after letting go on grey")
+        self.assertEqual(self.js("banjoRoom.world.held && banjoRoom.world.held.name"),
+                         self.BLOCKS["grey"], "it left the hand on a grey arc")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertEqual(said["tone"], "refused")
+        self.assertIn("where you are pointing", said["text"],
+                      "grey for the wrong reason: this block is light enough to throw,"
+                      " so the only thing wrong with it is where it would land")
+        self.no_page_errors("after letting go on a grey arc")
+
+    def test_green_throws_it(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("green")
+        self.assertTrue(self.look_at_the_ground(x, z, 2)["onTarget"])
+        self.hold_the_button(1.4)
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                        f"it never left the hand: {self.js('banjoRoom.details().last')}")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertIn("left your hand at", said["text"])
+        self.no_page_errors("after a throw")
+
+    def test_escape_puts_it_back_instead(self):
+        self.open_valley()
+        self.take_the_block("escape")
+        # A throwable thing has a placing ghost up from the moment it is picked
+        # up, so Esc used to only ever dismiss the ghost. One press now means
+        # "never mind" and the block goes down.
+        self.press_escape()
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                        f"Esc did not put it down: {self.js('banjoRoom.details().last')}")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertNotIn("left your hand at", said["text"], "Esc threw it")
+        self.no_page_errors("after Esc put it back")
+
+    def look_at_the_ground(self):
+        eye = self.js("banjoRoom.camera.position.toArray()")
+        x, z = eye[0], eye[2]
+        ground = self.js(f"banjoRoom.groundAt({x}, {z})") or 0.0
+        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z});"
+                           f"banjoRoom.lookAt({x}, {ground}, {z - 2.0}); true")
+        time.sleep(1.0)
+
+    # A body the Workshop finished, and one it did not, built the same way the
+    # room builds them. The finish reaches the page as part of the room's own
+    # description (fracture_lab.normalise_skins), so what is set here is what a
+    # room carrying a finished product hands over.
+    FINISHED = """(() => {
+      const was = banjoRoom.world.skins;
+      banjoRoom.world.skins = new Map([["finished probe",
+        { body: "finished probe", color: "#2b4a7a", roughness: 0.18, metalness: 0.85 }]]);
+      const body = { name: "finished probe", material: "oak", shape: "box",
+                     dimensions_m: [0.2, 0.2, 0.2] };
+      const read = (m) => ({ color: "#" + m.material.color.getHexString(),
+                             roughness: m.material.roughness,
+                             metalness: m.material.metalness,
+                             grainOf: m.material.userData.grainOf || null });
+      const out = { finished: read(banjoRoom.buildMesh(body)),
+                    plain: read(banjoRoom.buildMesh({ ...body, name: "plain probe" })) };
+      banjoRoom.world.skins = was;
+      return out;
+    })()"""
+
+    # A machine of several materials: an iron post through an oak deck. Drawn
+    # with no finish, with one that names a colour, and with one that says only
+    # how polished it is.
+    MANY = """(() => {
+      const was = banjoRoom.world.skins;
+      const body = { name: "many probe", material: "oak",
+        mechanical_model: "precise-rigid-v1",
+        rigid_parts_local: [
+          { shape: "box", center_local_m: [0, 0, 0], dimensions_m: [0.3, 0.05, 0.3],
+            rotation_wxyz: [1, 0, 0, 0], material: "oak" },
+          { shape: "cylinder", center_local_m: [0, 0.12, 0], dimensions_m: [0.05, 0.2, 0.05],
+            rotation_wxyz: [1, 0, 0, 0], material: "iron" }] };
+      const read = (m) => ({ color: "#" + m.material.color.getHexString(),
+                             roughness: m.material.roughness,
+                             perPart: !!m.material.vertexColors });
+      const withSkin = (skin) => {
+        banjoRoom.world.skins = skin ? new Map([["many probe", skin]]) : new Map();
+        return read(banjoRoom.buildMesh(body));
+      };
+      const out = {
+        bare: withSkin(null),
+        painted: withSkin({ body: "many probe", color: "#2b4a7a", roughness: 0.2 }),
+        polished: withSkin({ body: "many probe", roughness: 0.12 }) };
+      banjoRoom.world.skins = was;
+      return out;
+    })()"""
+
+    def test_a_finish_that_names_a_colour_paints_a_many_material_thing_whole(self):
+        self.open_valley()
+        got = self.js(self.MANY)
+        print(f"\n   bare     {got['bare']}\n   painted  {got['painted']}"
+              f"\n   polished {got['polished']}", flush=True)
+        # Left alone, each part is drawn in the colour of what it is made of --
+        # an iron post through an oak deck shows as that.
+        self.assertTrue(got["bare"]["perPart"])
+        self.assertEqual(got["bare"]["color"], "#ffffff")
+        # A finish that names a colour means the whole thing: somebody has said
+        # what this machine looks like and meant all of it.
+        self.assertFalse(got["painted"]["perPart"])
+        self.assertEqual(got["painted"]["color"], "#2b4a7a")
+        # A finish that says only how polished it is leaves the parts their own
+        # colours and changes the shine.
+        self.assertTrue(got["polished"]["perPart"])
+        self.assertEqual(got["polished"]["color"], "#ffffff")
+        self.assertAlmostEqual(got["polished"]["roughness"], 0.12, places=4)
+        self.no_page_errors("with a many-material thing finished")
+
+
+    def test_a_thing_the_workshop_finished_is_drawn_with_that_finish(self):
+        self.open_valley()
+        got = self.js(self.FINISHED)
+        print(f"\n   finished {got['finished']}\n   plain    {got['plain']}", flush=True)
+        self.assertEqual(got["finished"]["color"], "#2b4a7a")
+        self.assertAlmostEqual(got["finished"]["roughness"], 0.18, places=4)
+        self.assertAlmostEqual(got["finished"]["metalness"], 0.85, places=4)
+        # A finish must not cost the thing its grain. It did once: clone()
+        # carries a material's data but not its functions, so a finished body
+        # came back as a flat swatch, which is what this whole branch is about
+        # not being.
+        self.assertEqual(got["finished"]["grainOf"], "oak")
+        # And a body nobody finished is still oak, sharing oak's material.
+        self.assertEqual(got["plain"]["grainOf"], "oak")
+        self.assertNotEqual(got["plain"]["color"], got["finished"]["color"])
+        self.no_page_errors("with a finished thing drawn")
+
+
+    def test_every_substance_in_the_room_is_drawn_with_a_grain(self):
+        self.open_valley()
+        self.assertTrue(self.wait_for("banjoRoom.grain().substances.length > 3", 60),
+                        "hardly anything in the room was dressed")
+        grain = self.js("banjoRoom.grain()")
+        print(f"\n   {grain['substances']}", flush=True)
+        # The valley is made of these, and the ground under them.
+        for substance in ("oak", "concrete", "iron", "ground"):
+            self.assertIn(substance, grain["substances"])
+        self.assertEqual(grain["showing"], 1)
+        # Sizes are in metres, so the across-the-grain figure is cycles per
+        # metre: oak's is coarser than a fleck and finer than the hillside.
+        self.assertGreater(grain["grain"]["oak"][0], grain["grain"]["ground"][0])
+        self.no_page_errors("with every substance dressed")
+
+    def test_the_grain_puts_detail_on_a_surface(self):
+        self.open_valley()
+        self.look_at_the_ground()
+        self.page.evaluate("banjoRoom.showGrain(0); true")
+        time.sleep(0.8)
+        flat = self.js(self.PATCH)
+        self.page.evaluate("banjoRoom.showGrain(1); true")
+        time.sleep(0.8)
+        grained = self.js(self.PATCH)
+        print(f"\n   flat spread {flat['spread']:.2f}, grained {grained['spread']:.2f}"
+              f" (mean {flat['mean']:.0f} -> {grained['mean']:.0f})", flush=True)
+        # A flat swatch under one sun barely varies across a hand's width of
+        # ground; a grained one has something on it.
+        self.assertGreater(grained["spread"], 3 * flat["spread"] + 1.0,
+                           "the ground is no more detailed with the grain on than off")
+        # And it is the same ground: a grain that changed how bright the
+        # surface is on average would be a different colour, not a finish.
+        self.assertAlmostEqual(grained["mean"], flat["mean"], delta=0.12 * flat["mean"] + 2)
+        self.no_page_errors("with the grain on")
+
+    def test_the_grain_changes_nothing_the_room_reports(self):
+        self.open_valley()
+        # Held still first. The room is RUNNING, and a bench settling on sand
+        # moves seventy micrometres in the second between two readings, which
+        # would drown out what this is looking for.
+        self.page.evaluate("banjoRoom.world.paused = true; banjoRoom.world.lastTick = 0; true")
+        self.assertTrue(self.when_idle(), "the room was still busy")
+        time.sleep(0.8)
+        was = self.js(self.FACTS)
+        self.page.evaluate("banjoRoom.showGrain(0); true")
+        time.sleep(0.5)
+        self.page.evaluate("banjoRoom.showGrain(1); true")
+        time.sleep(0.5)
+        self.assertEqual(self.js(self.FACTS), was,
+                         "something the room reports moved when the grain was turned off and on")
+        self.assertGreater(len(was), 5)
+        self.page.evaluate("banjoRoom.world.paused = false; banjoRoom.world.lastTick = 0; true")
+        self.no_page_errors("after turning the grain off and on")
+
+
+class AThingIsDrawnAsTheShapeItWasDrawnTo(PageJourney):
+    """A room describes a thing as the boxes somebody laid out, and the engine
+    compiles those onto its grid and collides the cells. The cells are the
+    matter; the boxes are the design; and the difference between them is the
+    voxelisation, up to sqrt(3)/2 of a cell.
+
+    So a thing that is still WHOLE is drawn as the shape it was drawn to, and a
+    thing that has broken is drawn from its cells -- because the moment it comes
+    apart the boxes stop describing it. That second half is the important one:
+    a break is exactly when a drawing that flattered the matter would start
+    lying about it.
+
+    And the drawn shape is checked against the cells before it is used: the
+    design's box and the cells' box, in the body's own frame, must agree to
+    within a cell and a half. That is what catches a frame worked out wrongly
+    and a turn read the wrong way round, both of which draw perfectly well."""
+
+    # Whether the plank is still being drawn as the board it was drawn to.
+    PLANK = """(() => {
+      const held = banjoRoom.world.bodies.get("plank");
+      return held ? !!held.mesh.userData.drawnToDesign : null;
+    })()"""
+
+    def open_room(self, scene):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={scene}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{scene}'"
+                                      " && banjoRoom.ready()", 300), f"{scene} did not open")
+
+    def test_the_valleys_furniture_is_drawn_to_its_design(self):
+        self.open_room("explore")
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().designs > 0", 120),
+                        f"nothing was drawn to its design: {self.js('banjoRoom.hullsDrawn()')}")
+        drawn = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   {drawn}", flush=True)
+        # Every piece of furniture in the valley: nothing left as cells, and
+        # nothing fell all the way back to cubes.
+        self.assertGreaterEqual(drawn["designs"], 5)
+        self.assertEqual(drawn["hulls"], 0)
+        self.assertEqual(drawn["cubes"], 0)
+        # And it costs a fraction of what its cells did, because a board is a
+        # board however many cells were needed to carry it.
+        self.assertLess(drawn["triangles"], drawn["asCubes"] / 10)
+        self.no_page_errors("with the furniture drawn to its design")
+
+
+class AThingThatBreaksIsDrawnFromWhatIsLeft(AThingIsDrawnAsTheShapeItWasDrawnTo):
+    """The other half, and the important one: the moment a thing comes apart,
+    the shape it was drawn to stops describing it and the cells take over.
+
+    Its own class because each of these gets a server and a server holds ONE
+    room, so a class whose tests want two scenes cannot have the second."""
+
+    def test_the_valleys_furniture_is_drawn_to_its_design(self):
+        self.skipTest("this class is for the break room")
+
+    def test_a_thing_that_breaks_goes_back_to_its_cells(self):
+        # Nothing to do but watch: the ball lands above what the plank can take.
+        # (A paused room is no good for catching it whole -- nothing is stepped,
+        # so no body is ever drawn at all.)
+        self.open_room("tests-break")
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().hulls >= 2", 240),
+                        f"the plank never came apart: {self.situation()}")
+        broken = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   after the break: {broken}", flush=True)
+        # The pieces are drawn from what they are made of. The board it was
+        # drawn to stopped describing it the moment it came apart, so nothing
+        # is still being drawn to it.
+        self.assertIn(self.js(self.PLANK), (None, False),
+                      "a plank that has come apart is still being drawn as a whole board")
+        self.assertGreaterEqual(broken["hulls"], 2)
+        self.no_page_errors("after the plank broke")
+
+
 class BrokenPiecesComeWithYou(PageJourney):
     """Walking near broken pieces collects them, and a piece in the hand goes
     into what you carry (the owner, 2026-09-22: "when I walk near broken pieces

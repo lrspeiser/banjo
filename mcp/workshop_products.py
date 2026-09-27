@@ -283,6 +283,14 @@ def _drone_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[st
         joint("fixed", f"{name} arm", f"{name} mount")
         joint("bearing", f"{name} mount", f"{name} rotor stub")
         joint("fixed", f"{name} rotor stub", f"{name} rotor")
+        # Every blade on that hub. This template writes ITS OWN joints down and
+        # nothing is worked out from what touches what afterwards (adopted()
+        # returns early on joints_authored), so a blade the rotor family added
+        # and this list did not name is a loose part held by no bearing, and the
+        # whole drone is refused.
+        for blade in parts:
+            if blade.name.startswith(f"{name} rotor blade "):
+                joint("fixed", f"{name} rotor", blade.name)
     for i in range(1, 5):
         joint("fixed", "deck", f"leg-{i}")
     for name in ("battery", "solar panel", "hopper"):

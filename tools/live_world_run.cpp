@@ -457,6 +457,7 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             {"hover_m", tidy(p.hover_m)},
             {"store", p.store},
             {"height_m", tidy(p.height_m)},
+            {"landed_height_m", tidy(p.landed_height_m)},
             {"climb_m_s", tidy(p.climb_m_s)},
             {"turning_deg_s", tidy(p.turning_deg_s)},
             {"stuck_s", tidy(p.stuck_s)},
