@@ -1403,6 +1403,44 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
                            f"banjoRoom.lookAt({x}, {ground}, {z - 2.0}); true")
         time.sleep(1.0)
 
+    # A body the Workshop finished, and one it did not, built the same way the
+    # room builds them. The finish reaches the page as part of the room's own
+    # description (fracture_lab.normalise_skins), so what is set here is what a
+    # room carrying a finished product hands over.
+    FINISHED = """(() => {
+      const was = banjoRoom.world.skins;
+      banjoRoom.world.skins = new Map([["finished probe",
+        { body: "finished probe", color: "#2b4a7a", roughness: 0.18, metalness: 0.85 }]]);
+      const body = { name: "finished probe", material: "oak", shape: "box",
+                     dimensions_m: [0.2, 0.2, 0.2] };
+      const read = (m) => ({ color: "#" + m.material.color.getHexString(),
+                             roughness: m.material.roughness,
+                             metalness: m.material.metalness,
+                             grainOf: m.material.userData.grainOf || null });
+      const out = { finished: read(banjoRoom.buildMesh(body)),
+                    plain: read(banjoRoom.buildMesh({ ...body, name: "plain probe" })) };
+      banjoRoom.world.skins = was;
+      return out;
+    })()"""
+
+    def test_a_thing_the_workshop_finished_is_drawn_with_that_finish(self):
+        self.open_valley()
+        got = self.js(self.FINISHED)
+        print(f"\n   finished {got['finished']}\n   plain    {got['plain']}", flush=True)
+        self.assertEqual(got["finished"]["color"], "#2b4a7a")
+        self.assertAlmostEqual(got["finished"]["roughness"], 0.18, places=4)
+        self.assertAlmostEqual(got["finished"]["metalness"], 0.85, places=4)
+        # A finish must not cost the thing its grain. It did once: clone()
+        # carries a material's data but not its functions, so a finished body
+        # came back as a flat swatch, which is what this whole branch is about
+        # not being.
+        self.assertEqual(got["finished"]["grainOf"], "oak")
+        # And a body nobody finished is still oak, sharing oak's material.
+        self.assertEqual(got["plain"]["grainOf"], "oak")
+        self.assertNotEqual(got["plain"]["color"], got["finished"]["color"])
+        self.no_page_errors("with a finished thing drawn")
+
+
     def test_every_substance_in_the_room_is_drawn_with_a_grain(self):
         self.open_valley()
         self.assertTrue(self.wait_for("banjoRoom.grain().substances.length > 3", 60),

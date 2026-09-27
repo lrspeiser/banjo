@@ -402,7 +402,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces", "interaction_points", "sun", "goods"}
+                         "interfaces", "interaction_points", "sun", "goods", "skins"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -1485,6 +1485,68 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
     return out
 
 
+SKIN_FIELDS = {"body", "color", "roughness", "metalness"}
+# One to a body, so this is a bound on the room rather than on the finishes:
+# well over what a room's object budget allows, and small enough that a
+# malformed request cannot arrive as a megabyte of them.
+MAX_SKINS = 400
+
+
+def normalise_skins(skins: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """How a thing in the room is FINISHED (banjo.product-skin.v1, the appearance
+    of it).
+
+    A skin says what a body looks like -- its colour, and how polished or matt
+    it is -- and it is carried out of the Workshop that made the product and
+    into the room it was installed in, so a thing keeps the finish somebody gave
+    it at the bench instead of arriving as the plain colour of its material.
+
+    IT TOUCHES NOTHING PHYSICAL, and the fields here are the whole of why that
+    is true rather than a promise: colour and polish are all a skin can say. The
+    mass, the strength, the matter, the temperature and every measurement the
+    room reports are the MATERIAL's and are not reachable from here. Shape is
+    not here either, and for the same reason -- a skin that changed a shape
+    would change what the engine is colliding. Changing a shape is `physical` on
+    the bench (mcp/workshop_visual.py), which recompiles the matter and says the
+    measurements are stale; it is not something a finish can smuggle in.
+
+    One skin to a body, for a body that is in the room, and something to say.
+    """
+    if not isinstance(skins, list):
+        raise ValueError("skins must be a list")
+    if len(skins) > MAX_SKINS:
+        raise ValueError(f"at most {MAX_SKINS} skins in a room")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    already: set[str] = set()
+    for i, skin in enumerate(skins):
+        if not isinstance(skin, dict):
+            raise ValueError(f"skin {i} must be an object")
+        unknown = set(skin) - SKIN_FIELDS
+        if unknown:
+            raise ValueError(f"skin {i} cannot say {sorted(unknown)}")
+        body = str(skin.get("body", ""))
+        if body not in named:
+            raise ValueError(f"skin {i} is for {body!r}, and there is nothing called that")
+        if body in already:
+            raise ValueError(f"{body!r} is given more than one skin, and it has one surface")
+        already.add(body)
+        made: dict[str, Any] = {"body": body}
+        if skin.get("color") is not None:
+            colour = " ".join(str(skin["color"]).split())
+            if not colour or len(colour) > 32:
+                raise ValueError(f"skin {i}: a colour is 1 to 32 characters")
+            made["color"] = colour
+        for field in ("roughness", "metalness"):
+            if skin.get(field) is None:
+                continue
+            made[field] = _number(skin[field], 0.0, 1.0, f"skin {i} {field}")
+        if len(made) == 1:
+            raise ValueError(f"skin {i} says nothing about how {body!r} looks")
+        out.append(made)
+    return out
+
+
 def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
                            joints: list[dict[str, Any]],
                            tool_points: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -2391,6 +2453,11 @@ def validate(spec: Any) -> dict[str, Any]:
                                                         result["tool_points"])
         result["actions"] = normalise_actions(result.get("actions") or [],
                                                result["bodies"] + result.get("precise_rigid_bodies", []))
+        if result.get("skins"):
+            result["skins"] = normalise_skins(result["skins"],
+                                              result["bodies"] + result.get("precise_rigid_bodies", []))
+        else:
+            result.pop("skins", None)
         result["interaction_points"] = interaction_points.normalise(
             result.get("interaction_points", []), result["bodies"] + result.get("precise_rigid_bodies", []))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],

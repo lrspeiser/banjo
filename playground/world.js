@@ -1027,6 +1027,31 @@ function look(material, shaded = false) {
   return made;
 }
 
+// What one body is drawn with: the shared material of its substance, or, when
+// the Workshop gave it a finish, a material wearing that finish.
+//
+// Kept by the FINISH rather than by the body, so that everything wearing the
+// same one shares a material -- a skinned pane that shatters into seventy
+// shards is still one material and one draw call, and a room does not compile
+// a shader in the middle of a break.
+const SKINNED = new Map();
+function lookFor(name, material, shaded = false) {
+  const skin = world.skins && world.skins.get(name);
+  if (!skin) return look(material, shaded);
+  const key = `${material}|${shaded ? 1 : 0}|${skin.color || ""}`
+    + `|${skin.roughness ?? ""}|${skin.metalness ?? ""}`;
+  const had = SKINNED.get(key);
+  if (had) return had;
+  const made = dressedClone(look(material, shaded));
+  // A colour the bench let through that this page cannot read is not worth
+  // losing the thing over: it keeps its material's own.
+  if (skin.color) { try { made.color.set(skin.color); } catch { /* keep its own */ } }
+  if (typeof skin.roughness === "number") made.roughness = skin.roughness;
+  if (typeof skin.metalness === "number") made.metalness = skin.metalness;
+  SKINNED.set(key, made);
+  return made;
+}
+
 // Every cell in the room is the same cube, so there is one of it. Building a
 // BoxGeometry per shard meant seventy-four identical vertex buffers uploaded to
 // the card to draw one broken pane.
@@ -1153,7 +1178,7 @@ function buildMesh(body) {
     if (!Array.isArray(parts) || !parts.length || parts.length > 64)
       throw new Error("Precise rigid geometry is missing; refusing to draw a substitute bounding box.");
     const mixed = new Set(parts.map(part => part.material || body.material)).size > 1;
-    let material = look(body.material);
+    let material = lookFor(body.name, body.material);
     if (mixed) {
       // Its own, so colouring its parts touches no other body of that stuff.
       material = dressedClone(material);
@@ -1185,7 +1210,7 @@ function buildMesh(body) {
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(hull.positions, 3));
       geometry.setAttribute("normal", new THREE.Float32BufferAttribute(hull.normals, 3));
       geometry.setAttribute("color", new THREE.Float32BufferAttribute(hull.shades, 3));
-      const hulled = new THREE.Mesh(geometry, look(body.material, true));
+      const hulled = new THREE.Mesh(geometry, lookFor(body.name, body.material, true));
       hulled.userData.shaded = true;
       hulled.userData.hullQuads = hull.quads;
       hulled.userData.hullFaces = hull.faces;
@@ -1193,7 +1218,7 @@ function buildMesh(body) {
       hulled.userData.hullBent = !!hull.bent;
       return hulled;
     }
-    const cloud = new THREE.InstancedMesh(cellCube(), look(body.material),
+    const cloud = new THREE.InstancedMesh(cellCube(), lookFor(body.name, body.material),
                                           body.cells_local_m.length);
     for (let i = 0; i < body.cells_local_m.length; ++i) {
       const c = body.cells_local_m[i];
@@ -1213,7 +1238,7 @@ function buildMesh(body) {
     : new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4),
                             dented ? 12 : 1, dented ? 12 : 1, dented ? 12 : 1);
   if (dented) pressDent(geometry, body);
-  return new THREE.Mesh(geometry, look(body.material));
+  return new THREE.Mesh(geometry, lookFor(body.name, body.material));
 }
 
 // Take a mesh out of the scene and give back what only it was using.
@@ -4832,6 +4857,10 @@ function rememberProfiles(spec) {
   // The actions the room's chat gave its things (offer_actions), each
   // {body, label, steps}: in the side view's details when the crosshair is on it.
   world.actions = (spec && spec.actions) || [];
+  // The finish the Workshop gave a thing, carried into the room with it
+  // (fracture_lab.normalise_skins): its colour and how polished it is, and
+  // nothing else -- never a shape, and never anything the engine reads.
+  world.skins = new Map(((spec && spec.skins) || []).map((s) => [String(s.body), s]));
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
   // And the tools that work the ground (swing-and-lever), which tools.js holds.
@@ -5184,7 +5213,7 @@ function glow(name, tK) {
   if (!g && !(charred > 0.001)) {
     if (own) {
       if (entry && entry.mesh.material === own)
-        entry.mesh.material = look(entry.material, entry.mesh.userData.shaded);
+        entry.mesh.material = lookFor(name, entry.material, entry.mesh.userData.shaded);
       own.dispose();
       heat.glowing.delete(name);
     }
@@ -5195,11 +5224,12 @@ function glow(name, tK) {
   let mine = own;
   if (!mine || entry.mesh.material !== mine) {
     if (mine) mine.dispose();
-    mine = dressedClone(look(entry.material, entry.mesh.userData.shaded));
+    mine = dressedClone(lookFor(name, entry.material, entry.mesh.userData.shaded));
     entry.mesh.material = mine;
     heat.glowing.set(name, mine);
   }
-  mine.color.copy(look(entry.material).color).lerp(CHARCOAL, clamp(0.85 * charred, 0, 0.85));
+  mine.color.copy(lookFor(name, entry.material).color)
+    .lerp(CHARCOAL, clamp(0.85 * charred, 0, 0.85));
   if (g) {
     mine.emissive.copy(g.color);
     mine.emissiveIntensity = g.intensity;
@@ -7022,6 +7052,16 @@ window.banjoRoom = {
   // difference is taken and how a test tells a grain that is really being
   // drawn from one that is not.
   grain: grainState, showGrain,
+  // The finishes the room came with, and what a body is actually drawn with.
+  skins: () => [...(world.skins || new Map()).values()],
+  drawnWith: (name) => {
+    const held = world.bodies.get(name);
+    if (!held) return null;
+    const m = held.mesh.material;
+    return { color: `#${m.color.getHexString()}`, roughness: m.roughness,
+             metalness: m.metalness, grainOf: m.userData.grainOf || null,
+             shared: m === look(held.material, !!held.mesh.userData.shaded) };
+  },
   // How the bodies made of cells are actually drawn, which is not something a
   // picture can be asked: `hulls` are the ones drawn as their outside surface
   // (cellmesh.js) and `cubes` the ones the mesher would not vouch for and

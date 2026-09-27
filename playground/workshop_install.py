@@ -304,6 +304,50 @@ def _kept(app: Any, answer: dict[str, Any], design: Any, overrides: Any) -> dict
     return answer
 
 
+def _finishes(overrides, component_to_body):
+    """The finish each installed body carries out of the Workshop.
+
+    A skin is set on a COMPONENT at the bench (set_skin), and a body in the room
+    can be several components joined into one thing. So a body is given a finish
+    only when the components that became it and were actually dressed AGREE
+    about it. A body whose parts were dressed two different colours is still one
+    body with one surface, and picking a winner would be inventing an answer
+    nobody gave: those keep their material's own look and are named in the
+    receipt, so the person can see what was not carried and say which they meant.
+
+    Only components somebody dressed count. Every component has a roughness and
+    a metalness whether anybody chose them or not -- they are the defaults in
+    mcp/workshop_visual -- and carrying those in would quietly repaint every
+    installed thing with them, which would take the shine off iron for no reason
+    anybody asked for.
+
+    Gives back (skins, bodies whose parts disagreed).
+    """
+    dressed = workshop_visual.skin_overrides(overrides)
+    if not dressed:
+        return [], []
+    asked: dict[str, set] = {}
+    for component, skin in dressed.items():
+        body = (component_to_body or {}).get(component)
+        if not body:
+            continue
+        asked.setdefault(str(body), set()).add((
+            str(skin.get("color") or ""),
+            round(float(skin.get("roughness", 0.72)), 4),
+            round(float(skin.get("metalness", 0.0)), 4)))
+    skins, argued = [], []
+    for body in sorted(asked):
+        if len(asked[body]) != 1:
+            argued.append(body)
+            continue
+        colour, roughness, metalness = next(iter(asked[body]))
+        made = {"body": body, "roughness": roughness, "metalness": metalness}
+        if colour:
+            made["color"] = colour
+        skins.append(made)
+    return skins, argued
+
+
 def _bounds(cells, h):
     return ([min(g[a] for g in cells)*h for a in range(3)],
             [(max(g[a] for g in cells)+1)*h for a in range(3)])
@@ -1051,9 +1095,12 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     for joint in artifact["joints"]:
         joint["at_mm"] = [joint["at_mm"][a]+shift[a]*h*1000 for a in range(3)]
     spec = deepcopy(room.spec)
+    skins, unskinned = _finishes(overrides, artifact["component_to_body"])
     for field, extra in (("bodies", artifact["bodies"]), ("joints", artifact["joints"]),
-                         ("interfaces", artifact["interfaces"]), ("actions", actions), ("interaction_points", points)):
-        spec[field] = (spec.get(field) or []) + extra
+                         ("interfaces", artifact["interfaces"]), ("actions", actions),
+                         ("skins", skins), ("interaction_points", points)):
+        if extra:
+            spec[field] = (spec.get(field) or []) + extra
     # What drives it, named by component on the bench and by body in the room.
     # A room may already hold machines, so each kind is added to rather than
     # replaced -- installing a cart must not retire somebody else's hoist.
@@ -1086,6 +1133,7 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
               "placement_grid":list(shift), "applied_translation_m":[s*h for s in shift],
               "bounds_m":_bounds(placed,h), "engine_grid_verified":True,
               "existing_state_preserved":True, "resources_charged":False,
+              "finishes_carried":len(skins), "finishes_not_carried":unskinned,
               "strength_certified":False, "expires_in_s":PREVIEW_TTL_S,
               "limits":"Articulated lattice assembly with ideal hinges; bearing strength and wear are uncalibrated. No manufactured ground anchors or whole-assembly bag storage."}
     cache = _preview_cache(app)

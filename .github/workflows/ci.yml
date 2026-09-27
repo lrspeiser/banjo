@@ -34,6 +34,7 @@ jobs:
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
+          python3 tests/room_skins_tests.py -v
           python3 tests/workshop_tests.py -v
           python3 tests/workshop_api_tests.py -v
           python3 tests/workshop_store_tests.py -v
