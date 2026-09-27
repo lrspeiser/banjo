@@ -984,12 +984,12 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str],
             raise ValueError(f"program {i} is not an object")
         unknown = set(program) - {"name", "kind", "left", "right", "body", "setting", "climb_deg", "power", "sensors",
                                   "rest_below", "rest_until", "routine", "ports", "toward", "close_m", "pose",
-                                  "pose_deg", "rotors", "hover_m", "store"}
+                                  "pose_deg", "rotors", "hover_m", "store", "chamber", "element_w"}
         if unknown:
             raise ValueError(f"program {i} cannot say {sorted(unknown)}: it holds name, kind, left, right, body, "
                              f"setting, climb_deg, power, sensors, ports, rest_below, rest_until, routine; for a "
                              f"sit program toward, close_m, pose and pose_deg; for a hover program rotors and "
-                             f"hover_m; and for a still program its store")
+                             f"hover_m; and for a still program its store, and its chamber and element_w")
         name = " ".join(str(program.get("name") or "").split())[:60]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"program {i} needs a name of its own")
@@ -1098,6 +1098,24 @@ def _ports(given: Any, name: str, named: set[str]) -> list[dict[str, Any]]:
     return machine_ports.checked(given, name, named)
 
 
+def _chambers_exist(machines: dict[str, Any], thermo: dict[str, Any]) -> None:
+    """Every furnace heats a chamber the room actually has.
+
+    A program names its chamber and the room declares it as a gas region, and
+    the two are normalised apart -- machines first, thermo after -- so neither
+    can check the other as it goes. Unchecked, a furnace whose chamber was
+    renamed or dropped opens perfectly well and then never gets hot: it heats
+    a name nothing answers to and reads nothing back, so it sits at "heating"
+    for as long as anyone watches it. That is a bad way to find out.
+    """
+    regions = {str(r.get("name")) for r in (thermo.get("gas_regions") or [])}
+    for program in machines.get("programs") or []:
+        chamber = program.get("chamber")
+        if chamber and chamber not in regions:
+            raise ValueError(f"program {program.get('name')!r} heats the chamber {chamber!r}, and the "
+                             f"room has " + (", ".join(repr(r) for r in sorted(regions)) or "no gas regions"))
+
+
 def _still_program(program: dict[str, Any], name: str, body: str, named: set[str], out: list[dict[str, Any]],
                    stores: list[dict[str, Any]] | None) -> dict[str, Any]:
     """A program for a machine that goes nowhere (docs/machine-world.md, "Raw
@@ -1118,6 +1136,18 @@ def _still_program(program: dict[str, Any], name: str, body: str, named: set[str
         raise ValueError(f"program {name!r}: {body!r} already has a program that goes nowhere")
     made: dict[str, Any] = {"name": name, "kind": "still", "body": body, "store": store, "setting": 1.0,
                             "power": bool(program.get("power", False))}
+    # ITS FURNACE. A still machine that works hot heats a gas region -- the
+    # space its walls enclose -- and reads that region's temperature back to
+    # decide whether it is hot enough to work. That the region actually exists
+    # is checked by _chambers_exist, once the thermo block has been read too,
+    # because a room's machines are normalised before its thermo.
+    if program.get("chamber"):
+        made["chamber"] = " ".join(str(program["chamber"]).split())[:60]
+        made["element_w"] = _number(program.get("element_w", 5000.0), 1.0, 1.0e6,
+                                    f"program {name!r} element_w")
+    elif program.get("element_w") is not None:
+        raise ValueError(f"program {name!r}: element_w says how hard its element heats; "
+                         f"it needs a chamber to heat")
     if program.get("rest_below"):
         below = _number(program["rest_below"], 0.001, 0.99, f"program {name!r} rest_below")
         made["rest_below"] = below
@@ -2418,6 +2448,7 @@ def validate(spec: Any) -> dict[str, Any]:
         else:
             result.pop("constructions", None)
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
+        _chambers_exist(result.get("machines") or {}, result["thermo"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))
         result["blades"] = normalise_blades(result.get("blades") or [], result["bodies"])

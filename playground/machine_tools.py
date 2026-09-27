@@ -575,31 +575,42 @@ def take(ctx: senses.Context, call: Call) -> dict[str, Any]:
             "load": r.load_reading()}
 
 
-#: What a machine puts into itself while it is warming up, and for how long
-#: at a time. 5 kW for two seconds is 10 kJ a spell -- a spell being about
-#: as often as a routine gets a turn. Declared, not measured: it is the
-#: rating of a heating element nobody has specified, and the number a
-#: furnace's own design should carry once one does.
+#: A furnace's element rating when its design does not carry one. Every
+#: furnace the Workshop builds does carry one (`element_w` on its program),
+#: so this is only the fallback for a room that declared a chamber by hand.
 HEATING_W = 5000.0
+#: How long one spell of heating lasts. The element is switched on for this
+#: long and nothing re-issues it until it has run out, because TWO
+#: OVERLAPPING HEAT CALLS STACK: the engine adds their powers, so a furnace
+#: told twice heats at double rate and settles at double the rise. Measured:
+#: one call read heater_w = 5000, a second while it ran read 10000, and the
+#: chamber went to 3353 C instead of 1686 -- past the thermal model's own
+#: 3000 K validity ceiling, which it reports and does not refuse.
 HEATING_S = 2.0
-#: How near the mark counts as at it. A body loses heat to the air the whole
-#: time it is being heated, so holding an exact figure is not something a
-#: heater switching on and off can promise.
+#: How near the mark counts as at it. The chamber loses heat to its lining
+#: the whole time it is being heated, so holding an exact figure is not
+#: something an element switching on and off can promise.
 HEAT_SLACK_C = 15.0
 
 
-def _how_hot(ctx: senses.Context, body: str) -> float | None:
-    """What the engine says that body's temperature is, in Celsius, or None
-    when it is not in the thermal network at all -- which is what a body that
-    has never been heated is."""
+def _chamber(ctx: senses.Context, name: str) -> dict[str, Any] | None:
+    """What the engine says about this machine's chamber: the gas region its
+    lining encloses. None when the room has no such region, which is a room
+    whose furnace was declared wrong -- fracture_lab._chambers_exist refuses
+    that before it can happen, so it means something built a spec by hand."""
     said = _act(ctx, op="thermo") or {}
     block = said.get("thermo") if isinstance(said.get("thermo"), dict) else said
-    for entry in (block.get("bodies") or []):
-        if entry.get("name") == body:
-            t_k = entry.get("t_k")
-            if isinstance(t_k, (int, float)):
-                return float(t_k) - 273.15
+    for region in (block.get("regions") or []):
+        if region.get("name") == name:
+            return region
     return None
+
+
+def _how_hot(ctx: senses.Context, name: str) -> float | None:
+    """What the engine says that chamber is at, in Celsius."""
+    region = _chamber(ctx, name)
+    t_k = (region or {}).get("temperature_k")
+    return float(t_k) - 273.15 if isinstance(t_k, (int, float)) else None
 
 
 def _needs_c(ctx: senses.Context, recipe: str) -> float:
@@ -634,30 +645,51 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
     store = senses._store(ctx)
     batch = float(call.args.get("kg") or r.batch_kg)
 
-    # IT HAS TO BE HOT. A recipe that needs heat says what its machine must
-    # be at, and the engine says what it IS -- not a timer, not a flag. Below
-    # the mark the machine heats itself instead of working: it draws from its
-    # store and puts that energy into its own body the way a heater does.
+    # IT HAS TO BE HOT. A recipe that needs heat says what temperature its
+    # process runs at, and the engine says what the chamber IS at -- not a
+    # timer, not a flag. Below the mark the furnace heats instead of working:
+    # it draws from its store and puts that into the gas its lining encloses.
     #
-    # The ambient takes heat off it the whole time, which is why a furnace
-    # left alone goes cold and why coming back to a cold one costs again.
+    # The lining leaks the whole time, which is why a furnace left alone goes
+    # cold within a minute and why coming back to a cold one costs again.
     wants_c = _needs_c(ctx, recipe)
-    body = str(ctx.program.get("body") or "")
-    if wants_c > 0.0 and body:
-        now_c = _how_hot(ctx, body)
-        if now_c is None or now_c < wants_c - HEAT_SLACK_C:
-            joules = HEATING_W * HEATING_S
+    chamber = r.chamber or ""
+    if wants_c > 0.0 and not chamber:
+        # SAID, NOT WORKED COLD. A recipe with a temperature needs something
+        # to be hot IN, and a machine with no chamber has not got one. The
+        # bench will not build that pairing and the generator will not stand
+        # it, so reaching here means a room was written by hand -- and the
+        # answer it deserves is the reason, not 1.5 kg of copper smelted in
+        # the open air at twenty degrees.
+        return {"did": f"cannot work {recipe}: it needs {wants_c:.0f} C and this machine has no "
+                       f"chamber to make hot. That wants an electric furnace", "failed": True}
+    if wants_c > 0.0 and chamber:
+        region = _chamber(ctx, chamber)
+        if region is None:
+            return {"did": f"cannot heat: this room has no chamber called {chamber!r}",
+                    "failed": True}
+        now_c = float(region.get("temperature_k") or 0.0) - 273.15
+        if now_c < wants_c - HEAT_SLACK_C:
+            watts = float(r.element_w or HEATING_W)
+            # ONLY IF THE ELEMENT IS OFF. Heat calls stack -- a second one
+            # issued while the first is still running adds its power to it --
+            # so the engine's own reading of what the element is doing is
+            # what decides, rather than a clock on this side that a paused
+            # routine or a re-entered turn would get wrong.
+            if float(region.get("heater_w") or 0.0) > 1e-6:
+                return {"did": f"heating to work {recipe}: {now_c:.0f} C of {wants_c:.0f} C",
+                        "idle": True}
+            joules = watts * HEATING_S
             if store is not None:
                 have = float(store.get("charge_j") or 0.0)
                 if have + 1e-9 < joules:
                     return {"did": f"cannot heat: its battery has {have:.0f} J and a spell of "
                                    f"heating takes {joules:.0f} J", "failed": True}
                 _act(ctx, op="draw", store=store["id"], joules=joules)
-            _act(ctx, op="heat", target=body, power_w=HEATING_W, seconds=HEATING_S)
-            was = "cold" if now_c is None else f"{now_c:.0f} C"
-            r.note(f"heating for {recipe}: {was} of {wants_c:.0f} C")
-            return {"did": f"heating to work {recipe}: {was} of {wants_c:.0f} C, "
-                           f"{HEATING_W / 1000:.1f} kW drawn", "idle": True}
+            _act(ctx, op="heat", target=chamber, power_w=watts, seconds=HEATING_S)
+            r.note(f"heating for {recipe}: {now_c:.0f} C of {wants_c:.0f} C")
+            return {"did": f"heating to work {recipe}: {now_c:.0f} C of {wants_c:.0f} C, "
+                           f"{watts / 1000:.1f} kW drawn", "idle": True}
 
     holds = intake.setdefault("holds", {})
     trial = ctx.goods.convert(recipe, dict(holds), batch)

@@ -200,13 +200,16 @@ def compose(ground: dict, world: dict) -> dict:
         beside = [(mid[0] + s * 1.25 * side[0], mid[1] + s * 1.25 * side[1]) for s in (1.0, -1.0)]
         dry = [p for p in beside if not ws.wet_near(ground, p[0], p[1], 0.8)]
         at = min(dry or beside, key=lambda p: ws.flatness(ground, p[0], p[1], 0.8))
-        bodies, pins, made = a_processor(
+        bodies, pins, made = a_works(
             ground, name, at,
             {"kind": "process", "recipe": works.recipe, "intake": intake_name,
              "output": output_name, "batch_kg": 5.0})
         # Its names kept apart from every other machine's, as the install gate
-        # keeps them: eight processors all call their battery "battery".
-        made = workshop_install._named_apart(spec["machines"], made)
+        # keeps them: eight processors all call their battery "battery", and
+        # six furnaces all call their chamber "chamber". The same two helpers
+        # the bench's own install path uses, so a machine stood here and a
+        # machine built by hand land in the room the same way.
+        made = workshop_install._named_apart(workshop_install.standing_names(spec), made)
         # ON THE FARM'S STORE, not its own. Its own battery is still built --
         # it is part of the processor the Workshop makes -- and it holds
         # nothing, which is the honest state of it: the engine has no way to
@@ -218,6 +221,11 @@ def compose(ground: dict, world: dict) -> dict:
                 program["store"] = the_grid
             for panel in made.get("panels") or []:
                 panel["store"] = the_grid
+        # A FURNACE'S CHAMBER IS NOT MACHINERY: it is the space its lining
+        # encloses, so it goes to the room as a gas region for the thermal
+        # network to heat and leak. Taken out before the machines are merged,
+        # because `machines` holds no such key.
+        made = workshop_install.chambers_into(spec, made)
         spec["precise_rigid_bodies"] += bodies
         spec["joints"] += pins
         for key in ("stores", "motors", "panels", "controls", "programs"):
@@ -251,8 +259,8 @@ def compose(ground: dict, world: dict) -> dict:
     return spec
 
 
-def a_built_thing(ground: dict, kind: str, name: str,
-                  at: tuple[float, float]) -> tuple[list[dict], list[dict], Any, Any]:
+def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
+                  parameters: dict | None = None) -> tuple[list[dict], list[dict], Any, Any]:
     """Any Workshop kind, stood on the ground where it goes.
 
     THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
@@ -261,8 +269,8 @@ def a_built_thing(ground: dict, kind: str, name: str,
     design. Nothing here is made up for the world -- if the Workshop cannot
     build it, it cannot stand here either, which is the rule.
     """
-    design = w.assemble(kind, design_id=name)
-    candidate = {"kind": kind, "design_id": name, "parameters": {},
+    design = w.assemble(kind, design_id=name, parameters=dict(parameters or {}))
+    candidate = {"kind": kind, "design_id": name, "parameters": dict(parameters or {}),
                  "component_overrides": design.lineage["component_overrides"]}
     design, overrides = workshop_components.design_from_spec(candidate)
     artifact = rigid_assembly.compile_design(design, overrides, root=name)
@@ -278,9 +286,15 @@ def a_built_thing(ground: dict, kind: str, name: str,
     return rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made, design
 
 
-def a_processor(ground: dict, name: str, at: tuple[float, float],
-                routine: dict) -> tuple[list[dict], list[dict], dict]:
-    """The Workshop's own processor, stood on the ground where it goes.
+def a_works(ground: dict, name: str, at: tuple[float, float],
+            routine: dict) -> tuple[list[dict], list[dict], dict]:
+    """The machine that works this recipe, stood on the ground where it goes.
+
+    WHICH MACHINE IS THE RECIPE'S TO SAY. A recipe with a temperature needs
+    an inside to make hot, so it gets an electric furnace; cold work gets a
+    processor, which is a deck on legs. Nothing here chooses by name or by a
+    list kept in step by hand -- `needs_c` decides, so a recipe that gains or
+    loses its heat moves to the other machine on its own.
 
     THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
     exact bodies, seat it on the highest ground under its whole footprint,
@@ -292,7 +306,10 @@ def a_processor(ground: dict, name: str, at: tuple[float, float],
     mine's block costs 2,304 cells at 50 mm; a compiled design is precise
     rigid bodies, which the lattice never sees.
     """
-    bodies, pins, made, _ = a_built_thing(ground, "processor", name, at)
+    recipe = str(routine.get("recipe") or "")
+    needs_c = ws.CHAIN_BY_NAME[recipe].needs_c if recipe in ws.CHAIN_BY_NAME else 0.0
+    kind = "electric-furnace" if needs_c > 0.0 else "processor"
+    bodies, pins, made, _ = a_built_thing(ground, kind, name, at, {"recipe": recipe})
     for program in made.get("programs") or []:
         program["routine"] = dict(routine)
     return bodies, pins, made

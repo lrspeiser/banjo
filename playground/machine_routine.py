@@ -222,6 +222,12 @@ class Routine:
         self.intake = str(declared.get("intake") or "") or None
         self.output = str(declared.get("output") or "") or None
         self.batch_kg = float(declared.get("batch_kg") or BATCH_KG)
+        # A machine that works HOT: the gas region its lining encloses, and
+        # what its element puts into that region. Both empty for everything
+        # that works cold, which is what makes a recipe's own temperature the
+        # only thing deciding whether heating happens at all.
+        self.chamber = str(declared.get("chamber") or "") or None
+        self.element_w = float(declared.get("element_w") or 0.0) or None
         self.made_kg = 0.0
         self.batches = 0
         self.sand_m3 = self.soil_m3 = self.kg = 0.0
@@ -523,8 +529,23 @@ class Routine:
 
 
 def declared_for(spec: dict[str, Any] | None, name: str) -> dict[str, Any] | None:
-    """The routine a room declares on the program of this name, if any."""
+    """The routine a room declares on the program of this name, if any.
+
+    Its machine's FURNACE comes with it -- the chamber it heats and what its
+    element is rated at. Those belong to the machine rather than to the task,
+    and they are here for the same reason `hopper_kg` is: the routine is the
+    only description of a machine that reaches the tools it runs. The
+    alternative is reading them off the program the ENGINE reports, and the
+    engine never sees them -- they mean nothing to it, so it drops them, and
+    a furnace built from that report is one that never notices it is cold.
+    """
     for program in ((spec or {}).get("machines") or {}).get("programs") or []:
         if isinstance(program, dict) and program.get("name") == name:
-            return program.get("routine") if isinstance(program.get("routine"), dict) else None
+            routine = program.get("routine")
+            if not isinstance(routine, dict):
+                return None
+            if not program.get("chamber"):
+                return routine
+            return {**routine, "chamber": program["chamber"],
+                    "element_w": program.get("element_w")}
     return None

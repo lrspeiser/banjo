@@ -80,11 +80,32 @@ def checked(value: Any) -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ValueError("machines must be an object")
-    unknown = set(value) - {"schema", "stores", "motors", "panels", "controls", "programs"}
+    unknown = set(value) - {"schema", "stores", "motors", "panels", "controls", "programs", "chambers"}
     if unknown:
         raise ValueError("unknown machine field(s): " + ", ".join(sorted(unknown)))
 
     out: dict[str, Any] = {"schema": SCHEMA}
+
+    # A CHAMBER IS THE INSIDE OF A FURNACE: the gas its walls enclose, which
+    # is the thing that gets hot and the thing a charge sits in. It is not a
+    # body -- it is the space where no body is -- so it reaches the room as a
+    # gas region rather than as machinery, and `in` names the component whose
+    # walls make it so the design can be checked against its own parts.
+    #
+    # `wall_conductance_w_k` is how fast heat leaves through the lining, and
+    # it is the number that decides what the furnace can do: with an element
+    # of P watts it settles at ambient + P/U, so a leaky furnace cannot smelt
+    # iron however long you wait. The product works it out from the lining it
+    # was built with; here it is only checked for being a number.
+    out["chambers"] = [{
+        "name": _name(row.get("name"), "a chamber"),
+        "in": _name(row.get("in"), "a chamber's component"),
+        "volume_m3": _number(row.get("volume_m3"), "volume_m3", 1e-4, 1e3),
+        "wall_conductance_w_k": _number(row.get("wall_conductance_w_k"), "wall_conductance_w_k", 1e-3, 1e5),
+    } for row in _rows(value.get("chambers"), "chambers")]
+    if len(out["chambers"]) > 8:
+        # The room's own limit (fracture_lab.normalise_thermo): eight regions.
+        raise ValueError("a product has at most 8 chambers")
 
     out["stores"] = [{
         "name": _name(row.get("name"), "a store"),
@@ -180,6 +201,20 @@ def checked(value: Any) -> dict[str, Any]:
                 "at_m": _three(s.get("at_m"), "a sensor's at_m"),
                 "depth_m": _number(s.get("depth_m"), "a sensor's depth_m", 0.001, 10.0, default=0.003),
             } for s in sensors]
+        # THE FURNACE'S ELEMENT: which of its chambers this program heats, and
+        # how hard. The element is the program's to switch on -- it fires when
+        # a recipe wants heat and stops when the chamber is at temperature --
+        # so its rating belongs here rather than among the room's heaters,
+        # which start the moment a room opens and run for a fixed time.
+        if row.get("chamber") is not None:
+            program["chamber"] = _name(row.get("chamber"), "a program's chamber")
+            named = {c["name"] for c in out["chambers"]}
+            if program["chamber"] not in named:
+                raise ValueError(f"the program heats the chamber {program['chamber']!r}, and this "
+                                 f"product has " + (", ".join(sorted(named)) or "none"))
+            program["element_w"] = _number(row.get("element_w"), "element_w", 1.0, 1e6)
+        elif row.get("element_w") is not None:
+            raise ValueError("element_w says how hard the element heats; it needs a chamber to heat")
         if row.get("routine") is not None:
             program["routine"] = _routine(row["routine"])
         out["programs"].append(program)
@@ -365,6 +400,16 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
         out["controls"] = [{"name": c["name"],
                             "on": [body(c["turns"][0], "a control"), body(c["turns"][1], "a control")]}
                            for c in record["controls"]]
+    if record.get("chambers"):
+        # A GAS REGION, not machinery: the caller puts these in the room's
+        # `thermo` block. Only keys the thermal network knows may go in one --
+        # it refuses an unknown key by name -- so which component the chamber
+        # is inside is checked here and then dropped, and the pressure is the
+        # atmosphere's, a furnace being open to the air through its door.
+        out["chambers"] = [{"name": c["name"], "volume_m3": c["volume_m3"],
+                            "wall_conductance_w_k": c["wall_conductance_w_k"],
+                            "pressure_pa": 101325.0}
+                           for c in record["chambers"] if body(c["in"], "a chamber")]
     if record.get("programs"):
         program = dict(record["programs"][0])
         controls = {c["name"]: c for c in record.get("controls") or []}

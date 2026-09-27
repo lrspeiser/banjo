@@ -757,6 +757,18 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         # Starting at nothing and counting up is the same thing as counting up.
         if str(key).startswith("next") and was is None and type(now) is int and now >= 0:
             continue
+        # Installing a furnace puts a gas region in the room, and the world's
+        # readiness record counts them, so that count moves -- the same way a
+        # counter moves, and for the same reason: the install made one. What
+        # may NOT move is the rest of the record, above all the two version
+        # numbers, which are how a stale engine is caught.
+        if key == "carry_readiness" and isinstance(was, dict) and isinstance(now, dict):
+            counts = ("gas_regions", "pending_heaters")
+            if ({k: v for k, v in was.items() if k not in counts}
+                    == {k: v for k, v in now.items() if k not in counts}
+                    and all(type(now.get(c)) is int and type(was.get(c, 0)) is int
+                            and now.get(c) >= was.get(c, 0) for c in counts)):
+                continue
         raise ValueError(f"Staging changed existing {key}; installation refused")
     bg, ag = before.get("material_geometry"), after.get("material_geometry")
     if bg is not None or ag is not None:
@@ -1062,7 +1074,7 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
         panel["at_mm"], panel["normal"] = _lies_on_top_of(artifact, shift, h, panel["body"])
     # Kept apart from what the room already holds, and it hands back a copy
     # rather than changing what it was given.
-    made = _named_apart(spec.get("machines") or {}, made)
+    made = chambers_into(spec, _named_apart(standing_names(spec), made))
     if made:
         machines = deepcopy(spec.get("machines") or {})
         for kind, rows in made.items():
@@ -1160,16 +1172,41 @@ def _goods_for(spec, made, design, frame, pos):
         spec["goods"] = machine_goods.checked(goods)
 
 
+def standing_names(spec):
+    """What a room already holds, in the shape _named_apart wants.
+
+    Its machines, PLUS the chambers, which live in the thermo block rather
+    than among the machines because a chamber is gas and not machinery. The
+    gate cannot find them on its own, and without them every furnace ever
+    installed would name its chamber "chamber" over the last one's.
+    """
+    standing = dict(spec.get("machines") or {})
+    standing["chambers"] = list((spec.get("thermo") or {}).get("gas_regions") or [])
+    return standing
+
+
+def chambers_into(spec, made):
+    """Move a design's chambers out of its machines and into the room's gas
+    regions, where the thermal network will find them. Called before the
+    machines are merged, because `machines` takes no such key and the room
+    would be refused for holding one."""
+    rows = made.pop("chambers", None)
+    if rows:
+        thermo = spec.setdefault("thermo", {})
+        thermo["gas_regions"] = list(thermo.get("gas_regions") or []) + list(rows)
+    return made
+
+
 def _named_apart(existing, made):
     """A machine's names, kept apart from the room's: a second rover's battery
     is "rover battery 2", its program "rover 2", and whatever names them --
     a motor its store, a program its wheels' controls -- follows. The room
     refuses two stores of one name, and a design does not know the room."""
     taken = {kind: {row.get("name") for row in existing.get(kind) or [] if isinstance(row, dict)}
-             for kind in ("stores", "controls", "programs", "panels")}
+             for kind in ("stores", "controls", "programs", "panels", "chambers")}
     renamed = {}
     out = deepcopy(made)
-    for kind in ("stores", "controls", "programs", "panels"):
+    for kind in ("stores", "controls", "programs", "panels", "chambers"):
         for row in out.get(kind) or []:
             name = row.get("name")
             if name is None:
@@ -1194,6 +1231,12 @@ def _named_apart(existing, made):
         # name for something else, standing there already.
         if program.get("rotors"):
             program["rotors"] = [renamed.get(("controls", r), r) for r in program["rotors"]]
+        # Its own chamber, though, moved with it: eight furnaces in a yard all
+        # call theirs "chamber", and a program left pointing at the first one
+        # would heat a furnace on the other side of the valley and read its
+        # temperature back as its own.
+        if program.get("chamber"):
+            program["chamber"] = renamed.get(("chambers", program["chamber"]), program["chamber"])
     return out
 
 
@@ -1231,7 +1274,7 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
         raise ValueError("places maps at most 16 names to [x, z] in the room's metres")
     made = workshop_machines.installed(design, set_down["component_to_body"], frame, places)
     spec = deepcopy(room.spec)
-    made = _named_apart(spec.get("machines") or {}, made)
+    made = chambers_into(spec, _named_apart(standing_names(spec), made))
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + bodies
     for field, extra in (("joints", pins), ("actions", actions), ("interaction_points", points)):
         spec[field] = (spec.get(field) or []) + extra

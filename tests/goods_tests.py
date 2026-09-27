@@ -343,7 +343,7 @@ class TheMine(unittest.TestCase):
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
-class TheProcessorFromTheBench(unittest.TestCase):
+class TheFurnaceFromTheBench(unittest.TestCase):
     """The Workshop's processor template installed into a room through the
     gate: its bins become stockpiles of the room's where they stand, its
     recipe is given to the room, and ore put on its intake is worked into
@@ -352,11 +352,15 @@ class TheProcessorFromTheBench(unittest.TestCase):
     def test_it_installs_with_its_bins_as_stockpiles_and_works_its_recipe(self):
         from workshop_rover_tests import empty_basin
         import workshop_install as install
-        design = w.assemble("processor", design_id="processor")
-        self.assertEqual(9, len(design.parts))
-        self.assertEqual("1 store, 1 panel, a still program and a process routine",
-                         workshop_machines.described(design)["says"])
-        candidate = {"kind": "processor", "design_id": "processor", "parameters": {},
+        # AN ELECTRIC FURNACE, because smelting copper takes 1085 C and a
+        # processor is a deck on legs with no inside to make hot. The rest of
+        # this is unchanged: it is the same bench-to-room path, and what it
+        # proves is that a machine built on the bench arrives with its bins as
+        # stockpiles, its recipe given to the room, and -- now -- its chamber
+        # among the room's gas regions.
+        design = w.assemble("electric-furnace", design_id="furnace")
+        self.assertEqual(17, len(design.parts))
+        candidate = {"kind": "electric-furnace", "design_id": "furnace", "parameters": {},
                      "component_overrides": deepcopy(design.lineage["component_overrides"])}
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -383,17 +387,27 @@ class TheProcessorFromTheBench(unittest.TestCase):
             self.assertEqual("preview", preview["status"], preview)
             self.assertEqual(1, len(preview["root_bodies"]), "one body, no pins")
             receipt = install.commit(app, {"scene": "basin", "session": ctx["session"],
-                                           "preview_id": preview["preview_id"], "request_id": "install-processor-1"})
+                                           "preview_id": preview["preview_id"], "request_id": "install-furnace-1"})
             self.assertEqual("installed", receipt["status"], receipt)
             spec = room.spec
             [program] = spec["machines"]["programs"]
-            self.assertEqual(("still", "process", "smelt copper", "processor intake bin", "processor output bin"),
+            self.assertEqual(("still", "process", "smelt copper", "electric-furnace intake bin", "electric-furnace output bin"),
                              (program["kind"], program["routine"]["kind"], program["routine"]["recipe"],
                               program["routine"]["intake"], program["routine"]["output"]))
+            # ITS CHAMBER CAME WITH IT, into the room's gas regions and not
+            # among its machines, and the program still points at it.
+            self.assertEqual("chamber", program["chamber"])
+            self.assertEqual(5000.0, program["element_w"])
+            [region] = spec["thermo"]["gas_regions"]
+            self.assertEqual("chamber", region["name"])
+            self.assertAlmostEqual(0.048, region["volume_m3"], places=6, msg="0.4 x 0.4 x 0.3 m inside")
+            self.assertAlmostEqual(3.0, region["wall_conductance_w_k"], places=4,
+                                   msg="80 mm of castable at 0.3 W/m/K over 0.8 m2")
+            self.assertNotIn("chambers", spec["machines"], "a chamber is gas, not machinery")
             self.assertNotIn("recipes", program["routine"], "given to the room, not kept on the routine")
             piles = {s["name"]: s for s in spec["goods"]["stockpiles"]}
-            self.assertEqual({"processor intake bin", "processor output bin"}, set(piles))
-            self.assertGreater(piles["processor intake bin"]["at_m"][1], piles["processor output bin"]["at_m"][1] + 0.5,
+            self.assertEqual({"electric-furnace intake bin", "electric-furnace output bin"}, set(piles))
+            self.assertGreater(piles["electric-furnace intake bin"]["at_m"][1], piles["electric-furnace output bin"]["at_m"][1] + 0.5,
                                "the intake bin stands ahead (+z) of the output bin, where the bins are")
             self.assertEqual(["smelt copper"], [r["name"] for r in spec["goods"]["recipes"]])
             self.assertEqual(1.0, receipt["materials_taken"][-1]["took_kg"] if receipt["materials_taken"][-1].get("substance") == "copper" else 1.0)
@@ -401,7 +415,7 @@ class TheProcessorFromTheBench(unittest.TestCase):
             brains.opened(spec)
             self.assertNotIn("machine_problems", live.session.state, live.session.state.get("machine_problems"))
             goods = brains.goods
-            intake = goods.by_name("processor intake bin")
+            intake = goods.by_name("electric-furnace intake bin")
             goods.put(intake["at_m"][0], intake["at_m"][1], {"copper ore": 7.0})
             reply = live.session.send(op="step", dt=DT, n=1)
             [said] = reply["machines"]["programs"]
@@ -412,15 +426,21 @@ class TheProcessorFromTheBench(unittest.TestCase):
                 brains.before(app, body)
                 answer = live.act(body)
                 brains.attach(body, answer)
-                if goods.by_name("processor output bin")["holds"].get("copper", 0.0) >= 2.0:
+                if goods.by_name("electric-furnace output bin")["holds"].get("copper", 0.0) >= 2.0:
                     break
-            output = goods.by_name("processor output bin")["holds"]
-            store = next(s for s in answer["machines"]["stores"] if s["name"] == "processor battery")
-            print(f"\n    the bench's processor made {output} of 7 kg of ore; its battery gave {store['given_j']:.0f} J; "
-                  f"notes: {list(brains.of('processor').routine.notes)[-3:]}")
+            output = goods.by_name("electric-furnace output bin")["holds"]
+            store = next(s for s in answer["machines"]["stores"] if s["name"] == "furnace battery")
+            print(f"\n    the bench's furnace made {output} of 7 kg of ore; its battery gave {store['given_j']:.0f} J; "
+                  f"notes: {list(brains.of('electric-furnace').routine.notes)[-3:]}")
             self.assertAlmostEqual(2.1, output.get("copper", 0.0), places=3, msg="7 kg of ore at three tenths")
-            self.assertEqual({}, goods.by_name("processor intake bin")["holds"])
-            self.assertAlmostEqual(14000.0, store["given_j"], delta=1.0, msg="2 kJ a kilogram, and nothing else drew")
+            self.assertEqual({}, goods.by_name("electric-furnace intake bin")["holds"])
+            # 14 kJ of smelting, and on top of it what reaching 1085 C cost.
+            # Heating dominates, which is the real shape of a furnace: far
+            # more goes into getting hot than into the conversion itself.
+            self.assertGreater(store["given_j"], 14000.0, "it paid for its heat as well as its work")
+            heating = store["given_j"] - 14000.0
+            self.assertAlmostEqual(0.0, heating % 10000.0, places=3,
+                                   msg="each spell of heating is 5 kW for 2 s, and none of them overlapped")
 
 
 if __name__ == "__main__":

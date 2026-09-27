@@ -116,6 +116,7 @@
      "copper ore": 1.0
     },
     "name": "smelt copper",
+    "needs_c": 1085.0,
     "out": {
      "copper": 0.3
     },
@@ -127,6 +128,7 @@
      "copper": 1.0
     },
     "name": "draw wire",
+    "needs_c": 0.0,
     "out": {
      "copper wire": 0.98
     },
@@ -138,6 +140,7 @@
      "iron ore": 1.0
     },
     "name": "smelt iron",
+    "needs_c": 1538.0,
     "out": {
      "iron": 0.62
     },
@@ -149,6 +152,7 @@
      "bauxite": 1.0
     },
     "name": "smelt aluminium",
+    "needs_c": 960.0,
     "out": {
      "aluminum": 0.25
     },
@@ -160,6 +164,7 @@
      "sand": 1.0
     },
     "name": "melt glass",
+    "needs_c": 1400.0,
     "out": {
      "glass": 0.85
     },
@@ -171,6 +176,7 @@
      "clay": 1.0
     },
     "name": "fire ceramic",
+    "needs_c": 1200.0,
     "out": {
      "alumina ceramic": 0.7
     },
@@ -182,6 +188,7 @@
      "limestone": 1.0
     },
     "name": "burn lime",
+    "needs_c": 900.0,
     "out": {
      "cement": 0.56
     },
@@ -194,6 +201,7 @@
      "sand": 0.85
     },
     "name": "mix concrete",
+    "needs_c": 0.0,
     "out": {
      "concrete": 1.0
     },
@@ -603,10 +611,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     -8240.0,
-     1382.6,
+     -7465.0,
+     1008.8,
      -1750.0
     ],
     "body": "smelter",
@@ -637,10 +645,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     -10240.0,
-     1439.4,
+     -9465.0,
+     1069.4,
      -6750.0
     ],
     "body": "clay kiln",
@@ -654,10 +662,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     -14240.0,
-     1769.7,
+     -13465.0,
+     1387.1,
      -7250.0
     ],
     "body": "lime kiln",
@@ -671,10 +679,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     14760.0,
-     1762.4,
+     15535.0,
+     1282.6,
      -7750.0
     ],
     "body": "iron smelter",
@@ -688,10 +696,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     -4740.0,
-     1500.5,
+     -3965.0,
+     1041.0,
      -2250.0
     ],
     "body": "glass furnace",
@@ -722,10 +730,10 @@
     "store": "array battery"
    },
    {
-    "area_m2": 0.1944,
+    "area_m2": 0.0625,
     "at_mm": [
-     15260.0,
-     1101.6,
+     16035.0,
+     722.4,
      -5750.0
     ],
     "body": "aluminium cell",
@@ -826,8 +834,10 @@
    },
    {
     "body": "smelter",
+    "chamber": "chamber",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor",
+    "name": "electric-furnace",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -842,7 +852,7 @@
    {
     "body": "mill",
     "kind": "still",
-    "name": "processor 2",
+    "name": "processor",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -856,8 +866,10 @@
    },
    {
     "body": "clay kiln",
+    "chamber": "chamber 2",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor 3",
+    "name": "electric-furnace 2",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -871,8 +883,10 @@
    },
    {
     "body": "lime kiln",
+    "chamber": "chamber 3",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor 4",
+    "name": "electric-furnace 3",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -886,8 +900,10 @@
    },
    {
     "body": "iron smelter",
+    "chamber": "chamber 4",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor 5",
+    "name": "electric-furnace 4",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -901,8 +917,10 @@
    },
    {
     "body": "glass furnace",
+    "chamber": "chamber 5",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor 6",
+    "name": "electric-furnace 5",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -917,7 +935,7 @@
    {
     "body": "concrete mixer",
     "kind": "still",
-    "name": "processor 7",
+    "name": "processor 2",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -931,8 +949,10 @@
    },
    {
     "body": "aluminium cell",
+    "chamber": "chamber 6",
+    "element_w": 5000.0,
     "kind": "still",
-    "name": "processor 8",
+    "name": "electric-furnace 6",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -964,56 +984,56 @@
     "body": "smelter",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery",
+    "name": "furnace battery",
     "voltage_v": 48.0
    },
    {
     "body": "mill",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 2",
+    "name": "processor battery",
     "voltage_v": 48.0
    },
    {
     "body": "clay kiln",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 3",
+    "name": "furnace battery 2",
     "voltage_v": 48.0
    },
    {
     "body": "lime kiln",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 4",
+    "name": "furnace battery 3",
     "voltage_v": 48.0
    },
    {
     "body": "iron smelter",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 5",
+    "name": "furnace battery 4",
     "voltage_v": 48.0
    },
    {
     "body": "glass furnace",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 6",
+    "name": "furnace battery 5",
     "voltage_v": 48.0
    },
    {
     "body": "concrete mixer",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 7",
+    "name": "processor battery 2",
     "voltage_v": 48.0
    },
    {
     "body": "aluminium cell",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "processor battery 8",
+    "name": "furnace battery 6",
     "voltage_v": 48.0
    }
   ]
@@ -1516,8 +1536,8 @@
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "smelter",
    "orientation_wxyz": [
     1.0,
@@ -1529,98 +1549,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -1632,14 +1762,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -1647,7 +1777,7 @@
    ],
    "position_m": [
     -7.880000000000001,
-    0.8726311583518982,
+    0.8688057918548584,
     -1.75
    ]
   },
@@ -1788,8 +1918,8 @@
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "clay kiln",
    "orientation_wxyz": [
     1.0,
@@ -1801,98 +1931,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -1904,14 +2144,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -1924,8 +2164,8 @@
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "lime kiln",
    "orientation_wxyz": [
     1.0,
@@ -1937,98 +2177,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -2040,14 +2390,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -2055,13 +2405,13 @@
    ],
    "position_m": [
     -13.88,
-    1.2597314376831055,
+    1.247104660987854,
     -7.25
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "iron smelter",
    "orientation_wxyz": [
     1.0,
@@ -2073,98 +2423,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -2176,14 +2636,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -2191,13 +2651,13 @@
    ],
    "position_m": [
     15.120000000000001,
-    1.252426173210144,
+    1.1425775451660156,
     -7.75
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "glass furnace",
    "orientation_wxyz": [
     1.0,
@@ -2209,98 +2669,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -2312,14 +2882,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -2327,7 +2897,7 @@
    ],
    "position_m": [
     -4.38,
-    0.9904854555130005,
+    0.901010648727417,
     -2.25
    ]
   },
@@ -2468,8 +3038,8 @@
    ]
   },
   {
-   "color_rgba": 3382733567,
-   "material": "oak",
+   "color_rgba": 3503611135,
+   "material": "iron",
    "name": "aluminium cell",
    "orientation_wxyz": [
     1.0,
@@ -2481,98 +3051,208 @@
     {
      "center_local_m": [
       0.0,
-      0.48,
+      0.05,
       0.0
      ],
      "dimensions_m": [
-      1.2,
-      0.04,
-      1.2
+      0.56,
+      0.08,
+      0.56
      ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-1"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-2"
-    },
-    {
-     "center_local_m": [
-      0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-3"
-    },
-    {
-     "center_local_m": [
-      -0.504,
-      0.23,
-      -0.504
-     ],
-     "dimensions_m": [
-      0.05,
-      0.46,
-      0.05
-     ],
-     "name": "leg-4"
+     "material": "concrete",
+     "name": "lining-floor"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      0.312
+      0.43,
+      0.0
      ],
      "dimensions_m": [
-      0.5,
+      0.56,
+      0.08,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-roof"
+    },
+    {
+     "center_local_m": [
+      -0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-left"
+    },
+    {
+     "center_local_m": [
+      0.24000000000000002,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.08,
+      0.3,
+      0.56
+     ],
+     "material": "concrete",
+     "name": "lining-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.24000000000000002
+     ],
+     "dimensions_m": [
+      0.4,
+      0.3,
+      0.08
+     ],
+     "material": "concrete",
+     "name": "lining-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.005,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-floor"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.47500000000000003,
+      0.0
+     ],
+     "dimensions_m": [
+      0.5800000000000001,
+      0.01,
+      0.5800000000000001
+     ],
+     "name": "shell-roof"
+    },
+    {
+     "center_local_m": [
+      -0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-left"
+    },
+    {
+     "center_local_m": [
+      0.28500000000000003,
+      0.24,
+      0.0
+     ],
+     "dimensions_m": [
+      0.01,
+      0.45999999999999996,
+      0.5800000000000001
+     ],
+     "name": "shell-right"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      -0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-front"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.24,
+      0.28500000000000003
+     ],
+     "dimensions_m": [
+      0.56,
+      0.45999999999999996,
+      0.01
+     ],
+     "name": "shell-back"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.105,
+      0.0
+     ],
+     "dimensions_m": [
+      0.27999999999999997,
+      0.03,
+      0.06
+     ],
+     "name": "element"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08499999999999999,
+      -0.51
+     ],
+     "dimensions_m": [
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "intake bin"
     },
     {
      "center_local_m": [
       0.0,
-      0.575,
-      -0.312
+      0.08499999999999999,
+      0.51
      ],
      "dimensions_m": [
-      0.5,
+      0.44000000000000006,
       0.15,
-      0.5
+      0.44000000000000006
      ],
      "name": "output bin"
     },
     {
      "center_local_m": [
-      0.36,
-      0.56,
+      0.41500000000000004,
+      0.13,
       0.0
      ],
      "dimensions_m": [
@@ -2584,14 +3264,14 @@
     },
     {
      "center_local_m": [
-      -0.36,
-      0.505,
+      0.41500000000000004,
+      0.135,
       0.0
      ],
      "dimensions_m": [
-      0.36,
+      0.25,
       0.01,
-      0.54
+      0.25
      ],
      "material": "glass",
      "name": "solar panel"
@@ -2599,7 +3279,7 @@
    ],
    "position_m": [
     15.620000000000001,
-    0.591563250541687,
+    0.5824480314254761,
     -5.75
    ]
   }
@@ -2611,6 +3291,46 @@
  },
  "terrain": {
   "generate": "valley"
+ },
+ "thermo": {
+  "gas_regions": [
+   {
+    "name": "chamber",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   },
+   {
+    "name": "chamber 2",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   },
+   {
+    "name": "chamber 3",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   },
+   {
+    "name": "chamber 4",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   },
+   {
+    "name": "chamber 5",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   },
+   {
+    "name": "chamber 6",
+    "pressure_pa": 101325.0,
+    "volume_m3": 0.048,
+    "wall_conductance_w_k": 3.0
+   }
+  ]
  },
  "water": {
   "discharge_m3_s": 0.35

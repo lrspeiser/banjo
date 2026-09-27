@@ -334,17 +334,273 @@ PROCESSOR_PARAMETERS = (
     w.Parameter("capacity_j", "J", 2000000.0, 100.0, 1e9),
     w.Parameter("charge_j", "J", 2000000.0, 0.0, 1e9),
     w.Parameter("batch_kg", "kg", 5.0, 0.1, 500.0),
-    w.Parameter("recipe", "", "smelt copper", choices=("smelt copper", "draw wire")),
+    # The cold half of the chain only. A deck on legs has no inside to make
+    # hot, so a processor asked to smelt would stand at its bin for ever; the
+    # bench does not offer a build that cannot work. Those recipes are the
+    # electric furnace's.
+    w.Parameter("recipe", "", "draw wire", choices=("draw wire", "mix concrete")),
     w.Parameter("material", "", "oak", choices=("oak", "iron")),
 )
-# The recipes the template knows, per kilogram in, so a processor made on
-# the bench brings its chemistry to a room that has none.
-PROCESSOR_RECIPES = {
+# Every recipe the Workshop's machines can be built to work, per kilogram in,
+# so a machine made on the bench brings its chemistry to a room that has none.
+# This is the game's chain -- playground/world_seed.CHAIN -- in the room's own
+# words: `work_j_per_kg` is that chain's real specific energy taken down by its
+# WORK_SCALE (20 MJ/kg of copper smelting becomes 2000 J/kg), and `needs_c` is
+# the real temperature of the real process, which is what decides whether a
+# recipe needs a furnace or only a bench.
+#
+# THE SAME EIGHT IN TWO PLACES, ON PURPOSE. world_seed belongs to the
+# generator and cannot be imported from here: mcp/ does not sit on
+# playground's path, and a lazy import would work in the server and fail on
+# the bench, which is the worst of both. So the table is written out, and
+# tests/workshop_recipe_tests.py pins every number in it to the chain. They
+# cannot drift without a test saying which number moved.
+CATALOGUE_RECIPES = {
     "smelt copper": {"name": "smelt copper", "in": {"copper ore": 1.0}, "out": {"copper": 0.3},
-                     "work_j_per_kg": 2000.0, "s_per_kg": 2.0},
+                     "work_j_per_kg": 2000.0, "s_per_kg": 2.0, "needs_c": 1085.0},
     "draw wire": {"name": "draw wire", "in": {"copper": 1.0}, "out": {"copper wire": 0.98},
-                  "work_j_per_kg": 500.0, "s_per_kg": 1.0},
+                  "work_j_per_kg": 500.0, "s_per_kg": 1.0, "needs_c": 0.0},
+    "smelt iron": {"name": "smelt iron", "in": {"iron ore": 1.0}, "out": {"iron": 0.62},
+                   "work_j_per_kg": 2000.0, "s_per_kg": 2.5, "needs_c": 1538.0},
+    "smelt aluminium": {"name": "smelt aluminium", "in": {"bauxite": 1.0}, "out": {"aluminum": 0.25},
+                        "work_j_per_kg": 17000.0, "s_per_kg": 4.0, "needs_c": 960.0},
+    "melt glass": {"name": "melt glass", "in": {"sand": 1.0}, "out": {"glass": 0.85},
+                   "work_j_per_kg": 800.0, "s_per_kg": 3.0, "needs_c": 1400.0},
+    "fire ceramic": {"name": "fire ceramic", "in": {"clay": 1.0}, "out": {"alumina ceramic": 0.70},
+                     "work_j_per_kg": 1000.0, "s_per_kg": 4.0, "needs_c": 1200.0},
+    "burn lime": {"name": "burn lime", "in": {"limestone": 1.0}, "out": {"cement": 0.56},
+                  "work_j_per_kg": 400.0, "s_per_kg": 3.0, "needs_c": 900.0},
+    "mix concrete": {"name": "mix concrete", "in": {"cement": 0.15, "sand": 0.85}, "out": {"concrete": 1.0},
+                     "work_j_per_kg": 50.0, "s_per_kg": 0.5, "needs_c": 0.0},
 }
+#: What a processor can be built to work: the cold half of the chain. A hot
+#: recipe wants a chamber to be hot IN, which a deck on legs has not got, so
+#: it belongs to the electric furnace and the bench will not offer it here.
+PROCESSOR_RECIPES = {name: row for name, row in CATALOGUE_RECIPES.items() if not row["needs_c"]}
+#: And the hot half, which is what a furnace is for.
+FURNACE_RECIPES = {name: row for name, row in CATALOGUE_RECIPES.items() if row["needs_c"]}
+
+
+# ---------------------------------------------------------------------------
+# The electric furnace: a box with a real inside.
+#
+# A processor makes one thing of another on a deck. A furnace has to make its
+# INSIDE hot, and the inside is the point: a steel shell, a refractory lining,
+# and the space the lining encloses, which is a real volume of real air in the
+# thermal network. An element on the chamber floor puts the yard's electricity
+# into that air, and the recipe will not run until the engine says the air is
+# at the process temperature.
+#
+# WHAT THE LINING DECIDES. Heat leaves the chamber through the lining at
+# U = k*A/t, and an element of P watts holds the chamber at ambient + P/U. So
+# the lining is not decoration: a furnace with 25 mm of brick cannot smelt
+# copper however long it is left, and one with 100 mm can smelt iron. That is
+# the real relation, it is the same one a real furnace obeys, and it makes
+# thickness a thing worth getting right rather than a number to fill in.
+#
+# WHAT THE LINING IS MADE OF, AND WHY ITS CONDUCTIVITY IS A PARAMETER. The
+# lining is an insulating refractory CASTABLE: calcium-aluminate cement with
+# a lightweight aggregate, poured and fired in place, which is how small
+# furnaces really are lined and which is genuinely a concrete. So its parts
+# are concrete, which is also the only refractory among the four materials an
+# exact body may be made of -- glass, oak, iron, concrete. (Ceramic would be
+# the other candidate and the engine refuses it for exact bodies; that is
+# worth fixing and is not this change.)
+#
+# Its conductivity is a parameter because it is the POROUS form's. An
+# insulating castable runs about 0.3 W/m/K; ordinary structural concrete is
+# 1.7, and the thermal model's dense alumina is 30. A lining of dense alumina
+# would need fifteen metres of wall to hold 1500 C. The number is declared
+# here with its source so that nobody later "corrects" it to the structural
+# value and quietly makes every furnace in the game useless.
+#
+# WHAT IS NOT REAL HERE, SAID PLAINLY. The chamber stores only its gas --
+# 43 J/K for 50 litres of air. A real furnace's lining is 15-25 kg of
+# refractory at about 1000 J/kg/K, so its heat capacity is several hundred
+# times larger and a real box of this size takes HOURS to reach 1538 C, not
+# the 35 seconds measured here. The steady state is a real furnace's; the
+# warm-up is a game's. The honest way to slow it down is to give the lining
+# thermal mass in the network, not to spoil the conductance.
+# ---------------------------------------------------------------------------
+
+ELECTRIC_FURNACE_PARAMETERS = (
+    w.Parameter("chamber_w_m", "m", 0.4, 0.15, 1.2, about="the inside, across"),
+    w.Parameter("chamber_d_m", "m", 0.4, 0.15, 1.2, about="the inside, front to back"),
+    w.Parameter("chamber_h_m", "m", 0.3, 0.1, 1.0, about="the inside, floor to roof"),
+    # 80 mm of insulating castable on a 0.8 m2 chamber is 3.0 W/K, which on a
+    # 5 kW element tops out at 1686 C -- measured -- and so smelts iron with
+    # about 150 C in hand. Thinner and it cannot: 40 mm reaches 853 C, which
+    # will not even burn lime.
+    w.Parameter("lining_m", "m", 0.08, 0.01, 0.3,
+                about="the refractory between the chamber and the shell: what it can reach"),
+    w.Parameter("shell_m", "m", 0.01, 0.004, 0.05, about="the steel skin outside the lining"),
+    w.Parameter("lining_k_w_m_k", "W/m/K", 0.3, 0.03, 2.0,
+                about="insulating castable conducts about 0.3; structural concrete is 1.7"),
+    w.Parameter("element_w", "W", 5000.0, 100.0, 50000.0, about="what its element puts into the chamber"),
+    w.Parameter("capacity_j", "J", 2000000.0, 100.0, 1e9),
+    w.Parameter("charge_j", "J", 2000000.0, 0.0, 1e9),
+    w.Parameter("batch_kg", "kg", 5.0, 0.1, 500.0),
+    w.Parameter("recipe", "", "smelt copper", choices=tuple(sorted(FURNACE_RECIPES))),
+    # THE FITTINGS ONLY -- its bins and its battery case. The shell is steel
+    # and the lining is refractory, and neither is a choice: a furnace with
+    # an oak shell is not a cheaper furnace, it is a fire. What this picks is
+    # what the two hoppers bolted to the outside are made of, and oak is the
+    # sane default because the library's bin is a solid block, so an iron one
+    # weighs 228 kg and costs more than the whole furnace around it.
+    w.Parameter("material", "", "oak", choices=("oak", "iron"), about="its bins and battery case"),
+)
+
+
+def _furnace_chamber(values: dict[str, Any]) -> tuple[float, float, float]:
+    """The chamber's volume, its inner surface, and how fast heat leaves it.
+
+    All three fall out of the geometry a person chose on the bench, which is
+    the point: make the box bigger and there is more of it to lose heat
+    through, make the lining thicker and less gets out.
+    """
+    cw, cd, ch = (float(values["chamber_w_m"]), float(values["chamber_d_m"]),
+                  float(values["chamber_h_m"]))
+    lining = float(values["lining_m"])
+    volume = cw * cd * ch
+    area = 2.0 * (cw * cd) + 2.0 * (cw * ch) + 2.0 * (cd * ch)
+    return volume, area, float(values["lining_k_w_m_k"]) * area / lining
+
+
+def furnace_reaches_c(values: dict[str, Any], ambient_c: float = 20.0) -> float:
+    """The hottest the chamber will ever get: ambient + P/U, the temperature
+    at which the element and the lining's losses balance. Left running for
+    ever it approaches this and never passes it, so a recipe hotter than this
+    is one this furnace cannot work, whoever waits."""
+    return ambient_c + float(values["element_w"]) / _furnace_chamber(values)[2]
+
+
+def _build_electric_furnace(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    cw, cd, ch = (float(values["chamber_w_m"]), float(values["chamber_d_m"]),
+                  float(values["chamber_h_m"]))
+    lining, shell = float(values["lining_m"]), float(values["shell_m"])
+    material = str(values["material"])
+    # The lining's outside, then the shell's: each wraps the one within it.
+    lw, ld, lh = cw + 2 * lining, cd + 2 * lining, ch + 2 * lining
+    sw, sd = lw + 2 * shell, ld + 2 * shell
+    floor = shell + lining                     # where the chamber's floor is
+    roof = floor + ch                          # and its roof
+    mid = floor + ch / 2.0                     # halfway up the chamber
+
+    parts: list[w.WirePart] = []
+    # THE LINING, six faces enclosing the chamber. Laid out as the kettle's
+    # vessel is: floor and roof take the full footprint, the sides take the
+    # full depth, and the front and back fit between the sides.
+    parts += [
+        w.WirePart("lining-floor", "container_bottom", (lw, lining, ld),
+                   (0.0, shell + lining / 2.0, 0.0), material="concrete", family="lining"),
+        w.WirePart("lining-roof", "container_bottom", (lw, lining, ld),
+                   (0.0, roof + lining / 2.0, 0.0), material="concrete", family="lining"),
+        w.WirePart("lining-left", "container_wall", (lining, ch, ld),
+                   (-(cw + lining) / 2.0, mid, 0.0), material="concrete", family="lining"),
+        w.WirePart("lining-right", "container_wall", (lining, ch, ld),
+                   ((cw + lining) / 2.0, mid, 0.0), material="concrete", family="lining"),
+        w.WirePart("lining-front", "container_wall", (cw, ch, lining),
+                   (0.0, mid, -(cd + lining) / 2.0), material="concrete", family="lining"),
+        w.WirePart("lining-back", "container_wall", (cw, ch, lining),
+                   (0.0, mid, (cd + lining) / 2.0), material="concrete", family="lining"),
+    ]
+    # THE SHELL, six more outside those. Steel, and not the caller's choice:
+    # it is what holds a 1500 C box together and it is what the lining is
+    # cast against.
+    parts += [
+        w.WirePart("shell-floor", "container_bottom", (sw, shell, sd),
+                   (0.0, shell / 2.0, 0.0), material="iron", family="shell"),
+        w.WirePart("shell-roof", "container_bottom", (sw, shell, sd),
+                   (0.0, roof + lining + shell / 2.0, 0.0), material="iron", family="shell"),
+        w.WirePart("shell-left", "container_wall", (shell, lh, sd),
+                   (-(lw + shell) / 2.0, shell + lh / 2.0, 0.0), material="iron", family="shell"),
+        w.WirePart("shell-right", "container_wall", (shell, lh, sd),
+                   ((lw + shell) / 2.0, shell + lh / 2.0, 0.0), material="iron", family="shell"),
+        w.WirePart("shell-front", "container_wall", (lw, lh, shell),
+                   (0.0, shell + lh / 2.0, -(ld + shell) / 2.0), material="iron", family="shell"),
+        w.WirePart("shell-back", "container_wall", (lw, lh, shell),
+                   (0.0, shell + lh / 2.0, (ld + shell) / 2.0), material="iron", family="shell"),
+    ]
+    # THE ELEMENT, lying on the chamber floor where it can be seen through an
+    # open door. It is what turns the yard's charge into the chamber's heat.
+    element_t = min(0.03, ch * 0.1)
+    parts.append(w.WirePart("element", "container_bottom", (cw * 0.7, element_t, cd * 0.15),
+                            (0.0, floor + element_t / 2.0, 0.0),
+                            material="iron", family="element"))
+    # THE BINS, outside where a rover can reach them: what goes in at the
+    # front, what comes out at the back. The goods ledger moves the charge
+    # between them; this is where a machine docks to load and unload.
+    bin_m = min(0.5, min(cw, cd) * 1.1)
+    # Intake ahead (+z) and output behind, the way a processor's stand, so a
+    # machine that has learned to dock at one can dock at the other.
+    for name, sign in (("intake bin", 1.0), ("output bin", -1.0)):
+        parts += library.make("bin", name=name, material=material,
+                              at_m=(0.0, shell, sign * (sd / 2.0 + bin_m / 2.0)),
+                              parameters={"width_m": bin_m, "height_m": 0.15, "depth_m": bin_m}).parts
+    # ITS BATTERY, on the cool side, with a panel on top of it so a furnace
+    # built on its own still has somewhere to draw from.
+    battery_w = min(0.25, sw * 0.5)
+    parts += library.make("battery", name="battery", material=material,
+                          parameters={"width_m": battery_w, "height_m": 0.12, "depth_m": battery_w},
+                          at_m=(sw / 2.0 + battery_w / 2.0, shell + 0.06, 0.0)).parts
+    parts += library.make("solar-panel", name="solar panel", material="glass",
+                          parameters={"width_m": battery_w, "depth_m": battery_w},
+                          at_m=(sw / 2.0 + battery_w / 2.0, shell + 0.12, 0.0)).parts
+    return parts
+
+
+def _electric_furnace_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    from . import workshop_construction, workshop_machines
+    recipe = str(values["recipe"])
+    if recipe not in FURNACE_RECIPES:
+        cold = CATALOGUE_RECIPES.get(recipe)
+        raise ValueError(
+            f"an electric furnace does not work {recipe!r}: " +
+            ("it is cold work and wants a processor, not a chamber" if cold else
+             "the recipes it knows are " + ", ".join(sorted(FURNACE_RECIPES))))
+    volume, _area, conductance = _furnace_chamber(values)
+    # WILL IT EVER GET THERE? The chamber settles where the element and the
+    # lining balance, so this is answerable on the bench, before anything is
+    # built, and answering it here is worth far more than finding out by
+    # watching a furnace sit at 900 C for an afternoon.
+    reaches = furnace_reaches_c(values)
+    wants = float(FURNACE_RECIPES[recipe]["needs_c"])
+    if reaches < wants:
+        raise ValueError(
+            f"this furnace tops out at {reaches:.0f} C and {recipe} needs {wants:.0f} C: its "
+            f"element puts in {float(values['element_w']):.0f} W and its lining loses "
+            f"{conductance:.2f} W/K. Thicken the lining, shrink the chamber, or fit a bigger element")
+    body = [p.name for p in parts if p.name not in ("shell-floor",)]
+    joints = [{"id": f"joint-{i + 1}", "kind": "fixed", "a": "shell-floor", "b": b, "method": "bonded"}
+              for i, b in enumerate(body)]
+    construction = {"schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+                    "joints": joints, "added": [], "removed": []}
+    machines = workshop_machines.checked({
+        "stores": [{"name": "furnace battery", "in": "battery", "capacity_j": values["capacity_j"],
+                    "charge_j": values["charge_j"], "voltage_v": 48.0}],
+        "motors": [], "controls": [],
+        "panels": [{"name": "solar panel", "on": "solar panel", "store": "furnace battery",
+                    "area_m2": round(min(0.25, (float(values["chamber_w_m"]) + 2 * float(values["lining_m"])
+                                                + 2 * float(values["shell_m"])) * 0.5) ** 2, 4),
+                    "efficiency": 0.2}],
+        "chambers": [{"name": "chamber", "in": "lining-floor", "volume_m3": round(volume, 6),
+                      "wall_conductance_w_k": round(conductance, 4)}],
+        "programs": [{"kind": "still", "store": "furnace battery",
+                      "chamber": "chamber", "element_w": values["element_w"],
+                      "routine": {"kind": "process", "recipe": recipe, "intake": "intake bin",
+                                  "output": "output bin", "batch_kg": values["batch_kg"],
+                                  "recipes": [dict(FURNACE_RECIPES[recipe])]}}],
+    })
+    out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,
+                           workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _electric_furnace_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    del values
+    return []
 
 
 SOLAR_ARRAY_PARAMETERS = (
@@ -480,6 +736,17 @@ def _processor_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dic
     construction = {"schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
                     "joints": joints, "added": [], "removed": []}
     recipe = str(values["recipe"])
+    if recipe not in PROCESSOR_RECIPES:
+        # Said, not silently dropped. The recipe list used to be looked up with
+        # a fallback to nothing, so a processor built for a recipe it did not
+        # know came out perfectly formed, installed, powered up, and made
+        # nothing for ever, with no line anywhere saying why.
+        hot = CATALOGUE_RECIPES.get(recipe)
+        raise ValueError(
+            f"a processor cannot work {recipe!r}: " +
+            (f"it needs {hot['needs_c']:.0f} C, and a processor has no chamber to make hot. "
+             f"Build an electric furnace for it" if hot else
+             f"the recipes it knows are " + ", ".join(sorted(PROCESSOR_RECIPES))))
     machines = workshop_machines.checked({
         "stores": [{"name": "processor battery", "in": "battery", "capacity_j": values["capacity_j"],
                     "charge_j": values["charge_j"], "voltage_v": 48.0}],
@@ -490,7 +757,7 @@ def _processor_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dic
         "programs": [{"kind": "still", "store": "processor battery",
                       "routine": {"kind": "process", "recipe": recipe, "intake": "intake bin", "output": "output bin",
                                   "batch_kg": values["batch_kg"],
-                                  "recipes": [dict(PROCESSOR_RECIPES[recipe])] if recipe in PROCESSOR_RECIPES else []}}],
+                                  "recipes": [dict(PROCESSOR_RECIPES[recipe])]}}],
     })
     out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,
                            workshop_machines.MACHINES_KEY: machines}
@@ -625,8 +892,20 @@ def install() -> None:
         SOLAR_ARRAY_PARAMETERS, _build_solar_array, _solar_array_trials, _solar_array_overrides,
         uses={"primary_use_component": "frame",
               "interaction_point_components": {"deck": "frame", "grip": "frame", "use": "battery"}})
+    existing["electric-furnace"] = w.Assembly(
+        "electric-furnace", "make the inside hot enough to smelt",
+        "A steel shell around a refractory lining around a chamber of air, with an element on the chamber "
+        "floor and a bin at either end. The chamber is a real volume in the thermal network: the element "
+        "heats it, the lining decides how much of that stays in, and the recipe waits until the engine says "
+        "it is at temperature.",
+        ELECTRIC_FURNACE_PARAMETERS, _build_electric_furnace, _electric_furnace_trials,
+        _electric_furnace_overrides,
+        uses={"primary_use_component": "shell-floor",
+              "interaction_point_components": {"deck": "shell-roof", "grip": "shell-left",
+                                               "use": "intake bin"}})
     if "processor" not in seen: ordered.append(existing["processor"])
     if "solar-array" not in seen: ordered.append(existing["solar-array"])
+    if "electric-furnace" not in seen: ordered.append(existing["electric-furnace"])
     w.ASSEMBLIES = tuple(ordered)
     w._BY_NAME = {assembly.name: assembly for assembly in w.ASSEMBLIES}
     _INSTALLED = True
