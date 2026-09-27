@@ -95,6 +95,45 @@ class TheRoomsAccountOfGoods(unittest.TestCase):
         self.assertTrue(reading["stockpiles"][0]["within_reach"])
         self.assertEqual(["copper", "copper ore", "copper wire", "slag"], goods.substances())
 
+    def test_every_holder_reaches_the_page_and_only_when_it_has_moved(self):
+        """What the page's slots are drawn from (docs/machine-world.md, "What
+        everything holds, in slots"). Until this, a stockpile was a number in
+        the room's spec that the page was never told, so a heap of ore could
+        not be seen at all. It goes with the room when it opens, and with a
+        step only when something in it has moved."""
+        spec = {"goods": machine_goods.checked(goods_block())}
+        goods = machine_goods.Goods(spec)
+        held = goods.holders()
+        self.assertEqual(["smelter intake", "workshop rack"], [s["name"] for s in held["stockpiles"]])
+        self.assertEqual([{}, {}], [s["holds_kg"] for s in held["stockpiles"]], "nothing in them yet")
+        self.assertEqual([False, True], [s["rack"] for s in held["stockpiles"]], "which one is the Workshop's")
+        self.assertEqual([{"name": "copper vein", "at_m": [2.0, -6.5], "substance": "copper ore",
+                           "left_kg": 20.0, "of_kg": 20.0}], held["deposits"])
+        goods.put(-3.0, -8.0, {"copper ore": 12.0})
+        goods.dug(2.0, -6.5, 10.0)
+        held = goods.holders()
+        self.assertEqual({"copper ore": 12.0}, held["stockpiles"][0]["holds_kg"])
+        self.assertEqual(17.0, held["deposits"][0]["left_kg"], "3 kg of that 10 kg scoop was ore at 0.3")
+
+        # The seam the page reads it through (rover_brain.Brains).
+        brains = rover_brain.Brains(lambda: None)
+        brains.opened(spec)
+        opened: dict = {}
+        brains.settle(opened)
+        self.assertEqual({"copper ore": 12.0}, opened["goods"]["stockpiles"][0]["holds_kg"],
+                         "the room does not open with what its heaps hold")
+        step = {"op": "step"}
+        answer: dict = {}
+        brains.attach(step, answer)
+        self.assertNotIn("goods", answer, "nothing moved, so nothing is sent")
+        brains.goods.put(-3.0, -8.0, {"copper ore": 1.0})
+        answer = {}
+        brains.attach(step, answer)
+        self.assertEqual({"copper ore": 13.0}, answer["goods"]["stockpiles"][0]["holds_kg"])
+        answer = {}
+        brains.attach(step, answer)
+        self.assertNotIn("goods", answer, "sent once, not again until it moves again")
+
     def test_a_recipe_works_a_batch_and_no_more_than_is_there(self):
         goods = machine_goods.Goods({"goods": goods_block()})
         holds = {"copper ore": 7.0}
