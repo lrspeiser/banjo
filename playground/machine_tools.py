@@ -575,6 +575,40 @@ def take(ctx: senses.Context, call: Call) -> dict[str, Any]:
             "load": r.load_reading()}
 
 
+#: What a machine puts into itself while it is warming up, and for how long
+#: at a time. 5 kW for two seconds is 10 kJ a spell -- a spell being about
+#: as often as a routine gets a turn. Declared, not measured: it is the
+#: rating of a heating element nobody has specified, and the number a
+#: furnace's own design should carry once one does.
+HEATING_W = 5000.0
+HEATING_S = 2.0
+#: How near the mark counts as at it. A body loses heat to the air the whole
+#: time it is being heated, so holding an exact figure is not something a
+#: heater switching on and off can promise.
+HEAT_SLACK_C = 15.0
+
+
+def _how_hot(ctx: senses.Context, body: str) -> float | None:
+    """What the engine says that body's temperature is, in Celsius, or None
+    when it is not in the thermal network at all -- which is what a body that
+    has never been heated is."""
+    said = _act(ctx, op="thermo") or {}
+    block = said.get("thermo") if isinstance(said.get("thermo"), dict) else said
+    for entry in (block.get("bodies") or []):
+        if entry.get("name") == body:
+            t_k = entry.get("t_k")
+            if isinstance(t_k, (int, float)):
+                return float(t_k) - 273.15
+    return None
+
+
+def _needs_c(ctx: senses.Context, recipe: str) -> float:
+    for row in (getattr(ctx.goods, "recipes", None) or []):
+        if row.get("name") == recipe:
+            return float(row.get("needs_c") or 0.0)
+    return 0.0
+
+
 def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
     """One batch of its recipe: the inputs off its intake stockpile, the work
     drawn from its store, the outputs onto its output stockpile, and a wait
@@ -599,6 +633,32 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
         raise ValueError("its output stockpile is not within reach")
     store = senses._store(ctx)
     batch = float(call.args.get("kg") or r.batch_kg)
+
+    # IT HAS TO BE HOT. A recipe that needs heat says what its machine must
+    # be at, and the engine says what it IS -- not a timer, not a flag. Below
+    # the mark the machine heats itself instead of working: it draws from its
+    # store and puts that energy into its own body the way a heater does.
+    #
+    # The ambient takes heat off it the whole time, which is why a furnace
+    # left alone goes cold and why coming back to a cold one costs again.
+    wants_c = _needs_c(ctx, recipe)
+    body = str(ctx.program.get("body") or "")
+    if wants_c > 0.0 and body:
+        now_c = _how_hot(ctx, body)
+        if now_c is None or now_c < wants_c - HEAT_SLACK_C:
+            joules = HEATING_W * HEATING_S
+            if store is not None:
+                have = float(store.get("charge_j") or 0.0)
+                if have + 1e-9 < joules:
+                    return {"did": f"cannot heat: its battery has {have:.0f} J and a spell of "
+                                   f"heating takes {joules:.0f} J", "failed": True}
+                _act(ctx, op="draw", store=store["id"], joules=joules)
+            _act(ctx, op="heat", target=body, power_w=HEATING_W, seconds=HEATING_S)
+            was = "cold" if now_c is None else f"{now_c:.0f} C"
+            r.note(f"heating for {recipe}: {was} of {wants_c:.0f} C")
+            return {"did": f"heating to work {recipe}: {was} of {wants_c:.0f} C, "
+                           f"{HEATING_W / 1000:.1f} kW drawn", "idle": True}
+
     holds = intake.setdefault("holds", {})
     trial = ctx.goods.convert(recipe, dict(holds), batch)
     if not trial["made"]:

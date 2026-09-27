@@ -371,6 +371,10 @@ def checked(given: Any) -> dict[str, Any]:
             raise ValueError(f"recipe {n!r} makes more mass than it takes in: {sum(outs.values()):g} kg out of "
                              f"{sum(ins.values()):g} kg in")
         out["recipes"].append({"name": n, "in": ins, "out": outs,
+                               # What the machine working it has to be at, in
+                               # degrees Celsius. Zero is cold work.
+                               "needs_c": number(r.get("needs_c", 0.0), 0.0, 3000.0,
+                                                 f"recipe {n!r} needs_c"),
                                "work_j_per_kg": number(r.get("work_j_per_kg", 0.0), 0.0, 1e8, f"recipe {n!r} work_j_per_kg"),
                                "s_per_kg": number(r.get("s_per_kg", 1.0), 0.0, 3600.0, f"recipe {n!r} s_per_kg")})
     return out

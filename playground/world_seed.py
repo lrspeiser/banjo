@@ -134,13 +134,20 @@ class Step:
     makes: dict[str, float]
     real_mj_per_kg: float
     s_per_kg: float
+    #: What the machine working it has to be AT, in degrees Celsius, before a
+    #: batch will come out: the real temperature of the real process. Zero is
+    #: cold work. It is the machine that has to reach it, not the charge
+    #: inside it -- a heap's contents are an account in the goods ledger and
+    #: not matter in the thermal network, which is the next step and not this
+    #: one.
+    needs_c: float = 0.0
     note: str = ""
 
     def as_recipe(self) -> dict[str, Any]:
         """The room's own spelling of it (machine_goods, "recipes")."""
         return {"name": self.name, "in": dict(self.takes), "out": dict(self.makes),
                 "work_j_per_kg": round(self.real_mj_per_kg * 1.0e6 * WORK_SCALE, 1),
-                "s_per_kg": self.s_per_kg}
+                "s_per_kg": self.s_per_kg, "needs_c": self.needs_c}
 
 
 # ---------------------------------------------------------------------------
@@ -193,22 +200,22 @@ WORKS: tuple[Works, ...] = (
 )
 
 CHAIN: tuple[Step, ...] = (
-    Step("smelt copper", {"copper ore": 1.0}, {"copper": 0.30}, 20.0, 2.0,
+    Step("smelt copper", {"copper ore": 1.0}, {"copper": 0.30}, 20.0, 2.0, 1085.0,
          "concentrate to cathode; the mine room's own recipe, unchanged"),
-    Step("draw wire", {"copper": 1.0}, {"copper wire": 0.98}, 5.0, 1.0,
+    Step("draw wire", {"copper": 1.0}, {"copper wire": 0.98}, 5.0, 1.0, 0.0,
          "drawing and annealing; the mine room's own recipe, unchanged"),
-    Step("smelt iron", {"iron ore": 1.0}, {"iron": 0.62}, 20.0, 2.5,
+    Step("smelt iron", {"iron ore": 1.0}, {"iron": 0.62}, 20.0, 2.5, 1538.0,
          "blast furnace to basic oxygen steel, about 20 MJ/kg all told"),
-    Step("smelt aluminium", {"bauxite": 1.0}, {"aluminum": 0.25}, 170.0, 4.0,
+    Step("smelt aluminium", {"bauxite": 1.0}, {"aluminum": 0.25}, 170.0, 4.0, 960.0,
          "four tonnes of bauxite to two of alumina to one of metal, and "
          "Hall-Heroult is the dearest thing in the game by a long way"),
-    Step("melt glass", {"sand": 1.0}, {"glass": 0.85}, 8.0, 3.0,
+    Step("melt glass", {"sand": 1.0}, {"glass": 0.85}, 8.0, 3.0, 1400.0,
          "a float furnace; the batch loses its carbon dioxide"),
-    Step("fire ceramic", {"clay": 1.0}, {"alumina ceramic": 0.70}, 10.0, 4.0,
+    Step("fire ceramic", {"clay": 1.0}, {"alumina ceramic": 0.70}, 10.0, 4.0, 1200.0,
          "water and loss on ignition take the rest"),
-    Step("burn lime", {"limestone": 1.0}, {"cement": 0.56}, 4.0, 3.0,
+    Step("burn lime", {"limestone": 1.0}, {"cement": 0.56}, 4.0, 3.0, 900.0,
          "calcination: calcium carbonate loses 44% of its mass as gas"),
-    Step("mix concrete", {"cement": 0.15, "sand": 0.85}, {"concrete": 1.0}, 0.5, 0.5,
+    Step("mix concrete", {"cement": 0.15, "sand": 0.85}, {"concrete": 1.0}, 0.5, 0.5, 0.0,
          "one of cement to six of aggregate; the water is not tracked"),
 )
 
