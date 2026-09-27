@@ -72,6 +72,66 @@ class WhatAFinishMaySay(unittest.TestCase):
                 [{"body": "deck", "color": "red"}] * (fracture_lab.MAX_SKINS + 1), BODIES)
 
 
+class AFinishIsOfWhatTheThingIsBuiltOf(unittest.TestCase):
+    """The owner, 2026-09-26: "a finish should be of the material it is built
+    with."
+
+    Colour and polish are things you do to a surface: stain oak, paint it, sand
+    it, lacquer it, and it is still oak -- which is why its grain still runs
+    through whatever you put on. How metallic a thing is, is not something you
+    do to a surface. It is whether light leaves the stuff by reflecting off it
+    or by scattering about inside it, and that is what the thing IS.
+
+    So a finish may take it DOWN -- painting a steel bracket really does cover
+    the metal with a paint that is not one -- and may never take it up. Without
+    this the room could be made to draw a drone as anodised aluminium while
+    saying "oak, 12.04 kg" about it, which is a room saying two things at once.
+    """
+
+    THINGS = [{"name": "drone", "material": "oak"},
+              {"name": "bracket", "material": "iron"},
+              {"name": "pot", "material": "alumina ceramic"}]
+
+    def skins(self, *rows):
+        return fracture_lab.normalise_skins(list(rows), self.THINGS)
+
+    def test_wood_can_be_stained_and_polished(self):
+        self.assertEqual(self.skins({"body": "drone", "color": "#4a2f1c", "roughness": 0.3}),
+                         [{"body": "drone", "color": "#4a2f1c", "roughness": 0.3}])
+
+    def test_wood_cannot_be_made_metal(self):
+        with self.assertRaises(ValueError) as caught:
+            self.skins({"body": "drone", "color": "#39414a", "metalness": 0.85})
+        said = str(caught.exception)
+        self.assertIn("made of oak", said)
+        self.assertIn("will not become a metal", said)
+
+    def test_a_glaze_on_clay_is_allowed_and_a_mirror_is_not(self):
+        self.assertIn("metalness", self.skins({"body": "pot", "metalness": 0.05})[0])
+        with self.assertRaises(ValueError):
+            self.skins({"body": "pot", "metalness": 0.4})
+
+    def test_metal_may_be_painted_over(self):
+        # The paint is a dielectric, so the painted bracket really is not
+        # metallic any more. Down is a finish; up is a different substance.
+        self.assertEqual(self.skins({"body": "bracket", "color": "#2b4a7a", "metalness": 0.0}),
+                         [{"body": "bracket", "color": "#2b4a7a", "metalness": 0.0}])
+
+    def test_metal_may_be_left_metal(self):
+        self.assertEqual(self.skins({"body": "bracket", "metalness": 0.9}),
+                         [{"body": "bracket", "metalness": 0.9}])
+
+    def test_which_materials_are_metals_lives_with_the_materials(self):
+        from mcp import engine_materials
+        self.assertTrue(engine_materials.conducts("iron"))
+        self.assertTrue(engine_materials.conducts("aluminum"))
+        self.assertFalse(engine_materials.conducts("oak"))
+        # And it travels with the catalogue, so nothing has to keep its own copy.
+        self.assertEqual({d["material"]: d["metal"] for d in engine_materials.described()
+                          if d["material"] in ("iron", "oak")},
+                         {"iron": True, "oak": False})
+
+
 class AFinishSurvivesTheRoom(unittest.TestCase):
     """The whitelist in the middle: a field it has not heard of is dropped in
     silence, so the only way to know a skin arrives is to send one through."""
@@ -105,8 +165,20 @@ class WhichBodyWearsWhich(unittest.TestCase):
 
     TO_BODY = {"deck": "deck", "rail": "deck", "hub": "left wheel", "tyre": "left wheel"}
 
-    def finishes(self, overrides):
-        return workshop_install._finishes(overrides, self.TO_BODY)
+    class Design:
+        """Just enough of a design to say what each component is made of."""
+
+        class Part:
+            def __init__(self, name, material):
+                self.name, self.material = name, material
+
+        def __init__(self, materials):
+            self.parts = [self.Part(n, m) for n, m in materials.items()]
+
+    OAK = Design({"deck": "oak", "rail": "oak", "hub": "iron", "tyre": "rubber"})
+
+    def finishes(self, overrides, design=None):
+        return workshop_install._finishes(design or self.OAK, overrides, self.TO_BODY)
 
     def test_components_that_agree_dress_the_body_they_became(self):
         skins, argued = self.finishes({
@@ -136,6 +208,21 @@ class WhichBodyWearsWhich(unittest.TestCase):
         skins, argued = self.finishes({"tyre": {"skin": {"color": "black", "roughness": 0.95}}})
         self.assertEqual(argued, [])
         self.assertEqual([s["body"] for s in skins], ["left wheel"])
+
+    def test_a_finish_the_material_will_not_carry_costs_the_finish_not_the_install(self):
+        # The room refuses one outright, and rightly. Here it is dropped and
+        # named instead, so that asking for a metallic oak deck costs you the
+        # finish rather than the whole installation.
+        skins, argued = self.finishes({"deck": {"skin": {"color": "#39414a", "metalness": 0.9}}})
+        self.assertEqual(skins, [])
+        self.assertEqual(argued, ["deck"])
+        # The same finish on a thing actually made of metal is carried.
+        metal = self.Design({"deck": "iron", "rail": "iron", "hub": "iron", "tyre": "iron"})
+        skins, argued = self.finishes(
+            {"deck": {"skin": {"color": "#39414a", "metalness": 0.9}}}, metal)
+        self.assertEqual(argued, [])
+        self.assertEqual(skins, [{"body": "deck", "color": "#39414a",
+                                  "roughness": 0.72, "metalness": 0.9}])
 
     def test_a_component_that_became_no_body_is_passed_over(self):
         skins, argued = self.finishes({"a part that was fitted away": {"skin": {"color": "red"}}})

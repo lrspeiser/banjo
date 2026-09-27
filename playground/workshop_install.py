@@ -304,7 +304,7 @@ def _kept(app: Any, answer: dict[str, Any], design: Any, overrides: Any) -> dict
     return answer
 
 
-def _finishes(overrides, component_to_body):
+def _finishes(design, overrides, component_to_body):
     """The finish each installed body carries out of the Workshop.
 
     A skin is set on a COMPONENT at the bench (set_skin), and a body in the room
@@ -327,6 +327,11 @@ def _finishes(overrides, component_to_body):
     if not dressed:
         return [], []
     asked: dict[str, set] = {}
+    made_of: dict[str, str] = {}
+    for part in design.parts:
+        body = (component_to_body or {}).get(part.name)
+        if body:
+            made_of.setdefault(str(body), str(part.material or ""))
     for component, skin in dressed.items():
         body = (component_to_body or {}).get(component)
         if not body:
@@ -341,6 +346,15 @@ def _finishes(overrides, component_to_body):
             argued.append(body)
             continue
         colour, roughness, metalness = next(iter(asked[body]))
+        # A finish is a finish OF what the thing is built of, and the room is
+        # the authority on that (fracture_lab.normalise_skins). Checked here as
+        # well so that a finish the material will not carry costs the person
+        # the finish and not the whole installation: it is dropped, and said.
+        material = made_of.get(body, "")
+        ceiling = 1.0 if engine_materials.conducts(material) else fracture_lab.DIELECTRIC_METALNESS
+        if metalness > ceiling:
+            argued.append(body)
+            continue
         made = {"body": body, "roughness": roughness, "metalness": metalness}
         if colour:
             made["color"] = colour
@@ -1095,7 +1109,7 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     for joint in artifact["joints"]:
         joint["at_mm"] = [joint["at_mm"][a]+shift[a]*h*1000 for a in range(3)]
     spec = deepcopy(room.spec)
-    skins, unskinned = _finishes(overrides, artifact["component_to_body"])
+    skins, unskinned = _finishes(design, overrides, artifact["component_to_body"])
     for field, extra in (("bodies", artifact["bodies"]), ("joints", artifact["joints"]),
                          ("interfaces", artifact["interfaces"]), ("actions", actions),
                          ("skins", skins), ("interaction_points", points)):

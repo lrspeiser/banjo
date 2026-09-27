@@ -68,6 +68,23 @@ ALIASES = {
 }
 
 
+# Which of these are METALS, which is a fact about the substance and not about
+# how anything is drawn: light leaves a conductor by reflecting off its surface
+# and leaves a dielectric by scattering about inside it, which is why a metal
+# and a painted metal look nothing alike, and why no finish makes oak conduct.
+#
+# It lives here with the rest of what a material IS, because a finish put on a
+# thing in the room is checked against it (fracture_lab.normalise_skins). The
+# page keeps its own copy for drawing in MATERIAL_LOOK; this is the one the
+# room enforces, and described() carries it so the page can come to read it.
+METALS = frozenset({"iron", "aluminum", "aluminium", "steel"})
+
+
+def conducts(name: str) -> bool:
+    """Whether light leaves this material by reflecting off it: is it a metal."""
+    return str(name).strip().lower() in METALS
+
+
 def canonical(name: str) -> str:
     key = str(name).strip().lower()
     return ALIASES.get(key, key)
@@ -119,7 +136,11 @@ def engine_name(name: str) -> str:
 
 
 def described() -> list[dict[str, Any]]:
-    return [{"material": name, **values} for name, values in MATERIALS.items()]
+    # `metal` travels with the rest of what a material is, so that anything
+    # drawing or finishing one can read it from the catalogue rather than keep
+    # a table of its own and let it go stale.
+    return [{"material": name, "metal": conducts(name), **values}
+            for name, values in MATERIALS.items()]
 
 
 def synchronize_workshop_model() -> None:

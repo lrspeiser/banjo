@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
 import core_use  # noqa: E402
 import interaction_points  # noqa: E402
+import engine_materials  # noqa: E402
 
 GRAVITY_M_S2 = 9.81
 REALTIME_LIMIT = 1.1
@@ -1492,6 +1493,12 @@ SKIN_FIELDS = {"body", "color", "roughness", "metalness"}
 MAX_SKINS = 400
 
 
+# How metallic a thing that is not a metal may be drawn. Not zero, because a
+# varnish or a glaze puts a little specular sheen on wood and clay and the
+# number is the honest way to say so; nowhere near enough to read as metal.
+DIELECTRIC_METALNESS = 0.05
+
+
 def normalise_skins(skins: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """How a thing in the room is FINISHED (banjo.product-skin.v1, the appearance
     of it).
@@ -1517,6 +1524,7 @@ def normalise_skins(skins: Any, bodies: list[dict[str, Any]]) -> list[dict[str, 
     if len(skins) > MAX_SKINS:
         raise ValueError(f"at most {MAX_SKINS} skins in a room")
     named = {str(body.get("name", "")) for body in bodies}
+    made_of = {str(body.get("name", "")): str(body.get("material") or "") for body in bodies}
     out: list[dict[str, Any]] = []
     already: set[str] = set()
     for i, skin in enumerate(skins):
@@ -1541,6 +1549,27 @@ def normalise_skins(skins: Any, bodies: list[dict[str, Any]]) -> list[dict[str, 
             if skin.get(field) is None:
                 continue
             made[field] = _number(skin[field], 0.0, 1.0, f"skin {i} {field}")
+        # A FINISH IS A FINISH OF THE MATERIAL THE THING IS BUILT OF (the owner,
+        # 2026-09-26). Colour and polish are things you do to a surface: you can
+        # stain oak, paint it, sand it or lacquer it, and it is still oak, which
+        # is why its grain still runs through whatever you put on it. How
+        # metallic it is, is not something you do to a surface -- it is whether
+        # light leaves the stuff by reflecting off it or by scattering inside
+        # it, and that is what the thing IS. So a finish may take it DOWN, since
+        # painting a steel bracket really does cover the metal with a paint that
+        # is not one, and may never take it up: there is no lacquer that makes
+        # oak conduct. Without this the room could be made to draw a drone as
+        # anodised aluminium while saying "oak, 12.04 kg" about it, which is a
+        # room saying two things at once.
+        if "metalness" in made:
+            material = made_of.get(body, "")
+            ceiling = 1.0 if engine_materials.conducts(material) else DIELECTRIC_METALNESS
+            if made["metalness"] > ceiling:
+                raise ValueError(
+                    f"skin {i}: {body!r} is made of {material or 'something that is not a metal'}, "
+                    f"so it cannot be finished {made['metalness']:g} metallic. A finish is a finish "
+                    f"OF what the thing is built of -- stain it, paint it, polish it, but it will "
+                    f"not become a metal. At most {ceiling:g}.")
         if len(made) == 1:
             raise ValueError(f"skin {i} says nothing about how {body!r} looks")
         out.append(made)
