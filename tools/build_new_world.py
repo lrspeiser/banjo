@@ -56,6 +56,15 @@ WATCH_S = 600.0
 #: Where a person arrives in the valley: the hill in the middle, which is
 #: where world_room.valley puts them and what the drive map is measured from.
 ARRIVE_AT = (0.0, 0.0)
+#: A works machine's block: smaller than the mine room's 0.6 x 0.8 x 0.6,
+#: because there are eight of them here and there is one there. At this
+#: room's 50 mm cells the mine's block is 2,304 cells and eight of those are
+#: 18,432 against the lane's cap of 16,000 -- the room was refused outright.
+#: This one is 10 x 13 x 10 = 1,300, so eight come to 10,400. Seventeen per
+#: cent shorter in each direction, which is nothing to look at and everything
+#: to the budget: that is what a cube law does.
+WORKS_BLOCK_M = (0.5, 0.65, 0.5)
+
 #: The seed a new game starts from until somebody asks for another. The
 #: generator re-seeds past a bad roll on its own, so this is where it starts
 #: looking and not a promise that this one works.
@@ -72,7 +81,10 @@ def compose(ground: dict, world: dict) -> dict:
     script's layout and this script wants a different layout. The valley's
     terrain replaces the basin's for the same reason.
     """
-    goods = world["goods"]
+    # A copy, because the loan below is written into its heaps and the
+    # generator's own block is what the proof was made against.
+    goods = json.loads(json.dumps(world["goods"]))
+    spec_goods = goods
     yard = {p["name"]: tuple(p["at_m"]) for p in goods["stockpiles"]}
     intake, rack = yard["smelter intake"], yard["workshop rack"]
     middle = ((intake[0] + rack[0]) / 2.0, (intake[1] + rack[1]) / 2.0)
@@ -89,6 +101,7 @@ def compose(ground: dict, world: dict) -> dict:
     finally:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
     spec["water"] = dict(grounds.WATER)
+    spec["goods"] = spec_goods
 
     # The rover's job in the routine language: go to the nearest copper, dig
     # until the hopper is full, come back, tip it into the smelter's intake.
@@ -104,36 +117,61 @@ def compose(ground: dict, world: dict) -> dict:
             {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
         ]}
 
-    # The smelter: a block BESIDE the line between its two heaps, with a
-    # battery, a panel and the program that works one recipe between them.
-    #
-    # NOT ON THE LINE. Stood at the midpoint it is exactly what anything
-    # driving from one heap to the other runs into: the rover came back with
-    # a full hopper, met 600 mm of concrete nose-first, and sat against it for
-    # 180 seconds re-issuing the same order, because go_to steers straight at
-    # where it is going and knows nothing of what is between. A metre and a
-    # quarter to the side still reaches both heaps -- 1.95 m to each against
-    # machine_goods' 2 m of reach past their 0.8 m edge -- and leaves the way
-    # between them open.
-    span = math.hypot(rack[0] - intake[0], rack[1] - intake[1]) or 1.0
-    side = (-(rack[1] - intake[1]) / span, (rack[0] - intake[0]) / span)
-    beside = [(middle[0] + s * 1.25 * side[0], middle[1] + s * 1.25 * side[1]) for s in (1.0, -1.0)]
-    dry = [p for p in beside if not ws.wet_near(ground, p[0], p[1], 0.8)]
-    at = min(dry or beside, key=lambda p: ws.flatness(ground, p[0], p[1], 0.8))
-    body, top = mine.block(ground, "smelter", at)
-    spec["bodies"].append(body)
-    still = mine.STILL
-    spec["machines"]["stores"].append(
-        {"name": "smelter battery", "body": "smelter", "capacity_j": still["capacity_j"],
-         "charge_j": still["charge_j"], "voltage_v": still["voltage_v"]})
-    spec["machines"]["panels"].append(
-        {"name": "smelter panel", "body": "smelter", "store": "smelter battery",
-         "at_mm": [round(1000.0 * v, 1) for v in top], "normal": [0.0, 1.0, 0.0],
-         "area_m2": still["panel_area_m2"], "efficiency": still["efficiency"]})
-    spec["machines"]["programs"].append(
-        {"name": "smelter", "kind": "still", "body": "smelter", "store": "smelter battery",
-         "routine": {"kind": "process", "recipe": "smelt copper", "intake": "smelter intake",
-                     "output": "workshop rack", "batch_kg": 5.0}})
+    # EVERY WORKS THE GENERATOR PLACED, not only the smelter. The ladder has
+    # nine rungs and six of them are learned by WATCHING a machine work, so a
+    # room with one machine in it is a room where six rungs cannot be reached.
+    heaps = {p["name"]: p for p in goods["stockpiles"]}
+    for works in ws.WORKS:
+        name = works.machine
+        intake_name, output_name = ws.heaps_of(works)
+        if intake_name not in heaps or output_name not in heaps:
+            continue                      # the generator found no ground for it
+        # BESIDE THE LINE BETWEEN ITS TWO HEAPS, never on it. Stood at the
+        # midpoint a machine is exactly what anything driving from one heap to
+        # the other runs into: the rover came back with a full hopper, met
+        # 600 mm of concrete nose-first, and sat against it for 180 seconds
+        # re-issuing the same order, because go_to steers straight at where it
+        # is going and knows nothing of what is between. A metre and a quarter
+        # to the side still reaches both heaps -- 1.95 m to each against
+        # machine_goods' 2 m of reach past their 0.8 m edge.
+        one, two = heaps[intake_name]["at_m"], heaps[output_name]["at_m"]
+        mid = ((one[0] + two[0]) / 2.0, (one[1] + two[1]) / 2.0)
+        span = math.hypot(two[0] - one[0], two[1] - one[1]) or 1.0
+        side = (-(two[1] - one[1]) / span, (two[0] - one[0]) / span)
+        beside = [(mid[0] + s * 1.25 * side[0], mid[1] + s * 1.25 * side[1]) for s in (1.0, -1.0)]
+        dry = [p for p in beside if not ws.wet_near(ground, p[0], p[1], 0.8)]
+        at = min(dry or beside, key=lambda p: ws.flatness(ground, p[0], p[1], 0.8))
+        body, top = works_block(ground, name, at)
+        spec["bodies"].append(body)
+        still = mine.STILL
+        spec["machines"]["stores"].append(
+            {"name": f"{name} battery", "body": name, "capacity_j": still["capacity_j"],
+             "charge_j": still["charge_j"], "voltage_v": still["voltage_v"]})
+        spec["machines"]["panels"].append(
+            {"name": f"{name} panel", "body": name, "store": f"{name} battery",
+             "at_mm": [round(1000.0 * v, 1) for v in top], "normal": [0.0, 1.0, 0.0],
+             "area_m2": still["panel_area_m2"], "efficiency": still["efficiency"]})
+        spec["machines"]["programs"].append(
+            {"name": name, "kind": "still", "body": name, "store": f"{name} battery",
+             "routine": {"kind": "process", "recipe": works.recipe,
+                         "intake": intake_name, "output": output_name,
+                         "batch_kg": 5.0}})
+        # ITS LOAN. The generator keeps this off the goods block on purpose --
+        # a charge is not a supply, and a proof that counted it said you could
+        # reach everything without ever digging. The room is where it belongs:
+        # enough to be watched working once, and then it waits for you.
+        # ITS LOAN, read off the recipe. Whatever the recipe takes, in the
+        # proportions it takes it. Charging one named substance gave the
+        # concrete mixer 10 kg of cement and no sand, and mixing concrete
+        # takes 0.15 of one to 0.85 of the other -- so it sat on a full heap
+        # and made nothing. Every other recipe here has a single input, which
+        # is why that showed up exactly once.
+        takes = ws.CHAIN_BY_NAME[works.recipe].takes
+        whole = sum(takes.values()) or 1.0
+        if works.charge_kg > 0:
+            holds = heaps[intake_name].setdefault("holds", {})
+            for substance, share in takes.items():
+                holds[substance] = round(works.charge_kg * share / whole, 3)
 
     # BOTH MACHINES ARE RUNNING WHEN THE ROOM OPENS. A program that does not
     # say `power` opens stopped and waits to be switched on by hand, which is
@@ -144,8 +182,25 @@ def compose(ground: dict, world: dict) -> dict:
     for program in spec["machines"]["programs"]:
         program["power"] = True
 
-    spec["goods"] = json.loads(json.dumps(goods))
     return spec
+
+
+def works_block(ground: dict, name: str, at: tuple[float, float]) -> tuple[dict, list[float]]:
+    """A still machine's block standing on the ground: the body, and the
+    middle of its top for its panel.
+
+    The mine room's own (build_mine_room.block) at a size eight of them can
+    afford. Seated on the HIGHEST ground under its whole footprint, which is
+    why a works needs no flat patch: Jolt leaves a body started inside the
+    ground where it is, so the seating is what keeps it out of the hill.
+    """
+    x, z = at
+    hx, hz = WORKS_BLOCK_M[0] / 2.0, WORKS_BLOCK_M[2] / 2.0
+    base = grounds.ground_under(ground, (x - hx, z - hz), (x + hx, z + hz))
+    body = {"name": name, "shape": "box", "material": "concrete", "anchored": True,
+            "size_mm": [round(1000.0 * v, 1) for v in WORKS_BLOCK_M],
+            "center_mm": [round(1000.0 * v, 1) for v in (x, base + WORKS_BLOCK_M[1] / 2.0, z)]}
+    return body, [x, base + WORKS_BLOCK_M[1], z]
 
 
 def _nearest(deposits: list[dict], substance: str, to: tuple[float, float]) -> dict:

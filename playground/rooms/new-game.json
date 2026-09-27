@@ -21,16 +21,128 @@
    "anchored": true,
    "center_mm": [
     -7880.0,
-    1268.8,
+    1193.2,
     -1750.0
    ],
    "material": "concrete",
    "name": "smelter",
    "shape": "box",
    "size_mm": [
-    600.0,
-    800.0,
-    600.0
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -4880.0,
+    1164.6,
+    -250.0
+   ],
+   "material": "concrete",
+   "name": "mill",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -9880.0,
+    1249.9,
+    -6750.0
+   ],
+   "material": "concrete",
+   "name": "clay kiln",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -13880.0,
+    1407.3,
+    -7250.0
+   ],
+   "material": "concrete",
+   "name": "lime kiln",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    15120.0,
+    1246.8,
+    -7750.0
+   ],
+   "material": "concrete",
+   "name": "iron smelter",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -4380.0,
+    1161.6,
+    -2250.0
+   ],
+   "material": "concrete",
+   "name": "glass furnace",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    -11380.0,
+    1251.3,
+    -750.0
+   ],
+   "material": "concrete",
+   "name": "concrete mixer",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
+   ]
+  },
+  {
+   "anchored": true,
+   "center_mm": [
+    15620.0,
+    901.7,
+    -5750.0
+   ],
+   "material": "concrete",
+   "name": "aluminium cell",
+   "shape": "box",
+   "size_mm": [
+    500.0,
+    650.0,
+    500.0
    ]
   }
  ],
@@ -223,6 +335,9 @@
      -6.38,
      -3.0
     ],
+    "holds": {
+     "copper ore": 20.0
+    },
     "name": "smelter intake",
     "radius_m": 0.8
    },
@@ -245,6 +360,140 @@
     },
     "name": "oak pile",
     "radius_m": 1.0
+   },
+   {
+    "at_m": [
+     -3.38,
+     -1.5
+    ],
+    "holds": {
+     "copper": 10.0
+    },
+    "name": "mill intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -6.38,
+     -1.5
+    ],
+    "name": "mill output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -8.38,
+     -8.0
+    ],
+    "holds": {
+     "clay": 20.0
+    },
+    "name": "clay kiln intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -11.38,
+     -8.0
+    ],
+    "name": "clay kiln output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -12.38,
+     -8.5
+    ],
+    "holds": {
+     "limestone": 20.0
+    },
+    "name": "lime kiln intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -15.38,
+     -8.5
+    ],
+    "name": "lime kiln output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     16.62,
+     -9.0
+    ],
+    "holds": {
+     "iron ore": 20.0
+    },
+    "name": "iron smelter intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     13.62,
+     -9.0
+    ],
+    "name": "iron smelter output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -2.88,
+     -3.5
+    ],
+    "holds": {
+     "sand": 20.0
+    },
+    "name": "glass furnace intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -5.88,
+     -3.5
+    ],
+    "name": "glass furnace output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -9.88,
+     -2.0
+    ],
+    "holds": {
+     "cement": 1.5,
+     "sand": 8.5
+    },
+    "name": "concrete mixer intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     -12.88,
+     -2.0
+    ],
+    "name": "concrete mixer output",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     17.12,
+     -7.0
+    ],
+    "holds": {
+     "bauxite": 20.0
+    },
+    "name": "aluminium cell intake",
+    "radius_m": 0.8
+   },
+   {
+    "at_m": [
+     14.12,
+     -7.0
+    ],
+    "name": "aluminium cell output",
+    "radius_m": 0.8
    }
   ]
  },
@@ -383,7 +632,7 @@
     "area_m2": 0.3,
     "at_mm": [
      -7880.0,
-     1668.8,
+     1518.2,
      -1750.0
     ],
     "body": "smelter",
@@ -395,6 +644,125 @@
      0.0
     ],
     "store": "smelter battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -4880.0,
+     1489.6,
+     -250.0
+    ],
+    "body": "mill",
+    "efficiency": 0.2,
+    "name": "mill panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "mill battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -9880.0,
+     1574.9,
+     -6750.0
+    ],
+    "body": "clay kiln",
+    "efficiency": 0.2,
+    "name": "clay kiln panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "clay kiln battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -13880.0,
+     1732.3,
+     -7250.0
+    ],
+    "body": "lime kiln",
+    "efficiency": 0.2,
+    "name": "lime kiln panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "lime kiln battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     15120.0,
+     1571.8,
+     -7750.0
+    ],
+    "body": "iron smelter",
+    "efficiency": 0.2,
+    "name": "iron smelter panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "iron smelter battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -4380.0,
+     1486.6,
+     -2250.0
+    ],
+    "body": "glass furnace",
+    "efficiency": 0.2,
+    "name": "glass furnace panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "glass furnace battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     -11380.0,
+     1576.3,
+     -750.0
+    ],
+    "body": "concrete mixer",
+    "efficiency": 0.2,
+    "name": "concrete mixer panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "concrete mixer battery"
+   },
+   {
+    "area_m2": 0.3,
+    "at_mm": [
+     15620.0,
+     1226.7,
+     -5750.0
+    ],
+    "body": "aluminium cell",
+    "efficiency": 0.2,
+    "name": "aluminium cell panel",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "aluminium cell battery"
    }
   ],
   "programs": [
@@ -495,6 +863,104 @@
      "recipe": "smelt copper"
     },
     "store": "smelter battery"
+   },
+   {
+    "body": "mill",
+    "kind": "still",
+    "name": "mill",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "mill intake",
+     "kind": "process",
+     "output": "mill output",
+     "recipe": "draw wire"
+    },
+    "store": "mill battery"
+   },
+   {
+    "body": "clay kiln",
+    "kind": "still",
+    "name": "clay kiln",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "clay kiln intake",
+     "kind": "process",
+     "output": "clay kiln output",
+     "recipe": "fire ceramic"
+    },
+    "store": "clay kiln battery"
+   },
+   {
+    "body": "lime kiln",
+    "kind": "still",
+    "name": "lime kiln",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "lime kiln intake",
+     "kind": "process",
+     "output": "lime kiln output",
+     "recipe": "burn lime"
+    },
+    "store": "lime kiln battery"
+   },
+   {
+    "body": "iron smelter",
+    "kind": "still",
+    "name": "iron smelter",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "iron smelter intake",
+     "kind": "process",
+     "output": "iron smelter output",
+     "recipe": "smelt iron"
+    },
+    "store": "iron smelter battery"
+   },
+   {
+    "body": "glass furnace",
+    "kind": "still",
+    "name": "glass furnace",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "glass furnace intake",
+     "kind": "process",
+     "output": "glass furnace output",
+     "recipe": "melt glass"
+    },
+    "store": "glass furnace battery"
+   },
+   {
+    "body": "concrete mixer",
+    "kind": "still",
+    "name": "concrete mixer",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "concrete mixer intake",
+     "kind": "process",
+     "output": "concrete mixer output",
+     "recipe": "mix concrete"
+    },
+    "store": "concrete mixer battery"
+   },
+   {
+    "body": "aluminium cell",
+    "kind": "still",
+    "name": "aluminium cell",
+    "power": true,
+    "routine": {
+     "batch_kg": 5.0,
+     "intake": "aluminium cell intake",
+     "kind": "process",
+     "output": "aluminium cell output",
+     "recipe": "smelt aluminium"
+    },
+    "store": "aluminium cell battery"
    }
   ],
   "stores": [
@@ -510,6 +976,55 @@
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
     "name": "smelter battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "mill",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "mill battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "clay kiln",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "clay kiln battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "lime kiln",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "lime kiln battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "iron smelter",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "iron smelter battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "glass furnace",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "glass furnace battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "concrete mixer",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "concrete mixer battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "aluminium cell",
+    "capacity_j": 2000000.0,
+    "charge_j": 2000000.0,
+    "name": "aluminium cell battery",
     "voltage_v": 48.0
    }
   ]

@@ -45,7 +45,6 @@ yet: a restart empties it.
 """
 from __future__ import annotations
 
-import math
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -102,14 +101,6 @@ NOTES_KEPT = 12
 # A go_to that runs out of time is tried again from where it stands, this many
 # times, before the routine gives up the step.
 RETRIES = 3
-#: A go_to that ran out of time having covered less than this never started:
-#: something is in front of it. Half a metre, because a machine that is really
-#: on its way covers metres in a minute and one that is jammed covers
-#: centimetres -- the measured case was 29 cm in 180 seconds.
-JAMMED_M = 0.5
-#: How many times it will shove itself clear on one step before it stops
-#: trying and lets the step's own retries run out.
-SHOVES_MOST = 3
 UNTILS = ("arrived", "asked_done", "load_full", "load_empty", "done")
 STEPS_MOST = 24
 # A machine that processes works this much of its recipe's input at a time
@@ -188,13 +179,6 @@ class Frame:
     tries: int = 0
     issued: dict[str, Any] | None = None         # what the current step last did
     issued_t: float = 0.0
-    #: Where it stood when the step was issued, so a retry can tell the
-    #: difference between "it ran out of time on the way" and "it never moved".
-    issued_at: tuple[float, float] | None = None
-    #: How many times it has had to shove itself out of the way of something
-    #: on this step, and which beat of the recovery it is on.
-    shoves: int = 0
-    shoving: str = ""
     # When the current step was FIRST issued, for a step bounded in seconds.
     # Kept apart from issued_t, which moves with every re-issue: a repeating
     # step reset issued_t on every tick, so its seconds were never up and the
@@ -380,9 +364,6 @@ class Routine:
         frame.step += 1
         frame.tries = 0
         frame.issued = None
-        frame.issued_at = None
-        frame.shoves = 0
-        frame.shoving = ""
         frame.began_t = None
         if frame.done() and len(self.frames) > 1:
             self.frames.pop()
@@ -462,26 +443,12 @@ class Routine:
                     self._advance("it arrived")
                     return None
                 if asked is None:
-                    # IT RAN OUT OF TIME. There are two ways that happens and
-                    # they want different answers: it was on its way and the
-                    # minute was not enough, or it never moved at all because
-                    # something is in front of it. Told apart by how far it
-                    # actually got.
-                    #
-                    # Re-issuing the same go_to to a machine that is nose to
-                    # nose with a concrete block drives it into the block
-                    # again. A rover in the valley sat against the smelter for
-                    # 180 seconds doing exactly that, four identical orders in
-                    # a row, while the engine reported "going forward" the
-                    # whole time -- the engine's own stalled-wheels reflex
-                    # only runs while a machine is roaming FOR ITSELF, never
-                    # while it is carrying out an order.
-                    moved = (math.dist(ctx.at(), frame.issued_at)
-                             if frame.issued_at is not None else None)
-                    if moved is not None and moved < JAMMED_M and frame.shoves < SHOVES_MOST:
-                        did = self._shove(ctx, frame, step, by, moved, float(ctx.t) - frame.issued_t)
-                        if did is not None:
-                            return did
+                    # Its time ran out short of the place: again, from here.
+                    # A machine that is GOING NOWHERE is the engine's to
+                    # notice and get itself out of (LiveWorld, beside the
+                    # water reflex): it watches every ask and acts within
+                    # seconds, where anything here would wait out the whole
+                    # minute and would only ever cover a routine's own go_to.
                     frame.tries += 1
                     if frame.tries > int(step.get("retries", RETRIES)):
                         self.note(f"gave up going to {step['args'].get('place')}: {frame.tries - 1} tries")
@@ -518,7 +485,6 @@ class Routine:
         did = tools.run(ctx, call)
         frame.issued = did
         frame.issued_t = float(ctx.t)
-        frame.issued_at = ctx.at()
         if did.get("idle"):
             # Nothing to do yet (nothing on the pile, nothing to work): asked
             # again next time, quietly. A take with something in the hopper
@@ -536,41 +502,6 @@ class Routine:
                     self._advance("given up: " + str(did.get("did", ""))[:80])
                 else:
                     self.paused_by = "a step it could not do"
-        return did
-
-    def _shove(self, ctx: Any, frame: Frame, step: dict[str, Any], by: str,
-               moved: float, over_s: float) -> dict[str, Any] | None:
-        """It is not getting anywhere: back off, then turn, then try again.
-
-        Two beats, because one is no use. Backing off alone puts it a metre
-        from the same obstacle and the next go_to steers it straight back into
-        it; turning alone leaves it against the thing it is touching. Backed
-        off and then turned, it approaches on a different line.
-
-        This does NOT route around anything -- go_to still steers straight at
-        where it is going and knows nothing about what is between. What it
-        buys is that a machine stops repeating an order that is doing nothing,
-        and that a person watching is told so in words.
-        """
-        if frame.shoving == "":
-            frame.shoves += 1
-            frame.shoving = "backing off"
-            self.note(f"it has not moved in {over_s:.0f} s ({moved * 100:.0f} cm), so something is in its "
-                      f"way to {step['args'].get('place')}: backing off to try another line")
-        elif frame.shoving == "backing off":
-            frame.shoving = "turning"
-        else:
-            frame.shoving = ""
-            frame.issued = None
-            return None                           # the go_to again, from a new place and heading
-        # Left on the odd shove and right on the even, so a machine boxed in
-        # on one side is not sent the same way every time.
-        what = ("back_off" if frame.shoving == "backing off"
-                else ("turn_left" if frame.shoves % 2 else "turn_right"))
-        did = tools.run(ctx, tools.Call(what, {"for_s": 2.0}, by, why="it is not getting anywhere"))
-        frame.issued = did
-        frame.issued_t = float(ctx.t)
-        frame.issued_at = ctx.at()
         return did
 
     def summary(self) -> dict[str, Any]:

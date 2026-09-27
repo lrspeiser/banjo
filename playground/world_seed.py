@@ -107,6 +107,21 @@ class Heap:
 
 
 @dataclass(frozen=True)
+class Works:
+    """A machine that works one recipe, and the two heaps it works between.
+
+    `charge_kg` is what its intake holds when the world is made: a loan, so
+    the machine works a batch or two by itself and a person can watch it and
+    learn the technique. It is not a supply -- when it runs out the machine
+    waits, and keeping it fed is the goal the technique opens.
+    """
+    machine: str
+    recipe: str
+    takes: str
+    charge_kg: float
+
+
+@dataclass(frozen=True)
 class Step:
     """One recipe: what it takes, what comes out, and what it costs.
 
@@ -159,6 +174,24 @@ LIES_ABOUT: tuple[Heap, ...] = (
          "ever have, and when it is gone it is gone"),
 )
 
+#: One works per recipe, in the order they are laid out. The copper smelter
+#: comes first because it is the one the start stands beside; the rest go
+#: round the start in a ring, near enough to walk to and far enough apart to
+#: drive between.
+#:
+#: A charge is a few batches of the recipe's own batch size (machine_routine
+#: BATCH_KG is 5 kg), which is enough to be watched and not enough to live on.
+WORKS: tuple[Works, ...] = (
+    Works("smelter", "smelt copper", "copper ore", 20.0),
+    Works("mill", "draw wire", "copper", 10.0),
+    Works("clay kiln", "fire ceramic", "clay", 20.0),
+    Works("lime kiln", "burn lime", "limestone", 20.0),
+    Works("iron smelter", "smelt iron", "iron ore", 20.0),
+    Works("glass furnace", "melt glass", "sand", 20.0),
+    Works("concrete mixer", "mix concrete", "cement", 10.0),
+    Works("aluminium cell", "smelt aluminium", "bauxite", 20.0),
+)
+
 CHAIN: tuple[Step, ...] = (
     Step("smelt copper", {"copper ore": 1.0}, {"copper": 0.30}, 20.0, 2.0,
          "concentrate to cathode; the mine room's own recipe, unchanged"),
@@ -183,6 +216,15 @@ CHAIN: tuple[Step, ...] = (
 #: supply: the eight materials its rack is kept in, and the goods its machines
 #: are made of beyond their matter. Read from the library so that adding a
 #: material to the game adds it to this proof.
+#: The chain by the name a works calls its recipe, so a works and a recipe
+#: cannot drift apart without something saying so.
+CHAIN_BY_NAME = {step.name: step for step in CHAIN}
+for _works in WORKS:
+    if _works.recipe not in CHAIN_BY_NAME:
+        raise ValueError(f"the works {_works.machine!r} works {_works.recipe!r}, "
+                         f"which no recipe in CHAIN makes")
+
+
 def wants() -> dict[str, list[str]]:
     from workshop_library import DEFAULT_RACK, GOODS_PER
     return {"materials": sorted(DEFAULT_RACK),
@@ -601,6 +643,31 @@ def _patches(ground: dict[str, Any], there: set[tuple[int, int]],
             for x, z, d, h in found]
 
 
+def _standing_room(ground: dict[str, Any], there: set[tuple[int, int]],
+                   stride: int = 2) -> list[tuple[float, float, str, float]]:
+    """Every place an ANCHORED machine could stand: dry, and somewhere a
+    machine can drive to.
+
+    No flatness bar, unlike `_patches`. A still machine is bolted where it is
+    put -- it cannot topple and it does not have to be driven onto -- and the
+    room builder seats its block on the highest ground under its footprint
+    whatever the slope. The valley has 228 patches flat enough for a driving
+    machine and the seams take all of them; it has 757 a block could stand
+    on. Drivable still matters: a rover has to reach the heaps to feed it.
+    """
+    cell = ground["cell"]
+    out = []
+    for j in range(0, ground["nz"], stride):
+        for i in range(0, ground["nx"], stride):
+            if (i, j) not in there:
+                continue
+            x, z = ground["x0"] + i * cell, ground["z0"] + j * cell
+            if wet_near(ground, x, z, YARD_M + YARD_PILE_M):
+                continue
+            out.append((x, z, "standing", height_at(ground, x, z)))
+    return out
+
+
 def place(ground: dict[str, Any], seed: int, *,
           start_xz: tuple[float, float] = (0.0, 0.0)) -> dict[str, Any]:
     """Seed a map: what is in this ground, where, and how much of it.
@@ -612,6 +679,7 @@ def place(ground: dict[str, Any], seed: int, *,
     roll = random.Random(seed)
     there = drivable(ground, start_xz)
     patches = _patches(ground, there)
+    standing = _standing_room(ground, there)
     taken: list[tuple[float, float, float]] = [(start_xz[0], start_xz[1], 3.0)]
     deposits: list[dict[str, Any]] = []
     stockpiles: list[dict[str, Any]] = []
@@ -624,8 +692,9 @@ def place(ground: dict[str, Any], seed: int, *,
         return (not wet_near(ground, x, z, radius + CLEAR_M)
                 and flatness(ground, x, z, radius) <= WORKABLE_SPREAD_M)
 
-    def pick(kind: str, radius: float,
-             near: tuple[float, float] | None = None) -> tuple[float, float, float] | None:
+    def pick(kind: str, radius: float, near: tuple[float, float] | None = None,
+             where: list[tuple[float, float, str, float]] | None = None
+             ) -> tuple[float, float, float] | None:
         """Somewhere of this kind that will take a patch this big, or the best
         compromise: the right kind of ground first, then any ground, and a
         smaller patch before no patch at all.
@@ -634,8 +703,9 @@ def place(ground: dict[str, Any], seed: int, *,
         one -- how the start's own yard is laid out, because a rack the player
         cannot see is a rack they will never find.
         """
+        look = patches if where is None else where
         for want in (kind, "open", None):
-            here = [(x, z) for x, z, k, _ in patches if want is None or k == want]
+            here = [(x, z) for x, z, k, _ in look if want is None or k == want]
             if not here:
                 continue
             size = radius
@@ -646,6 +716,51 @@ def place(ground: dict[str, Any], seed: int, *,
                     return x, z, round(size, 2)
                 size *= 0.75
         return None
+
+    # A YARD FOR EVERY OTHER RECIPE THE WORLD CAN RUN, once the ground that
+    # matters is spoken for. Nine rungs on the ladder and only copper's
+    # machines stood anywhere, so six techniques could never be watched, and
+    # a rung nobody can reach is a rung that is not there.
+    #
+    # LAST, and that is the third time this file has learned the same rule.
+    # Placed before the seams these ate the valley and the map came out with
+    # no copper ore in it at all. What cannot be placed elsewhere goes first:
+    # the start's yard has one acceptable place, a heap is the only source of
+    # what is in it, a seam is what makes the map playable. A works is
+    # infrastructure -- no room for one means a rung cannot be watched, which
+    # is a shame and not a stranding, and `prove_you_can_make_it` still passes
+    # because the substance is in the ground either way.
+    def heaps_at(at: tuple[float, float]) -> list[tuple[float, float]]:
+        """Where a yard's two heaps go, either side of its machine."""
+        return [(at[0] + YARD_M * math.cos(n * math.tau / 2.0),
+                 at[1] + YARD_M * math.sin(n * math.tau / 2.0)) for n in (0, 1)]
+
+    def a_works_yard(works: Works, near: tuple[float, float]) -> bool:
+        # BOTH HEAPS HAVE TO BE DRIVABLE TO, not just the machine's own spot.
+        # Checking only the middle put a heap over a bank no rover could
+        # reach, and the geographic half of the proof refused the map twelve
+        # seeds running -- rightly, since a heap nothing can drive to is a
+        # heap nothing can feed.
+        room = [(x, z, k, h) for x, z, k, h in standing
+                if all(_cell_of(ground, hx, hz) in there and
+                       not wet_near(ground, hx, hz, YARD_PILE_M + CLEAR_M)
+                       for hx, hz in heaps_at((x, z)))]
+        spot = pick(None, YARD_PILE_M, near=near, where=room)
+        if spot is None:
+            return False
+        at = (spot[0], spot[1])
+        # Only the machine's own footing is reserved at the middle: the two
+        # heaps carry their own clearance, and reserving the whole yard put
+        # 2.3 m out of bounds for every seam that came after it.
+        taken.append((at[0], at[1], 0.5))
+        for n, what in enumerate((f"{works.machine} intake", f"{works.machine} output")):
+            a = n * math.tau / 2.0
+            x, z = at[0] + YARD_M * math.cos(a), at[1] + YARD_M * math.sin(a)
+            taken.append((x, z, YARD_PILE_M))
+            stockpiles.append({"name": what, "at_m": [round(x, 2), round(z, 2)],
+                               "radius_m": YARD_PILE_M})
+        yards[works.machine] = (at, f"{works.machine} intake", f"{works.machine} output")
+        return True
 
     # The start's yard goes down before anything else, by where the player
     # arrives: the heap the first smelter is fed from, and the Workshop's own
@@ -670,6 +785,7 @@ def place(ground: dict[str, Any], seed: int, *,
         taken.append((x, z, YARD_PILE_M))
         stockpiles.append({"name": name, "at_m": [round(x, 2), round(z, 2)],
                            "radius_m": YARD_PILE_M, **extra})
+    yards = {WORKS[0].machine: (middle, "smelter intake", "workshop rack")}
 
     # ORDER IS THE DIFFERENCE BETWEEN A PLAYABLE MAP AND A BAD ROLL. Laid down
     # seam by seam, with the timber last, 25 of 60 seeds of the valley had no
@@ -705,8 +821,30 @@ def place(ground: dict[str, Any], seed: int, *,
                          "grade": thing.grade,
                          "reserve_kg": round(roll.uniform(*thing.reserve_kg), 1)})
 
+    for works in WORKS[1:]:
+        a_works_yard(works, middle)
+
+    # The goods block and nothing else in it: machine_goods.checked holds it
+    # to deposits, stockpiles and recipes and refuses anything else, which is
+    # right -- it is the ledger the engine reads, and a stray key in it is a
+    # stray key in every saved world. Where a machine stands is not ledger,
+    # and does not need passing: a works's heaps are named after it, and
+    # `heaps_of` reads them back.
     return {"deposits": deposits, "stockpiles": stockpiles,
             "recipes": [step.as_recipe() for step in CHAIN]}
+
+
+def heaps_of(works: Works) -> tuple[str, str]:
+    """The two heaps a works works between, by name.
+
+    A works's heaps are named after it, so whoever builds the room can find
+    them without the generator handing over a layout. The first works is the
+    start's own, and its output IS the Workshop's rack: what it makes has to
+    land somewhere a person can build with.
+    """
+    if works is WORKS[0]:
+        return f"{works.machine} intake", "workshop rack"
+    return f"{works.machine} intake", f"{works.machine} output"
 
 
 def new_world(ground: dict[str, Any], seed: int = 1, *, tries: int = 12,

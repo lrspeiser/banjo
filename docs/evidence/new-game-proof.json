@@ -65,7 +65,21 @@
       "sand 3 seam",
       "smelter intake",
       "workshop rack",
-      "oak pile"
+      "oak pile",
+      "mill intake",
+      "mill output",
+      "clay kiln intake",
+      "clay kiln output",
+      "lime kiln intake",
+      "lime kiln output",
+      "iron smelter intake",
+      "iron smelter output",
+      "glass furnace intake",
+      "glass furnace output",
+      "concrete mixer intake",
+      "concrete mixer output",
+      "aluminium cell intake",
+      "aluminium cell output"
     ],
     "cut off": {},
     "ok": true
