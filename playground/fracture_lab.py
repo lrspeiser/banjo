@@ -402,7 +402,7 @@ LIMITS = {
 # without machines says nothing about them: an empty block in every room's
 # document would change the word every saved world is checked against.
 FIELDS = set(DEFAULT) | {"request_id", "machines", "constructions", "precise_rigid_bodies",
-                         "interfaces", "interaction_points", "sun", "goods"}
+                         "interfaces", "interaction_points", "sun", "goods", "sight"}
 
 # What a declared joint leaves the bonds that cross it, inside one joined
 # object. A glued or dowelled joint is not the wood it joins; the shares come
@@ -2440,6 +2440,13 @@ def validate(spec: Any) -> dict[str, Any]:
             result["goods"] = machine_goods.checked(result["goods"])
         else:
             result.pop("goods", None)
+        # And what has been seen of it (machine_sight): a room that has been
+        # walked about in keeps the record, and one nobody has been in has none.
+        if result.get("sight"):
+            import machine_sight
+            result["sight"] = machine_sight.checked(result["sight"])
+        else:
+            result.pop("sight", None)
         # The structures its chat declared, each with what it must do and its
         # parts (docs/building-from-language.md). Like the machines, only in a
         # room that has one: a room without keeps the document it had.

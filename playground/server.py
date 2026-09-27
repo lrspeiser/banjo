@@ -1215,14 +1215,14 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/tool-qa":"tool-qa.html","/tool-qa.js":"tool-qa.js","/fabrication":"fabrication.html","/fabrication.js":"fabrication.js","/fabrication.css":"fabrication.css","/mechanics-qa":"mechanics-qa.html","/mechanics-qa.js":"mechanics-qa.js","/mechanics-qa.css":"mechanics-qa.css","/qa":"material-qa.html","/material-qa.js":"material-qa.js","/material-qa.css":"material-qa.css",
+            # The site is the world, and the Workshop inside it at
+            # /world?workshop=1. Nothing else is served. The experiment
+            # console, the Explorer, the fabrication page and the three QA
+            # pages are gone: what they showed is measured by scripts/ in CI,
+            # which never needed a browser to do it.
+            allowed={"/":"world.html","/world":"world.html","/world.html":"world.html",
+                "/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/base.css":"base.css",
-                # The Explorer: its own page, which builds the world from
-                # scratch through this API and draws what comes back.
-                "/explore":"explore.html","/explore.html":"explore.html",
-                "/explore.js":"explore.js","/explore.css":"explore.css",
-                "/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
-                "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
@@ -1542,6 +1542,10 @@ class Handler(BaseHTTPRequestHandler):
                 app.brains.opened(room.spec)
                 app.brains.settle(opened)
                 opened["brains"]=app.brains.summaries()
+                # So the page draws the ground that is known and leaves the rest
+                # dark from the first frame, before anything has stepped.
+                if app.brains.sight is not None and app.brains.sight.nx:
+                    opened["sight"]=app.brains.sight.shown()
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
@@ -2437,6 +2441,10 @@ def _rejoin(app,scene):
     # frame of a device with no indicator on it.
     app.brains.settle(opened)
     opened["brains"]=app.brains.summaries()
+    # And what has been seen of the room, so a page that rejoins draws the
+    # ground that is known and leaves the rest dark, as it did before.
+    sight=getattr(getattr(app,'brains',None),'sight',None)
+    if sight is not None and sight.nx: opened["sight"]=sight.shown()
     return opened
 
 

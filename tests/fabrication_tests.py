@@ -727,8 +727,10 @@ class NativeHTTP(WorkbenchTestCase):
             self.assertEqual(status,400,raw)
             status,_,raw=self.request(app,"POST","/api/world/ask",{"message":"spawn free stock"})
             self.assertEqual(status,400,raw)
-            status,_,raw=self.request(app,"GET","/fabrication")
-            self.assertEqual(status,200);self.assertIn(b"fabrication.js",raw)
+            # The page is gone. Fabrication itself is above, over the API,
+            # and the Workshop is where a person reaches it now.
+            status,_,_=self.request(app,"GET","/fabrication")
+            self.assertEqual(status,404)
             checklist=self.get(app,"/api/gameplay/capabilities")
             self.assertEqual({i["id"] for i in checklist["items"]},set(range(1,31)))
 

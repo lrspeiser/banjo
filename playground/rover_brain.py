@@ -425,6 +425,7 @@ class Brain:
         self.unattended = False
         self.goods: Any = None                     # the room's goods ledger (machine_goods.Goods), shared
         self.ports: Any = None                     # the room's ports (machine_ports.Ports), shared
+        self.sight: Any = None                     # what has been seen of the room (machine_sight.Sight)
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
         self.bodies: list[dict[str, Any]] | None = None
@@ -459,7 +460,7 @@ class Brain:
         """Its senses' view of the world as the last step left it."""
         return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
                               routine=self.routine, person=self.person, impacts=self.impacts, t=self.t,
-                              goods=self.goods, ports=self.ports)
+                              goods=self.goods, ports=self.ports, sight=self.sight)
 
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
                 t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
@@ -596,6 +597,9 @@ class Brains:
         # its machines, riding the bodies the engine reports, and which of them
         # are docked to which.
         self.ports: Any = None
+        # And what has been seen of it (machine_sight.Sight), so a machine's
+        # senses answer about the ground someone has been to and no more.
+        self.sight: Any = None
         self.on_rack: Callable[[str, float], None] | None = None
         #: What a batch of a recipe was: the server turns it into evidence.
         self.on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None
@@ -614,6 +618,7 @@ class Brains:
                                               routines.declared_for(self.spec, name))
             brain.goods = self.goods
             brain.ports = self.ports
+            brain.sight = self.sight
         return brain
 
     def holder_for(self, port: Any) -> Any:
@@ -650,9 +655,11 @@ class Brains:
         self.spec = spec
         import machine_goods
         import machine_ports
+        import machine_sight
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
         self.ports = machine_ports.Ports(spec if isinstance(spec, dict) else None, holder_for=self.holder_for)
+        self.sight = machine_sight.Sight(spec) if isinstance(spec, dict) else None
         # A brain for every program the room declares, now, so that the page
         # is told what each machine is doing and carrying the moment the room
         # opens. Made only when the first step ran, `summaries()` at open
@@ -761,7 +768,8 @@ class Brains:
                 len(r.get("notes") or []))
 
     def attach(self, body: Any, answer: Any) -> None:
-        """On a step's answer, the brains the page has not heard the latest of."""
+        """On a step's answer: what the room has been seen of now, and the brains
+        the page has not heard the latest of."""
         if not isinstance(body, dict) or body.get("op") != "step" or not isinstance(answer, dict):
             return
         # Every mouth, every step, for the page to draw the indicator on the
@@ -786,6 +794,16 @@ class Brains:
             if brain.changed or self._sent.get(brain.name) != showing:
                 changed.append(brain)
                 self._sent[brain.name] = showing
+        # What everything in the room can see from where this step left it
+        # (machine_sight). Here rather than in the server, because this runs
+        # after every step either way -- the page's and a test's.
+        if self.sight is not None and self.sight.nx:
+            found = self.sight.looked(answer.get("machines"), self.person)
+            shown = self.sight.shown()
+            if found:
+                shown["found_cells"] = found
+            answer["sight"] = shown
+        changed = [b for b in self.brains.values() if b.changed]
         if not changed:
             return
         answer["brains"] = [b.summary() for b in changed]

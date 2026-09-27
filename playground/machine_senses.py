@@ -48,6 +48,7 @@ class Context:
     t: float = 0.0
     goods: Any = None                                    # machine_goods.Goods, the room's ledger, or None
     ports: Any = None                                    # machine_ports.Ports, the room's mouths, or None
+    sight: Any = None                                    # machine_sight.Sight: what has been seen, or None
     _surveys: dict[tuple[float, float], dict[str, Any]] = field(default_factory=dict)
     _sun: dict[str, Any] | None = None
 
@@ -265,11 +266,29 @@ def sense_load(ctx: Context) -> dict[str, Any]:
 
 def sense_goods(ctx: Context) -> dict[str, Any]:
     """The room's goods (machine_goods): each deposit and stockpile, how far
-    and which way from the machine and what it holds, and the recipes."""
+    and which way from the machine and what it holds, and the recipes.
+
+    Only the ones in ground that has been seen (machine_sight). A vein declared
+    in the room's document is not something a machine KNOWS: handing every
+    machine every deposit in the room made a world with nothing to find out, and
+    a routine sent to a vein nobody had been near was being told where to dig by
+    the document rather than by anything that had happened."""
     if ctx.goods is None:
         return {"deposits": [], "stockpiles": [], "recipes": []}
     ax, az = ctx.at()
     out = ctx.goods.reading(ax, az)
+    if ctx.sight is not None and ctx.sight.nx:
+        for key in ("deposits", "stockpiles"):
+            known, hidden = [], 0
+            for row in out[key]:
+                if ctx.sight.knows(float(row["x_m"]), float(row["z_m"])):
+                    known.append(row)
+                else:
+                    hidden += 1
+            out[key] = known
+            if hidden:
+                out[key + "_not_seen"] = hidden
+        out["room_seen_share"] = round(ctx.sight.share(), 3)
     for row in out["deposits"] + out["stockpiles"]:
         row["bearing_deg"] = relative_bearing(ctx.heading(), float(row["x_m"]) - ax, float(row["z_m"]) - az)
     return out

@@ -373,10 +373,19 @@ const GROUND_COLOURS = [new THREE.Color(0x7b776f),   // rock
                         new THREE.Color(0x6b4f32),   // soil
                         new THREE.Color(0xc9ad7c)];  // sand
 const WATER_SHALLOW = new THREE.Color(0x58a7ad), WATER_DEEP = new THREE.Color(0x163f63);
+// Ground nobody has been near yet (machine_sight): drawn, because the lie of the
+// land is the shape of the room and hiding it would leave holes in the world, but
+// drawn as unknown -- flat and colourless -- so the ground that HAS been seen
+// reads as the part of the room anyone knows anything about.
+const GROUND_UNSEEN = new THREE.Color(0x2b2f36);
 const FOAM_COUNT = 700;
 const WATER_EASE_MS = 260;
 const ground = {
   grid: null, heights: null, surfaces: null, view: null,
+  // What has been seen: a coarse grid of its own, a byte a cell, as the server
+  // keeps it. Null until the server sends one, and then every cell is drawn
+  // either as its surface or as unknown.
+  seen: null, seenGrid: null,
   mesh: null, water: null, foam: null,
   was: null, next: null, arrived: 0, flow: null, flowBox: [0, 0, 0, 0], last: null,
   beyond: [],   // sheets of water standing beyond the edges: see drawBeyond
@@ -441,9 +450,47 @@ function clearGround() {
   $("water").hidden = true;
 }
 
+// Whether this ground has been seen. Without a record everything has: a room
+// with no sight block is one nothing keeps fog for.
+function groundSeen(index) {
+  if (!ground.seen || !ground.seenGrid || !ground.grid) return true;
+  const { nx, dx, x0, z0 } = ground.grid;
+  const x = x0 + (index % nx) * dx, z = z0 + Math.floor(index / nx) * dx;
+  const s = ground.seenGrid;
+  const i = Math.floor((x - s.x0_m) / s.cell_m), j = Math.floor((z - s.z0_m) / s.cell_m);
+  if (i < 0 || j < 0 || i >= s.nx || j >= s.nz) return true;
+  return ground.seen[j * s.nx + i] !== 0;
+}
+
 function paintGround(colours, index) {
-  const c = GROUND_COLOURS[ground.surfaces[index]] || GROUND_COLOURS[1];
+  const c = groundSeen(index) ? (GROUND_COLOURS[ground.surfaces[index]] || GROUND_COLOURS[1]) : GROUND_UNSEEN;
   colours[3 * index] = c.r; colours[3 * index + 1] = c.g; colours[3 * index + 2] = c.b;
+}
+
+// What has been seen, as the server sends it with a room and with every step it
+// changes. Repaints the ground when the edge of what is known has moved, which
+// is what makes a machine's going about visibly uncover the room.
+function showSeen(block) {
+  if (!block || !block.seen_b64) return;
+  const was = ground.seen ? ground.seen.length : 0;
+  const known = block.known_cells || 0;
+  const same = ground.seenGrid && ground.seenGrid.known === known && was === (block.cells || 0);
+  ground.seen = bytesOf(block.seen_b64);
+  ground.seenGrid = { nx: block.nx, nz: block.nz, cell_m: block.cell_m,
+                      x0_m: block.x0_m, z0_m: block.z0_m, known };
+  if (!same) repaintSeen();
+}
+
+// Every cell's colour again, after the edge of what is known has moved. Only the
+// colours: the ground's shape has not changed, so the heights and the normals
+// stand.
+
+function repaintSeen() {
+  if (!ground.mesh || !ground.grid) return;
+  const col = ground.mesh.geometry.attributes.color;
+  const count = ground.grid.nx * ground.grid.nz;
+  for (let k = 0; k < count; ++k) paintGround(col.array, k);
+  col.needsUpdate = true;
 }
 
 function drawTerrain(block) {
@@ -581,6 +628,11 @@ function drawWater(block) {
     ground.flow = null;
   }
   const extended = extendShore(surface);
+  // Water nobody has seen is not drawn: a lake shows itself when someone comes
+  // near enough to see it, as the ground does. NaN is what dry already is here,
+  // so unseen water is dry until it is found.
+  if (ground.seen && ground.seenGrid)
+    for (let k = 0; k < extended.length; ++k) if (!groundSeen(k)) extended[k] = NaN;
   // Ease from where the drawing is now to the new report.
   ground.was = ground.next ? currentSurface() : extended;
   ground.next = extended;
@@ -6150,6 +6202,8 @@ async function tick() {
     narrateCuts(state.cuts, say, remember);
     if (state.terrain) drawTerrain(state.terrain);
     if (state.terrain_changed) patchTerrain(state.terrain_changed);
+    // What has been seen of the room, which grows as machines get about it.
+    if (state.sight) showSeen(state.sight);
     if (state.water) drawWater(state.water);
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
@@ -6625,6 +6679,7 @@ function adoptRebuilt(answer) {
   // where the person is standing.
   if (answer.state.terrain) {
     drawTerrain(answer.state.terrain);
+    if (answer.state.sight) showSeen(answer.state.sight);
     if (answer.state.water) drawWater(answer.state.water);
   } else {
     clearGround();
@@ -7197,10 +7252,6 @@ async function open({ again = false } = {}) {
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
     world.scene = data.scene || null;
-    // The fabrication page is on its way out with the rest of the pages that are
-    // not the world or the Workshop, so its link may not be here.
-    const manufacture=document.getElementById("manufacture-link");
-    if(manufacture)manufacture.href="/fabrication?scene="+encodeURIComponent(world.scene||"world");
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;
@@ -7250,6 +7301,7 @@ async function open({ again = false } = {}) {
     const asItStood = !!data.rejoined || !!(data.restored && data.restored.tier === "whole");
     if (data.terrain) {
       drawTerrain(data.terrain);
+      if (data.sight) showSeen(data.sight);
       if (data.water) drawWater(data.water);
       // Somewhere to stand that looks at something: the valley says where --
       // or, when the room is as it stood, where the person was standing.

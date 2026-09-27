@@ -194,8 +194,10 @@ class Api(WorkbenchTestCase):
             self.assertEqual(self.get(app, "/api/material-qa/runs"), material_qa_tools.status({}))
         self.assertEqual(self.get(app, base + "/" + case_id + "/playback")["schema"], "banjo.playback.v1")
         self.assertIn("measurements", self.get(app, base + "/" + case_id + "/native"))
-        status, mime, html = self.request(app, "GET", "/qa")
-        self.assertEqual(status, 200); self.assertIn("text/html", mime); self.assertIn(b"Hold crack frames", html)
+        # Its page is gone with the rest that were not the world or the
+        # Workshop. Everything above is the API it drew on, which stays.
+        status, _, _ = self.request(app, "GET", "/qa")
+        self.assertEqual(status, 404)
 
     def test_http_mutations_do_not_touch_world_and_validate_ids(self):
         app = self.start(); live = app.live

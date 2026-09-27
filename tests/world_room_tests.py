@@ -2313,7 +2313,7 @@ class TheWorldsThingsTakenUpWhole(unittest.TestCase):
             both = body("mace")["mass_kg"] + body("mace head")["mass_kg"]
             self.assertAlmostEqual(took["shown"]["carried"]["objects_kg"], both, delta=0.05)
             let_run(0.3)
-            # Up to the lower right of the view, as explore.js leads the hand.
+            # Up to the lower right of the view, where the page leads the hand.
             grip = (live.session.state.get("hand") or {}).get("grip_m") or at
             carry = [at[0] + 0.25, y0 + 1.05, at[2] + 0.45]
             self.assertEqual(server._stroke_along(app, [grip, [grip[0], carry[1], grip[2]], carry], 1.5),

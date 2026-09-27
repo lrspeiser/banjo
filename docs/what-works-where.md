@@ -3,7 +3,8 @@
 The [README](../README.md) tells the story; this is the ledger behind it. Every
 row says what has been built and how close it is to being something you can
 walk up to in the world. Kept current with `main`: last checked
-**26 September 2026**, at `7044df7`.
+**27 September 2026**, at `dd79c66`, when the site became the world and the
+bench in it and the other six pages were taken out.
 
 The labels:
 
@@ -11,8 +12,6 @@ The labels:
 - **Test room** — in the live world, but in a room you reach only by typing its
   address, `/world?scene=<name>`.
 - **Chat** — in the live world, but only if you ask the room's chat to build it.
-- **Page** — on a separate page (the bench, `/fabrication`, `/qa`,
-  `/mechanics-qa`, `/tool-qa`, or the older lab at `/`), not in the world.
 - **Code only** — built and tested, but no page reaches it. You can run it from
   the C API, the MCP servers, a command-line tool or the tests.
 - **Branch** — built on a branch that is not merged yet.
@@ -34,9 +33,9 @@ The labels:
 | Heat weakening what breaks | World | heat a plank or beam, then load or hit it |
 | Cutting with a blade | World, Test room | the sword in the world; `/world?scene=armoury` (10 mm cells) has a rope, a panel and a batten to cut |
 | Every break says what it cost, against the material's own fracture energy | World | the room's own words after a break |
-| The energy-scaled failure law | Page, Test room | the fracture lab at `/`, and any room that asks for it: `/world?scene=tests-break`. A room that says nothing runs the strain-threshold law |
+| The energy-scaled failure law | Test room | any room that asks for it: `/world?scene=tests-break`. A room that says nothing runs the strain-threshold law |
 | Joints weaker than the material they join | Code only | built and tested, but every joint is held at full strength until the owner sets numbers ([issue #20](https://github.com/lrspeiser/banjo/issues/20)) |
-| "Algorithm 3" (precomputed propagators) | Page | a lane in the fracture lab at `/` |
+| "Algorithm 3" (precomputed propagators) | Code only | a lane in the fracture lab, which went when the lab's page did |
 | Implicit Newton, modal-basis, quasi-static and GPU (CUDA) fracture solvers | Code only | command-line tools; the GPU backend needs `-DBANJO_BUILD_CUDA=ON` |
 | The older "network" solver, cohesive interfaces, tetrahedral contact, continuum and J2 plasticity references | Code only | tests and probes; the lab panels that ran some of them no longer have a way in |
 
@@ -54,7 +53,7 @@ body that stays whole.
 | Internal damping and random strength variation | Code only: in the catalogue but switched off in the world |
 | Wood grain (oak's anisotropy) | Not built in the world: declared in the catalogue and never read. Directional laws exist only in the older solver and the continuum reference |
 | Full (J2) plasticity with hardening | Code only: a reference solver; the world's plasticity is along each bond only, with no hardening |
-| Material QA: 96 impacts across all eight materials | Page (`/qa`) |
+| Material QA: 96 impacts across all eight materials | Code only (`scripts/material_qa.py` in CI, and the `/api/material-qa` API) |
 
 ## Heat, fire and thermodynamics
 
@@ -81,7 +80,7 @@ container's walls.
 
 | Capability | Status | How to try it |
 |---|---|---|
-| River and pond | World | the valley under `/world` (also `/explore`, where the water is drawn but not updated) |
+| River and pond | World | the valley under `/world` (also `/world?scene=explore`, where the water is drawn but not updated) |
 | Floating, drag and dams | World, Chat | drop things in the river; ask the chat to "dam the river with stone blocks" |
 | Rivers beyond the valley: reservoir, reaches, a confluence and a lake | Test room | `/world?scene=watershed`; dam the river and watch the reservoir fill |
 | Changing the river's flow | Chat | the chat's `set_river` |
@@ -99,7 +98,7 @@ switching regions between coarse and detailed simulation as you walk.
 | Carrying what you dig (80 kg budget shared with what you hold) | World | dig, then look at the bag |
 | A machine digging a place it was sent to | Test room | `/world?scene=tests-dig`, `/world?scene=tests-mine` |
 | Filling and cutting out blocks | Chat | the chat's `fill` and `cut_block` |
-| Storing dug sand and soil | Page | `/fabrication` |
+| Storing dug sand and soil | World | `/world?scene=fabrication` |
 | The ground kept across reloads and restarts | World | automatic |
 
 **Not built:** breaking rock (a pick stops on rock, or says the case is not
@@ -113,8 +112,8 @@ supported), wet soil, tool wear, and landslides that rotate rather than slump.
 | Fixings that fail in tension or shear | World | the arrow's nock; stacked or heated loads |
 | Drum, DC motor, battery and brake | World | the hoist: E on the drum, or its Operate panel |
 | Every joule of a machine accounted for | World | the Room tab's Machines panel |
-| What a machine is spending, and how long that leaves | World, Page | the machine panel in the world, and the bench's drive box |
-| Wheels on pins: a product made of exact bodies | World (`/explore`) | the cart: J pushes it, Q puts all of it in the bag and it comes back whole |
+| What a machine is spending, and how long that leaves | World | the machine panel in the world, and the Bench tab's drive box |
+| Wheels on pins: a product made of exact bodies | World (`/world?scene=explore`) | the cart: J pushes it, Q puts all of it in the bag and it comes back whole |
 | Which end of a motor turns | Test room | `/world?scene=tests-motor`: three turntables where both ends are free |
 | A machine that stops itself by what a sensor reads | Test room | `/world?scene=tests-cart`: its water sensor stops it at the lake's edge |
 | A machine with a program that roams by itself | Test room | `/world?scene=tests-rover` |
@@ -138,10 +137,10 @@ moon.
 
 | Capability | Status |
 |---|---|
-| Pick up, carry, put down with a checked preview, the bag | World (and `/explore`) |
+| Pick up, carry, put down with a checked preview, the bag | World (and `/world?scene=explore`) |
 | Throwing, the bow, swinging a sword, a pick | World |
-| One saved "Use" per product (left mouse or J) | World (and `/explore`) |
-| A thing of several parts taken up whole, its moving parts still moving | World: the mace and the cart in `/explore`, and `/explore?scene=tests-carry` |
+| One saved "Use" per product (left mouse or J) | World (and `/world?scene=explore`) |
+| A thing of several parts taken up whole, its moving parts still moving | World: the mace and the cart in `/world?scene=explore`, and `/world?scene=tests-carry` |
 | Where a throw would land, drawn before you let go | Branch (`agent/throw-aim`) |
 | Two hands | Not built; the second hand is planned as a powered gripper |
 | Declared grip and use points | Not built: they are stored but never read; the hand holds wherever you point |
@@ -152,7 +151,7 @@ moon.
 |---|---|---|---|
 | `world` | 40 mm | menu | nearly everything: breaking, burning, water, digging, joints, the hoist, the bow, the sword, the pick |
 | `expedition` | 40 mm | menu | gather stone and wood, build a dryer, dry timber (a bookkeeping model, not native physics) |
-| `explore` | 40 mm | `/explore` | a block of every material, furniture, a mace on its chain and a cart on pins; picking up, placing, using |
+| `explore` | 40 mm | address | a block of every material, furniture, a mace on its chain and a cart on pins; picking up, placing, using |
 | `bench` | 20 mm | address | plates of all eight materials, 20 and 40 mm thick, on piers: break them |
 | `armoury` | 10 mm | address | cutting a rope, a panel and a loaded batten with a sword |
 | `courtyard` | 40 mm | address | gate, portcullis with counterweight, chain, a shelf that breaks under load |
@@ -160,7 +159,7 @@ moon.
 | `tests-ropes` | 40 mm | address | ropes, pulleys, a pendulum, springs, the bow, cutting |
 | `tests-motion` | 40 mm | address | breaking, denting, bouncing, sliding, burning, a gas piston |
 | `tests-machines` | 50 mm | address | a motor, drum, battery and brake |
-| `tests-carry` | 40 mm | `/explore?scene=tests-carry` | a mace, a table and a chair, each taken up whole |
+| `tests-carry` | 40 mm | address | a mace, a table and a chair, each taken up whole |
 | `tests-cart` | 50 mm | address | a cart that drives down a shore until its water sensor stops it |
 | `tests-rover` | 50 mm | address | a rover with a motor on each back wheel that roams a lake's shore |
 | `tests-dig` | 50 mm | address | the rover digging its site until its hopper is full, then hauling the load to its depot |
@@ -174,6 +173,6 @@ moon.
 | `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
 | `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |
 | `yard` | 40 mm | address | a flat, empty yard for the chat to build in |
-| `fabrication` | 40 mm | `/fabrication` | where manufactured parts are placed |
+| `fabrication` | 40 mm | address | where manufactured parts are placed |
 
 Twenty-five rooms; the menu offers two of them.

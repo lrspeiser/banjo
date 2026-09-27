@@ -39,9 +39,11 @@ The owner, 2026-09-24: "I don't want 10 different places. I want the main world
 and a workshop/lab where time freezes and you can craft items and test them and
 so forth. Remove all other code paths and consolidate everything in these two."
 
-Today there are **7 pages and 22 scenes**. `/` is the fracture lab (where a
-bowling scene of 12 bare bodies ran and nothing moved), `/world` is the world,
-`/explore`, `/qa`, `/mechanics-qa`, `/tool-qa` and `/fabrication` are five more.
+Today there is **one page and 22 scenes**. `/` and `/world` are the world, and
+the bench is a tab in it at `/world?workshop=1`. The other six pages -- the
+fracture lab, the Explorer, `/qa`, `/mechanics-qa`, `/tool-qa` and
+`/fabrication` -- were taken out; their rooms are still reachable as
+`/world?scene=<name>` and their measurements are made by `scripts/` in CI.
 Of the scenes, `world.html` offers two on its menu and the other twenty are
 reachable only by typing a URL.
 
@@ -120,16 +122,24 @@ work is what the Workshop cannot yet do, then the deleting.
 
 ### Then the deleting
 
-Pages to go, with what has to move first:
+**The pages are gone, 27 September 2026.** `/` and `/world` are the world and
+the bench is a tab in it; the other six -- the fracture lab, `/explore`, `/qa`,
+`/mechanics-qa`, `/tool-qa` and `/fabrication` -- answer 404, and so do
+`app.js`, `style.css` and `scene.js`.
 
-| goes | first |
-|---|---|
-| `/` + `app.js`, `style.css`, `scene.js`, `/api/fracture*` | `tests/playground_tests.py:740` asserts they serve. **`playground/fracture_lab.py` STAYS** -- despite the name it is the spec admission gate for the world and the Workshop both, with 45 importers. Only the panel is the lab. It wants an honest name. |
-| `/explore` | nothing links to it; only an uncI'd test uses it |
-| `/qa`, `/mechanics-qa`, `/tool-qa` | the **pages** only. `material_qa.py` is the shared run manager for all three plus fabrication and physics trials; `mechanics_qa.binary()` is imported by two others. CI runs their headless twins under `scripts/`, and `node --check` on two of their .js files. |
-| `/fabrication` | `fabrication_room.py` is a **world** capability (finite stock, gated at `server.py:1234`). The Workshop already has the rack; fold it in. |
+What had to move first, moved. **`playground/fracture_lab.py` stays**: despite
+the name it is the spec admission gate for the world and the Workshop both, with
+45 importers, and only the panel was the lab -- it still wants an honest name.
+**`material_qa.py` and `mechanics_qa.py` stay** as the shared run managers for
+the QA runs, fabrication and the physics trials, and what CI runs is their
+headless twins under `scripts/`, which never needed a browser.
+**`fabrication_room.py` stays** as a world capability, its room reachable by
+address at `/world?scene=fabrication` until the Workshop's rack absorbs it.
 
-Scenes to go: `explore`, `armoury`, `watershed`, `clearing`, `courtyard`, and
+`tests/playground_tests.py` now asserts the opposite of what it did: that `/` is
+the world page, and that every one of those addresses is a 404.
+
+Scenes to go (still to do): `explore`, `armoury`, `watershed`, `clearing`, `courtyard`, and
 the duplicate keys `yard` and `valley` (same builders as `fabrication` and
 `expedition`; `workshop.js:105` links to `yard` and must move first).
 

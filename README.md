@@ -306,7 +306,7 @@ floor where there is none.
 |---|---|---|
 | ![A 200 mm ice block on the valley's slope among blocks of other materials](docs/images/readme/ice-before.jpg) | ![The ice block much smaller, and a pool of meltwater downhill of it](docs/images/readme/ice-after.jpg) | ![The same view with the side panel: the ice block at 273 K, 5.41 kg melted, now 128 mm across and 1.93 kg, and 5.41 kg of meltwater into the water](docs/images/readme/ice-after-panel.jpg) |
 
-*An ice block in the Explorer's valley, heated with **B** three times: 30 kW for
+*An ice block in the explore room's valley, heated with **B** three times: 30 kW for
 60 s. It stayed at 273 K throughout; 5.41 kg of its 7.34 kg melted — 1.8 MJ
 over 333.55 kJ/kg — and it is now 128 mm across. Its meltwater ran downhill and
 pooled below it, 5.41 kg into the valley's water, whose ledger still closes.*
@@ -401,9 +401,9 @@ heat, and the rope now carries 316 N.*
 
 | Before | After |
 |---|---|
-| ![The Explorer's cart standing on a slope, with its handle, deck and two wheelsets](docs/images/readme/cart-before.jpg) | ![The same cart further up the slope after a push](docs/images/readme/cart-after.jpg) |
+| ![The explore room's cart standing on a slope, with its handle, deck and two wheelsets](docs/images/readme/cart-before.jpg) | ![The same cart further up the slope after a push](docs/images/readme/cart-after.jpg) |
 
-*The cart in the Explorer is three exact bodies — a chassis and two wheelsets,
+*The cart in the explore room is three exact bodies — a chassis and two wheelsets,
 each an iron axle through oak wheels — on two free pins. **J** pushes it and it
 rolls: when it was added, a push moved it 0.404 m while its wheels turned 145
 degrees, which is 0.405 m of rim. It rolls rather than slides, and nothing in
@@ -855,13 +855,17 @@ It listens on `127.0.0.1` only and keeps its rooms in
 
 | Address | What it is |
 |---|---|
-| `/world` | the main world, with the chat and the side panel |
-| `/explore` | the newest interface: the valley with a block of each material, five pieces of furniture, a mace and a cart. It rebuilds the valley on every load |
+| `/` and `/world` | the main world, with the chat and the side panel |
 | `/world?workshop=1` | the bench: design one product at a time, drive it, and make it |
 | `/world?scene=<room>` | any of the 25 rooms ([the list](docs/what-works-where.md#the-rooms)) |
-| `/fabrication` | manufacturing from finite stock |
-| `/qa`, `/mechanics-qa`, `/tool-qa` | material, mechanism and tool test suites with 3D replays |
-| `/` | the older lab: the fracture lab and its live stage |
+
+That is the whole site. The Explorer, the fabrication page, the three QA pages
+and the older fracture lab were taken out: what a person opens is the world,
+and the bench inside it. Nothing they held is lost -- their rooms are still
+there as `/world?scene=explore` and `/world?scene=fabrication`, and the
+measurements the QA pages drew are made by `scripts/material_qa.py`,
+`scripts/mechanics_qa.py`, `scripts/tool_qa.py` and `scripts/fabrication_qa.py`
+in CI, which never needed a browser to do it.
 
 The main world stands on a generated valley with a river and a pond, and holds
 a latched gate, a portcullis on a winch, a self-closing door, a bell on a rope,
@@ -893,15 +897,15 @@ between what is built and what you can find.
 | Space, Shift+Space | up and down |
 | / | talk to the room's chat |
 
-On `/explore`: W A S D walk, drag or the arrow keys look, E takes or puts down,
-J uses a thing, Q bags it, G sweeps up loose pieces, X lets go, and the mouse
-wheel pulls the camera back.
+And: W A S D walk, drag or the arrow keys look, E takes or puts down, J uses a
+thing, Q bags it, G sweeps up loose pieces, X lets go, and the mouse wheel
+pulls the camera back.
 
 | Looking at it | Holding it |
 |---|---|
-| ![The Explorer looking at a glass block; the side panel says what it is made of, what it weighs, how big it is and how far off](docs/images/readme/explore-looking.jpg) | ![The glass block in the hands; a see-through copy on the ground marked "it fits here, on the ground", and the carrying bar at 20 of 80 kg](docs/images/readme/explore-holding.jpg) |
+| ![Looking at a glass block in the explore room; the side panel says what it is made of, what it weighs, how big it is and how far off](docs/images/readme/explore-looking.jpg) | ![The glass block in the hands; a see-through copy on the ground marked "it fits here, on the ground", and the carrying bar at 20 of 80 kg](docs/images/readme/explore-holding.jpg) |
 
-*The Explorer. Looking at a block, the panel shows what the engine knows about
+*The explore room. Looking at a block, the panel shows what the engine knows about
 it: glass, 20.0 kg, 200 × 200 × 200 mm, 2.1 m away. After **E** it is in your
 hands, a see-through copy shows where **E** will put it down (the engine has
 checked that it fits), and the carrying bar counts its 20 kg against the 80 kg
@@ -1036,7 +1040,7 @@ there.
    was not changed.
 5. **One world, built by asking.** The world's contents are built through the
    chat and the same tools any program can use, not placed by hand. (The
-   Explorer's valley is the exception so far: a script lays it out.)
+   explore room's valley is the exception so far: a script lays it out.)
 6. **Simple controls, real physics.** A control is a bounded hand, never a set
    velocity.
 7. **Knowledge unlocks plans; physics decides results.** Progress teaches a
@@ -1055,10 +1059,9 @@ stands at **1 complete, 26 partial and 3 planned**. In rough priority order:
 
 **Get what is built into the world.** The menu shows 2 of 25 rooms, so breaking
 under load, the gas piston, fine cells for cutting, the plates of every material
-and the whole watershed are reachable only by typing an address. `/explore`
-cannot throw, heat, dig, chat, use a bow, blade or pick, or work a gate or a
-machine, and it rebuilds its valley on every load, so nothing done there is
-kept. Freezing exists only in a separate voxel thermal simulation with no link
+and the whole watershed are reachable only by typing an address. The explore
+room still rebuilds its valley on every load, so nothing done in that one room
+is kept. Freezing exists only in a separate voxel thermal simulation with no link
 to the world's heat. Circuits run in the engine but the room refuses them.
 Different cell sizes in one world are not built, and the scene format, scene
 builder and renderer all assume one size.
@@ -1119,15 +1122,16 @@ release with tags and installable packages (the shared library is versioned
 
 **Before hosting it for other people.** Accounts instead of one shared password.
 A world per person — one server runs one world for everyone, a second tab takes
-it over, and opening `/explore` replaces it. Chat cost controls: measured turns
+it over. Chat cost controls: measured turns
 use 62,000 to 2.76 million input tokens with no per-person budget. Robustness: a
 world process that stops answering blocks the server, and a chat turn can hold
 the world for 420 s. And a real host — the copy on Render is on the free plan,
 so every deploy or idle spin-down deletes the rooms.
 
-**Decisions waiting on the owner:** the licence; the hosting plan; whether
-`/explore` replaces `/world`; which fracture solvers to keep; joint-strength
-numbers; whether charred wood keeps a little strength.
+**Decisions waiting on the owner:** the licence; the hosting plan; which
+fracture solvers to keep; joint-strength numbers; whether charred wood keeps a
+little strength. (Whether the Explorer replaces `/world` is settled: the site is
+the world, and the Explorer's valley is one of its rooms.)
 
 **In progress on branches:** `agent/throw-aim` (where a throw would land, drawn
 before you let go), `agent/room-surfaces` and `agent/room-looks` (how the room

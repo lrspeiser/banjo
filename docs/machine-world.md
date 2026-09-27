@@ -751,6 +751,61 @@ and through the playground's own route (the `tests-rover` room, `behave` with
 9 m up the shore: its own ask left it dry at z -6.4 saying "the water was in
 the way of what it was asked, so it gave it up"; a person's order put it at
 (0.15, -0.88), 152 mm of water under a wheel, waiting where it was sent.
+## What has been seen
+
+A room answered about ground nobody had ever been near as readily as about the
+ground a machine was standing on. Every deposit in the spec went into every
+machine's senses, and the page drew the whole basin from the first frame. A world
+like that has nothing to find out, and a routine sent to a vein nobody had been
+to was being told where to dig by the document rather than by anything that had
+happened.
+
+So a room keeps what has been SEEN (`playground/machine_sight.py`). It is a
+coarse grid, a metre a cell over the ground the room covers, and it is kept with
+the room, so a place stays known once someone has been there and a reload does
+not forget it.
+
+**Being there is what reveals it.** After every step, everything in the room
+marks a circle round where it stands: six metres for a machine on the ground or a
+person on foot, and a metre and a half more for every metre a machine is above
+the ground, up to thirty. Nothing else reveals anything -- not a routine's
+places, not a deposit declared in the spec, not anything the chat knows.
+
+**Height is what a scout is for.** On the ground a machine takes in about a tenth
+of a 32 m room from one spot. At ten metres up a flyer sees 21 m, twelve times the
+ground, and somewhere above sixteen it takes in the whole room at once. Eight
+metres and three per metre up lit two thirds of a room from three standing spots,
+which is not a world with anything left to find out.
+
+**What is held to it.** The sense that hands a machine the room's goods gives it
+only the deposits and heaps in ground that has been seen, and says how many it
+has not seen. The page draws ground nobody has been near as unknown -- flat and
+colourless -- and does not draw water there at all, so a lake shows itself when
+someone comes near enough to see it. The lie of the land is still drawn, because
+hiding it would leave holes in the world; what is hidden is what is THERE.
+
+**A survey says what is known of a place.** The `survey` tool reports the ground
+round where a machine stands, or round a place it knows: its surface, how high
+and how steep, what water is in it, the deposits and heaps and things standing
+there, and how much of it nobody has seen. It reports; it does not reveal. Asked
+about somewhere nobody has been it says so, which is the point of it, because a
+place worth going to is one it cannot answer about yet.
+
+**What it is not part of.** The record is not what the world is MADE of, so it is
+left out of the word a saved world is checked against (`live_session.spec_digest`),
+exactly as the goods ledger is. A room learns what is where as machines get about
+it, and a world saved after they have is still that room's world.
+
+Measured on the mine, opened fresh: nothing known, 227 of its 1,024 cells known
+after one step as four machines see where they stand, and 313 after a minute of
+them working -- 31% of the room. Checked by `tests/sight_tests.py`, which also
+opens a real room and fails if the grid the record works out from what the room
+declares ever stops matching the grid the engine reports.
+
+Not done yet: things standing in ground nobody has seen are still drawn, so a
+boulder beyond the fog is visible even though the ground under it is not. Hiding
+those means deciding what a machine of your own looks like when it is out there
+in the dark, which is a question about the game rather than about the ground.
 
 ### When a machine cannot get out
 
@@ -1363,9 +1418,10 @@ a schema for its arguments, and what to fill them with when whoever picks it
 gives none: `go_forward`, `back_off`,
 `turn_left`, `turn_right`, `hold_still`, `face` and `go_to` (a place it
 knows by name, the person, a point, or a bearing and distance), `dig`,
-`dump`, and `carry_on` (nothing more is asked: its routine and its reflexes
-have it back). The going tools are asks on the program (`behave`); a tool
-answers what it did, in words, and never invents an outcome -- what the
+`dump`, `survey` (what is known of a place, and how much of it nobody has
+seen: "What has been seen"), and `carry_on` (nothing more is asked: its
+routine and its reflexes have it back). The going tools are asks on the
+program (`behave`); a tool answers what it did, in words, and never invents an outcome -- what the
 machine then does is the world's answer, read back through the senses. A
 decider is asked which tool, among these names with these descriptions as
 the criteria, and the same call asks whether it is stuck and how urgent its
