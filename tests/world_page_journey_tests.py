@@ -1423,6 +1423,54 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
       return out;
     })()"""
 
+    # A machine of several materials: an iron post through an oak deck. Drawn
+    # with no finish, with one that names a colour, and with one that says only
+    # how polished it is.
+    MANY = """(() => {
+      const was = banjoRoom.world.skins;
+      const body = { name: "many probe", material: "oak",
+        mechanical_model: "precise-rigid-v1",
+        rigid_parts_local: [
+          { shape: "box", center_local_m: [0, 0, 0], dimensions_m: [0.3, 0.05, 0.3],
+            rotation_wxyz: [1, 0, 0, 0], material: "oak" },
+          { shape: "cylinder", center_local_m: [0, 0.12, 0], dimensions_m: [0.05, 0.2, 0.05],
+            rotation_wxyz: [1, 0, 0, 0], material: "iron" }] };
+      const read = (m) => ({ color: "#" + m.material.color.getHexString(),
+                             roughness: m.material.roughness,
+                             perPart: !!m.material.vertexColors });
+      const withSkin = (skin) => {
+        banjoRoom.world.skins = skin ? new Map([["many probe", skin]]) : new Map();
+        return read(banjoRoom.buildMesh(body));
+      };
+      const out = {
+        bare: withSkin(null),
+        painted: withSkin({ body: "many probe", color: "#2b4a7a", roughness: 0.2 }),
+        polished: withSkin({ body: "many probe", roughness: 0.12 }) };
+      banjoRoom.world.skins = was;
+      return out;
+    })()"""
+
+    def test_a_finish_that_names_a_colour_paints_a_many_material_thing_whole(self):
+        self.open_valley()
+        got = self.js(self.MANY)
+        print(f"\n   bare     {got['bare']}\n   painted  {got['painted']}"
+              f"\n   polished {got['polished']}", flush=True)
+        # Left alone, each part is drawn in the colour of what it is made of --
+        # an iron post through an oak deck shows as that.
+        self.assertTrue(got["bare"]["perPart"])
+        self.assertEqual(got["bare"]["color"], "#ffffff")
+        # A finish that names a colour means the whole thing: somebody has said
+        # what this machine looks like and meant all of it.
+        self.assertFalse(got["painted"]["perPart"])
+        self.assertEqual(got["painted"]["color"], "#2b4a7a")
+        # A finish that says only how polished it is leaves the parts their own
+        # colours and changes the shine.
+        self.assertTrue(got["polished"]["perPart"])
+        self.assertEqual(got["polished"]["color"], "#ffffff")
+        self.assertAlmostEqual(got["polished"]["roughness"], 0.12, places=4)
+        self.no_page_errors("with a many-material thing finished")
+
+
     def test_a_thing_the_workshop_finished_is_drawn_with_that_finish(self):
         self.open_valley()
         got = self.js(self.FINISHED)

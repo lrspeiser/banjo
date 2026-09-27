@@ -1177,7 +1177,15 @@ function buildMesh(body) {
     const parts = body.rigid_parts_local;
     if (!Array.isArray(parts) || !parts.length || parts.length > 64)
       throw new Error("Precise rigid geometry is missing; refusing to draw a substitute bounding box.");
-    const mixed = new Set(parts.map(part => part.material || body.material)).size > 1;
+    // A thing of several materials draws each part in the colour of what that
+    // part is made of -- an iron axle through oak wheels shows as that. A
+    // FINISH that names a colour overrules it and paints the whole thing:
+    // somebody has said what this machine looks like and meant all of it. A
+    // finish that says only how polished it is leaves every part the colour of
+    // its own material and changes the shine.
+    const finish = world.skins && world.skins.get(body.name);
+    const mixed = new Set(parts.map(part => part.material || body.material)).size > 1
+      && !(finish && finish.color);
     let material = lookFor(body.name, body.material);
     if (mixed) {
       // Its own, so colouring its parts touches no other body of that stuff.
