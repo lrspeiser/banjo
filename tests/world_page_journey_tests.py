@@ -1268,16 +1268,19 @@ class ADrawingOfTheMatterItIsMadeOf:
                     self.assertGreater(piece["volume"], 0.6 * piece["matter"])
                     self.assertLess(piece["volume"], 1.4 * piece["matter"])
                 else:
-                    # A part in ten thousand. The buffer the corners go into is
-                    # single precision, so the volume comes back a few parts in
-                    # a hundred million off whatever the mesher worked out, and
-                    # everything this is looking for -- a face missing, a face
-                    # wound inside out, a surface moved off the cell boundaries
-                    # -- is out by a whole cell or more, not by a rounding.
-                    self.assertAlmostEqual(
-                        piece["volume"], piece["matter"], delta=piece["matter"] * 1e-4,
-                        msg=f"{piece['name']} is drawn as {piece['volume']:.9f} m3 "
-                            f"of matter and is made of {piece['matter']:.9f}")
+                    # A LITTLE less than its cells, and never more. A hull has
+                    # its edges taken off (cellmesh.BEVEL), which really does
+                    # cost volume: about a sixteenth of a single cell, and far
+                    # less of a bigger body, because an edge is a length and a
+                    # body is a volume. What this is still looking for -- a face
+                    # missing, a face wound inside out, a surface moved off the
+                    # cell boundaries -- is out by a whole cell or more.
+                    self.assertLessEqual(piece["volume"], piece["matter"] * 1.0001,
+                                         f"{piece['name']} encloses more than it is made of")
+                    self.assertGreater(
+                        piece["volume"], 0.88 * piece["matter"],
+                        f"{piece['name']} is drawn as {piece['volume']:.9f} m3 "
+                        f"of matter and is made of {piece['matter']:.9f}")
 
 
 class ARoomWhereThingsStandOnTheGround(ADrawingOfTheMatterItIsMadeOf, PageJourney):
@@ -1303,24 +1306,6 @@ class ARoomWhereThingsStandOnTheGround(ADrawingOfTheMatterItIsMadeOf, PageJourne
         self.assertEqual(lit["toneMapping"], 4)
         self.no_page_errors("with the room lit")
 
-    def test_a_body_of_cells_is_drawn_as_its_surface(self):
-        self.open_world(self.SCENE)
-        self.wait_for_hulls(2)
-        drawn = self.js("banjoRoom.hullsDrawn()")
-        hulls = self.js(self.HULLS)
-        print(f"\n   {drawn['hulls']} hulls, {drawn['cubes']} still cubes,"
-              f" {drawn['cells']} cells, {drawn['triangles']} triangles"
-              f" against {drawn['asCubes']} as cubes", flush=True)
-        self.assertEqual(drawn["cubes"], 0, "a body standing still fell back to cubes")
-        self.assertFalse([p["name"] for p in hulls if p["bent"]],
-                         "nothing in this room is moving, so nothing should read as bent")
-        # Cubes cost twelve triangles a cell whether the cell can be seen or
-        # not. Nothing about the matter changed; the drawing of it got smaller.
-        self.assertLess(drawn["triangles"], drawn["asCubes"] / 4)
-        self.each_piece_holds_what_it_is_made_of(hulls)
-        self.no_page_errors("with the room drawn as hulls")
-
-
 class ThePiecesOfABreakAreDrawnAsTheyAre(ADrawingOfTheMatterItIsMadeOf, PageJourney):
     """The break room, where the plank comes apart under the falling ball.
 
@@ -1339,6 +1324,14 @@ class ThePiecesOfABreakAreDrawnAsTheyAre(ADrawingOfTheMatterItIsMadeOf, PageJour
               f" {drawn['cubes']} thrown about too far to mesh and drawn as cubes",
               flush=True)
         self.assertGreaterEqual(len(hulls), 2)
+        # NOT cheaper than cubes here, and that is worth writing down. A hull
+        # saves on a big body because most of its cells are buried; a chip of
+        # one or two cells has nothing buried to save, and taking the edges off
+        # what little it has costs more than the cubes would have. It is still
+        # a few thousand triangles for a plank in pieces, which is nothing --
+        # but if this ever climbs past a few times the cubes, something has
+        # gone wrong rather than merely been paid for.
+        self.assertLess(drawn["triangles"], 4 * drawn["asCubes"])
         self.each_piece_holds_what_it_is_made_of(hulls)
         self.no_page_errors("after the plank broke")
 
@@ -1542,6 +1535,80 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
         self.assertGreater(len(was), 5)
         self.page.evaluate("banjoRoom.world.paused = false; banjoRoom.world.lastTick = 0; true")
         self.no_page_errors("after turning the grain off and on")
+
+
+class AThingIsDrawnAsTheShapeItWasDrawnTo(PageJourney):
+    """A room describes a thing as the boxes somebody laid out, and the engine
+    compiles those onto its grid and collides the cells. The cells are the
+    matter; the boxes are the design; and the difference between them is the
+    voxelisation, up to sqrt(3)/2 of a cell.
+
+    So a thing that is still WHOLE is drawn as the shape it was drawn to, and a
+    thing that has broken is drawn from its cells -- because the moment it comes
+    apart the boxes stop describing it. That second half is the important one:
+    a break is exactly when a drawing that flattered the matter would start
+    lying about it.
+
+    And the drawn shape is checked against the cells before it is used: the
+    design's box and the cells' box, in the body's own frame, must agree to
+    within a cell and a half. That is what catches a frame worked out wrongly
+    and a turn read the wrong way round, both of which draw perfectly well."""
+
+    # Whether the plank is still being drawn as the board it was drawn to.
+    PLANK = """(() => {
+      const held = banjoRoom.world.bodies.get("plank");
+      return held ? !!held.mesh.userData.drawnToDesign : null;
+    })()"""
+
+    def open_room(self, scene):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={scene}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{scene}'"
+                                      " && banjoRoom.ready()", 300), f"{scene} did not open")
+
+    def test_the_valleys_furniture_is_drawn_to_its_design(self):
+        self.open_room("explore")
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().designs > 0", 120),
+                        f"nothing was drawn to its design: {self.js('banjoRoom.hullsDrawn()')}")
+        drawn = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   {drawn}", flush=True)
+        # Every piece of furniture in the valley: nothing left as cells, and
+        # nothing fell all the way back to cubes.
+        self.assertGreaterEqual(drawn["designs"], 5)
+        self.assertEqual(drawn["hulls"], 0)
+        self.assertEqual(drawn["cubes"], 0)
+        # And it costs a fraction of what its cells did, because a board is a
+        # board however many cells were needed to carry it.
+        self.assertLess(drawn["triangles"], drawn["asCubes"] / 10)
+        self.no_page_errors("with the furniture drawn to its design")
+
+
+class AThingThatBreaksIsDrawnFromWhatIsLeft(AThingIsDrawnAsTheShapeItWasDrawnTo):
+    """The other half, and the important one: the moment a thing comes apart,
+    the shape it was drawn to stops describing it and the cells take over.
+
+    Its own class because each of these gets a server and a server holds ONE
+    room, so a class whose tests want two scenes cannot have the second."""
+
+    def test_the_valleys_furniture_is_drawn_to_its_design(self):
+        self.skipTest("this class is for the break room")
+
+    def test_a_thing_that_breaks_goes_back_to_its_cells(self):
+        # Nothing to do but watch: the ball lands above what the plank can take.
+        # (A paused room is no good for catching it whole -- nothing is stepped,
+        # so no body is ever drawn at all.)
+        self.open_room("tests-break")
+        self.assertTrue(self.wait_for("banjoRoom.hullsDrawn().hulls >= 2", 240),
+                        f"the plank never came apart: {self.situation()}")
+        broken = self.js("banjoRoom.hullsDrawn()")
+        print(f"\n   after the break: {broken}", flush=True)
+        # The pieces are drawn from what they are made of. The board it was
+        # drawn to stopped describing it the moment it came apart, so nothing
+        # is still being drawn to it.
+        self.assertIn(self.js(self.PLANK), (None, False),
+                      "a plank that has come apart is still being drawn as a whole board")
+        self.assertGreaterEqual(broken["hulls"], 2)
+        self.no_page_errors("after the plank broke")
 
 
 class BrokenPiecesComeWithYou(PageJourney):

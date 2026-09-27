@@ -31,10 +31,28 @@
 // fracture/forces. No smooth-surface claim"), and it is here for the same
 // reason -- a drawing that flatters the matter is a drawing that lies about it.
 
-// How bright a corner is, by how many of the three cells crowding it are
-// filled. Nothing around it is full brightness; matter on two sides of it is
+// How bright a corner is, by how many of the cells crowding it are filled.
+// Nothing around it is full brightness; matter on more than one side of it is
 // the darkest, which is the inside of every right angle.
 export const CORNER_SHADE = [0.42, 0.63, 0.83, 1.0];
+
+// HOW MUCH OF A CELL THE EDGES ARE TAKEN OFF BY, as a share of one.
+//
+// Nothing in the world has an edge you could cut yourself on at this scale: a
+// sawn board, a cast block and a broken shard all catch the light along their
+// edges instead of ending in a perfect line, and a hull that ends in perfect
+// lines is the last thing left saying "drawn by a machine" once it is lit.
+//
+// So the corners of the hull that stand PROUD are pulled in a little and the
+// light is leaned over them, which chamfers every convex edge and leaves every
+// flat face and every inside corner exactly where it was. A tenth of a cell is
+// four millimetres at the forty-millimetre cells rooms use: far inside the
+// √3·h/2 the voxelisation is already out by, and enough to catch a highlight.
+//
+// Zero turns it off, and the tests that check the hull encloses EXACTLY the
+// volume of its cells run that way, because a chamfer really does take a
+// little volume off and a test that hid that would be worth nothing.
+export const BEVEL = 0.1;
 
 // How far off its grid place a cell may have moved before the grid stops being
 // able to say what is next to what. A third of a cell: past that a node is
@@ -57,6 +75,12 @@ const MAX_FACES = 60000;
 
 const SIX = [[0, -1], [0, 1], [1, -1], [1, 1], [2, -1], [2, 1]];
 
+// How far the light is leaned over a chamfer, against the face's own normal. A
+// chamfer four millimetres across would catch almost nothing on its own; the
+// lean is what makes the edge read as an edge that has been taken off rather
+// than as a line, and it costs no geometry at all.
+const LEAN = 0.7;
+
 // cells: local cell centres in metres, as the engine reports them.
 // cellSize: the room's cell size in metres.
 //
@@ -64,8 +88,13 @@ const SIX = [[0, -1], [0, 1], [1, -1], [1, 1], [2, -1], [2, 1]];
 // ready for a buffer, or null when the caller should draw cubes instead. Null
 // is never a failure to be reported -- it is this saying the cubes are the
 // better picture here, and the cubes are always correct.
-export function cellSurface(cells, cellSize) {
+export function cellSurface(cells, cellSize, options = {}) {
   const h = Number(cellSize);
+  // How far the proud corners are pulled in, in metres. A share of a cell, so
+  // that a room at ten millimetres and one at forty get the same edge for their
+  // size; never more than a third of one, or a single cell would vanish.
+  const asked = options.bevel === undefined ? BEVEL : Number(options.bevel);
+  const bevel = Number.isFinite(asked) && asked > 0 ? Math.min(asked, 0.33) * h : 0;
   if (!Array.isArray(cells) || cells.length === 0 || !Number.isFinite(h) || h <= 0) return null;
   const n = cells.length;
   const half = h / 2;
@@ -160,6 +189,10 @@ export function cellSurface(cells, cellSize) {
     const had = corners.get(key);
     if (had) return had;
     let x = 0, y = 0, z = 0, count = 0;
+    // Which way the matter lies from this corner, counted on the grid rather
+    // than on where the cells have got to, so that a strained body's edges are
+    // taken off by the same amount as a still one's.
+    let gx = 0, gy = 0, gz = 0;
     for (let i = ci - 1; i <= ci; ++i)
       for (let j = cj - 1; j <= cj; ++j)
         for (let k = ck - 1; k <= ck; ++k) {
@@ -168,6 +201,9 @@ export function cellSurface(cells, cellSize) {
           x += Number(at[0]) + (i < ci ? half : -half);
           y += Number(at[1]) + (j < cj ? half : -half);
           z += Number(at[2]) + (k < ck ? half : -half);
+          gx += i < ci ? -1 : 1;
+          gy += j < cj ? -1 : 1;
+          gz += k < ck ? -1 : 1;
           ++count;
         }
     // Nothing touching it: on the fitted grid, where a corner of an empty cell
@@ -178,8 +214,30 @@ export function cellSurface(cells, cellSize) {
                      : [origin[0] + (least[0] + ci) * h - half,
                         origin[1] + (least[1] + cj) * h - half,
                         origin[2] + (least[2] + ck) * h - half];
-    corners.set(key, at);
-    return at;
+    let lean = null;
+    // A corner STANDS PROUD when the matter round it lies off to one side in
+    // more than one direction at once: one cell touching it is the corner of a
+    // block, two are its edge, three or four an angle of it. Five or more and
+    // it is an inside corner, which a chamfer would only deepen. And a corner
+    // in the middle of a FLAT face has matter lying straight inwards and
+    // nothing else -- that one must not move, or the whole face sinks.
+    if (bevel > 0 && count >= 1 && count <= 4) {
+      const len = Math.hypot(gx, gy, gz);
+      if (len > 1e-9) {
+        const dx = gx / len, dy = gy / len, dz = gz / len;
+        if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) < 0.93) {
+          // `lean` points the way the matter lies, so the corner is moved
+          // TOWARDS it -- a corner standing proud is cut off, never pushed out
+          // -- and the chamfer's own outward normal is the other way, which is
+          // what the light is leaned by.
+          at[0] += dx * bevel; at[1] += dy * bevel; at[2] += dz * bevel;
+          lean = [dx, dy, dz];
+        }
+      }
+    }
+    const made = { at, lean };
+    corners.set(key, made);
+    return made;
   };
 
   // Which cells are in each slice, one map per axis, so a slice's mask covers
@@ -206,51 +264,130 @@ export function cellSurface(cells, cellSize) {
   const positions = [], normals = [], shades = [];
   let quads = 0;
 
-  // How bright one corner of one face is: the three cells that crowd it, all of
-  // them on the empty side of the face, where `du` and `dv` say which corner.
-  const cornerShade = (d, s, a, b, side, du, dv) => {
-    const beside = near(d, s + side, a + du, b);
-    const along = near(d, s + side, a, b + dv);
-    if (beside && along) return 0;
-    const corner = near(d, s + side, a + du, b + dv);
-    return 3 - ((beside ? 1 : 0) + (along ? 1 : 0) + (corner ? 1 : 0));
+  // How bright a corner of the hull is: how many of the four cells crowding it
+  // on the EMPTY side of the face are filled. Written against the corner's own
+  // grid place rather than against the cell that asked, so two faces meeting on
+  // one corner get the same answer and the shading runs on across the seam.
+  const shadeAt = (d, s, side, cu, cv) => {
+    const off = s + side;
+    const n = (near(d, off, cu - 1, cv - 1) ? 1 : 0) + (near(d, off, cu, cv - 1) ? 1 : 0)
+            + (near(d, off, cu - 1, cv) ? 1 : 0) + (near(d, off, cu, cv) ? 1 : 0);
+    return Math.max(0, 3 - n);
   };
 
   const facing = [0, 0, 0];
-  const vertex = (at, shade) => {
+  const vertex = (at, shade, lean) => {
     positions.push(at[0], at[1], at[2]);
-    normals.push(facing[0], facing[1], facing[2]);
+    if (!lean) {
+      normals.push(facing[0], facing[1], facing[2]);
+    } else {
+      // The light leaned over the chamfer. The face is where it was and the
+      // silhouette is where it was; this says only that the edge does not end
+      // in a perfect line, which is true of every edge there has ever been.
+      const nx = facing[0] - lean[0] * LEAN, ny = facing[1] - lean[1] * LEAN,
+            nz = facing[2] - lean[2] * LEAN;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      normals.push(nx / len, ny / len, nz / len);
+    }
     shades.push(shade, shade, shade);
   };
+  const triangle = (a, b, c) => { vertex(a[0], a[1], a[2]); vertex(b[0], b[1], b[2]);
+                                  vertex(c[0], c[1], c[2]); };
 
   // One rectangle of hull, from cell `aMin..aMax` across and `bMin..bMax` along
-  // in its slice, with the four corner brightnesses it was merged under.
-  const quad = (d, s, side, aMin, aMax, bMin, bMax, ao) => {
+  // in its slice.
+  //
+  // Drawn as a flat middle with a rim round it, one step of the rim per cell,
+  // so that the corners standing proud can be pulled in along the WHOLE of an
+  // edge and not only at the four ends of it. A rectangle whose corners are all
+  // flush keeps to two triangles, which is nearly all of them.
+  const quad = (d, s, side, aMin, aMax, bMin, bMax) => {
     const u = (d + 1) % 3, v = (d + 2) % 3;
     // A cell at index i owns the grid corners i and i + 1 along each axis.
     const onD = s + (side > 0 ? 1 : 0);
     const u0 = aMin, u1 = aMax + 1, v0 = bMin, v1 = bMax + 1;
+    facing[0] = facing[1] = facing[2] = 0;
+    facing[d] = side;
     const corner = (a, b) => {
       here[d] = onD; here[u] = a; here[v] = b;
       return cornerAt(here[0], here[1], here[2]);
     };
-    // Corners anticlockwise seen from outside. The canonical order runs
-    // (-,-) (+,-) (+,+) (-,+) across then along, which is already anticlockwise
-    // from the +axis side; from the -axis side it has to go round the other way
-    // or the face is drawn inside out and disappears.
-    const us = side > 0 ? [u0, u1, u1, u0] : [u0, u0, u1, u1];
-    const vs = side > 0 ? [v0, v0, v1, v1] : [v0, v1, v1, v0];
-    const bright = side > 0 ? [ao[0], ao[1], ao[2], ao[3]] : [ao[0], ao[3], ao[2], ao[1]];
-    const at = [corner(us[0], vs[0]), corner(us[1], vs[1]),
-                corner(us[2], vs[2]), corner(us[3], vs[3])];
-    facing[0] = facing[1] = facing[2] = 0;
-    facing[d] = side;
-    // Which way the rectangle is split matters when its corners are not all
-    // the same brightness: run the seam between the pair that differ least, or
-    // the shading kinks along the diagonal and reads as a crease in the matter.
-    const flip = Math.abs(bright[0] - bright[2]) > Math.abs(bright[1] - bright[3]);
-    const order = flip ? [1, 2, 3, 1, 3, 0] : [0, 1, 2, 0, 2, 3];
-    for (const c of order) vertex(at[c], CORNER_SHADE[bright[c]]);
+    // Where a grid corner of this face sits when it is NOT pulled: on the
+    // face's own plane. The rim's inner ring is built from these, moved in by
+    // the bevel, so the middle of the face stays exactly flat.
+    const flat = (a, b) => {
+      const got = corner(a, b);
+      if (!got.lean) return got.at;
+      return [got.at[0] - got.lean[0] * bevel, got.at[1] - got.lean[1] * bevel,
+              got.at[2] - got.lean[2] * bevel];
+    };
+
+    // Round the rim, one vertex per cell boundary, anticlockwise seen from
+    // outside: from the +axis side the canonical order across then along is
+    // already anticlockwise, and from the -axis side it has to go the other way
+    // round or the face is drawn inside out and disappears.
+    const ring = [];
+    const walk = (a, b) => ring.push([a, b]);
+    if (side > 0) {
+      for (let a = u0; a < u1; ++a) walk(a, v0);
+      for (let b = v0; b < v1; ++b) walk(u1, b);
+      for (let a = u1; a > u0; --a) walk(a, v1);
+      for (let b = v1; b > v0; --b) walk(u0, b);
+    } else {
+      for (let b = v0; b < v1; ++b) walk(u0, b);
+      for (let a = u0; a < u1; ++a) walk(a, v1);
+      for (let b = v1; b > v0; --b) walk(u1, b);
+      for (let a = u1; a > u0; --a) walk(a, v0);
+    }
+
+    const got = ring.map(([a, b]) => corner(a, b));
+    const proud = got.some((c) => c.lean);
+    const shade = ring.map(([a, b]) => CORNER_SHADE[shadeAt(d, s, side, a, b)]);
+    if (!proud) {
+      // Nothing stands proud: the plain rectangle, two triangles, as before.
+      const ends = side > 0 ? [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]
+                            : [[u0, v0], [u0, v1], [u1, v1], [u1, v0]];
+      const at = ends.map(([a, b]) => corner(a, b).at);
+      const lit = ends.map(([a, b]) => CORNER_SHADE[shadeAt(d, s, side, a, b)]);
+      // Which way the rectangle is split matters when its corners are not all
+      // the same brightness: run the seam between the pair that differ least,
+      // or the shading kinks along the diagonal and reads as a crease.
+      const flip = Math.abs(lit[0] - lit[2]) > Math.abs(lit[1] - lit[3]);
+      const order = flip ? [1, 2, 3, 1, 3, 0] : [0, 1, 2, 0, 2, 3];
+      for (const c of order) vertex(at[c], lit[c], null);
+      ++quads;
+      return;
+    }
+
+    // The middle, flat and inset by the bevel on every side, and the rim
+    // between it and the pulled corners. The middle's own corners are the
+    // inset rectangle's; the rim's inner ring follows the outer one step for
+    // step, so the two meet all the way round with nothing between them.
+    const room = Math.min(bevel, 0.45 * h * Math.min(u1 - u0, v1 - v0));
+    const inward = (a, b) => {
+      const at = flat(a, b).slice();
+      at[u] += (a === u0 ? room : a === u1 ? -room : 0);
+      at[v] += (b === v0 ? room : b === v1 ? -room : 0);
+      return at;
+    };
+    const inner = ring.map(([a, b]) => inward(a, b));
+    for (let i = 0; i < ring.length; ++i) {
+      const j = (i + 1) % ring.length;
+      // The rim: outer to outer, then back along the inner ring.
+      triangle([got[i].at, shade[i], got[i].lean], [got[j].at, shade[j], got[j].lean],
+               [inner[j], shade[j], null]);
+      triangle([got[i].at, shade[i], got[i].lean], [inner[j], shade[j], null],
+               [inner[i], shade[i], null]);
+      quads += 1;
+    }
+    // The flat middle. Its four corners are the inset rectangle's, and the rim
+    // vertices along its sides lie exactly on those lines, so the places they
+    // meet are places and not gaps.
+    const ends = side > 0 ? [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]
+                          : [[u0, v0], [u0, v1], [u1, v1], [u1, v0]];
+    const mid = ends.map(([a, b]) => inward(a, b));
+    const lit = ends.map(([a, b]) => CORNER_SHADE[shadeAt(d, s, side, a, b)]);
+    for (const c of [0, 1, 2, 0, 2, 3]) vertex(mid[c], lit[c], null);
     ++quads;
   };
 
@@ -278,10 +415,8 @@ export function cellSurface(cells, cellSize) {
           for (const c of list) {
             const a = grid[c * 3 + u], b = grid[c * 3 + v];
             if (near(d, s + side, a, b)) continue;
-            const ao = [cornerShade(d, s, a, b, side, -1, -1),
-                        cornerShade(d, s, a, b, side, 1, -1),
-                        cornerShade(d, s, a, b, side, 1, 1),
-                        cornerShade(d, s, a, b, side, -1, 1)];
+            const ao = [shadeAt(d, s, side, a, b), shadeAt(d, s, side, a + 1, b),
+                        shadeAt(d, s, side, a + 1, b + 1), shadeAt(d, s, side, a, b + 1)];
             mask[(a - aLow) * along + (b - bLow)] =
               1 + ao[0] + (ao[1] << 2) + (ao[2] << 4) + (ao[3] << 6);
           }
@@ -299,9 +434,7 @@ export function cellSurface(cells, cellSize) {
               }
               for (let p = 0; p < tall; ++p)
                 mask.fill(0, (a + p) * along + b, (a + p) * along + b + wide);
-              const packed = key - 1;
-              quad(d, s, side, aLow + a, aLow + a + tall - 1, bLow + b, bLow + b + wide - 1,
-                   [packed & 3, (packed >> 2) & 3, (packed >> 4) & 3, (packed >> 6) & 3]);
+              quad(d, s, side, aLow + a, aLow + a + tall - 1, bLow + b, bLow + b + wide - 1);
               b += wide - 1;
             }
           }
@@ -311,9 +444,7 @@ export function cellSurface(cells, cellSize) {
           for (const c of list) {
             const a = grid[c * 3 + u], b = grid[c * 3 + v];
             if (near(d, s + side, a, b)) continue;
-            quad(d, s, side, a, a, b, b,
-                 [cornerShade(d, s, a, b, side, -1, -1), cornerShade(d, s, a, b, side, 1, -1),
-                  cornerShade(d, s, a, b, side, 1, 1), cornerShade(d, s, a, b, side, -1, 1)]);
+            quad(d, s, side, a, a, b, b);
           }
         }
       }

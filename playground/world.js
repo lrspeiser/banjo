@@ -1027,6 +1027,122 @@ function look(material, shaded = false) {
   return made;
 }
 
+// The shape a thing was DRAWN TO, as against the cells it is made of.
+//
+// A room describes a thing as the boxes somebody laid out -- each with a size,
+// a place, a turn and a `join` saying which of them are one thing -- and the
+// engine compiles those onto its grid and collides the cells. The cells are the
+// matter; the boxes are the design; and the difference between them is the
+// voxelisation, up to sqrt(3)/2 of a cell, which is 34.6 mm at the forty the
+// rooms use. A raked strut is the case that shows it: a board set at an angle
+// becomes a staircase of cells, and the staircase is what the page drew.
+//
+// So a thing that is still WHOLE is drawn as the shape it was drawn to. A thing
+// that has broken is drawn from its cells, because the moment it comes apart
+// the boxes stop describing it -- which is the same rule the hull already
+// follows and the reason the hull is still there.
+//
+// NOTHING HERE IS A CLAIM ABOUT THE MATTER. The room says what it says, the
+// engine collides what it collides, and the drawn shape is checked against the
+// cells before it is used: if it does not sit where the matter sits, to within
+// a cell, it is not drawn and the cells are.
+const OUTLINE_SLACK_CELLS = 1.6;
+
+function rememberOutlines(spec) {
+  world.outlines = new Map();
+  const grouped = new Map();
+  for (const row of (spec && spec.bodies) || []) {
+    if (!row || String(row.shape || "box") !== "box") continue;
+    if (!Array.isArray(row.size_mm) || !Array.isArray(row.center_mm)) continue;
+    if (!row.size_mm.every(Number.isFinite) || !row.center_mm.every(Number.isFinite)) continue;
+    const of = String(row.join || row.name || "");
+    if (!of) continue;
+    let held = grouped.get(of);
+    if (!held) grouped.set(of, held = []);
+    held.push(row);
+  }
+  for (const [name, rows] of grouped) {
+    // Where the thing's middle is, weighted by how much of it each box is --
+    // the engine reports a body about its centre of mass, and a group of one
+    // material has its centre of mass where its volume is.
+    let bulk = 0, mx = 0, my = 0, mz = 0;
+    for (const row of rows) {
+      const v = row.size_mm[0] * row.size_mm[1] * row.size_mm[2];
+      bulk += v;
+      mx += v * row.center_mm[0]; my += v * row.center_mm[1]; mz += v * row.center_mm[2];
+    }
+    if (!(bulk > 0)) continue;
+    const mid = [mx / bulk / 1000, my / bulk / 1000, mz / bulk / 1000];
+    const parts = rows.map((row) => {
+      const turn = new THREE.Quaternion();
+      const spin = Array.isArray(row.rotation_deg) ? row.rotation_deg : [0, 0, 0];
+      // The room turns a box z first (Rx.Ry.Rz), which is what three.js means
+      // by an XYZ euler. If it were not, the shape would sit askew on its own
+      // matter and the check below would refuse to draw it.
+      turn.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(spin[0] || 0),
+                                        THREE.MathUtils.degToRad(spin[1] || 0),
+                                        THREE.MathUtils.degToRad(spin[2] || 0), "XYZ"));
+      return { shape: "box",
+               dimensions_m: row.size_mm.map((v) => v / 1000),
+               center_local_m: [row.center_mm[0] / 1000 - mid[0],
+                                row.center_mm[1] / 1000 - mid[1],
+                                row.center_mm[2] / 1000 - mid[2]],
+               rotation_wxyz: [turn.w, turn.x, turn.y, turn.z],
+               material: row.material };
+    });
+    if (parts.length > 64) continue;   // preciseGeometry will not take more
+    world.outlines.set(name, { parts, cells: null,
+                               mixed: new Set(parts.map((p) => p.material)).size > 1 });
+  }
+}
+
+// Does the shape it was drawn to sit where its matter is? The cells' box and
+// the design's box, in the body's own frame, agreeing to within a cell and a
+// half at both ends of every axis. This is what catches a thing that has lost
+// matter, a frame worked out wrongly, and a turn read the wrong way round --
+// all three of which draw perfectly well and are all three wrong.
+function sitsOnItsMatter(parts, cells, h) {
+  const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+  for (const at of cells)
+    for (let d = 0; d < 3; ++d) {
+      if (at[d] - h / 2 < low[d]) low[d] = at[d] - h / 2;
+      if (at[d] + h / 2 > high[d]) high[d] = at[d] + h / 2;
+    }
+  const box = new THREE.Box3();
+  const corner = new THREE.Vector3(), turn = new THREE.Quaternion(), matrix = new THREE.Matrix4();
+  const at = new THREE.Vector3(), size = new THREE.Vector3(1, 1, 1);
+  for (const part of parts) {
+    const q = part.rotation_wxyz;
+    turn.set(q[1], q[2], q[3], q[0]).normalize();
+    matrix.compose(at.fromArray(part.center_local_m), turn, size);
+    const d = part.dimensions_m;
+    for (let c = 0; c < 8; ++c) {
+      corner.set((c & 1 ? 0.5 : -0.5) * d[0], (c & 2 ? 0.5 : -0.5) * d[1],
+                 (c & 4 ? 0.5 : -0.5) * d[2]).applyMatrix4(matrix);
+      box.expandByPoint(corner);
+    }
+  }
+  const slack = OUTLINE_SLACK_CELLS * h;
+  const ends = [[box.min.x, box.min.y, box.min.z], [box.max.x, box.max.y, box.max.z]];
+  for (let d = 0; d < 3; ++d)
+    if (Math.abs(ends[0][d] - low[d]) > slack || Math.abs(ends[1][d] - high[d]) > slack)
+      return false;
+  return true;
+}
+
+// The shape this body should be drawn to, or nothing when it should be drawn
+// from its cells.
+function outlineFor(body) {
+  const held = world.outlines && world.outlines.get(body.name);
+  if (!held) return null;
+  const cells = body.cells_local_m;
+  // The first sight of it is what "whole" means; losing matter after that is
+  // what breaking looks like from here.
+  if (held.cells === null) held.cells = cells.length;
+  if (cells.length < held.cells) return null;
+  return sitsOnItsMatter(held.parts, cells, world.cellSize) ? held : null;
+}
+
 // What one body is drawn with: the shared material of its substance, or, when
 // the Workshop gave it a finish, a material wearing that finish.
 //
@@ -1212,6 +1328,17 @@ function buildMesh(body) {
     // The surface is the same matter: it stands on the cell boundaries the
     // engine is colliding, it is not smoothed, and where the mesher will not
     // vouch for it the cubes come back, which are always right.
+    // Drawn to the shape it was drawn to, while it still is that shape.
+    const drawn = outlineFor(body);
+    if (drawn) {
+      try {
+        const mesh = new THREE.Mesh(preciseGeometry(drawn.parts, body.material, drawn.mixed),
+                                    lookFor(body.name, body.material));
+        mesh.userData.drawnToDesign = true;
+        mesh.userData.hullCells = body.cells_local_m.length;
+        return mesh;
+      } catch { /* not a shape this can draw: its cells, then */ }
+    }
     const hull = cellSurface(body.cells_local_m, world.cellSize);
     if (hull) {
       const geometry = new THREE.BufferGeometry();
@@ -4869,6 +4996,7 @@ function rememberProfiles(spec) {
   // (fracture_lab.normalise_skins): its colour and how polished it is, and
   // nothing else -- never a shape, and never anything the engine reads.
   world.skins = new Map(((spec && spec.skins) || []).map((s) => [String(s.body), s]));
+  rememberOutlines(spec);
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
   // And the tools that work the ground (swing-and-lever), which tools.js holds.
@@ -7076,20 +7204,24 @@ window.banjoRoom = {
   // handed back. `triangles` is what they cost against `asCubes`, what the
   // same cells would have cost drawn one cube each.
   hullsDrawn: () => {
-    let hulls = 0, cubes = 0, cells = 0, triangles = 0;
+    let hulls = 0, cubes = 0, cells = 0, triangles = 0, designs = 0;
     for (const held of world.bodies.values()) {
       const mesh = held.mesh;
       if (mesh.isInstancedMesh && mesh.geometry === cellGeometry) {
         ++cubes;
         cells += mesh.count;
         triangles += 12 * mesh.count;
+      } else if (mesh.userData.drawnToDesign) {
+        ++designs;
+        cells += mesh.userData.hullCells || 0;
+        triangles += mesh.geometry.attributes.position.count / 3;
       } else if (mesh.userData.shaded) {
         ++hulls;
         cells += mesh.userData.hullCells || 0;
         triangles += mesh.geometry.attributes.position.count / 3;
       }
     }
-    return { hulls, cubes, cells, triangles, asCubes: 12 * cells,
+    return { hulls, cubes, designs, cells, triangles, asCubes: 12 * cells,
              shadows: renderer.shadowMap.enabled, sunCasts: key.castShadow,
              environment: !!scene.environment, toneMapping: renderer.toneMapping };
   },
