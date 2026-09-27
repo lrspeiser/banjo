@@ -4,145 +4,17 @@
   {
    "anchored": true,
    "center_mm": [
-    -11790.0,
-    1331.1,
-    -2350.0
+    0.0,
+    -238.4,
+    0.0
    ],
    "material": "concrete",
-   "name": "post",
+   "name": "marker stone",
    "shape": "box",
    "size_mm": [
-    150.0,
-    900.0,
-    150.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -7880.0,
-    1193.2,
-    -1750.0
-   ],
-   "material": "concrete",
-   "name": "smelter",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -4880.0,
-    1164.6,
-    -250.0
-   ],
-   "material": "concrete",
-   "name": "mill",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -9880.0,
-    1249.9,
-    -6750.0
-   ],
-   "material": "concrete",
-   "name": "clay kiln",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -13880.0,
-    1407.3,
-    -7250.0
-   ],
-   "material": "concrete",
-   "name": "lime kiln",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    15120.0,
-    1246.8,
-    -7750.0
-   ],
-   "material": "concrete",
-   "name": "iron smelter",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -4380.0,
-    1161.6,
-    -2250.0
-   ],
-   "material": "concrete",
-   "name": "glass furnace",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    -11380.0,
-    1251.3,
-    -750.0
-   ],
-   "material": "concrete",
-   "name": "concrete mixer",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
-   ]
-  },
-  {
-   "anchored": true,
-   "center_mm": [
-    15620.0,
-    901.7,
-    -5750.0
-   ],
-   "material": "concrete",
-   "name": "aluminium cell",
-   "shape": "box",
-   "size_mm": [
-    500.0,
-    650.0,
-    500.0
+    100.0,
+    100.0,
+    100.0
    ]
   }
  ],
@@ -629,140 +501,140 @@
     "store": "rover battery"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -7880.0,
-     1518.2,
+     -8240.0,
+     1382.6,
      -1750.0
     ],
     "body": "smelter",
     "efficiency": 0.2,
-    "name": "smelter panel",
+    "name": "solar panel 2",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "smelter battery"
+    "store": "processor battery"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -4880.0,
-     1489.6,
+     -5240.0,
+     1354.2,
      -250.0
     ],
     "body": "mill",
     "efficiency": 0.2,
-    "name": "mill panel",
+    "name": "solar panel 3",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "mill battery"
+    "store": "processor battery 2"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -9880.0,
-     1574.9,
+     -10240.0,
+     1439.4,
      -6750.0
     ],
     "body": "clay kiln",
     "efficiency": 0.2,
-    "name": "clay kiln panel",
+    "name": "solar panel 4",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "clay kiln battery"
+    "store": "processor battery 3"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -13880.0,
-     1732.3,
+     -14240.0,
+     1769.7,
      -7250.0
     ],
     "body": "lime kiln",
     "efficiency": 0.2,
-    "name": "lime kiln panel",
+    "name": "solar panel 5",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "lime kiln battery"
+    "store": "processor battery 4"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     15120.0,
-     1571.8,
+     14760.0,
+     1762.4,
      -7750.0
     ],
     "body": "iron smelter",
     "efficiency": 0.2,
-    "name": "iron smelter panel",
+    "name": "solar panel 6",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "iron smelter battery"
+    "store": "processor battery 5"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -4380.0,
-     1486.6,
+     -4740.0,
+     1500.5,
      -2250.0
     ],
     "body": "glass furnace",
     "efficiency": 0.2,
-    "name": "glass furnace panel",
+    "name": "solar panel 7",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "glass furnace battery"
+    "store": "processor battery 6"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     -11380.0,
-     1576.3,
+     -11740.0,
+     1438.0,
      -750.0
     ],
     "body": "concrete mixer",
     "efficiency": 0.2,
-    "name": "concrete mixer panel",
+    "name": "solar panel 8",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "concrete mixer battery"
+    "store": "processor battery 7"
    },
    {
-    "area_m2": 0.3,
+    "area_m2": 0.1944,
     "at_mm": [
-     15620.0,
-     1226.7,
+     15260.0,
+     1101.6,
      -5750.0
     ],
     "body": "aluminium cell",
     "efficiency": 0.2,
-    "name": "aluminium cell panel",
+    "name": "solar panel 9",
     "normal": [
      0.0,
      1.0,
      0.0
     ],
-    "store": "aluminium cell battery"
+    "store": "processor battery 8"
    }
   ],
   "programs": [
@@ -853,7 +725,7 @@
    {
     "body": "smelter",
     "kind": "still",
-    "name": "smelter",
+    "name": "processor",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -862,12 +734,13 @@
      "output": "workshop rack",
      "recipe": "smelt copper"
     },
-    "store": "smelter battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "mill",
     "kind": "still",
-    "name": "mill",
+    "name": "processor 2",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -876,12 +749,13 @@
      "output": "mill output",
      "recipe": "draw wire"
     },
-    "store": "mill battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "clay kiln",
     "kind": "still",
-    "name": "clay kiln",
+    "name": "processor 3",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -890,12 +764,13 @@
      "output": "clay kiln output",
      "recipe": "fire ceramic"
     },
-    "store": "clay kiln battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "lime kiln",
     "kind": "still",
-    "name": "lime kiln",
+    "name": "processor 4",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -904,12 +779,13 @@
      "output": "lime kiln output",
      "recipe": "burn lime"
     },
-    "store": "lime kiln battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "iron smelter",
     "kind": "still",
-    "name": "iron smelter",
+    "name": "processor 5",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -918,12 +794,13 @@
      "output": "iron smelter output",
      "recipe": "smelt iron"
     },
-    "store": "iron smelter battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "glass furnace",
     "kind": "still",
-    "name": "glass furnace",
+    "name": "processor 6",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -932,12 +809,13 @@
      "output": "glass furnace output",
      "recipe": "melt glass"
     },
-    "store": "glass furnace battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "concrete mixer",
     "kind": "still",
-    "name": "concrete mixer",
+    "name": "processor 7",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -946,12 +824,13 @@
      "output": "concrete mixer output",
      "recipe": "mix concrete"
     },
-    "store": "concrete mixer battery"
+    "setting": 1.0,
+    "store": "processor battery"
    },
    {
     "body": "aluminium cell",
     "kind": "still",
-    "name": "aluminium cell",
+    "name": "processor 8",
     "power": true,
     "routine": {
      "batch_kg": 5.0,
@@ -960,7 +839,8 @@
      "output": "aluminium cell output",
      "recipe": "smelt aluminium"
     },
-    "store": "aluminium cell battery"
+    "setting": 1.0,
+    "store": "processor battery"
    }
   ],
   "stores": [
@@ -975,56 +855,56 @@
     "body": "smelter",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "smelter battery",
+    "name": "processor battery",
     "voltage_v": 48.0
    },
    {
     "body": "mill",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "mill battery",
+    "name": "processor battery 2",
     "voltage_v": 48.0
    },
    {
     "body": "clay kiln",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "clay kiln battery",
+    "name": "processor battery 3",
     "voltage_v": 48.0
    },
    {
     "body": "lime kiln",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "lime kiln battery",
+    "name": "processor battery 4",
     "voltage_v": 48.0
    },
    {
     "body": "iron smelter",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "iron smelter battery",
+    "name": "processor battery 5",
     "voltage_v": 48.0
    },
    {
     "body": "glass furnace",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "glass furnace battery",
+    "name": "processor battery 6",
     "voltage_v": 48.0
    },
    {
     "body": "concrete mixer",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "concrete mixer battery",
+    "name": "processor battery 7",
     "voltage_v": 48.0
    },
    {
     "body": "aluminium cell",
     "capacity_j": 2000000.0,
     "charge_j": 2000000.0,
-    "name": "aluminium cell battery",
+    "name": "processor battery 8",
     "voltage_v": 48.0
    }
   ]
@@ -1344,6 +1224,1094 @@
     -5.38,
     0.8419337290543211,
     -1.27
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "smelter",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -7.880000000000001,
+    0.8726311583518982,
+    -1.75
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "mill",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -4.88,
+    0.8441722054481506,
+    -0.25
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "clay kiln",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -9.88,
+    0.9293545742034912,
+    -6.75
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "lime kiln",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -13.88,
+    1.2597314376831055,
+    -7.25
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "iron smelter",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    15.120000000000001,
+    1.252426173210144,
+    -7.75
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "glass furnace",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -4.38,
+    0.9904854555130005,
+    -2.25
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "concrete mixer",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    -11.38,
+    0.9279847402572632,
+    -0.75
+   ]
+  },
+  {
+   "color_rgba": 3382733567,
+   "material": "oak",
+   "name": "aluminium cell",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    -0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.48,
+      0.0
+     ],
+     "dimensions_m": [
+      1.2,
+      0.04,
+      1.2
+     ],
+     "name": "deck"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -0.504,
+      0.23,
+      -0.504
+     ],
+     "dimensions_m": [
+      0.05,
+      0.46,
+      0.05
+     ],
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "intake bin"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.575,
+      -0.312
+     ],
+     "dimensions_m": [
+      0.5,
+      0.15,
+      0.5
+     ],
+     "name": "output bin"
+    },
+    {
+     "center_local_m": [
+      0.36,
+      0.56,
+      0.0
+     ],
+     "dimensions_m": [
+      0.25,
+      0.12,
+      0.25
+     ],
+     "name": "battery"
+    },
+    {
+     "center_local_m": [
+      -0.36,
+      0.505,
+      0.0
+     ],
+     "dimensions_m": [
+      0.36,
+      0.01,
+      0.54
+     ],
+     "material": "glass",
+     "name": "solar panel"
+    }
+   ],
+   "position_m": [
+    15.620000000000001,
+    0.591563250541687,
+    -5.75
    ]
   }
  ],

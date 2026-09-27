@@ -12,6 +12,7 @@ of them opens the real valley instead, and is skipped without BANJO_LIVE_ENGINE.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import sys
@@ -302,6 +303,69 @@ class TheChainItself(unittest.TestCase):
         for pile in goods.stockpiles:
             self.assertIsNotNone(goods.by_name(pile["name"]))
 
+
+
+class EverythingInItCouldBeBuilt(unittest.TestCase):
+    """The owner, 2026-09-26: "we shouldn't have things in the world that
+    aren't buildable in the workshop and vice versa."
+
+    Held over the room a new game actually opens, not over the test rooms:
+    those exist to exercise the engine, and a domino, a cut rope and a pane
+    that breaks are fixtures rather than things anybody would make.
+
+    Read off the written room and not off the builder, because the written
+    room is what a player opens.
+    """
+
+    ROOM = ROOT / "playground" / "rooms" / "new-game.json"
+
+    def setUp(self):
+        if not self.ROOM.is_file():
+            self.skipTest("new-game.json has not been built (tools/build_new_world.py)")
+        self.room = json.loads(self.ROOM.read_text(encoding="utf-8"))
+
+    def kinds_the_workshop_knows(self):
+        from mcp import workshop as w
+        try:
+            w.assemble("a kind nobody has", design_id="x")
+        except Exception as refusal:
+            said = str(refusal)
+        else:
+            self.fail("the Workshop accepted a kind that does not exist")
+        # "unknown assembly: x; the workshop knows bench, cart, chair, ..."
+        listed = said.split("knows", 1)[1] if "knows" in said else ""
+        return {word.strip(" .'\"") for word in listed.replace(" and ", ",").split(",") if word.strip()}
+
+    def test_every_machine_in_it_is_a_kind_the_workshop_can_build(self):
+        known = self.kinds_the_workshop_knows()
+        self.assertIn("processor", known, f"the Workshop should know a processor: {sorted(known)}")
+        standing = sorted({b["name"].split(":")[0] for b in self.room.get("precise_rigid_bodies") or []})
+        self.assertTrue(standing, "the room has no machines in it at all")
+        for name in standing:
+            with self.subTest(name):
+                # A machine is named for its job -- "clay kiln", "iron
+                # smelter" -- and built from a kind. The kind is what has to
+                # be buildable, and every works here is a processor.
+                self.assertTrue(
+                    name in known or name in {w.machine for w in ws.WORKS},
+                    f"{name!r} stands in a new game and is not something the Workshop builds")
+
+    def test_nothing_is_left_standing_that_nobody_could_build(self):
+        """A plain box is a box somebody drew, not a thing anybody made.
+
+        The one that is allowed is buried: a world is opened from its bodies
+        and a room with none is refused outright, so the valley's own scene
+        keeps a marker stone under the rock and this does the same. Buried is
+        what makes it the world's footing rather than a thing in the world.
+        """
+        loose = self.room.get("bodies") or []
+        for body in loose:
+            with self.subTest(body.get("name")):
+                self.assertEqual("marker stone", body.get("name"),
+                                 "the only plain box in a new game is its marker stone")
+                self.assertLess(body["center_mm"][1], 0.0,
+                                "the marker stone is buried; anything above ground is a thing "
+                                "in the world and has to be buildable")
 
 class TheRealValley(unittest.TestCase):
     """The engine's own ground, not one written here."""

@@ -35,6 +35,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
 
 import build_explore_world as grounds   # noqa: E402
 import build_mine_room as mine          # noqa: E402
+import workshop_install                 # noqa: E402
 import build_rover_room as rover_room   # noqa: E402
 import fracture_lab                     # noqa: E402
 import live_session                     # noqa: E402
@@ -43,6 +44,7 @@ import machine_routine                  # noqa: E402
 import machine_senses                   # noqa: E402
 import rigid_assembly                   # noqa: E402
 import world_seed as ws                 # noqa: E402
+from mcp import workshop as w, workshop_components, workshop_machines  # noqa: E402
 
 ROOMS = ROOT / "playground" / "rooms"
 #: The proof is evidence, not a room, and it does not live among the rooms.
@@ -102,6 +104,28 @@ def compose(ground: dict, world: dict) -> dict:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
     spec["water"] = dict(grounds.WATER)
     spec["goods"] = spec_goods
+    # NOTHING STANDS HERE THAT THE WORKSHOP CANNOT BUILD (the owner,
+    # 2026-09-26). The rover room's composer leaves a concrete post in every
+    # room it makes -- a charging post from before batteries charged off
+    # solar panels, which they have since the owner's own call. It was the
+    # last thing in this world nobody could build, and it is not needed.
+    #
+    # A MARKER STONE TAKES ITS PLACE, buried, because a world is opened from
+    # its bodies and a room with none of them is not a room: with the post
+    # simply deleted the lab fell back to its default 10 mm plate, which is
+    # not a whole number of this room's 50 mm cells, and refused the world.
+    # The valley's own scene does exactly this and for the same reason
+    # (world_room.valley: "one marker stone, anchored and buried in the rock
+    # under the valley"). Buried is the point -- it is not a thing in the
+    # world that cannot be built, it is the world's own footing.
+    spec["bodies"] = [b for b in spec["bodies"] if b.get("name") != "post"]
+    mx, mz = ARRIVE_AT
+    under = grounds.ground_under(ground, (mx - 0.05, mz - 0.05), (mx + 0.05, mz + 0.05))
+    spec["bodies"].append(
+        {"name": "marker stone", "shape": "box", "material": "concrete", "anchored": True,
+         "size_mm": [100.0, 100.0, 100.0],
+         "center_mm": [round(mx * 1000.0, 1), round((under - 1.0) * 1000.0, 1),
+                       round(mz * 1000.0, 1)]})
 
     # The rover's job in the routine language: go to the nearest copper, dig
     # until the hopper is full, come back, tip it into the smelter's intake.
@@ -141,21 +165,17 @@ def compose(ground: dict, world: dict) -> dict:
         beside = [(mid[0] + s * 1.25 * side[0], mid[1] + s * 1.25 * side[1]) for s in (1.0, -1.0)]
         dry = [p for p in beside if not ws.wet_near(ground, p[0], p[1], 0.8)]
         at = min(dry or beside, key=lambda p: ws.flatness(ground, p[0], p[1], 0.8))
-        body, top = works_block(ground, name, at)
-        spec["bodies"].append(body)
-        still = mine.STILL
-        spec["machines"]["stores"].append(
-            {"name": f"{name} battery", "body": name, "capacity_j": still["capacity_j"],
-             "charge_j": still["charge_j"], "voltage_v": still["voltage_v"]})
-        spec["machines"]["panels"].append(
-            {"name": f"{name} panel", "body": name, "store": f"{name} battery",
-             "at_mm": [round(1000.0 * v, 1) for v in top], "normal": [0.0, 1.0, 0.0],
-             "area_m2": still["panel_area_m2"], "efficiency": still["efficiency"]})
-        spec["machines"]["programs"].append(
-            {"name": name, "kind": "still", "body": name, "store": f"{name} battery",
-             "routine": {"kind": "process", "recipe": works.recipe,
-                         "intake": intake_name, "output": output_name,
-                         "batch_kg": 5.0}})
+        bodies, pins, made = a_processor(
+            ground, name, at,
+            {"kind": "process", "recipe": works.recipe, "intake": intake_name,
+             "output": output_name, "batch_kg": 5.0})
+        # Its names kept apart from every other machine's, as the install gate
+        # keeps them: eight processors all call their battery "battery".
+        made = workshop_install._named_apart(spec["machines"], made)
+        spec["precise_rigid_bodies"] += bodies
+        spec["joints"] += pins
+        for key in ("stores", "motors", "panels", "controls", "programs"):
+            spec["machines"][key] = spec["machines"].get(key, []) + list(made.get(key) or [])
         # ITS LOAN. The generator keeps this off the goods block on purpose --
         # a charge is not a supply, and a proof that counted it said you could
         # reach everything without ever digging. The room is where it belongs:
@@ -185,22 +205,37 @@ def compose(ground: dict, world: dict) -> dict:
     return spec
 
 
-def works_block(ground: dict, name: str, at: tuple[float, float]) -> tuple[dict, list[float]]:
-    """A still machine's block standing on the ground: the body, and the
-    middle of its top for its panel.
+def a_processor(ground: dict, name: str, at: tuple[float, float],
+                routine: dict) -> tuple[list[dict], list[dict], dict]:
+    """The Workshop's own processor, stood on the ground where it goes.
 
-    The mine room's own (build_mine_room.block) at a size eight of them can
-    afford. Seated on the HIGHEST ground under its whole footprint, which is
-    why a works needs no flat patch: Jolt leaves a body started inside the
-    ground where it is, so the seating is what keeps it out of the hill.
+    THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
+    exact bodies, seat it on the highest ground under its whole footprint,
+    and let workshop_machines read its battery, its panel and its program off
+    the design. Nothing here is made up for the world -- if the Workshop
+    cannot build it, it cannot stand here either, which is the rule.
+
+    It is also what the cell budget wants. A plain box is latticed and the
+    mine's block costs 2,304 cells at 50 mm; a compiled design is precise
+    rigid bodies, which the lattice never sees.
     """
+    design = w.assemble("processor", design_id=name)
+    candidate = {"kind": "processor", "design_id": name, "parameters": {},
+                 "component_overrides": design.lineage["component_overrides"]}
+    design, overrides = workshop_components.design_from_spec(candidate)
+    artifact = rigid_assembly.compile_design(design, overrides, root=name)
     x, z = at
-    hx, hz = WORKS_BLOCK_M[0] / 2.0, WORKS_BLOCK_M[2] / 2.0
-    base = grounds.ground_under(ground, (x - hx, z - hz), (x + hx, z + hz))
-    body = {"name": name, "shape": "box", "material": "concrete", "anchored": True,
-            "size_mm": [round(1000.0 * v, 1) for v in WORKS_BLOCK_M],
-            "center_mm": [round(1000.0 * v, 1) for v in (x, base + WORKS_BLOCK_M[1] / 2.0, z)]}
-    return body, [x, base + WORKS_BLOCK_M[1], z]
+    flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, 0.0)
+    lift = max(grounds.ground_under(ground, lo, hi) - low
+               for low, lo, hi in rigid_assembly.footprint(flat))
+    stood = rigid_assembly.placed(artifact, [x, lift, z], 0.0, 0.0)
+    origin = [x, lift, z]
+    frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)],
+             lambda d: [float(v) for v in d])
+    made = workshop_machines.installed(design, artifact["component_to_body"], frame, {})
+    for program in made.get("programs") or []:
+        program["routine"] = dict(routine)
+    return rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made
 
 
 def _nearest(deposits: list[dict], substance: str, to: tuple[float, float]) -> dict:
