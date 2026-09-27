@@ -1634,7 +1634,24 @@ function renderMachineBench(candidate) {
   take.onclick = () => guard(take, takeTheKeys);
   stop.onclick = () => guard(stop, letGo);
   const row = make("div", { class:"ws-mb-run" }); row.append(take, stop);
-  root.append(make("h3", {}, "Drive it"), status, row);
+  const energy = make("p", { id:"ws-drive-energy", class:"ws-feedback-count" });
+  const store = (record?.stores || [])[0];
+  if (store) energy.textContent = `${store.name || "its battery"}: ${joulesSaid(store.charge_j)} of ${joulesSaid(store.capacity_j)}. Drive it and this says what it is spending.`;
+  root.append(make("h3", {}, "Drive it"), status, energy, row);
+}
+
+// What it holds and what it is spending, the same words the world's panel
+// uses: a thing that stops, or lands, stops spending, and you can see it.
+const joulesSaid = (j) => (j >= 1e6 ? `${(j / 1e6).toFixed(2)} MJ` : j >= 1e3 ? `${(j / 1e3).toFixed(1)} kJ` : `${Math.round(j)} J`);
+const wattsSaid = (w) => (w >= 1000 ? `${(w / 1000).toFixed(2)} kW` : w >= 10 ? `${Math.round(w)} W` : `${w.toFixed(1)} W`);
+const forHowLong = (s) => (s >= 3600 ? `${(s / 3600).toFixed(1)} hours` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`);
+function showEnergy(e) {
+  const line = $("#ws-drive-energy");
+  if (!line || !e) return;
+  line.textContent = `${e.name || "its battery"}: ${joulesSaid(e.charge_j)} of ${joulesSaid(e.capacity_j)}`
+    + ` · ${e.using_w > 0.05 ? `using ${wattsSaid(e.using_w)}` : "using nothing"}`
+    + (e.taking_w > 0.05 ? `, taking in ${wattsSaid(e.taking_w)}` : "")
+    + (e.left_s ? `, ${forHowLong(e.left_s)} left at that` : "");
 }
 
 async function takeTheKeys() {
@@ -1649,6 +1666,7 @@ async function takeTheKeys() {
   bench.playback = recording; bench.playbackIndex = recording.frames.length - 1; bench.playbackPlaying = false;
   view = "physics"; pressView("physics"); show(false); frameSimulation(recording); drawPlayback();
   $("#ws-drive-take").hidden = true; $("#ws-drive-stop").hidden = false;
+  showEnergy(answer.energy);
   driveStatus(`Driving${answer.program ? ` its ${answer.kind} program` : answer.wheels.length ? ` its ${answer.wheels.join(" and ")}` : ""}: W A S D or the arrows${answer.flies ? ", Space up, Shift+Space down" : ""}. Esc lets go.`);
   stage.dataset.driving = "true";
   stage.focus?.();
@@ -1667,6 +1685,7 @@ async function driveStep() {
     bench.playback = drive.recording; bench.playbackIndex = drive.recording.frames.length - 1;
     if (view !== "physics") { view = "physics"; pressView("physics"); }
     drawPlayback();
+    showEnergy(said.energy);
     const held = Object.entries(drive.keys).filter(([, v]) => v).map(([k]) => k).join("+") || "no keys";
     driveStatus(`${(said.doing || said.asked || "").replace(/^\w/, (c) => c.toUpperCase())}${said.why ? `: ${said.why}` : ""} \u00b7 ${held} \u00b7 ${Number(said.t_s).toFixed(1)} s`
       + (said.speed_m_s != null ? ` \u00b7 ${Number(said.speed_m_s).toFixed(2)} m/s` : "")

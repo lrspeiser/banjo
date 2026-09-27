@@ -647,6 +647,11 @@ off from its own panel. The one kind so far, "roam":
   one side, it turns towards the lower side.
 - Where its wheels stop for want of progress, it backs off and turns. For now
   that stands in for a bump sensor.
+- Where it has been told to go somewhere and has got nowhere for 20 s, it backs
+  itself out, and after a few tries stops and says it cannot ("When a machine
+  cannot get out"). It also takes care not to dig itself in ("Working a place
+  without digging yourself in"), and it stops before it turns on the spot
+  ("Following a line instead of weaving off it").
 - It turns until it has turned at least as far as it meant to and nothing is
   in its way, or for 6 s at most.
 - Turned off, it stops on its brakes.
@@ -681,6 +686,193 @@ water:
   inside the line the front takes.
 - **A slope to the side counts.** Checking only the slope ahead, it ran along
   a steep contour and spiralled up towards the basin's rim.
+
+### When a machine cannot get out
+
+A machine can be held by the world without anything it watches saying so. In
+the mine on 2026-09-26 the rover stood at one spot for 232 s of a 7-minute run,
+driving and turning the whole time and going nowhere: it had dug 1.3 m ahead of
+itself, on ground it then had to drive over, and sat against the spoil heap of
+its own hole on a slope. Its wheels turned freely, so the motors were never
+overloaded and the stall that stands in for a bump sensor never tripped; no
+water sensor saw anything; its battery was full. Every layer above -- the
+routine's three tries, the deciders, Jev -- was told only that it was
+"approaching" the vein, which it was, for four minutes.
+
+So a machine has a sense of getting nowhere, and a reflex about it.
+
+**The sense.** While it is told to be going somewhere -- going forward, backing
+off, turning either way, rising, descending -- the engine keeps where it stood
+when it was told, and how long it has been inside half a metre of there. Getting
+out of that circle opens a new one. Anything that is not trying to go (waiting,
+digging, resting, stopped, off) clears it. The circle is the measure, not
+standing still and not the wheels: in a hole a machine drives, rocks and turns
+busily and gets nowhere, so the first thing tried -- reset the moment it moved
+or turned five degrees -- never fired at all. The program reports it as
+`stuck_s`, and how many times it has tried to get out as `stucks`; the senses
+give a routine or a decider `not_getting_anywhere_for_s` and
+`tried_to_get_out_times`, the conditions `getting_nowhere` (seconds, 5 by
+default) and `stuck`, and a brain the events "it was not getting anywhere, so it
+is getting itself out" and "it cannot get itself out of where it is" -- both
+said even while something is asking it to do something, as a knock is, because
+both happen to it rather than being anything it chose.
+
+**The reflex, for a machine that drives.** Twenty seconds of getting nowhere and
+it backs out: reverse, turn 110 degrees, reverse again along the new line.
+Reversing alone barely rocked it; reversing again after the turn pulled it
+clear. It reverses 4 s, then 8, then 12, turning the other way each time, and
+once it has tried it waits only 5 s before trying again rather than 20. Three
+tries at one place and it stops, holds its wheels, and says "it cannot get
+itself out". Getting two metres from that place, by its own back-out or because
+something else moved it, ends the episode and gives the next thing in its way
+the same patience as the first. Being stuck does not make it deaf: asked to do
+something it does it, so a person who comes to get it out can.
+
+**The reflex, for a machine that flies.** It climbs over what is in its way
+rather than backing round it: two metres on the height it holds, up to five
+times. Then it holds where it is and says it cannot get past. It never stops its
+rotors for this, whatever is in the way, because a flyer that gives up in the
+air falls. Climbing is getting somewhere for the sense -- a flyer told to rise
+and rising is not stuck -- but not for the place, which is measured across the
+ground: without that, a walled-in drone climbed a metre at a time for ever.
+
+**Which machines have it.** A machine that roams and a machine that flies. A
+machine going to a thing to hold a pose there (the "sit" kind) has only its
+older reflex, backing off where its wheels make no progress, and so has the
+same blind spot: its wheels turn freely in a hole. A "still" machine is never
+told to go anywhere.
+
+Getting out of a hole is the reflex; not digging one is the other half, and that
+is below.
+
+Measured in the engine (`tests/rover_roam_tests.cpp`,
+`tests/drone_hover_tests.cpp`):
+
+| | |
+|---|---|
+| driven into a wall while roaming | nowhere for 20 s, one back-out, roaming again 6.5 s later, 5.4 m back from the wall; no wheel ever stalled |
+| penned in 1.6 m of concrete, told to go through it | three back-outs, stuck after 45 s, never further than 0.30 m from where it began, then obeyed a person |
+| a drone walled in a 14 m shaft | climbed from 1.5 m to 11.5 m in five lifts, then held, never coming below 1.75 m |
+
+What it does not do is plan a way round. Told to approach a point through a
+wall, a machine that drives backs out, turns away, and is turned straight back
+at the wall by the ask. Getting itself out is not finding a route.
+
+Getting nowhere does not count against the three water scares that make a
+machine give up what it was asked. Backing out of something and carrying on is
+the whole point of the reflex, and a machine that truly cannot get out stops and
+says so on its own; counted together, one water scare and two back-outs made a
+machine abandon a haul it could have finished, and it roamed for the rest of the
+run.
+
+### Working a place without digging yourself in
+
+A machine cannot drive out of a hole as deep as its wheels are tall, and the
+holes in its way are its own. So how a machine works a place is a rule of the
+world, not a setting on a routine (`machine_tools`, all of it measured on the
+mine's rover, 2026-09-26):
+
+- **It bites the place it was sent to, never its own nose.** The `dig` tool
+  takes a `place`, and a routine that digs passes its dig site. Biting 1.3 m
+  straight ahead instead put a crater wherever the machine happened to stop and
+  whichever way it was pointing: four trips to one vein left four holes 10 to
+  18 cm deep spread over 2 m of ground it had to cross, and on the fifth the
+  rover stood on the rim of one and could not get out.
+- **It stands off the place.** `go_to` takes `stop_at_m` -- how far from the
+  place to stop, since the place is about to become a pit -- and a machine told
+  to stop "a metre off" rolls on while its brakes take hold, measured down to
+  0.2 m. The dig routine stands 2.0 m off, which puts it between 1.2 m and
+  2.0 m out: inside what it can reach, outside what it is digging.
+- **It will not dig the ground under itself.** Closer than 1.2 m to the spot and
+  it backs off first and says so, rather than digging where its own wheels are.
+- **Each spot is scooped once, and the working is as wide as the place.** A bite
+  goes into the highest ground of the place the machine can reach, and only while
+  that ground is still within 30 mm of the ground around: so the working spreads
+  across the place, the way an open pit is worked, and no hole is ever deepened.
+  How wide it spreads is the deposit's own width where the place is in one, and
+  half a metre where it is not. Biting always at the middle instead sank a shaft
+  600 mm deep and 1.1 m across in ten minutes, which a machine on 160 mm wheels
+  can only fall into; holding the width to half a metre gave three loads and
+  then nothing, and the machine spent nine tenths of a twenty-minute run on a
+  dig step it could not do.
+- **Worked out is said, not scraped at.** Once every spot it can reach is down
+  past that, the tool says the place is worked out and its routine goes on with
+  what it has. Scraping the same exhausted spot brought up 3.8 kg, then 2.2,
+  then 0.6, and would have gone on for ever.
+
+What one scoop leaves is not a trap: driven at a hole 0.5 m wide and 150 mm
+deep, the rover crosses it. What traps it is the same spot bitten over and over.
+
+Measured over ten minutes of the mine, the same engine both ways:
+
+| | biting its own nose | working the place |
+|---|---|---|
+| loads delivered | 1 | 6 |
+| the working's radius | 1.1 m | 3.3 m |
+| deepest cut | 185 mm | 140 mm |
+| time stuck, unable to move | 62 s | none |
+
+Wider and shallower is the point of it: an open pit a machine drives over,
+rather than a shaft it falls into.
+
+Over twenty minutes it delivered 8 loads, took 69 kg of ore out of the vein's
+400, put 18.2 kg of copper wire on the Workshop's rack, gave up no trip, never
+had to back itself out, and was never once stuck.
+
+### Following a line instead of weaving off it
+
+A machine that turns with a driven wheel each side has no braking while it
+turns: the two wheels push against each other and nothing pushes back along its
+way, so one that starts a turn while it is still moving coasts onward through
+the whole turn. Measured on the mine's rover, told to go from the vein to the
+smelter over dry ground: it spun up to 108 degrees a second, sailed 50 degrees
+past the mark, and then travelled 1.6 m at up to 80 degrees off its way while it
+came round. A metre of that was northward every trip, and after a few trips it
+was standing in the lake's shallows with its water reflex turning it away, which
+is how a haul over dry ground gets nowhere near the ground it was about to
+cross.
+
+So a machine asked to go to a place or to face one **stops before it turns on
+the spot, and stops again before it goes on**. Both stops hold its wheels on
+their brakes, and it turns from rest, where it goes where it is pointed. What
+counts as stopped is a sixth of a metre a second, and it waits at most a second
+and a half for that, because on a slope it may never come to a complete stand.
+This is the same stop-turn-go a machine holding a pose has always done
+(`decideSit`), which is why that one lands on its mark, and the roaming reflexes
+are untouched: getting clear of water or of a hole it is stuck in is still one
+decisive turn at full effort.
+
+Two things tried first and thrown away, both measured:
+
+- **Aiming at where the nose will be** rather than where it is, by the swing it
+  already has. It reads well and it does not work: the doing it goes into brakes
+  the swing it just predicted would carry on, so the machine stopped 35 degrees
+  off the mark and called itself faced.
+- **Easing the turn as it closes**, at six tenths and then three tenths of its
+  effort. At three tenths it could not come round on rough ground at all: it got
+  itself stuck seven times in twenty minutes where it had been twice, and
+  delivered nothing.
+
+What it took, over twenty minutes of the mine each time:
+
+| | before | after |
+|---|---|---|
+| loads delivered | 3 | 8 |
+| copper wire on the Workshop's rack | 7.1 kg | 18.2 kg |
+| time its reflexes had it for water | 288 s | 35 s |
+| times it had to back itself out | 2 | none |
+| time stuck, unable to move | none | none |
+
+The haul was never the whole of it. Nine tenths of the twenty minutes had gone
+on a dig step the machine could not do, because a place half a metre wide gives
+three loads and is then worked out, and a machine on a step it cannot finish
+roams while it waits. A place now spreads as wide as the deposit it is in, and
+the mine's vein is 3 m across.
+
+What holds the load count down is not the digging: 288 s of those 1,200 went on
+its water reflex turning it away on the haul between the vein and the smelter,
+which is the next thing to look at.
+
 
 It can be worked in the page at `/world?scene=tests-rover`. That is a test room
 off the menu, built by `tools/build_rover_room.py`, which lets the rover roam a
@@ -1098,10 +1290,12 @@ way -- a point in the world -- the routine and a person can. The decision's
 words say what was filled: "go to 3 m at +90 deg, for 6 s".
 
 **Digging.** The engine's `dig` needs no hand or tool: it is a terrain edit
-whose volume goes into the ground's one carried account. The `dig` tool
-takes one scoop of the ground 1.3 m ahead of the machine's centre (0.5 m
-wide, 0.15 m deep; closer, its caster swung into the hole when it turned to
-leave), moves what came out from the carried account into the machine's
+whose volume goes into the ground's one carried account. The `dig` tool takes
+one scoop 0.5 m wide and 0.15 m deep, at the place it was sent to work or, told
+no place, 1.3 m ahead of the machine's centre (closer, its caster swung into the
+hole when it turned to leave); how it chooses the spot is "Working a place
+without digging yourself in" below. It moves what came out from the carried
+account into the machine's
 hopper with the engine's `ground_withdraw`, so the ground's ledger stays
 whole and the person's carrying is untouched, cuts the scoop to what the
 hopper has room for and puts the rest back where it came from, draws the
@@ -1410,6 +1604,23 @@ body, draws on a store of its own, has no wheels, and can only stand by,
 wait as asked, rest when its battery is low, or be off (`LiveWorld::
 decideStill`). What it makes is its routine, run by the playground over it.
 
+**Rising and descending are tools too** (`machine_tools`): `rise` and
+`descend`, with how long to do it for, so a routine, a decider or a person
+talking can tell a flying machine to climb over something or come down,
+not only a person at the keys. A machine on wheels is told it does not
+fly, and does nothing.
+
+**What a machine is spending.** Its panel in the world, and the Lab's
+drive box, both say what its battery holds and what it is spending right
+now: the joules it has of its capacity, the watts its motors are asking of
+it this step (`LiveMotor::power_w`), the watts its panels are putting back,
+and how long that leaves at this rate. A machine switched off asks for
+nothing. A flying machine asked all the way down sets itself on the ground
+and stops its rotors -- a landed machine is carried by the ground, not by
+its rotors -- so its draw falls to nothing until it is asked up again.
+Measured: the drone hovering asks 2.84 kW of its 2 MJ battery, about twelve
+minutes; landed it asks nothing; asked up again it spends again.
+
 **Three more tools**, for any machine (`machine_tools`): `take` (goods off
 the stockpile it stands by, or the one at a place it knows, into its hopper,
 one substance or whatever is there), `process` (one batch of its recipe: the
@@ -1480,7 +1691,8 @@ the deciders read, in words a person or a model writes: `hopper_full`,
 `battery_above` (a share), `pile_empty` and `pile_has` (the stockpile at a
 place it knows, or by name, or within reach; a substance, a mass),
 `water_ahead`, `person_near` (metres), `at_place`, `night`, `day`,
-`stalled`, `struck`, `resting`, `asked_by_someone`; and `not`, `all`, `any`
+`stalled`, `getting_nowhere` (seconds), `stuck`, `struck`, `resting`,
+`asked_by_someone`; and `not`, `all`, `any`
 over them. A condition that needs what the machine lacks is false, never a
 fault. A new one is one entry in CONDITIONS.
 

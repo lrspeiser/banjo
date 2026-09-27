@@ -470,8 +470,11 @@ class InTheRealEngine(unittest.TestCase):
         person = {"standing_m": behind, "facing": [v[0] / speed, 0, v[2] / speed]}
         opened = rover_talk.talk(self.app, {"program": "rover", "open": True, "person": person})
         self.assertEqual(("facing", "talk"), (opened["program"]["asked"]["doing"], opened["program"]["asked"]["by"]))
-        self.assertIn(opened["program"]["doing"], ("turning left", "turning right"))
-        self.assertTrue(opened["reply"].startswith("I am turning"), opened["reply"])
+        # It was going somewhere when they spoke, so it stops before it turns:
+        # turning with its wheels opposed has no braking, and one that turns
+        # while still moving coasts off its way (LiveWorld, decideProgram).
+        self.assertIn(opened["program"]["doing"], ("stopping", "turning left", "turning right"))
+        self.assertTrue(opened["reply"].startswith(("I am stopping", "I am turning")), opened["reply"])
         self.assertEqual([("rover", True)], [(t["who"], t.get("opened", False)) for t in opened["talk"]])
         # While they talk, nothing that happens to it is asked about.
         self.step_as_the_page_does(14.0)
@@ -584,6 +587,8 @@ class TheSensesAndTheTools(unittest.TestCase):
         ctx.routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 40.0,
                                                         "places": {"depot": [-3.0, 0.0], "dig site": [0.0, 4.0]}})
         did = machine_tools.run(ctx, machine_tools.Call("go_to", {"place": "dig site"}, "routine", "its routine"))
+        # It stands off the site, because the site is the pit it digs
+        # (machine_tools.DIG_STAND_M).
         self.assertEqual("asked to go to dig site, and stop a metre off", did["did"])
         self.assertEqual({"session": None, "op": "behave", "program": 1, "sender": "routine", "doing": "approaching",
                           "for_s": 60.0, "why": "its routine", "toward": [0.0, 0.3, 4.0]},
@@ -628,15 +633,67 @@ class TheSensesAndTheTools(unittest.TestCase):
         self.assertEqual(["ground_return", "deposit", "behave"], [c["op"] for c in ask.sent[-3:]])
         self.assertEqual((0.0, 30.0, 1), (ctx.routine.kg, ctx.routine.delivered_kg, ctx.routine.trips))
 
+    def test_it_works_the_place_it_is_sent_to_and_never_digs_the_ground_under_itself(self):
+        """A machine sent to work a place digs THAT place, off its high ground,
+        and will not dig where it is standing or deepen a hole it has made
+        (docs/machine-world.md, "When a machine cannot get out")."""
+        # The ground is flat except for a hole 200 mm deep at the site's middle,
+        # as a scoop would leave, and the machine stands 1.5 m south of the site.
+        def heights(x, z):
+            return -0.2 if math.hypot(x - 0.0, z - 1.5) < 0.2 else 0.0
+
+        ask = self.engine(heights=heights)
+        ctx = self.context(ask)
+        ctx.routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 30.0,
+                                                        "places": {"depot": [-3.0, 0.0], "site": [0.0, 1.5]}})
+        did = machine_tools.run(ctx, machine_tools.Call("dig", {"place": "site"}, "routine"))
+        bite = next(c for c in ask.sent if c["op"] == "dig")["from"]
+        self.assertTrue(did["did"].startswith("dug 12.0 kg"), did["did"])
+        # Not the hole in the middle: somewhere else at the site, off the high
+        # ground, and out at arm's length rather than under the machine.
+        self.assertEqual(0.0, heights(bite[0], bite[1]), "into fresh ground, not the hole it already made")
+        self.assertLessEqual(math.hypot(bite[0], bite[1] - 1.5), machine_tools.DIG_SPREAD_M + 1e-6,
+                             "and still at the site")
+        self.assertGreaterEqual(math.hypot(bite[0], bite[1]), machine_tools.DIG_CLEAR_M,
+                                "never the ground under itself")
+        # Standing on the place: it backs off instead of digging, and says so.
+        near = self.context(self.engine(heights=heights))
+        near.program["at_m"] = [0.0, 0.3, 1.2]
+        near.routine = ctx.routine
+        did = machine_tools.run(near, machine_tools.Call("dig", {"place": "site"}, "routine"))
+        self.assertIn("will not dig the ground under itself", did["did"])
+        self.assertIn("backs off", did["did"])
+        self.assertEqual("backing off", next(c for c in near.ask.sent if c["op"] == "behave")["doing"])
+        # Out of reach: it says to go there first rather than digging where it is.
+        far = self.context(self.engine(heights=heights))
+        far.routine = ctx.routine
+        did = machine_tools.run(far, machine_tools.Call("dig", {"place": "depot"}, "routine"))
+        self.assertTrue(did["failed"])
+        self.assertIn("beyond the 2.0 m it can reach", did["did"])
+        # Worked out: every spot of the place already down past DIG_FRESH_M, so
+        # it stops rather than deepening one, and its routine moves it on.
+        # Down 200 mm across the whole working, but not out where the ground
+        # around it is read (DIG_SPREAD_M + 0.5 m).
+        dug_out = self.context(self.engine(heights=lambda x, z: -0.2 if math.hypot(x, z - 1.5) < 0.7 else 0.0))
+        dug_out.routine = ctx.routine
+        did = machine_tools.run(dug_out, machine_tools.Call("dig", {"place": "site"}, "routine"))
+        self.assertTrue(did["idle"], did["did"])
+        self.assertIn("worked out", did["did"])
+        self.assertIn("will not dig one hole deeper", did["did"])
+        self.assertNotIn("dig", [c["op"] for c in dug_out.ask.sent], "and it never touched the ground")
+
     def test_the_routine_runs_its_steps_and_waits_while_someone_else_has_it(self):
         ask = self.engine()
+        # The site is within reach of where it stands: a machine digs the place
+        # it was sent to, so it has to be able to reach it (DIG_REACH_M).
         routine = machine_routine.Routine("rover", {"kind": "dig", "hopper_kg": 24.0,
-                                                    "places": {"dig site": [0.0, 4.0], "depot": [-3.0, 0.0]}})
+                                                    "places": {"dig site": [0.0, 1.8],
+                                                               "depot": [-3.0, 0.0]}})
         ctx = self.context(ask)
         ctx.routine = routine
         self.assertEqual((1, "go_to dig site"), (routine.summary()["step"], routine.summary()["doing"]))
         did = routine.tick(ctx)
-        self.assertEqual("asked to go to dig site, and stop a metre off", did["did"])
+        self.assertEqual("asked to go to dig site, and stand 2.0 m off it", did["did"])
         # Still on its way: nothing more is asked.
         ctx.program["asked"] = {"doing": "approaching", "by": "routine"}
         self.assertIsNone(routine.tick(ctx))

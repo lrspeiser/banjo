@@ -744,6 +744,21 @@ struct LiveProgram {
     // times it has stopped to rest.
     double charge_share{};
     unsigned rests{};
+    // Getting nowhere (docs/machine-world.md, "When a machine cannot get
+    // out"): how long it has been told to be going somewhere and has stayed
+    // within half a metre of where it stood when it was told, and how many
+    // times it has had to back itself out. A machine spinning its wheels in a
+    // hole it dug is NOT a stalled machine -- its wheels turn freely, its
+    // motors are not overloaded -- so nothing that watches a motor can see
+    // this; nor is it a machine that is not turning, because in a hole it
+    // turns busily and still goes nowhere. Zero whenever it gets somewhere,
+    // and whenever it is not trying to.
+    double stuck_s{};
+    unsigned stucks{};
+    // How fast it is swinging round, degrees a second, positive the way a left
+    // turn takes it. A machine carries its swing after its wheels stop pushing,
+    // so anything aiming its nose has to aim where the nose will be.
+    double turning_deg_s{};
     // A "sit" program, as the last kept step left it: how far away what it goes
     // to is, across the ground, from its chassis's middle to that body's; which
     // way that is off its nose, its own left counting positive, degrees; where

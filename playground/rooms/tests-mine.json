@@ -488,14 +488,17 @@
      "steps": [
       {
        "args": {
-        "place": "vein"
+        "place": "vein",
+        "stop_at_m": 2.0
        },
        "do": "go_to",
        "retries": 3,
        "until": "arrived"
       },
       {
-       "args": {},
+       "args": {
+        "place": "vein"
+       },
        "do": "dig",
        "repeat": true,
        "until": "load_full"
