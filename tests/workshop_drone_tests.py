@@ -46,20 +46,74 @@ class TheDroneIsInTheCatalogue(unittest.TestCase):
         library = w.ComponentLibrary()
         self.assertIn("rotor", {f.name for f in w.LIBRARY_FAMILIES})
         rotor = library.make("rotor", name="front rotor", material="oak", at_m=(0.0, 0.2, 0.6), parameters={})
-        self.assertEqual(["front rotor stub", "front rotor"], [p.name for p in rotor.parts])
-        stub, disc = rotor.parts
+        self.assertEqual(["front rotor stub", "front rotor"] +
+                         [f"front rotor blade {i}" for i in (1, 2, 3, 4)],
+                         [p.name for p in rotor.parts])
+        stub, hub = rotor.parts[:2]
         self.assertEqual("iron", stub.material)
-        self.assertGreater(disc.center_m[1], stub.center_m[1], "the disc sits on top of the stub")
+        self.assertGreater(hub.center_m[1], stub.center_m[1], "the hub sits on top of the stub")
         self.assertEqual((0.0, 0.2, 0.6), rotor.anchors["mount"])
+
+    def test_four_blades_round_a_hub_instead_of_a_disc_that_never_looks_like_it_turns(self):
+        """A solid disc has one thing wrong with it that nothing else does: a
+        turning one looks exactly like a stopped one, so the drone gave no sign
+        of whether it was running.
+
+        Nothing ever stopped it being blades -- a rotor is exact parts, collided
+        as they are drawn, at whatever size. It was a disc because the family
+        made a disc."""
+        library = w.ComponentLibrary()
+        at, span = (0.0, 0.2, 0.6), 0.4
+        rotor = library.make("rotor", name="r", material="oak", at_m=at,
+                             parameters={"diameter_m": span})
+        blades = [p for p in rotor.parts if "blade" in p.name]
+        hub = next(p for p in rotor.parts if p.name == "r")
+        self.assertEqual(4, len(blades))
+        # Spaced evenly round the hub, all the same, and all at one radius.
+        out = sorted(round(math.hypot(b.center_m[0] - at[0], b.center_m[2] - at[2]), 6)
+                     for b in blades)
+        self.assertEqual(1, len(set(out)), "every blade the same distance out")
+        self.assertEqual([0.0, 90.0, 180.0, 270.0], sorted(b.rotation_deg[1] for b in blades))
+        self.assertEqual(1, len({b.size_m for b in blades}), "every blade the same blade")
+        # Reaching the rim and no further, and rooted on the hub rather than
+        # floating off it.
+        self.assertAlmostEqual(max(out) + blades[0].size_m[0] / 2, span / 2, places=6)
+        self.assertAlmostEqual(min(out) - blades[0].size_m[0] / 2, hub.size_m[0] / 2, places=6)
+        # The hub is SQUARE, and that is not a drawing choice: a design is held
+        # together by what its parts touch face to face, and a square blade end
+        # on a round hub meets it along one line and comes away loose.
+        self.assertEqual("box", hub.shape)
+        # And far lighter than the disc it replaces, because most of a disc is
+        # the part between the blades.
+        disc = library.make("rotor", name="d", material="oak", at_m=at,
+                            parameters={"diameter_m": span, "blades": 0})
+        self.assertLess(sum(p.mass_kg() for p in rotor.parts),
+                        0.5 * sum(p.mass_kg() for p in disc.parts))
+
+    def test_a_blade_count_that_cannot_butt_onto_the_hub_gets_the_disc(self):
+        # Two or four butt square onto a four-sided hub. Three would meet it on
+        # a corner and come away, so it is given the disc rather than a rotor
+        # that falls apart.
+        library = w.ComponentLibrary()
+        for blades, want in ((0, 0), (1, 0), (2, 2), (3, 0), (4, 4)):
+            with self.subTest(blades=blades):
+                made = library.make("rotor", name="r", material="oak", at_m=(0.0, 0.2, 0.6),
+                                    parameters={"blades": float(blades)})
+                self.assertEqual(want, len([p for p in made.parts if "blade" in p.name]))
 
     def test_the_drone_template_authors_every_joint_and_declares_its_machines(self):
         design = w.assemble("drone", design_id="drone")
-        self.assertEqual(24, len(design.parts))
+        # Sixteen on the chassis and six to a rotor: a stub, a hub and its four
+        # blades.
+        self.assertEqual(40, len(design.parts))
         overrides = design.lineage["component_overrides"]
         construction = overrides[workshop_construction.CONSTRUCTION_KEY]
         self.assertTrue(construction["joints_authored"])
         kinds = [j["kind"] for j in construction["joints"]]
-        self.assertEqual((19, 4), (kinds.count("fixed"), kinds.count("bearing")))
+        # Nineteen as it was, and sixteen more: every blade fastened to its
+        # hub by name, because this template writes its own joints down and
+        # nothing is worked out from what touches what afterwards.
+        self.assertEqual((35, 4), (kinds.count("fixed"), kinds.count("bearing")))
         machines = overrides[workshop_machines.MACHINES_KEY]
         self.assertEqual(["front motor", "right motor", "back motor", "left motor"], [m["name"] for m in machines["motors"]])
         self.assertTrue(all(m["rotor"]["thrust_n_per_rad2"] > 0 for m in machines["motors"]), "every motor spins a rotor")
@@ -84,7 +138,8 @@ class TheDroneIsInTheCatalogue(unittest.TestCase):
         groups = {b["name"]: sorted(b["_components"]) for b in artifact["bodies"]}
         self.assertEqual(5, len(groups))
         self.assertIn("deck", groups["drone"], "the chassis carries the name")
-        self.assertTrue(all(len(g) == 2 for n, g in groups.items() if n != "drone"), "each rotor with its stub")
+        self.assertTrue(all(len(g) == 6 for n, g in groups.items() if n != "drone"),
+                        "each rotor is its stub, its hub and four blades")
         self.assertEqual(4, len(artifact["joints"]))
         self.assertTrue(all(tuple(round(v, 3) for v in j["axis"]) == (0.0, 1.0, 0.0) for j in artifact["joints"]),
                         "every pin stands up")

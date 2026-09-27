@@ -482,18 +482,77 @@ def _block(role: str, family: str):
 
 
 def _rotor(*, name: str, at_m: Iterable[float], material: str, diameter_m: float, thickness_m: float,
-           stub_diameter_m: float, stub_length_m: float) -> Component:
-    """A rotor: an iron stub standing up through a mount, with a disc on top
+           stub_diameter_m: float, stub_length_m: float, blades: float = 4.0) -> Component:
+    """A rotor: an iron stub standing up through a mount, with blades on top
     that the air pushes against. A motor with a rotor block goes on the pair
-    mount and stub. `at_m` is the mount's centre; the stub is fixed to the
-    disc and turns in the mount."""
+    mount and stub. `at_m` is the mount's centre; the stub is fixed to the hub
+    and turns in the mount.
+
+    It was a solid disc, and a solid disc has one thing wrong with it that
+    nothing else does: a turning one looks exactly like a stopped one, so the
+    drone gave no sign at all of whether it was running. `blades` of them
+    instead, round a hub, and you can see it go. Nothing stopped it being
+    blades before -- these are exact parts, collided as they are drawn, at
+    whatever size -- and `blades: 0` still draws the disc.
+
+    WHAT THIS CHANGES, PHYSICALLY, AND WHAT IT DOES NOT. The engine takes a
+    rotor's lift from a coefficient on its pin -- thrust_n_per_rad2 times the
+    square of how fast it is turning (LiveWorld) -- so the shape of the blades
+    is not what lifts the machine and cutting away the disc between them does
+    not cost it any. What it really does change is the WEIGHT and the swing:
+    four blades are a fraction of a disc's matter and most of what is left is
+    out at the rim, so the machine is lighter and its rotors take longer to
+    come up to speed, both of which are true of the thing that is now drawn.
+
+    And they are drawn FLAT, with no pitch on them, on purpose. A pitched blade
+    says which way it has to turn to push air down, and this engine's thrust
+    does not depend on which way the rotor is turning: drawing a pitch would
+    promise something the room does not do.
+    """
     x, y, z = _finite3("at_m", at_m)
+    # Two or four. A blade is held to the hub by butting square onto one of its
+    # faces, and a four-sided hub has four of those; three or five would meet it
+    # on a corner and come away. Anything else asked for gets the disc.
+    count = int(round(max(0.0, float(blades))))
+    if count not in (2, 4):
+        count = 0
+    top = y + stub_length_m - 0.03
     stub = WirePart(name=f"{name} stub", role="axle", size_m=(stub_diameter_m, stub_length_m, stub_diameter_m),
                     center_m=(x, y + stub_length_m / 2 - 0.03, z), material="iron", shape="cylinder", family="rotor")
-    disc = WirePart(name=name, role="wheel", size_m=(diameter_m, thickness_m, diameter_m),
-                    center_m=(x, y + stub_length_m - 0.03 + thickness_m / 2, z), material=material,
-                    shape="cylinder", family="rotor")
-    return Component(parts=[stub, disc], anchors={"hub": (x, disc.center_m[1], z), "mount": (x, y, z)})
+    hub_y = top + thickness_m / 2
+    if not count:
+        disc = WirePart(name=name, role="wheel", size_m=(diameter_m, thickness_m, diameter_m),
+                        center_m=(x, hub_y, z), material=material, shape="cylinder", family="rotor")
+        return Component(parts=[stub, disc], anchors={"hub": (x, hub_y, z), "mount": (x, y, z)})
+    # The hub keeps the rotor's own name, because that is what the motor, the
+    # pin and the hover program are all written against; the blades hang off it.
+    hub_across = max(2.6 * stub_diameter_m, 0.16 * diameter_m)
+    # A SQUARE hub, and that is not a drawing choice. A design is held together
+    # by what its parts touch FACE TO FACE (workshop_construction.adopted), and
+    # a blade with a square end butted onto a round hub meets it along one line
+    # and nothing else: every blade came out a loose part held by no bearing and
+    # the whole drone was refused outright. Butted flat onto a flat face, they
+    # are plainly fixed to it -- which is also why there are two or four of them
+    # and not three, since only those butt square onto a four-sided hub.
+    hub = WirePart(name=name, role="wheel", size_m=(hub_across, thickness_m, hub_across),
+                   center_m=(x, hub_y, z), material=material, family="rotor")
+    root_m = hub_across / 2.0
+    reach = diameter_m / 2.0 - root_m
+    # About a tenth of the span across, which is what a blade looks like.
+    chord = max(0.10 * diameter_m, 2.5 * thickness_m)
+    parts = [stub, hub]
+    for i in range(count):
+        turn = 360.0 * i / count
+        about = radians(turn)
+        # Turned about the upright by `turn`, which carries the blade's own
+        # length from +x round to where it belongs: a turn about y takes +x to
+        # (cos, 0, -sin).
+        middle = root_m + reach / 2.0
+        parts.append(WirePart(
+            name=f"{name} blade {i + 1}", role="wheel", size_m=(reach, thickness_m, chord),
+            center_m=(x + middle * cos(about), hub_y, z - middle * sin(about)),
+            material=material, rotation_deg=(0.0, turn, 0.0), family="rotor"))
+    return Component(parts=parts, anchors={"hub": (x, hub_y, z), "mount": (x, y, z)})
 
 
 def _solar_panel(*, name: str, at_m: Iterable[float], material: str, width_m: float, depth_m: float,
@@ -529,10 +588,13 @@ MACHINE_FAMILIES = (
            (Parameter("width_m", "m", 0.4, 0.05, 2.0), Parameter("depth_m", "m", 0.4, 0.05, 2.0),
             Parameter("thickness_m", "m", 0.01, 0.004, 0.05)),
            _solar_panel, offers=("bottom", "top")),
-    Family("rotor", "wheel", "A rotor: an iron stub up through a mount with a disc on top that the air pushes "
+    Family("rotor", "wheel", "A rotor: an iron stub up through a mount with blades on top that the air pushes "
                              "against; a motor with a rotor block goes on the mount and the stub.",
            (Parameter("diameter_m", "m", 0.4, 0.1, 2.0), Parameter("thickness_m", "m", 0.01, 0.004, 0.05),
-            Parameter("stub_diameter_m", "m", 0.02, 0.008, 0.06), Parameter("stub_length_m", "m", 0.12, 0.06, 0.4)),
+            Parameter("stub_diameter_m", "m", 0.02, 0.008, 0.06), Parameter("stub_length_m", "m", 0.12, 0.06, 0.4),
+            Parameter("blades", "", 4.0, 0.0, 4.0,
+                      about="2 or 4 blades round the hub, which is what butts square onto its "
+                            "four faces; 0 draws the solid disc it used to be")),
            _rotor, offers=("hub", "mount")),
     Family("bin", "post", "A bin: an open box on a deck that goods are put into and taken out of; a machine "
                           "that processes has an intake bin and an output bin, each a stockpile of the room's "
