@@ -1343,6 +1343,121 @@ class ThePiecesOfABreakAreDrawnAsTheyAre(ADrawingOfTheMatterItIsMadeOf, PageJour
         self.no_page_errors("after the plank broke")
 
 
+class ASubstanceLooksLikeWhatItIs(PageJourney):
+    """Every substance is drawn with its own grain (playground/surfaces.js).
+
+    Each material used to be one flat colour at one roughness, so oak was a
+    brown swatch and concrete a grey one and a wooden table and a concrete one
+    differed only in hue. Each now carries a little noise, worked out in the
+    body's OWN space so that it is solid rather than wrapped on -- a face that
+    was on the outside and a face just broken open are cut from the same block.
+
+    The way to check a surface has detail on it is to measure the detail: read
+    the pixels back off the drawing buffer and look at how much they vary. A
+    flat swatch lit by one sun varies smoothly and hardly at all across a small
+    patch; a grained one varies several times as much. And because this is
+    arithmetic on colour and roughness in a fragment shader, turning it off and
+    on must leave every number the room reports exactly where it was."""
+
+    SCENE = "explore"
+
+    # Renders once and reads a patch out of the middle of the drawing buffer,
+    # in the same turn so nothing has swapped it. `spread` is how much the
+    # pixels in that patch differ from one another -- the detail on whatever
+    # fills the middle of the view.
+    PATCH = """(() => {
+      const r = banjoRoom;
+      r.renderer.render(r.scene, r.camera);
+      const gl = r.renderer.getContext();
+      const w = 96, h = 96;
+      const px = new Uint8Array(w * h * 4);
+      gl.readPixels(Math.floor((gl.drawingBufferWidth - w) / 2),
+                    Math.floor((gl.drawingBufferHeight - h) / 2),
+                    w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let sum = 0, sq = 0;
+      const n = px.length / 4;
+      for (let i = 0; i < px.length; i += 4) {
+        const v = (px[i] + px[i + 1] + px[i + 2]) / 3;
+        sum += v; sq += v * v;
+      }
+      const mean = sum / n;
+      return { mean, spread: Math.sqrt(Math.max(0, sq / n - mean * mean)) };
+    })()"""
+
+    # What the room says about itself, which the grain must not touch.
+    FACTS = """(() => [...banjoRoom.world.bodies].map(([n, h]) => [
+      n, h.material, h.mesh.position.toArray().map((v) => v.toFixed(6)).join(","),
+    ]).sort())()"""
+
+    def open_valley(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={self.SCENE}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{self.SCENE}'"
+                                      " && banjoRoom.ready()", 300), "the valley did not open")
+
+    def look_at_the_ground(self):
+        eye = self.js("banjoRoom.camera.position.toArray()")
+        x, z = eye[0], eye[2]
+        ground = self.js(f"banjoRoom.groundAt({x}, {z})") or 0.0
+        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z});"
+                           f"banjoRoom.lookAt({x}, {ground}, {z - 2.0}); true")
+        time.sleep(1.0)
+
+    def test_every_substance_in_the_room_is_drawn_with_a_grain(self):
+        self.open_valley()
+        self.assertTrue(self.wait_for("banjoRoom.grain().substances.length > 3", 60),
+                        "hardly anything in the room was dressed")
+        grain = self.js("banjoRoom.grain()")
+        print(f"\n   {grain['substances']}", flush=True)
+        # The valley is made of these, and the ground under them.
+        for substance in ("oak", "concrete", "iron", "ground"):
+            self.assertIn(substance, grain["substances"])
+        self.assertEqual(grain["showing"], 1)
+        # Sizes are in metres, so the across-the-grain figure is cycles per
+        # metre: oak's is coarser than a fleck and finer than the hillside.
+        self.assertGreater(grain["grain"]["oak"][0], grain["grain"]["ground"][0])
+        self.no_page_errors("with every substance dressed")
+
+    def test_the_grain_puts_detail_on_a_surface(self):
+        self.open_valley()
+        self.look_at_the_ground()
+        self.page.evaluate("banjoRoom.showGrain(0); true")
+        time.sleep(0.8)
+        flat = self.js(self.PATCH)
+        self.page.evaluate("banjoRoom.showGrain(1); true")
+        time.sleep(0.8)
+        grained = self.js(self.PATCH)
+        print(f"\n   flat spread {flat['spread']:.2f}, grained {grained['spread']:.2f}"
+              f" (mean {flat['mean']:.0f} -> {grained['mean']:.0f})", flush=True)
+        # A flat swatch under one sun barely varies across a hand's width of
+        # ground; a grained one has something on it.
+        self.assertGreater(grained["spread"], 3 * flat["spread"] + 1.0,
+                           "the ground is no more detailed with the grain on than off")
+        # And it is the same ground: a grain that changed how bright the
+        # surface is on average would be a different colour, not a finish.
+        self.assertAlmostEqual(grained["mean"], flat["mean"], delta=0.12 * flat["mean"] + 2)
+        self.no_page_errors("with the grain on")
+
+    def test_the_grain_changes_nothing_the_room_reports(self):
+        self.open_valley()
+        # Held still first. The room is RUNNING, and a bench settling on sand
+        # moves seventy micrometres in the second between two readings, which
+        # would drown out what this is looking for.
+        self.page.evaluate("banjoRoom.world.paused = true; banjoRoom.world.lastTick = 0; true")
+        self.assertTrue(self.when_idle(), "the room was still busy")
+        time.sleep(0.8)
+        was = self.js(self.FACTS)
+        self.page.evaluate("banjoRoom.showGrain(0); true")
+        time.sleep(0.5)
+        self.page.evaluate("banjoRoom.showGrain(1); true")
+        time.sleep(0.5)
+        self.assertEqual(self.js(self.FACTS), was,
+                         "something the room reports moved when the grain was turned off and on")
+        self.assertGreater(len(was), 5)
+        self.page.evaluate("banjoRoom.world.paused = false; banjoRoom.world.lastTick = 0; true")
+        self.no_page_errors("after turning the grain off and on")
+
+
 class BrokenPiecesComeWithYou(PageJourney):
     """Walking near broken pieces collects them, and a piece in the hand goes
     into what you carry (the owner, 2026-09-22: "when I walk near broken pieces

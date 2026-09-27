@@ -20,6 +20,7 @@ import { BINDINGS, isKey, isButton, keyOf, controls, holdPoint, windUpPoint,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
 import { cellSurface } from "/cellmesh.js";
+import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 
@@ -618,8 +619,8 @@ function drawTerrain(block) {
   geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
-  ground.mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.96, metalness: 0.0 }));
+  ground.mesh = new THREE.Mesh(geometry, dress(new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.96, metalness: 0.0 }), "ground"));
   // The ground catches what the room drops on it, and casts too: a valley
   // whose own hills throw no shade at a low sun is a valley with no shape.
   ground.mesh.castShadow = true;
@@ -1018,7 +1019,10 @@ function look(material, shaded = false) {
   const options = { color: m.color, roughness: m.rough, metalness: m.metal };
   if (m.clear) { options.transparent = true; options.opacity = 1 - m.clear * 0.55; }
   if (shaded) options.vertexColors = true;
-  const made = new THREE.MeshStandardMaterial(options);
+  // Dressed with the substance's own grain (surfaces.js). It is the shared
+  // material that is dressed, not the body, so every oak thing in the room
+  // still batches together and the grain costs one shader for the lot.
+  const made = dress(new THREE.MeshStandardMaterial(options), material);
   kept.set(material, made);
   return made;
 }
@@ -1152,7 +1156,7 @@ function buildMesh(body) {
     let material = look(body.material);
     if (mixed) {
       // Its own, so colouring its parts touches no other body of that stuff.
-      material = material.clone();
+      material = dressedClone(material);
       material.vertexColors = true;
       material.color.set(0xffffff);
     }
@@ -5191,7 +5195,7 @@ function glow(name, tK) {
   let mine = own;
   if (!mine || entry.mesh.material !== mine) {
     if (mine) mine.dispose();
-    mine = look(entry.material, entry.mesh.userData.shaded).clone();
+    mine = dressedClone(look(entry.material, entry.mesh.userData.shaded));
     entry.mesh.material = mine;
     heat.glowing.set(name, mine);
   }
@@ -6070,7 +6074,7 @@ function heldInTheWay() {
 function ghostOf(material) {
   let ghost = ghosts.get(material);
   if (!ghost) {
-    ghost = material.clone();
+    ghost = dressedClone(material);
     ghost.transparent = true;
     ghost.opacity = 0.28;
     ghost.depthWrite = false;
@@ -7013,6 +7017,11 @@ window.banjoRoom = {
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
+  // The grain each substance is drawn with (surfaces.js): what is dressed, and
+  // a way to turn the whole room's grain down, which is how a picture of the
+  // difference is taken and how a test tells a grain that is really being
+  // drawn from one that is not.
+  grain: grainState, showGrain,
   // How the bodies made of cells are actually drawn, which is not something a
   // picture can be asked: `hulls` are the ones drawn as their outside surface
   // (cellmesh.js) and `cubes` the ones the mesher would not vouch for and

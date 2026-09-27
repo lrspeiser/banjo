@@ -109,6 +109,7 @@ jobs:
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           node --check playground/cellmesh.js
+          node --check playground/surfaces.js
           python3 tests/cellmesh_tests.py -v
           python3 tests/playground_tests.py -v
           python3 tests/chat_tool_parity_tests.py -v
