@@ -1741,10 +1741,17 @@ class Live:
         if op == "behave":
             # A machine's program asked to do something for a while instead of
             # deciding for itself (docs/machine-world.md, "Talking to the
-            # rover"): {program, sender, seq, doing, why, for_s, toward}, by a
-            # sender and its count as run is; answered with the program as it
-            # now stands. `doing` is one of the things a program can be asked,
-            # or "" to ask nothing more.
+            # rover"): {program, sender, seq, doing, why, for_s, toward,
+            # by_person}, by a sender and its count as run is; answered with the
+            # program as it now stands. `doing` is one of the things a program
+            # can be asked, or "" to ask nothing more.
+            #
+            # `by_person` says a PERSON is ordering this -- somebody in the
+            # machine's chat, at its panel or at the keys -- rather than its own
+            # routine or whatever decides for it. A person's order outranks the
+            # machine's water reflex (docs/machine-world.md, "A person's order
+            # wins"), so whoever makes the ask says so: the engine sees a
+            # sender's name and a name tells it nothing.
             try:
                 program = int(body.get("program"))
                 seq = int(body.get("seq", 0))
@@ -1761,7 +1768,8 @@ class Live:
             if not (math.isfinite(for_s) and 0.0 <= for_s <= 60.0):
                 raise LiveError("a program is asked for from 0 s (until asked otherwise) to 60 s")
             command = {"op": "behave", "program": program, "sender": str(body.get("sender") or "")[:64],
-                       "seq": seq, "doing": doing, "why": str(body.get("why") or "")[:200], "for_s": for_s}
+                       "seq": seq, "doing": doing, "why": str(body.get("why") or "")[:200], "for_s": for_s,
+                       "by_person": bool(body.get("by_person"))}
             toward = body.get("toward")
             if toward is not None:
                 if not isinstance(toward, list) or len(toward) != 3:

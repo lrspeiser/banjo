@@ -479,6 +479,7 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
             // for itself (LiveWorld::behave).
             {"asked", p.asked.empty() ? nlohmann::json{}
                                       : nlohmann::json{{"doing", p.asked}, {"why", p.asked_why}, {"by", p.asked_by},
+                                                       {"by_person", p.asked_by_person},
                                                        {"for_s", tidy(p.asked_for_s)}, {"s", tidy(p.asked_s)},
                                                        {"toward_m", {tidy(p.asked_toward_m.x), tidy(p.asked_toward_m.y),
                                                                      tidy(p.asked_toward_m.z)}}}}};
@@ -2329,14 +2330,18 @@ int main(int argc, char **argv) {
                 } else if (op == "behave") {
                     // A program asked to do something for a while instead of
                     // deciding for itself (LiveWorld::behave): {program, sender,
-                    // seq, doing, why, for_s, toward: [x, y, z]}; answered as
-                    // run is, with the program as it now stands.
+                    // seq, doing, why, for_s, toward: [x, y, z], by_person};
+                    // answered as run is, with the program as it now stands.
+                    // `by_person` says a person ordered this rather than the
+                    // machine's own routine or decider, and outranks its water
+                    // reflex.
                     LiveWorld::ProgramAsk ask;
                     ask.sender = command.value("sender", std::string{});
                     ask.seq = command.value("seq", std::uint64_t{0});
                     ask.doing = command.value("doing", std::string{});
                     ask.why = command.value("why", std::string{});
                     ask.for_s = command.value("for_s", 0.0);
+                    ask.by_person = command.value("by_person", false);
                     if (command.contains("toward") && command.at("toward").is_array() &&
                         command.at("toward").size() == 3) {
                         const nlohmann::json &t = command.at("toward");

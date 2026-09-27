@@ -109,8 +109,11 @@ class Drive:
         self.asked = doing
         if self.steers == "program":
             self.seq += 1
+            # A person at the keys is a person ordering it (LiveProgram::
+            # asked_by_person): what they steer it into is their business, and
+            # its water reflex does not overrule them.
             self.room.live.session.send(op="behave", program=self.programs[0]["id"], sender="drive",
-                                        seq=self.seq, doing=doing, for_s=0.0,
+                                        seq=self.seq, doing=doing, for_s=0.0, by_person=True,
                                         why="the person at the keys")
         elif self.steers == "wheels" and self.wheels:
             left, right = WHEELS.get(doing, (0, 0))

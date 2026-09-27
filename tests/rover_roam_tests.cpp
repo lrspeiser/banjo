@@ -29,9 +29,14 @@
 //    asked to face a point it turns on the spot until its front is towards it
 //    and waits there; a stale ask changes nothing; turned off it drops the
 //    ask; and a saved world gives it back doing what it was asked, as far in.
-// 8. An ask never drives it into the water: asked to approach a point in the
-//    lake, its reflexes have it when a sensor sees water -- it backs off and
-//    turns away -- and no wheel gets wet; the ask stands, and it says so.
+// 8. An ask that is not a person's never drives it into the water: asked by
+//    its routine or its decider to approach a point in the lake, its reflexes
+//    have it when a sensor sees water -- it backs off and turns away -- and no
+//    wheel gets wet; three scares and it gives the ask up.
+// 9. A person's order does drive it into the water. The same ask, marked as a
+//    person's, takes it in until it is wet, its reflexes never touching it;
+//    and the moment the order is lifted the reflex has it back and it comes
+//    out. The order is the one bit of difference between 8 and 9.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -818,13 +823,15 @@ void itGoesToTheStoolAndSitsOnIt() {
 } // namespace
 
 void askIt(LiveWorld &world, unsigned program, const std::string &doing, double for_s, std::uint64_t seq,
-           const std::string &why = "the test asked", const Vec3 *toward = nullptr) {
+           const std::string &why = "the test asked", const Vec3 *toward = nullptr,
+           bool by_person = false) {
     LiveWorld::ProgramAsk ask;
     ask.sender = "test";
     ask.seq = seq;
     ask.doing = doing;
     ask.why = why;
     ask.for_s = for_s;
+    ask.by_person = by_person;
     if (toward != nullptr) {
         ask.has_toward = true;
         ask.toward_m = *toward;
@@ -1116,14 +1123,17 @@ void itDoesWhatItIsAskedForAWhile() {
     require(said.doing == "stopped" && said.asked.empty(), "turned off, it drops the ask");
 }
 
-void anAskNeverDrivesItIntoTheWater() {
+// An ask the machine made of itself -- its routine's, its decider's -- is
+// governed by its reflexes like everything else it does: it never drives
+// itself into the lake, and after three scares it gives the ask up.
+void anAskThatIsNotAPersonsNeverDrivesItIntoTheWater() {
     Rover r = roverOnTheShore();
     LiveWorld &world = *r.world;
     runIt(world, r.program, true, 1);
     for (int i = 0; i < 240; ++i) tick(world);
     // The lake's middle is at the origin: asked to approach it, it heads in.
     const Vec3 middle{0.0, 0.0, 0.0};
-    askIt(world, r.program, "approaching", 60.0, 2, "the test sent it into the lake", &middle);
+    askIt(world, r.program, "approaching", 60.0, 2, "the test sent it into the lake", &middle, false);
     double wet = 0.0;
     bool interrupted = false, resumed = false;
     (void)resumed;
@@ -1152,6 +1162,65 @@ void anAskNeverDrivesItIntoTheWater() {
             "three times turned back, it gave the ask up: " + after.why);
 }
 
+// The owner, 2026-09-26, having tried to send a rover into the lake and
+// watched it turn away: "your order wins". A person's order outranks the
+// water reflex. The ask here is the same ask as above, to the same point, in
+// the same room; the only difference is that it says a person made it.
+void aPersonsOrderDrivesItIntoTheWater() {
+    Rover r = roverOnTheShore();
+    LiveWorld &world = *r.world;
+    runIt(world, r.program, true, 1);
+    for (int i = 0; i < 240; ++i) tick(world);
+    const Vec3 middle{0.0, 0.0, 0.0};
+    askIt(world, r.program, "approaching", 60.0, 2, "the person sent it into the lake", &middle, true);
+    double wet = 0.0, wet_at_s = 0.0;
+    bool interrupted = false, saw_water = false;
+    std::string doing_when_wet;
+    for (int i = 0; i < 60 * 240 && wet < 0.05; ++i) {
+        tick(world);
+        const LiveProgram said = programOf(world, r.program);
+        if (said.why.find("reflexes have it") != std::string::npos) interrupted = true;
+        if (said.asked.empty()) break;
+        for (const LiveSensor &sensor : said.sensors)
+            if (sensor.sees) saw_water = true;
+        if (i % 24 != 23) continue;
+        const double here = wettest(world);
+        if (here <= wet) continue;
+        wet = here;
+        wet_at_s = static_cast<double>(i + 1) * kDt;
+        doing_when_wet = said.doing + ": " + said.why;
+    }
+    const LiveProgram in_it = programOf(world, r.program);
+    std::cout << "    ordered into the lake: " << wet * 1000.0 << " mm of water under a wheel by "
+              << wet_at_s << " s (" << doing_when_wet << "); its sensors saw the water " << saw_water
+              << ", its reflexes took it " << interrupted << "\n";
+    require(saw_water, "its sensors saw the water it was ordered into");
+    require(!interrupted, "and its reflexes never took it: " + in_it.doing + ": " + in_it.why);
+    require(wet >= 0.05, "a person's order drove it into the water: " + std::to_string(wet * 1000.0) + " mm");
+    require(in_it.asked == "approaching" && in_it.asked_by_person,
+            "and the order still stands: " + in_it.asked);
+
+    // The order stood the reflex aside; it did not take it away. Asked nothing
+    // more, the machine is its own again and backs out of the water at once.
+    askIt(world, r.program, "", 0.0, 3);
+    bool reflexed = false;
+    std::string said_out;
+    for (int i = 0; i < 10 * 240 && !reflexed; ++i) {
+        tick(world);
+        const LiveProgram said = programOf(world, r.program);
+        if (said.doing != "backing off" && said.doing != "turning left" && said.doing != "turning right")
+            continue;
+        if (said.why.find("water") == std::string::npos) continue;
+        reflexed = true;
+        said_out = said.doing + ": " + said.why;
+    }
+    const LiveProgram after = programOf(world, r.program);
+    std::cout << "    the order lifted: " << said_out << "; now " << after.doing << ": " << after.why
+              << ", ordered by a person " << after.asked_by_person << "\n";
+    require(!after.asked_by_person, "the order is gone with the ask");
+    require(reflexed, "and its water reflex has it back: " + after.doing + ": " + after.why);
+}
+
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
@@ -1161,7 +1230,9 @@ int main() {
         {"it rests through the night and roams on in the morning", itRestsThroughTheNightAndRoamsOnInTheMorning},
         {"it goes to the stool and sits on it", itGoesToTheStoolAndSitsOnIt},
         {"it does what it is asked for a while", itDoesWhatItIsAskedForAWhile},
-        {"an ask never drives it into the water", anAskNeverDrivesItIntoTheWater},
+        {"an ask that is not a person's never drives it into the water",
+         anAskThatIsNotAPersonsNeverDrivesItIntoTheWater},
+        {"a person's order drives it into the water", aPersonsOrderDrivesItIntoTheWater},
         {"it frees itself from a wall it drove into and roams on", itFreesItselfFromAWallItDroveIntoAndRoamsOn},
         {"it backs out of where it gets nowhere, and says when it cannot",
          itBacksOutOfWhereItGetsNowhereAndSaysWhenItCannot},

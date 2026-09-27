@@ -139,9 +139,14 @@ def _standing(body: dict[str, Any]) -> list[float] | None:
 
 def _ask(app: Any, program: dict[str, Any], brain: rover_brain.Brain, doing: str, for_s: float, why: str,
          toward: list[float] | None = None) -> dict[str, Any]:
+    """An ask on the program from the person in its chat. `by_person` marks it
+    an order: told to go somewhere it goes there, and its water reflex stands
+    aside (docs/machine-world.md, "A person's order wins"). Only this and the
+    keys at the bench set it; the machine's routine and its decider do not."""
     brain.seq += 1
     command: dict[str, Any] = {"session": app.live.session.id, "op": "behave", "program": program["id"],
-                               "sender": "talk", "seq": brain.seq, "doing": doing, "for_s": for_s, "why": why}
+                               "sender": "talk", "seq": brain.seq, "doing": doing, "for_s": for_s,
+                               "why": why, "by_person": True}
     if toward is not None:
         command["toward"] = toward
     said = app.live.act(command)
@@ -155,7 +160,15 @@ def _use(app: Any, program: dict[str, Any], brain: rover_brain.Brain, body: dict
     brain.before = program
     brain.person = body.get("person") if isinstance(body.get("person"), dict) else brain.person
     session_id = app.live.session.id
-    ctx = brain.context(lambda **command: app.live.act({"session": session_id, **command}))
+
+    def ordered(**command: Any) -> dict[str, Any]:
+        # A tool the person asked for is the person's order, the same as words
+        # typed at it: what it asks of the program carries `by_person`, so
+        # "go to the lake" goes to the lake.
+        person = {"by_person": True} if command.get("op") == "behave" else {}
+        return app.live.act({"session": session_id, **command, **person})
+
+    ctx = brain.context(ordered)
     did = tools.run(ctx, tools.Call(tool, args, "talk", why))
     now = _program(app, {"program": program.get("name")})
     return did, now

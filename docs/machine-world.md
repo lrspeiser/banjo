@@ -478,6 +478,9 @@ where it is as the room is made, in millimetres, like a pin:
 
 The runner's `sense` operation puts one on:
 `{"op": "sense", "control": id, "kind": "water", "body": "cart", "at_m": [x, y, z], "depth_m": 0.01, "stops": 1}`.
+
+A sensor stops whoever works the controller -- but not a machine a person has
+ordered somewhere ("A person's order wins").
 Each controller that `machines` reports carries its `sensors`: for each, where
 it is now (`at_m`), what it reads (`reading_m`), and whether it sees more than
 its depth (`sees`). A controller's `parts` are its motor pin's two things, a
@@ -698,6 +701,57 @@ water:
 - **A slope to the side counts.** Checking only the slope ahead, it ran along
   a steep contour and spiralled up towards the basin's rim.
 
+### A person's order wins
+
+**Status, 2026-09-26.** Everything above is what the machine does of its own:
+roaming, and the asks its routine and whatever decides for it make. All of it
+is governed by the water reflex, and none of it will drive into a lake.
+
+A person is not. The owner, having tried to send a rover into the water and
+watched it turn away every time: *"your order wins"*. Told by somebody in its
+chat, at its panel or at the keys to go somewhere, a machine goes there, water
+or not. It is their machine and their mistake to make. It still sees the water
+and still says so -- "I see water ahead on my left" -- it just does not turn.
+
+The engine could not tell the two apart, and could not have. An ask carries a
+sender's name (`asked_by`) and nothing else, and a name means nothing to it:
+"talk", "routine", "jev" and "drive" are four strings. So the ask carries one
+more thing, `by_person` (`LiveWorld::ProgramAsk`, `LiveProgram::asked_by_person`),
+set by whoever makes the ask, because only they know. The chat sets it, and the
+keys at the Workshop bench set it. A routine does not, and neither does a
+decider: a machine thinking for itself is the machine, not a person.
+
+An order outranks both of the things that keep a machine out of water:
+
+- **The roaming reflex** does not interrupt it. It never backs off from water,
+  never turns away, and never counts the three water scares that would make it
+  give the ask up.
+- **A wheel's own sensor** does not stop its motor either. The order has to win
+  at both levels or it wins at neither: the program would drive at the lake and
+  the wheels would refuse, and the machine would sit at the shore with its
+  motors told forward. Nothing else overrules a sensor -- a person working a
+  controller straight from its own panel, like the cart above, still stops at
+  the water's edge and backs away by telling it the other way.
+
+It stands the reflex aside; it does not take it away. The moment the order is
+lifted -- asked nothing more, run down, turned off -- the machine is its own
+again and backs out of the water it is standing in.
+
+Measured in `tests/rover_roam_tests.cpp`, the same ask to the same point in the
+same room, twice:
+
+| | not a person's | a person's order |
+|---|---|---|
+| water under a wheel | 0.3 mm | 58.7 mm by 12 s |
+| its reflexes took it | yes, three times | never |
+| where it ended | back on the shore, the ask given up | in the lake, the order standing |
+
+and through the playground's own route (the `tests-rover` room, `behave` with
+`by_person`), 40 s after being told to approach the middle of the lake from
+9 m up the shore: its own ask left it dry at z -6.4 saying "the water was in
+the way of what it was asked, so it gave it up"; a person's order put it at
+(0.15, -0.88), 152 mm of water under a wheel, waiting where it was sent.
+
 ### When a machine cannot get out
 
 A machine can be held by the world without anything it watches saying so. In
@@ -770,7 +824,8 @@ wall, a machine that drives backs out, turns away, and is turned straight back
 at the wall by the ask. Getting itself out is not finding a route.
 
 Getting nowhere does not count against the three water scares that make a
-machine give up what it was asked. Backing out of something and carrying on is
+machine give up an ask of its own (a person's order is never given up for
+water: "A person's order wins"). Backing out of something and carrying on is
 the whole point of the reflex, and a machine that truly cannot get out stops and
 says so on its own; counted together, one water scare and two back-outs made a
 machine abandon a haul it could have finished, and it roamed for the rest of the
@@ -1416,7 +1471,15 @@ a metre, then waiting); for so many seconds, or until asked otherwise; by a
 sender and its count, stale as `run` is. It says why it was asked as its
 `why`, and when the while is up it goes on as it would have. Turned off, or
 run low, it drops the ask: those come first. A saved world gives it back
-doing what it was asked, as far in. Measured in `tests/rover_roam_tests.cpp`:
+doing what it was asked, as far in.
+
+The ask also carries `by_person`: true when a PERSON is ordering it -- the
+chat, the panel, the keys at the bench -- and false for the machine's own
+routine and for whatever decides for it. A person's order outranks the water
+reflex ("A person's order wins"); nothing else does. Whoever makes the ask
+sets it, because the engine only ever sees a sender's name.
+
+Measured in `tests/rover_roam_tests.cpp`:
 asked to back off it went 0.62 m back in its second second (a controller
 told to reverse stops its wheel first); asked to face a point behind it, it
 turned on the spot to it in 12 s and, driven forward from there, went to it
@@ -1514,6 +1577,11 @@ program: stop is `waiting` until asked otherwise; go on lifts the ask; come
 here is `approaching` where they stand, for up to 30 s; turn round is
 `turning left` for 5 s; back off is `backing off` for 2.5 s; what and why
 are answered from its state, why with the last thing decided for it.
+Everything the chat does to the machine is the person's order (`by_person`,
+"A person's order wins"): told to come somewhere it comes, through water if
+that is where they are standing, and its water reflex stands aside until the
+order is lifted.
+
 Anything else goes to the chat's model (`OPENAI_MODEL`, the same one the
 room's chat uses), told to answer in one or two sentences in the rover's
 voice from that state alone and to change nothing; without an OpenAI key

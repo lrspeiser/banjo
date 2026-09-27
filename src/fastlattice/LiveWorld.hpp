@@ -797,6 +797,16 @@ struct LiveProgram {
     std::string asked;
     std::string asked_why;        // why, in a person's words, shown as its `why`
     std::string asked_by;         // who asked
+    // Whether a PERSON ordered it (LiveWorld::ProgramAsk::by_person):
+    // somebody in its chat, at its panel or at the keys, rather than its own
+    // routine or whatever decides for it. A person's order outranks its water
+    // reflex -- told to drive into the lake it drives into the lake, because
+    // it is their machine and theirs to drown. Nothing the machine does of
+    // its own gets that: roaming, or working its routine, it still turns away
+    // from water. The engine cannot tell one sender from another -- asked_by
+    // is a name and a name means nothing here -- so whoever makes the ask says
+    // whether a person made it.
+    bool asked_by_person{};
     double asked_for_s{};
     double asked_s{};             // how long it has been doing what it was asked
     Vec3 asked_toward_m{};        // where it faces or approaches, for those two
@@ -1769,6 +1779,10 @@ public:
         double for_s{};
         bool has_toward{};
         Vec3 toward_m{};
+        // A person's order rather than the machine's own doing: it overrules
+        // the water reflex (LiveProgram::asked_by_person). False for a
+        // routine's ask and for whatever decides for the machine.
+        bool by_person{};
     };
     std::string behave(unsigned program, const ProgramAsk &ask);
     // A "hover" program on four rotors' controllers (LiveProgram::rotors), its

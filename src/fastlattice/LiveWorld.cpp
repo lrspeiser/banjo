@@ -1483,7 +1483,7 @@ struct LiveWorld::Impl {
             why = s.condition;  // what stopped it, until it is told something again
         } else if (!(s.setting > 0.0)) {
             why = "its drive setting is at nothing";
-        } else if (stopping(s, s.direction) != nullptr) {
+        } else if (stopping(s, s.direction) != nullptr && !ordered(s)) {
             // A sensor sees what it was fitted to stop for: it stops, on its
             // brake if it has one, until it is told something again -- told the
             // same way while the sensor still sees it, it stops again at once;
@@ -1609,6 +1609,22 @@ struct LiveWorld::Impl {
             }
             sensor.sees = sensor.reading_m > sensor.depth_m;
         }
+    }
+    // A motor of a machine a person has ordered somewhere (LiveProgram::
+    // asked_by_person): its own sensor does not stop it either. The order has
+    // to win at both levels or it wins at neither -- the program would drive
+    // at the lake and the wheels would refuse, and the machine would sit at
+    // the shore with its motors told forward. Nothing else overrules a sensor:
+    // a person working a controller straight from its own panel still stops at
+    // the water's edge, and backs away by telling it the other way.
+    [[nodiscard]] bool ordered(const LiveControl &s) const {
+        for (const Program &p : programs) {
+            if (!p.said.asked_by_person || p.said.asked.empty()) continue;
+            if (p.said.left == s.id || p.said.right == s.id) return true;
+            if (std::find(p.said.rotors.begin(), p.said.rotors.end(), s.id) != p.said.rotors.end())
+                return true;
+        }
+        return false;
     }
     // The first sensor that stops a controller going `direction`, if any.
     [[nodiscard]] static const LiveSensor *stopping(const LiveControl &s, int direction) {
@@ -1888,6 +1904,7 @@ struct LiveWorld::Impl {
             s.asked.clear();
             s.asked_why.clear();
             s.asked_by.clear();
+            s.asked_by_person = false;
             s.asked_for_s = s.asked_s = 0.0;
             if (done) into("waiting", "it has done what it was asked, and hovers");
         }
@@ -1985,6 +2002,7 @@ struct LiveWorld::Impl {
                 s.asked.clear();
                 s.asked_why.clear();
                 s.asked_by.clear();
+                s.asked_by_person = false;
                 s.asked_for_s = s.asked_s = 0.0;
                 lean_deg = yaw_deg_s = 0.0;
                 into("waiting", "it cannot get past what is in its way: it climbed " +
@@ -2090,6 +2108,7 @@ struct LiveWorld::Impl {
             s.asked.clear();
             s.asked_why.clear();
             s.asked_by.clear();
+            s.asked_by_person = false;
             s.asked_for_s = s.asked_s = 0.0;
         };
         if (!s.power) {
@@ -2208,6 +2227,7 @@ struct LiveWorld::Impl {
                 s.asked.clear();
                 s.asked_why.clear();
                 s.asked_by.clear();
+                s.asked_by_person = false;
                 s.asked_for_s = s.asked_s = 0.0;
                 p.interrupted = false;
                 p.interrupted_by.clear();
@@ -2267,6 +2287,7 @@ struct LiveWorld::Impl {
             s.asked.clear();
             s.asked_why.clear();
             s.asked_by.clear();
+            s.asked_by_person = false;
             s.asked_for_s = s.asked_s = 0.0;
             into("going forward", why);
         };
@@ -2274,6 +2295,7 @@ struct LiveWorld::Impl {
             s.asked.clear();
             s.asked_why.clear();
             s.asked_by.clear();
+            s.asked_by_person = false;
             s.asked_for_s = s.asked_s = 0.0;
         }
         // Well clear of where it kept getting nowhere: it is out, whether its
@@ -2286,7 +2308,14 @@ struct LiveWorld::Impl {
         const bool driving_ask = s.asked == "going forward" || s.asked == "approaching" || s.asked == "facing";
         constexpr double kClearBeforeAskS = 2.0;
         constexpr unsigned kInterruptionsMost = 3;
-        if (!s.asked.empty() && !p.interrupted && driving_ask && (water_left || water_right)) {
+        // A person's order wins (LiveProgram::asked_by_person). The owner,
+        // 2026-09-26, having tried to send a rover into the lake and failed:
+        // "your order wins". So the water reflex holds for everything the
+        // machine does of its own -- roaming, and the asks its routine and its
+        // decider make -- and stands aside for a person who says go there. It
+        // sees the water all the same and says so; it just does not turn.
+        if (!s.asked.empty() && !p.interrupted && driving_ask && !s.asked_by_person &&
+            (water_left || water_right)) {
             // As the roaming reflex meets water: back off first, whatever it
             // was doing -- a turn on the spot where it saw the water swings
             // the caster in -- and then turn away from the side that saw it.
@@ -5379,6 +5408,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.asked = o.value("asked", std::string{});
         p.said.asked_why = o.value("asked_why", std::string{});
         p.said.asked_by = o.value("asked_by", std::string{});
+        p.said.asked_by_person = o.value("asked_by_person", false);
         p.said.asked_for_s = o.contains("asked_for_s") ? numberFrom(o.at("asked_for_s")) : 0.0;
         p.said.asked_s = o.contains("asked_s") ? numberFrom(o.at("asked_s")) : 0.0;
         if (o.contains("asked_toward_m")) p.said.asked_toward_m = vecFrom(o.at("asked_toward_m"));
@@ -7102,6 +7132,7 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
     s.asked = ask.doing;
     s.asked_why = ask.doing.empty() ? std::string{} : ask.why.empty() ? "it was asked to" : ask.why;
     s.asked_by = ask.doing.empty() ? std::string{} : ask.sender;
+    s.asked_by_person = !ask.doing.empty() && ask.by_person;
     s.asked_for_s = ask.doing.empty() ? 0.0 : ask.for_s;
     s.asked_s = 0.0;
     s.asked_toward_m = needs_toward ? ask.toward_m : Vec3{};
@@ -15134,6 +15165,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"asked", p.said.asked},
                                 {"asked_why", p.said.asked_why},
                                 {"asked_by", p.said.asked_by},
+                                {"asked_by_person", p.said.asked_by_person},
                                 {"asked_for_s", savedNumber(p.said.asked_for_s)},
                                 {"asked_s", savedNumber(p.said.asked_s)},
                                 {"asked_toward_m", savedVec(p.said.asked_toward_m)},
