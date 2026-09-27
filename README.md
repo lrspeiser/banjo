@@ -1,101 +1,109 @@
 # Banjo
 
-Banjo is a physics engine, and a 3D world built on it, in which every object is
-made of a real material. It is developed in the open and meant to become an
-open-source project.
-
-Each object is a block of small cubes of material, called cells, held together
-by bonds. The bonds stretch, bend and break according to the material's
-stiffness and strength, so what happens in a collision is calculated rather
-than scripted. Drop an iron ball and a glass ball onto the same floor from the
-same height and they behave differently, because their materials are
-different. When something breaks, its pieces are whatever stays connected
-after the bonds fail. Nothing is cut in advance and nothing is animated.
-
-The same world has heat and fire, flowing water, ground that can be dug, and
-machines made of real hinges, ropes, motors and batteries. The goal is a large,
-persistent world in which all of this physics works together: a place to walk
-around, pick things up, build, dig, dam a river, light a fire, run a machine or
-break something, with an AI assistant that builds what you ask for using the
-same tools a programmer would.
+**A 3D world where nothing is animated.** Every object is made of a real
+material, cut into small cubes held together by bonds. When something is hit,
+the engine works out what the bonds do — and whatever stays connected
+afterwards is what you are left with. No pre-cut shards, no shatter animation,
+no rule that says "glass + hammer = pieces".
 
 ![The main world: a generated valley with a river and a pond. A gate and a portcullis stand on the left terrace; a hearth, a battery hoist and a table stand on the right](docs/images/readme/world-valley.jpg)
 
 *The main world at `/world`. Every picture in this README is a screenshot of
-the running world, taken on 21 and 22 September 2026. What happens in them is
-simulated, not animated. Where there are two, they are the same camera in the
-same room, so the only difference is what the physics did.*
+the running world or one of its pages, taken between 21 and 26 September 2026.
+Where there are two, they are the same camera in the same room, so the only
+difference in the frame is what the physics did.*
 
-> **Status (22 September 2026).** Banjo is early and experimental. A lot of
-> physics has been built and merged, but not all of it has reached the world
-> you can walk around in. [The physics](#the-physics) shows where each part
-> stands, and the [to-do list](#to-do) collects everything that remains.
-> Banjo is developed on Windows and tested on Linux. It does not have a licence
-> yet.
+The same world has heat and fire, flowing water, ground you can dig, machines
+built from real hinges, ropes, motors and batteries — and machines that decide
+things for themselves: a rover that roams a shore, a drone that flies, a mine
+that turns ore into wire while you watch. You can talk to any of them. You can
+design a new one on a bench, drive it with the arrow keys, and install it in
+the world, where it breaks like everything else.
 
-## Contents
+> **Where this is, 26 September 2026.** Banjo is early and experimental, built
+> in the open, and it does not have a licence yet. A lot of physics is merged;
+> not all of it has reached the world you can walk around in, and this README
+> says which is which every time. CI on `main` is currently **red** — see
+> [What is not done](#what-is-not-done). Developed on Windows, built on Linux
+> in CI, untested on macOS.
 
-1. [The physics](#the-physics): how it works, what you can try, and what is not in the world yet
-2. [Try it](#try-it): build, run, the rooms and the controls
-3. [How the system fits together](#how-the-system-fits-together)
-4. [Design rules](#design-rules)
-5. [To-do](#to-do)
-6. [Documentation](#documentation), [repository layout](#repository-layout) and [contributing](#contributing)
+**Contents**
+
+1. [The idea: matter that is made of something](#the-idea-matter-that-is-made-of-something)
+2. [Eight materials, and what they actually do](#eight-materials-and-what-they-actually-do)
+3. [What a break costs](#what-a-break-costs)
+4. [Fire that eats the log, and ice that melts into the river](#fire-that-eats-the-log-and-ice-that-melts-into-the-river)
+5. [Water, and ground you can dig](#water-and-ground-you-can-dig)
+6. [Machines are joints, not animations](#machines-are-joints-not-animations)
+7. [Machines that decide for themselves](#machines-that-decide-for-themselves)
+8. [Ore to wire: a chain that runs itself](#ore-to-wire-a-chain-that-runs-itself)
+9. [Telling a machine what to do, in words](#telling-a-machine-what-to-do-in-words)
+10. [The bench: building a thing that does not exist yet](#the-bench-building-a-thing-that-does-not-exist-yet)
+11. [Try it yourself](#try-it-yourself)
+12. [How the system fits together](#how-the-system-fits-together) ·
+    [Design rules](#design-rules) · [What is not done](#what-is-not-done) ·
+    [Documentation](#documentation)
 
 ---
 
-## The physics
-
-### How matter works
+## The idea: matter that is made of something
 
 A scene is a list of objects. Each has a shape, a size, a position and one of
 eight materials, and the whole scene has one **cell size**: the edge length of
-the cubes its matter is cut into. Neighbouring cells, up to two cells apart,
-are joined by bonds whose stiffness and strength come from the material
-catalogue ([`src/material/MaterialCatalog.cpp`](src/material/MaterialCatalog.cpp)).
-An object's mass, centre of mass and inertia are summed from its cells, never
+the cubes its matter is cut into. Neighbouring cells are joined by bonds whose
+stiffness and strength come from the material catalogue
+([`src/material/MaterialCatalog.cpp`](src/material/MaterialCatalog.cpp)). An
+object's mass, centre of mass and inertia are summed from its cells — never
 taken from a render mesh or a collision shape.
 
 Most of the time the bonds do nothing. An object that is not being hit hard
 moves as one rigid body in [Jolt Physics](https://github.com/jrouwe/JoltPhysics)
-(v5.6.0, double precision), which costs microseconds per step. Only when a blow
-could break or dent something does the engine run the struck object's cells and
+(v5.6.0, double precision), which costs microseconds a step. Only when a blow
+could break or dent something does the engine run that object's cells and
 bonds, for a few milliseconds of simulated time. Bonds strained past their
 strength fail, and whatever is still connected afterwards becomes the new
 objects, each with the mass, spin and speed of its own cells. They are rigid
-bodies again and can break again later.
-
-This is Banjo's main performance idea. Moving intact matter is almost free and
-barely grows with size: 0.059 ms per 1/240 s step for 492 cells, 0.067 ms for
-16,680. A break costs about 309 ms of lattice time (5,275 substeps of 1.36 µs).
-So the engine pays for material detail only where a break is possible.
+bodies again, and they can break again later.
 
 | Before | After |
 |---|---|
 | ![Eight oak dominoes standing in a row, with an iron ball rolling towards them from the left](docs/images/readme/dominoes-before.jpg) | ![The dominoes lying toppled against each other and the iron ball past them](docs/images/readme/dominoes-after.jpg) |
 
-*In `/world?scene=tests-motion`, an iron ball rolls into eight oak dominoes at
-4 m/s. Nothing is hit hard enough to break, so every domino falls as one
-rigid body.*
+*An iron ball rolls into eight oak dominoes at 4 m/s in `/world?scene=tests-motion`.
+Nothing is hit hard enough to break, so every domino falls as one rigid body —
+and costs about as much to simulate as a crate.*
 
-**Why a step that would break something is taken back.** Jolt resolves a
-collision inside its step, so by the time a collision is reported its energy
-has already gone into bouncing the objects apart, and running the cells from
-that state breaks nothing, however hard the hit (measured: 171 ms of lattice
-that produced one piece). So every step is a **reversible trial**. The engine
-saves Jolt's state, takes the step and checks every contact. If a contact could
-break something, the step is undone: the world stays one step before the
-impact, with the objects still closing, and the clock waits until the caller
-decides. In the C API, `banjo_step` returns `BANJO_BREAK_PENDING` and the
-caller runs the break (`banjo_fracture`) or declines it (`banjo_decline_break`);
-`banjo_advance` decides for you. A program that ignores the question leaves the
-world frozen at that moment.
+This split is the whole performance idea. Moving intact matter is nearly free
+and barely grows with size: 0.059 ms per 1/240 s step for 492 cells, 0.067 ms
+for 16,680. A break costs about 309 ms of lattice time. So the engine pays for
+material detail only where a break is possible.
 
-The check, `admitRefracture`
+### The step that gets taken back
+
+There is a catch, and the way round it is the most unusual thing in the engine.
+
+Jolt resolves a collision *inside* its step. By the time a collision is
+reported, its energy has already gone into bouncing the two objects apart — and
+running the cells from that state breaks nothing, however hard the hit. (We
+measured it: 171 ms of lattice work that produced exactly one piece.)
+
+So every step is a **reversible trial**. The engine saves Jolt's state, takes
+the step, and checks every contact. If a contact could break something, the
+step is *undone*: the world goes back to one step before the impact, with the
+objects still closing and the clock waiting for the caller to decide. In the C
+API, `banjo_step` returns `BANJO_BREAK_PENDING`, and the caller either runs the
+break (`banjo_fracture`) or declines it (`banjo_decline_break`). A program that
+ignores the question leaves the world frozen at that moment.
+
+The test for "could this break something", `admitRefracture`
 ([`src/fastlattice/Refracture.cpp`](src/fastlattice/Refracture.cpp)), is a few
 multiplications on the closing speed, the two materials' acoustic impedances,
-the wave speed and the weakest bond. It is deliberately generous: passing it
-means a break is possible, not certain.
+the wave speed and the weakest bond — plus, since September, a third question:
+**can this blow pay for a crack across the piece**, at the material's own
+fracture energy? That last one is why a chip no longer shatters every time it
+lands. It makes the bar depend on size: a 40 mm oak cube needs 8.5 m/s, a
+120 mm one only 4.9, because the crack a piece has to open shrinks as the
+square of its size while what it carries shrinks as the cube.
 
 | 100 mm iron ball onto a 300 × 40 × 300 mm glass pane | threshold | result |
 |---|---|---|
@@ -103,530 +111,672 @@ means a break is possible, not certain.
 | dropped 1.5 m (5.4 m/s) | 4.5 m/s | above the threshold, but still holds |
 | dropped 10 m (13.9 m/s) | 4.5 m/s | breaks into 78 pieces |
 
-Two things make breaks feel immediate. **Foresight** looks along the path of
-anything moving fast, predicts the speed it will arrive at, and starts the
-lattice run before the impact; that cut the delay between a glass pane's impact
-and its pieces from 856 ms to 127 ms. It also guesses where a held object would
-land if dropped, and starts that run while the object is still in the hand,
-which brings the delay to about 50 ms from any height. And the break is worked
-out on a separate thread (`banjo_begin_fracture` / `banjo_finish_fracture`), so
-the world keeps running while it does.
-
-### What you can try today
-
-Everything below is merged into `main` unless it is marked **Branch**. Merged is
-not the same as reachable in the world, and the difference is most of the
-[to-do list](#to-do). The status labels mean:
-
-- **World**: you can try it in the main world at `/world`.
-- **Test room**: in the live world, but in a room you reach only by typing its
-  address, `/world?scene=<name>`.
-- **Chat**: in the live world, but only if you ask the room's chat to build it.
-- **Page**: on a separate page (the Workshop, `/fabrication`, `/qa`,
-  `/mechanics-qa`, `/tool-qa`, or the older lab at `/`), not in the world.
-- **Code only**: built and tested, but no page reaches it. You can run it from
-  the C API, the MCP servers, a command-line tool or the tests.
-- **Branch**: built on a branch that is not merged yet.
-- **Not built**: designed, measured or planned only.
-
-At a glance ("in the live world" includes the test rooms and what the chat can
-build; the tables further down say which):
-
-| System | In the live world | Built, but not in the world | Not built yet |
-|---|---|---|---|
-| Breaking | impact fracture of all eight materials, pieces breaking again, denting, breaking under a steady load, foresight, cutting; a room chooses its failure law, and every break says what it cost against the material's own fracture energy | other fracture solvers; joints weaker than their material (switched off) | calibration against real materials; converged piece counts; a break costing what it is charged |
-| Cell sizes | one size per room: 10, 20, 40 or 50 mm; exact bodies with no cells | Workshop designs at 5-200 mm; per-object resolution in an older solver | different cell sizes in one world |
-| Materials | eight materials: brittle or dentable, friction, bounce, rolling resistance | internal damping, strength variation, wood grain, full plasticity | grain in the world, rate effects |
-| Heat and fire | heating, conduction, radiation, burning wood, heat weakening and charring, burning away, gas pistons, ice melting into the room's water | freezing, which lives only in a separate thermal simulation | freezing in the world, fires going out, thermal expansion, smoke |
-| Water | river and pond, floating, drag, dams, rivers beyond the valley | | waves, sediment, rain, wet ground, water putting out fire |
-| Ground | digging, heaping, slumping, a pick in soil, carrying what you dig | storing dug material (manufacturing page) | breaking rock, wet soil, tool wear |
-| Machines | hinges, slides, ropes, pulleys, latches, springs, drums, motors, batteries, brakes and their control panel; a cart on wheels; a cart that drives itself until its water sensor stops it at a lake's edge; a rover that roams a lake's shore by itself; solar panels that charge a battery from the room's sun; a sun that crosses the sky and sets, so the rover rests through the night | electrical and thermal circuits | gears, joints that fail by bending |
-| Hands and tools | pick up, carry, place, bag, throw, bow, sword, pick; things of several parts taken up whole | | two hands, grip points |
-
-The main world is the room at `/world` ("The world"). It stands on a generated
-valley with a river and a pond, and holds a latched gate, a portcullis on a
-winch, a self-closing door, a bell on a rope, a crate, a ceramic pot, a plank, a
-rubber ball, a bow, an iron sword, a pick, a hearth with an iron pot and two
-burning logs, a table and chair, and a battery hoist. Nineteen more rooms exist
-but the room menu shows only "The world" and "Expedition"; the rest open by
-address ([the rooms](#the-rooms)). `/explore`, the newest interface, can pick
-things up, carry, place and bag them and use them for what they are for (push
-the cart, swing the mace), and what breaks there breaks; it cannot throw, heat,
-dig or chat yet.
-
-| The west terrace | The east terrace |
-|---|---|
-| ![The west terrace: a bell hanging on a rope in a frame, a self-closing door, a portcullis with its winch, and a latched gate, above the river](docs/images/readme/world-west-terrace.jpg) | ![The east terrace: a table and chair, the battery hoist's mast, a crate, a plank and a ball, the hearth and a bow, above the river](docs/images/readme/world-east-terrace.jpg) |
-
-*The main world's two terraces. West: the bell on its rope, the self-closing
-door, the portcullis and its winch, and the latched gate. East: the table and
-chair, the battery hoist, the crate, the hearth and the bow.*
-
-### Breaking, denting and cutting
+The test is deliberately generous: passing it means a break is *possible*, not
+certain. The lattice still decides.
 
 | Before | After |
 |---|---|
 | ![An iron ball flying towards a glass pane that hangs between two stone posts](docs/images/readme/break-pane-before.jpg) | ![The pane in pieces on the floor: a long shard, strips and single cells scattered around the posts](docs/images/readme/break-pane-after.jpg) |
 
-*In `/world?scene=tests-motion` (40 mm cells), a 120 mm iron ball hits a
-640 × 640 × 40 mm glass pane hanging on a pin, at 16 m/s. The room reported
-that the pane broke into 18 pieces, and that one of those was struck again and
-broke into 52. The pieces were not cut in advance: each is a group of cells
-that stayed connected.*
+*A 120 mm iron ball hits a 640 × 640 × 40 mm glass pane hanging on a pin, at
+16 m/s (40 mm cells). The room reported that the pane broke into 18 pieces, and
+that one of those was struck again and broke into 52. None of them were cut in
+advance: each is a group of cells that stayed connected.*
 
-| Capability | Status | How to try it |
-|---|---|---|
-| Objects break when hit hard enough; all eight materials | World | throw or drop things. The bench room, `/world?scene=bench` (20 mm cells), has plates of every material on piers |
-| Pieces break again when they land hard | World | break something, then drop its pieces |
-| Denting: iron, aluminium, oak and rubber take a permanent set | World, Test room | on in every room; in `/world?scene=tests-motion` an iron ball hits an aluminium plate at 30 m/s as the room opens |
-| Breaking under a steady load (statics) | Test room | `/world?scene=courtyard`: load the thin concrete shelf. `/world?scene=armoury`: notch the loaded batten |
-| Foresight and background fracture | World | automatic |
-| Cells colliding with each other while something breaks | World | automatic |
-| Heat weakening what breaks | World | heat a plank or beam, then load or hit it |
-| Cutting with a blade | World, Test room | the sword in the world; `/world?scene=armoury` (10 mm cells) has a rope, a panel and a batten to cut |
-| Joints weaker than the material they join | Code only | built and tested, but every joint is held at full strength until the owner sets numbers |
-| The energy-scaled failure law, which charges a crack the material's own fracture energy | Page, Test room | the fracture lab at `/`, and any room that asks for it: `/world?scene=tests-break`. A room that says nothing still runs the strain-threshold law |
-| "Algorithm 3" (precomputed propagators) | Page | a lane in the fracture lab at `/` |
-| Implicit Newton, modal-basis, quasi-static and GPU (CUDA) fracture solvers | Code only | command-line tools; the GPU backend needs `-DBANJO_BUILD_CUDA=ON` |
-| The older "network" solver, cohesive interfaces, tetrahedral contact, continuum and J2 plasticity references | Code only | tests and probes; the lab panels that ran some of them no longer have a way in |
+Two more tricks make breaks feel immediate. **Foresight** looks along the path
+of anything moving fast, predicts the speed it will arrive at, and starts the
+lattice run *before* the impact — that cut the delay between a glass pane's
+impact and its pieces from 856 ms to 127 ms. It also guesses where a held
+object would land if you dropped it, and starts that run while the object is
+still in your hands, which brings the delay to about 50 ms from any height. And
+the break itself runs on another thread, so the world keeps going while it
+works.
+
+### Why there is one cell size, and why it matters
+
+Cost grows with the fourth power of detail. Halving the cell size gives eight
+times the cells, and the internal timestep halves too, because it is bounded by
+the speed of sound in the material (glass needs 0.55 µs). So a room holds at
+most 16,000 cells, nothing can be thinner than one cell, and every room picks
+one size for everything in it: 10 mm in the armoury, 20 mm on the material
+bench, 40 mm in the main world, 50 mm in the machine rooms.
+
+You can see the cell size in the pieces — the pane above broke into 40 mm
+cubes. You can also see it in what the grid *cannot* hold, which is most of the
+story of [the bench](#the-bench-building-a-thing-that-does-not-exist-yet).
+
+---
+
+## Eight materials, and what they actually do
+
+Glass, ceramic, ice and concrete are brittle: whole, then broken. Iron,
+aluminium, oak and rubber have a yield point (200, 276, 45 and 6 MPa) and can
+dent before they break. A bond's stiffness comes from the material's Young's
+modulus, the strain at which it fails from its strength in tension, compression
+and shear, and the strain at which it yields from its yield strength.
+
+| | E (GPa) | density | tensile | compressive | shear | yield |
+|---|---|---|---|---|---|---|
+| iron | 211 | 7870 | 250 | 600 | 170 | **200** |
+| aluminium (6061-T6) | 68.9 | 2700 | 310 | 250 | 207 | **276** |
+| glass (soda lime) | 70 | 2500 | 45 | 1000 | 35 | — |
+| alumina ceramic | 300 | 3900 | 300 | 2200 | 240 | — |
+| oak | 12 | ~700 | 90 | 52 | 11 | **45** |
+| rubber | ~0.01 | 1100 | 20 | 15 | 4 | **6** |
+| ice | 9 | 917 | 1 | 5 | 1 | — |
+| concrete | 30 | 2400 | 3 | 35 | 5 | — |
+
+Strengths in MPa, density in kg/m³. Glass being 22× stronger in compression
+than in tension is why it shatters in bending and crushes hard; concrete's
+3 MPa in tension is why it is so easy to break and comes apart into so many
+pieces.
+
+And here is what that produces. A 100 mm ball of each material, starting just
+above a concrete floor at a given speed, 20 mm cells, half a second of world
+time — measured on **26 September 2026** against `main` at `7044df7`. Run it
+yourself in about eight minutes: `python scripts/drop-ladder.py`, which drives
+the engine through the same [Python binding](#use-the-engine-from-a-program)
+you would.
+
+| | 5 m/s | 10 | 20 | 40 | 80 |
+|---|---|---|---|---|---|
+| iron | held | held | **dent** | 9 pieces | 9 pieces |
+| aluminium | held | held | held | held | 9 pieces |
+| oak | held | held | held | 6 pieces | 12 pieces |
+| rubber | held | held | held | held | held |
+| glass | held | 6 pieces | 29 pieces | 12 pieces | 12 pieces |
+| ceramic | held | held | held | 29 pieces | 12 pieces |
+| concrete | 44 pieces | 24 pieces | 29 pieces | 16 pieces | 25 pieces |
+| ice | 30 pieces | 16 pieces | 12 pieces | 13 pieces | 12 pieces |
+
+Nothing in that table was chosen. Rubber never breaks because its modulus is
+four orders of magnitude below iron's; concrete comes apart at walking pace
+because its tensile strength is 3 MPa; the piece counts stop rising with speed
+because past a point the ball is already as broken as that grid can represent.
+Held and broken are stable; **the counts are not**. A rerun moves most of them
+by a piece or two, and the weakest — concrete and ice, which come apart into
+dozens — by considerably more. They do not settle as the grid is refined
+either, which is one of the things this engine cannot yet claim.
+
+| Before | After |
+|---|---|
+| ![Two rows of small plates of all eight materials on iron piers, with a row of balls and blocks in the foreground](docs/images/readme/bench-before.jpg) | ![The glass plate and the concrete plate broken into small cubes scattered around their piers; the oak plate beside them is whole](docs/images/readme/bench-after.jpg) |
+
+*The same thing in the world. In `/world?scene=bench` (20 mm cells), a 120 mm
+iron ball was let go 1.5 m above three 20 mm plates in turn: glass (front row,
+left), concrete and oak. Glass and concrete break; oak holds.*
+
+**Two of those rows are new.** Until 26 September, ceramic and ice carried
+"strain multipliers" — 6× and 12× for ceramic, 5× and 10× for ice — of the kind
+that had already been removed from glass as wrong. Ceramics are purely elastic
+to fracture, so there is no plastic reserve for a multiplier to stand for, and
+ice loads faster than its ductile-to-brittle transition in every case this
+engine runs. Both went to 0.9/1.0, and a 20 kg block dropped 5 m now shatters a
+ceramic table where it used to do nothing whatever. Oak keeps a multiplier of
+2, and that one is *right*: a wooden beam's extreme fibre reaches about twice
+its crushing strength before it ruptures, because the compression face yields
+and the neutral axis shifts. White oak crushes at 51.3 MPa and its measured
+modulus of rupture is 102.3 — a ratio of 1.99.
+
+**What is honest about all this:** the declared numbers are handbook values for
+real materials, and they produce differences you can see. What is *not* honest
+yet is calibration — nothing here has been checked against laboratory impact
+data, piece counts do not converge as the cell size shrinks, and oak's pure
+tensile behaviour is uncalibrated and says so in the catalogue. The full
+per-material state is in [docs/api/materials.md](docs/api/materials.md); what
+each behaviour costs and where you can reach it is in
+[what works, and where](docs/what-works-where.md#materials).
+
+---
+
+## What a break costs
+
+Every break now reports its own bill: the bonds the lattice removed, the crack
+area they stand for, and the energy that left with them — against what the
+material itself takes to crack.
 
 | An oak plank on two piers | The moment it broke |
 |---|---|
 | ![An oak plank bridged between two iron piers on the floor of an empty room](docs/images/readme/break-cost-before.jpg) | ![The same view: the plank is in several pieces with the iron ball resting among them between the piers](docs/images/readme/break-cost-after.jpg) |
 
-*What a break costs (`/world?scene=tests-break`): a 200 mm iron ball is dropped
-a metre and a half onto the middle of the plank. The picture on the right is
-held at the instant the room reported the break, before the pieces fell and
-broke again. The room's own account of it:*
+*`/world?scene=tests-break`: a 200 mm iron ball dropped a metre and a half onto
+the middle of an oak plank. The right-hand picture is held at the instant the
+room reported the break, before the pieces fell and broke again.*
+
+The room's own account of it:
 
 > ball hit plank at 5.2 m/s (it bends above 8.3 m/s, breaks above 3.1 m/s). It
 > broke into 7 pieces. It cost 4.47 J over 152 cm² of new crack: 294 J/m²,
 > where oak itself takes 1,000 J/m² and this room charges 1,000
 > (energy-scaled).
 
-**What a break costs** ([what-a-break-costs.md](docs/what-a-break-costs.md)):
-every break now says what it took -- the bonds the lattice removed, the crack
-they stand for, the energy that left with them -- against what the material
-itself takes to crack. Measured, the law every room runs charges a crack in oak
-148,500 J/m2 at 20 mm cells and 37,125 at 5 mm, where oak's own is 1,000: the
-charge is a property of the grid, not of the wood. A room can now ask for the
-energy-scaled law instead (`"failure_law": "energy-scaled"`), and the charge is
-then the material's own at every cell size. `/world?scene=tests-break` drops an
-iron ball on an oak plank and says what breaking it cost.
+That last clause is the interesting one, because for most rooms it is a
+confession. The failure law every other room runs charges a crack in oak
+**148,500 J/m² at 20 mm cells** and 37,125 at 5 mm, where oak's own figure is
+1,000. The charge is a property of the grid, not of the wood. A room can now
+ask for the energy-scaled law instead (`"failure_law": "energy-scaled"`), and
+then the charge is the material's own at every cell size.
+[what-a-break-costs.md](docs/what-a-break-costs.md) has the working.
 
-**Limits:** nothing is calibrated against laboratory data, and piece counts do
-not converge as the cell size or timestep shrinks. One break is worked out at a
-time (up to 16 wait in a queue). Past about 2,000 bodies the world stops being
-able to break anything, silently. A plate one cell thick has almost no bending
-stiffness, so at 40 mm cells a pane needs to be at least 80 mm thick to bend
-properly (the pane above is one cell thick).
+**Limits worth knowing:** nothing is calibrated against laboratory data; piece
+counts do not converge; one break is worked out at a time (up to 16 wait in a
+queue); past about 2,000 bodies the world quietly stops being able to break
+anything; and a plate one cell thick has almost no bending stiffness, so at
+40 mm cells a pane needs to be at least 80 mm thick to bend properly.
 
-### Cell sizes
+---
 
-Every world has exactly one cell size. The rooms use different ones:
-
-| Cell size | Rooms |
-|---|---|
-| 10 mm | armoury |
-| 20 mm | bench, tests-break |
-| 40 mm | world, expedition, explore, valley, watershed, clearing, yard, courtyard, fabrication, tests-gates, tests-ropes, tests-motion, tests-carry |
-| 50 mm | tests-machines, tests-cart, tests-rover, tests-solar, tests-day |
-
-The cell size shows in the pieces: the pane above broke into 40 mm cubes, and
-the bench plates under [Materials](#materials) into 20 mm ones.
-
-Cost grows with the fourth power of detail: halving the cell size gives eight
-times the cells, and the internal timestep halves too, because it is bounded
-by the speed of sound in the material (glass needs 0.55 µs). So a room holds at
-most 16,000 cells, and nothing can be thinner than one cell; at 20 mm, window
-glass (4-6 mm) is out of reach.
-
-![The Workshop showing the cart design, with a report that says it is not buildable on this grid because its axles and bearing mounts disappear](docs/images/readme/workshop-cart.jpg)
-
-*The cart in the Workshop (`/world?workshop=1`). Its report lists what the
-rooms' 40 mm cells cannot hold: both 30 mm axles and all four bearing mounts
-disappear. So in the world the cart is not made of cells but of exact bodies
-on pins (see [Joints, machines and energy](#joints-machines-and-energy)).*
-
-- **Different cell sizes in one world: not built.** The scene format, the
-  engine's scene builder and the renderer all assume one size. This is what the
-  Workshop's finer designs need: at 40 mm the cart's axles vanish, at 20 mm it
-  resolves in 6,440 cells, and at 10 mm it needs 50,408, three times what a
-  room may hold.
-- **Workshop designs** can use 5-200 mm cells, but a design put into a room is
-  rebuilt at the room's cell size.
-- **Exact bodies** ("precise rigid") are compounds of boxes and cylinders with
-  no cells, each part of its own material, and they can be joined by real pins.
-  They cost nothing in the cell budget and share rooms with ground, water and
-  bodies made of cells. But they cannot break, dent or heat, water does not
-  hold them up yet, and a break that would need one inside the lattice run is
-  declined.
-- **Not built:** a cell size per object, refining an object's cells when it is
-  about to break, dormant regions that wake when touched, scenery that costs no
-  cells, and sparse storage for large worlds.
-
-### Materials
-
-The eight materials are glass, ceramic, ice and concrete, which are brittle
-(whole, then broken), and iron, aluminium, oak and rubber, which have a yield
-point (200, 276, 45 and 6 MPa) and can dent before they break. A bond's
-stiffness comes from the material's Young's modulus, the strain at which it
-fails from the material's strength in tension, compression and shear, and the
-strain at which it yields from the yield strength.
-
-What that produces, for a 100 mm ball of each dropped onto a concrete floor
-([docs/api/materials.md](docs/api/materials.md)):
-
-| Material | dents above | breaks above | bounces back |
-|---|---|---|---|
-| iron | 14.2 m/s | 35.6 m/s | 14.5% of the drop |
-| aluminium | 26.4 m/s | 47.8 m/s | 15.9% |
-| oak | 10.4 m/s | 13.7 m/s | 16.0% |
-| rubber | 29.0 m/s | 100.7 m/s (never broke in the tests) | 32.6% |
-| glass | brittle | 8.7 m/s | 17.5% |
-| concrete | brittle | 0.7 m/s | |
-| ice | brittle | 2.3 m/s | 22.3% |
-| ceramic | brittle | 264.8 m/s | 14.9% |
-
-Ceramic's figure is probably too high: ceramic and ice still carry strain
-multipliers (5-12 times) of the kind that were removed from glass as wrong.
-
-| Before | After |
-|---|---|
-| ![Two rows of small plates of all eight materials on iron piers, with a row of balls and blocks in the foreground](docs/images/readme/bench-before.jpg) | ![The glass plate and the concrete plate broken into small cubes scattered around their piers; the oak plate beside them is whole](docs/images/readme/bench-after.jpg) |
-
-*In `/world?scene=bench` (20 mm cells), the same 120 mm iron ball was let go
-1.5 m above three 20 mm plates in turn: glass (front row, left), concrete and
-oak (front row, fourth and fifth). The glass and the concrete break; the oak
-holds.*
-
-| Behaviour | Status |
-|---|---|
-| Bond failure by strain; yielding and denting | World |
-| Friction, bounce (restitution) and rolling resistance | World; rolling resistance also depends on the ground (rock 0.001, soil 0.06, sand 0.30) |
-| Strength lost to heat (oak, iron, concrete) | World |
-| Internal damping and random strength variation | Code only: in the catalogue but switched off in the world |
-| Wood grain (oak's anisotropy) | Not built in the world: declared in the catalogue and never read. Directional laws exist only in the older solver and the continuum reference |
-| Full (J2) plasticity with hardening | Code only: a reference solver; the world's plasticity is along each bond only, with no hardening |
-| Material QA: 96 impacts across all eight materials | Page (`/qa`) |
-
-Numbers come from the catalogue and are not calibrated; several are labelled
-demonstration values in the source.
-
-### Heat, fire and thermodynamics
+## Fire that eats the log, and ice that melts into the river
 
 Every body carries a thermal lump: a surface layer over a core. Heaters,
 conduction between touching bodies, radiation (to each other and to the sky)
 and convection to the air move heat between lumps, and one ledger accounts for
-every joule. A body's contents are an inventory, not a flag: oak is 0.88 dry
-wood, 0.10 moisture and 0.02 ash, and declared reactions turn what is there into
-something else. Wood dries, then burns at the rate oxygen reaches it, so how
-long a log burns follows from its fuel and its surroundings.
+every joule.
 
-Heat also changes the mechanics. Each material with a heat law (oak, iron and
-concrete, using the Eurocode fire-design curves) loses strength and stiffness
-as it warms, oak chars from 300 °C, and the bonds of a heated body are weakened
-by the same factors, so a hot beam breaks at a lower load. Burning removes
-matter: oak recedes about 0.4 mm a minute from every face, and a body that
-burns through leaves the world as ash. A gas sealed in a cylinder pushes on its
-piston with pressure times area, and is charged exactly the work that push
-does.
+A body's contents are an inventory, not a flag. Oak is 0.88 dry wood, 0.10
+moisture and 0.02 ash, and declared reactions turn what is there into something
+else. Wood dries, then burns at the rate oxygen reaches it, so how long a log
+burns follows from its fuel and its surroundings rather than from a timer.
+
+Heat also changes the mechanics. Oak, iron and concrete each lose strength and
+stiffness as they warm (the Eurocode fire-design curves), oak chars from
+300 °C, and the bonds of a heated body are weakened by the same factors — so a
+hot beam breaks under a load a cold one carries. Burning removes matter: oak
+recedes about 0.4 mm a minute from every face, and a body that burns through
+leaves the world as ash.
 
 | Start | 100 s later | The Room tab's Heat panel |
 |---|---|---|
 | ![A hearth stone with two oak logs side by side, a third log across them and an iron kettle](docs/images/readme/hearth-before.jpg) | ![The two lower logs glowing orange with flames over them; the log across them is still brown](docs/images/readme/hearth-after.jpg) | ![The same view with the side panel open, listing each log's temperature, power, charring and remaining strength](docs/images/readme/hearth-after-panel.jpg) |
 
 *The hearth in `/world?scene=tests-motion`. After 100 s the two lower logs have
-caught: each is at 984 K and releasing 13 kW, with 3 mm of char and 82% of its
-strength left. The log across them is still drying at 317 K. The glow and the
-flames are only pictures of the engine's numbers: the glow follows a log's
-temperature and the flame's height its power, and a drawn flame warms
-nothing.*
+caught: each at 984 K, releasing 13 kW, with 3 mm of char and 82% of its
+strength left. The log lying across them is still drying at 317 K. The glow and
+the flames are pictures of those numbers — the glow follows a log's temperature
+and the flame's height its power — and a drawn flame warms nothing.*
 
-Ice melts. While a body has ice in it, it is never warmer than 273.15 K: the
-heat that would take it higher melts exactly as much ice as that heat can, at
-333.55 kJ a kilogram, with nothing added and nothing lost. The block shrinks
-from every face by what melted, weighs what is left, and its meltwater runs
-into the room's water under it, or off across the floor where there is none.
-Ice cannot be at a warm room's temperature, so it is followed from the moment
-it is in the world, at its melting point, and the room's own air and floor melt
-it slowly (a 200 mm cube loses about a quarter of a gram a second).
+Ice melts, and the bookkeeping is strict. While a body has ice in it, it is
+never warmer than 273.15 K: the heat that would take it higher melts exactly as
+much ice as that heat can, at 333.55 kJ a kilogram, with nothing added and
+nothing lost. The block shrinks from every face by what melted, weighs what is
+left, and its meltwater runs into the room's water under it, or off across the
+floor where there is none.
 
 | Start | After 60 s of heating | The Room tab's Heat panel |
 |---|---|---|
 | ![A 200 mm ice block on the valley's slope among blocks of other materials](docs/images/readme/ice-before.jpg) | ![The ice block much smaller, and a pool of meltwater downhill of it](docs/images/readme/ice-after.jpg) | ![The same view with the side panel: the ice block at 273 K, 5.41 kg melted, now 128 mm across and 1.93 kg, and 5.41 kg of meltwater into the water](docs/images/readme/ice-after-panel.jpg) |
 
-*The ice block in the Explorer's valley, opened on the room page
-(`/world?scene=explore`) and heated with **B** three times: 30 kW for 60 s. It
-stayed at 273 K throughout, 5.41 kg of its 7.34 kg melted -- 1.8 MJ over
-333.55 kJ/kg -- and it is now 128 mm across. Its meltwater ran downhill and
-pooled below it (lower right): 5.41 kg into the valley's water, whose ledger
-still closes.*
+*An ice block in the Explorer's valley, heated with **B** three times: 30 kW for
+60 s. It stayed at 273 K throughout; 5.41 kg of its 7.34 kg melted — 1.8 MJ
+over 333.55 kJ/kg — and it is now 128 mm across. Its meltwater ran downhill and
+pooled below it, 5.41 kg into the valley's water, whose ledger still closes.*
 
-| Capability | Status | How to try it |
-|---|---|---|
-| Heating, conduction, radiation, energy ledger | World | aim at something and press **Heat it** (B), 10 kW for 60 s; the Room tab's Heat panel shows temperatures, power and the ledger |
-| Burning wood | World | the hearth's logs burn from the start; heat any oak |
-| Strength lost to heat; oak chars at 300 °C | World | heat a plank; the panel shows the strength left and the char depth |
-| Burning away: objects shrink as they burn | World | keep heating a log |
-| A heated peg or pin giving way | Chat | ask for a fixing made of a named member, then heat it (about 50 s under 2 kW) |
-| Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
-| Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away: its surface and core do not even out, and nothing reacts in it |
-| Ice melting: it stays at 273 K while it melts, shrinks from every face, and its meltwater runs into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
-| Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`) with no link to the world's heat, whose lab panel is hidden; nothing in the world is colder than ice yet |
-| Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |
-| Circuit heat, manufacturing heat | Code only, Page | machine circuits; the manufacturing page's station heat |
+**Not built:** freezing or boiling in the world (the separate voxel thermal
+simulation still has its own, unconnected); fires that go out; thermal
+expansion; smoke and airflow; heat into water or into the ground — a burning
+log in the river keeps burning; and friction, impact, cutting or motor work
+turning into heat.
 
-**Not built:** freezing or boiling in the world; fires that go out; thermal
-expansion; smoke, flame gas and airflow; heat into water or into the ground (a
-burning log in the river keeps burning, and ice floating in it melts only from
-the air); friction, impact, cutting or motor work turning into heat; gas
-pressure on a container's walls.
+---
 
-### Water
+## Water, and ground you can dig
 
-The valley's ground is generated once by drainage and erosion, then kept.
-Water is a depth-averaged shallow-water solver that computes only wet tiles and
-a ring around them: a lake at rest stays exactly at rest, wet and dry edges move,
+The valley's ground is generated once by drainage and erosion, then kept. Water
+is a depth-averaged shallow-water solver that computes only wet tiles and a
+ring around them: a lake at rest stays exactly at rest, wet and dry edges move,
 and mass is conserved to rounding. Bodies float, drift and dam the flow through
-their displaced volume and drag, and the drag pushes back on the water: oak
+their displaced volume and drag, and that drag pushes back on the water. Oak
 floats 70% under, and a dam block carries the pressure difference across it to
-the newton. When the chat dammed the river with nine concrete blocks, the water
-behind it rose from 29.5 m³ to 36.2 m³ in 69 s while the outflow fell from 0.35
-to about 0.22-0.25 m³/s. Beyond the valley's edges, rivers continue as a coarse
-network of reaches, junctions and lakes, so damming the valley fills a
-reservoir upstream.
+the newton.
 
 | Carried to the river | 8 s after letting go |
 |---|---|
 | ![An oak plank held at the edge of the river](docs/images/readme/float-before.jpg) | ![The same oak plank floating on the river further downstream](docs/images/readme/float-after.jpg) |
 
-*An oak plank in the main world, carried to the river and let go over the
-water. It floats, and the current carries it downstream.*
-
-| Capability | Status | How to try it |
-|---|---|---|
-| River and pond | World | the valley under `/world` (also `/explore`, where the water is drawn but not updated) |
-| Floating, drag and dams | World, Chat | drop things in the river; ask the chat to "dam the river with stone blocks" |
-| Rivers beyond the valley: reservoir, reaches, a confluence and a lake | Test room | `/world?scene=watershed`; dam the river and watch the reservoir fill |
-| Changing the river's flow | Chat | the chat's `set_river` |
+When the room's chat was asked to dam the river with nine concrete blocks, the
+water behind it rose from 29.5 m³ to 36.2 m³ in 69 s while the outflow fell
+from 0.35 to about 0.22–0.25 m³/s. Beyond the valley's edges, rivers continue
+as a coarse network of reaches, junctions and lakes, so damming the valley
+fills a reservoir upstream.
 
 ![The watershed room from high above: the valley and its river in the middle, and flat blue strips running out of both ends of it to a large rectangular lake](docs/images/readme/watershed-overview.jpg)
 
 *`/world?scene=watershed`. The valley's river is simulated in detail; the flat
 blue strips beyond its ends are the coarse network, running upstream to a
-reservoir (left, out of the picture) and downstream to a lake (top right).*
-
-**Not built:** waves and wakes; sediment moving while you play; rain,
-infiltration and evaporation; wet soil; water and heat affecting each other;
-switching regions between coarse and detailed simulation as you walk.
-
-### Ground
+reservoir and downstream to a lake.*
 
 The ground is columns of rock, soil and sand. After an edit, only the columns it
 disturbed are checked for stability (Mohr-Coulomb friction, and Terzaghi's
 critical height for cohesive soil): a sand pit settles to its angle of repose,
-a 0.5 m soil trench stands and a 1.6 m one caves in, and what stood on the
+a 0.5 m soil trench stands and a 1.6 m one caves in, and whatever stood on the
 ground falls in. Digging one pit rechecked 65 columns, rebuilt 1 of 20 ground
-colliders in 0.05 ms and woke nothing else, so the cost follows what changes,
-not the size of the world. What you dig is carried, and heaping it puts back
-exactly what came out.
+colliders in 0.05 ms and woke nothing else — the cost follows what changed, not
+the size of the world.
 
 | Before | After one dig | The side panel |
 |---|---|---|
 | ![Flat sand on the river bank, with the pond on the left and a table and chair in the distance](docs/images/readme/dig-before.jpg) | ![The same sand with a square pit dug into it](docs/images/readme/dig-after.jpg) | ![The same view with the side panel open: carrying 51 kg of sand and 29 kg of soil, 80 of 80 kg, walking at 40%](docs/images/readme/dig-after-panel.jpg) |
 
-*One **Dig here** (F) on the main world's river bank. The panel then reads
-51 kg of sand and 29 kg of soil carried: 80 of the 80 kg a person can carry,
-so walking slows to 40%, and a second dig is refused.*
+*One **Dig here** (F) on the main world's river bank. The panel then reads 51 kg
+of sand and 29 kg of soil carried: 80 of the 80 kg a person can carry, so
+walking slows to 40% and a second dig is refused. What you dig is carried, and
+heaping it puts back exactly what came out.*
 
-| Capability | Status | How to try it |
-|---|---|---|
-| Digging and heaping, with slumping | World | **Dig here** (F) and **Heap here** (H) |
-| Digging with a pick: swing and pry | World | take up the pick with E, swing with the left mouse |
-| Carrying what you dig (80 kg budget shared with what you hold) | World | dig, then look at the bag |
-| Filling and cutting out blocks | Chat | the chat's `fill` and `cut_block` |
-| Storing dug sand and soil | Page | `/fabrication` |
-| The ground kept across reloads and restarts | World | automatic |
+**Not built:** waves and wakes, sediment, rain, wet soil, water putting out
+fire; breaking rock with a pick, tool wear, landslides that rotate rather than
+slump.
 
-**Not built:** breaking rock (a pick stops on rock, or says the case is not
-supported), wet soil, tool wear, and landslides that rotate rather than slump.
+---
 
-### Joints, machines and energy
+## Machines are joints, not animations
 
-Mechanisms are joints, not animations. A door opens because you push it off its
-pin's line; a bow shoots because its limbs store energy, with no bow code
-anywhere. Joints are held by name, so a pin whose post is smashed follows the
-piece it ends up in.
+A door opens because you push it off its pin's line. A bow shoots because its
+limbs store energy — there is no bow code anywhere. Joints are held by name, so
+a pin whose post is smashed follows the piece it ends up in.
 
 | Before | After |
 |---|---|
 | ![The latched gate, closed between its two posts](docs/images/readme/gate-before.jpg) | ![The gate swung open on its hinge pins, with the hand's grip marked by a small ring](docs/images/readme/gate-after.jpg) |
 | ![The portcullis down in its frame, with its winch beside it](docs/images/readme/portcullis-before.jpg) | ![The portcullis raised in its frame and the winch turned](docs/images/readme/portcullis-after.jpg) |
 
-*Top: the latched gate in the main world, before and after releasing its latch
-and choosing **Open the gate**; the hand pushes the leaf round its hinge pins.
-Bottom: **Raise the portcullis**; the hand turns the winch, the rope winds on,
-and the portcullis rises in its frame.*
+*Top: release the latch and choose **Open the gate**; the hand pushes the leaf
+round its hinge pins. Bottom: **Raise the portcullis**; the hand turns the
+winch, the rope winds on, and the portcullis rises in its frame.*
+
+Every control is a bounded hand, never a velocity: 800 N of pull, 60 N·m of
+wrist, and 2 kg of moving mass of its own, so it can lift at most 73 kg. A
+throw is the hand's force over the hand's stroke, so a light ball leaves faster
+than a heavy one.
+
+Motors and batteries are accounted the same way — every joule in, every joule
+out.
 
 | Before | After | The Room tab's Machines panel |
 |---|---|---|
 | ![The battery hoist: a mast on a concrete base with a drum at the top and a crate at the foot of the mast](docs/images/readme/hoist-before.jpg) | ![The crate lifted most of the way up the mast](docs/images/readme/hoist-after.jpg) | ![The side panel listing the battery's charge, the motor's energy split into work and heat, and the rope's load](docs/images/readme/hoist-after-panel.jpg) |
 
 *The battery hoist: **Wind it up** (E on the drum) lifts the crate up the mast.
-The panel accounts for every joule: the motor drew 981 J from the battery, of
-which 380 J became work and 601 J heat, and the rope now carries 316 N.*
+The motor drew 981 J from the battery, of which 380 J became work and 601 J
+heat, and the rope now carries 316 N.*
 
 | Before | After |
 |---|---|
 | ![The Explorer's cart standing on a slope, with its handle, deck and two wheelsets](docs/images/readme/cart-before.jpg) | ![The same cart further up the slope after a push](docs/images/readme/cart-after.jpg) |
 
-*The cart in the Explorer is three exact bodies, a chassis and two wheelsets
-(an iron axle through oak wheels), on two free pins. **J** pushes it and it
-rolls: when the cart was added, a push moved it 0.404 m while its wheels turned
-145 degrees, which is 0.405 m of rim, so it rolls rather than slides.*
+*The cart in the Explorer is three exact bodies — a chassis and two wheelsets,
+each an iron axle through oak wheels — on two free pins. **J** pushes it and it
+rolls: when it was added, a push moved it 0.404 m while its wheels turned 145
+degrees, which is 0.405 m of rim. It rolls rather than slides, and nothing in
+the code says so.*
+
+"Exact bodies" are compounds of boxes and cylinders with no cells, each part of
+its own material, joined by real pins. They cost nothing in the cell budget and
+share rooms with ground, water and bodies made of cells — but they cannot
+break, dent or heat, and water does not hold them up yet.
+
+---
+
+## Machines that decide for themselves
+
+This is where most of September went. A machine in Banjo is not scripted: it
+has controls (a motor on a shaft, with a brake), senses (what its sensors
+report), and a **program** that works its own controls exactly as a person
+works the panel. Nothing it does bypasses the physics.
+
+**It stops when a sensor says so.**
 
 | Turned on, at the top of the shore | Six metres later, at the water |
 |---|---|
 | ![The lake on the left, a concrete post in the middle of the shore, and the cart standing on the right with its sensor's blue bead on a thread in front of it](docs/images/readme/self-driving-cart-before.jpg) | ![The same view: the cart has driven past the post and stopped with its front wheels at the water's edge](docs/images/readme/self-driving-cart-after.jpg) |
 
-*A cart that drives itself (`/world?scene=tests-cart`): the same cart, with a
-24 V battery in its chassis, a motor with a brake on its back wheels, and a
-controller whose water sensor looks at the ground 0.6 m in front of the deck.
-E on the cart opens its panel, and **On** then **Forward** send it down the
-shore. Both pictures are from the same place, with the concrete post as a fixed
-mark: between them the cart drove itself down the shore and stopped. The sensor
-is the bead on the thread; it turns amber when the water under it is more than
-10 mm deep, and the controller brakes. In the engine it went 6.0 m in 5.2 s and
-stopped with its front wheels 0.13 m short of the water. Going downhill the
-motor mostly held it back: the battery gave 26 J, the motor's work was -83 J,
-and 110 J became heat.*
+*`/world?scene=tests-cart`: the same cart, with a 24 V battery, a motor and
+brake on its back wheels, and a controller whose water sensor looks at the
+ground 0.6 m ahead of the deck. The bead on the thread is the sensor; it turns
+amber when the water under it is deeper than 10 mm, and the controller brakes.
+It went 6.0 m in 5.2 s and stopped with its front wheels 0.13 m short of the
+water. Going downhill the motor mostly held it back: the battery gave 26 J, the
+motor's work was −83 J, and 110 J became heat.*
+
+**It finds its own way.**
 
 | A sensor finds the water | Seconds later, turned away |
 |---|---|
 | ![The rover driving at the lake, a green arc on the wheel that is turning forward; of the two beads on threads ahead of it, the one over the water is amber and the one over dry ground is blue](docs/images/readme/rover-before.jpg) | ![The same view: the rover has swung round to face along the shore, one wheel driving forward and the other backing, and both beads are blue over dry ground](docs/images/readme/rover-after.jpg) |
 
-*A rover that roams by itself (`/world?scene=tests-rover`): a motor on each
-back wheel, so it steers by driving them differently, and a caster in front
-that swings round to follow. Its **program** works the two wheels' controllers
-as a person works their panels. The two pictures are the same camera a few
-seconds apart: on the left the bead over the water has turned amber while its
-wheels are still driving forward; on the right it has backed off and turned
-away from the side that saw water -- one wheel forward, one back -- and both
-beads are over dry ground again. Nothing tells it where the lake is. It also
-turns downhill where the ground is steeper than 8 degrees. In the engine it
-roamed 50 m of shore in a minute, turned away 5 times, and never had a wheel
-in the water.*
+*`/world?scene=tests-rover`: a motor on each back wheel, so it steers by driving
+them differently, and a caster in front that swings round to follow. Nothing
+tells it where the lake is. In the engine it roamed 50 m of shore in a minute,
+turned away 5 times, and never had a wheel in the water. It also turns downhill
+where the ground is steeper than 8 degrees.*
+
+**It is told where a thing is, and goes and uses it.**
+
+| Told where the stool is | Sitting on it |
+|---|---|
+| ![A wheeled robot with an upright torso standing on bare ground, with a wooden stool several metres away from it](docs/images/readme/sit-before.jpg) | ![The same view: the robot has driven to the stool and lowered its torso onto the seat](docs/images/readme/sit-after.jpg) |
+
+*`/world?scene=tests-sit`. Nothing tells it how to get there, and nothing
+animates the sitting: it drives to the stool and puts its torso down, and the
+stool holds it because a stool holds things. Between these two frames its torso
+went from 1.25 m to 0.94 m above the ground. The same shape of program digs in
+`/world?scene=tests-dig`: dig the site until the hopper is full, carry the load
+to the depot, dump it, go back.*
+
+**It runs out of power, and waits for the sun.**
 
 ![The rover standing still on the shore with the pale glass solar panel on its deck and both sensor beads blue over dry ground](docs/images/readme/solar-resting.jpg)
 
-*Solar panels (`/world?scene=tests-solar`): the owner chose them to charge a
-machine's batteries. The room declares a sun, 50 degrees up at 1000 W/m2. The
-glass panel on the rover's deck puts into its battery the sunlight on its face
-(irradiance, times area, times the cosine of the angle to the sun) times its
-efficiency, and nothing in shade. Roaming draws more than the panel gives, so
-when the battery is down to a quarter the rover stops where it is and rests
-until the sun has charged it to three fifths, then roams on. The rover above is
-resting: standing still is all there is to see of it.*
+*`/world?scene=tests-solar`. The room declares a sun, 50 degrees up at
+1000 W/m². The glass panel on the rover's deck puts into its battery the
+sunlight on its face — irradiance × area × the cosine of the angle to the sun —
+times its efficiency, and nothing in shade. Roaming draws more than the panel
+gives, so at a quarter charge the rover stops where it is and rests until the
+sun has brought it back to three fifths. Standing still is all there is to see
+of it, which is the point.*
 
 ![The Machines list while it rests: the rover battery at 1.38 kJ of 5.00 kJ (28%), having given 399 J and taken in 382 J; each wheel's controller stopped and holding on its brake; the program resting because its battery is low while its panel charges it; the solar panel on the rover giving 29 W from 147 W of sun on it, having given 382 J; and each motor's draw, work and heat](docs/images/readme/solar-machines.jpg)
 
 *The joules are the one thing the room cannot show you, so here is the Room
-tab's Machines list at that moment. It is worth a look because it is the whole
-account in seven lines: the panel turning 29 W out of the 147 W of sunlight on
-it, the battery holding 28% and having taken in 382 J of it, and each motor's
-draw split into work and heat. What the battery holds is always what it began
-with, plus what it took in, less what it gave.*
+tab's Machines list at that moment — the whole account in seven lines. The
+panel is turning 29 W out of the 147 W of sunlight falling on it; the battery
+holds 28% and has taken in 382 J of it. What a battery holds is always what it
+began with, plus what it took in, less what it gave.*
+
+**And the sun sets.**
 
 | Four in the afternoon | Ten to seven, after sunset |
 |---|---|
 | ![The lake and the rover on its shore under a blue sky, the ground and the rover's deck lit, the sun glinting off the water](docs/images/readme/day-afternoon.jpg) | ![The same view with nothing moved: the sky is black, the ground is dim and the rover is barely lit](docs/images/readme/day-night.jpg) |
 
-*A day for the sun (`/world?scene=tests-day`): the room's sun goes round in
-four minutes, rising in the east, highest in the south at noon and setting in
-the west, and the room begins at four in the afternoon. Nothing in the room
-moved between these two pictures -- the rover is switched off and standing
-where it was, and the camera has not moved -- so the only difference is the
-light. They are 28 seconds of the room's time apart, which is nearly three
-hours of its day. Low in the sky less of the sun's light gets through the air;
-below the horizon none does, and the sun's lamp goes out. The Room tab's clock
-says the hour: "16:08, the sun 24° up", then "18:56, night". Turned on, the
-rover roams into the dark on what its battery holds; when the battery is down
-to a quarter it rests until morning, taking in nothing all night. In the
-engine the sun set 20 s in, the rover rested at 20:34, and it woke at 11:00,
-once the morning sun had charged it to two fifths.*
+*`/world?scene=tests-day`: the room's sun goes round in four minutes, rising in
+the east, highest in the south at noon, setting in the west. Nothing moved
+between these two pictures — the rover is switched off, the camera has not
+moved — so the only difference is the light. They are 28 seconds of the room's
+time apart, which is nearly three hours of its day. Low in the sky, less of the
+sun's light gets through the air; below the horizon, none does. In the engine
+the sun set 20 s in, the rover rested at 20:34, and it woke at 11:00 once the
+morning sun had charged it to two fifths.*
 
-| Capability | Status | How to try it |
-|---|---|---|
-| Hinges, slides, rope links, pulleys, latches (fixings), springs | World | the gate, door, bell, portcullis and winch; the bow's limbs |
-| Fixings that fail in tension or shear | World | the arrow's nock; stacked or heated loads |
-| Drum, DC motor, battery and brake | World | the hoist: E on the drum, or its Operate panel |
-| Every joule of a machine accounted for | World | the Room tab's Machines panel |
-| Wheels on pins: a product made of exact bodies | World (`/explore`) | the cart: J pushes it, Q puts all of it in the bag and it comes back whole |
-| A machine that stops itself by what a sensor reads | Test room (`/world?scene=tests-cart`) | E on the cart, **On**, **Forward**: its water sensor stops it at the lake's edge |
-| A machine with a program that roams by itself | Test room (`/world?scene=tests-rover`) | E on the rover, **On**: it roams the shore, turning away from the water and from steep ground |
-| Solar panels that charge a battery from the room's sun | Test room (`/world?scene=tests-solar`) | E on the rover, **On**: it runs its battery down, rests while its panel charges it, and roams on |
-| A sun that crosses the sky and sets | Test room (`/world?scene=tests-day`) | E on the rover, **On**: it roams into the sunset, rests in the night until the morning sun has charged it, and roams on |
-| Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |
+### Three faults that only turned up by running it for a long time
 
-**Not built:** gears; motor heat that warms anything;
-hinges with a strength; joints that fail by bending or prying; a bearing's
-strength along its axis; a bump sensor that feels a knock rather than a
-stall; seasons, clouds and the moon; heat from a panel's losses
-warming anything ([machine-world.md](docs/machine-world.md)).
+**A machine can get nowhere while everything looks fine.** In the mine, the
+rover stood in one spot for 232 s of a seven-minute run, driving and turning
+the whole time. It had dug 1.3 m ahead of itself, then had to drive over its
+own hole, and sat against the spoil heap on a slope. Its wheels turned freely,
+so no motor was ever overloaded and the stall that stands in for a bump sensor
+never tripped. No sensor saw water. Its battery was full. Every layer above was
+told, truthfully, that it was "approaching" the vein — for four minutes.
 
-### Making a machine out of components
+The fix is a sense and a reflex. While a machine is told to go somewhere, the
+engine keeps where it stood when it was told and how long it has been inside
+half a metre of there. **The circle is the measure** — not standing still, and
+not the wheels, because in a hole a machine drives and rocks and turns busily
+and gets nowhere. Twenty seconds of that and it backs out: reverse, turn 110
+degrees, reverse again, 4 s then 8 then 12, turning the other way each time.
+Three tries at one place and it stops, holds its wheels, and says it cannot get
+itself out — rather than butting the same thing all day. Being stuck does not
+make it deaf, so a person who comes to get it out can. Two metres from that
+place ends the episode, and a saved room brings a machine back where it gave
+up.
 
-Everything above is matter the world already holds. This is how a new machine
-gets into it: you put components together, say how they are fastened, and the
-Workshop redraws whatever the room cannot carry until the thing works.
+**A machine that digs where its nose happens to point digs itself in.** The
+rover used to bite 1.3 m straight ahead of wherever it stopped, so four trips
+to one vein left four holes 10–18 cm deep spread over 2 m of ground it then had
+to cross. Now the dig tool takes a *place* and works that place, by rules of the
+world rather than settings:
 
-**1. Lay the parts out.** Open the Workshop, pick what you are working on, and
-drag *Apart* to pull it into its components. The left rail lists every one with
-its material and its mass; **Held to** on the right lists what the design says
-it must survive, each marked `run it` until it has been.
+- It bites the place it was sent to, never its own nose.
+- It stands off, because that place is about to be a pit — 2 m, and `go_to`
+  takes a `stop_at_m`, since a machine told to stop "a metre off" rolls on
+  while its brakes take hold.
+- It will not dig the ground under itself: closer than 1.2 m and it backs off
+  first and says so.
+- Each spot is scooped once. A bite goes into the highest ground it can reach,
+  and only while that ground is within 30 mm of the ground around it, so the
+  working spreads the way an open pit is worked and no hole is deepened. Biting
+  always at the middle instead sank a shaft 600 mm deep and 1.1 m across in ten
+  minutes — which a machine on 160 mm wheels can only fall into.
+- A place is as wide as the deposit it sits in. Half a metre gives three loads
+  and is then worked out, and a machine on a step it cannot finish roams while
+  it waits; the vein is 3 m across, so the place is too. Ten minutes of digging,
+  against the old bite-at-the-nose: 1 load becomes 6, and the working goes from
+  1.1 m across and 185 mm deep to 3.3 m across and 140 mm deep — an open pit it
+  can drive over rather than a shaft it falls into.
+- Worked out is *said*, not scraped at.
 
-![The parts of a cart laid out on the Workshop bench](docs/images/readme/workshop-parts.jpg)
+**And a third: a machine with a driven wheel each side cannot brake while it
+turns.** The two wheels push against each other and nothing pushes back along
+its way, so one that starts a turn while still rolling coasts through the whole
+turn. Measured: it spun up to 108 degrees a second, sailed 50 degrees past the
+mark, then travelled 1.6 m at up to 80 degrees off its way while it came round
+— about a metre of drift every trip, which is how the mine's rover kept ending
+up in the shallows with its water reflex turning it away. Told to go to a place
+or face one, it now stops before it turns on the spot, turns from rest, and
+stops again before it goes on. The roaming reflexes are untouched: getting
+clear of water, or of a hole, is still one decisive turn at full effort. Two
+other fixes were tried first and thrown away — aiming at where the nose *will*
+be (the braking kills the swing it predicted, so it stopped 35 degrees off and
+called itself faced) and easing the turn as it closes (at three tenths effort
+it could not come round on rough ground at all) — and both are written down in
+[machine-world.md](docs/machine-world.md) rather than quietly dropped.
 
-**2. Ask whether it is a machine.** *Check it* answers two different questions.
-First, are the concepts there — is every part fastened to another, does every
-wheel have something to turn on, does something stand still for the rest to
-move against, does it say which part you take hold of? A missing concept is
-reported and never guessed at, because guessing there would be designing on
-your behalf:
+### A machine that flies
 
-![Check it refusing to guess what the cart is worked by](docs/images/readme/workshop-check.jpg)
+![The bench with the drone in the air in its little world, the status line reading "Rising: the person at the keys · forward+up · 9.1 s · 0.82 m/s" and below it "drone battery: 1.97 MJ of 2.00 MJ · using 2.84 kW, taking in 7.8 W, 12 min left at that"](docs/images/readme/bench-drive.jpg)
 
-Second, once the concepts hold, can the room carry it as drawn? Usually not.
-The world keeps matter on a 40 mm cell grid, and sizes that read well to a
-person are rarely sizes the grid can hold. So it redraws, and says every change
-it made and why:
+*The drone, driven by hand. Space takes a person up in the world and
+Shift+Space down; they now do the same to a machine that flies. The two asks
+move the height it **holds**, at 0.8 m/s — a little under the 1 m/s its climb
+is limited to, so the machine keeps up with the target, and letting go leaves
+it hovering where it got to, the way a flown machine answers a stick. Held all
+the way down, it sets itself on the ground.*
+
+Landing costs what landing costs: a flying machine asked all the way down used
+to sit on the ground with its rotors still at hover throttle, fighting the
+floor for 2.65 kW, because the height loop had nothing to say about being held
+up by the ground. Sat down with the height it holds at zero, it is *landed* —
+the rotors stop and its draw falls to nothing until rising lifts that height
+off zero again.
+
+The line under the picture is new too, and it is in both panels now: what the
+battery holds of its capacity, the watts its motors are asking this step, the
+watts its panels are putting back, and how long that leaves at this rate.
+Hovering, the drone asks 2.84 kW of its 2 MJ battery — about twelve minutes.
+Switched off, it asks for nothing, and the panel says "using nothing".
+
+More on all of this: [machine-world.md](docs/machine-world.md), and
+[what works, and where](docs/what-works-where.md#joints-machines-and-energy).
+
+---
+
+## Ore to wire: a chain that runs itself
+
+`/world?scene=tests-mine` is four machines, a copper vein and four heaps of
+ground, and nobody drives any of it.
+
+| Every program switched on | Eighteen seconds later |
+|---|---|
+| ![The mine room: the rover with its solar panel standing in the foreground, the smelter and the mill as grey blocks behind it, and the drone on the ground at the left, all still](docs/images/readme/mine-before.jpg) | ![The same camera: the rover is driving away in the foreground with a green arc on each wheel, and the drone is in the air over the smelter with arcs on its four rotors](docs/images/readme/mine-after.jpg) |
+
+The rover's whole job is five steps, written in the routine language: *go to the
+vein and stop 2 m off; dig there until the hopper's 40 kg are full; back off for
+1.5 s; go to the smelter's intake; dump until you are empty.* The smelter goes
+nowhere — it works a recipe, 1 kg of copper ore into 0.3 kg of copper at 2,000 J
+and 2 seconds a kilogram, and puts the copper on its output heap. The drone
+hauls: it hovers at 1.5 m, lifts up to 20 kg from that heap, carries it to the
+mill's intake and drops it. The mill draws wire (1 kg of copper into 0.98 kg of
+wire) straight onto the heap marked as the Workshop's rack, so what lands there
+becomes material you can build with.
+
+Measured on 26 September from a fresh room: **the first 1.47 kg of copper wire
+reaches the rack about half a minute into the world's time**, and over twenty
+minutes of it the rover brings in 8 loads and 18.2 kg of wire lands on the rack.
+The vein holds 400 kg of ore at a grade of 0.3 and is nowhere near empty at the
+end of that.
+
+None of those numbers were true a day earlier, and the reasons are the sort of
+thing only a long run finds. The vein read as empty because its reserve was
+being read off a field the deposit does not have. The haul went nowhere because
+of the faults described above — the hole it dug itself into, and the turn it
+could not brake. Twenty minutes of the same room before and after them:
+3 loads became 8, 7.1 kg of wire became 18.2, and the time the rover's reflexes
+spent hauling it out of the shallows fell from 288 seconds to 35.
+
+**Be clear about what is physics here and what is bookkeeping.** The digging is
+real: the rover's scoop moves the ground's own columns, the pit is in the
+terrain, the spoil is heaped, and the rover has to drive over what it leaves
+behind — that is how the getting-nowhere bug above was found. The *substances*
+are a ledger. A deposit is a patch of ground where a scoop brings up ore with
+the soil at a stated grade, a stockpile is what a machine dumped at a place,
+and a recipe is a declared conversion with a mass balance, a time and an energy
+cost. Ore, copper and wire are not drawn in the world and have no cells. The
+room's recipes are the only chemistry there is: nothing in the engine knows
+what copper is.
+
+That honesty is the point of the design, not an apology for it — the ledger
+moves with the room, is read by every sense, and is checked against the ground's
+own accounts of what was exported. It is also what makes the chain something
+the Workshop can spend.
+
+---
+
+## Telling a machine what to do, in words
+
+Machines take orders. A routine is a list of steps in a small language over the
+places, substances and recipes the machine knows — go here, dig, take, drop,
+process, wait, rise, descend — and the steps are checked before they run.
+
+Two things make that more than a macro:
+
+**A step can carry a condition.** `when` skips it unless something holds;
+`unless` skips it while something holds. The conditions read the same senses the
+machine's own reflexes read: the hopper, the battery, a stockpile at a place or
+within reach, water ahead, a person near, a place reached, night and day, a
+stall, a knock, resting, being asked by someone — and `not`/`all`/`any` over
+them.
+
+**A routine can watch.** `watch: {when, do, then}` interrupts whatever the
+machine was doing the moment its condition comes to hold — once per rising
+edge, never while its own steps are running — and afterwards it resumes the
+interrupted step or restarts its round. The runner keeps its work as frames:
+the round at the bottom, interruptions above it, run first.
+
+And a person's words can be a job. Walk up to a machine and talk to it: the
+chat's model writes what you said as steps of that same language, against a
+strict schema. Plain words cover the common shapes without a model at all —
+bring or fetch from one place to another, dig and dump, go to, make N batches.
+The steps are checked exactly as a routine's are, queued as an order that runs
+before the machine's round, answered with the plan it intends to follow, listed
+when you ask "what are you doing", dropped on "never mind", and reported in the
+chat when they are done. A machine that cannot move takes only batches and
+waiting, and says so: asked to come here, the smelter answers that it goes
+nowhere.
+
+In the engine's own test of this, the mine's rover left its digging to go where
+it was told, said "Done", and went back; a watch held it when a person walked
+up; the drone took an order, described it and dropped it; and the smelter
+refused to move.
+
+---
+
+## The bench: building a thing that does not exist yet
+
+Everything above is matter the world already holds. The bench
+(`/world?workshop=1`) is where a new thing gets in. It has four tabs — **Lab**,
+**Inventory**, **Skills**, **Recipes** — and a chat beside every one of them,
+which can do anything the controls can.
+
+**1. Take it apart and look at it.**
+
+![The bench with the cart's parts laid apart above the grid: the deck, four wheels, axles, bearing mounts, handle arms and handle, with the chat on the left and a red report across the top](docs/images/readme/bench-apart.jpg)
+
+*The Lab, with the **Apart** slider dragged out. The cart is 14 parts and 35.895 kg: a deck,
+two axles, four bearing mounts, four wheels, two handle arms and a handle, each
+with its own material.*
+
+**2. Ask whether it is a machine.** *Check it* answers two different questions,
+and the first is not about physics at all: are the concepts there? Is every
+part fastened to another; does every wheel have something to turn on; does
+something stand still for the rest to move against; does it say which part you
+take hold of? A missing concept is reported and never guessed at, because
+guessing there would be designing on your behalf.
+
+![The bench showing the whole cart, with an amber refusal reading "It is not a machine yet: it has moving parts but does not say which one you take hold of" and a red report reading "Not buildable on this grid... 584 / 16,000 scene cells. 24 / 240 joined boxes. Components disappear at this resolution: axle-1, axle-2, bearing-mount-11, bearing-mount-12, bearing-mount-21, bearing-mount-22."](docs/images/readme/bench-lab.jpg)
+
+The second question is whether the room can carry it as drawn. Usually not: the
+world keeps matter on a 40 mm grid, and sizes that read well to a person are
+rarely sizes a grid can hold. So the bench redraws it, and says every change it
+made and why:
 
 | the redraw | why |
 | --- | --- |
 | nothing thinner than two cells | a part thinner than a cell shares that cell with whatever else reaches into it, and the grid hands the cell to one of them |
 | every face on a cell boundary | a face inside a cell leaves a part with no cells unarguably its own, and two parts bonded solid never share a cell face |
-| a shaft through its mounts becomes a stub per bearing | no lattice body can carry a hole for another body to turn inside — this is true at 40, 20 and 10 mm alike, so the grid-legal bearing is a stub butted to its mount |
+| a shaft through its mounts becomes a stub per bearing | no lattice body can carry a hole for another body to turn inside — true at 40, 20 and 10 mm alike, so the grid-legal bearing is a stub butted to its mount |
 | one material to a moving group | the compiler carries a group as one body, and a body is one material |
-| a strut is rebuilt between its anchors | a member that spans two things is its two anchors; the moment either end moves, a resized strut is the wrong length and pointing the wrong way |
+| a strut is rebuilt between its anchors | a member that spans two things *is* its two anchors; the moment either end moves, a resized strut is the wrong length and pointing the wrong way |
 
 The cart takes 37 of these. Its through-axles come out as four stubs, each
 butted to its own mount and carrying its own wheel — which is how the rover's
-wheels are built in the world already.
+wheels are built in the world already. The bench says so on screen: *"Components
+disappear at this resolution: axle-1, axle-2, bearing-mount-11…"*, and
+*"584 / 16,000 scene cells"*.
 
-**3. Find out what it would take.** The rack along the bottom holds what the
+**It is not written against any particular object.** The rules know about
+cells, bearings, materials and struts, and nothing about carts:
+
+| built from components | redraws | comes out as |
+| --- | --- | --- |
+| a cart: deck, mounts, axles, four wheels, handle arms and a handle | 37 | four 5.02 kg wheels on four hinges to a 47.40 kg frame |
+| a door: two posts, a lintel, a leaf on one bearing | 4 | a 103.04 kg frame and a 23.30 kg leaf on one hinge |
+| a well pulley: two posts, a headstock, a drum, a rope, a bucket | 6 | a 36.56 kg headstock and a 33.15 kg drum, rope and bucket turning on it |
+| a mace: a haft and an iron head that turns on it | 2 | a 2.87 kg haft and a 4.03 kg head on one hinge |
+
+*(Measured 26 September through `workshop_fitting.check_validity`, the call
+`tests/workshop_fitting_tests.py` makes.)*
+
+Only the cart was tuned for. The well pulley was built through the same four
+tools an AI model is given (`add_part`, `remove_part`, `set_joint`,
+`check_validity`) and turned up a refusal the cart never hit. The mace turned up
+a better one: every other machine braces against a frame, and a hand-held one
+has none — so the part it says you take hold of *is* the frame, and the check
+now reads "you hold the haft, so that is the frame". Without that it is refused
+for being all moving parts.
+
+**3. Drive it.** The owner's words, of an earlier panel of controls and a Do it
+button: *"I don't understand what turning the left wheel to reverse and hitting
+do it means... allow me to become the object and control it with the keys."* So:
+take the keys, and W A S D (or the arrows) go, back, turn left, turn right, in
+a little world with ground and a sky, kept on the server and stepped an eighth
+of a second at a time as the keys arrive. The keys are put to the thing's
+program as the asks a panel makes in the world, so a rover and a drone drive the
+same way; a machine with wheels and no program is driven by its wheels' own
+controls. Driven by hand for 10.9 seconds, the drone pictured earlier went
+7.55 m.
+
+**4. Every run is kept as a take.**
+
+![The bench after letting go: a second thumbnail, DRIVEN, sits beside CLEAN, and its replay is playing below with Pause, Reset and a speed selector, reading "5 simulated bodies · 0.70 seconds. Positions are calculated by the physics engine."](docs/images/readme/bench-take.jpg)
+
+*The first take is **Clean** — the design as it is, untouched. Every run,
+whether the chat asked for it or the controls below did, becomes a take beside
+it with its picture and its verdict. A run never replaces the thing: click a
+run's take for its replay, click Clean and the design is back.*
+
+**5. Find out what it would take, and make it.** The rack holds what the
 workshop has, per material, in kilograms. Every design says what making it
 would take against what is there, and what is short. A design is drawn,
-measured and tried on the bench whatever the rack holds; only *making* it draws
-stock:
+measured and driven whatever the rack holds; only *making* it draws stock.
 
-![The rack, and what a design is short of](docs/images/readme/workshop-rack.jpg)
+![The bench's Recipes tab, listing what you can make: table (30.78 kg oak, have 12.4, in red), stool (4.73 kg, in green), bench (19 kg, red), chair (8.85 kg, green), shelf-unit (42.64 kg, red), each with a Design it button](docs/images/readme/bench-recipes.jpg)
 
-**4. Make it.** *Make it* finds ground nothing else has claimed, takes the
-material out of the rack — all of it or none — and installs the machine. It
-arrives as separate bodies that keep their joints, and the room describes it in
-its own words: **turns on a pin**, with *take hold of it and work it by hand*,
-*turn it all the way*, *turn it half way*.
+*Green where the rack has it, red where it does not.*
+
+*Make it* finds ground nothing else has claimed, takes the material out of the
+rack — all of it or none — and installs the machine. It arrives as separate
+bodies that keep their joints, and the room describes it in its own words:
+**turns on a pin**, with *take hold of it and work it by hand*, *turn it all the
+way*, *turn it half way*.
 
 ![A cart made from components, standing in the yard and turning on its pins](docs/images/readme/world-machine.jpg)
 
@@ -634,113 +784,41 @@ Because it is lattice matter throughout rather than one rigid lump, it is still
 breakable: the parts that turn are separate bodies, and each of them can dent,
 crack and shatter like anything else in the world.
 
-**It is not written against any particular object.** The rules know about
-cells, bearings, materials and struts, and nothing about carts:
-
-| built from components | comes out as |
-| --- | --- |
-| a cart: deck, mounts, axles, four wheels, handle arms and a handle | four 5.02 kg wheels on four hinges to a 47.4 kg frame |
-| a door: two posts, a lintel, a leaf on one bearing | a 103 kg frame and a 23.3 kg leaf on one hinge |
-| a well pulley: two posts, a headstock, a drum, a rope, a bucket | a 36.6 kg headstock and a 33.2 kg drum, rope and bucket turning on it |
-| a mace: a haft and an iron head that turns on it | a 2.87 kg haft and a 4.03 kg head on one hinge |
-
-Only the cart was tuned for. The well pulley was built through the same four
-tools an AI model is given, and it turned up a refusal the cart never hit. The
-mace turned up a better one: every other machine braces against a frame, and a
-hand-held one has none — so the part it says you take hold of *is* the frame,
-and the check now reads "you hold the haft, so that is the frame". Without
-that it is refused for being all moving parts
-(`tests/workshop_fitting_tests.py`).
-
-**The tools a model is given** are `add_part`, `remove_part`, `set_joint` and
-`check_validity`. It is told to build the concept and not to agonise over
-millimetres, and never to say a thing turns, swings or rolls until
-`check_validity` has said so — before that it knows what was drawn, not what
-the room can carry.
-
-**Not built:** nothing in the world puts material back into the rack — no
-chopping, quarrying or reclaiming, so the rack is stocked by hand on the bench.
-A machine still has to name the component you take hold of and bind each place
-you touch it; the templates do not declare their own, so that is set through
-the chat. Taking a made product back apart into its components happens in the
-world's physics, by breaking it; the Workshop has no intake that reclaims one.
-
-### Hands, tools and handling
-
-Every control is a bounded hand, never a velocity: 800 N of pull, 60 N m of
-wrist, and a 2 kg moving mass of its own, so it can lift at most 73 kg. A throw
-is the hand's force over the hand's stroke, so a light ball leaves faster than
-a heavy one.
-
-| Looking at it | Holding it |
-|---|---|
-| ![The Explorer looking at a glass block; the side panel says what it is made of, what it weighs, how big it is and how far off](docs/images/readme/explore-looking.jpg) | ![The glass block in the hands; a see-through copy on the ground marked "it fits here, on the ground", and the carrying bar at 20 of 80 kg](docs/images/readme/explore-holding.jpg) |
-
-*The Explorer (`/explore`). Looking at a block, the panel shows what the engine
-knows about it: glass, 20.0 kg, 200 × 200 × 200 mm, 2.1 m away. After **E**
-it is in your hands, a see-through copy shows where **E** will put it down
-(the engine has checked that it fits), and the carrying bar counts its 20 kg
-against the 80 kg limit.*
-
-| Capability | Status |
-|---|---|
-| Pick up, carry, put down with a checked preview, the bag | World (and `/explore`) |
-| Throwing, the bow, swinging a sword, a pick | World |
-| One saved "Use" per product (left mouse or J) | World (and `/explore`) |
-| A thing of several parts taken up whole, its moving parts still moving | World: the mace and the cart in `/explore`, and `/explore?scene=tests-carry` |
-| Two hands | Not built; the second hand is planned as a powered gripper |
-| Declared grip and use points | Not built: they are stored but never read; the hand holds wherever you point |
-
-### Other solvers and experiments in the repository
-
-A lot of the physics code is research that did not become the world's path:
-
-- **The older "network" solver** (`src/platform/NetworkWorld`): deformable cell
-  networks with per-object resolution and directional (grain) materials. Its
-  fracture does not converge.
-- **Fracture solvers tried for speed**: implicit Newton/GMRES, a modal basis, a
-  quasi-static solve (its static solver is reused for breaking under load), a
-  GPU (CUDA) lattice, and three algorithms, of which 1 and 2 were not adopted
-  and are not on `main`.
-- **Reference solvers**: cohesive interfaces, tetrahedral contact, a coupled
-  sphere-and-mesh contact reference, continuum pressure with J2 plasticity, and
-  orthotropic elasticity.
-- **The separate voxel thermal world** with melting and freezing (melting,
-  since 22 September, is in the world itself).
-- **Desktop applications**: the original ball lab (`banjo_lab`), the bowl lab,
-  the creator workshop and the starter game (raylib).
-
-Each needs a decision: bring it into the world, keep it as a reference test, or
-archive it. They are listed on the [to-do list](#1-get-what-is-built-into-the-world).
+**Not built:** only *goods* fill the rack from the world — the mine chain above
+does, through its rack stockpile. No chopping, quarrying or reclaiming puts
+oak, iron or stone back, so a design's materials are still stocked by hand on
+the bench. Taking a made product back apart happens in the world's physics, by
+breaking it; the bench has no intake that reclaims one. And a machine still has
+to name the component you take hold of and bind each place you touch it; the
+templates declare neither, so both are set through the chat.
 
 ---
 
-## Try it
+## Try it yourself
 
 ### What you need
 
-- **CMake 3.25 or newer and a C++23 compiler**: Visual Studio 2022 on Windows,
-  where Banjo is developed, or GCC 12+ / Clang 16+ on Linux, where CI builds
-  it. macOS is not built or tested. Before CMake 3.27, the first build stops
-  once and asks you to configure again.
+- **CMake 3.25+ and a C++23 compiler**: Visual Studio 2022 on Windows, where
+  Banjo is developed, or GCC 12+ / Clang 16+ on Linux, where CI builds it.
+  macOS is not built or tested. Before CMake 3.27, the first build stops once
+  and asks you to configure again.
 - **Python 3**, with nothing to install. CMake uses it to check the build's
   floating-point settings, and the server, the MCP servers and the Python
   binding use only its standard library.
 - **Git and network access for the first configure.** CMake downloads Jolt
   Physics v5.6.0 and nlohmann/json (and raylib 6.0 for the desktop lab).
-- **An OpenAI API key, only for the chats** (the room's, the lab's and the
-  Workshop assistant) and the model-graded QA. Put `OPENAI_API_KEY=...` in a
-  `.env` file at the repository root; `OPENAI_MODEL` changes the model from
-  the default `gpt-5-mini`. Everything else runs without a key.
+- **An OpenAI API key, only for the chats** (the room's, the bench's, a
+  machine's) and the model-graded QA. Put `OPENAI_API_KEY=...` in a `.env` file
+  at the repository root; `OPENAI_MODEL` changes the model from the default
+  `gpt-5-mini`. Everything else runs without a key.
 - **Chrome**, only for the browser tests.
 
 ### Build
 
 The world needs four programs: `banjo_c` (the shared library, `banjo.dll` or
 `libbanjo.so`), `banjo_live_world_run` (the world's engine),
-`banjo_platform_cli` and `banjo_network_lab` (the desktop studio). The older
-lab and QA pages need more of them; build without `--target` to get
-everything.
+`banjo_platform_cli`, and `banjo_network_lab` (the desktop studio). The older
+lab and QA pages need more; build without `--target` to get everything.
 
 Windows:
 
@@ -778,38 +856,26 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | Address | What it is |
 |---|---|
 | `/world` | the main world, with the chat and the side panel |
-| `/explore` | the newest interface: the valley with a block of each material, five pieces of furniture, a mace and a cart. It rebuilds the valley on every load. `/explore?scene=tests-carry` opens the carrying test room in it |
-| `/world?workshop=1` | the Workshop: design one product at a time and test it on a bench |
-| `/world?scene=<room>` | any of the rooms below |
+| `/explore` | the newest interface: the valley with a block of each material, five pieces of furniture, a mace and a cart. It rebuilds the valley on every load |
+| `/world?workshop=1` | the bench: design one product at a time, drive it, and make it |
+| `/world?scene=<room>` | any of the 25 rooms ([the list](docs/what-works-where.md#the-rooms)) |
 | `/fabrication` | manufacturing from finite stock |
 | `/qa`, `/mechanics-qa`, `/tool-qa` | material, mechanism and tool test suites with 3D replays |
 | `/` | the older lab: the fracture lab and its live stage |
 
-### The rooms
+The main world stands on a generated valley with a river and a pond, and holds
+a latched gate, a portcullis on a winch, a self-closing door, a bell on a rope,
+a crate, a ceramic pot, a plank, a rubber ball, a bow, an iron sword, a pick, a
+hearth with an iron pot and two burning logs, a table and chair, and a battery
+hoist.
 
-| Room | Cell | Reached by | What to try |
-|---|---|---|---|
-| `world` | 40 mm | menu | nearly everything: breaking, burning, water, digging, joints, the hoist, the bow, the sword, the pick |
-| `expedition` | 40 mm | menu | gather stone and wood, build a dryer, dry timber (a bookkeeping model, not native physics) |
-| `explore` | 40 mm | `/explore` | a block of every material, furniture, a mace on its chain and a cart on pins; picking up, placing, using |
-| `bench` | 20 mm | address | plates of all eight materials, 20 and 40 mm thick, on piers: break them |
-| `armoury` | 10 mm | address | cutting a rope, a panel and a loaded batten with a sword |
-| `courtyard` | 40 mm | address | gate, portcullis with counterweight, chain, a shelf that breaks under load |
-| `tests-gates` | 40 mm | address | hinges, a castle gate on a winch, a capstan |
-| `tests-ropes` | 40 mm | address | ropes, pulleys, a pendulum, springs, the bow, cutting |
-| `tests-motion` | 40 mm | address | breaking, denting, bouncing, sliding, burning, a gas piston |
-| `tests-machines` | 50 mm | address | a motor, drum, battery and brake |
-| `tests-carry` | 40 mm | `/explore?scene=tests-carry` | a mace, a table and a chair, each taken up whole |
-| `tests-cart` | 50 mm | address | a cart with a battery and a motor that drives down a shore until its water sensor stops it |
-| `tests-rover` | 50 mm | address | a rover with a motor on each back wheel and a program that roams a lake's shore by itself |
-| `tests-solar` | 50 mm | address | the rover with its battery nearly flat: it rests while the solar panel on its deck charges it |
-| `tests-day` | 50 mm | address | the rover under a sun with a four-minute day, from four in the afternoon: it rests through the night |
-| `tests-break` | 20 mm | address | an oak plank on piers and an iron ball dropped on it: the room says what breaking it cost, under the energy-scaled law |
-| `watershed` | 40 mm | address | rivers beyond the valley; dam one and watch the reservoir fill |
-| `valley` | 40 mm | address | the valley and its river, empty: dig, dam, float things |
-| `clearing` | 40 mm | address | dry soil and bare rock, for digging and for tools |
-| `yard` | 40 mm | address | a flat, empty yard for the chat to build in |
-| `fabrication` | 40 mm | `/fabrication` | where manufactured parts are placed |
+| The west terrace | The east terrace |
+|---|---|
+| ![The west terrace: a bell hanging on a rope in a frame, a self-closing door, a portcullis with its winch, and a latched gate, above the river](docs/images/readme/world-west-terrace.jpg) | ![The east terrace: a table and chair, the battery hoist's mast, a crate, a plank and a ball, the hearth and a bow, above the river](docs/images/readme/world-east-terrace.jpg) |
+
+**Twenty-four other rooms exist, and the menu offers two of them** —
+everything else opens by typing its address, which is the single biggest gap
+between what is built and what you can find.
 
 ### Controls on `/world`
 
@@ -818,7 +884,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 | W A S D, mouse | walk and look |
 | E | pick up what you look at, or do what the side panel marks with E; with something held, put it down where the see-through copy shows |
 | Tab | move E to the next action |
-| Q, 1-9 | put it in the bag; take a bag slot into the hand |
+| Q, 1–9 | put it in the bag; take a bag slot into the hand |
 | Left mouse (hold, release) | wind up and throw; draw and loose the bow; swing a sword or a pick |
 | J | use the thing you hold or look at for what it is for |
 | Right mouse | lower, let down, pry with the pick, or turn a sword's edge |
@@ -831,6 +897,16 @@ On `/explore`: W A S D walk, drag or the arrow keys look, E takes or puts down,
 J uses a thing, Q bags it, G sweeps up loose pieces, X lets go, and the mouse
 wheel pulls the camera back.
 
+| Looking at it | Holding it |
+|---|---|
+| ![The Explorer looking at a glass block; the side panel says what it is made of, what it weighs, how big it is and how far off](docs/images/readme/explore-looking.jpg) | ![The glass block in the hands; a see-through copy on the ground marked "it fits here, on the ground", and the carrying bar at 20 of 80 kg](docs/images/readme/explore-holding.jpg) |
+
+*The Explorer. Looking at a block, the panel shows what the engine knows about
+it: glass, 20.0 kg, 200 × 200 × 200 mm, 2.1 m away. After **E** it is in your
+hands, a see-through copy shows where **E** will put it down (the engine has
+checked that it fits), and the carrying bar counts its 20 kg against the 80 kg
+limit.*
+
 ### Use the engine from a program
 
 ```c
@@ -840,22 +916,24 @@ wheel pulls the camera back.
 int main(void) {
     banjo_world *w = banjo_open(
         "{\"bodies\":["
-        " {\"name\":\"pane\",\"shape\":\"box\",\"material\":\"glass\","
-        "  \"dimensions_m\":[0.3,0.02,0.3],\"center_m\":[0,0.01,0]},"
-        " {\"name\":\"ball\",\"shape\":\"sphere\",\"material\":\"iron\","
+        " {\"name\":\"slab\",\"shape\":\"box\",\"material\":\"concrete\","
+        "  \"dimensions_m\":[1.0,0.2,1.0],\"center_m\":[0,-0.1,0],\"anchored\":true},"
+        " {\"name\":\"ball\",\"shape\":\"sphere\",\"material\":\"glass\","
         "  \"dimensions_m\":[0.1,0.1,0.1],\"center_m\":[0,10.0,0]}]}",
         0.02);                                    /* 20 mm cells */
     if (!w) { fprintf(stderr, "%s\n", banjo_last_error()); return 1; }
-    for (int i = 0; i < 600; ++i) banjo_advance(w, 1.0 / 120.0, 0.003);
+    for (int i = 0; i < 900; ++i) banjo_advance(w, 1.0 / 120.0, 0.003);
     printf("%d bodies now\n", banjo_body_count(w));  /* more than two if it broke */
     banjo_close(w);
     return 0;
 }
 ```
 
-The floor is at y = 0, so the pane lies on it and the ball falls about 10 m,
-arriving at 14 m/s. The pane breaks, and on Windows this prints `15 bodies
-now`. Dropped from 3 m instead, the pane holds and it prints 2.
+A 100 mm glass ball falls 10 m onto a concrete slab, arriving at 14 m/s, and
+breaks into 36 pieces — so this prints `37 bodies now`, the same three times
+running. Dropped from 3 m instead it arrives at 7.7 m/s, below glass's bar, and
+the program prints 2. That is the second row of the [materials
+table](#eight-materials-and-what-they-actually-do), reached from C.
 
 Build against an installed library (`cmake --install build/linux --prefix
 /somewhere`, then `cc drop.c -I/somewhere/include -L/somewhere/lib -lbanjo`), or
@@ -874,7 +952,8 @@ with World(scene, cell_size_m=0.02) as world:
 ```
 
 The binding finds the library through `BANJO_LIBRARY`, or in
-`build/integration/Release`, `build/Release`, `build` or `bin`. The full
+`build/integration/Release`, `build/Release`, `build` or `bin`. The material
+table earlier in this README was measured through exactly this path. The full
 reference is [docs/api/](docs/api/README.md).
 
 ### Give an AI model the tools
@@ -884,8 +963,8 @@ claude mcp add banjo -- python /path/to/banjo/mcp/banjo_mcp.py
 ```
 
 `mcp/banjo_mcp.py` has 89 tools for building and running worlds;
-`mcp/banjo_platform_mcp.py` adds the Workshop, material QA and physics trials,
-for 115. Both speak MCP over stdio, need the built library, and call no model
+`mcp/banjo_platform_mcp.py` adds the bench, material QA and physics trials, for
+115. Both speak MCP over stdio, need the built library, and call no model
 themselves. See [docs/api/mcp.md](docs/api/mcp.md).
 
 ### Host it
@@ -904,11 +983,11 @@ there.
 
 ```text
  a person in a browser                            an AI model or agent
- /world  /explore  Workshop  lab and QA pages     (MCP over stdio)
+ /world  /explore  the bench  lab and QA pages    (MCP over stdio)
           |  HTTP + JSON                                  |
           v                                               v
  playground/server.py  --- the room's chat --->  mcp/banjo_mcp.py        world tools
- one live world per server, rooms saved           mcp/banjo_platform_mcp.py  + Workshop
+ one live world per server, rooms saved           mcp/banjo_platform_mcp.py  + the bench
  to disk, the 1.1x realtime rule                          |
           |  JSON lines over stdin/stdout                 |  ctypes
           v                                               v
@@ -919,46 +998,40 @@ there.
 - **The engine** is C++23. `LiveWorld`
   ([`src/fastlattice/LiveWorld.cpp`](src/fastlattice/LiveWorld.cpp)) runs the
   world: Jolt for rigid motion and joints, the cell lattice for breaking and
-  denting, and the heat, water, ground and machine systems.
+  denting, and the heat, water, ground, machine and program systems.
 - **The C library** (`libbanjo`, [`include/banjo/banjo.h`](include/banjo/banjo.h))
   exposes the engine to any language that can call C. The Python binding
   ([`bindings/python/banjo.py`](bindings/python/banjo.py)) is plain ctypes.
-- **The server** ([`playground/server.py`](playground/server.py)) holds one
-  live world at a time. The world runs in its own process and is driven over
-  JSON lines, so a crash in the world does not take the server down. Rooms are
-  saved as they change and come back after a reload or a restart: moved,
-  broken, dented and cut things, joint angles, the ground, heat, and what you
-  carry. A saved world that cannot be restored whole is set aside, never
-  deleted.
-- **The pages** draw only what the engine reports; an object with cells is
-  drawn as its cells, so a broken thing looks broken. The page steps the world
-  against the real clock, about thirty times a second. With no page open, the
-  world waits.
-- **The chat and the MCP servers share one set of tools.** The room's chat
-  (OpenAI's `gpt-5-mini` by default) builds in its own copy of the room using
-  the MCP's functions, and the room is then reopened with everything the change
-  did not touch kept as it was. A declared structure, such as a staircase or a
-  ski jump, is measured before the chat may call it finished.
-- **The Workshop** designs one product at a time, part by part with declared
-  joints, and tests it on a bench of its own. A finished design can be placed
-  in a room as one single-material solid, as single-material parts on ideal
-  bearings, or as one exact body. The Explorer's cart was compiled from its
-  design into exact bodies on real pins
-  ([`playground/rigid_assembly.py`](playground/rigid_assembly.py)).
+- **The server** ([`playground/server.py`](playground/server.py)) holds one live
+  world at a time. The world runs in its own process, driven over JSON lines, so
+  a crash in the world does not take the server down. Rooms are saved as they
+  change and come back after a reload or a restart: moved, broken, dented and
+  cut things, joint angles, the ground, heat, what you carry, and where a
+  machine gave up. A saved world that cannot be restored whole is set aside,
+  never deleted.
+- **The pages** draw only what the engine reports. An object with cells is drawn
+  as its cells, so a broken thing looks broken. The page steps the world against
+  the real clock, about thirty times a second; with no page open, the world
+  waits.
+- **The chat, the machines' chats and the MCP servers share one set of tools.**
+  The room's chat builds in its own copy of the room and the room is then
+  reopened with everything the change did not touch kept as it was. A declared
+  structure — a staircase, a ski jump — is measured before the chat may call it
+  finished.
 
 ---
 
 ## Design rules
 
 1. **Physics decides; names never do.** No pre-cut pieces, no shatter
-   animations, no explosion impulses, and no rules like "iron + glass =
-   shatter". Material, shape, state and a declared law decide what happens. A
-   property the engine does not model is reported or refused, not faked.
-2. **Real time, or refused.** Nothing may take more than 1.1 times the
-   simulated time of the whole interaction, including settling. The server
-   refuses such a job before it starts.
-3. **Done means you can watch it in 3D.** A measurement or a passing test is
-   not finished work until it can be seen in the world.
+   animations, no explosion impulses, no rules like "iron + glass = shatter".
+   Material, shape, state and a declared law decide what happens. A property the
+   engine does not model is reported or refused, not faked.
+2. **Real time, or refused.** Nothing may take more than 1.1 times the simulated
+   time of the whole interaction, including settling. The server refuses such a
+   job before it starts.
+3. **Done means you can watch it in 3D.** A measurement or a passing test is not
+   finished work until it can be seen in the world.
 4. **Nothing resets.** A reload, a restart or a chat edit keeps everything that
    was not changed.
 5. **One world, built by asking.** The world's contents are built through the
@@ -968,217 +1041,132 @@ there.
    velocity.
 7. **Knowledge unlocks plans; physics decides results.** Progress teaches a
    player what they can make. It never makes the same object stronger.
-8. **Say what was measured.** Designed, implemented, experimental and
-   validated are kept apart, with numbers and their conditions. A green build
-   is not a validated material.
+8. **Say what was measured.** Designed, implemented, experimental and validated
+   are kept apart, with numbers and their conditions. A green build is not a
+   validated material.
 
 ---
 
-## To-do
+## What is not done
 
-Grouped by what it takes, roughly in priority order within each group. The
-project's own checklist of 30 player capabilities
+The project's own checklist of 30 player capabilities
 ([progression/physics-capabilities.json](progression/physics-capabilities.json))
-stands at 1 complete, 26 partial and 3 planned.
+stands at **1 complete, 26 partial and 3 planned**. In rough priority order:
 
-### 1. Get what is built into the world
+**Get what is built into the world.** The menu shows 2 of 25 rooms, so breaking
+under load, the gas piston, fine cells for cutting, the plates of every material
+and the whole watershed are reachable only by typing an address. `/explore`
+cannot throw, heat, dig, chat, use a bow, blade or pick, or work a gate or a
+machine, and it rebuilds its valley on every load, so nothing done there is
+kept. Freezing exists only in a separate voxel thermal simulation with no link
+to the world's heat. Circuits run in the engine but the room refuses them.
+Different cell sizes in one world are not built, and the scene format, scene
+builder and renderer all assume one size.
 
-- [ ] **Make `/explore` a full interface, or merge it into `/world`.** It
-  cannot throw, heat, dig, chat, use a bow, blade or pick, or work a gate or a
-  machine, and it does not animate the water. It rebuilds its valley on every
-  load, so nothing done there is kept.
-- [ ] **Put the test rooms' physics in the main world, or on the menu.** The
-  menu shows 2 of 21 rooms. Breaking under load, the gas piston, fine cells for
-  cutting, the plates of every material and the watershed can only be reached
-  by typing an address.
-- [ ] **Freezing in the world.** Ice melts in the world now; water does not
-  freeze, and the water in rivers and pools has no temperature of its own. The
-  separate voxel thermal simulation still has its own melting and freezing:
-  bring its freezing across, or retire it, so there is one thermal model.
-- [ ] **Circuits in the world.** They run in the engine and the standalone MCP
-  world, but the room refuses them until room edits can keep their state.
-- [ ] **Different cell sizes in one world.** The scene format, scene builder and
-  renderer all assume one size. Needed for Workshop detail, thin parts and
-  imported models.
-- [ ] **Choose the fracture solver**, then integrate or archive the rest:
-  algorithm 3, the implicit, modal, quasi-static and GPU solvers, the network
-  solver, the cohesive, tetrahedral and continuum references. Bring the GPU
-  backend to the world if it is kept. The failure law is settled: a room picks
-  one, and the energy-scaled law charges a crack the material's own fracture
-  energy ([what-a-break-costs.md](docs/what-a-break-costs.md)).
-- [ ] **Turn on the material properties that are switched off:** internal
-  damping and strength variation. Give oak its grain in the world's lattice.
-- [ ] **Joint strengths.** The mechanism for a joint weaker than its material is
-  built; the numbers are the owner's call.
-- [ ] **Exact bodies that break, heat and float.** They share rooms with
-  ground, water, joints and bodies of cells now, but they cannot break, dent or
-  heat, water does not hold them up, and a break that would need one inside the
-  lattice run is declined. A fixed group inside a product is one rigid
-  compound, so its joints cannot give way.
-- [ ] **Page controls for what only the chat or the protocol can do:** gas
-  vents, filling and cutting ground, the river's flow, heat-weakened fixings,
-  the rolling and material reports.
-- [x] **Something in the world that fills the rack.** Done for goods: a
-  stockpile marked as the Workshop's rack puts what lands on it onto the goods
-  rack, and `/world?scene=tests-mine` runs the whole chain -- a rover digs a
-  copper vein, a smelter makes copper of the ore, a drone hauls it to a mill,
-  the mill draws wire and 1.47 kg of it reaches the rack in 38 s of the world.
-  Still by hand for MATTER: no chopping or quarrying puts oak, iron or stone
-  back, so a design's materials are stocked on the bench as they always were.
-- [ ] **Take a made thing back apart.** A machine installs as separate bodies
-  that keep their joints, and the world can break it; but there is no intake
-  that carries one back into the Workshop, opens it as its components and
-  returns its material to the rack.
-- [ ] **Let a template say what you take hold of.** A machine has to name the
-  component you work it by, and bind each place you touch it, before the world
-  will take it. The templates declare neither, so both are set through the chat.
-- [ ] **Manufacturing and storage in the world page** rather than on
-  `/fabrication` alone.
-- [ ] **Show the lab's hidden experiments or remove them.** The server still
-  runs thermal, dynamic-material, continuum, material-state, thermal-frontier
-  and network experiments, but the lab page has no way to reach them.
+**Physics still to build.** Heat: freezing and boiling in the world, fires that
+go out, thermal expansion, smoke and airflow, heat into water and ground,
+mechanical work turning into heat. Water: waves, sediment, rain, wet soil, water
+putting out fire, containers and pouring. Ground: breaking rock, tool wear,
+rotational landslides. Machines: gears, motor heat, hinges with a strength,
+joints that fail by bending or prying, a bump sensor that feels a knock rather
+than a stall. Breaking: calibration against laboratory data, converged piece
+counts, a failure path for thin parts. Scale: a cell size per object, refining
+on demand, dormant regions, beyond 16,000 cells a room and 2,000 bodies.
+Handling: two hands, grip and use points.
 
-### 2. Physics still to build
+**Known defects.**
 
-- [ ] **Heat:** freezing and boiling in the world, fires that go out, thermal
-  expansion, smoke and airflow, heat into water and ground, mechanical work
-  (friction, impact, cutting, motors) turning into heat, gas pressure on
-  container walls.
-- [ ] **Water:** waves and wakes, sediment, rain and infiltration, wet soil,
-  water putting out fire, containers and pouring, coarse-to-fine regions as you
-  walk (watershed stages W4 onward).
-- [ ] **Ground:** breaking rock (mining), tool wear, rotational landslides.
-- [ ] **Machines:** gears, motor heat, hinges with a strength, joints that
-  fail by bending or prying, bearings rated along their axis; a bump sensor,
-  and bringing the cart and the rover into the main world.
-- [ ] **Breaking:** calibration against laboratory data, converged piece
-  counts, a failure path for thin parts, keeping a crack in a body that stays
-  whole.
-- [ ] **Scale:** a cell size per object, refining on demand, dormant regions,
-  scenery without cells, sparse storage; beyond 16,000 cells a room and 2,000
-  bodies.
-- [ ] **Handling:** two hands, grip and use points.
-
-### 3. Known defects
-
-- [ ] **Using "Manufacture parts" locks the main world.** Once starting stock is
-  set up for the world on `/fabrication?scene=world`, the server treats the
-  world as a funded room and refuses the chat, heating, grabbing, throwing,
-  sweeping and latch release. Because breaks cannot be answered there either, a
-  hard hit would stop the world's clock, and "Start the room again" no longer
-  resets it.
-- [ ] Bonds reach across a one-cell gap (`buildBonds`, `src/matter/Lattice.cpp`),
-  so two sides of a slot are joined through it.
-- [ ] A crack inside a body that stays whole heals on its next run. A fix is
+- **CI on `main` is red**, and has been since the `agent/fracture-truth` merge
+  on 26 September. Two tests in `tests/workshop_bench_engine_tests.py` fail —
+  both about a kettle holding water and heat. The C++ suites are not what is
+  failing; it is that one Python step. The nightly long-physics job is a
+  separate, older failure: it has failed every night since 14 September.
+- Using "Manufacture parts" locks the main world: once starting stock is set up
+  on `/fabrication?scene=world`, the server treats the world as a funded room
+  and refuses the chat, heating, grabbing, throwing, sweeping and latch release.
+- A pane that cannot bend breaks at some heights and not others. A
+  300 × 20 × 300 mm glass pane lying flat on the floor — one cell thick at
+  20 mm cells, so it has almost no bending stiffness — survives a 100 mm iron
+  ball dropped from 1, 2, 4, 5 and 10 m, and comes apart into two pieces from
+  3 m and 7 m. Whether a fully supported plate should break under that blow at
+  all is a fair question; that it breaks at two heights in the middle of the
+  range is not. (This was the README's own C example until 26 September, when
+  re-running it turned this up.)
+- Bonds reach across a one-cell gap (`buildBonds`, `src/matter/Lattice.cpp`), so
+  two sides of a slot are joined through it.
+- A crack inside a body that stays whole heals on its next run. A fix is
   uncommitted on `agent/shard-rest`, waiting for the owner.
-- [ ] The inventory's record of the hand can disagree with the engine after a
-  put-down (`/explore` believes the engine and says so).
-- [ ] A thing of several parts set down on a slope goes down as one upright
-  shape. Where its feet span more than the engine's 6 cm look-down it is
-  refused ("nothing under it to rest on"), and at that edge the preview
-  flickers between fits and does not fit.
-- [ ] Holding the cart counts only its 21 kg chassis against the 80 kg carrying
+- A thing of several parts set down on a slope goes down as one upright shape;
+  where its feet span more than the engine's 6 cm look-down it is refused.
+- Holding the cart counts only its 21 kg chassis against the 80 kg carrying
   limit; the bag counts all 43 kg.
-- [ ] Open issues [#17 to #21](https://github.com/lrspeiser/banjo/issues): a
-  curved skin sinks a part into the floor; a glass table skids and never
-  breaks; the stool, chair and shelf cannot be simulated at 40 mm; declared
-  joint weakening has no numbers; a loaded oak table chars through and never
-  gives.
-- [ ] Inertia is computed two ways that were never compared. A chat-built hoist
-  once stopped itself, and the chat once buried a ball in the ground; neither
-  was diagnosed.
-- [ ] `playground/rooms/world.json` was made by a script that is not in the
+- Open issues [#17–#21](https://github.com/lrspeiser/banjo/issues): a curved
+  skin sinks a part into the floor; a glass table skids and never breaks; the
+  stool, chair and shelf cannot be simulated at 40 mm; declared joint weakening
+  has no numbers; a loaded oak table chars through and never gives.
+- `playground/rooms/world.json` was made by a script that is not in the
   repository, so the main world cannot be rebuilt from source.
 
-### 4. Before others use the code
+**Before others use the code.** There is **no licence**, and without one nobody
+may legally use this — that is the first thing, along with a `NOTICE` for Jolt
+Physics (MIT), nlohmann/json (MIT), raylib (zlib) and three.js (MIT). Then: a
+green nightly run (the long-physics job has failed every night since
+14 September); one build folder per platform instead of fifteen scripts pointing
+at `build/win-joint-double`; docs that are current (`docs/` has 211 markdown
+files, most of them dated checkpoint notes, and several contradict the code); a
+release with tags and installable packages (the shared library is versioned
+4.0.0 while its ABI is 25); and CI on more than Ubuntu with GCC.
 
-- [ ] **A licence**, with a `NOTICE` for Jolt Physics (MIT), nlohmann/json
-  (MIT), raylib (zlib) and three.js (MIT), plus `CONTRIBUTING.md` and
-  `SECURITY.md`. The repository is public, and without a licence nobody may
-  legally use it.
-- [ ] **A green nightly run.** CI on `main` is green at the newest commit
-  (22 September). Of the eight runs since 19 September, seven passed and one
-  failed -- a browser journey that judged a machine stopped by the wall clock
-  rather than the room's, fixed the same day. The nightly long-physics job has
-  failed every night since 14 September.
-- [ ] **A first build that works.** Make every script default to one build
-  folder per platform (fifteen files point at `build/win-joint-double`), and
-  make the desktop lab optional so a headless Linux configure works.
-- [ ] **Docs that are current.** `docs/` has 202 files; 123 are dated
-  checkpoint notes and 139 were last changed between 4 and 8 September. Several
-  contradict the code (for example, `docs/building-on-banjo.md` says there are
-  no joints and no saving). Move the history out of the way, keep a few current
-  guides, document `/explore`, and remove the owner's local paths from
-  `docs/evidence`.
-- [ ] **Releases.** No tags or packages exist; the shared library is versioned
-  4.0.0 while its ABI is 25; the Python binding and MCP servers are not
-  installable; no minimum Python version is stated.
-- [ ] **More platforms.** CI runs Ubuntu with GCC only. Add Windows, and macOS
-  or say it is unsupported, and a test that builds a program against the
-  installed library.
+**Before hosting it for other people.** Accounts instead of one shared password.
+A world per person — one server runs one world for everyone, a second tab takes
+it over, and opening `/explore` replaces it. Chat cost controls: measured turns
+use 62,000 to 2.76 million input tokens with no per-person budget. Robustness: a
+world process that stops answering blocks the server, and a chat turn can hold
+the world for 420 s. And a real host — the copy on Render is on the free plan,
+so every deploy or idle spin-down deletes the rooms.
 
-### 5. Before hosting it for other people
+**Decisions waiting on the owner:** the licence; the hosting plan; whether
+`/explore` replaces `/world`; which fracture solvers to keep; joint-strength
+numbers; whether charred wood keeps a little strength.
 
-- [ ] **Accounts** instead of one shared password, with sessions that expire,
-  rate limits and an audit log.
-- [ ] **A world per person or group.** One server runs one world for everyone;
-  a second tab takes it over, and opening `/explore` replaces it.
-- [ ] **Chat cost controls.** Measured turns use 62,000 to 2.76 million input
-  tokens, with no per-person budget, and the model is fixed to OpenAI.
-- [ ] **Robustness.** A world process that stops answering blocks the server;
-  unexpected errors close the connection without a reply; a chat turn holds the
-  world for up to 420 s; logs and run folders are never cleaned up.
-- [ ] **A real host.** The hosted copy on Render is on the free plan (0.1 CPU,
-  512 MB, no disk): each deploy or idle spin-down deletes the rooms, and the
-  copy running there was deployed on 18 September, well behind `main`.
-  [docs/deploy.md](docs/deploy.md) sizes a real host at 8 cores, 16 GB and a
-  10 GB volume.
-
-### Decisions for the owner
-
-The licence; the hosting plan; whether `/explore` replaces `/world`; which
-fracture solvers to keep; joint-strength numbers; whether charred wood keeps a
-little strength; and the uncommitted fixes on `agent/shard-rest` and
-`agent/foresight-partner`.
-
-### In progress on branches
-
-- **`agent/journey-auto-placing`**: a stricter version of the browser
-  journeys' put-down, which requires the see-through copy to appear by itself.
+**In progress on branches:** `agent/throw-aim` (where a throw would land, drawn
+before you let go), `agent/room-surfaces` and `agent/room-looks` (how the room
+is lit and how things are drawn), `agent/journey-auto-placing` (a stricter
+put-down for the browser journeys).
 
 ---
 
 ## Documentation
 
 Most of `docs/` is a development log: a checkpoint note records one piece of
-work as it stood that day. Where a note disagrees with the code, the code is
-right. Start with these:
+work as it stood that day. **Where a note disagrees with the code, the code is
+right.** Start with these:
 
 | Topic | Read |
 |---|---|
+| What works and where you can reach it | [what-works-where.md](docs/what-works-where.md) |
 | The C API and materials | [docs/api/README.md](docs/api/README.md), [c-api.md](docs/api/c-api.md), [materials.md](docs/api/materials.md) |
 | The MCP tools | [docs/api/mcp.md](docs/api/mcp.md), [machine-networks.md](docs/api/machine-networks.md), [workshop.md](docs/api/workshop.md) |
 | The live world and why it works as it does | [a-world-that-keeps-running.md](docs/a-world-that-keeps-running.md) |
 | Heat, fire and strength | [thermal-mechanics.md](docs/thermal-mechanics.md), [thermochemistry.md](docs/thermochemistry.md) |
 | Water and ground | [terrain-and-water.md](docs/terrain-and-water.md), [watershed.md](docs/watershed.md), [ground-work.md](docs/ground-work.md) |
-| Machines | [machine-world.md](docs/machine-world.md), [machine-circuits.md](docs/machine-circuits.md) |
+| Machines, programs and goods | [machine-world.md](docs/machine-world.md), [machine-circuits.md](docs/machine-circuits.md) |
 | Cutting and handling | [cutting-model.md](docs/cutting-model.md), [interaction-profiles.md](docs/interaction-profiles.md), [placement-and-interaction-points.md](docs/placement-and-interaction-points.md) |
-| The Workshop and products | [workshop-mode.md](docs/workshop-mode.md), [product-framework.md](docs/product-framework.md) |
+| The bench and products | [workshop-mode.md](docs/workshop-mode.md), [workshop-deep-dive.md](docs/workshop-deep-dive.md), [product-framework.md](docs/product-framework.md) |
 | Building from language | [building-from-language.md](docs/building-from-language.md) |
 | Breaking: what it costs, and what is not calibrated | [what-a-break-costs.md](docs/what-a-break-costs.md), [criterion-energy-scaled-checkpoint.md](docs/criterion-energy-scaled-checkpoint.md), [glass-drop-benchmark.md](docs/glass-drop-benchmark.md) |
 | Every mechanic and its evidence | [mechanics-scorecard.md](docs/mechanics-scorecard.md) |
 | The pages and HTTP routes | [playground/README.md](playground/README.md) |
 | Hosting | [deploy.md](docs/deploy.md) |
 | The long-term plan | [project-master-plan.md](docs/project-master-plan.md), [roadmap.md](docs/roadmap.md) |
-| What is not done, as it stood on 16 September | [what-is-not-done.md](docs/what-is-not-done.md) |
 
-## Repository layout
+### Repository layout
 
 ```text
 include/banjo/banjo.h      the C API (ABI 25)
 src/
   fastlattice/             LiveWorld (the running world), the cell lattice, fracture
-                           admission, exact bodies
+                           admission, exact bodies, machine programs
   rigid/                   Jolt: rigid bodies, contacts, joints, the rope drum
   matter/  material/       cells cut from shapes; the material catalogue
   fracture/                bond failure, pieces, fragment geometry, statics
@@ -1192,8 +1180,8 @@ src/
   sim/ viewer/ app/ creator/ core/ persistence/
                            desktop apps, command-line tools, shared helpers
 bindings/python/           the Python binding
-mcp/                       the MCP servers, and the Workshop and product model
-playground/                the server, the pages and the rooms
+mcp/                       the MCP servers, and the bench and product model
+playground/                the server, the pages, the rooms, goods and routines
 tools/                     the world's engine process, builders, probes
 scripts/                   build guards, QA runners, benchmarks
 tests/                     C++ and Python tests, browser tests
@@ -1202,12 +1190,31 @@ docs/                      design notes, API reference, checkpoint log, evidence
 examples/                  a C example, the authoring client, physics trials
 ```
 
+### A lot of the code is research that did not become the world's path
+
+- **The older "network" solver** (`src/platform/NetworkWorld`): deformable cell
+  networks with per-object resolution and directional (grain) materials. Its
+  fracture does not converge.
+- **Fracture solvers tried for speed**: implicit Newton/GMRES, a modal basis, a
+  quasi-static solve (its static solver is reused for breaking under load), a
+  GPU (CUDA) lattice, and three algorithms, of which 1 and 2 were not adopted
+  and are not on `main`.
+- **Reference solvers**: cohesive interfaces, tetrahedral contact, a coupled
+  sphere-and-mesh contact reference, continuum pressure with J2 plasticity, and
+  orthotropic elasticity.
+- **The separate voxel thermal world**, with melting and freezing.
+- **Desktop applications**: the original ball lab (`banjo_lab`), the bowl lab,
+  the creator workshop and the starter game (raylib).
+
+Each needs a decision: bring it into the world, keep it as a reference test, or
+archive it.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) first. In short:
 
 - Check `git worktree list` and the open branches before starting; several
-  people and agents work on the repository at once.
+  people and agents work on this repository at once.
 - Compare any material claim across at least glass, oak and iron under the same
   conditions, and never loosen a tolerance to make a test pass.
 - Every source file must be built by a CMake target;
