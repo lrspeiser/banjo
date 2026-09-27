@@ -244,7 +244,15 @@ class InstalledIntoTheRoom(unittest.TestCase):
         print(f"\n    the Workshop's drone rose to {max(heights):.2f} m and holds {program['height_m']:.2f} m "
               f"(asked {program['hover_m']} m), {program['doing']}: {program['why']}")
         self.assertGreater(heights[-1], 1.0, "it took off")
-        self.assertLess(abs(program["height_m"] - program["hover_m"]), 0.35, "and holds its height")
+        # ON STATION, which is `landed_height_m + hover_m` and not `hover_m`:
+        # hover_m is asked ABOVE where the machine's centre stood when it was
+        # made, and height_m is that centre above the ground. Comparing the two
+        # directly measured how high the drone's centre sits, not whether it
+        # holds anything -- it passed at 0.32 with a solid rotor disc and failed
+        # at 0.36 when four blades replaced it, which moved the centre and
+        # changed nothing about the flying.
+        held = program["landed_height_m"] + program["hover_m"]
+        self.assertLess(abs(program["height_m"] - held), 0.35, "and holds its height")
         # Its routine knows its places, and stepped as the page steps the
         # room -- the brains before and after each step -- it flies to its dig
         # site, digs a load, carries it to its depot in the air and dumps it.

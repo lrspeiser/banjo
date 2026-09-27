@@ -787,6 +787,12 @@ struct LiveProgram {
     std::vector<unsigned> rotors;
     double hover_m{};
     double height_m{};            // its centre above the ground under it, as the last kept step left it
+    // Where its centre stood when it was made, which is what `hover_m` is
+    // measured ABOVE: the height loop holds `landed_height_m + hover_m`, so
+    // without this nothing outside the engine can tell whether a machine is
+    // on station or 300 mm off it. A test that compared height_m against
+    // hover_m alone was really measuring how high the thing's centre sits.
+    double landed_height_m{};
     // A "still" program's machine (docs/machine-world.md, "Raw materials into
     // finished goods"): a machine that goes nowhere -- a smelter, a mill --
     // with a store of its own and no wheels. It stands by, rests when its

@@ -1810,6 +1810,7 @@ struct LiveWorld::Impl {
                                                                              at.center_of_mass_world_m.z)
                                           : 0.0;
         p.said.height_m = at.center_of_mass_world_m.y - ground;
+        p.said.landed_height_m = p.landed_height_m;
         p.said.heading_deg = p.heading_rad * kDegPerRad;
         if (p.said.heading_deg < 0.0) p.said.heading_deg += 360.0;
         // How far what it goes to is, and which way off its nose: both across
