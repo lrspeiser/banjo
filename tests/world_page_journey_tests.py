@@ -1488,6 +1488,201 @@ class AChatChangeKeepsTheHoistUp(PageJourney):
         self.no_page_errors("after the chat's change")
 
 
+def kg_of(said: str) -> float:
+    """The kilograms behind what a slot reads: "12.4 kg", "860 g", "402 kg"."""
+    number = float(said.split()[0])
+    return number / 1000.0 if said.endswith(" g") else number
+
+
+class TheMineShowsWhatEachThingHolds(PageJourney):
+    """Every holder in a room, and what is in it, in the side view as it moves
+    (docs/machine-world.md, "Raw materials into finished goods").
+
+    The owner, 2026-09-26: "there are too many windows open, have it open on
+    the right under the chat. also have slots for anything that can hold
+    things and show the material being held it is so we can see it happen more
+    as it goes."
+
+    The tests-mine room is the whole chain: a rover with a hopper digs copper
+    ore out of a vein, docks at the smelter, the smelter makes copper of it, a
+    drone flies the copper to the mill, and the mill draws wire onto the
+    Workshop's rack. Its four machines open off.
+
+    This opens a machine's panel the way a person does -- the Room tab's own
+    Controls button -- and checks the panel is IN the side view under the
+    conversation rather than floating over the room; switches all four on from
+    it; and then watches the slots for a minute of the room's own time: the
+    vein going down, the rover's hopper filling with ore and emptying into the
+    smelter, and every heap along the chain taking what the one before it
+    gave, with a slot lighting up as each one moves.
+    """
+
+    MACHINES = ("rover", "smelter", "mill", "drone")
+    HOPPER = "Rover: its hopper"
+    VEIN = "Copper Vein"
+
+    def holds(self, which="holds-list"):
+        return self.js(f"banjoRoom.holds({json.dumps(which)})")
+
+    @staticmethod
+    def holder(shown, name):
+        return next((h for h in shown["holders"] if h["name"] == name), None)
+
+    def much(self, shown, name, what):
+        """What a holder's slot for a substance reads, in kilograms; 0.0 when
+        it has no slot for it."""
+        for slot in (self.holder(shown, name) or {}).get("slots") or []:
+            if slot["what"] == what:
+                return kg_of(slot["much"])
+        return 0.0
+
+    def click_where(self, selector):
+        """A button pressed with the mouse, found by what it is rather than by
+        an id: the Controls buttons are one per machine and have none. Scrolled
+        into the panel's view first -- the Room tab's list scrolls."""
+        where = self.js(
+            f"(() => {{ const e = document.querySelector({json.dumps(selector)}); if (!e) return null;"
+            f" e.scrollIntoView({{block: 'center'}}); const r = e.getBoundingClientRect();"
+            f" return [r.left + r.width / 2, r.top + r.height / 2]; }})()")
+        self.assertIsNotNone(where, f"nothing on the page matches {selector}")
+        x, y = where
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left",
+                                                        "clickCount": 1})
+            time.sleep(0.05)
+
+    def switch_on(self, machine):
+        self.click_where(f'#machine-list button[aria-label="Control {machine}"]')
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
+                        f"Controls did not open {machine}'s panel")
+        self.assertTrue(self.wait_for(f"document.getElementById('mp-name').textContent.toLowerCase() === "
+                                      f"{json.dumps(machine)}", 10),
+                        "the panel opened on "
+                        + repr(self.js("document.getElementById('mp-name').textContent")))
+        self.click_where("#mp-on")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.programs.some((p) => p.name === "
+                                      f"{json.dumps(machine)} && p.power === true)", 20),
+                        f"On did not reach {machine}: the panel said "
+                        + repr(self.js("document.getElementById('mp-ack').textContent")))
+
+    def test_the_chain_shows_the_ore_moving_from_holder_to_holder(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-mine"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-mine' && "
+                                      "banjoRoom.ready()", 300), "the mine did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && "
+                                      "(banjoRoom.world.machines.programs || []).length === 4", 60),
+                        f"the room's steps do not carry its four programs: {self.situation()}")
+        self.page.evaluate("banjoRoom.showTab('room'); true")
+
+        # -- every holder is on the page before anything has run ---------------
+        at_open = self.holds()
+        self.assertTrue(at_open["shown"], "the Room tab says nothing about what anything holds")
+        self.assertEqual([h["name"] for h in at_open["holders"]],
+                         ["Rover: its hopper", "Drone: its hopper", "Smelter Intake", "Smelter Output",
+                          "Mill Intake", "Workshop Rack", "Copper Vein"],
+                         "the room's holders are not all there, in the room's own order")
+        self.assertEqual([s["what"] for s in self.holder(at_open, "Smelter Intake")["slots"]], [None],
+                         "an empty heap does not say it is empty")
+        self.assertEqual(self.much(at_open, self.VEIN, "copper ore"), 400.0,
+                         "the vein does not say what is in the ground")
+        # The bar, for a holder that has a full: the browser writes back what
+        # the page set, tidied ("0.0%" comes back "0%"), so read the number.
+        full = lambda name: float(self.holder(at_open, name)["full"].rstrip("%"))
+        self.assertEqual(full(self.HOPPER), 0.0, "an empty hopper's bar is not empty")
+        self.assertEqual(full(self.VEIN), 100.0, "an untouched vein's bar is not full")
+        self.assertIsNone(self.holder(at_open, "Smelter Intake")["full"],
+                          "a heap has no capacity, so it must have no bar")
+
+        # -- the panel is in the side view, under the conversation -------------
+        self.switch_on("rover")
+        self.assertEqual(self.js("document.getElementById('machine-panel').parentElement.id"), "panel",
+                         "the machine panel is not in the side view")
+        self.assertTrue(self.js("document.body.classList.contains('machine-open')"))
+        where = self.js("(() => { const p = document.getElementById('machine-panel').getBoundingClientRect(),"
+                        " t = document.getElementById('talk').getBoundingClientRect(),"
+                        " d = document.getElementById('details').getBoundingClientRect();"
+                        " return {left: p.left, width: p.width, under_chat: p.top >= t.bottom - 1,"
+                        " over_details: p.bottom <= d.top + 1, inner: innerWidth}; })()")
+        self.assertTrue(where["under_chat"], f"the panel is not under the conversation: {where}")
+        self.assertTrue(where["over_details"], f"the panel is not above what you look at: {where}")
+        self.assertGreater(where["left"], where["inner"] - 400,
+                           f"the panel is not in the right-hand column: {where}")
+        self.assertGreater(where["width"], 100, f"the panel has no room: {where}")
+        # And it says what THIS machine holds: its hopper, and the heap behind
+        # each of its mouths.
+        mine = self.holds("mp-holds-list")
+        self.assertTrue(mine["shown"], "the machine's panel says nothing about what it holds")
+        self.assertEqual([h["name"] for h in mine["holders"]], ["Rover: its hopper"],
+                         "the rover's panel does not show its hopper")
+        self.assertIn("Rover Store", mine["holders"][0]["of"],
+                      f"the hopper's card does not say which mouth it is behind: {mine['holders'][0]['of']}")
+
+        for machine in self.MACHINES[1:]:
+            self.page.evaluate("banjoRoom.showTab('room'); true")
+            self.switch_on(machine)
+            if machine == "smelter":
+                # A machine with two mouths shows the heap behind each, and
+                # which way the goods go through it.
+                two = self.holds("mp-holds-list")["holders"]
+                self.assertEqual([h["name"] for h in two],
+                                 ["Smelter Intake: smelter intake", "Smelter Outlet: smelter output"],
+                                 "the smelter's panel does not show the heap behind each of its mouths")
+                self.assertTrue(two[0]["of"].startswith("goods in"), two[0]["of"])
+                self.assertTrue(two[1]["of"].startswith("goods out"), two[1]["of"])
+
+        # -- watch the material move -------------------------------------------
+        began = self.js("banjoRoom.status().time_s")
+        most = {}          # holder, substance -> the most it was ever seen holding
+        lit = {}           # holder, substance -> the ways it was seen lighting up
+        vein = [self.much(at_open, self.VEIN, "copper ore")]
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < 90.0:
+            shown = self.holds()
+            for holder in shown["holders"]:
+                for slot in holder["slots"]:
+                    if slot["what"] is None:
+                        continue
+                    key = (holder["name"], slot["what"])
+                    most[key] = max(most.get(key, 0.0), kg_of(slot["much"]))
+                    if slot["moved"]:
+                        lit.setdefault(key, set()).add(slot["moved"])
+            vein.append(self.much(shown, self.VEIN, "copper ore"))
+            if self.much(shown, "Workshop Rack", "copper wire") > 0.0:
+                break
+            time.sleep(0.25)
+        ran = self.js("banjoRoom.status().time_s") - began
+        print(f"\n   in {ran:.0f} s of the mine: "
+              + ", ".join(f"{name} held {kg:g} kg of {what}" for (name, what), kg in sorted(most.items()))
+              + f"; the vein went {vein[0]:g} -> {vein[-1]:g} kg; slots lit: "
+              + ", ".join(f"{name}/{what} {'+'.join(sorted(ways))}" for (name, what), ways in sorted(lit.items())),
+              flush=True)
+
+        # The vein emptied into the rover, the rover emptied into the smelter,
+        # and what the smelter made went on down the chain.
+        self.assertLess(vein[-1], vein[0], "nothing came out of the ground")
+        self.assertGreater(most.get((self.HOPPER, "copper ore"), 0.0), 1.0, "the rover's hopper never held ore")
+        self.assertGreater(most.get((self.HOPPER, "sand and soil"), 0.0), 1.0,
+                           "the rover's hopper never held the spoil it digs with the ore")
+        self.assertGreater(most.get(("Smelter Intake", "copper ore"), 0.0), 1.0,
+                           "the ore never reached the smelter's heap")
+        self.assertGreater(most.get(("Smelter Output", "copper"), 0.0), 0.0, "the smelter never made copper")
+        self.assertGreater(most.get(("Workshop Rack", "copper wire"), 0.0), 0.0,
+                           "no wire ever reached the Workshop's rack")
+        # A slot that moved lights up: this is what makes the chain watchable.
+        self.assertIn("up", lit.get((self.HOPPER, "copper ore"), set()),
+                      f"the hopper's slot never lit as it filled: {sorted(lit)}")
+        self.assertTrue(any("down" in ways for ways in lit.values()),
+                        f"nothing ever lit as it emptied: {sorted(lit)}")
+        self.no_page_errors("after the mine ran")
+
+        # Closed, the panel goes and the column has its floor back.
+        self.click("mp-close")
+        self.assertTrue(self.wait_for("document.getElementById('machine-panel').hidden && "
+                                      "!document.body.classList.contains('machine-open')", 10),
+                        "closing the panel left it open")
+
+
 # Workshop controls share the existing required Chrome/engine CI gate.
 from workshop_browser_tests import WorkshopBrowserRegression  # noqa: E402,F401
 

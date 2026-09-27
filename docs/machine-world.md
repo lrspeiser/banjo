@@ -306,6 +306,17 @@ E on a machine opens its panel; E still picks up, places and uses ordinary
 things. Working a machine by hand becomes an advanced choice. The buttons are
 real buttons, with focus and pressed and disabled states.
 
+**Where the panel is (2026-09-26).** In the side view, under the conversation,
+in the same column as everything else the room says. It floated over the room
+at the bottom left until the owner said: "there are too many windows open, have
+it open on the right under the chat." Nothing it does changed in the move; what
+changed is that it no longer covers the machine it is about, and there is one
+place to look. The column then has four things stacked in it instead of three,
+so the panel takes what it needs up to a little under half the column and does
+not shrink, and the conversation, the tabs and what-you-are-looking-at give way
+around it. Measured before that rule was right: in a 960x600 window the panel
+came out 84 px tall, with its own On button below its own fold.
+
 **Increments.**
 1. Control ownership and commands: an action lets go only of what it took hold
    of (a drive pressed with a ball in the hand dropped it); machines and motors
@@ -1706,6 +1717,70 @@ smelter's outlet port, which it cannot reach -- it hovers 1.8 m up and the
 outlet is 0.4 m off the ground, four times the dock apart, so it still takes
 off the heap; a dock that a person can make by hand; a port drawn on the
 Workshop bench, so a machine built there declares none.
+
+## What everything holds, in slots
+
+The owner, 2026-09-26: "also have slots for anything that can hold things and
+show the material being held it is so we can see it happen more as it goes."
+
+A room that mines has four kinds of thing that hold material, and three of them
+could not be seen at all. The person's hands, bag and carried sand and soil
+were in the Bag tab. A machine's hopper was six words at the end of its routine
+line, "hopper 12 of 40 kg". A heap on the ground was a number in the room's
+spec that **never reached the page**: nothing drew it and nothing said it, so
+the ore a rover tipped into the smelter simply vanished as far as anybody
+watching could tell. Ore still in the ground was the same.
+
+**The room's account now travels with its steps.** `Goods.holders()` is every
+heap with what it holds by substance, and every deposit with what the ledger
+says is still down there. `Brains.settle` sends it with the room when it opens,
+and `Brains.attach` sends it with a step **when it has changed** -- a heap sits
+still, and the account moves only when something is dug, dumped, taken or made.
+It is a separate report from the ports' own `holds_kg`, which says what is
+behind one mouth: a heap with no mouth on it -- a spoil heap, a heap a person
+made with a spade -- is a holder too.
+
+**They are all drawn the same way**, because the only difference between them
+is where they are: a name, and one small square per substance with that
+substance's mass. A holder with a capacity -- a hopper, a deposit's reserve --
+gets a bar as well, so how full it is reads without arithmetic. The Room tab
+lists every holder in the room, in the room's own order, never sorted by how
+much is in them: a row that jumps up the list as it fills is a row you cannot
+watch. A machine's panel lists that machine's own -- its hopper, and the heap
+behind each of its mouths with which way the goods go and whether it is docked.
+
+**A slot that moved since the last step lights for about a second**, green for
+more in it and amber for less. That is what makes a chain legible while it runs
+rather than after it. A card drawn for the first time lights nothing, because
+at a room's open nothing has moved; after that a substance appearing where
+there was none is a move like any other and lights green, and one leaving stays
+at nothing while its light is on, so the last kilogram going is seen.
+
+**Measured in the page** (`tests/world_page_journey_tests.py`,
+`TheMineShowsWhatEachThingHolds`, on the real engine in headless Chrome). The
+tests-mine room opened with all seven of its holders listed and all four heaps
+saying "empty", the vein's bar full at 400 kg and the rover's hopper at 0 of
+40 kg. Its four machines were switched on from the panel in the side view, one
+at a time, through the Room tab's own Controls button. In 27 s of the room's
+time: the vein went 400 kg to 388 kg, the rover's hopper held 12.0 kg of copper
+ore and 28.0 kg of sand and soil, the smelter's intake heap took 7.0 kg of
+ore, its output heap 1.5 kg of copper, the drone's hopper carried that 1.5 kg,
+and 1.5 kg of copper wire reached the Workshop's rack. Every one of those slots
+was seen lit as it moved.
+
+**What is NOT modelled.** A slot is an account, not a picture of a pile.
+Nothing is drawn on the ground where a heap is; a heap has no shape, no angle
+of repose and no volume, two substances in one heap neither mix nor separate,
+and a heap cannot be full. A deposit's mass is what the ledger says is left,
+not a measurement of the ground. The goods ledger and the ground's own sand and
+soil are two accounts, not one -- ore is the share of a scoop that leaves the
+ground for good -- so what a person carries stays in the Bag tab and is not
+mixed into this strip. The colours are tints picked from a substance's NAME so
+that two slots can be told apart; nothing measures what colour copper ore is,
+and a substance named after a material the room draws with borrows that
+material's colour instead. The Workshop's own two racks are unchanged: they are
+a database table shown in the Workshop's Inventory tab, and the world page sees
+the rack as the room's `rack` stockpile filling.
 
 ## After the hoist
 

@@ -1271,6 +1271,7 @@ function followPorts(ports) {
   if (ports === undefined) return;
   world.ports = Array.isArray(ports) ? ports : [];
   dressPorts();
+  showMachineHolds();
 }
 
 // What a machine's controller was told, in a person's words.
@@ -1474,6 +1475,7 @@ function openMachinePanel(control) {
   machinePanel.said = "";
   machinePanel.stale = false;
   $("machine-panel").hidden = false;
+  document.body.classList.add("machine-open");
   // The mouse is the person's again, to press the panel's buttons; a click in
   // the room takes it back to looking round.
   if (document.pointerLockElement) document.exitPointerLock?.();
@@ -1486,6 +1488,8 @@ function closeMachinePanel() {
   machinePanel.id = null;
   machinePanel.name = "";
   $("machine-panel").hidden = true;
+  document.body.classList.remove("machine-open");
+  showMachineHolds();
 }
 
 function mergeControl(control) {
@@ -1600,6 +1604,7 @@ function showMachinePanel() {
     /stalled|too weak|flat|held back|hand|gone|coasts|water/.test(c.condition || ""));
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
+  showMachineHolds();
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
 }
 
@@ -1667,6 +1672,7 @@ function showProgramPanel(p) {
   $("mp-condition").classList.toggle("attention",
     p.power && /water|steeper|progress|gone|battery is low/.test(p.why || ""));
   showBrain(p);
+  showMachineHolds();
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
@@ -1708,8 +1714,10 @@ function showBrain(p) {
 function showRoutine(r) {
   const line = $("mp-routine");
   if (!r || !r.of) { line.hidden = true; return; }
-  const load = r.load ? ` · hopper ${Math.round(r.load.kg)} of ${Math.round(r.load.capacity_kg)} kg` +
-    (r.load.trips ? `, ${r.load.trips} load${r.load.trips === 1 ? "" : "s"} delivered (${Math.round(r.load.delivered_kg)} kg)` : "") : "";
+  // What is IN the hopper is a slot of its own above this line now, so the
+  // line says only what the slot cannot: how many loads have gone.
+  const load = r.load && r.load.trips
+    ? ` · ${r.load.trips} load${r.load.trips === 1 ? "" : "s"} delivered (${Math.round(r.load.delivered_kg)} kg)` : "";
   const paused = r.paused_by ? ` · waiting: ${r.paused_by} has it` : "";
   const note = r.notes && r.notes.length ? ` · ${r.notes[r.notes.length - 1]}` : "";
   const on = r.on ? ` · on ${r.on}: ${r.doing}` : "";
@@ -2063,6 +2071,299 @@ function dressPorts() {
     mark.cone.geometry.dispose();
     portMarks.delete(name);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Slots: what everything that can hold something is holding
+// ---------------------------------------------------------------------------
+//
+// The owner, 2026-09-26: "also have slots for anything that can hold things and
+// show the material being held it is so we can see it happen more as it goes."
+//
+// Four kinds of thing in a room hold material, and only the first of them could
+// be seen:
+//
+//   * the person -- their hands, their bag, and the sand and soil they carry,
+//     all in the Bag tab, which is left as it is: what a person carries is the
+//     GROUND's account (the spade's cubic metres), and mixing it into the same
+//     strip as the goods would say the two ledgers were one;
+//   * a machine's hopper (machine_routine.Routine), which was six words at the
+//     end of the routine's one line: "hopper 12 of 40 kg";
+//   * a heap on the ground (machine_goods.Goods). This reached the page for the
+//     first time with this work: a stockpile was a number in the room's spec,
+//     and nothing on the page said it or drew it, so the ore the rover tipped
+//     into the smelter simply vanished as far as anybody watching could tell;
+//   * the ore still in the ground -- a deposit -- likewise.
+//
+// The last three are drawn the same way, because they are the same thing: a
+// name, and one slot per substance in it with that substance's mass. A holder
+// that has a known capacity -- a hopper, a deposit's reserve -- gets the bar
+// too, so how full it is reads without arithmetic.
+//
+// A slot whose mass moved since the last step lights for a moment, green for
+// more and amber for less. That is what makes a chain legible while it runs
+// rather than after it: the ore leaves the rover's hopper amber and arrives in
+// the smelter's intake green, in the same second, and a person watching can
+// see WHERE the stuff went instead of only that a number changed.
+//
+// WHAT IS NOT MODELLED. A slot is an account, not a picture of a pile: nothing
+// is drawn on the ground where a heap is, a heap has no shape, no angle of
+// repose and no volume, two substances in one heap neither mix nor separate,
+// and a heap cannot be full. A deposit's mass is what the room's ledger says is
+// still down there, not a measurement of the ground. The colours are tints
+// picked from the substance's NAME, so that two slots can be told apart at a
+// glance; nothing anywhere measures what colour copper ore is. Where a
+// substance is called after one of the materials the room actually draws with,
+// that material's own colour is used instead, so iron in a heap is the grey
+// that iron is in the room.
+
+// The room's heaps and the ore left in its ground (rover_brain.Brains.attach),
+// with the room when it opens and with a step whenever any of it has moved.
+// Nothing said means this reply carried none, which is not the same as a room
+// with no heaps -- that is said as empty lists, when the room opens.
+world.goods = null;
+function followGoods(goods) {
+  if (goods === undefined) return;
+  world.goods = goods || null;
+  drawHolds();
+}
+
+const SUBSTANCE_TINT = new Map();
+function substanceColour(what) {
+  const drawn = MATERIAL_LOOK[what];
+  if (drawn) return `#${drawn.color.toString(16).padStart(6, "0")}`;
+  let tint = SUBSTANCE_TINT.get(what);
+  if (tint === undefined) {
+    let hash = 0;
+    for (let i = 0; i < what.length; i += 1) hash = (hash * 31 + what.charCodeAt(i)) >>> 0;
+    tint = `hsl(${hash % 360} 46% 60%)`;
+    SUBSTANCE_TINT.set(what, tint);
+  }
+  return tint;
+}
+
+// A mass in a slot. Three figures at most: a slot is read at a glance, and
+// "0.28 kg" beside "402.00 kg" is two different questions.
+const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
+  : kg >= 1 ? `${kg.toFixed(1)} kg` : `${Math.round(kg * 1000)} g`);
+
+// Everything in the room that holds something, in an order that does not move:
+// each machine's hopper, then the room's heaps as the room declares them, then
+// the ore in its ground. Never sorted by how much is in them -- a row that
+// jumps up the list as it fills is a row you cannot watch.
+function holdersNow() {
+  const holders = [];
+  for (const brain of world.brains.values()) {
+    const load = (brain.routine && brain.routine.load) || null;
+    if (!load || !(load.capacity_kg > 0)) continue;
+    const slots = Object.entries(load.goods_kg || {}).map(([what, kg]) => ({ what, kg: Number(kg) || 0 }));
+    // What is in the hopper besides the named substances: the spade's own
+    // sand and soil, which is most of a scoop. `kg` is the whole load.
+    const spoil = (Number(load.kg) || 0) - slots.reduce((sum, s) => sum + s.kg, 0);
+    if (spoil > 0.001) slots.push({ what: "sand and soil", kg: spoil });
+    holders.push({ key: `hopper ${brain.name}`, machine: brain.name, name: `${titled(brain.name)}: its hopper`,
+                   kind: "hopper", slots, kg: Number(load.kg) || 0, capacity_kg: Number(load.capacity_kg) || 0 });
+  }
+  const goods = world.goods || {};
+  for (const pile of goods.stockpiles || []) {
+    const slots = Object.entries(pile.holds_kg || {}).map(([what, kg]) => ({ what, kg: Number(kg) || 0 }));
+    holders.push({ key: `pile ${pile.name}`, pile: pile.name, name: titled(pile.name),
+                   kind: pile.rack ? "the Workshop's rack" : "heap", slots,
+                   kg: slots.reduce((sum, s) => sum + s.kg, 0), capacity_kg: 0 });
+  }
+  for (const seam of goods.deposits || []) {
+    const left = Number(seam.left_kg) || 0;
+    holders.push({ key: `ore ${seam.name}`, name: titled(seam.name), kind: "in the ground",
+                   slots: left > 0.0005 ? [{ what: seam.substance, kg: left }] : [],
+                   kg: left, capacity_kg: Number(seam.of_kg) || 0 });
+  }
+  return holders;
+}
+
+// How long a slot stays lit after its mass moved. Long enough to catch out of
+// the corner of the eye while the room runs, short enough that a busy chain
+// does not end up with every slot lit at once.
+const SLOT_LIT_MS = 1200;
+// One card per holder per list, made once and then only written to: the whole
+// list was rebuilt from nothing on every step in an earlier draft, which threw
+// away the "it just moved" light with the element it was on.
+const holdCards = new Map();     // "<list id> <holder key>" -> the card
+
+function holdCard(list, holder) {
+  const key = `${list.id} ${holder.key}`;
+  let card = holdCards.get(key);
+  if (!card) {
+    const li = document.createElement("li");
+    li.className = "hold";
+    const head = document.createElement("p");
+    head.className = "hold-head";
+    const name = document.createElement("span");
+    name.className = "hold-name";
+    const of = document.createElement("span");
+    of.className = "hold-of";
+    head.append(name, of);
+    const bar = document.createElement("span");
+    bar.className = "meter-bar";
+    bar.hidden = true;
+    const fill = document.createElement("i");
+    bar.append(fill);
+    const slots = document.createElement("ul");
+    slots.className = "hold-slots";
+    li.append(head, bar, slots);
+    card = { li, name, of, bar, fill, slots, rows: new Map(), drawn: false };
+    holdCards.set(key, card);
+  }
+  return card;
+}
+
+// Nothing else redraws the slots once the room has gone quiet: the brains and
+// the goods reach the page only when they have changed, so a slot emptied and
+// kept while it was lit would stay at nothing until the next thing moved --
+// which was measured lingering for eight seconds in the mine. One redraw is
+// asked for after the last light goes out, however many went out together.
+let holdsSettle = 0;
+
+function litSlot(row, way) {
+  if (row.lit) clearTimeout(row.lit);
+  row.li.classList.remove("up", "down");
+  row.li.classList.add(way);
+  row.moved = way;
+  row.lit = setTimeout(() => {
+    row.lit = 0;
+    row.moved = null;
+    row.li.classList.remove("up", "down");
+    clearTimeout(holdsSettle);
+    holdsSettle = setTimeout(drawHolds, 30);
+  }, SLOT_LIT_MS);
+}
+
+function fillHoldCard(card, holder) {
+  if (card.name.textContent !== holder.name) card.name.textContent = holder.name;
+  const of = holder.capacity_kg > 0
+    ? `${holder.kind} · ${heldSaid(holder.kg)} of ${heldSaid(holder.capacity_kg)}`
+    : holder.kind;
+  if (card.of.textContent !== of) card.of.textContent = of;
+  const full = holder.capacity_kg > 0 ? Math.max(0, Math.min(1, holder.kg / holder.capacity_kg)) : 0;
+  card.bar.hidden = !(holder.capacity_kg > 0);
+  const width = `${(full * 100).toFixed(1)}%`;
+  if (card.fill.style.width !== width) card.fill.style.width = width;
+  // A card drawn for the first time lights nothing: at a room's open, and
+  // when a machine's panel is opened again, every slot in it is new and none
+  // of it moved. After that a slot that was not there IS a move -- the first
+  // ore into an empty heap is the whole thing worth watching -- so it lights
+  // like any other.
+  const settled = card.drawn;
+  card.drawn = true;
+  const shown = [];
+  for (const slot of holder.slots) {
+    let row = card.rows.get(slot.what);
+    if (!row) {
+      const li = document.createElement("li");
+      li.className = "hold-slot";
+      const swatch = document.createElement("i");
+      swatch.style.setProperty("--c", substanceColour(slot.what));
+      const what = document.createElement("span");
+      what.textContent = slot.what;
+      const much = document.createElement("b");
+      li.append(swatch, what, much);
+      row = { li, much, was: null, lit: 0, moved: null, gone: false };
+      card.rows.set(slot.what, row);
+      if (settled && slot.kg > 0.0005) litSlot(row, "up");
+    }
+    row.gone = false;
+    const said = heldSaid(slot.kg);
+    if (row.much.textContent !== said) row.much.textContent = said;
+    if (row.was !== null && Math.abs(slot.kg - row.was) > 0.0005) litSlot(row, slot.kg > row.was ? "up" : "down");
+    row.was = slot.kg;
+    shown.push(row.li);
+  }
+  // A substance that has left: it stays at nothing while its light is on --
+  // the last kilogram going is exactly the moment worth seeing -- and goes on
+  // the render after the light does.
+  for (const [what, row] of card.rows) {
+    if (holder.slots.some((s) => s.what === what)) continue;
+    if (!row.gone) {
+      row.gone = true;
+      if (row.was > 0.0005) litSlot(row, "down");
+      row.was = 0;
+      row.much.textContent = heldSaid(0);
+    }
+    if (row.lit) shown.push(row.li);
+    else card.rows.delete(what);
+  }
+  if (!shown.length) {
+    if (!card.empty) {
+      card.empty = document.createElement("li");
+      card.empty.className = "hold-slot none";
+      card.empty.textContent = "empty";
+    }
+    shown.push(card.empty);
+  }
+  if (card.slots.children.length !== shown.length || shown.some((li, i) => card.slots.children[i] !== li))
+    card.slots.replaceChildren(...shown);
+  return card.li;
+}
+
+// One list of holders drawn into one <ul>: the Room tab's, which is every
+// holder in the room, and the machine panel's, which is the open machine's.
+function drawHoldList(list, holders) {
+  const rows = holders.map((holder) => fillHoldCard(holdCard(list, holder), holder));
+  if (list.children.length !== rows.length || rows.some((li, i) => list.children[i] !== li))
+    list.replaceChildren(...rows);
+  const keep = new Set(holders.map((h) => `${list.id} ${h.key}`));
+  for (const key of holdCards.keys())
+    if (key.startsWith(`${list.id} `) && !keep.has(key)) holdCards.delete(key);
+  return rows.length;
+}
+
+const HOLDS_NOTE = "A slot is the room's account of what is in a holder, not a picture of a pile:"
+  + " a heap has no shape and no volume, and nothing is drawn on the ground where one is."
+  + " What you carry yourself is in the Bag.";
+
+function drawHolds() {
+  const all = holdersNow();
+  const many = drawHoldList($("holds-list"), all);
+  $("holds").hidden = many === 0;
+  if ($("holds-note").textContent !== HOLDS_NOTE) $("holds-note").textContent = HOLDS_NOTE;
+  showMachineHolds(all);
+}
+
+// What the machine whose panel is open holds: its own hopper, and the heap
+// behind each of its mouths, which is where its goods come from and go to. A
+// mouth's line says which way and whether it is docked, so the moment the
+// rover's store and the smelter's intake pair up is on the panel of either.
+function machineHolders(c, all) {
+  if (!c || machinePanel.of !== "program") return [];
+  const mine = [];
+  const hopper = all.find((h) => h.key === `hopper ${c.name}`);
+  if (hopper) mine.push(hopper);
+  const atThe = (port) => `${port.flow === "out" ? "goods out" : "goods in"} · `
+    + (port.docked ? `docked to ${port.docked}`
+       : port.near ? "a mouth near it, not docked" : "nothing alongside");
+  for (const port of world.ports || []) {
+    if (port.machine !== c.name) continue;
+    // A mouth onto the machine's OWN hopper -- the rover's store -- is not a
+    // second holder: it is the same hopper with a mouth on it, so the dock
+    // goes on the hopper's own card rather than making a card that would
+    // show the same kilograms twice.
+    if (port.holds === "hopper") {
+      if (hopper) hopper.kind = `${titled(port.name)} · ${atThe(port)}`;
+      continue;
+    }
+    const behind = all.find((h) => h.key === `pile ${port.holds}`);
+    if (!behind) continue;
+    mine.push({ ...behind, key: `${behind.key} at ${port.name}`,
+                name: `${titled(port.name)}: ${behind.name.toLowerCase()}`,
+                kind: atThe(port) });
+  }
+  return mine;
+}
+
+function showMachineHolds(all = holdersNow()) {
+  const list = $("mp-holds-list");
+  const mine = machinePanel.id == null ? [] : machineHolders(shownControl(), all);
+  const many = drawHoldList(list, mine);
+  $("mp-holds").hidden = many === 0;
 }
 
 function drawJoints(pins) {
@@ -5797,6 +6098,7 @@ async function tick() {
     previewShot();
     followMachines(state.machines);
     followBrains(state.brains);
+    followGoods(state.goods);
     followPorts(state.ports);
     // A sun with a day moves with every step the engine takes.
     if (state.sun) lightFromSun(state.sun);
@@ -6841,6 +7143,8 @@ async function open({ again = false } = {}) {
     followMachines(data.machines);
   world.brains.clear();
   followBrains(data.brains);
+    // A room opening has no "unchanged": no goods said means this room has none.
+    followGoods(data.goods || { stockpiles: [], deposits: [] });
     followPorts(data.ports || []);
     lightFromSun(data.sun);
     drawRopes();
@@ -7002,6 +7306,22 @@ window.banjoRoom = {
   // The pins and grooves drawn right now: none may be left over from a room
   // that is no longer open.
   pinsDrawn: () => pinGroup.children.length,
+  // Every holder's slots as they are DRAWN: the Room tab's list, and the
+  // open machine's own. `moved` is up or down while a slot is lit.
+  holds: (which = "holds-list") => ({
+    shown: !$(which === "holds-list" ? "holds" : "mp-holds").hidden,
+    holders: [...$(which).children].map((li) => ({
+      name: li.querySelector(".hold-name").textContent,
+      of: li.querySelector(".hold-of").textContent,
+      full: li.querySelector(".meter-bar").hidden ? null : li.querySelector(".meter-bar i").style.width,
+      slots: [...li.querySelectorAll(".hold-slot")].map((slot) => ({
+        what: slot.classList.contains("none") ? null : slot.querySelector("span").textContent,
+        much: slot.classList.contains("none") ? null : slot.querySelector("b").textContent,
+        tint: slot.classList.contains("none") ? null : slot.querySelector("i").style.getPropertyValue("--c"),
+        moved: slot.classList.contains("up") ? "up" : slot.classList.contains("down") ? "down" : null,
+      })),
+    })),
+  }),
   // The workbench: what is on it, and where its clock is (workbench.js).
   workbench: () => workbench.state(),
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],

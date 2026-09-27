@@ -256,6 +256,32 @@ class Goods:
                         for r in self.recipes],
         }
 
+    # ---- for the page ------------------------------------------------------------
+    def holders(self) -> dict[str, Any]:
+        """Every heap in the room and every patch of ore still in its ground,
+        with what each holds by substance, for the page's slots.
+
+        Not `reading()`: that answers "what is near ME" for a machine's senses
+        and carries the recipes with it. This is the room's own account, with
+        no point of view and nothing in it that does not change as material
+        moves, because it goes out with the steps. A deposit's `left_kg` is
+        what the ledger says is still down there (reserve less what has been
+        taken); nothing measures the ground itself, and a deposit has no heap
+        to walk up to -- it is ore that comes up with the soil a scoop lifts.
+        """
+        return {
+            "stockpiles": [{"name": s.get("name"), "at_m": _xz(s["at_m"]),
+                            "holds_kg": {k: round(float(v), 3) for k, v in (s.get("holds") or {}).items()
+                                         if float(v) > 0.0},
+                            "rack": bool(s.get("rack"))}
+                           for s in self.stockpiles],
+            "deposits": [{"name": d.get("name"), "at_m": _xz(d["at_m"]),
+                          "substance": d.get("substance"),
+                          "left_kg": round(self.reserve_kg(d), 3),
+                          "of_kg": round(float(d.get("reserve_kg", 0.0)), 3)}
+                         for d in self.deposits],
+        }
+
 
 # ---- the room's spelling, checked -------------------------------------------------
 
