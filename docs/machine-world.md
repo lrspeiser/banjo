@@ -1780,12 +1780,106 @@ vein had 388 kg left of 400. Checked by `tests/goods_tests.py`.
 an intake bin and an output bin, a battery and a panel, and a still program
 with a process routine whose recipe is a parameter. Installed through the
 gate, its bins become stockpiles of the room's where they stand, and the
-recipe it brings is given to a room that lacks it; in the engine, 7 kg of
-ore put on its intake became 2.1 kg of copper on its output for 14 kJ.
+recipe it brings is given to a room that lacks it.
+
+A processor works the COLD half of the chain -- drawing wire, mixing
+concrete. Smelting, firing and melting need a temperature, and a deck on
+legs has no inside to make hot, so those belong to the electric furnace
+below and the bench will not offer a processor that cannot work.
 
 Not built: a hopper or a stockpile drawn on the
 page; a routine that changes with what it senses (a step's `until` is one
 condition, not a choice); a market or a price for goods.
+
+## The electric furnace, and what a lining decides
+
+**Status, 2026-09-26.** A smelter used to be a deck on legs that turned ore
+into copper by arithmetic. It is now a furnace with a real inside: a steel
+shell, a refractory lining, and the space the lining encloses -- a genuine
+volume of air in the thermal network, which an element heats and the lining
+leaks. A recipe with a temperature will not run until the engine says the
+chamber is at it.
+
+**What the lining decides.** Heat leaves the chamber at `U = k*A/t` -- the
+lining's conductivity times the chamber's inner surface, divided by its
+thickness -- and an element of `P` watts holds the chamber at `ambient +
+P/U`. That one relation is the whole design space. On the default 0.4 x 0.4
+x 0.3 m chamber with a 5 kW element, measured:
+
+| lining | U | it tops out at | so it can |
+| --- | --- | --- | --- |
+| 20 mm | 12.0 W/K | 437 C | nothing |
+| 40 mm | 6.0 W/K | 853 C | not even burn lime, at 900 C |
+| 60 mm | 4.0 W/K | 1270 C | lime, aluminium, copper, ceramic |
+| 80 mm | 3.0 W/K | 1687 C | everything, iron at 1538 C |
+| 120 mm | 2.0 W/K | 2520 C | everything, with room to spare |
+
+The bench works that out before anything is built and refuses the pair with
+the reason -- "this furnace tops out at 853 C and smelt iron needs 1538 C:
+thicken the lining, shrink the chamber, or fit a bigger element" -- rather
+than letting somebody build one and watch it sit at 850 C. Chamber size
+counts the same way, because losses go with surface: four times the volume
+on the same element reaches nothing at all.
+
+**A recipe's own temperature says which machine works it.** `needs_c` on the
+recipe decides, so the generator stands furnaces for the hot steps and
+processors for the cold ones, and a recipe that gained or lost its heat
+would move between them on its own. Nothing keeps a list of which is which.
+
+**A furnace is not its recipe.** The chamber is hot or it is not; what the
+routine converts in it is the routine's business. A furnace whose chamber
+reaches 1687 C will smelt iron at 1538 as readily as copper at 1085, which
+is what makes one starting smelter enough to bootstrap a valley.
+
+**The element only burns for work that exists.** It fires when there is
+something on the intake to convert and the chamber is below temperature, and
+the engine's own reading of the element decides whether to fire -- not a
+clock on the playground's side. Two overlapping heat calls STACK: measured,
+a second one issued during the first read 10 kW instead of 5 and took the
+chamber to 3353 C instead of 1686, past the thermal model's own validity
+range, which it reports and does not refuse.
+
+**A gas region may stand among exact bodies.** Everything the Workshop builds
+compiles to exact (precise rigid) bodies, and an exact body has no thermal
+model, so heat on one is meaningless and the engine refuses it by name. A
+gas region is not a body: one that pushes on nothing and contains nothing
+names nothing the model lacks. That is why a chamber can be hot inside a
+machine a person built, and why heating the machine itself still cannot be
+done.
+
+**What is not real, said plainly.** The chamber stores only its gas -- 43 J/K
+for 48 litres of air. A real furnace's lining is 15-25 kg of refractory at
+about 1000 J/kg/K, several hundred times that, so a real box of this size
+takes hours to reach 1538 C and not the 35 seconds here. The steady state is
+a real furnace's; the warm-up is a game's. The honest way to slow it down is
+to give the lining thermal mass in the network, not to spoil the
+conductance. The lining is modelled as insulating refractory castable at
+0.3 W/m/K, which is a real furnace lining and really is a concrete; it would
+rather be the ceramic the game already fires, and the engine does not yet
+allow ceramic for exact bodies.
+
+**Measured**, in the valley: the furnaces heat before they work and they do
+it in temperature order, which is the physics and not a schedule -- lime
+(900 C) at 14.5 s, aluminium (960) at 15.5, copper (1085) at 19.2, while
+cold work runs at once. On the bench, smelting 7 kg of ore cost 144 kJ: 14 kJ
+of conversion and 130 kJ of getting hot, in thirteen spells that did not
+overlap. A furnace left alone is back at room temperature within a minute.
+Checked by `tests/electric_furnace_tests.py`.
+
+**Power is now the constraint, and that shaped the new game.** A furnace
+draws 5 kW warming and loses 3.2 kW just holding copper heat, against 840 W
+of solar for the whole valley. Eight machines stood at once emptied the farm
+in two minutes and the valley never recovered. So a new game stands two --
+the copper smelter and the wire mill -- and lays out the other six yards
+with their ore heaped beside them, for machines you build when you can power
+them. Over ten world minutes the rover keeps the smelter fed, seven batches
+come out, copper on the rack goes 3.0 to 6.0 to 9.6 kg, and the farm never
+empties.
+
+Not built: a door that opens, a conveyor, or any charge inside the chamber
+-- what reaches temperature is the chamber, and the goods in the heap are an
+account in the ledger rather than matter in the thermal network. Fire, as
+opposed to an element, is not built either: this is the electric furnace.
 
 ## A routine that responds, and standing requests
 
