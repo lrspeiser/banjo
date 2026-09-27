@@ -41,9 +41,39 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not spec.get("bodies"):
         raise ValueError("Precise rigid bodies need a room with at least one lattice body in it; use a yard")
-    for key in ("thermo", "blades", "tool_points", "interactions"):
+    for key in ("blades", "tool_points", "interactions"):
         if spec.get(key):
             raise ValueError(f"Precise rigid rooms do not yet support {key}; nothing was installed")
+    # HOT GAS IS ALLOWED HERE; a hot exact body is not. An exact body has no
+    # thermal model -- thermoShapes leaves it out -- so heat on one means
+    # nothing, and the engine refuses it by name. A gas region is not a body:
+    # one that pushes on nothing touches nothing the engine cannot model, and
+    # heating it is heating gas, which is what the inside of a furnace is.
+    #
+    # The two rules below are the engine's own (LiveWorld::refuseExactHeat),
+    # said here so a room is refused as it is written rather than as it opens.
+    exact = {str(b.get("name")) for b in value if b.get("name")}
+    thermo = spec.get("thermo") or {}
+    if thermo:
+        if not isinstance(thermo, dict):
+            raise ValueError("thermo must be an object of gas_regions and heaters")
+        regions = {str(r.get("name")) for r in (thermo.get("gas_regions") or []) if r.get("name")}
+        for region in thermo.get("gas_regions") or []:
+            for key in ("piston", "container"):
+                if str(region.get(key) or "") in exact and region.get(key):
+                    raise ValueError(
+                        f"Precise rigid rooms do not yet support a gas region pushing on an exact "
+                        f"body: {region.get('name')!r} names {region[key]!r}, which has no thermal "
+                        f"model; nothing was installed")
+        for heater in thermo.get("heaters") or []:
+            target = str(heater.get("target") or "")
+            if target in exact:
+                raise ValueError(
+                    f"Precise rigid rooms do not yet support heating an exact body: {target!r} has "
+                    f"no thermal model. Heat a gas region instead; nothing was installed")
+            if target and target not in regions:
+                raise ValueError(
+                    f"a heater's target must be something in the room: {target!r} is not")
     # Saved core gestures use the existing rigid hand/contact path. Rich
     # machine/heat/action DSL remains unavailable in this deliberately narrow lane.
     actions = spec.get("actions", [])

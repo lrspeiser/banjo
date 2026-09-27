@@ -64,14 +64,34 @@ class PreciseAdmission(unittest.TestCase):
             spec=world_room.yard();spec[key]=value
             with self.subTest(key=key):self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
 
-    def test_heat_tools_and_rich_actions_are_refused_not_downgraded(self):
+    def test_tools_and_rich_actions_are_refused_not_downgraded(self):
         # Machines are not among them: a cart carries a battery, a motor and
         # a controller with its sensors (tests/cart_room_tests.py).
-        for key in ('thermo','blades','tool_points','interactions','actions'):
+        for key in ('blades','tool_points','interactions','actions'):
             spec=world_room.yard();spec[key]=[{}]
             with self.subTest(key=key), self.assertRaises(ValueError):precise_rigid.normalise([box()],spec)
         spec=world_room.yard();spec['machines']={'stores':[{'name':'battery','capacity_j':1000}]}
         self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
+
+    def test_gas_is_admitted_beside_exact_bodies_but_heating_one_is_not(self):
+        # HOT GAS IS ALLOWED, a hot exact body is not. An exact body has no
+        # thermal model, so heat on one means nothing and the engine refuses
+        # it by name; a gas region is not a body, and the inside of a furnace
+        # is hot gas anyway. What may not happen is a region pushing on an
+        # exact body or a heater aimed at one -- neither has anything to push.
+        chamber={'name':'chamber','volume_m3':.05,'pressure_pa':101325.}
+        spec=world_room.yard();spec['thermo']={'gas_regions':[chamber]}
+        self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
+        spec=world_room.yard()
+        spec['thermo']={'gas_regions':[chamber],'heaters':[{'target':'chamber','power_w':5000,'seconds':2}]}
+        self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
+        for bad in ({'gas_regions':[{**chamber,'piston':'box'}]},
+                    {'gas_regions':[{**chamber,'container':'box'}]},
+                    {'gas_regions':[chamber],'heaters':[{'target':'box','power_w':5000,'seconds':2}]},
+                    {'gas_regions':[chamber],'heaters':[{'target':'nothing','power_w':5000,'seconds':2}]},
+                    [{}]):
+            spec=world_room.yard();spec['thermo']=bad
+            with self.subTest(thermo=bad),self.assertRaises(ValueError):precise_rigid.normalise([box()],spec)
 
     def test_bad_geometry_and_unknown_fields_never_fall_back(self):
         cases=[]

@@ -3956,10 +3956,21 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         // its ground and water. A breakable body they strike is judged against
         // their real material; a break that would need them INSIDE the lattice
         // run is declined and said so (judgeStep), never run without them. What
-        // they cannot share yet is heat -- the thermal model has no exact bodies
-        // -- and loose cells.
-        if (request.bodies.empty() || !request.thermo_scene_json.empty() || request.loose_cells)
-            throw std::invalid_argument("precise-rigid rooms need at least one lattice body and no thermal or loose-cell declarations");
+        // they cannot share is heat ON THEMSELVES -- the thermal model has
+        // no exact bodies -- and loose cells.
+        //
+        // GAS THEY CAN SHARE. A gas region is not a body: one that pushes on
+        // nothing and contains nothing names nothing the model lacks, and
+        // heating it is heating gas, which is what the inside of a furnace
+        // is. The four ways a thermo declaration can reach an exact body --
+        // contents on one, a heater's target, a region's piston, a region's
+        // container -- are each refused BY NAME in declareThermo
+        // (refuseExactHeat), which is where the knowledge of what is missing
+        // lives. Refusing the whole block here as well meant a room could
+        // not have a hot chamber in it merely because something exact stood
+        // in the same valley.
+        if (request.bodies.empty() || request.loose_cells)
+            throw std::invalid_argument("precise-rigid rooms need at least one lattice body and no loose-cell declarations");
         for (const SceneBody &body : request.bodies)
             if (impl.precise_bodies.count(body.name) ||
                 (!body.join.empty() && impl.precise_bodies.count(body.join)))
