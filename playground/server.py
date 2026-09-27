@@ -1157,6 +1157,11 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
             if path=="/api/gameplay/capabilities": return self.send(gameplay_capabilities.catalog())
+            # Every room the server can open. A page that wants to offer them
+            # has to read them from here: the alternative is a list of scenes
+            # written into the page, which goes stale the moment SCENES moves
+            # and cannot be told that it has. /debug is the page that does.
+            if path=="/api/scenes": return self.send({"scenes":sorted(world_room.SCENES)})
             # What each material IS, from the engine's own catalogue. A page that
             # wants to say what a thing is made of has to read it from here: the
             # alternative is a table of physics written into the page, which goes
@@ -1216,15 +1221,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
             # The site is the world, and the Workshop inside it at
-            # /world?workshop=1. Nothing else is served. The experiment
-            # console, the Explorer, the fabrication page and the three QA
-            # pages are gone: what they showed is measured by scripts/ in CI,
-            # which never needed a browser to do it.
+            # /world?workshop=1. Nothing else is served to a person playing.
+            # The experiment console, the Explorer, the fabrication page and
+            # the three QA pages are gone: what they showed is measured by
+            # scripts/ in CI, which never needed a browser to do it.
+            #
+            # /debug is the one exception, and it is not the game: it is the
+            # bench the coding agents work from -- every room one click away,
+            # what the engine says about itself, and the suites that measure
+            # it. Anything built for debugging belongs on that page rather
+            # than in a page of its own, which is how there came to be seven.
             allowed={"/":"world.html","/world":"world.html","/world.html":"world.html",
                 "/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
                 "/base.css":"base.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
+                "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]

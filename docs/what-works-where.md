@@ -3,14 +3,15 @@
 The [README](../README.md) tells the story; this is the ledger behind it. Every
 row says what has been built and how close it is to being something you can
 walk up to in the world. Kept current with `main`: last checked
-**27 September 2026**, at `dd79c66`, when the site became the world and the
-bench in it and the other six pages were taken out.
+**27 September 2026**, when the site became the world and the bench in it, the
+other six pages were taken out, and what was left of the QA screens moved to
+`/debug`.
 
 The labels:
 
 - **World** — you can try it in the main world at `/world`.
 - **Test room** — in the live world, but in a room you reach only by typing its
-  address, `/world?scene=<name>`.
+  address, `/world?scene=<name>`, or by clicking it in the list at `/debug`.
 - **Chat** — in the live world, but only if you ask the room's chat to build it.
 - **Code only** — built and tested, but no page reaches it. You can run it from
   the C API, the MCP servers, a command-line tool or the tests.

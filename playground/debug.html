@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banjo — Debug</title>
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/debug.css">
+</head>
+<body>
+<header class="dbg-top">
+<h1>Debug</h1>
+<p class="dbg-sub">Not part of the game. This is the bench the coding agents work from: every room one click away, what the engine says about itself, and the suites that measure it. A person playing never needs this page — the site is the world and the Workshop in it.</p>
+<nav class="dbg-nav" aria-label="Back to the site"><a href="/">The world</a><a href="/world?workshop=1">Workshop</a></nav>
+</header>
+<main>
+
+<section id="engine">
+<h2>The engine</h2>
+<p class="note">Read from <code>/api/status</code> as this page loaded. A suite that will not start is nearly always one of these saying no.</p>
+<dl class="dbg-facts" id="engine-facts"><div><dt>Reading</dt><dd id="engine-loading">…</dd></div></dl>
+<p class="note" id="engine-limits"></p>
+</section>
+
+<section id="rooms">
+<h2>The rooms</h2>
+<p class="note">Every scene the server can open, from <code>/api/scenes</code>. The world's own menu offers two of these; the rest are reachable only by typing a URL, which is what this list is for. A room opens in the world page — the same page, the same physics, a different starting arrangement. <strong>world</strong> is the real one.</p>
+<div id="rooms-list"><p class="note">Reading…</p></div>
+</section>
+
+<section id="suites">
+<h2>The QA suites</h2>
+<p class="note">What each suite contains, whether it can run here, and the runs on this server. These are the measurements the three deleted QA pages used to draw. CI makes them with <code>scripts/material_qa.py</code>, <code>mechanics_qa.py</code> and <code>tool_qa.py</code>, which never needed a browser; the buttons below are for when you want one case now and watched.</p>
+<div class="dbg-suites" id="suites-list"><p class="note">Reading…</p></div>
+</section>
+
+<section id="routes">
+<h2>Driving it without a browser</h2>
+<p class="note">Every route below is a GET. The POSTs need the header <code>X-Banjo-Token</code> set to <code>csrf_token</code> from <code>/api/status</code>, or the answer is 403.</p>
+<ul class="dbg-routes" id="routes-list"></ul>
+</section>
+
+</main>
+<script type="module" src="/debug.js"></script>
+</body>
+</html>

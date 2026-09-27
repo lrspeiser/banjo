@@ -29,6 +29,10 @@ sys.path.insert(0, str(ROOT / "examples" / "authoring"))
 import experiment_language as language
 import server as playground_server
 
+SCRIPT_BLOCK = r'<script\s+type=["\']module["\']>(.*?)</script>'
+STYLE_BLOCK = r"<style\b[^>]*>(.*?)</style>"
+
+
 
 PRIVATE_KEY = "private-test-key-never-return"
 
@@ -736,10 +740,31 @@ class PlaygroundHttpTests(PlaygroundTestCase):
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("default-src 'self'", headers["Content-Security-Policy"])
 
+    def test_every_address_that_serves_the_world_authorizes_its_inline_blocks(self):
+        # world.html boots itself from an inline module and lays the Workshop
+        # out from an inline stylesheet, so an address that serves the page
+        # without their hashes serves a page the browser then refuses to run.
+        # / is the front door and serves world.html, and it was once left out
+        # of the set access_gate patches: the root came up blank -- its module
+        # blocked, nothing imported, no room -- while /world was perfectly fine.
+        import access_gate
+
+        wanted = (access_gate._world_inline_hashes(SCRIPT_BLOCK)
+                  + access_gate._world_inline_hashes(STYLE_BLOCK))
+        self.assertGreaterEqual(len(wanted), 3)
+        for path in ("/", "/world", "/world.html"):
+            with self.subTest(path=path):
+                _, headers, _ = self.request("GET", path)
+                policy = headers["Content-Security-Policy"]
+                for source in wanted:
+                    self.assertIn(source, policy)
+
     def test_static_allowlist_and_environment_paths(self):
-        # The site is the world and the Workshop in it, and nothing else.
+        # The site is the world and the Workshop in it, plus Debug, which is
+        # not the game: it is the bench the coding agents work from.
         for path in ("/", "/world", "/world.html", "/world.js", "/world.css", "/base.css",
-                     "/workshop.js", "/workshop.css"):
+                     "/workshop.js", "/workshop.css",
+                     "/debug", "/debug.js", "/debug.css"):
             with self.subTest(path=path):
                 status, _, _ = self.request("GET", path)
                 self.assertEqual(status, 200)
@@ -747,6 +772,10 @@ class PlaygroundHttpTests(PlaygroundTestCase):
         _, headers, home = self.request("GET", "/")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn(b"world.js", home)
+        # ...and the world is where you reach the other two from, so a person
+        # never has to know an address to find either.
+        self.assertIn(b'href="/world?workshop=1"', home)
+        self.assertIn(b'href="/debug"', home)
         # The experiment console, the Explorer, the fabrication page and the
         # three QA pages were taken out. Their APIs remain; their pages do not.
         for path in ("/.env", "/../.env", "/%2e%2e/.env", "/server.py", "/unknown",

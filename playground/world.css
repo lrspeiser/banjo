@@ -507,5 +507,10 @@ input[type="range"] { background: transparent; accent-color: var(--ink); }
 
 #talk[hidden], #details[hidden] { display: none; }
 
-/* Navigation to the Workshop and recorded material range. */
+/* Navigation to the Workshop and to Debug, and recorded material range.
+   Two links sit side by side in the header, so the second one needs the
+   gap an inline-block does not give it. Debug is the dimmer of the two on
+   purpose: one is where you play, the other is not part of the game. */
 #panel .workshop-entry { color: var(--ink); border-color: var(--edge); }
+#panel .workshop-entry + .workshop-entry { margin-left: .4rem; }
+#panel .debug-entry { color: var(--dim); }
