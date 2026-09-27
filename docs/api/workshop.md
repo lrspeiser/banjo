@@ -242,8 +242,8 @@ what makes it go. It travels the same way `@construction` does, inside
 `component_overrides` under the reserved key `"@machines"`, so a client that
 already round-trips the overrides carries it without learning a new field.
 Schema `banjo.workshop-machines.v1`; at most 32 of each kind; the top-level
-fields are exactly `schema`, `stores`, `motors`, `panels`, `controls` and
-`programs`, and anything else is refused by name.
+fields are exactly `schema`, `stores`, `motors`, `panels`, `controls`,
+`chambers` and `programs`, and anything else is refused by name.
 
 Everything is named by COMPONENT, because that is what a person is looking at on
 the bench. A motor names the two components its pin joins, exactly as the room
@@ -259,6 +259,8 @@ bodies the compiler made.
     "motors":   [{"name": "left motor", "turns": ["bearing-mount-11", "axle-1-stub-1"], "store": "battery",
                   "stall_torque_n_m": 20, "no_load_rpm": 60, "brake_torque_n_m": 40}],
     "controls": [{"name": "left wheel", "turns": ["bearing-mount-11", "axle-1-stub-1"]}],
+    "chambers": [{"name": "chamber", "in": "lining-floor", "volume_m3": 0.048,
+                  "wall_conductance_w_k": 3.0}],
     "programs": [{"kind": "roam", "left": "left wheel", "right": "right wheel",
                   "rest_below": 0.25, "rest_until": 0.6,
                   "sensors": [{"kind": "water", "on": "deck", "at_m": [0.2, 0, 0.3], "depth_m": 0.003}]}]
@@ -291,9 +293,33 @@ directly, so a motor with no control on its pin can never be told anything --
 Check Validity adds one rather than leaving it dead, and says so among its
 changes.
 
+**A chamber** is the inside of a furnace: the gas its walls enclose, which is
+the thing that gets hot and the thing a charge sits in. It is not a body -- it
+is the space where no body is -- so it reaches the room as a gas region rather
+than as machinery, and `in` names the component whose walls make it, so the
+design can be checked against its own parts. `volume_m3` is 1e-4 to 1e3.
+
+`wall_conductance_w_k` (1e-3 to 1e5) is how fast heat leaves through the
+lining, and it is the number that decides what the furnace can DO. With an
+element of P watts the chamber settles at `ambient + P/U`, so a leaky furnace
+cannot smelt iron however long you wait: on a 0.4 x 0.4 x 0.3 m chamber, 40 mm
+of insulating castable is 6.0 W/K and tops out at 853 C -- not enough to burn
+lime at 900 -- while 80 mm is 3.0 W/K and reaches 1687 C, which smelts iron at
+1538. A product works its own conductance out from the lining it was built
+with; declared here, it is only checked for being a number. At most 8, because
+that is what a room will take in gas regions.
+
 **A program** is what the machine does on its own, and a product runs at most
 one. Its `kind` is `roam`, `sit`, `hover` or `still`, with `setting` 0 to 1
 (default 1):
+
+A still program may also work a furnace: `chamber` names which of the
+product's chambers its element heats, and `element_w` (1 to 1e6) is what that
+element puts in. The element is the program's to switch on -- it fires when a
+recipe wants heat and stops once the chamber is at temperature -- which is why
+its rating lives here and not among a room's heaters, those being started the
+moment a room opens and run for a fixed time. `element_w` without a `chamber`
+is refused, and so is a `chamber` the product has not got.
 
 | kind | what it does | what it needs |
 |---|---|---|
