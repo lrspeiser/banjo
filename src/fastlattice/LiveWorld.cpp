@@ -1849,6 +1849,10 @@ struct LiveWorld::Impl {
         constexpr double kFacedDeg = 6.0;
         constexpr double kNearM = 1.0;
         constexpr double kLandedM = 0.06;
+        // How long a flyer takes to lose the way it is going once it leans back,
+        // near enough to reckon an arrival by: measured on the mine's drone,
+        // which carried 8 m at 4.4 m/s.
+        constexpr double kStopS = 3.6;
         LiveProgram &s = p.said;
         std::vector<Control *> rotors;
         for (unsigned id : s.rotors)
@@ -1929,8 +1933,17 @@ struct LiveWorld::Impl {
                     p.turn_sign = off_deg > 0.0 ? 1 : -1;
                     yaw_deg_s = std::clamp(off_deg, -kYawDegS, kYawDegS);
                 } else if (s.asked == "approaching") {
+                    // A flyer has no brakes but its own rotors, so it leans back
+                    // to arrive. Leaning forward the whole way in it sails past
+                    // what it was sent to: measured on the mine's drone, 4.4 m/s
+                    // over a 13 m flight, "arrived" within a metre, and then 8 m
+                    // beyond the vein before it could turn round, which cost it
+                    // the best part of a minute every trip. It leans back once
+                    // what it has left to go is less than the way it would carry
+                    // on at the speed it is going.
+                    const double carries_m = 0.5 * s.speed_m_s * kStopS;
                     into("going forward", s.asked_why);
-                    lean_deg = -kLeanDeg;
+                    lean_deg = away <= carries_m ? kLeanDeg : -kLeanDeg;
                     yaw_deg_s = std::clamp(off_deg, -kYawDegS, kYawDegS);
                 } else {
                     into("waiting", s.asked_why);

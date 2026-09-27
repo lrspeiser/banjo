@@ -214,6 +214,29 @@ class InstalledIntoTheRoom(unittest.TestCase):
         self.assertLess(t, 60.0, "one load in under a minute")
         self.assertLess(math.hypot(p[0], p[2] + 12.0), 2.5, "it dumped near its depot")
         self.assertGreater(p[1] - ground_y, 0.8, "in the air")
+        # And it keeps at it, trip after trip. One load was all this asked for
+        # once, and a drone that could not stop flew 8 m past its dig site every
+        # time and spent the best part of a minute coming back; one that drifted
+        # out of reach of the site sat on the dig step for the rest of the run,
+        # because the step that took it there is behind it.
+        was, drifted_s = brain.routine.trips, 0.0
+        for _ in range(4 * 240):                  # up to 240 s more
+            body = {"session": sid, "op": "step", "dt": DT, "n": 60}
+            self.brains.before(self.app, body)
+            answer = self.live.act(body)
+            self.brains.attach(body, answer)
+            t = float(answer["t"])
+            here = self.pose(chassis)["position_m"]
+            if brain.routine.summary().get("step") == 2 and math.hypot(here[0], here[2] + 6.0) > 4.0:
+                drifted_s += DT * 60
+            if brain.routine.trips >= was + 2:
+                break
+        p2 = self.pose(chassis)["position_m"]
+        print(f"    kept at it: {brain.routine.trips} loads ({brain.routine.delivered_kg:.0f} kg) by {t:.0f} s; "
+              f"it was far from its dig site with digging to do for {drifted_s:.0f} s")
+        self.assertGreaterEqual(brain.routine.trips, was + 2, list(brain.routine.notes))
+        self.assertLess(drifted_s, 30.0, "it does not sit out of reach of the ground it is working")
+        self.assertGreater(p2[1] - ground_y, 0.8, "and it is still flying")
         program = self.program()
         # A person can talk to it, and its senses know it flies.
         talked = rover_talk.talk(self.app, {"program": "drone", "open": True,

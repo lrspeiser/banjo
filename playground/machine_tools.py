@@ -171,6 +171,35 @@ def face(ctx: senses.Context, call: Call) -> dict[str, Any]:
     return out
 
 
+def _flies(ctx: senses.Context) -> bool:
+    """Whether this machine is in the air: a flyer is over the ground it works,
+    not on it, so nothing it digs is under its wheels."""
+    return str((ctx.program or {}).get("kind") or "") == "hover"
+
+
+def stands_off_m(ctx: senses.Context) -> float:
+    """How far from a place a machine stands to work it: nothing for one that
+    flies, which hovers over it, and its own body-length and more for one on
+    wheels, which must keep off what it digs."""
+    return 0.0 if _flies(ctx) else DIG_STAND_M
+
+
+def _short_of(ctx: senses.Context, point: list[float], stand_m: float) -> list[float]:
+    """The point `stand_m` short of a place, on the line the machine is coming in
+    on. A machine stops a metre off whatever it is aimed at, so to stand further
+    out it is aimed a metre nearer than that. Already inside it, the point comes
+    out behind the machine, and going to it takes it back out, which is what it
+    needs."""
+    short = max(0.0, stand_m - NEAR_M)
+    if short <= 0.0:
+        return list(point)
+    ax, az = ctx.at()
+    away = math.hypot(point[0] - ax, point[1] - az)
+    if away <= 1e-6:
+        return list(point)
+    return [point[0] + (ax - point[0]) * short / away, point[1] + (az - point[1]) * short / away]
+
+
 def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
     """Asked to go to a place and stop a metre off it; `stop_at_m` stops it that
     far from the place instead, by aiming it at a point short of the place on the
@@ -182,17 +211,12 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
     took hold, into a 12 cm hole of its own, and could not get out. Standing
     short of its work, it can reach the pit without being in it."""
     point, name = _place(ctx, call.args)
-    # It stops a metre off whatever it is aimed at, so to stand further out it is
-    # aimed a metre nearer than that.
+    # A machine that flies hovers over what it works, so a stand-off asked of it
+    # is nothing: it is not standing on anything.
     stand = max(0.0, float(call.args.get("stop_at_m", 0.0)))
-    short = max(0.0, stand - NEAR_M)
-    aim, ax, az = list(point), *ctx.at()
-    if short > 0.0:
-        away = math.hypot(point[0] - ax, point[1] - az)
-        # Already inside it: the point short of the place is behind the machine,
-        # and going to it takes it back out, which is what it needs.
-        if away > 1e-6:
-            aim = [point[0] + (ax - point[0]) * short / away, point[1] + (az - point[1]) * short / away]
+    if _flies(ctx):
+        stand = 0.0
+    aim = _short_of(ctx, point, stand)
     out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim)
     out["did"] = (f"asked to go to {name}, and stand {stand:.1f} m off it" if stand > 0.0
                   else f"asked to go to {name}, and stop a metre off")
@@ -259,6 +283,8 @@ def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
     ax, az = ctx.at()
     to_middle = math.hypot(middle[0] - ax, middle[1] - az)
     spread = _spread_m(ctx, middle)
+    # A flyer is over its work, not on it, so no spot is under its wheels.
+    clear = 0.0 if _flies(ctx) else DIG_CLEAR_M
     radii = [0.0]
     while radii[-1] + DIG_STEP_M <= spread + 1e-6:
         radii.append(round(radii[-1] + DIG_STEP_M, 3))
@@ -269,7 +295,7 @@ def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
             turn = i * 2.0 * math.pi / turns
             spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
             off = math.hypot(spot[0] - ax, spot[1] - az)
-            if DIG_CLEAR_M <= off <= DIG_REACH_M:
+            if clear <= off <= DIG_REACH_M:
                 (far if off >= to_middle - 0.05 else near).append(spot)
     return far or near
 
@@ -293,21 +319,33 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
     for the high ground spreads the working out and keeps it shallow, the way an
     open pit is worked, and the cap means a machine never digs itself a hole it
     cannot drive out of.
+
+    A machine that flies works the ground under it: it hovers over the place and
+    scoops down, so it keeps no stand-off and nothing it digs is under its
+    wheels. It keeps the rest -- the high ground, one scoop a spot, worked out
+    said rather than scraped at -- because the hole it leaves is in everyone's
+    way, not only its own.
     """
     if not args.get("place") and args.get("point") is None:
         return {"point": senses.point_ahead(ctx, float(args.get("ahead_m", DIG_AHEAD_M)))}
     middle, named = _place(ctx, args)
     ax, az = ctx.at()
     off = math.hypot(middle[0] - ax, middle[1] - az)
+    clear = 0.0 if _flies(ctx) else DIG_CLEAR_M
     if off > DIG_REACH_M + 1e-6:
-        raise ValueError(f"{named} is {off:.1f} m off, beyond the {DIG_REACH_M:.1f} m it can reach; "
-                         "it must go there first")
-    if off < DIG_CLEAR_M:
-        # Standing over the place. Told to go somewhere, a machine stops "a
-        # metre off" and then rolls on while its brakes take hold -- measured
-        # 0.2 m from the vein -- so where it stopped is no guide to what it may
-        # dig, and it gets off the spot before working it.
-        return {"back_off_m": DIG_CLEAR_M + 0.3 - off,
+        # Drifted out of reach of the place it is working: it goes back to it.
+        # Refusing outright left the routine sat on a dig step it could not do,
+        # because the step that took the machine there is behind it -- measured
+        # on a drone given a dig routine, which wandered 4.8 m off the vein and
+        # said "it must go there first" for the rest of the run.
+        return {"go_to": _short_of(ctx, middle, stands_off_m(ctx)),
+                "why": f"{named} is {off:.1f} m off, beyond the {DIG_REACH_M:.1f} m it can reach, so it goes back"}
+    if off < clear:
+        # Standing over the place. Told to go somewhere, a machine on wheels
+        # stops "a metre off" and then rolls on while its brakes take hold --
+        # measured 0.2 m from the vein -- so where it stopped is no guide to what
+        # it may dig, and it gets off the spot before working it.
+        return {"back_off_m": clear + 0.3 - off,
                 "why": f"it is {off:.1f} m from {named} and will not dig the ground under itself"}
     around = _around_m(ctx, middle, _spread_m(ctx, middle) + 0.5)
     best, high = None, None
@@ -341,6 +379,9 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     if bite.get("back_off_m"):
         _behave(ctx, call, "backing off", max(1.0, float(bite["back_off_m"]) / BACK_OFF_M_S))
         return {"did": f"dug nothing yet: {bite['why']}, so it backs off first", "load": r.load_reading()}
+    if bite.get("go_to"):
+        _behave(ctx, call, "approaching", 60.0, bite["go_to"])
+        return {"did": f"dug nothing yet: {bite['why']}", "load": r.load_reading()}
     if not bite.get("point"):
         return {"did": f"dug nothing: {bite.get('why', 'there is nothing to dig there')}", "idle": True,
                 "load": r.load_reading()}
