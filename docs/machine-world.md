@@ -734,6 +734,12 @@ air falls. Climbing is getting somewhere for the sense -- a flyer told to rise
 and rising is not stuck -- but not for the place, which is measured across the
 ground: without that, a walled-in drone climbed a metre at a time for ever.
 
+**Which machines have it.** A machine that roams and a machine that flies. A
+machine going to a thing to hold a pose there (the "sit" kind) has only its
+older reflex, backing off where its wheels make no progress, and so has the
+same blind spot: its wheels turn freely in a hole. A "still" machine is never
+told to go anywhere.
+
 Measured in the engine (`tests/rover_roam_tests.cpp`,
 `tests/drone_hover_tests.cpp`):
 
