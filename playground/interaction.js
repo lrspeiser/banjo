@@ -311,18 +311,27 @@ export function handHelp(use) {
   const k = keyOf;
   const rows = [];
   let meter = null, note = "";
+  const onTarget = !!(use.preview && use.preview.onTarget);
   const preview = use.preview && use.preview.possible
-    ? `This throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
-      + (use.preview.hitName ? ` and hit ${use.preview.hitName}` : use.preview.hit ? " and come down on the ground" : "")
-      + ` — a preview of this hand on this ${use.noun || "thing"}, not of what it meets on the way.`
+    ? (onTarget
+        ? `This throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
+          + (use.preview.hitName ? ` and hit ${use.preview.hitName}`
+             : use.preview.hit ? " and come down where you are pointing" : "")
+          + ` — a preview of this hand on this ${use.noun || "thing"}.`
+        : "It would not come down where you are pointing, so it will not be thrown:"
+          + " move the ring onto what you want, or hold on longer to send it further.")
     : use.preview && use.preview.why ? use.preview.why : "";
   switch (use.mode) {
     case "ready":
-      rows.push([[k("primary")], "hold to wind up, let go to throw"]);
+      rows.push([[k("primary")], onTarget ? "hold to wind up, let go to throw"
+                                          : "hold to wind up — it throws while the ring is green"],
+                [["Esc"], "put it down instead"]);
       note = preview;
       break;
     case "preparing":
-      rows.push([[k("primary")], "let go to throw"], [[k("secondary")], "lower it"]);
+      rows.push([[k("primary")], onTarget ? "let go to throw"
+                                          : "let go: it lowers while the ring is grey"],
+                [[k("secondary")], "lower it"], [["Esc"], "lower it"]);
       meter = { label: "Wind-up", fraction: use.reached || 0,
                 value: `${Math.round(100 * (use.reached || 0))}%` };
       note = preview;
@@ -413,34 +422,68 @@ export function handHelp(use) {
 // The engine's preview, drawn: a dashed arc from where the hand would let go,
 // and a ring where it would first meet something. Dashed because it is a
 // preview and not the thing -- the real throw is the one the world makes.
+// The arc says yes or no by its colour: green while the throw can be made AND
+// would land where the crosshair is asking for, grey when it would not -- and
+// while it is grey, letting go does not throw. It was amber whatever the throw
+// was going to do, which told you where the thing would come down and nothing
+// at all about whether to let go.
+export const AIM_ON = 0x7ee08a, AIM_OFF = 0x9aa3ab;
+
 export class AimArc {
   constructor(scene) {
     this.material = new THREE.LineDashedMaterial({
-      color: 0xf0b429, dashSize: 0.14, gapSize: 0.09, transparent: true, opacity: 0.9 });
+      color: AIM_ON, dashSize: 0.14, gapSize: 0.09, transparent: true, opacity: 0.9 });
     this.line = new THREE.Line(new THREE.BufferGeometry(), this.material);
-    this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.1, 0.14, 32),
-      new THREE.MeshBasicMaterial({ color: 0xf0b429, side: THREE.DoubleSide,
-                                    transparent: true, opacity: 0.9 }));
+    this.ringLook = new THREE.MeshBasicMaterial({ color: AIM_ON, side: THREE.DoubleSide,
+                                                  transparent: true, opacity: 0.9 });
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.14, 32), this.ringLook);
     this.ring.rotation.x = -Math.PI / 2;
     this.group = new THREE.Group();
     this.group.add(this.line, this.ring);
     this.group.visible = false;
+    this.onTarget = false;
     scene.add(this.group);
   }
 
-  show(flight) {
+  paint(onTarget) {
+    this.onTarget = !!onTarget;
+    const colour = onTarget ? AIM_ON : AIM_OFF;
+    this.material.color.setHex(colour);
+    this.ringLook.color.setHex(colour);
+    // Grey is quieter as well as greyer: it is the answer "not there", and it
+    // should not shout over a room somebody is trying to aim across.
+    this.material.opacity = this.ringLook.opacity = onTarget ? 0.95 : 0.5;
+  }
+
+  show(flight, onTarget) {
     const points = (flight.points_m || []).map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     if (points.length < 2) { this.hide(); return; }
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     this.line.geometry.dispose();
     this.line.geometry = geometry;
     this.line.computeLineDistances();
+    this.line.visible = true;
     this.ring.visible = !!flight.hit;
     if (flight.hit) {
       const [x, y, z] = flight.hit_point_m;
       this.ring.position.set(x, y + 0.01, z);
     }
+    this.paint(onTarget);
+    this.group.visible = true;
+  }
+
+  // The spot the crosshair is on, and nothing else.
+  //
+  // What a throw that cannot be made AT ALL has to show. The engine works out
+  // a flight for a throw that happens; when the hand would give up before the
+  // end of the swing there is no throw, so there is no flight, and drawing a
+  // line anyway would be a picture of something that is not going to happen.
+  // The ring marks the place that was asked for and is grey to say no.
+  mark(point) {
+    this.line.visible = false;
+    this.ring.visible = true;
+    this.ring.position.set(point[0], point[1] + 0.01, point[2]);
+    this.paint(false);
     this.group.visible = true;
   }
 
