@@ -965,6 +965,126 @@ class ACartDrivesItselfToTheWater(PageJourney):
         self.no_page_errors("after driving the cart to the water's edge")
 
 
+
+class ClickingWithTheMouse(PageJourney):
+    """The cursor picks, and one click does it.
+
+    The owner, 2026-09-26: "it's hard to click on objects because I have to
+    line up my + symbol, I'd like to be able to just click on it with my
+    mouse." Before this the pick was cast along the camera's own forward --
+    the middle of the view, always -- and the first click on a thing was
+    swallowed asking for the pointer lock, so it took two.
+
+    tests-mine has a rover, a smelter and a mill standing apart from each
+    other, so there is always something to put the cursor on that the middle
+    of the view is NOT on, which is the whole of what is being tested.
+    """
+
+    def mouse_to(self, x, y):
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+
+    def click_at(self, x, y):
+        self.mouse_to(x, y)
+        time.sleep(0.15)
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y,
+                                                        "button": "left", "clickCount": 1})
+            time.sleep(0.05)
+
+    def on_screen(self, name):
+        """Where a body is on the canvas, through the camera's own projection,
+        or None when it is not in view."""
+        return self.js(f"""(() => {{
+            const b = window.banjoRoom, e = b.world.bodies.get({json.dumps(name)});
+            if (!e) return null;
+            b.camera.updateMatrixWorld();
+            const p = e.mesh.position.clone().project(b.camera);
+            const box = document.getElementById("stage").getBoundingClientRect();
+            const x = box.left + (p.x + 1) / 2 * box.width, y = box.top + (1 - p.y) / 2 * box.height;
+            if (p.z > 1 || x < box.left || y < box.top || x > box.right || y > box.bottom) return null;
+            return [x, y, box.left + box.width / 2, box.top + box.height / 2];
+        }})()""")
+
+    def open_the_mine(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-mine"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-mine' && "
+                                      "banjoRoom.ready()", 300), "the mine room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.bodies.has('smelter')", 60),
+                        f"the smelter never arrived: {self.situation()}")
+
+    def test_the_cursor_picks_what_it_is_over_and_not_the_middle_of_the_view(self):
+        self.open_the_mine()
+        # Stand so that the smelter is in view but off to one side, and the
+        # middle of the view is on something else or on nothing.
+        x, y, z = self.position("smelter")
+        self.page.evaluate(f"banjoRoom.standAt({x + 2.6}, {y + 1.4}, {z + 3.0}); "
+                           f"banjoRoom.lookAt({x + 1.5}, {y + 0.2}, {z + 1.2}); true")
+        time.sleep(1.0)
+        where = self.on_screen("smelter")
+        self.assertIsNotNone(where, f"the smelter is not in view to aim at: {self.situation()}")
+        sx, sy, mx, my = where
+        self.assertGreater(math.dist((sx, sy), (mx, my)), 60.0,
+                           "the smelter is too near the middle for this to prove anything")
+        middle_on = self.js("banjoRoom.world.aim && banjoRoom.world.aim.name")
+        self.mouse_to(sx, sy)
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'smelter'", 15),
+                        f"the cursor on the smelter did not aim at it: {self.situation()}")
+        print(f"\n   the middle of the view was on {middle_on!r}; the cursor "
+              f"{math.dist((sx, sy), (mx, my)):.0f} px away from it picked the smelter", flush=True)
+        self.assertNotEqual("smelter", middle_on,
+                            "the middle was on the smelter too, so this proved nothing")
+
+    def test_one_click_does_what_the_side_view_marks(self):
+        self.open_the_mine()
+        x, y, z = self.at_rest("rover")
+        self.page.evaluate(f"banjoRoom.standAt({x + 2.2}, {y + 1.3}, {z + 2.4}); "
+                           f"banjoRoom.lookAt({x + 1.2}, {y + 0.1}, {z + 1.3}); true")
+        time.sleep(1.0)
+        where = self.on_screen("rover")
+        self.assertIsNotNone(where, f"the rover is not in view: {self.situation()}")
+        rx, ry, _, _ = where
+        self.mouse_to(rx, ry)
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 15),
+                        f"the cursor is not on the rover: {self.situation()}")
+        self.assertTrue(self.js("document.getElementById('machine-panel').hidden"),
+                        "its panel was open before the click")
+        self.click_at(rx, ry)
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 15),
+                        f"ONE click did not open the rover's panel: {self.situation()}")
+        self.assertFalse(self.js("!!document.pointerLockElement"),
+                         "a click took the pointer lock; nothing should ask for it now")
+        print("\n   one click on the rover opened its panel, and the pointer was not taken", flush=True)
+
+    def test_dragging_looks_around_and_does_not_act(self):
+        self.open_the_mine()
+        x, y, z = self.at_rest("rover")
+        self.page.evaluate(f"banjoRoom.standAt({x + 2.2}, {y + 1.3}, {z + 2.4}); "
+                           f"banjoRoom.lookAt({x + 1.2}, {y + 0.1}, {z + 1.3}); true")
+        time.sleep(1.0)
+        where = self.on_screen("rover")
+        self.assertIsNotNone(where, f"the rover is not in view: {self.situation()}")
+        rx, ry, _, _ = where
+        facing = lambda: self.js("(() => { const v = new banjoRoom.THREE.Vector3(0, 0, -1)"
+                                 ".applyQuaternion(banjoRoom.camera.quaternion); return [v.x, v.z]; })()")
+        was = facing()
+        # Down on the rover, drawn across it, up: a look, not a click.
+        self.page.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": rx, "y": ry,
+                                                    "button": "left", "clickCount": 1})
+        for step in range(1, 9):
+            self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": rx + step * 22, "y": ry,
+                                                        "button": "left", "buttons": 1})
+            time.sleep(0.03)
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": rx + 176, "y": ry,
+                                                    "button": "left", "clickCount": 1})
+        time.sleep(1.0)
+        now = facing()
+        turned = math.dist(was, now)
+        print(f"\n   dragging 176 px turned the view by {turned:.3f} of a unit vector, "
+              f"and opened nothing", flush=True)
+        self.assertGreater(turned, 0.05, f"dragging did not look around: {was} -> {now}")
+        self.assertTrue(self.js("document.getElementById('machine-panel').hidden"),
+                        "a drag across the rover opened its panel; that was a look, not a click")
+
 class ARoverRoamsTheShore(PageJourney):
     """The machine world's autonomous creature, its second step
     (docs/machine-world.md), in the tests-rover room: a rover with a motor on

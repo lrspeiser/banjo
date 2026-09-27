@@ -1706,6 +1706,27 @@ class Handler(BaseHTTPRequestHandler):
                 # the world clock in on top of it (world_clock).
                 clock=getattr(self.server.app,"clock",None)
                 if clock is not None and isinstance(body,dict) and body.get("op")=="step":
+                    # THE PAGE'S RECORD IS STALE IF THE CLOCK HAS BEEN STEPPING.
+                    # A step asked for with `moved` sends only what changed
+                    # since the engine last told THIS SESSION, and the engine
+                    # keeps one such record per session, not one per caller.
+                    # The clock asks without `moved`, so every reply it takes
+                    # is a full set that marks those bodies as sent -- to a
+                    # caller that draws nothing. The page, still asking for
+                    # only what moved, is then never told about them until
+                    # they move again, and draws them where they used to be.
+                    #
+                    # So the first page step after the clock has had the room
+                    # asks for everything, which is what world.js already does
+                    # for itself after a reply goes missing (`world.resync`).
+                    #
+                    # THIS IS NOT WHY A ROAMING ROVER GETS A WHEEL WET. I
+                    # thought it was and it is not: the engine's own survey
+                    # says the wheel really is in the water, and clean main
+                    # does the same. A decider is driving it in -- the reason
+                    # it gives is "OpenAI (gpt-5-mini) said turn left". This
+                    # only stops the page drawing a stale world.
+                    if clock.has_it(): body["moved"]=False
                     clock.page_stepped()
                     self.server.app.brains.unattended=False
                 self.server.app.brains.before(self.server.app,body)

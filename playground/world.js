@@ -3576,11 +3576,19 @@ function releasePrimary() {
   tools.release();
 }
 
-// A click takes the mouse, to look with; a second click on the same thing
-// straight after does what E does -- picks it up, or what the side view marks
-// (the owner: "maybe double click to take it").
-let lastClick = null;
-const DOUBLE_CLICK_MS = 400;
+// A CLICK DOES IT. One click on a thing does what E does -- picks it up, or
+// whatever the side view marks as its first action.
+//
+// It used to take two: the first click was swallowed asking for the pointer
+// lock, and a second on the same thing within 400 ms acted. That was written
+// when the only way to aim was to line the crosshair up in the middle of the
+// view, so a click could not mean "that one" -- the view had to be turned
+// until the crosshair was on it. The cursor picks now (aimVector), so a click
+// already says which thing, and the first one may as well do the thing. The
+// owner: "it's hard to click on objects because I have to line up my +
+// symbol, I'd like to be able to just click on it with my mouse."
+//
+// Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
@@ -3596,12 +3604,32 @@ canvas.addEventListener("pointerdown", (e) => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
 });
 canvas.addEventListener("pointermove", (e) => {
+  cursor = cursorAt(e);
+  markAt(cursor);
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
   drag.x = e.clientX; drag.y = e.clientY;
   turn(dx, dy);
 });
+// The mouse off the view: back to the middle, so nothing is aimed at a place
+// the mouse is no longer at.
+canvas.addEventListener("pointerleave", () => { cursor = null; markAt(null); });
+
+// The ring rides the cursor. It is the same mark it always was -- it fills as
+// a wind-up fills and colours as something comes under it -- it is just no
+// longer nailed to the middle of the screen.
+function markAt(at) {
+  const mark = $("crosshair");
+  if (!mark) return;
+  if (!at || document.pointerLockElement) {
+    mark.style.left = ""; mark.style.top = "";
+    return;
+  }
+  const box = canvas.getBoundingClientRect();
+  mark.style.left = `${box.left + at.px}px`;
+  mark.style.top = `${box.top + at.py}px`;
+}
 canvas.addEventListener("pointerup", (e) => {
   if (e.button !== 0) return;
   // Letting go of primary after a wind-up throws, however much the view was
@@ -3617,26 +3645,12 @@ canvas.addEventListener("pointerup", (e) => {
   drag = null;
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
   if (was && was.moved) return;          // that was a look, not a click
-  if (!looking) {
-    // Ask for the mouse. If the browser says no, dragging still works and the
-    // click below still does what a click does.
-    const asked = canvas.requestPointerLock?.();
-    if (asked && typeof asked.catch === "function") asked.catch(() => {});
-  }
   // A tool is never dropped by a click -- E puts it down. A second click with
   // the pick's point in the ground used to come here and drop it.
   if (world.held && world.held.pick) return;
   if (world.held) { intend("drop"); return; }
-  // With the hand empty a click only takes the mouse; a second click on the
-  // same thing straight after does what E does.
-  const on = world.aim && world.aim.name;
-  const now = performance.now();
-  if (on && lastClick && lastClick.name === on && now - lastClick.at < DOUBLE_CLICK_MS) {
-    lastClick = null;
-    intend(doChoice);
-  } else {
-    lastClick = on ? { name: on, at: now } : null;
-  }
+  // Hand empty, and the cursor is on something: do the thing.
+  if (world.aim && world.aim.name) intend(doChoice);
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -3756,6 +3770,30 @@ function forwardVector() {
   return v;
 }
 
+// WHERE THE CURSOR IS, as the camera sees it: -1 to 1 across and up the
+// canvas. Null until the mouse has been over the view, and null while the
+// pointer is locked -- a locked pointer has no place on the screen, and the
+// middle of the view is the only thing it can mean.
+let cursor = null;
+function cursorAt(e) {
+  const box = canvas.getBoundingClientRect();
+  if (!box.width || !box.height) return null;
+  return { x: ((e.clientX - box.left) / box.width) * 2 - 1,
+           y: -((e.clientY - box.top) / box.height) * 2 + 1,
+           px: e.clientX - box.left, py: e.clientY - box.top };
+}
+// The direction a pick is cast along: through the cursor where there is one,
+// and along the camera's forward where there is not. Through the camera's
+// own projection, so it is right at every zoom -- a narrower field of view
+// means the same pixel points somewhere else, and reading it off the
+// projection is the only way that stays true.
+const throughCursor = new THREE.Raycaster();
+function aimVector() {
+  if (!cursor || document.pointerLockElement) return forwardVector();
+  throughCursor.setFromCamera(new THREE.Vector2(cursor.x, cursor.y), camera);
+  return throughCursor.ray.direction.clone();
+}
+
 // ---------------------------------------------------------------------------
 // Turning what is held
 // ---------------------------------------------------------------------------
@@ -3851,7 +3889,7 @@ async function aim() {
   aimBusy = true;
   try {
     const from = camera.position;
-    const dir = forwardVector();
+    const dir = aimVector();
     let found = await act("pick", { from: [from.x, from.y, from.z],
                                     dir: [dir.x, dir.y, dir.z], max_m: 40 });
     // Past the tool in your own hand: held ready it can be under the
