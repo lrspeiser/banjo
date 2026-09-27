@@ -100,7 +100,11 @@ class TheTabs(unittest.TestCase):
         self.assertIn("digs at a site and carries the load to a depot", rover["can_do"])
         self.assertIn("drives itself and turns away from water", rover["can_do"])
         self.assertTrue(by_name["chair"]["enough"])
-        self.assertIn("works the recipe 'smelt copper' from its intake to its output", by_name["processor"]["can_do"])
+        # A processor draws wire; smelting takes 1085 C and a chamber to make
+        # hot, so the bench offers it only on the electric furnace.
+        self.assertIn("works the recipe 'draw wire' from its intake to its output", by_name["processor"]["can_do"])
+        self.assertIn("works the recipe 'smelt copper' from its intake to its output",
+                      by_name["electric-furnace"]["can_do"])
         self.assertEqual([], r["room_recipes"], "no room open")
         # With the mine open, its recipes and its vein are listed.
         import json

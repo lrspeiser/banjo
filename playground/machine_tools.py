@@ -663,6 +663,18 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
         # the open air at twenty degrees.
         return {"did": f"cannot work {recipe}: it needs {wants_c:.0f} C and this machine has no "
                        f"chamber to make hot. That wants an electric furnace", "failed": True}
+    # IS THERE ANYTHING TO WORK? Asked BEFORE the element is lit, because a
+    # furnace warming an empty box is 5 kW spent on nothing, and it never
+    # stops: it cannot reach its temperature and go quiet, it just heats, and
+    # loses it, and heats again. Six of them doing that drained the yard's
+    # whole farm in two minutes and left every machine in the valley dead.
+    # The trial converts a copy and takes nothing, so asking is free.
+    holds = intake.setdefault("holds", {})
+    trial = ctx.goods.convert(recipe, dict(holds), batch)
+    if not trial["made"]:
+        return {"did": f"made nothing: {intake['name']} has no " + ", ".join(trial.get("missing") or []) + " on it",
+                "idle": True}
+
     if wants_c > 0.0 and chamber:
         region = _chamber(ctx, chamber)
         if region is None:
@@ -691,11 +703,6 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
             return {"did": f"heating to work {recipe}: {now_c:.0f} C of {wants_c:.0f} C, "
                            f"{watts / 1000:.1f} kW drawn", "idle": True}
 
-    holds = intake.setdefault("holds", {})
-    trial = ctx.goods.convert(recipe, dict(holds), batch)
-    if not trial["made"]:
-        return {"did": f"made nothing: {intake['name']} has no " + ", ".join(trial.get("missing") or []) + " on it",
-                "idle": True}
     # The work must be in the battery before anything is worked.
     if store is not None and trial["work_j"] > 0.0:
         have = float(store.get("charge_j") or 0.0)
