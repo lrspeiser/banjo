@@ -40,12 +40,12 @@ class Contracts(unittest.TestCase):
 
 
 class HTTP(WorkbenchTestCase):
-    def test_tools_page_and_catalog_leave_world_untouched(self):
+    def test_the_tool_catalog_leaves_the_world_untouched_without_a_page(self):
         app = self.start(); original = app.live
         self.assertEqual(len(self.get(app,"/api/tool-qa")["cases"]),6)
-        status,content,raw = self.request(app,"GET","/tool-qa")
-        self.assertEqual(status,200); self.assertIn("text/html",content)
-        self.assertIn(b"tool-qa.js",raw)
+        # The page is gone; the catalog it drew is not.
+        status,_,_ = self.request(app,"GET","/tool-qa")
+        self.assertEqual(status,404)
         self.assertIs(original,app.live)
 
 

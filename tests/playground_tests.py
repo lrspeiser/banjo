@@ -737,11 +737,25 @@ class PlaygroundHttpTests(PlaygroundTestCase):
         self.assertIn("default-src 'self'", headers["Content-Security-Policy"])
 
     def test_static_allowlist_and_environment_paths(self):
-        for path in ("/", "/index.html", "/app.js", "/style.css"):
+        # The site is the world and the Workshop in it, and nothing else.
+        for path in ("/", "/world", "/world.html", "/world.js", "/world.css", "/base.css",
+                     "/workshop.js", "/workshop.css"):
             with self.subTest(path=path):
                 status, _, _ = self.request("GET", path)
                 self.assertEqual(status, 200)
-        for path in ("/.env", "/../.env", "/%2e%2e/.env", "/server.py", "/unknown"):
+        # The front door IS the world, not a console that links to it.
+        _, headers, home = self.request("GET", "/")
+        self.assertIn("text/html", headers["Content-Type"])
+        self.assertIn(b"world.js", home)
+        # The experiment console, the Explorer, the fabrication page and the
+        # three QA pages were taken out. Their APIs remain; their pages do not.
+        for path in ("/.env", "/../.env", "/%2e%2e/.env", "/server.py", "/unknown",
+                     "/index.html", "/app.js", "/style.css", "/scene.js",
+                     "/explore", "/explore.html", "/explore.js", "/explore.css",
+                     "/fabrication", "/fabrication.js", "/fabrication.css",
+                     "/qa", "/material-qa.js", "/material-qa.css",
+                     "/mechanics-qa", "/mechanics-qa.js", "/mechanics-qa.css",
+                     "/tool-qa", "/tool-qa.js"):
             with self.subTest(path=path):
                 status, _, body = self.request("GET", path)
                 self.assertEqual(status, 404)

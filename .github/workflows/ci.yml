@@ -27,8 +27,6 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
-          node --check playground/material-qa.js
-          node --check playground/tool-qa.js
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/workshop_buildability_tests.py -v
@@ -105,7 +103,6 @@ jobs:
         env:
           OPENAI_API_KEY: ""
         run: |
-          node --check playground/material-qa.js
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           python3 tests/playground_tests.py -v

@@ -6657,10 +6657,6 @@ async function open({ again = false } = {}) {
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
     world.scene = data.scene || null;
-    // The fabrication page is on its way out with the rest of the pages that are
-    // not the world or the Workshop, so its link may not be here.
-    const manufacture=document.getElementById("manufacture-link");
-    if(manufacture)manufacture.href="/fabrication?scene="+encodeURIComponent(world.scene||"world");
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;

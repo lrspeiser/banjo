@@ -173,16 +173,16 @@ class Contracts(unittest.TestCase):
             self.assertEqual(denied.call_count,20)
 
 class HTTP(WorkbenchTestCase):
-    def test_catalog_validation_and_static_page_preserve_live_room(self):
+    def test_catalog_and_validation_preserve_the_live_room_without_a_page(self):
         app=self.start()
         original=app.live
         data=self.get(app,"/api/mechanics-qa")
         self.assertEqual(len(data["cases"]),44)
         data=self.post(app,"/api/mechanics-qa/validate",{"document":example()})
         self.assertTrue(data["valid"])
-        status,content,raw=self.request(app,"GET","/mechanics-qa")
-        self.assertEqual(status,200);self.assertIn("text/html",content)
-        self.assertIn(b"mechanics-qa.js",raw)
+        # The page is gone; the catalog and the validator are not.
+        status,_,_=self.request(app,"GET","/mechanics-qa")
+        self.assertEqual(status,404)
         self.assertIs(app.live,original)
 
 

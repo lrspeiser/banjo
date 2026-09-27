@@ -245,9 +245,6 @@ class ThermalMaterialRouteTests(unittest.TestCase):
         self.assertLess(abs(playback["final_ledger"]["combined_energy_residual_j"]), 1e-9)
         self.assertEqual(job["cases"][0]["diagnostics"]["native_facts"]["final_ledger"],
                          playback["final_ledger"])
-        scene_source = (ROOT / "playground/scene.js").read_text(encoding="utf-8")
-        self.assertIn("liquid_fraction: state.liquid_fraction", scene_source)
-        self.assertIn("thermal_enthalpy_j_region", scene_source)
 
 
 if __name__ == "__main__":
