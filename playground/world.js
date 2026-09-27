@@ -3294,15 +3294,23 @@ addEventListener("keydown", (e) => {
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
   // Esc while placing: the copy goes, and the thing stays in the hand.
-  if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
   // Esc while a throw is aimed is how you change your mind: wound up, it comes
-  // down and stays in the hand; merely held, it is put back down. Never a
-  // throw -- there is no key that throws by accident.
-  else if (e.code === "Escape" && world.held?.throwable
-           && ["ready", "preparing", "blocked"].includes(world.use.mode)) {
+  // down and stays in the hand; otherwise it is put back down where the ghost
+  // shows. Never a throw -- there is no key that throws by accident.
+  //
+  // It goes AHEAD of stopping a placement, because a throwable thing in the
+  // hand always has a placing ghost up the moment it is picked up: Esc would
+  // otherwise only ever dismiss the ghost, and a second Esc would be needed to
+  // put the thing back, which is not what one key meaning "never mind" does.
+  if (e.code === "Escape" && world.held?.throwable
+      && ["ready", "preparing", "blocked"].includes(world.use.mode)) {
     if (world.use.mode === "preparing") cancelWindUp();
-    else intend("put down");
+    else {
+      if (world.placing) stopPlacing(true);
+      intend(() => putDown(false));
+    }
   }
+  else if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
   // Esc closes a machine's panel when nothing else is using it -- and not
   // while the mouse is looking round, where Esc gives the mouse back first.
   else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
@@ -3414,13 +3422,32 @@ function primaryAction(name) {
   return offered.find((a) => a.primary) || offered[0] || { label: "Inspect", steps: [{ do: "inspect" }] };
 }
 
+// Whether a thing's own primary action does nothing but set it down. The one
+// step called "place" is the shape pressPrimary already knew, because that is
+// what it hands to placeHere; now it is also the only action a throw is allowed
+// to go in front of. Nothing offered at all counts as nothing in the way.
+function wouldOnlySetItDown(name) {
+  if (!actionsFor(name).length) return true;
+  const program = primaryAction(name);
+  return program.steps?.length === 1 && program.steps[0].do === "place";
+}
+
 function pressPrimary() {
   if (!world.session) return false;
   if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
   const name = world.held?.name || world.aim?.name;
-  if (name && actionsFor(name).length) {
+  // A throw takes the button ahead of the held thing's OWN action, but only
+  // when that action does nothing but set it down (the owner, 2026-09-26).
+  // Every block in the valley has "Set it down" on it, so clicking used to put
+  // the block at your feet and the aim arc could never throw it at all.
+  // Anything with a real use in the hand keeps the button -- the mace still
+  // swings, a tool still works, a bow still draws -- and setting down is still
+  // on E, in the side view, and now on Esc.
+  const aimingAThrow = !!world.held && world.held.throwable && name === world.held.name
+    && ["ready", "blocked"].includes(world.use.mode) && wouldOnlySetItDown(name);
+  if (!aimingAThrow && name && actionsFor(name).length) {
     const program = primaryAction(name);
     if (world.held && program.steps?.length === 1 && program.steps[0].do === "place") intend(placeHere);
     else runAction(name, 0, true);
@@ -4216,8 +4243,13 @@ async function letFly() {
 
 // Put it down: lowered by the same hand onto what is under it, and let go of
 // when it gets there. A carried thing is set down as it always was.
-async function putDown() {
-  if (placementEligible()) { await placeHere(); return; }
+async function putDown(placing = true) {
+  // `placing` false lowers it onto what is under it and lets go there, without
+  // going through a placement. Esc uses that: a placement can be refused for
+  // want of a clear spot -- "no clear receiving point or ground in front" --
+  // and a key that means "never mind" must not be something the room can turn
+  // down and leave the thing still in your hand.
+  if (placing && placementEligible()) { await placeHere(); return; }
   const held = world.held;
   if (!held) return;
   if (held.pick) {
