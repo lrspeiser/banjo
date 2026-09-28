@@ -80,7 +80,7 @@ def checked(value: Any) -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ValueError("machines must be an object")
-    unknown = set(value) - {"schema", "stores", "motors", "panels", "controls", "programs", "chambers"}
+    unknown = set(value) - {"schema", "stores", "motors", "panels", "controls", "programs", "chambers", "lamps"}
     if unknown:
         raise ValueError("unknown machine field(s): " + ", ".join(sorted(unknown)))
 
@@ -146,6 +146,20 @@ def checked(value: Any) -> dict[str, Any]:
         **({"at_m": _three(row.get("at_m"), "a panel's at_m")} if row.get("at_m") is not None else {}),
         **({"normal": _three(row.get("normal"), "a panel's normal")} if row.get("normal") is not None else {}),
     } for row in _rows(value.get("panels"), "panels")]
+
+    # A lamp on one of the design's components (docs/machine-world.md, "Light
+    # underground"). It names no store and no cable: a lamp comes out of the
+    # Workshop unwired and dark, and lights when somebody strings a run to it.
+    # One made ON a product that carries its own battery may name that store.
+    out["lamps"] = [{
+        "name": _name(row.get("name") or "lamp", "a lamp"),
+        "on": _name(row.get("on"), "a lamp's component"),
+        "watts": _number(row.get("watts"), "watts", 0.01, 1e5, default=20.0),
+        "efficacy_lm_w": _number(row.get("efficacy_lm_w"), "efficacy_lm_w", 0.1, 1000.0, default=120.0),
+        "on_at_first": bool(row.get("on_at_first", True)),
+        **({"store": _name(row.get("store"), "a lamp's store")} if row.get("store") else {}),
+        **({"at_m": _three(row.get("at_m"), "a lamp's at_m")} if row.get("at_m") is not None else {}),
+    } for row in _rows(value.get("lamps"), "lamps")]
 
     out["controls"] = [{
         "name": _name(row.get("name"), "a control"),
@@ -316,11 +330,11 @@ def of(design: Any) -> dict[str, Any]:
 def described(design: Any) -> dict[str, Any]:
     record = of(design)
     if not record:
-        return {"schema": SCHEMA, "stores": [], "motors": [], "panels": [],
+        return {"schema": SCHEMA, "stores": [], "motors": [], "panels": [], "lamps": [],
                 "controls": [], "programs": [], "says": "nothing drives it"}
     parts = []
     for key, word in (("stores", "store"), ("motors", "motor"), ("panels", "panel"),
-                      ("controls", "control")):
+                      ("lamps", "lamp"), ("controls", "control")):
         count = len(record.get(key) or [])
         if count:
             parts.append(f"{count} {word}{'' if count == 1 else 's'}")
@@ -396,6 +410,16 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
                                   "at_mm": [round(1000.0 * v, 1) for v in to_room(at)],
                                   "normal": [round(float(v), 9) for v in to_direction(normal)],
                                   "area_m2": p["area_m2"], "efficiency": p["efficiency"]})
+    if record.get("lamps"):
+        out["lamps"] = []
+        for lamp in record["lamps"]:
+            at, _ = top_of(lamp["on"])
+            at = lamp.get("at_m") or at
+            out["lamps"].append({"name": lamp["name"], "body": body(lamp["on"], "a lamp"),
+                                 "cable": "", "store": lamp.get("store", ""),
+                                 "at_mm": [round(1000.0 * v, 1) for v in to_room(at)],
+                                 "watts": lamp["watts"], "efficacy_lm_w": lamp["efficacy_lm_w"],
+                                 "on": lamp["on_at_first"]})
     if record.get("controls"):
         out["controls"] = [{"name": c["name"],
                             "on": [body(c["turns"][0], "a control"), body(c["turns"][1], "a control")]}

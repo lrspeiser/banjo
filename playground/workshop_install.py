@@ -614,7 +614,8 @@ def _thermal_preserved(before, after, body_names, thermal_transfer=None):
 #: What the world reports about the machines in it, in the SNAPSHOT's own words
 #: rather than the room file's -- a store is "energy_stores" here and "stores"
 #: there. An installation may bring its own; it may not touch any already there.
-MACHINE_KEYS = ("energy_stores", "motors", "controls", "programs", "solar_panels", "cables", "lamps")
+MACHINE_KEYS = ("energy_stores", "motors", "controls", "programs", "solar_panels", "cables", "lamps",
+                "breakers")
 
 
 def _machine_bodies(row):

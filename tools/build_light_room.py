@@ -1,10 +1,19 @@
-"""Write the room that shows electric light underground.
+"""Write the room that shows the whole mining loop, with nothing wired yet.
 
 The owner, 2026-09-28: light in a mine is electric, on cables running up to a
-solar farm. This lays the smallest room that shows it whole -- a solar farm on
-the hill over the old adit, a battery beside it, a cable down the slope and in
-along the heading, and three lamps hung on that cable -- and writes it out as
-`playground/rooms/tests-light.json`, open at `/world?scene=tests-light`.
+solar farm -- and then: "prove that we can take the same parts from the workshop,
+put them into our inventory, go into the world and dig a tunnel and install the
+lights to a solar panel".
+
+So this room is the KIT, not the finished job. Standing at the valley's old adit
+are three things the Workshop makes from its own templates -- a solar array, a
+mine lamp and a powered breaker -- and NOTHING is wired. The lamp is dark
+because a lamp is a fitting; the heading is dark because there is rock over it.
+What is left is what a person does: pick the lamp up, carry it in, stand it at
+the face, and run a cable to it from the array (P at the battery, walk, P at the
+lamp). The breaker is there to take the face back with.
+
+It writes `playground/rooms/tests-light.json`, open at `/world?scene=tests-light`.
 
 The adit is where the valley's generator put it, not where anybody guessed. So
 this opens the valley in the engine first, reads back the runs, and lays the
@@ -25,6 +34,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOMS = ROOT / "playground" / "rooms"
+sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
+
+from mcp import workshop as w, workshop_machines, workshop_products  # noqa: E402
 
 RUN_VOID = 8
 
@@ -113,6 +125,31 @@ def mm(x: float, y: float, z: float) -> list[float]:
     return [round(x * 1000.0, 1), round(y * 1000.0, 1), round(z * 1000.0, 1)]
 
 
+def built(kind: str, at: tuple[float, float, float]) -> tuple[dict, dict]:
+    """A Workshop template, built and stood at a place.
+
+    The same two calls the bench makes -- assemble the template, then ask
+    `workshop_machines` for the room's own rows -- so nothing here is drawn by
+    hand and a change to the template shows up here. It comes out as an EXACT
+    BODY, which is what these products install as: one rigid group with its
+    parts in their own frame.
+    """
+    workshop_products.install()
+    design = w.assemble(kind)
+    group = {"name": kind, "material": str(design.parts[0].material),
+             "position_m": [round(float(v), 4) for v in at],
+             "orientation_wxyz": [1.0, 0.0, 0.0, 0.0],
+             "parts": [{"name": part.name,
+                        "center_local_m": [round(float(v), 5) for v in part.center_m],
+                        "dimensions_m": [round(float(v), 5) for v in part.size_m],
+                        "material": str(part.material)} for part in design.parts]}
+    rows = workshop_machines.installed(design, {part.name: kind for part in design.parts})
+    for key in ("panels", "lamps", "breakers"):
+        for row in rows.get(key) or []:
+            row["at_mm"] = [round(row["at_mm"][i] + 1000.0 * at[i], 1) for i in range(3)]
+    return group, rows
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--engine", type=Path,
@@ -150,57 +187,49 @@ def main() -> int:
     if site is None:
         raise SystemExit("no flat ground near the adit to stand a solar farm on")
     farm_x, farm_z, stands_at = site
-    # Standing ON the hill, not over it: half the plinth is under the ground.
-    farm_y = round(stands_at + 0.3, 3)
-    print(f"the farm on flat ground at [{farm_x:.2f}, {farm_z:.2f}], standing at {stands_at:.2f} m")
-    plinth = {"name": "farm plinth", "shape": "box", "material": "concrete",
-              "size_mm": mm(1.6, 0.6, 1.6), "center_mm": mm(farm_x, farm_y, farm_z),
-              "anchored": True, "color_rgba": "6d7280ff"}
-    top = farm_y + 0.3
+    # The array on the flat ground the plinth was going to stand on, and the
+    # lamp and the breaker at the mouth of the adit, where somebody would have
+    # put them down. Standing on the ground, not floating over it: a template's
+    # own frame has its feet at y = 0.
+    array, array_rows = built("solar-array", (farm_x, stands_at, farm_z))
+    # The lamp and the breaker are IN the heading, at the face -- carried there
+    # already, which is the part `tests/mine_loop_tests.py` proves. What is left
+    # here is the wiring, and the wiring is what the page shows.
+    lamp_at = (round(face["x"], 3), round(face["floor"], 3), round(face["z"], 3))
+    lamp, lamp_rows = built("mine-lamp", lamp_at)
+    breaker_at = (round(face["x"] + 0.4, 3), round(face["floor"] + 0.05, 3), round(face["z"], 3))
+    breaker, breaker_rows = built("breaker", breaker_at)
+    print(f"the array at [{farm_x:.2f}, {farm_z:.2f}]; the lamp and the breaker at the face "
+          f"[{face['x']:.2f}, {face['z']:.2f}], on its floor at {face['floor']:.2f} m "
+          f"under {face['hill'] - face['roof']:.2f} m of hill")
 
-    # The run: down off the plinth, across the ground to the mouth, in at the
-    # mouth and along the heading to the face, hung just under the roof.
-    hang = min(mouth["roof"], face["roof"]) - 0.08
-    run = [mm(farm_x, top, farm_z),
-           mm(farm_x, farm_y - 0.3 + 0.05, farm_z),
-           mm(mouth["x"], mouth["hill"] + 0.1, mouth["z"]),
-           mm(mouth["x"], hang, mouth["z"]),
-           mm(face["x"], hang, face["z"])]
-    # Three lamps along it: one at the mouth, one halfway in, one at the face.
-    def between(t: float) -> list[float]:
-        return mm(mouth["x"] + t * (face["x"] - mouth["x"]), hang,
-                  mouth["z"] + t * (face["z"] - mouth["z"]))
-    lamps = [{"name": "mouth lamp", "cable": "the mine feeder", "at_mm": between(0.05),
-              "watts": 20.0, "on": True},
-             {"name": "heading lamp", "cable": "the mine feeder", "at_mm": between(0.5),
-              "watts": 20.0, "on": True},
-             {"name": "face lamp", "cable": "the mine feeder", "at_mm": between(0.95),
-              "watts": 20.0, "on": True}]
+    machines = {
+        "stores": (array_rows.get("stores") or []) + (breaker_rows.get("stores") or []),
+        "panels": array_rows.get("panels") or [],
+        # Unwired, and switched on, so it lights the moment a run reaches it.
+        "lamps": lamp_rows.get("lamps") or [],
+        # The breaker's chisel looks along the way the template draws it (+z),
+        # and it reaches a hand's breadth past its point.
+        "breakers": [{"name": "breaker", "body": "breaker", "store": "breaker battery",
+                      "at_mm": mm(breaker_at[0], breaker_at[1] + 0.02, breaker_at[2] + 0.3),
+                      "along": [0.0, 0.0, 1.0], "watts": 1500.0, "reach_m": 0.15, "on": False}],
+    }
 
     room = {
         "algorithm": "lattice",
-        "cell_m": 0.05,
+        "cell_m": 0.01,
         "terrain": {"generate": "valley"},
         # A day of four minutes, starting at four in the afternoon, so the sun
-        # goes down while you are in the mine and the lamps are all there is.
+        # goes down while you are in the mine and a lamp is all there is.
         "sun": {"day_s": 240, "noon_elevation_deg": 60, "hour": 16, "irradiance_w_m2": 1000},
-        "bodies": [plinth],
-        "machines": {
-            "stores": [{"name": "the farm battery", "body": "farm plinth",
-                        "capacity_j": 2.0e6, "charge_j": 4.0e5, "voltage_v": 24.0}],
-            "panels": [{"name": "east panel", "body": "farm plinth", "store": "the farm battery",
-                        "at_mm": mm(farm_x - 0.35, top, farm_z), "normal": [0.0, 1.0, 0.0],
-                        "area_m2": 0.5, "efficiency": 0.2},
-                       {"name": "west panel", "body": "farm plinth", "store": "the farm battery",
-                        "at_mm": mm(farm_x + 0.35, top, farm_z), "normal": [0.0, 1.0, 0.0],
-                        "area_m2": 0.5, "efficiency": 0.2}],
-            # 4 mm2 copper: thick enough that this run costs a fraction of a volt.
-            # Lay it in 1.5 and the face lamp goes noticeably dim, which is the
-            # thing to try in the page.
-            "cables": [{"name": "the mine feeder", "store": "the farm battery",
-                        "run_mm": run, "area_mm2": 4.0}],
-            "lamps": lamps,
-        },
+        # One marker so the room is this room: a spec with an empty bodies list
+        # gets the engine's own drop-test scene instead.
+        "bodies": [{"name": "claim post", "shape": "box", "material": "oak",
+                    "size_mm": [80.0, 1200.0, 80.0],
+                    "center_mm": mm(mouth["x"] + 1.2, mouth["hill"] + 0.6, mouth["z"] - 1.2),
+                    "anchored": True, "color_rgba": "8a6b45ff"}],
+        "precise_rigid_bodies": [array, lamp, breaker],
+        "machines": machines,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(room, indent=1, sort_keys=True) + "\n", encoding="utf-8")

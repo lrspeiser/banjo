@@ -1805,7 +1805,8 @@ struct LiveWorld::Impl {
                 const RigidSnapshot at = world->snapshot(body_of[found->second]);
                 lamp.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(lamp.at_local_m);
             }
-            if (!lamp.on) lamp.why = "switched off";
+            if (lamp.cable == 0 && lamp.store == 0) lamp.why = "not wired to anything";
+            else if (!lamp.on) lamp.why = "switched off";
         }
         // Each run, and then the lamps wired straight to a store, as runs of no
         // length: what is asked of the store, what it gives, and the share.
@@ -1819,7 +1820,8 @@ struct LiveWorld::Impl {
             LiveEnergyStore *store = energyStoreById(store_id);
             if (store == nullptr) {
                 for (LiveLamp &lamp : lamps)
-                    if (lamp.on && lamp.cable == (cable != nullptr ? cable->id : 0U) && lamp.store == store_id)
+                    if (lamp.on && lamp.cable == (cable != nullptr ? cable->id : 0U) &&
+                        lamp.store == store_id && lamp.why.empty())
                         lamp.why = "there is no store to draw on";
                 return;
             }
@@ -1877,8 +1879,91 @@ struct LiveWorld::Impl {
         // Lamps with no cable, gathered by the store each is wired to.
         std::set<unsigned> direct;
         for (const LiveLamp &lamp : lamps)
-            if (lamp.cable == 0 && lamp.on) direct.insert(lamp.store);
+            if (lamp.cable == 0 && lamp.store != 0 && lamp.on) direct.insert(lamp.store);
         for (const unsigned store_id : direct) drive(nullptr, store_id);
+    }
+
+    // ---- powered breakers (LiveBreaker) ---------------------------------------
+    std::vector<LiveBreaker> breakers;
+    unsigned next_breaker{1};
+    // After a kept step: where each breaker's point is, and what its store put
+    // into the rock in front of it. The work is the store's own joules, the law
+    // is rock-work-v1, and the cell only comes out if whoever holds it can carry
+    // it -- the same rule a pick goes through.
+    void settleBreakers(double dt_s) {
+        if (breakers.empty() || !(dt_s > 0.0)) return;
+        if (environment == nullptr) {
+            // Said, not silent: a breaker in a room with no ground in it is a
+            // tool with nothing to work, and the report should say so.
+            for (LiveBreaker &breaker : breakers) {
+                breaker.drawn_w = breaker.broke_m3 = 0.0;
+                breaker.working = false;
+                breaker.why = "this room has no ground in it";
+            }
+            return;
+        }
+        const terrain::TerrainField &field = environment->terrain();
+        for (LiveBreaker &breaker : breakers) {
+            breaker.drawn_w = breaker.broke_m3 = 0.0;
+            breaker.working = false;
+            breaker.why.clear();
+            const auto found = index_of.find(breaker.body);
+            if (found == index_of.end() || !inWorld(found->second)) {
+                breaker.why = "the " + breaker.body + " it is on is not in the world";
+                continue;
+            }
+            const RigidSnapshot at = world->snapshot(body_of[found->second]);
+            breaker.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(breaker.point_local_m);
+            breaker.along = at.orientation_world.rotate(breaker.along_local);
+            if (!breaker.on) { breaker.why = "switched off"; continue; }
+            LiveEnergyStore *store = energyStoreById(breaker.store);
+            if (store == nullptr) { breaker.why = "there is no store to draw on"; continue; }
+            // The face: its point, or the first rock within reach ahead of it. A
+            // collider will not let the chisel inside the wall, so a breaker held
+            // against one has its point just outside.
+            Vec3 face = breaker.at_m;
+            bool met = false;
+            const double step = 0.02;
+            for (double d = 0.0; d <= breaker.reach_m + 1.0e-9 && !met; d += step) {
+                const Vec3 probe{breaker.at_m.x + d * breaker.along.x, breaker.at_m.y + d * breaker.along.y,
+                                 breaker.at_m.z + d * breaker.along.z};
+                const auto column = field.cellAt(probe.x, probe.z);
+                if (!column) continue;
+                if (!(field.cellRockM3(*column, probe.y) > 0.0)) continue;
+                face = probe;
+                met = true;
+            }
+            if (!met) { breaker.why = "its point is not against rock"; continue; }
+            double can_w = store->charge_j / dt_s;
+            if (store->max_power_w > 0.0) can_w = std::min(can_w, store->max_power_w);
+            const double got_w = std::clamp(can_w, 0.0, breaker.watts);
+            if (!(got_w > 0.0)) { breaker.why = "the battery is flat"; continue; }
+            const double work_j = got_w * dt_s;
+            const auto column = field.cellAt(face.x, face.z);
+            const double hardness = terrain::groundHardnessPa(field.kindAt(*column, face.y));
+            if (!(hardness > 0.0)) { breaker.why = "there is nothing there to break"; continue; }
+            const double bought = terrain::brokenVolumeM3(hardness, work_j);
+            const terrain::Environment::Chipped chipped =
+                environment->chip(*world, face.x, face.z, face.y, bought, carriedObjectsKg());
+            breaker.broken_share = chipped.broken;
+            if (chipped.full) {
+                breaker.why = "the cell is worked through and more rock than can be carried";
+                continue;
+            }
+            store->charge_j = std::max(0.0, store->charge_j - work_j);
+            store->given_j += work_j;
+            if (got_w + 1.0e-9 < breaker.watts) breaker.why = "the battery cannot give all it asks for";
+            breaker.drawn_w = got_w;
+            breaker.drawn_j += work_j;
+            breaker.broke_m3 = bought;
+            breaker.broke_total_m3 += bought;
+            breaker.working = true;
+        }
+    }
+    [[nodiscard]] LiveBreaker *breakerById(unsigned id) {
+        for (LiveBreaker &b : breakers)
+            if (b.id == id) return &b;
+        return nullptr;
     }
 
     // ---- a machine's program (LiveProgram) ------------------------------------
@@ -5660,7 +5745,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             throw std::invalid_argument("a saved lamp is not one this engine can light");
         if (carrying) {
             const bool declared = kept(asked.lamps, lamp.id);
-            const bool store = impl.energyStoreById(lamp.store) != nullptr;
+            const bool store = lamp.store == 0 || impl.energyStoreById(lamp.store) != nullptr;
             const bool run = lamp.cable == 0 || impl.cableById(lamp.cable) != nullptr;
             // A lamp on a part needs the part; one pinned in the world does not.
             if (!declared || !store || !run || !(lamp.body.empty() || back(lamp.body))) {
@@ -5675,6 +5760,36 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.lamps.push_back(std::move(lamp));
     }
     impl.next_lamp = doc.value("next_lamp", 1U);
+    for (const nlohmann::json &o : doc.value("breakers", nlohmann::json::array())) {
+        LiveBreaker breaker;
+        breaker.id = o.at("id").get<unsigned>();
+        breaker.name = o.at("name").get<std::string>();
+        breaker.body = o.at("body").get<std::string>();
+        breaker.store = o.at("store").get<unsigned>();
+        breaker.point_local_m = vecFrom(o.at("point_local_m"));
+        breaker.along_local = vecFrom(o.at("along_local"));
+        breaker.watts = numberFrom(o.at("watts"));
+        breaker.reach_m = numberFrom(o.at("reach_m"));
+        breaker.on = o.at("on").get<bool>();
+        breaker.drawn_j = numberFrom(o.at("drawn_j"));
+        breaker.broke_total_m3 = numberFrom(o.at("broke_total_m3"));
+        if (!(breaker.watts > 0.0) || !(breaker.reach_m >= 0.0))
+            throw std::invalid_argument("a saved breaker is not one this engine can work");
+        if (carrying) {
+            const bool declared = kept(asked.breakers, breaker.id);
+            const bool store = impl.energyStoreById(breaker.store) != nullptr;
+            if (!declared || !store || !back(breaker.body)) {
+                if (declared)
+                    lost.push_back("the " + breaker.name +
+                                   ": what it is on or draws from did not come back as it was, so it is as the "
+                                   "room declares it");
+                continue;
+            }
+            ++said.carried.breakers;
+        }
+        impl.breakers.push_back(std::move(breaker));
+    }
+    impl.next_breaker = doc.value("next_breaker", 1U);
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -6135,6 +6250,7 @@ void LiveWorld::step(double dt_s) {
         if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
         if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
         if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
+        if (!impl_->breakers.empty()) impl_->settleBreakers(dt_s);
         if (!impl_->controls.empty()) impl_->settleControls(dt_s);
         if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
@@ -6177,6 +6293,7 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
     if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
     if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
+    if (!impl_->breakers.empty()) impl_->settleBreakers(dt_s);
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
     settleCuts(dt_s);
@@ -7457,7 +7574,9 @@ unsigned LiveWorld::lamp(const std::string &name, const std::string &body, unsig
         if (store != 0 && store != run->store) return 0;
         store = run->store;
     }
-    if (I.energyStoreById(store) == nullptr) return 0;
+    // Neither: a fitting nobody has wired yet, which is what comes out of the
+    // Workshop and goes into a bag.
+    if (store != 0 && I.energyStoreById(store) == nullptr) return 0;
     LiveLamp lamp;
     lamp.id = I.next_lamp++;
     lamp.name = name.empty() ? "lamp " + std::to_string(lamp.id) : name;
@@ -7479,6 +7598,24 @@ unsigned LiveWorld::lamp(const std::string &name, const std::string &body, unsig
     return I.lamps.back().id;
 }
 
+bool LiveWorld::wireLamp(unsigned id, unsigned cable_id, unsigned store) {
+    Impl &I = *impl_;
+    if (cable_id != 0) {
+        const LiveCable *run = I.cableById(cable_id);
+        if (run == nullptr) return false;
+        if (store != 0 && store != run->store) return false;
+        store = run->store;
+    }
+    if (store != 0 && I.energyStoreById(store) == nullptr) return false;
+    for (LiveLamp &lamp : I.lamps)
+        if (lamp.id == id) {
+            lamp.cable = cable_id;
+            lamp.store = store;
+            return true;
+        }
+    return false;
+}
+
 bool LiveWorld::switchLamp(unsigned id, bool on) {
     for (LiveLamp &lamp : impl_->lamps)
         if (lamp.id == id) {
@@ -7490,6 +7627,43 @@ bool LiveWorld::switchLamp(unsigned id, bool on) {
 }
 
 std::vector<LiveLamp> LiveWorld::lamps() const { return impl_->lamps; }
+
+unsigned LiveWorld::breaker(const std::string &name, const std::string &body, unsigned store,
+                            const Vec3 &point_world_m, const Vec3 &along_world, double watts, double reach_m) {
+    Impl &I = *impl_;
+    if (I.energyStoreById(store) == nullptr) return 0;
+    if (!(watts > 0.0 && watts <= 1.0e6) || !(reach_m >= 0.0 && reach_m <= 0.5)) return 0;
+    if (!std::isfinite(point_world_m.x) || !std::isfinite(point_world_m.y) || !std::isfinite(point_world_m.z) ||
+        length(along_world) < 1e-6)
+        return 0;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+    const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
+    const Quat back = conjugateOf(at.orientation_world);
+    LiveBreaker breaker;
+    breaker.id = I.next_breaker++;
+    breaker.name = name.empty() ? "breaker " + std::to_string(breaker.id) : name;
+    breaker.body = body;
+    breaker.store = store;
+    breaker.point_local_m = back.rotate(point_world_m - at.center_of_mass_world_m);
+    breaker.along_local = back.rotate(normalized(along_world));
+    breaker.watts = watts;
+    breaker.reach_m = reach_m;
+    breaker.at_m = point_world_m;
+    breaker.along = normalized(along_world);
+    I.breakers.push_back(std::move(breaker));
+    return I.breakers.back().id;
+}
+
+bool LiveWorld::switchBreaker(unsigned id, bool on) {
+    LiveBreaker *breaker = impl_->breakerById(id);
+    if (breaker == nullptr) return false;
+    breaker->on = on;
+    if (!on) { breaker->working = false; breaker->drawn_w = breaker->broke_m3 = 0.0; breaker->why = "switched off"; }
+    return true;
+}
+
+std::vector<LiveBreaker> LiveWorld::breakers() const { return impl_->breakers; }
 
 double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) const {
     const auto found = impl_->index_of.find(name);
@@ -15577,6 +15751,23 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         doc["lamps"] = std::move(lamps);
         doc["next_lamp"] = I.next_lamp;
     }
+    if (!I.breakers.empty()) {
+        nlohmann::json breakers = nlohmann::json::array();
+        for (const LiveBreaker &breaker : I.breakers)
+            breakers.push_back({{"id", breaker.id},
+                                {"name", breaker.name},
+                                {"body", breaker.body},
+                                {"store", breaker.store},
+                                {"point_local_m", savedVec(breaker.point_local_m)},
+                                {"along_local", savedVec(breaker.along_local)},
+                                {"watts", savedNumber(breaker.watts)},
+                                {"reach_m", savedNumber(breaker.reach_m)},
+                                {"on", breaker.on},
+                                {"drawn_j", savedNumber(breaker.drawn_j)},
+                                {"broke_total_m3", savedNumber(breaker.broke_total_m3)}});
+        doc["breakers"] = std::move(breakers);
+        doc["next_breaker"] = I.next_breaker;
+    }
     doc["next_energy_store"] = I.next_energy_store;
     doc["next_motor"] = I.next_motor;
     doc["next_control"] = I.next_control;
@@ -15818,6 +16009,7 @@ LiveCarry LiveWorld::carryAll(const std::string &snapshot) {
     ids("solar_panels", all.solar_panels);
     ids("cables", all.cables);
     ids("lamps", all.lamps);
+    ids("breakers", all.breakers);
     ids("blades", all.blades);
     ids("tool_points", all.tool_points);
     return all;

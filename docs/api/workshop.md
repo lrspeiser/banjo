@@ -242,7 +242,7 @@ what makes it go. It travels the same way `@construction` does, inside
 `component_overrides` under the reserved key `"@machines"`, so a client that
 already round-trips the overrides carries it without learning a new field.
 Schema `banjo.workshop-machines.v1`; at most 32 of each kind; the top-level
-fields are exactly `schema`, `stores`, `motors`, `panels`, `controls`,
+fields are exactly `schema`, `stores`, `motors`, `panels`, `lamps`, `controls`,
 `chambers` and `programs`, and anything else is refused by name.
 
 Everything is named by COMPONENT, because that is what a person is looking at on
@@ -256,6 +256,7 @@ bodies the compiler made.
     "schema": "banjo.workshop-machines.v1",
     "stores":   [{"name": "battery", "in": "deck", "capacity_j": 5000, "charge_j": 5000, "voltage_v": 24}],
     "panels":   [{"name": "solar panel", "on": "deck", "store": "battery", "area_m2": 0.25, "efficiency": 0.2}],
+    "lamps":    [{"name": "lamp", "on": "globe", "watts": 20, "efficacy_lm_w": 120, "on_at_first": true}],
     "motors":   [{"name": "left motor", "turns": ["bearing-mount-11", "axle-1-stub-1"], "store": "battery",
                   "stall_torque_n_m": 20, "no_load_rpm": 60, "brake_torque_n_m": 40}],
     "controls": [{"name": "left wheel", "turns": ["bearing-mount-11", "axle-1-stub-1"]}],
@@ -285,6 +286,15 @@ has `area_m2` 1e-4 to 1e4 and `efficiency` 0.001 to 1 (default 0.2). `at_m` and
 `normal` say where on its component it lies and which way it faces, in the
 design's frame; left out, the installer takes the component's top. What it
 collects depends on where the sun is, so a panel is only as good as the hour.
+
+**A lamp** sits `on` a component and gives light (docs/machine-world.md, "Light
+underground"). `watts` 0.01 to 1e5 (default 20) is what it asks for switched on,
+`efficacy_lm_w` 0.1 to 1000 (default 120) is the lumens it gives for each watt it
+gets, and `on_at_first` says whether it comes out switched on (default true).
+`at_m` says where on its component it hangs, in the design's frame; left out, the
+installer takes the component's top. It names NO store and NO cable: a lamp comes
+out of the Workshop unwired and dark, and lights when somebody runs a cable to
+it. One on a product that carries its own battery may name that `store`.
 
 **A control** is the named handle for a pin, and it is how anything works a
 motor: the page's panel, the room's chat and the API all operate a control or a

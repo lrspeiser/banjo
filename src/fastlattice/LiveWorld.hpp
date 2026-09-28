@@ -578,6 +578,37 @@ struct LiveLamp {
     double drawn_j{};                 // since it was made
 };
 
+// A powered breaker (docs/machine-world.md, "Breaking rock with a machine"): a
+// chisel on a part, wired to a store, that spends its store into whatever rock
+// its point is against. A pick swung by hand puts twenty-odd joules into rock a
+// blow and a cell of fresh rock costs 469 kJ (rock-work-v1), so a heading driven
+// by arm alone is twenty thousand blows; this is what makes a tunnel a thing a
+// person can drive.
+//
+// It works the rock its point is IN, or the first rock within `reach_m` ahead of
+// its point along the chisel -- a collider will not let a tool inside the face,
+// so a breaker held against a wall has its point a hair outside it. Nothing here
+// aims: where the point is and which way it looks is where the hand put it.
+struct LiveBreaker {
+    unsigned id{};
+    std::string name;
+    std::string body;             // the part the chisel is on
+    unsigned store{};             // what it draws from
+    Vec3 point_local_m{};         // its point, in the part's own frame
+    Vec3 along_local{0.0, 0.0, 1.0};  // which way the chisel looks
+    double watts{};               // what it puts in while it is on
+    double reach_m{};             // how far ahead of the point it can reach rock
+    bool on{};
+    // As the last kept step left it: where its point is and which way it looks,
+    // what it drew, what that bought, how far through the cell it is working,
+    // and why it is doing nothing.
+    Vec3 at_m{}, along{};
+    double drawn_w{}, broke_m3{}, broken_share{};
+    bool working{};
+    std::string why;
+    double drawn_j{}, broke_total_m3{};
+};
+
 // A motor on a pin, wired to a store: a DC motor's torque-speed line, from the
 // two numbers a maker gives -- the torque it stalls at and the speed it runs at
 // unloaded, both at the store's voltage. The command runs from -1 to 1, the
@@ -1281,7 +1312,7 @@ struct LiveRestore {
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
         std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{},
-            cables{}, lamps{}, blades{},
+            cables{}, lamps{}, breakers{}, blades{},
             tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
@@ -1310,7 +1341,7 @@ struct LiveCarry {
     // Explicit host assertion that terrain declarations/edits are unchanged.
     bool ground{};
     std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, cables, lamps,
-        blades, tool_points;
+        breakers, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1887,8 +1918,16 @@ public:
     // world, so it goes where the part goes; with no part it is pinned where it
     // is put. It starts switched off. Returns its id, above zero, or 0 when the
     // part, the cable or the store is not there or the numbers are not a lamp's.
+    //
+    // A lamp with neither a cable nor a store is a lamp nobody has wired yet:
+    // it is a real fitting standing where it was put, and it is dark until a
+    // run reaches it. That is how one comes out of the Workshop.
     unsigned lamp(const std::string &name, const std::string &body, unsigned cable, unsigned store,
                   const Vec3 &at_world_m, double watts, double efficacy_lm_w);
+    // Make a lamp off onto a run, or (with cable 0) onto a store directly, which
+    // is what stringing a cable to a fitting does. False if there is no such
+    // lamp, or no such run or store.
+    bool wireLamp(unsigned id, unsigned cable, unsigned store = 0);
     // Switch a lamp on or off. False if there is no such lamp.
     bool switchLamp(unsigned id, bool on);
     [[nodiscard]] std::vector<LiveLamp> lamps() const;
@@ -2012,6 +2051,16 @@ public:
         bool full{};
     };
     Chipped workRock(double x, double y, double z, double work_j);
+    // A powered breaker (LiveBreaker) on the named part, wired to `store`: its
+    // point given where it is now in the world, the chisel looking along
+    // `along_world`, putting `watts` (above 0, at most 1 MW) into the rock and
+    // reaching `reach_m` (0 to 0.5) ahead of its point. It starts switched off.
+    // Returns its id, above zero, or 0 when the part or the store is not there
+    // or the numbers are not a breaker's.
+    unsigned breaker(const std::string &name, const std::string &body, unsigned store,
+                     const Vec3 &point_world_m, const Vec3 &along_world, double watts, double reach_m);
+    bool switchBreaker(unsigned id, bool on);
+    [[nodiscard]] std::vector<LiveBreaker> breakers() const;
     // How much dug ground the person can carry (terrain::Environment). A world
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);

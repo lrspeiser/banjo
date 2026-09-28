@@ -227,10 +227,10 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     spec's entry index -> the id it keeps, "told": motor index -> (command,
     brake)}."""
     engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "controls": [], "programs": [],
-                              "solar_panels": [], "cables": [], "lamps": [],
+                              "solar_panels": [], "cables": [], "lamps": [], "breakers": [],
                               "blades": [], "tool_points": [], "declared_anew": []}
     pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "controls": {}, "programs": {},
-                                        "panels": {}, "cables": {}, "lamps": {},
+                                        "panels": {}, "cables": {}, "lamps": {}, "breakers": {},
                                         "blades": {}, "tool_points": {}}
     told: dict[int, tuple[Any, Any]] = {}
     told_controls: dict[int, tuple[Any, Any, Any]] = {}
@@ -353,6 +353,15 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
             continue
         pairs["lamps"][i] = ident
         engine["lamps"].append(ident)
+    pool = list(was.get("breakers") or [])
+    for i, breaker in enumerate(machines.get("breakers") or []):
+        ident = keep(pool, _plain(breaker)) if isinstance(breaker, dict) else None
+        if ident is None:
+            if isinstance(breaker, dict) and breaker.get("body"):
+                anew.add(str(breaker.get("body") or ""))
+            continue
+        pairs["breakers"][i] = ident
+        engine["breakers"].append(ident)
     engine["declared_anew"] = sorted(name for name in anew if name)
     return {"engine": engine, "pairs": pairs, "told": told, "told_controls": told_controls,
             "told_programs": told_programs}
@@ -1149,8 +1158,11 @@ class Live:
             name = str(lamp.get("name", ""))
             cable_id = runs.get(str(lamp.get("cable", ""))) if lamp.get("cable") else None
             store = stores.get(str(lamp.get("store", ""))) if lamp.get("store") else None
-            if cable_id is None and store is None:
-                problems.append(f"the {name} has neither a cable nor a store to draw on")
+            if lamp.get("cable") and cable_id is None:
+                problems.append(f"the {name} hangs on {lamp.get('cable')!r}, and there is no cable called that")
+                continue
+            if lamp.get("store") and store is None:
+                problems.append(f"the {name} draws on {lamp.get('store')!r}, and there is no store called that")
                 continue
             try:
                 answer = session.send(op="lamp", name=name, body=str(lamp.get("body", "")),
@@ -1164,6 +1176,27 @@ class Live:
                 continue
             if made is not None and answer.get("lamp") is not None:
                 made["lamps"][name] = answer.get("lamp")
+        # And each powered breaker, on its part and drawing on its store.
+        if made is not None:
+            made.setdefault("breakers", {})
+        for breaker in machines.get("breakers") or []:
+            name = str(breaker.get("name", ""))
+            store = stores.get(str(breaker.get("store", "")))
+            if store is None:
+                problems.append(f"the {name} has no store called {breaker.get('store', '')!r} to draw on")
+                continue
+            try:
+                answer = session.send(op="breaker", name=name, body=str(breaker.get("body", "")), store=store,
+                                      at_m=[float(v) / 1000.0 for v in breaker.get("at_mm") or []],
+                                      along=[float(v) for v in breaker.get("along") or []],
+                                      watts=float(breaker.get("watts", 1500.0)),
+                                      reach_m=float(breaker.get("reach_m", 0.12)),
+                                      on=bool(breaker.get("on", False)))
+            except Exception as error:
+                problems.append(f"the {name} would not go on: {error}")
+                continue
+            if made is not None and answer.get("breaker") is not None:
+                made["breakers"][name] = answer.get("breaker")
         hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
                   for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
         # Each motor's id by its pin's two things -- those the world has
@@ -1908,6 +1941,46 @@ class Live:
         if op == "sun":
             # The room's sun as it stands, whether or not it has a day.
             return session.send(op="sun")
+        if op == "cable":
+            # A run of cable strung in the world, from a store, through the
+            # points it is pinned at (docs/machine-world.md, "Light
+            # underground"). This is a person paying a drum out as they walk.
+            try:
+                store = int(body.get("store"))
+            except (TypeError, ValueError):
+                raise LiveError("a cable runs from a store's number") from None
+            run = body.get("run_m")
+            if not isinstance(run, list) or not 2 <= len(run) <= 256:
+                raise LiveError("a cable is pinned at 2 to 256 points")
+            points = []
+            for at in run:
+                if not isinstance(at, (list, tuple)) or len(at) != 3:
+                    raise LiveError("each point of a run is three numbers")
+                got = [float(v) for v in at]
+                if not all(math.isfinite(v) and -100000.0 <= v <= 100000.0 for v in got):
+                    raise LiveError("a run's points are within the world")
+                points.append(got)
+            area = float(body.get("area_mm2", 4.0))
+            if not (math.isfinite(area) and 0.01 <= area <= 1000.0):
+                raise LiveError("a conductor is from 0.01 to 1000 mm2")
+            return session.send(op="cable", name=str(body.get("name", "") or ""), store=store,
+                                run_m=points, area_mm2=area,
+                                resistivity_ohm_m=float(body.get("resistivity_ohm_m", 1.68e-8)))
+        if op == "lamp_wire":
+            # A run made off to a fitting: what makes an unwired lamp light.
+            try:
+                lamp = int(body.get("lamp"))
+            except (TypeError, ValueError):
+                raise LiveError("lamp_wire needs a lamp's number") from None
+            return session.send(op="lamp_wire", lamp=lamp, cable=int(body.get("cable") or 0),
+                                store=int(body.get("store") or 0))
+        if op == "breaker_switch":
+            # A breaker's trigger, by the id the room kept for it.
+            try:
+                breaker = int(body.get("breaker"))
+            except (TypeError, ValueError):
+                raise LiveError("breaker_switch needs a breaker's number") from None
+            return session.send(op="breaker_switch", breaker=breaker, on=bool(body.get("on", True)))
         if op == "lamp_switch":
             # A lamp turned on or off, by the id the room kept for it.
             try:

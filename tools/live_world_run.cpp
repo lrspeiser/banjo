@@ -282,7 +282,7 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
                           {"energy_stores", n.energy_stores}, {"motors", n.motors},
                           {"controls", n.controls}, {"programs", n.programs},
                           {"solar_panels", n.solar_panels}, {"cables", n.cables}, {"lamps", n.lamps},
-                          {"blades", n.blades},
+                          {"breakers", n.breakers}, {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
         out["woken"] = restored.woken;
@@ -308,6 +308,7 @@ LiveCarry carryFrom(const nlohmann::json &doc) {
     ids("solar_panels", carry.solar_panels);
     ids("cables", carry.cables);
     ids("lamps", carry.lamps);
+    ids("breakers", carry.breakers);
     ids("blades", carry.blades);
     ids("tool_points", carry.tool_points);
     if (doc.contains("declared_anew"))
@@ -589,6 +590,25 @@ nlohmann::json lampOf(const LiveLamp &lamp) {
             {"why", lamp.why}};
 }
 
+nlohmann::json breakerOf(const LiveBreaker &breaker) {
+    return {{"id", breaker.id},
+            {"name", breaker.name},
+            {"body", breaker.body},
+            {"store", breaker.store},
+            {"at_m", vec(breaker.at_m)},
+            {"along", vec(breaker.along)},
+            {"watts", tidy(breaker.watts)},
+            {"reach_m", tidy(breaker.reach_m)},
+            {"on", breaker.on},
+            {"working", breaker.working},
+            {"drawn_w", tidy(breaker.drawn_w)},
+            {"broke_m3", tidy(breaker.broke_m3)},
+            {"broken_share", tidy(breaker.broken_share)},
+            {"drawn_j", tidy(breaker.drawn_j)},
+            {"broke_total_m3", tidy(breaker.broke_total_m3)},
+            {"why", breaker.why}};
+}
+
 nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveEnergyStore> stores = world.energyStores();
     const std::vector<LiveMotor> motors = world.motors();
@@ -598,6 +618,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveSolarPanel> panels = world.solarPanels();
     const std::vector<LiveCable> cables = world.cables();
     const std::vector<LiveLamp> lamps = world.lamps();
+    const std::vector<LiveBreaker> breakers = world.breakers();
     nlohmann::json ropes = nlohmann::json::array();
     for (const LiveJoint &joint : joints) {
         if (joint.kind != "drum" || !joint.attached) continue;
@@ -609,7 +630,7 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                          {"meets", vec(joint.meets_m)}});
     }
     if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty() &&
-        panels.empty() && cables.empty() && lamps.empty())
+        panels.empty() && cables.empty() && lamps.empty() && breakers.empty())
         return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
@@ -675,6 +696,10 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     if (!lamps.empty()) {
         out["lamps"] = nlohmann::json::array();
         for (const LiveLamp &lamp : lamps) out["lamps"].push_back(lampOf(lamp));
+    }
+    if (!breakers.empty()) {
+        out["breakers"] = nlohmann::json::array();
+        for (const LiveBreaker &breaker : breakers) out["breakers"].push_back(breakerOf(breaker));
     }
     return out;
 }
@@ -2369,6 +2394,59 @@ int main(int argc, char **argv) {
                     if (command.value("on", false)) (void)world->switchLamp(made, true);
                     for (const LiveLamp &lamp : world->lamps())
                         if (lamp.id == made) reply["lit"] = lampOf(lamp);
+                } else if (op == "breaker") {
+                    // A powered breaker (LiveBreaker) on a part, wired to a
+                    // store: its point and which way its chisel looks, given in
+                    // the world. It starts off.
+                    const nlohmann::json &at = command.at("at_m");
+                    const nlohmann::json &along = command.at("along");
+                    const unsigned made = world->breaker(
+                        command.value("name", std::string{}), command.value("body", std::string{}),
+                        command.at("store").get<unsigned>(),
+                        Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()},
+                        Vec3{along.at(0).get<double>(), along.at(1).get<double>(), along.at(2).get<double>()},
+                        command.value("watts", 1500.0), command.value("reach_m", 0.12));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a breaker goes on a part that is in the world, wired to a store that is there, with a "
+                            "chisel that looks some way, above 0 and up to 1 MW, and a reach of 0 to 0.5 m");
+                    reply["breaker"] = made;
+                    if (command.value("on", false)) (void)world->switchBreaker(made, true);
+                    for (const LiveBreaker &breaker : world->breakers())
+                        if (breaker.id == made) reply["working"] = breakerOf(breaker);
+                } else if (op == "breaker_switch") {
+                    const unsigned id = command.at("breaker").get<unsigned>();
+                    if (!world->switchBreaker(id, command.value("on", true)))
+                        throw std::invalid_argument("there is no breaker with that id");
+                    for (const LiveBreaker &breaker : world->breakers())
+                        if (breaker.id == id) reply["working"] = breakerOf(breaker);
+                } else if (op == "lamp_wire") {
+                    // A run made off to a fitting: what stringing a cable to a
+                    // lamp does, and what makes an unwired one light.
+                    const unsigned id = command.at("lamp").get<unsigned>();
+                    if (!world->wireLamp(id, command.value("cable", 0U), command.value("store", 0U)))
+                        throw std::invalid_argument(
+                            "a lamp is made off to a run that is there, or straight to a store that is");
+                    for (const LiveLamp &lamp : world->lamps())
+                        if (lamp.id == id) reply["lit"] = lampOf(lamp);
+                } else if (op == "work_rock") {
+                    // Rock worked with measured energy at a point (rock-work-v1),
+                    // which is how a powered breaker takes a face back. The work
+                    // is the caller's to have paid for -- a hand breaker draws it
+                    // from the store it carries first.
+                    const nlohmann::json &at = command.at("at_m");
+                    const LiveWorld::Chipped chipped =
+                        world->workRock(at.at(0).get<double>(), at.at(1).get<double>(),
+                                        at.at(2).get<double>(), command.value("work_j", 0.0));
+                    reply["broken_share"] = tidy(chipped.broken_share);
+                    reply["bought_m3"] = tidy(chipped.bought_m3);
+                    reply["full"] = chipped.full;
+                    reply["moved_m3"] = tidy(chipped.effect.edit.moved.total());
+                    reply["cells"] = chipped.effect.edit.cells.size();
+                    if (!chipped.effect.edit.cells.empty()) {
+                        reply["dug"] = dugJson(chipped.effect);
+                        reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                    }
                 } else if (op == "lamp_switch") {
                     const unsigned id = command.at("lamp").get<unsigned>();
                     if (!world->switchLamp(id, command.value("on", true)))

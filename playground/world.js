@@ -383,6 +383,54 @@ function dressLights(block) {
   aimLamps();
 }
 
+// The powered breaker in your hand, if you are holding one (LiveBreaker): the
+// room's breaker whose part is the thing the hand has. A breaker is a compound,
+// so its chisel's body may be a part of the group the hand holds.
+function breakerInHand() {
+  const held = world.held && world.held.name;
+  if (!held) return null;
+  const mine = (world.machines && world.machines.breakers) || [];
+  return mine.find((b) => b && (b.body === held || sameThing(b.body, held))) || null;
+}
+
+// Two names for one thing: a product installed as exact bodies is a group whose
+// parts share a root name, so "breaker: chisel" and "breaker" are the same
+// thing to a hand (docs, "Same name, several bodies").
+function sameThing(a, b) {
+  if (!a || !b) return false;
+  const root = (n) => String(n).split(":")[0].trim();
+  return root(a) === root(b);
+}
+
+// The lamp and the store on a thing, for wiring: which of the room's fittings
+// and batteries belong to the thing you are looking at.
+function lampOn(name) {
+  const lamps = (world.machines && world.machines.lamps) || [];
+  return lamps.find((l) => l && (l.body === name || sameThing(l.body, name))) || null;
+}
+function storeOn(name) {
+  const stores = (world.machines && world.machines.stores) || [];
+  return stores.find((s) => s && (s.body === name || sameThing(s.body, name))) || null;
+}
+
+// A run of cable being paid out: where it started, and where you have walked
+// since. The run follows your feet, so going the long way round really does
+// cost you volts (docs/machine-world.md, "Light underground").
+const CABLE_STEP_M = 0.6;
+world.laying = null;
+function layCable(from, store) {
+  world.laying = { store, points: [from.slice()] };
+}
+function payOutCable() {
+  if (!world.laying) return;
+  const at = [camera.position.x, standingOn(camera.position.x, camera.position.z, camera.position.y) + 0.06,
+              camera.position.z];
+  const last = world.laying.points[world.laying.points.length - 1];
+  if (Math.hypot(at[0] - last[0], at[1] - last[1], at[2] - last[2]) < CABLE_STEP_M) return;
+  if (world.laying.points.length > 250) return;    // the engine takes 256 points
+  world.laying.points.push(at);
+}
+
 // Which lit lamps get one of the pool's lights: the nearest to the eye. Every
 // frame, because the eye moves between steps -- walking past a string of lamps
 // should not wait for the next reply to light the one you have reached.
@@ -4140,6 +4188,19 @@ function detailsModel() {
       rows.push([[k("stow")], entry && entry.shape === "hull" ? "sweep it up into what you carry"
                                                              : "put it in your bag"]);
     if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
+    const breaker = breakerInHand();
+    if (breaker) {
+      rows.push([[k("breaker")], breaker.on ? "let the trigger go" : "hold the trigger against the face"]);
+      const battery = ((world.machines && world.machines.stores) || [])
+        .find((s) => s.id === breaker.store);
+      const left = battery ? ` · ${(battery.charge_j / 1000).toFixed(0)} kJ left` : "";
+      model.note = [breaker.on
+        ? (breaker.working
+            ? `breaking: ${Math.round(breaker.drawn_w)} W into the rock, ` +
+              `${Math.round(100 * breaker.broken_share)}% through this cell`
+            : `running, doing nothing: ${breaker.why}`)
+        : `${Math.round(breaker.watts)} W against rock${left}`, model.note].filter(Boolean).join(" · ");
+    }
     // Placing: what the copy is doing is the only help -- not a throw's preview,
     // nor the wheel as it is when only holding.
     const help = world.placing ? { rows: [], note: "", meter: null } : handHelp(world.use);
@@ -4156,6 +4217,25 @@ function detailsModel() {
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
       rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"
                                                      : "put it in your bag"]);
+    // Wiring: a run starts at a battery and is made off at a fitting. What you
+    // are looking at decides which end this is.
+    const store = storeOn(name), fitting = lampOn(name);
+    if (world.laying && fitting && !fitting.cable) {
+      const paid = runLength(world.laying.points.concat([[camera.position.x, camera.position.y, camera.position.z]]));
+      rows.push([[k("cable")], `make the cable off here — ${paid.toFixed(1)} m paid out`]);
+    } else if (world.laying && store) {
+      rows.push([[k("cable")], "drop the drum: this run goes nowhere"]);
+    } else if (!world.laying && store) {
+      rows.push([[k("cable")], "start a run of cable here"]);
+    } else if (!world.laying && fitting && !fitting.cable) {
+      model.note = ["it is not wired to anything: start a run at a battery and walk it here",
+                    model.note].filter(Boolean).join(" · ");
+    }
+    if (fitting) {
+      model.facts = [model.facts, fitting.lit
+        ? `lit: ${Math.round(fitting.drawn_w)} W, ${Math.round(fitting.lumens)} lumens`
+        : `dark — ${fitting.why || "not wired"}`].filter(Boolean).join(" · ");
+    }
     rows.push([[k("heat")], "heat it"]);
   } else if (world.groundAim) {
     const underfoot = groundMadeOf(world.groundAim);
@@ -4713,6 +4793,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyL") markLag();
   // The room's buttons from the keyboard (interaction.js BINDINGS), so what the
   // side view offers, it offers with the key that does it.
+  if (isKey("breaker", e.code)) { e.preventDefault(); pullTheTrigger(); }
+  if (isKey("cable", e.code)) { e.preventDefault(); workTheCable(); }
   if (isKey("dig", e.code)) $("dig-it").click();
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
@@ -7461,6 +7543,7 @@ function frame() {
   lookFromKeys(dt);
   lookFromCursor(dt);
   walk(dt);
+  payOutCable();
   turnFromKeys(dt);
   updateGuides();
   updatePlacing(now);
@@ -8172,6 +8255,67 @@ async function digAt(x, z, width = 0.8, depth = 0.4) {
   if (answer.water) drawWater(answer.water);
   return answer;
 }
+// The breaker's trigger. The engine decides whether anything happens: a chisel
+// in the air breaks nothing, and it says so.
+async function pullTheTrigger() {
+  const breaker = breakerInHand();
+  if (!breaker) { lastAction("Nothing in your hand breaks rock.", "refused"); return; }
+  const answer = await act("breaker_switch", { breaker: breaker.id, on: !breaker.on });
+  const now = (answer && answer.working) || null;
+  if (now) {
+    for (const b of (world.machines && world.machines.breakers) || [])
+      if (b.id === now.id) Object.assign(b, now);
+    lastAction(now.on ? `The breaker is running: ${Math.round(now.watts)} W.` : "You let the trigger go.");
+  }
+  showDetails();
+}
+
+function runLength(points) {
+  let out = 0;
+  for (let i = 1; i < points.length; ++i)
+    out += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1],
+                      points[i][2] - points[i - 1][2]);
+  return out;
+}
+
+// Stringing a run: start it at a battery, walk it where you want it, make it off
+// at a fitting. The run is where YOU walked, so the cable is as long as the way
+// you took and the lamp is dimmer for every metre of it.
+async function workTheCable() {
+  const name = world.aim && world.aim.name;
+  const store = name ? storeOn(name) : null;
+  const fitting = name ? lampOn(name) : null;
+  if (!world.laying) {
+    if (!store) { lastAction("Start a run of cable at a battery.", "refused"); return; }
+    const entry = world.bodies.get(name);
+    const at = entry ? entry.mesh.position : camera.position;
+    layCable([at.x, at.y, at.z], store.id);
+    lastAction(`A run of cable started at ${titled(name)}. Walk it to the fitting.`);
+    showDetails();
+    return;
+  }
+  if (!fitting) {
+    world.laying = null;
+    lastAction("You put the drum down. Nothing was run.", "refused");
+    showDetails();
+    return;
+  }
+  const entry = world.bodies.get(name);
+  const end = entry ? entry.mesh.position : camera.position;
+  const points = world.laying.points.concat([[end.x, end.y, end.z]]);
+  const answer = await act("cable", { store: world.laying.store, run_m: points, area_mm2: 4.0 });
+  const run = answer && answer.ran;
+  if (!run) { lastAction("The run would not go in.", "refused"); return; }
+  const wired = await act("lamp_wire", { lamp: fitting.id, cable: run.id });
+  world.laying = null;
+  const lit = wired && wired.lit;
+  // What it will draw is not known until the next step settles the run, so the
+  // line says what was RUN, and the fitting's own line says what it is giving.
+  lastAction(`${run.length_m.toFixed(1)} m of cable from the battery to ${titled(name)}: `
+             + `${run.resistance_ohm.toFixed(3)} ohm.`);
+  showDetails();
+}
+
 $("dig-it").addEventListener("click", async () => {
   if (!world.session) return;
   if (!ground.grid) {
@@ -8478,6 +8622,10 @@ window.banjoRoom = {
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
   aim, pickUp, dropIt, putDown, letFly, intend,
+  // Mining: the breaker's trigger and the cable drum, which the M and P keys
+  // are bound to (tests/lamp_shots.py drives these, not the engine behind the
+  // page's back, so what a check photographs is what a person does).
+  pullTheTrigger, workTheCable, breakerInHand,
   // Where the hand hauls what it holds on a joint, and what it moves along.
   haulTarget: () => world.held && haulTarget(),
   haulGuide: () => world.held && world.held.guide && ({
