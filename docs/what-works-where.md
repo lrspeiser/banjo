@@ -68,6 +68,8 @@ body that stays whole.
 | A heated peg or pin giving way | Chat | ask for a fixing made of a named member, then heat it (about 50 s under 2 kW) |
 | Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
 | Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away |
+| A container holds a mass of a substance and rides the body that carries it | Code only | declare `vessels` on a room; `tests/vessels_tests.py` |
+| Turning a container over pours it into another one, or onto the ground | Code only | the same; a pail over a pail fills it, 12 kg in 4 s |
 | Ice melting, and its meltwater running into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
 | Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`), with no link to the world's heat |
 | Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |

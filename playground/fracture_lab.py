@@ -93,6 +93,11 @@ DEFAULT: dict[str, Any] = {
     # and heaters, in SI units (metres, pascals, watts) because nothing in them
     # is a size on the room's grid. What a body CONTAINS is on the body.
     "thermo": {},
+    # Containers, and what each holds (playground/vessels.py): a mass of a
+    # substance carried BY A BODY rather than lying at a place, so it rides
+    # whatever carries it and comes out when that is turned over. A heap on
+    # the ground is still a stockpile in the goods block; this is the bucket.
+    "vessels": [],
     # Terrain and water: the ground as a height field of rock, soil and sand,
     # and rivers and ponds on it (docs/terrain-and-water.md). Handed to the
     # engine as the scene's own "terrain" and "water" blocks, which it checks
@@ -1884,6 +1889,21 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
     return out
 
 
+def normalise_vessels(given: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A room's containers (playground/vessels.py): what each holds, and the
+    body it rides. The spelling and the numbers are vessels' own; what is
+    checked here is the one thing only the room knows -- that the body a
+    vessel rides is a body the room has."""
+    import vessels as vessels_module
+    made = vessels_module.checked(given)
+    named = {str(b.get("name")) for b in bodies}
+    for vessel in made:
+        if vessel["body"] not in named:
+            raise ValueError(f"the vessel {vessel['name']!r} rides {vessel['body']!r}, "
+                             f"and there is no such body in the room")
+    return made
+
+
 TERRAIN_KINDS = ("valley", "basin", "channel", "flat", "clearing")
 TERRAIN_EDITS = ("dig", "deposit", "cut")
 
@@ -2545,6 +2565,8 @@ def validate(spec: Any) -> dict[str, Any]:
             result["constructions"] = normalise_constructions(result["constructions"], result["bodies"])
         else:
             result.pop("constructions", None)
+        result["vessels"] = normalise_vessels(result.get("vessels"),
+                                              result["bodies"] + result.get("precise_rigid_bodies", []))
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
         _chambers_exist(result.get("machines") or {}, result["thermo"])
         result["terrain"] = normalise_terrain(result.get("terrain"))

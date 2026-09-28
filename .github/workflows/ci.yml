@@ -127,6 +127,7 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/tool_use_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
+          python3 tests/vessels_tests.py -v
           python3 tests/asset_compiler_tests.py -v
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v

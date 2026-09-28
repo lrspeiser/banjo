@@ -1545,6 +1545,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
     set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
+    # And containers: a mass of a substance carried BY A BODY rather than
+    # lying at a place, riding whatever carries it and pouring into another
+    # container -- or onto the ground -- when it is turned over.
+    add_test(NAME banjo_vessels_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/vessels_tests.py -v)
+    set_tests_properties(banjo_vessels_tests PROPERTIES TIMEOUT 120)
     # And the electric furnace: what its lining decides, that a recipe's own
     # temperature says which machine works it, that the Workshop's recipes
     # and the generator's chain cannot drift apart, and -- in the real engine
