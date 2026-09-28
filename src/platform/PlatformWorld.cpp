@@ -22,7 +22,9 @@ double number(const json &j,double lo,double hi){require(j.is_number(),"expected
 unsigned integer(const json &j,unsigned lo,unsigned hi){require(j.is_number_unsigned()||j.is_number_integer(),"expected integer");auto v=j.get<std::int64_t>();require(v>=lo&&v<=hi,"integer outside supported bounds");return unsigned(v);}
 Vec3 vector(const json &j,double limit){require(j.is_array()&&j.size()==3,"expected three SI components");return {number(j[0],-limit,limit),number(j[1],-limit,limit),number(j[2],-limit,limit)};}
 json vec(Vec3 v){return {v.x,v.y,v.z};}
-MaterialPreset material(const json &j){for(auto p:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Concrete})if(j==std::string(materialPresetName(p)))return p;throw std::invalid_argument("unsupported package material");}
+// A package names its material as the catalogue does, so the alumina is
+// "alumina ceramic" here and "ceramic" in a scene (materialSceneName).
+MaterialPreset material(const json &j){for(auto p:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Concrete,MaterialPreset::Ceramic})if(j==std::string(materialPresetName(p)))return p;throw std::invalid_argument("unsupported package material");}
 struct Body {
     unsigned id; MaterialPreset material; RigidPrimitive geometry; RigidSnapshot state;
     std::uint64_t seed{};

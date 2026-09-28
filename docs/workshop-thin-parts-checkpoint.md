@@ -55,7 +55,7 @@ physics. An old native binary without the declared capability refuses the reques
   1–6000 mm; offsets about the compound COM bounded to 6 m. The fixed compound
   must be face-connected. Positive-volume overlaps are refused rather than
   double-counted; gaps and point/edge-only contacts need an actual joint model.
-- Supported native density catalogs: glass, oak, iron and concrete. The same
+- Supported native density catalogs: glass, oak, iron, concrete and ceramic. The same
   geometric rules apply to every material. Cosmetic skins do not affect physics;
   physical curves/round members and rotated subparts are refused, not replaced by
   bounding boxes. Explicit physical block edits are boxes.

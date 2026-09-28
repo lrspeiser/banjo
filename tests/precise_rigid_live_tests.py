@@ -121,6 +121,24 @@ class PreciseAdmission(unittest.TestCase):
         lo,hi=precise_rigid.bounds(out['parts'],[0,1,0],[1,0,0,0])
         self.assertAlmostEqual(.41,hi[0]);self.assertAlmostEqual(1.16,hi[1])
 
+    def test_a_body_or_a_part_of_ceramic_is_admitted_by_the_scene_name(self):
+        # "ceramic" is what a scene calls the alumina the catalogue calls
+        # "alumina ceramic" (engine_materials.scene_name), and this list is the
+        # engine's own set: kExactMaterials in
+        # src/fastlattice/PreciseRigidScene.cpp. rigid_assembly compiles a
+        # design against this one list, so the two cannot drift apart.
+        self.assertIn('ceramic',precise_rigid.MATERIALS)
+        for material in precise_rigid.MATERIALS:
+            with self.subTest(material=material):
+                self.assertEqual(material,precise_rigid.normalise(
+                    [box(material=material)],world_room.yard())[0]['material'])
+        b=box('mixed');b['parts']=[{'dimensions_m':[.02]*3,'center_local_m':[0,0,0]},
+                                   {'dimensions_m':[.02]*3,'center_local_m':[.02,0,0],'material':'ceramic'}]
+        self.assertEqual('ceramic',precise_rigid.normalise([b],world_room.yard())[0]['parts'][1]['material'])
+        # The catalogue's own name is not a scene's: one spelling per scene.
+        with self.assertRaises(ValueError):
+            precise_rigid.normalise([box(material='alumina ceramic')],world_room.yard())
+
     def test_validation_and_scene_document_preserve_precise_geometry(self):
         spec=world_room.yard();spec['precise_rigid_bodies']=[box()]
         normalized=fracture_lab.validate(spec)
@@ -222,7 +240,8 @@ class RigidAssembly(unittest.TestCase):
                                                       for p in design.parts])
         cases = {'wheels on no axle': (without('axle-1'), 'held by a bearing'),
                  'an oval wheel': (changed('wheel-11', size_m=(.32, .06, .30)), 'oval cylinder'),
-                 'a rubber wheel': (changed('wheel-11', material='rubber'), 'glass, oak, iron or concrete')}
+                 'a rubber wheel': (changed('wheel-11', material='rubber'),
+                                    'glass, oak, iron, concrete or ceramic')}
         for label, (broken, words) in cases.items():
             with self.subTest(label), self.assertRaisesRegex(ValueError, words):
                 rigid_assembly.compile_design(broken, over, root='cart')
@@ -277,7 +296,7 @@ class NativePreciseInstallation(unittest.TestCase):
         # mass, not about material, so the rack is filled before they start; the
         # gate itself is covered by tests/workshop_rack_tests.py.
         import workshop_library
-        for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber'):
+        for _material in ('glass', 'oak', 'iron', 'concrete', 'aluminum', 'rubber', 'ceramic'):
             workshop_library.set_rack(self.app, _material, 500.0)
     def snap(self):return install._snapshot(self.live)
     def preview(self, material='oak', x=3.123):
@@ -426,6 +445,64 @@ class NativePreciseInstallation(unittest.TestCase):
         self.live.session.send(op='unpark',name=root,at=at,q=was['orientation_wxyz'])
         back=next(b for b in self.live.session.send(op='poses')['bodies'] if b['name']==root)
         for k in range(3):self.assertAlmostEqual(at[k],back['position_m'][k],delta=1e-6)
+
+    def test_an_exact_ceramic_body_opens_falls_and_settles(self):
+        # An exact body asks its material for a density and a contact surface,
+        # and the catalogue has given the alumina both all along; it never
+        # bonds, so the brittle-bond law it shares with glass is unused here.
+        # A 200 x 100 x 100 mm brick let go 600 mm up: made of 3900 kg/m3 of
+        # matter, lands on the floor and stops there, at rest and asleep.
+        brick=box('brick',(0,.6,0),'ceramic')
+        brick['parts']=[{'dimensions_m':[.2,.1,.1],'center_local_m':[0,0,0]}]
+        brick['color_rgba']=precise_rigid.colour('ceramic')
+        spec=world_room.yard();spec['precise_rigid_bodies']=[brick]
+        self.assertEqual('ceramic',fracture_lab.validate(spec)['precise_rigid_bodies'][0]['material'])
+        self.room.spec=spec;self.live.open(self.app,{'spec':spec})
+        made=next(b for b in self.snap()['bodies'] if b['name']=='brick')
+        self.assertEqual('precise-rigid-v1',made['mechanical_model'])
+        self.assertEqual('',made['nodes_b64']);self.assertEqual('',made['offsets_b64'])
+        self.assertAlmostEqual(3900*.2*.1*.1,made['precise_mass_kg'],delta=7.8*5e-6)
+        # What it is made of, by the catalogue's name; what it was declared as,
+        # by the scene's, so the declaration a caller holds still matches.
+        self.assertEqual('alumina ceramic',made['material'])
+        self.assertEqual('ceramic',made['precise_rigid_definition']['material'])
+        self.assertAlmostEqual(.6,made['pose']['com_m'][1],delta=1e-9)
+        self.live.session.send(op='step',dt=1/240,n=480)
+        after=self.snap();rested=next(b for b in after['bodies'] if b['name']=='brick')
+        self.assertAlmostEqual(.05,rested['pose']['com_m'][1],delta=.002)
+        self.assertLess(max(abs(v) for v in rested['pose']['v_m_s']),.01)
+        self.assertFalse(rested['awake'])
+        # It stands on ceramic's own contact surface, which is the material
+        # model a saved exact body is checked against on the way back in
+        # ("saved precise-rigid surface differs from its material model").
+        self.assertEqual(.38,rested['friction']);self.assertEqual(.0003,rested['rolling_resistance'])
+        self.assertGreater(rested['restitution'],0)
+        self.room.world_record=after;self.app.store.save(self.room)
+        self.live.shutdown();self.app.room=self.room=self.app.store.load('yard')
+        opened=self.live.open(self.app,{'spec':self.room.spec,'snapshot':self.room.world_record})
+        self.assertEqual('whole',opened['restored']['tier'])
+        self.assertEqual(after,self.snap())
+        # It is drawn as the one part it is, in the ceramic colour a body of
+        # cells of it is drawn in (fracture_lab.MATERIAL_COLORS).
+        shown=next(b for b in self.live.session.send(op='poses')['bodies'] if b['name']=='brick')
+        self.assertEqual([.2,.1,.1],shown['rigid_parts_local'][0]['dimensions_m'])
+        self.assertEqual(fracture_lab.MATERIAL_COLORS['ceramic'],shown['color_rgba'])
+        self.assertEqual('alumina ceramic',shown['rigid_parts_local'][0]['material'])
+
+    def test_a_ceramic_workshop_product_installs_as_an_exact_body(self):
+        # The plain rigid lane as well (workshop_rigid.compile_rigid, then
+        # _preview_rigid), which is how anything with no bearing and no machine
+        # in it is installed -- a ceramic lining, not only a cart's wheel.
+        a=artifact('alumina ceramic')
+        self.assertEqual('alumina ceramic',a['material'])
+        self.assertAlmostEqual(3900,a['density_kg_m3'])
+        p=self.preview('alumina ceramic',9.5)
+        self.assertEqual(0,p['cells']);self.assertEqual(5,p['collision_boxes'])
+        self.commit(p,'rigid-install-ceramic')
+        b=next(x for x in self.snap()['bodies'] if x['name']==p['root_body'])
+        self.assertAlmostEqual(a['mass_kg'],b['precise_mass_kg'],delta=a['mass_kg']*5e-6)
+        self.assertEqual('alumina ceramic',b['material'])
+        self.assertEqual('ceramic',b['precise_rigid_definition']['material'])
 
     def test_native_geometry_validator_independently_rejects_bad_raw_scenes(self):
         spec=world_room.yard();spec['precise_rigid_bodies']=[box()]

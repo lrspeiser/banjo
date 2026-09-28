@@ -1,9 +1,11 @@
 #include "fastlattice/PreciseRigidScene.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 
 namespace banjo::fastlattice {
 namespace {
@@ -30,9 +32,19 @@ Vec3 vector(const json &j, double limit) {
     return {number(j[0], -limit, limit), number(j[1], -limit, limit), number(j[2], -limit, limit)};
 }
 json vec(Vec3 v) { return {v.x, v.y, v.z}; }
+// What an exact body may be made of, by the name a scene calls it. An exact
+// body asks its material for two things and no more: a density, so its mass and
+// inertia are its own matter's, and a contact surface (compileContactMaterial:
+// friction, restitution, rolling resistance), so it lands and slides as that
+// stuff does. It never bonds, so a brittle-bond law is unused here -- glass's
+// already is -- and the alumina the catalogue calls "alumina ceramic", which
+// `fire ceramic` makes in the game's own chain, has had both all along.
+constexpr std::array<MaterialPreset, 5> kExactMaterials{
+    MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron,
+    MaterialPreset::Concrete, MaterialPreset::Ceramic};
 MaterialPreset material(const json &j) {
-    for (auto p : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron, MaterialPreset::Concrete})
-        if (j == std::string(materialPresetName(p))) return p;
+    for (const MaterialPreset p : kExactMaterials)
+        if (j == std::string(materialSceneName(p))) return p;
     throw std::invalid_argument("unsupported precise rigid material");
 }
 Quat unitQuaternion(const json &q) {
@@ -252,8 +264,10 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
         b.dimensions_m = hi - lo;
         for (RigidCompoundPart &part : b.parts) part.center_local_m = part.center_local_m - centre;
         b.initial.center_of_mass_world_m = origin + rotation.rotate(centre);
-        // As given, so reading it again makes the same body.
-        b.definition_json = json{{"name", b.name}, {"material", materialPresetName(b.material)},
+        // As given, so reading it again makes the same body -- and by the name
+        // the scene used for its material, so the declaration a caller holds
+        // still matches the one that comes back (precise_rigid.verify).
+        b.definition_json = json{{"name", b.name}, {"material", std::string(materialSceneName(b.material))},
             {"parts", parts}, {"position_m", vec(origin)},
             {"orientation_wxyz", q}, {"velocity_m_s", vec(b.initial.linear_velocity_m_s)},
             {"spin_rad_s", vec(b.initial.angular_velocity_rad_s)}, {"color_rgba", b.color_rgba}}.dump();

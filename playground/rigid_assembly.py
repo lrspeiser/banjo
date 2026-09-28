@@ -27,10 +27,10 @@ import math
 import re
 from typing import Any
 
+import precise_rigid
 from mcp import core_use, engine_materials, interaction_points, workshop_construction, workshop_visual
 
 SCHEMA = "banjo.rigid-assembly.v1"
-MATERIALS = ("glass", "oak", "iron", "concrete")
 
 
 def _quaternion(m) -> list[float]:
@@ -70,8 +70,9 @@ def _part(part, skins) -> dict[str, Any]:
     if skin.get("physical") and workshop_visual._effective_profile(part, skin) == "curve":
         raise ValueError(f"{part.name}: a curved physical skin is neither a box nor a cylinder")
     material = engine_materials.scene_name(part.material)
-    if material not in MATERIALS:
-        raise ValueError(f"{part.name}: an exact rigid part is glass, oak, iron or concrete, not {part.material}")
+    if material not in precise_rigid.MATERIALS:
+        listed = ", ".join(precise_rigid.MATERIALS[:-1]) + " or " + precise_rigid.MATERIALS[-1]
+        raise ValueError(f"{part.name}: an exact rigid part is {listed}, not {part.material}")
     size = [float(v) for v in part.size_m]
     out = {"name": part.name, "dimensions_m": size, "center_local_m": [float(v) for v in part.center_m],
            "material": material}

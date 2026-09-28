@@ -15,7 +15,7 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from typing import Any
-from mcp import core_use
+from mcp import core_use, engine_materials
 
 MODEL = "precise-rigid-v1"
 MAX_BODIES = 32
@@ -24,7 +24,12 @@ LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat, blades
           "A breakable body they strike is judged against their material, and a break that would need them inside "
           "the lattice run is declined and reported rather than run.")
 SHAPES = ("box", "cylinder")
-MATERIALS = ("glass", "oak", "iron", "concrete")
+# What an exact body may be made of, by the name a scene calls it
+# (engine_materials.scene_name), and the engine's own set: kExactMaterials
+# in src/fastlattice/PreciseRigidScene.cpp. "ceramic" is the alumina the
+# catalogue calls "alumina ceramic" and the chain fires; an exact body of it
+# asks for nothing a lattice would, since it never bonds.
+MATERIALS = ("glass", "oak", "iron", "concrete", "ceramic")
 
 
 def _vector(value: Any, limit: float, label: str) -> list[float]:
@@ -96,7 +101,7 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
                 any(ord(c) < 32 or ord(c) == 127 for c in name)):
             raise ValueError("Precise rigid body names must be unique, nonempty, at most 120 bytes, and contain no control characters")
         names.add(name)
-        if raw.get("material") not in {"glass", "oak", "iron", "concrete"}:
+        if raw.get("material") not in set(MATERIALS):
             raise ValueError("Unsupported precise rigid material")
         b = {"name": name, "material": raw["material"],
              "position_m": _vector(raw.get("position_m"), 190, "position_m"),
@@ -203,11 +208,14 @@ def colour(material: str) -> int:
 
 def placement(artifact: dict[str, Any], root: str, xz: list[float]):
     translation = [xz[0], .002-artifact["bounds_m"][0][1], xz[1]]
-    body = {"name": root, "material": artifact["material"],
+    # An artifact names its material as the catalogue does ("alumina ceramic");
+    # a scene, and so the body below and its colour, uses the scene name.
+    material = engine_materials.scene_name(artifact["material"])
+    body = {"name": root, "material": material,
             "parts": [{"dimensions_m": deepcopy(p["dimensions_m"]), "center_local_m": deepcopy(p["center_local_m"])} for p in artifact["components"]],
             "position_m": [a+b for a,b in zip(artifact["centre_of_mass_m"],translation)],
             "orientation_wxyz": [1,0,0,0], "velocity_m_s": [0,0,0], "spin_rad_s": [0,0,0],
-            "color_rgba": colour(artifact["material"])}
+            "color_rgba": colour(material)}
     return body, translation
 
 
