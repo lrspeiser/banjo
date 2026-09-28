@@ -274,15 +274,23 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.audit_energy = r.audit_energy ? 1 : 0;
     s.plastic_yield_stretch = setup.compiled.yield_stretch;
     s.plastic_hardening = setup.compiled.plastic_hardening_ratio;
-    // Half a cell: the outermost fibre of matter one cell thick, which is what
-    // lets a sheet one cell thick answer a blow struck flat at it at all
-    // (LatticePhysics plateBendingStrain, docs/plate-bending.md). Only a
-    // coplanar neighbourhood reads it, so every body two cells thick or more is
-    // untouched. It is held by the fit-share guard next to it: a curvature is
-    // read only where a quadratic explains nine tenths of the out-of-plane
-    // motion, which is what keeps a plate that is ALREADY shattering from
-    // feeding its own noise back in. What that costs is in the note, measured.
-    s.plate_half_thickness = 0.5 * r.cell_size_m;
+    // OFF, on the realtime rule, after being on for one commit (4c193d5).
+    // Setting this to 0.5 * cell size switches plate bending on: it is what
+    // lets a sheet one cell thick answer a blow struck flat at it at all, and
+    // it works (LatticePhysics plateBendingStrain, docs/plate-bending.md has
+    // the ladder both ways). What it costs is the problem. A one-cell glass
+    // tabletop comes apart into ~185 pieces instead of holding, and the
+    // Workshop's own drop test for a glass table then takes 15.0 s of wall
+    // clock for 1.7 s of world time -- 8.8x realtime, where the same test is
+    // 0.08 s with this off. Design rule 2 is that nothing may take more than
+    // 1.1x the simulated time, and the bench's own 30 s guard refuses the run
+    // outright on CI's slower hardware: three tests in
+    // tests/workshop_bench_engine_tests.py, measured on main at 4c193d5. The
+    // cost is NOT the curvature fit, it is simulating the pieces, so it cannot
+    // be optimised away at the fit -- it needs either a cheaper way to carry a
+    // shattered sheet, or a decision that this product test may cost that
+    // much. Awaiting the owner on which.
+    s.plate_half_thickness = 0.0;
     // Node-node contact. The cell is a cube of side `cell`; its contact sphere
     // is the inscribed one, the same radius the support planes hold a cell
     // centre above a surface with, so two cells touch exactly one cell apart --

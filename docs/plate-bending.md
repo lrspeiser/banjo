@@ -1,10 +1,22 @@
 # Plate bending: matter one cell thick
 
-**Status: ON in the world since 27 September.** It fixes the reported fault from
-6 m up and does not fix it below that; this note is the measurement both ways,
-what it costs a plate bridged on piers, and the separate bug it flushed out on
-the way — the world not repeating itself — which had to be fixed before any of
-these numbers meant anything.
+**Status: built, measured, and OFF — on the realtime rule.** It was on for one
+commit (4c193d5, 28 September) and is off again in the one after. It fixes the
+reported fault from 6 m up and does not fix it below that. What stopped it is not
+the physics but the bill: a one-cell glass tabletop comes apart into ~185 pieces,
+and the Workshop's own drop test for a glass table then takes **15.0 s of wall
+clock for 1.7 s of world time — 8.8× realtime**, where the same test is 0.08 s
+with the term off. Design rule 2 is 1.1×, and the bench's own 30 s guard refuses
+the run outright on CI's slower hardware: three tests in
+`tests/workshop_bench_engine_tests.py` failed on main at 4c193d5 with
+"The simulation exceeded its work budget". **The cost is not the curvature fit —
+it is simulating the pieces** — so it cannot be optimised away at the fit. This
+note is the measurement both ways, so the decision can be made on numbers: it
+needs either a cheaper way to carry a shattered sheet, or a decision that a
+product test may cost that much.
+
+The other half of this work, the world repeating itself, is ON and unaffected —
+it has no cost and it is what made the published ladders reproducible.
 
 ## What a plane can measure
 
