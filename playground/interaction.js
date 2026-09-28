@@ -312,14 +312,21 @@ export function handHelp(use) {
   const rows = [];
   let meter = null, note = "";
   const onTarget = !!(use.preview && use.preview.onTarget);
+  // The ring is where the flight FIRST touches something. The engine's preview
+  // stops there -- it does not carry the thing on through the bounce -- so
+  // calling it "where it would come down" was a promise about a rubber ball
+  // that the room was never going to keep.
   const preview = use.preview && use.preview.possible
     ? (onTarget
         ? `This throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
-          + (use.preview.hitName ? ` and hit ${use.preview.hitName}`
-             : use.preview.hit ? " and come down where you are pointing" : "")
+          + (use.preview.hitName ? ` and first strike ${use.preview.hitName}`
+             : use.preview.hit ? " and first touch down where you are pointing" : "")
           + ` — a preview of this hand on this ${use.noun || "thing"}.`
-        : "It would not come down where you are pointing, so it will not be thrown:"
-          + " move the ring onto what you want, or hold on longer to send it further.")
+          + " The ring is that first touch, not where it ends up: something"
+          + " springy will bounce on from there."
+        : "Its first touch would not be where you are pointing, so it will not be"
+          + " thrown: move the ring onto what you want, or hold on longer to send"
+          + " it further.")
     : use.preview && use.preview.why ? use.preview.why : "";
   switch (use.mode) {
     case "ready":

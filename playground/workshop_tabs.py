@@ -22,6 +22,81 @@ import workshop_library
 from mcp import workshop as w, workshop_machines
 
 
+# What a bench design can be made of. A world body may be a sphere; a design
+# part may not (mcp.workshop.WirePart takes box, tapered or cylinder only), so
+# a round thing opens as the nearest thing the bench can hold and says so
+# rather than quietly becoming a crate.
+_BENCH_SHAPE = {"box": "box", "cylinder": "cylinder", "tapered": "tapered",
+                "sphere": "cylinder", "capsule": "cylinder"}
+
+
+def carried(app: Any) -> list[dict[str, Any]]:
+    """What the person has in their hands and their bag, for the bench to show.
+
+    The bench used to know nothing about it: the Inventory tab read the rack,
+    the goods, the library and what had been installed, so a thing you had just
+    picked up was nowhere in the Workshop. Each entry carries enough to draw it
+    and enough to open it: where it is being carried, what it is made of, how
+    big, what colour, and whether the bench itself made it.
+    """
+    try:
+        import inventory_room
+        from inventory import items_of
+        room = getattr(app, "room", None)
+        if room is None or not getattr(room, "spec", None):
+            return []
+        shown = inventory_room.shown(app)
+        spec = room.spec
+        bodies = {str(b["name"]): b for b in (spec.get("bodies") or [])
+                  if isinstance(b, dict) and b.get("name")}
+        bodies.update({str(b["name"]): b for b in (spec.get("precise_rigid_bodies") or [])
+                       if isinstance(b, dict) and b.get("name")})
+        # Which design made what, so a thing built on the bench opens its own
+        # design rather than a fresh copy of its shape.
+        made = {}
+        for receipt in getattr(room, "workshop_installs", None) or []:
+            if isinstance(receipt, dict) and receipt.get("design_id"):
+                made[str(receipt.get("root_body") or "")] = str(receipt["design_id"])
+
+        def one(entry: dict[str, Any] | None, where: str) -> dict[str, Any] | None:
+            if not entry:
+                return None
+            name = str(entry.get("name") or "")
+            first = bodies.get(name) or {}
+            size = [float(v) for v in (first.get("size_mm") or [])] or None
+            out = {"where": where, "id": entry.get("id"), "name": name,
+                   "material": str(first.get("material") or entry.get("material") or ""),
+                   "shape": str(first.get("shape") or entry.get("shape") or "box"),
+                   "parts": list(entry.get("parts") or [name]),
+                   "color_rgba": str(first.get("color_rgba") or ""),
+                   "design_id": made.get(name) or None}
+            out["bench_shape"] = _BENCH_SHAPE.get(out["shape"], "box")
+            out["same_shape"] = out["bench_shape"] == out["shape"]
+            if size:
+                out["size_mm"] = size
+            thing = next((i for i in items_of(spec) if i["id"] == entry.get("id")), None)
+            kg = inventory_room.whole_kg(app, thing) if thing else None
+            if kg is not None:
+                out["kg"] = round(float(kg), 3)
+            return out
+
+        out = []
+        for hand, entry in (shown.get("hands") or {}).items():
+            got = one(entry, f"{hand} hand")
+            if got:
+                out.append(got)
+        for i, entry in enumerate(shown.get("stowed") or []):
+            got = one(entry, f"bag {i + 1}")
+            if got:
+                out.append(got)
+        return out
+    except Exception:
+        # The bench is worth showing even when the room cannot say what is in a
+        # hand; an empty list reads as "carrying nothing", which is what the
+        # tab said before this existed.
+        return []
+
+
 def inventory(app: Any) -> dict[str, Any]:
     rack = workshop_library.rack(app)
     goods = workshop_library.goods_rack(app)
@@ -50,7 +125,8 @@ def inventory(app: Any) -> dict[str, Any]:
     return {"materials": rack.get("materials", []), "goods": goods.get("goods", []),
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
-            "families": families, "in_world": in_world, "saved": saved}
+            "families": families, "in_world": in_world, "saved": saved,
+            "carried": carried(app)}
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:

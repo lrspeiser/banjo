@@ -1741,8 +1741,108 @@ function tag(text, cls = "") { return make("span", { class: `ws-tag ${cls}`.trim
 function item(title, sub, cls = "") { const li = make("li", cls ? { class: cls } : {}); li.append(make("strong", {}, title)); if (sub) li.append(make("small", {}, sub)); return li; }
 function fill(id, rows, empty) { const root = $(id); if (!root) return; root.replaceChildren(); if (!rows.length) root.append(item(empty)); for (const row of rows) root.append(row); }
 
+// A small picture of a thing, drawn from what the room says it is: its shape
+// and its own colour. Not a render of the real body -- the bench's 3D view is
+// for the design being worked on -- but enough to tell a rubber ball from an
+// iron sword at a glance, which a column of names never did.
+function thumbnail(thing) {
+  const size = 48;
+  const canvas = make("canvas", { width: String(size), height: String(size),
+                                  role: "img", "aria-label": `${thing.name}, ${thing.material}` });
+  const pen = canvas.getContext("2d");
+  if (!pen) return canvas;
+  const hex = /^[0-9a-f]{6,8}$/i.test(thing.color_rgba || "") ? thing.color_rgba.slice(0, 6) : "9aa7b4";
+  const face = `#${hex}`;
+  const dark = (amount) => {
+    const n = parseInt(hex, 16);
+    const mix = (c) => Math.max(0, Math.min(255, Math.round(c * amount)));
+    return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+  };
+  const m = 8, w = size - m * 2;
+  pen.clearRect(0, 0, size, size);
+  if (thing.shape === "sphere" || thing.shape === "capsule") {
+    const light = pen.createRadialGradient(size * 0.38, size * 0.36, 2, size / 2, size / 2, w / 2);
+    light.addColorStop(0, face);
+    light.addColorStop(1, dark(0.45));
+    pen.fillStyle = light;
+    pen.beginPath(); pen.arc(size / 2, size / 2, w / 2, 0, Math.PI * 2); pen.fill();
+  } else if (thing.shape === "cylinder") {
+    pen.fillStyle = dark(0.7);
+    pen.fillRect(m, m + 5, w, w - 10);
+    pen.fillStyle = face;
+    pen.beginPath(); pen.ellipse(size / 2, m + 5, w / 2, 5, 0, 0, Math.PI * 2); pen.fill();
+    pen.fillStyle = dark(0.5);
+    pen.beginPath(); pen.ellipse(size / 2, size - m - 5, w / 2, 5, 0, 0, Math.PI * 2); pen.fill();
+  } else {
+    // A box, drawn with its top and one side, so it reads as a solid.
+    const d = 7;
+    pen.fillStyle = face;
+    pen.fillRect(m, m + d, w - d, w - d);
+    pen.fillStyle = dark(1.25);
+    pen.beginPath(); pen.moveTo(m, m + d); pen.lineTo(m + d, m);
+    pen.lineTo(size - m, m); pen.lineTo(size - m - d, m + d); pen.closePath(); pen.fill();
+    pen.fillStyle = dark(0.6);
+    pen.beginPath(); pen.moveTo(size - m - d, m + d); pen.lineTo(size - m, m);
+    pen.lineTo(size - m, size - m - d); pen.lineTo(size - m - d, size - m); pen.closePath(); pen.fill();
+  }
+  return canvas;
+}
+
+// Opening a carried thing on the bench. Something the Workshop made opens its
+// own design; anything else becomes a design of one part, from the shape,
+// size and material the room has for it, so it can be edited and made again.
+// The bench cannot hold a sphere (a design part is box, tapered or cylinder),
+// so a round thing opens as the nearest it can and the row says so.
+function carriedDesign(thing) {
+  const mm = thing.size_mm || [100, 100, 100];
+  const size_m = mm.map((v) => Math.max(0.001, v / 1000));
+  return {
+    kind: "custom",
+    generation: bench.generation + 1,
+    component_overrides: { "@construction": {
+      schema: "banjo.workshop-construction.v1",
+      added: [{ name: thing.name || "part", role: "part", shape: thing.bench_shape || "box",
+                material: thing.material || "oak", size_m,
+                center_m: [0, size_m[1] / 2, 0] }],
+      removed: [], joints: [] } },
+  };
+}
+
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
+  // What the person has on them. The bench knew nothing of this until now: a
+  // thing you had just picked up was in the room's bag and nowhere in here.
+  fill("#ws-inv-carried", (inv.carried || []).map((thing) => {
+    const li = make("li");
+    const of = make("div", { class: "ws-carry-of" });
+    of.append(make("strong", {}, thing.name));
+    const facts = [thing.where, thing.material, thing.shape,
+                   thing.kg != null ? `${thing.kg} kg` : null,
+                   thing.size_mm ? thing.size_mm.map((v) => Math.round(v)).join(" × ") + " mm" : null]
+      .filter(Boolean).join(" · ");
+    of.append(make("small", {}, facts));
+    if (!thing.same_shape) {
+      of.append(make("small", { class: "ws-approx" },
+        `The bench has no ${thing.shape}: it opens as a ${thing.bench_shape} of the same size.`));
+    }
+    const open = make("button", { type: "button", class: "ws-action" },
+                      thing.design_id ? "Open its design" : "Open in the Lab");
+    open.onclick = () => guard(open, async () => {
+      showTab("lab");
+      bench.openedLibraryItem = null;
+      if (thing.design_id) {
+        const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
+        if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
+      }
+      if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
+        $("#ws-archetype").value = "custom";
+        say(`${thing.name} is on the bench: one part, ${thing.material}.`);
+      }
+    });
+    of.append(open);
+    li.append(thumbnail(thing), of);
+    return li;
+  }), "Your hands and bag are empty.");
   // The rack, editable here: what the bench holds of each material. Making
   // is what spends it; designing never does.
   fill("#ws-inv-materials", inv.materials.map((r) => {

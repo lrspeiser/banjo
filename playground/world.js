@@ -4438,6 +4438,62 @@ addEventListener("mousemove", (e) => {
   if (looking) turn(e.movementX, e.movementY);
 });
 
+// THE CURSOR PUSHES THE VIEW. Moving the mouse turns the room without
+// clicking anything and without holding a button down: the middle of the
+// screen is a dead zone where the cursor only picks things, and from there out
+// to an edge the view turns that way, faster the nearer the edge. Park the
+// cursor by an edge and it keeps turning; bring it back to the middle and it
+// stops.
+//
+// Why not pointer lock, which is how a shooter does this: a browser will only
+// lock the pointer on a click, and not having to click first is the whole
+// point. So this is the ordinary cursor, and dragging still works for a big
+// turn in one go.
+//
+// The dead zone is most of the screen because the owner asked to be able to
+// click straight onto a thing rather than line the crosshair up with it: the
+// place you click in is the place that does not turn.
+const LOOK_DEAD = 0.55;        // share of the half-width that turns nothing
+// Measured in the real page rather than guessed: at 2.2 the cursor in the
+// corner brought the view round 122 degrees a second -- a whole turn in under
+// three -- which is a flick, not a look. These are 63 and 34 degrees a second
+// at the very edge, and gentler than that for most of the way out.
+const LOOK_YAW_RATE = 1.1;     // radians a second at the very edge, side to side
+const LOOK_PITCH_RATE = 0.6;   // and up and down, slower -- there is less of it
+
+// How hard the cursor pushes at `v`, which is -1 to 1 across the visible view.
+// Squared, so it eases in at the edge of the dead zone instead of stepping.
+function lookPush(v) {
+  const away = Math.abs(v);
+  if (away <= LOOK_DEAD) return 0;
+  const into = Math.min(1, (away - LOOK_DEAD) / (1 - LOOK_DEAD));
+  return Math.sign(v) * into * into;
+}
+
+function lookFromCursor(dt) {
+  // Dragging already turns the view, and a wind-up is aimed by hand.
+  if (!cursor || drag) return;
+  const box = canvas.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  // The side panel sits ON the canvas, so the canvas's own right edge is
+  // behind it and a cursor can never reach it. What counts is the edge of what
+  // can be seen: turn right has to start before the panel does, or it is a
+  // turn nobody can ask for.
+  const panel = $("panel");
+  const over = panel ? panel.getBoundingClientRect() : null;
+  const right = over && over.width && over.left > box.left ? over.left : box.right;
+  const wide = right - box.left;
+  if (wide <= 0) return;
+  const nx = (cursor.px / wide) * 2 - 1;
+  const ny = -(cursor.py / box.height) * 2 + 1;
+  const dx = lookPush(nx), dy = lookPush(ny);
+  if (!dx && !dy) return;
+  // turn() is in mouse pixels at 0.0022 radians each, so a rate in radians a
+  // second becomes that many pixels of the same turn.
+  const px = (rate) => (rate * dt) / 0.0022;
+  turn(dx * px(LOOK_YAW_RATE), -dy * px(LOOK_PITCH_RATE));
+}
+
 // Arrow keys look, for anyone who would rather not drag and for a keyboard on
 // its own.
 function lookFromKeys(dt) {
@@ -5123,7 +5179,7 @@ async function letFly() {
   if (!use.preview || !use.preview.onTarget) {
     cancelWindUp(use.preview && !use.preview.possible && use.preview.why
       ? use.preview.why
-      : "It would not come down where you are pointing, so it was not thrown."
+      : "Its first touch would not be where you are pointing, so it was not thrown."
         + " Move the ring onto what you want, or hold on longer.");
     return;
   }
@@ -6868,6 +6924,7 @@ function frame() {
   last = now;
   traceFrame(gap);
   lookFromKeys(dt);
+  lookFromCursor(dt);
   walk(dt);
   turnFromKeys(dt);
   updateGuides();

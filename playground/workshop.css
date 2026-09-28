@@ -2,6 +2,14 @@
    Served as a file under script-src/style-src 'self'. */
 
 .workshop-entry { display:inline-block;margin-top:.45rem;padding:.35rem .65rem;border:1px solid currentColor;border-radius:.4rem;text-decoration:none;font:inherit; }
+/* What you are carrying: a picture of each thing, because a list of names is
+   not how anybody recognises their own bag. */
+.ws-carry li { display:grid;grid-template-columns:48px minmax(0,1fr);gap:.55rem;align-items:start; }
+.ws-carry canvas { width:48px;height:48px;border:1px solid #34404e;border-radius:.4rem;background:#0d141c; }
+.ws-carry .ws-carry-of { display:grid;gap:.15rem;min-width:0; }
+.ws-carry .ws-action { justify-self:start;margin-top:.2rem; }
+.ws-carry small { overflow-wrap:anywhere; }
+.ws-carry .ws-approx { color:#ffd195; }
 body.workshop-mode { margin:0;background:#0d1117;color:#e7edf4;overflow:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 body.workshop-mode > :not(#design-workshop) { display:none!important; }
 #design-workshop[hidden] { display:none; }
