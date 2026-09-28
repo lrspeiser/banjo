@@ -49,7 +49,7 @@ namespace banjo::terrain {
 
 // Bumped whenever generation changes what it makes, so an old cached valley is
 // never read back as a new one.
-inline constexpr int kGeneratorVersion = 4;
+inline constexpr int kGeneratorVersion = 5;
 
 struct ValleyParameters {
     std::uint64_t seed{7};
@@ -91,6 +91,27 @@ struct GenerationReport {
     double river_volume_m3{};
 };
 
+// What somebody left behind here. The valley is not empty ground: people worked
+// the vein once and went away, and where they worked is the first thing a person
+// arriving sees -- an open cut following the vein, a shaft at the end of it, the
+// spoil they took out, and a mouth cut into the hillside on the level they drove
+// in on. Nothing about it is scenery: the cut exposes the beds it goes through,
+// the spoil is the matter that came out of it, and what they could not work is
+// where the ore goes from oxidised and soft to fresh and hard.
+//
+// Where the pieces are, so whoever builds a scene can stand the surface things
+// up in the right places. Metres, in the landscape's own frame.
+struct Mine {
+    bool worked{};              // false where a valley has no vein to follow
+    double cut_from_m[2]{};     // the open cut along the vein, at the outcrop
+    double cut_to_m[2]{};       // and where they stopped
+    double shaft_m[2]{};        // the collar at the end of the cut
+    double shaft_floor_m{};     // how far down they got
+    double adit_m[2]{};         // the mouth cut into the hillside, lower down
+    double adit_into_m[2]{};    // the way it points: into the hill
+    double spoil_m3{};          // what they took out and left in the heaps
+};
+
 struct Landscape {
     std::string kind;             // "valley", "basin", "channel", "flat"
     Grid grid;
@@ -104,6 +125,7 @@ struct Landscape {
     std::vector<water::Inflow> inflows;
     std::vector<water::Outflow> outflows;
     std::vector<Lake> lakes;
+    Mine mine;
     GenerationReport report;
     // Where somebody arriving would stand, and what they would look at.
     double eye_m[3]{};

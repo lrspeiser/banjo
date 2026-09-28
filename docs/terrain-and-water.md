@@ -56,6 +56,22 @@ daylight** on the knoll's bare rock -- a rust-coloured stain you can walk up to
 -- and no column holds more than 8 runs. All of it is declared, deterministic in
 the seed, and cached with the landscape.
 
+**Somebody worked this valley before we got here.** The ground is not empty: it
+carries the workings of people who found the vein where it broke surface and
+followed it. An **open cut** down the vein wherever the ore lay within about
+1.6 m of the surface, taking the cover off and a little of the ore with it; a
+**shaft** sunk at the high end of the cut, 2.8 m down, because that is where a
+shaft goes; an **adit mouth** notched into the hillside below the collar, the
+level they meant to come in on; and the **spoil** from all of it in heaps where
+it was thrown. None of it is scenery: the cut truncates the beds it passes
+through, the heaps hold exactly the 23.7 m3 that came out, and the workings keep
+off the river because nobody swings a pick in the stream. Measured: 93 columns
+are left with the ore within a hand's reach of the surface, where 28 showed it
+before anybody dug. The terrain block reports where each piece is (`mine`), so a
+scene can stand things up at them. What is NOT there is the underground: the
+adit's mouth stops at a notch, because a tunnel needs a void and that is stage 3
+of [the earth plan](earth-and-mining-plan.md).
+
 **The rock under a column is a stack of BEDS** -- what each bed is and the height
 it reaches -- and it goes down **30 m** below the lowest rock there is
 (`TerrainField::kEarthDepthM`), where it used to go down 2 m, which is no earth

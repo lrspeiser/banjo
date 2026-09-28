@@ -1471,6 +1471,17 @@ nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::v
             // above the ground's floor, which the water block also measures from.
             {"runs_b64", banjo::terrain::encodeBase64(runs.data(), runs.size())},
             {"floor_m", env.terrain().floor()},
+            // What somebody left behind here, so a scene can stand the surface
+            // things up where the workings actually are.
+            {"mine", land.mine.worked
+                 ? nlohmann::json{{"cut_from_m", {land.mine.cut_from_m[0], land.mine.cut_from_m[1]}},
+                                  {"cut_to_m", {land.mine.cut_to_m[0], land.mine.cut_to_m[1]}},
+                                  {"shaft_m", {land.mine.shaft_m[0], land.mine.shaft_m[1]}},
+                                  {"shaft_floor_m", land.mine.shaft_floor_m},
+                                  {"adit_m", {land.mine.adit_m[0], land.mine.adit_m[1]}},
+                                  {"adit_into", {land.mine.adit_into_m[0], land.mine.adit_into_m[1]}},
+                                  {"spoil_m3", land.mine.spoil_m3}}
+                 : nlohmann::json(nullptr)},
             {"view", {{"eye_m", {land.eye_m[0], land.eye_m[1], land.eye_m[2]}},
                       {"look_m", {land.look_m[0], land.look_m[1], land.look_m[2]}}}}};
 }

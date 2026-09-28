@@ -726,7 +726,12 @@ function growRuns(needed) {
 // the ground mesh, and these are drawn with a polygon offset so that where the
 // two lie together the band is what you see. Both sides are drawn, because a
 // step is looked at from whichever side you are standing on.
-const FACE_STEP_M = 0.12;      // a drop worth drawing: 26 degrees across a 0.25 m cell
+// A drop worth drawing is one the ground could not have come to rest at: at
+// 0.25 m columns this is 55 degrees, well past the angle any soil or sand stands
+// at (30 to 32), so what shows is a cut, a pit's wall or bare rock -- and not
+// every gentle step down a hillside, which at a lower threshold covered the
+// whole valley in dark chevrons.
+const FACE_STEP_M = 0.35;
 const FACE_BAND_M = 0.01;      // thinner than this is not a band anyone can see
 
 function buildFaces() {

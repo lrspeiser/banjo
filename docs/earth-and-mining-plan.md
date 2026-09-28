@@ -81,6 +81,32 @@ columns is drawn as a stretched flat triangle. Drawn as a face split at every ru
 boundary, the same pit suddenly shows topsoil over subsoil over rock, and a vein
 shows as a band you can follow. No physics changes to get that.
 
+## 2a. Why there is already a mine here
+
+The owner, 2026-09-28: *"We land at this spot to find an abandoned mine site. So
+there are already mine shafts and tunnels and some structures on the surface.
+This would allow us to immediately experience what is possible, even though we
+have to start from the bottom of the tech tree to build up."*
+
+That is the best argument for all of this, and it costs nothing extra, because
+**the workings are made of the same ground everything else is**. Somebody found
+the vein where it broke surface and followed it: an open cut while the ore was
+within reach of the top, a shaft at the high end when it got too deep to throw
+spoil out of, an adit mouth notched into the hillside below to come in
+underneath, and the spoil in heaps where it was thrown.
+
+It teaches the tech tree without a word of tutorial, because the ground says what
+stopped them: **the cut runs out where the ore stops being oxidised and soft and
+turns fresh and hard.** You arrive, you can see the whole shape of what mining is
+-- follow the vein, take the cover off, sink a shaft, drive in from below -- and
+you cannot do any of it yet, for exactly the reason they could not carry on.
+
+Built, 2026-09-28: the cut, the shaft, the mouth, the heaps, and `mine` in the
+terrain block saying where each piece is. NOT built: the underground (the mouth
+stops at a notch until stage 3 gives it a void), and the surface structures --
+a headframe over the shaft, a ruined hut, old timbers -- which are bodies a
+scene stands up at the places the terrain block reports.
+
 ## 3. What a person does — the loop this is for
 
 1. **Walk and look.** A vein that reaches the surface shows as a stained outcrop:
