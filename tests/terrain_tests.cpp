@@ -106,7 +106,7 @@ void invalidContinuationIsAtomic() {
         [](auto &s){s.soil[0]=-.01;},
         [](auto &s){s.beds.top[0]=std::numeric_limits<double>::quiet_NaN();},
         [](auto &s){s.beds.count[0]=0;}, [](auto &s){s.beds.count[0]=9;},
-        [](auto &s){s.beds.kind[0]=7;}, [](auto &s){s.beds.top.pop_back();},
+        [](auto &s){s.beds.kind[0]=kRunKinds;}, [](auto &s){s.beds.top.pop_back();},
         [](auto &s){s.moisture[0]=2;}, [](auto &s){s.frontier.insert(s.grid.cells());},
         [](auto &s){s.dirty_chunks.insert(-1);}, [](auto &s){s.changed.ni=s.grid.nx+1;},
         [](auto &s){s.ledger.dug.sand_m3+=1;}, [](auto &s){s.floor=1;},
@@ -462,6 +462,59 @@ void aColumnKeepsItsBeds() {
     sameContinuation(ground.state(), other.state());
 }
 
+// The rock under the valley is made of something: a mantle of weathered rock on
+// top of it, a bed of clay dipping under it, and a vein of ore cutting through
+// both and reaching daylight where the rock is bare. Generated once and read
+// from the cache the previous check left (docs/earth-and-mining-plan.md).
+void theValleyHasGeologyInIt() {
+    namespace fs = std::filesystem;
+    const fs::path folder = fs::temp_directory_path() / "banjo-terrain-test-cache";
+    const Landscape made = valley(ValleyParameters{}, folder.string());
+    const TerrainField ground(made.grid, made.beds, made.soil, made.sand, made.loose, made.moisture);
+    require(!made.beds.empty(), "the valley's rock is said in beds");
+
+    std::size_t with_clay = 0, with_ore = 0, outcrops = 0, most_beds = 0;
+    double clay_west = 0.0, clay_east = 0.0;
+    int west = made.grid.nx, east = -1;
+    for (std::size_t c = 0; c < made.grid.cells(); ++c) {
+        Run runs[TerrainField::kRunsMost];
+        const int count = ground.runsOf(c, runs);
+        most_beds = std::max(most_beds, static_cast<std::size_t>(count));
+        bool clay = false, ore = false;
+        for (int k = 0; k < count; ++k) {
+            if (runs[k].kind == RunKind::Clay) {
+                clay = true;
+                const int i = static_cast<int>(c % static_cast<std::size_t>(made.grid.nx));
+                if (i < west) { west = i; clay_west = runs[k].top_m; }
+                if (i > east) { east = i; clay_east = runs[k].top_m; }
+            }
+            if (runs[k].kind == RunKind::Ore || runs[k].kind == RunKind::OxidisedOre) ore = true;
+        }
+        with_clay += clay;
+        with_ore += ore;
+        // Daylight: the top bed is the ore, with nothing over it.
+        if (count > 0 && (runs[count - 1].kind == RunKind::OxidisedOre ||
+                          runs[count - 1].kind == RunKind::Ore)) ++outcrops;
+    }
+    std::cout << "    " << with_clay << " columns have the clay bed, " << with_ore
+              << " the vein, and " << outcrops << " show it at the surface; at most "
+              << most_beds << " runs in a column\n";
+    require(with_clay > 1000, "the clay bed runs under most of the valley");
+    require(with_ore > 100, "the vein is in the ground");
+    require(outcrops > 0, "the vein reaches daylight somewhere, or nobody could ever find it");
+    require(most_beds <= TerrainField::kRunsMost, "a column fits the runs a caller is given room for");
+    // It dips: the bed is not level, which is what makes it findable elsewhere
+    // once it has been found in one place.
+    require(clay_west - clay_east > 1.0,
+            "the clay bed dips along the valley (west " + std::to_string(clay_west) +
+            ", east " + std::to_string(clay_east) + ")");
+
+    // Every column still adds up: the top bed is where the rock stops.
+    for (std::size_t c = 0; c < made.grid.cells(); ++c)
+        require(std::abs(ground.rockTop(c) - made.rock[c]) < 1e-9,
+                "the beds end where the rock always did");
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
@@ -476,6 +529,7 @@ int main() {
         {"height follows the collider's split", heightAtFollowsTheColliderSplit},
         {"a column keeps its beds", aColumnKeepsItsBeds},
         {"a valley is shaped by water and saved", aValleyIsShapedByWaterAndSaved},
+        {"the valley has geology in it", theValleyHasGeologyInIt},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

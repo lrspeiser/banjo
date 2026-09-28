@@ -280,6 +280,19 @@ void aCutBlockIsNeitherLostNorDuplicated() {
     // Bare, level rock: the top of the knoll. A block's sides are whole
     // cells, so at 0.25 m columns and 0.04 m cells it is 4 columns, 1 m, a side.
     const auto &g = v.ground().grid();
+    // Rock all the way down, not only on top: the valley has a vein in its
+    // knoll and a bed of clay under it now, and a block of either is refused
+    // rather than counted as rock (docs/earth-and-mining-plan.md).
+    const auto rockThroughout = [&](std::size_t c, double depth) {
+        terrain::Run runs[terrain::TerrainField::kRunsMost];
+        const int count = v.ground().runsOf(c, runs);
+        const double top = v.ground().rockTop(c), bottom = top - depth;
+        for (int k = 0; k < count; ++k)
+            if (runs[k].top_m > bottom && runs[k].top_m <= top + 1.0e-9 &&
+                !terrain::isRockLike(runs[k].kind))
+                return false;
+        return true;
+    };
     double at_x = 0.0, at_z = 0.0;
     bool found = false;
     for (int j = 3; j < g.nz - 3 && !found; ++j)
@@ -288,10 +301,11 @@ void aCutBlockIsNeitherLostNorDuplicated() {
             for (int dj = -2; dj <= 2; ++dj)
                 for (int di = -2; di <= 2; ++di)
                     bare = bare && v.ground().surface(g.at(i + di, j + dj)) == terrain::Surface::Rock &&
-                           v.ground().slopeDeg(g.at(i + di, j + dj)) < 15.0;
+                           v.ground().slopeDeg(g.at(i + di, j + dj)) < 15.0 &&
+                           rockThroughout(g.at(i + di, j + dj), 0.45);
             if (bare) { at_x = g.xOf(i); at_z = g.zOf(j); found = true; }
         }
-    require(found, "there is bare, level rock to cut");
+    require(found, "there is bare, level rock to cut, rock all the way down");
     auto world = open(v.scene(Json::array()));
     const terrain::Volumes before = world->environment()->terrain().volumes();
     std::string why;

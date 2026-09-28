@@ -115,6 +115,7 @@ switching regions between coarse and detailed simulation as you walk.
 | Storing dug sand and soil | World | `/world?scene=fabrication` |
 | The ground kept across reloads and restarts | World | automatic |
 | Seeing what the ground is made of, all the way down | World | dig a pit and look at its wall; the panel says the column in words |
+| A vein, a clay bed and weathered rock in the valley's own geology | World | walk to the knoll: the rust stain on its bare rock is the vein at daylight |
 | Rock as a stack of beds, and 30 m of earth under the lowest of it | Code only | `tests/deep_earth_tests.py`; nothing in the page can reach rock yet |
 
 **Not built:** breaking rock (a pick stops on rock, or says the case is not

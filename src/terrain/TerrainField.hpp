@@ -77,7 +77,23 @@ enum class Surface : std::uint8_t { Rock = 0, Soil = 1, Sand = 2 };
 // kind because it IS a different material -- soil that lost its cohesion when it
 // was dug -- and a pit someone has heaped back into should not look like the
 // bank it came out of.
-enum class RunKind : std::uint8_t { Rock = 0, Soil = 1, Sand = 2, LooseSoil = 3 };
+//
+// The rest are what the rock is made of, and they are the reason a column is
+// said in runs at all (docs/earth-and-mining-plan.md): a mantle of rock rotted
+// near the surface, a bed of clay dipping across the valley -- the weak ground a
+// roof will fall out of -- and a vein of ore, whose top is oxidised and soft
+// where the weather has been at it.
+enum class RunKind : std::uint8_t {
+    Rock = 0, Soil = 1, Sand = 2, LooseSoil = 3,
+    WeatheredRock = 4, Clay = 5, Ore = 6, OxidisedOre = 7,
+};
+inline constexpr int kRunKinds = 8;
+// Rock a block can be cut out of. Weathered rock is rock, rotted: it is the same
+// matter at the same density, so a block of it is a block. Clay and ore are not,
+// and a cut that would reach them is refused rather than counted as rock.
+[[nodiscard]] constexpr bool isRockLike(RunKind kind) {
+    return kind == RunKind::Rock || kind == RunKind::WeatheredRock;
+}
 
 // A column bottom to top, as runs: a material and the height it reaches. A
 // column is already this -- rock, the soil that formed on it, and the loose
