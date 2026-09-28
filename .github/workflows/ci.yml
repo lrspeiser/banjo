@@ -4,12 +4,25 @@ on:
   push:
   pull_request:
 
-# Workshop development is intentionally iterative. A new commit makes older
-# runs for the same head branch obsolete; cancel them so the newest design is
-# what gets a runner instead of queueing behind stale intermediates.
+# ON A BRANCH, workshop development is intentionally iterative: a new commit
+# makes older runs for the same head branch obsolete, so they are cancelled and
+# the newest design gets the runner instead of queueing behind stale
+# intermediates.
+#
+# ON MAIN it is the opposite, and cancelling there quietly cost us every
+# verification we had. Each commit on main is a state somebody builds on, and
+# build-test-and-capture takes about forty minutes while main is pushed to
+# every twenty or thirty -- so each push killed the run before it could finish.
+# Measured 2026-09-28: five of main's last six runs ended "Canceling since a
+# higher priority waiting request for ci-ci-main exists", two of them inside
+# thirty seconds, and main had not completed the long job since 20:04 the day
+# before. A cancelled run is not a green one; it is no answer at all.
+#
+# So main queues instead. Runs there follow one another and every commit gets
+# its verdict, later rather than never.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
   source-registration:
