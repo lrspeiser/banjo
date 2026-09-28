@@ -2756,6 +2756,25 @@ function substanceColour(what) {
 const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
   : kg >= 1 ? `${kg.toFixed(1)} kg` : `${Math.round(kg * 1000)} g`);
 
+// What a container on that body holds, said in the fewest words that are
+// still true: "holding 18.0 kg of sand, 20 C", or "empty". Temperature only
+// when it is worth saying -- a pail at room temperature is just a pail, and a
+// line that always ends in "20 C" stops being read.
+function vesselLine(body) {
+  const mine = (world.vessels || []).filter((v) => v.body === body);
+  if (!mine.length) return "";
+  return mine.map((vessel) => {
+    const slots = Object.entries(vessel.holds_kg || {})
+      .filter(([, kg]) => Number(kg) > 0.0005)
+      .map(([what, kg]) => `${Number(kg).toFixed(1)} kg of ${what}`);
+    const warmth = Math.abs(Number(vessel.temperature_c) - 20) >= 2
+      ? `, ${Math.round(Number(vessel.temperature_c))} C` : "";
+    const tipping = Number(vessel.pouring) > 0 ? ", pouring" : "";
+    return slots.length ? `holding ${slots.join(" and ")}${warmth}${tipping}`
+                        : `empty${tipping}`;
+  }).join(" · ");
+}
+
 // Everything in the room that holds something, in an order that does not move:
 // each machine's hopper, then the room's heaps as the room declares them, then
 // the ore in its ground. Never sorted by how much is in them -- a row that
@@ -2975,6 +2994,11 @@ function machineHolders(c, all) {
     mine.push({ ...behind, key: `${behind.key} at ${port.name}`,
                 name: `${titled(port.name)}: ${behind.name.toLowerCase()}`,
                 kind: atThe(port) });
+  }
+  // And any container riding the machine's own body -- a bucket on a cart
+  // goes where the cart goes, so what is in it belongs on the cart's panel.
+  for (const holder of all) {
+    if (holder.body && holder.body === c.body) mine.push(holder);
   }
   return mine;
 }
@@ -3857,6 +3881,10 @@ function detailsModel() {
     const part = tools.profileOf(name) || profileOf(name);
     model.name = titled(part ? part.object : name);
     model.facts = factsOf(name, entry, world.aim.distance_m);
+    // And what it holds, if it is a container: walking up to a pail should
+    // tell you about the pail without opening a panel.
+    const holding = vesselLine(name);
+    if (holding) model.facts += ` · ${holding}`;
     choiceRows();
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
       rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"

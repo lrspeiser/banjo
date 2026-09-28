@@ -406,21 +406,21 @@ FURNACE_RECIPES = {name: row for name, row in CATALOGUE_RECIPES.items() if row["
 # the real relation, it is the same one a real furnace obeys, and it makes
 # thickness a thing worth getting right rather than a number to fill in.
 #
-# WHAT THE LINING IS MADE OF, AND WHY ITS CONDUCTIVITY IS A PARAMETER. The
-# lining is an insulating refractory CASTABLE: calcium-aluminate cement with
-# a lightweight aggregate, poured and fired in place, which is how small
-# furnaces really are lined and which is genuinely a concrete. So its parts
-# are concrete, which is also the only refractory among the four materials an
-# exact body may be made of -- glass, oak, iron, concrete. (Ceramic would be
-# the other candidate and the engine refuses it for exact bodies; that is
-# worth fixing and is not this change.)
+# WHAT THE LINING IS MADE OF, AND WHY ITS CONDUCTIVITY IS A PARAMETER. It is
+# INSULATING FIREBRICK: alumina foamed to seventy-odd per cent porosity, laid
+# up inside the shell, which is how a small furnace really is lined. So its
+# parts are alumina ceramic -- the thing this very machine makes, by the
+# `fire ceramic` recipe, which closes the chain on itself. (Until main's
+# fcc5a6b an exact body could not be ceramic at all, and every Workshop
+# machine compiles to exact bodies, so the lining was cast refractory
+# concrete instead. Castable is a real lining too; ceramic is the better one.)
 #
-# Its conductivity is a parameter because it is the POROUS form's. An
-# insulating castable runs about 0.3 W/m/K; ordinary structural concrete is
-# 1.7, and the thermal model's dense alumina is 30. A lining of dense alumina
-# would need fifteen metres of wall to hold 1500 C. The number is declared
-# here with its source so that nobody later "corrects" it to the structural
-# value and quietly makes every furnace in the game useless.
+# Its conductivity is a parameter because it is the POROUS form's, about
+# 0.2-0.3 W/m/K. The thermal model's alumina is the DENSE form at 30, which
+# is right for a solid alumina part and catastrophic for a lining: it would
+# need fifteen metres of wall to hold 1500 C. The number is declared here
+# with its source so that nobody later "corrects" it to the dense value and
+# quietly makes every furnace in the game useless.
 #
 # WHAT IS NOT REAL HERE, SAID PLAINLY. The chamber stores only its gas --
 # 43 J/K for 50 litres of air. A real furnace's lining is 15-25 kg of
@@ -440,10 +440,10 @@ ELECTRIC_FURNACE_PARAMETERS = (
     # about 150 C in hand. Thinner and it cannot: 40 mm reaches 853 C, which
     # will not even burn lime.
     w.Parameter("lining_m", "m", 0.08, 0.01, 0.3,
-                about="the refractory between the chamber and the shell: what it can reach"),
+                about="the firebrick between the chamber and the shell: what it can reach"),
     w.Parameter("shell_m", "m", 0.01, 0.004, 0.05, about="the steel skin outside the lining"),
     w.Parameter("lining_k_w_m_k", "W/m/K", 0.3, 0.03, 2.0,
-                about="insulating castable conducts about 0.3; structural concrete is 1.7"),
+                about="insulating firebrick conducts about 0.3; dense alumina is 30"),
     w.Parameter("element_w", "W", 5000.0, 100.0, 50000.0, about="what its element puts into the chamber"),
     w.Parameter("capacity_j", "J", 2000000.0, 100.0, 1e9),
     w.Parameter("charge_j", "J", 2000000.0, 0.0, 1e9),
@@ -500,17 +500,17 @@ def _build_electric_furnace(library: w.ComponentLibrary, values: dict[str, Any])
     # full depth, and the front and back fit between the sides.
     parts += [
         w.WirePart("lining-floor", "container_bottom", (lw, lining, ld),
-                   (0.0, shell + lining / 2.0, 0.0), material="concrete", family="lining"),
+                   (0.0, shell + lining / 2.0, 0.0), material="alumina ceramic", family="lining"),
         w.WirePart("lining-roof", "container_bottom", (lw, lining, ld),
-                   (0.0, roof + lining / 2.0, 0.0), material="concrete", family="lining"),
+                   (0.0, roof + lining / 2.0, 0.0), material="alumina ceramic", family="lining"),
         w.WirePart("lining-left", "container_wall", (lining, ch, ld),
-                   (-(cw + lining) / 2.0, mid, 0.0), material="concrete", family="lining"),
+                   (-(cw + lining) / 2.0, mid, 0.0), material="alumina ceramic", family="lining"),
         w.WirePart("lining-right", "container_wall", (lining, ch, ld),
-                   ((cw + lining) / 2.0, mid, 0.0), material="concrete", family="lining"),
+                   ((cw + lining) / 2.0, mid, 0.0), material="alumina ceramic", family="lining"),
         w.WirePart("lining-front", "container_wall", (cw, ch, lining),
-                   (0.0, mid, -(cd + lining) / 2.0), material="concrete", family="lining"),
+                   (0.0, mid, -(cd + lining) / 2.0), material="alumina ceramic", family="lining"),
         w.WirePart("lining-back", "container_wall", (cw, ch, lining),
-                   (0.0, mid, (cd + lining) / 2.0), material="concrete", family="lining"),
+                   (0.0, mid, (cd + lining) / 2.0), material="alumina ceramic", family="lining"),
     ]
     # THE SHELL, six more outside those. Steel, and not the caller's choice:
     # it is what holds a 1500 C box together and it is what the lining is

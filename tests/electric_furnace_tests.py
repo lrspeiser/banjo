@@ -159,7 +159,9 @@ class WhatTheLiningDecides(unittest.TestCase):
         design = w.assemble("electric-furnace", design_id="f")
         by_name = {p.name: p for p in design.parts}
         self.assertEqual(17, len(design.parts))
-        self.assertEqual({"concrete"}, {by_name[n].material for n in by_name if n.startswith("lining-")})
+        self.assertEqual({"alumina ceramic"},
+                         {by_name[n].material for n in by_name if n.startswith("lining-")},
+                         "insulating firebrick, which is the thing this machine itself fires")
         self.assertEqual({"iron"}, {by_name[n].material for n in by_name if n.startswith("shell-")},
                          "a furnace shell is steel, and not the caller's choice")
         # The chamber is the gap: the lining's floor ends where the chamber

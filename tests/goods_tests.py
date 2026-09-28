@@ -373,7 +373,10 @@ class TheFurnaceFromTheBench(unittest.TestCase):
         app = SimpleNamespace(live=live, live_holder="world", room=room, engine_path=ENGINE, runs_path=root / "runs",
                               store=room_store.RoomStore(root / "rooms"), brains=brains, api_key="", model="",
                               on_live_reply=lambda session, reply: brains.listen(session, reply))
-        for material in ("glass", "oak", "iron", "concrete"):
+        # Alumina ceramic among them since the furnace's lining became
+        # firebrick: 375 kg of it, which is the honest price of a lining
+        # that will hold 1687 C.
+        for material in ("glass", "oak", "iron", "concrete", "alumina ceramic"):
             workshop_library.set_rack(app, material, 500.0)
         workshop_library.set_goods(app, "copper", 50.0)
         workshop_library.set_goods(app, "copper wire", 50.0)
