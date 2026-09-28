@@ -426,5 +426,48 @@ class TheHeatReachesItThroughTheRoom(unittest.TestCase):
         self.assertLess(pail.temperature_k, vessels.AMBIENT_K - 1.0, "it did cool")
 
 
+class WhereTheEngineCarriesItTheEngineIsRight(unittest.TestCase):
+    """Water is the one thing a vessel holds that the engine's thermochemistry
+    knows, so water declared to it stops being this module's business.
+
+    validate() turns a vessel holding water into `thermo.carrying` on its body
+    (fracture_lab), the engine warms it through the body's wall, holds it at
+    its boiling point and boils it away, and `warm` then only READS. The old
+    rule -- relax toward the body's temperature, never conserving, never
+    boiling -- is what anything the engine does not know still follows.
+    """
+
+    def a_reply(self, body, kg, at_c, body_c=20.0):
+        """The heat block a step carries, as live_world_run writes it."""
+        return {"bodies": [{"name": body, "t_k": body_c + 273.15,
+                            "carrying_kg": kg, "carrying_c": at_c}]}
+
+    def test_it_takes_the_engines_kilograms_and_heat_rather_than_its_own(self):
+        held = vessels.Vessels(room(a_bucket("kettle", "kettle", {"water": 0.5})))
+        kettle = held.by_name("kettle")
+        # The engine has boiled a tenth of it away and is holding the rest at
+        # its boiling point. Neither of those is something `warms` could do.
+        held.warm(1.0, self.a_reply("kettle", {"water": 0.4}, 100.0, body_c=115.0))
+        self.assertAlmostEqual(0.4, kettle.holds["water"], places=9)
+        self.assertAlmostEqual(373.15, kettle.temperature_k, places=6)
+
+    def test_water_boiled_entirely_away_leaves_the_vessel_empty(self):
+        held = vessels.Vessels(room(a_bucket("kettle", "kettle", {"water": 0.5})))
+        kettle = held.by_name("kettle")
+        held.warm(1.0, self.a_reply("kettle", {"water": 0.0}, 100.0, body_c=115.0))
+        self.assertNotIn("water", kettle.holds)
+        self.assertAlmostEqual(0.0, kettle.held_kg(), places=9)
+
+    def test_what_the_engine_does_not_carry_still_follows_the_old_rule(self):
+        """Sand has no thermochemistry, so a pail of it is warmed the way it
+        always was: toward the body it rides, by this module's own arithmetic."""
+        held = vessels.Vessels(room(a_bucket("pail", "pail", {"sand": 2.0})))
+        pail = held.by_name("pail")
+        was = pail.temperature_k
+        held.warm(1.0, {"bodies": [{"name": "pail", "t_k": 400.0}]})
+        self.assertGreater(pail.temperature_k, was, "it should have warmed toward the body")
+        self.assertLess(pail.temperature_k, 400.0, "but nowhere near reached it in a second")
+        self.assertAlmostEqual(2.0, pail.holds["sand"], places=9, msg="and still holds its sand")
+
 if __name__ == "__main__":
     unittest.main()

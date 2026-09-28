@@ -1923,6 +1923,56 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
     return out
 
 
+#: What the engine's thermochemistry knows how to be, out of everything a
+#: vessel can hold. Water is the whole of it today, and it is the one that
+#: matters: it is the one that BOILS, and a kettle that cannot boil is the
+#: thing this is all for. Sand and ore and clay have no thermochemistry in the
+#: model -- no heat capacity it knows, no reference energy, nothing to melt or
+#: boil into -- so they stay on the vessel's own simple warming until they do.
+CARRIED_BY_THE_ENGINE = ("water",)
+
+
+def _vessel_water_is_carried(vessels: list[dict[str, Any]], thermo: dict[str, Any],
+                             bodies: list[dict[str, Any]]) -> dict[str, Any]:
+    """A room says what is in its kettle ONCE.
+
+    A vessel's `holds` is the room's own words for what is in it. Where that is
+    something the engine can be trusted with, it is also declared to the
+    thermal network as what the body CARRIES (thermo.carrying), so the engine
+    warms it, boils it, and makes the body heavier for it -- rather than the
+    room writing the same water down twice and the two drifting apart.
+
+    A room that declares `thermo.carrying` for a body itself is left alone:
+    saying it by hand is a deliberate act and beats a derivation.
+    """
+    if not vessels:
+        return thermo
+    named = {b["name"] for b in bodies}
+    out = dict(thermo)
+    already = {str(c.get("body")) for c in (out.get("carrying") or [])}
+    # Two vessels on one body pool into one load, because the engine carries
+    # things per BODY: a cart with two buckets of water on it is a cart with
+    # that much water on it.
+    made: dict[str, dict[str, Any]] = {}
+    for vessel in vessels:
+        body = str(vessel.get("body") or "")
+        if body in already or body not in named:
+            continue
+        holds = vessel.get("holds") or {}
+        water = {k: float(v) for k, v in holds.items()
+                 if k in CARRIED_BY_THE_ENGINE and float(v) > 0.0}
+        if not water:
+            continue
+        load = made.setdefault(body, {"body": body, "kg": {},
+                                      "temperature_k": float(vessel.get("temperature_k", 293.15)),
+                                      "conductance_w_k": float(vessel.get("warms_w_k", 20.0))})
+        for what, kg in water.items():
+            load["kg"][what] = load["kg"].get(what, 0.0) + kg
+    if made:
+        out["carrying"] = list(out.get("carrying") or []) + list(made.values())
+    return out
+
+
 def normalise_vessels(given: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """A room's containers (playground/vessels.py): what each holds, and the
     body it rides. The spelling and the numbers are vessels' own; what is
@@ -2602,6 +2652,8 @@ def validate(spec: Any) -> dict[str, Any]:
         result["vessels"] = normalise_vessels(result.get("vessels"),
                                               result["bodies"] + result.get("precise_rigid_bodies", []))
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
+        result["thermo"] = _vessel_water_is_carried(result["vessels"], result["thermo"],
+                                                    result["bodies"])
         _chambers_exist(result.get("machines") or {}, result["thermo"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))

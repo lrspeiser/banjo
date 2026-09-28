@@ -1031,19 +1031,6 @@ def engines() -> dict[str, Any]:
                  "vent_area_m2": 0.00006, "vent_open": True,
                  "wall_conductance_w_k": 0.0},
             ],
-            # In KILOGRAMS, and of a body rather than in it: this is what the
-            # kettle holds, not what it is made of.
-            "carrying": [
-                # 500 W/K through the wall, said rather than left to the
-                # default. The default is the generic conductance between two
-                # bodies TOUCHING -- about 18 W/K across a 100 mm box -- and a
-                # kettle's wall is not two things in contact, it is thin metal
-                # with water against it. Left at the default the kettle runs to
-                # 231 C while its water is still at 100, which is a kettle made
-                # of firebrick.
-                {"body": "kettle", "kg": {"water": 0.5}, "temperature_k": 288.0,
-                 "conductance_w_k": 500.0},
-            ],
             "contents": [
                 {"body": "boiler water", "contents": {"water": 1.0},
                  "temperature_k": 373.15, "environment": "cylinder gas"},
@@ -1102,6 +1089,25 @@ def engines() -> dict[str, Any]:
                  "seconds": 5.0, "label": "rocket primer"},
             ],
         },
+        # THE KETTLE IS A CONTAINER, the same kind the pour room's pails are
+        # (playground/vessels.py), and its water is written down once. Because
+        # water is something the engine's thermochemistry knows, validate()
+        # also declares it to the thermal network as what the kettle CARRIES,
+        # so the engine warms it through the kettle's wall, holds it at its
+        # boiling point and boils it away -- and the container reads those
+        # numbers back rather than keeping its own.
+        #
+        # 500 W/K through that wall, said rather than left to the default. The
+        # default is the generic conductance between two bodies TOUCHING,
+        # about 18 W/K across a 100 mm box, and a kettle's wall is not two
+        # things in contact but thin metal with water against it. Left at the
+        # default the kettle runs to 231 C while its water is still at 100,
+        # which is a kettle made of firebrick.
+        "vessels": [
+            {"name": "kettle", "body": "kettle", "capacity_kg": 2.0,
+             "holds": {"water": 0.5}, "mouth_mm": [0, 50, 0],
+             "temperature_k": 288.0, "warms_w_k": 500.0},
+        ],
         "goods": {"deposits": [], "stockpiles": [], "recipes": []},
     }
 
