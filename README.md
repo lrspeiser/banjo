@@ -271,33 +271,39 @@ counts do not converge; one break is worked out at a time (up to 16 wait in a
 queue); and past about 2,000 bodies the world quietly stops being able to break
 anything.
 
-**Matter one cell thick can answer a blow struck flat at it, since
-27 September.** A sheet one cell thick has every node's neighbourhood in one
-plane, so the strain the engine could state was the stretching of that plane —
-and hitting a plate flat loads it in *bending*, which that strain was blind to.
-A 20 mm glass plate at 20 mm cells lost 40 bonds to a blow that took 902 out of
-the same plate 40 mm thick and never came apart; what the piece count reported
-was whether one 20 mm cell had happened to lose its last bond, which is why the
-same plate broke from 3 m and 7 m and not from 10 — and "broke" meant a 0.02 kg
-chip off 4.5 kg. The curvature is recoverable from the same neighbours — how far
-each has moved *out* of the plane — and a plate of thickness h strains its
-outermost fibre by half that thickness times the curvature. **From 6 m up that
-plate now comes apart properly, into 2, 3, 4, 4 and 5 pieces from 6 to 10 m:**
-more pieces for a harder blow, which is the thing the term was written for. A
-body two cells thick never reads bending at any node, because its neighbours
-span three directions and it measures its own; what changes for thicker matter
-is only that a *fragment* of it can end up one cell thick, and then this applies
-to the fragment.
+**Matter one cell thick cannot answer a blow struck flat at it — the fix is
+written and switched off, on the realtime rule.** A sheet one cell thick has
+every node's neighbourhood in one plane, so the strain the engine can state is
+the stretching of that plane — and hitting a plate flat loads it in *bending*,
+which that strain is blind to. A 20 mm glass plate at 20 mm cells loses 40 bonds
+to a blow that takes 902 out of the same plate 40 mm thick and never comes apart;
+what the piece count reports is whether one 20 mm cell happened to lose its last
+bond, which is why the same plate breaks from 3 m and 7 m and not from 10 — and
+"breaks" means a 0.02 kg chip off 4.5 kg.
 
-**Below 6 m it is still not right, and the rest of the ladder is worth knowing
-before you quote a piece count.** Dropped 3 m or 5 m the plate stays whole,
-while 4 m between them gives 16 pieces — and that is not one blow: the ball
-first turns round with the plate intact and shatters it 0.8 s later, coming back
-down on it. Above 10 m the counts fall again, to 4 and 3, which repeats and is
-not explained. And a plate *bridged between piers* — which was never blind,
-since tension across a span is in the plane — now disintegrates almost
-completely where it used to come apart into tens of pieces.
-[plate-bending.md](docs/plate-bending.md) has all of it measured, and
+The curvature is recoverable from the same neighbours — how far each has moved
+*out* of the plane — and a plate of thickness h strains its outermost fibre by
+half that thickness times the curvature. That term is built, tested and measured:
+with it on, the plate comes apart at every height from 6 m up, into 2, 3, 4, 4
+and 5 pieces from 6 to 10 m, more for a harder blow.
+
+**What stops it is the clock, not the physics.** With it on, a glass tabletop one
+cell thick shatters into about 185 pieces instead of coming away whole, and the
+Workshop's own drop test for a glass table then takes 15.0 seconds of wall clock
+for 1.7 seconds of world time — 8.8× realtime, where that same test costs 0.08 s
+with the term off. [Design rule 2](#design-rules) is 1.1×, and the bench's own
+thirty-second guard refuses the run outright on slower hardware. The cost is not
+the curvature fit; it is simulating the pieces, so it cannot be tuned away at the
+fit. It was on `main` for exactly one commit while that was measured, and the
+choice it leaves is a cheaper way to carry a shattered sheet, or a decision that
+a product test may cost that much.
+
+Two other things the ladder shows, worth knowing before anyone quotes a piece
+count: below 6 m it is still not ordered by the blow — 3 m and 5 m leave the
+plate whole while 4 m between them gives 16 pieces, because the ball comes back
+down and hits it again — and above 10 m the counts fall to 4 and 3, which repeats
+and is not explained.
+[plate-bending.md](docs/plate-bending.md) has all of it measured both ways, and
 `python scripts/plate-ladder.py` is the ladder itself, to run.
 
 ---
