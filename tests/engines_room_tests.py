@@ -47,12 +47,37 @@ class ThreeMachinesRunInOneRoom(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         cls.session = live_session.Session(ENGINE, spec, Path(cls._tmp.name))
         cls.start = cls._poses()
-        # Ten seconds, sampled every second, so the rocket's flight -- which is
-        # over in under two -- is caught as well as the steam engine's climb.
+        # Fourteen seconds, sampled every second, so the rocket's whole flight
+        # -- light, climb, fall, break -- is caught as well as the steam
+        # engine's climb and the kettle coming to the boil.
         cls.track = []
-        for _ in range(10):
-            cls.session.send(op="step", dt=DT, n=240)
+        cls.breaks = 0
+        for _ in range(14):
+            cls._step(240)
             cls.track.append((cls._poses(), cls._thermo()))
+
+    @classmethod
+    def _step(cls, n):
+        """A second of room time, ANSWERING what the engine asks.
+
+        A step that would break something is taken back and the body offered
+        in `breakable`: the engine is asking what happened, and until it is
+        told it will hand back the same instant for ever. That is a handshake,
+        not a hang -- the page answers it (world.js takes `state.breakable[0]`
+        and fractures), so a person opening the room never notices, and a
+        bare stepping loop that does not answer is the commonest way to
+        conclude the engine has wedged when it is waiting to be told.
+
+        The rocket lands hard enough to break, so this room needs it.
+        """
+        said = cls.session.send(op="step", dt=DT, n=n)
+        for _ in range(16):
+            if not said.get("breakable") or said.get("working_on"):
+                break
+            cls.session.send(op="fracture", name=str(said["breakable"][0]))
+            cls.breaks += 1
+            said = cls.session.send(op="step", dt=DT, n=1)
+        return said
 
     @classmethod
     def tearDownClass(cls):
@@ -101,9 +126,11 @@ class ThreeMachinesRunInOneRoom(unittest.TestCase):
     def test_the_rocket_leaves_the_bench_on_its_own_exhaust(self):
         """Nothing is pushed against: the gas goes down the throat and the
         momentum of it carries the rocket up."""
-        peak = max(p["rocket"][1] for p, _ in self.track)
+        # Its highest over the whole flight: by the end it has landed hard
+        # enough to come apart, and pieces are not "the rocket" any more.
+        peak = max((p.get("rocket") or [0, 0, 0])[1] for p, _ in self.track)
         climb = peak - self.start["rocket"][1]
-        self.assertGreater(climb, 2.0, f"the rocket should have flown; it reached {climb:.3f} m")
+        self.assertGreater(climb, 4.0, f"the rocket should have flown; it reached {climb:.3f} m")
         # It is a rocket and not a firework on a stick: the push came from the
         # nozzle, so the motor must have done thrust work.
         thrusted = max(r["motor"].get("thrust_work_j", 0.0) for _, (r, _) in self.track)
@@ -122,7 +149,7 @@ class ThreeMachinesRunInOneRoom(unittest.TestCase):
         # The kettle is the slow one in this room: it takes about a minute to
         # come to the boil, where the cannon goes at 3 s and the rocket at 9.
         for _ in range(9):
-            self.session.send(op="step", dt=DT, n=240 * 10)
+            self._step(240 * 10)
         _, bodies = self._thermo()
         kettle = bodies["kettle"]
         carrying = kettle.get("carrying_kg") or {}

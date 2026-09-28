@@ -969,15 +969,9 @@ def engines() -> dict[str, Any]:
              "size_mm": [100, 100, 100], "center_mm": [-1000, above(bench_top, 100), 0]},
 
             # The cannon at the EAST end, firing east off the end of the bench
-            # into open ground, with nothing downrange.
-            #
-            # It was in the middle at first, firing straight at the rocket. That
-            # is worth recording, because it did not merely knock the rocket
-            # over: the ball arrived at 10.818 m/s against the rocket's breaking
-            # speed of 10.9, the engine took the step back to judge a break that
-            # close to the line, the retry produced the same borderline hit, and
-            # the world wedged at t = 3.4625 s and never advanced again. A room
-            # should not point one machine at another by accident.
+            # into open ground, with nothing downrange. It was in the middle at
+            # first, firing straight at the rocket, which is no way to lay out
+            # a room: one machine should not be in another's line by accident.
             {"name": "barrel", "shape": "box", "material": "iron",
              "size_mm": [1600, 300, 300], "center_mm": [1800, above(bench_top, 300), 0],
              "anchored": True},
@@ -1049,16 +1043,22 @@ def engines() -> dict[str, Any]:
                 # the two cancel -- so a motor needs its powder to burn quickly,
                 # and a charge that is mostly inert ash cannot: the ash is a
                 # heat sink that holds it at a smoulder.
-                # 154 g of powder, which is chosen by where it LANDS rather than
-                # by how high it goes. It rises 2.9 m and comes down at 7.5 m/s,
-                # under the 10.4 m/s at which oak starts to bend. At 182 g it
-                # rises 5.9 m and lands at 10.7, right on that line, and a hit
-                # that lands on a break threshold wedges the world -- the step
-                # is taken back to judge it, the retry makes the same borderline
-                # hit, and time stops. That is an engine fault and is filed as
-                # one; this room stays the safe side of it rather than pretending
-                # it is not there.
-                {"body": "rocket charge", "contents": {"propellant": 0.22, "ash": 0.78},
+                # 210 g of powder: it climbs about 10 m and comes down hard
+                # enough to break, which is worth watching and is the sort of
+                # thing this world is for.
+                #
+                # A NOTE FOR WHOEVER DRIVES THIS ROOM FROM A SCRIPT. A landing
+                # that hard puts the rocket over its breaking speed, and the
+                # engine answers that by taking the step back and offering the
+                # body in `breakable` -- it is asking. Answer it (`op`
+                # "fracture" on the name) and the clock moves on; ignore it and
+                # the world sits at that instant for ever, because nobody has
+                # said what happened. The page does answer (world.js, where it
+                # takes `state.breakable[0]`), so a person opening the room
+                # never sees this. A bare stepping loop that does not is the
+                # commonest way to conclude the engine has hung when it is
+                # waiting to be told.
+                {"body": "rocket charge", "contents": {"propellant": 0.30, "ash": 0.70},
                  "temperature_k": 500.0, "environment": "motor"},
             ],
             "heaters": [
