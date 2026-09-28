@@ -443,6 +443,36 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertAlmostEqual(app.live.acts[0]["path"][-1][1], .82)
         self.assertEqual(app.live.acts[-1]["path"][-1], [0, 1, 1])
 
+    def test_a_strike_takes_the_part_that_hits_to_where_the_person_looks(self):
+        """Its use point, not the hand, goes to the spot looked at -- and a hand's
+        width through it -- no further than the strike reaches."""
+        app = self.start([{"body": "stool", "label": "Strike", "primary": True,
+                           "steps": [{"do": "strike", "distance_m": .3, "speed_m_s": 3}]}])
+        # Held up by a grip 0.2 m above its middle; the part that hits 0.2 m below.
+        app.room.spec["interaction_points"] = [{"body": "stool", "points": [
+            {"id": "grip", "kind": "grip", "position_m": [0, .2, 0]},
+            {"id": "use", "kind": "use", "position_m": [0, -.2, 0]}]}]
+        app.live.session.state["hand"] = {"holding": True, "name": "stool", "grip_m": [0, 1, 1]}
+        # The stool's middle is at (0, 0.225, 1), so what hits is at (0, 0.025, 1).
+        near = dict(PERSON, look_direction=[0, -.6, -.8], aim_m=[.15, .025, 1])
+        status, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": near})
+        self.assertEqual(status, 200, answer)
+        self.assertNotIn("refused", answer)
+        # 0.15 m to the spot and 0.1 through it: 0.25 m along +x, within the 0.3 it reaches.
+        for got, want in zip(app.live.acts[0]["path"][-1], [.25, 1, 1]):
+            self.assertAlmostEqual(got, want, places=6)
+        self.assertEqual(app.live.acts[1]["path"][-1], [0, 1, 1], "the hand did not come back")
+        app.live.acts.clear()
+        app.live.session.state["hand"].update(grip_m=[0, 1, 1])
+        # The stand-in moved the stool with its strokes: back where it was.
+        next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")["position_m"] = [0, .225, 1]
+        far = dict(PERSON, look_direction=[0, -.6, -.8], aim_m=[3, .025, 1])
+        self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True, "person": far})
+        for got, want in zip(app.live.acts[0]["path"][-1], [.3, 1, 1]):
+            self.assertAlmostEqual(got, want, places=6)
+
     def test_unheld_strike_and_concurrent_use_are_refused(self):
         app = self.start([{"body": "stool", "label": "Strike", "primary": True,
                            "steps": [{"do": "strike"}]}])
@@ -476,6 +506,24 @@ class RunningAnAction(PlaygroundTestCase):
             "session": app.live.session.id, "object": "stool", "primary": True})
         self.assertEqual(answer["action"], "Inspect")
         self.assertIn("position_m", answer["done"][0])
+        self.assertEqual(app.live.acts, [])
+
+    def test_a_look_is_said_in_words_with_where_things_go_on_it(self):
+        """J on a thing whose use is to be looked at -- what the Workshop's model
+        chose for all of the valley's furniture -- says what it is, and where
+        things can be set on it by the surfaces its maker named. It used to say
+        its own label back, "Look at it", and nothing else happened."""
+        app = self.start([{"body": "stool", "label": "Look at it", "primary": True,
+                           "steps": [{"do": "inspect"}]}])
+        next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")["mass_kg"] = 7.5
+        app.room.spec["interaction_points"] = [{"body": "stool", "points": [
+            {"id": "seat", "kind": "surface", "label": "Seat top", "position_m": [0.0, 0.225, 0.0],
+             "size_m": [0.35, 0.02, 0.35]}]}]
+        _, answer = self.post(app, "/api/world/action", {
+            "session": app.live.session.id, "object": "stool", "primary": True})
+        self.assertEqual(answer["did"], ["Look at it"])
+        self.assertIn("position_m", answer["done"][0], "the chat no longer reads what was seen")
+        self.assertEqual(answer["said"], "The stool: 7.5 kg, 0.35 x 0.45 x 0.35 m. Things can be set on: seat top.")
         self.assertEqual(app.live.acts, [])
 
     def test_bring_it_to_me_is_a_grip_a_stroke_and_setting_it_down(self):

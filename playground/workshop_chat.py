@@ -147,8 +147,10 @@ CAD/physics copilot, not a one-shot intent classifier.
 Important behavior:
 - define_interaction_points says where a finished product is taken hold of and
   what it receives: grip/use points, plus real receiving surfaces or cargo
-  interiors. Positions are in the design frame; a receiving position is on the
-  floor and size_m is the usable space above it. Metadata never creates a
+  interiors. Positions are in the design frame; a receiving point sits on the
+  FACE things rest on -- the top of the deck, seat, shelf or cavity floor, never
+  the ground under the product -- and size_m is the usable space above that
+  face. Metadata never creates a
   cavity. ONLY when the person is making or finishing a product, when they ask
   for it, or when GEOMETRY you just changed has moved the points -- a change of
   material has moved nothing.

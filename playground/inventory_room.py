@@ -19,6 +19,12 @@ A thing of several parts is taken up whole: the hand grips the part the person
 pointed at, and the others come with it on the joints they already have -- which
 stay joints, so a mace's head swings on its chain as it is carried. What it
 weighs, for the lift, is every part's.
+
+Where the hand takes hold is the thing's own GRIP point when it has one: the
+interaction point its maker -- the Workshop's model, the room's chat, a recipe
+-- put where a person's hand goes (hold_point). A mace is held by the end of its
+handle whichever part was pointed at. And the part that does the work, what a
+swing aims (use_point), is its USE point furthest from that grip: a mace's head.
 """
 from __future__ import annotations
 
@@ -37,6 +43,10 @@ PUT_OUT_M, PUT_DOWN_M = 0.7, 0.9
 # How far from a thing's middle a grip the page gives may be: a pick's handle is
 # half a metre from its middle, and a grip further than this is not on it.
 GRIP_REACH_M = 1.5
+# A grip point this far from the middle of its part says where the hand goes.
+# One at the middle -- which is where every body's point is when nobody placed
+# one (interaction_points.checked) -- says nothing the middle does not already.
+DECLARED_GRIP_M = 0.02
 
 
 def inventory_of(app: Any) -> inventory.Inventory:
@@ -75,6 +85,69 @@ def item_holding(app: Any, part: str | None) -> dict[str, Any] | None:
     if not part:
         return None
     return next((i for i in inventory.items_of(app.room.spec) if part in i["bodies"]), None)
+
+
+def _turned(q: list[float], v: list[float]) -> list[float]:
+    w, x, y, z = (float(c) for c in q)
+    return [(1-2*(y*y+z*z))*v[0]+2*(x*y-w*z)*v[1]+2*(x*z+w*y)*v[2],
+            2*(x*y+w*z)*v[0]+(1-2*(x*x+z*z))*v[1]+2*(y*z-w*x)*v[2],
+            2*(x*z-w*y)*v[0]+2*(y*z+w*x)*v[1]+(1-2*(x*x+y*y))*v[2]]
+
+
+def _points(app: Any, names: list[str], kind: str) -> list[tuple[str, list[float], list[float]]]:
+    """Every interaction point of a kind on these bodies, as the running room
+    has them: (body, its offset from the body's middle, where it is now). Points
+    are body-local metres from the centre of mass (mcp/interaction_points.py)."""
+    live = {b["name"]: b for b in _state(app).get("bodies") or []
+            if b.get("name") in names and b.get("position_m")}
+    out = []
+    for record in app.room.spec.get("interaction_points") or []:
+        body = live.get(record.get("body")) if isinstance(record, dict) else None
+        if body is None:
+            continue
+        for point in record.get("points") or []:
+            if point.get("kind") != kind:
+                continue
+            local = [float(v) for v in point.get("position_m") or [0.0, 0.0, 0.0]]
+            turned = _turned(body.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0], local)
+            out.append((body["name"], local,
+                        [float(body["position_m"][k]) + turned[k] for k in range(3)]))
+    return out
+
+
+def hold_point(app: Any, thing: dict[str, Any] | None, pointed: str) -> tuple[str, list[float] | None]:
+    """Which part the hand takes a thing by, and where on it (None: its middle).
+
+    The thing's own grip, where its maker put one: a grip point away from the
+    middle of its part -- on the part pointed at when it has one, else the
+    first. Failing that, a thing of several parts is taken by the part its Use
+    works (the body whose primary action is a real one, not the Inspect every
+    part gets by default), and anything else by the part pointed at."""
+    names = list(thing["bodies"]) if thing else [pointed]
+    placed = [(name, at) for name, local, at in _points(app, names, "grip")
+              if math.hypot(*local) > DECLARED_GRIP_M]
+    if placed:
+        return next(((n, at) for n, at in placed if n == pointed), placed[0])
+    if len(names) > 1:
+        from mcp import core_use
+        worked = next((a.get("body") for a in app.room.spec.get("actions") or []
+                       if isinstance(a, dict) and a.get("body") in names and a.get("primary")
+                       and a.get("steps") != core_use.DEFAULT["steps"]), None)
+        if worked and _body(app, worked) is not None:
+            return worked, None
+    return pointed, None
+
+
+def use_point(app: Any, thing: dict[str, Any] | None, grip: list[float], held: str) -> list[float] | None:
+    """Where the part of a thing that does its work is now: the use point
+    furthest from where the hand grips it -- a mace's head, a hammer's face.
+    A room gives every body a use point at its middle when nobody placed one,
+    so a plain block's is its middle. None only when no part has one at all."""
+    names = list(thing["bodies"]) if thing else [held]
+    uses = _points(app, names, "use")
+    if not uses:
+        return None
+    return max(uses, key=lambda u: math.dist(u[2], grip))[2]
 
 
 def _carried(app: Any) -> Any:
@@ -290,16 +363,19 @@ def request(app: Any, body: Any) -> dict[str, Any]:
             # (LiveWorld::park), and the page stops drawing all of it.
             return {"set_aside": name, "parts": list(thing["bodies"]) if thing else [name]}
         if plan["from"] == "world" and plan["to"] in inventory.HANDS:
-            # Taken up: the engine's hand grips it where it lies -- by the part
-            # pointed at, the rest of it coming on its own joints.
-            now = _body(app, part)
+            # Taken up: the engine's hand grips it where it lies -- where the
+            # page says (a tool by its handle), else by the thing's own grip
+            # (hold_point), else by the part pointed at, the rest of it coming
+            # on its own joints.
+            by, at = (part, None) if body.get("grip") is not None else hold_point(app, thing, part)
+            now = _body(app, by)
             if now is None or not now.get("position_m"):
-                raise ValueError(f"{inventory.said_name(part or asked)} is not in the room to take up")
-            grip = _grip(body.get("grip"), now)
-            app.live.act({"session": sid, "op": "wield", "name": part, "grip": grip})
+                raise ValueError(f"{inventory.said_name(by or asked)} is not in the room to take up")
+            grip = [round(v, 4) for v in at] if at is not None else _grip(body.get("grip"), now)
+            app.live.act({"session": sid, "op": "wield", "name": by, "grip": grip})
             said = {"taken_up": name, "held": True, "grip_m": grip}
-            if part != name:
-                said["by"] = part
+            if by != name:
+                said["by"] = by
             return said
         if plan["from"] == "stowed":
             if person is None or not person.get("eyes_m"):

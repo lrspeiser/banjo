@@ -1970,6 +1970,39 @@ BUILTIN_ACTIONS={
         {"do":"stand","stand":"lying","along":"facing"}]}}
 
 
+# How far past the spot looked at a strike carries the part that hits, so it
+# goes THROUGH what it is aimed at rather than stopping on its surface.
+STRIKE_THROUGH_M = 0.1
+
+
+def _looked_at(app, name):
+    """What an Inspect ("Look at it") tells the PERSON, in words: what all of
+    the thing weighs, how big the part is, and where things go on it -- the
+    surfaces its maker named. Its `done` line stays JSON, for the chat; shown
+    as it was, J on a table said only "Look at it" and nothing else happened."""
+    target = _live_body(app, name)
+    thing = inventory_room.item_holding(app, name)
+    kg = inventory_room.whole_kg(app, thing)
+    words = [f"{float(target.get('mass_kg') or 0.0) if kg is None else kg:.1f} kg"]
+    size = target.get("dimensions_m")
+    if isinstance(size, (list, tuple)) and len(size) == 3:
+        words.append(" x ".join(f"{float(v):.2f}" for v in size) + " m")
+    if thing is not None and len(thing["bodies"]) > 1:
+        words.append(f"{len(thing['bodies'])} parts, joined")
+    if target.get("anchored"):
+        words.append("fixed in place")
+    parts = thing["bodies"] if thing is not None else [name]
+    surfaces = [str(p.get("label") or "its top").lower()
+                for r in app.room.spec.get("interaction_points") or [] if r.get("body") in parts
+                for p in r.get("points") or [] if p.get("kind") == "surface"]
+    said = f"The {name}: " + ", ".join(words) + "."
+    if surfaces:
+        listed = (surfaces[0] if len(surfaces) == 1
+                  else ", ".join(surfaces[:-1]) + " and " + surfaces[-1])
+        said += f" Things can be set on: {listed}."
+    return said
+
+
 def _live_body(app,name):
     """A thing as the running room has it now: where it is, its sides, its turn."""
     body=next((b for b in (app.live.session.state or {}).get("bodies",[]) if b.get("name")==name),None)
@@ -2629,6 +2662,18 @@ def _core_hand_step(app, name, step, person):
         start = list(hand.get("grip_m") or at)
         way = person.get("look_direction") or person["facing"]
         end = [start[k] + way[k] * step["distance_m"] for k in range(3)]
+        # Aimed with the part that does the work: the hand moves so the thing's
+        # use point -- a mace's head -- goes to where the person is looking and
+        # a hand's width through it, no further than the strike reaches. With
+        # nowhere looked at, straight out along the look as before.
+        aim = person.get("aim_m")
+        hits = inventory_room.use_point(app, inventory_room.item_holding(app, name), start, name)
+        if aim is not None and hits is not None:
+            toward = [float(aim[k]) - hits[k] for k in range(3)]
+            size = math.sqrt(sum(v * v for v in toward))
+            if size > 0.02:
+                travel = min(step["distance_m"], size + STRIKE_THROUGH_M)
+                end = [start[k] + toward[k] / size * travel for k in range(3)]
         ended = _stroke_to(app, end, step["speed_m_s"], start)
         if ended not in ("reached", "blocked"):
             app.live.act({"session": app.live.session.id, "op": "cancel_stroke"})
@@ -2962,6 +3007,10 @@ def _run_action(app,body,own_hold=False):
         try: app.live.act({"session":app.live.session.id,"op":"release"})
         except ValueError: pass
     said={"action":action["label"],"done":done}
+    # A look is said in words for the person; the page shows `said` first.
+    if not problem and any(step["do"]=="inspect" for step in action["steps"]):
+        try: said["said"]=_looked_at(app,name)
+        except (ValueError,KeyError,TypeError): pass
     if problem: said["refused"]=problem
     else: said["did"]=[action["label"]]
     if kept or (before and not acquired and not worked): said["holding"]=holding
