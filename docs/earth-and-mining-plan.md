@@ -96,16 +96,18 @@ shows as a band you can follow. No physics changes to get that.
 4. **Work the vein by hand.** The oxidised top of a vein is soft; a pick takes it
    a bite at a time and the face recedes cube by cube. You carry ore out in
    40 kg loads. This is the session-scale activity.
-5. **Go in.** The vein dips under the hill. To follow it you need a heading — and
-   a heading through fresh rock is a machine's job, not a person's (§7). You set
-   a breaker machine to drive it and go do something else; the world keeps
-   running while you are in the Workshop.
-6. **Hold the roof up.** Before it will offer a heading, the page shows you the
-   ghosts of what the roof needs: *granite 0.4 m thick under 6 m of ground holds
-   2.6 m; this chamber is 5 m across, so props no more than 2.6 m apart — 3 of
-   them. You have 2 oak posts on the rack. You are short 1.* Place them and they
-   hold because they are there; get it wrong and the roof comes down, as real
-   bodies, on whatever is underneath.
+5. **Go in.** The vein dips under the hill, so you follow it in. Nothing hands you
+   a tunnel shape: the hole is whatever the tool has broken (§4.9), and a machine
+   opens one it can fit through and then keeps the section it is in. Through fresh
+   rock that is a machine's job, not a person's (§7) — you set a breaker on the
+   face, and go and do something else, because the world keeps running while you
+   are in the Workshop.
+6. **Hold the roof up.** As the hole you have cut gets near what the roof can
+   span, the page puts up the ghosts of what it needs: *rock 0.4 m thick under 6 m
+   of ground holds 2.6 m; this chamber is 5 m across, so props no more than 2.6 m
+   apart — 3 of them. You have 2 oak posts on the rack. You are short 1.* Place
+   them and they hold because they are there; get it wrong and the roof comes
+   down, as real bodies, on whatever is underneath — including you.
 7. **Keep it dry.** Below the water table the ground is saturated: the walls
    stand less well, and a gravel lens floods the heading in minutes. Drive above
    the table, or drive a drain lower down and let it run out.
@@ -346,6 +348,21 @@ a void whose footprint changed, or whose supports moved or broke, is asked on th
 next pass. A quiet mine costs nothing. This is the same machinery as `relax()` and
 should live next to it.
 
+**What "it lands on you" can mean.** The owner asked for a collapse that can hurt
+you (§10), and there is a catch worth saying before anything is built: **the person
+is a point of view and not a body** (`world.js`: "The person is a point of view and
+not a body"). There is nothing for a falling block to collide with. The water work
+already solved the same problem the honest way — the person is *taken* to hang
+1.6 m below the eye, never below the ground, and how much of that is under water
+decides how they wade, swim or are carried off. A roof should use the same
+stand-in: a falling body whose path crosses that volume is measured against it, and
+what follows is stated in physical terms — knocked down, pinned under what fell,
+what you were carrying spilled on the floor, and you dig yourself out with the
+spade you already have. No health, no death, no damage number: the engine has no
+such notion and this plan does not add one. If you want the person to be a real
+body that a rock can actually strike, that is its own project and a large one —
+say so and I will scope it separately.
+
 **Failing.** The failing span's roof voxels leave the ground. Big and coherent:
 through the existing `cut` path, as a falling body — which can crush a prop, a
 machine, or you. Thin: as rubble deposited on the void's floor, no body at all.
@@ -356,10 +373,11 @@ already happen for a boulder dug out from under.
 page says so, dust falls. Derived from the same number, not a scripted tell. This
 is the fairness knob, and the only one.
 
-**The ghosts** — the thing you asked for. At a face, "drive a heading" shows the
-ghost of the next section (say 1 m × 1 m × 1 m of void) *and* the ghosts of the
-supports the rule demands at their computed spacing, using the green / amber / red
-ghost look the page already has (`GHOST_LOOK`). Under them, the rack's own
+**The ghosts** — the thing you asked for. There is no ghost of the tunnel (§4.9:
+the tool decides that). What is ghosted is the **support plan for the hole as it
+stands**: as the span you have cut comes within reach of `L_crit`, the page puts
+up the ghosts of the props the rule demands at their computed spacing, in the
+green / amber / red ghost look the page already has (`GHOST_LOOK`). Under them, the rack's own
 shortfall sentence, which also already exists: *"It takes 3 oak posts and 1 cap.
 You are short 1 oak post."* The count comes from `L_crit`, and the panel says
 where it came from, in the same breath. The ghosts are advice; the physics is
@@ -423,6 +441,39 @@ The machines' side:
   `docs/machine-world.md`) becomes a navigable thing instead: a void is somewhere
   to drive in and out of, and a step too tall to climb is a real obstacle the
   getting-nowhere sense can see.
+
+### 4.9 There is no standard tunnel: the section is what has to fit through it
+
+The owner's decision (§10): no declared heading size. The void is whatever the
+tool has broken, cube by cube, and the section emerges from the work. That removes
+a made-up number and replaces it with two physical rules and one rule of thumb:
+
+- **A machine cuts a section it can fit through.** Starting a fresh face, its
+  breaker opens the smallest opening that clears its own body plus its clearance
+  — which is a measurement of the machine, not a setting. A rover wants roughly
+  its own width and height; a drone wants its rotor circle. Too small and it
+  cannot follow its own heading, and the physics says so by stopping it.
+- **A machine driving on keeps the section it is in.** The heading's profile is
+  read off the void already there and continued, so a tunnel has a shape because
+  the first few metres gave it one. Nothing declares it.
+- **A person cuts what they can reach and swing at**, which is what the pick's
+  own reach already decides.
+
+Three consequences to build for:
+
+- **The estimate is per cube and per metre, not per heading** (§7). The page can
+  honestly say "your breaker takes about 9 minutes a cube in this rock, and the
+  face you have cut is 16 cubes a metre — about 2½ hours a metre", and let you
+  make it narrower if you do not like the answer. The narrowing is yours, not the
+  design's.
+- **The support ghosts follow what you actually cut** (§4.6), which is how the
+  roof rule already works: it measures the real span. So props appear as the hole
+  you are cutting approaches `L_crit`, and widening a heading is what summons
+  them. This is better than checking a declared section against a rule — you can
+  see the rule arrive.
+- **Nothing offers you a shape.** There is no "drive a 1 m heading" button. There
+  is a face, a tool, and a roof that is or is not holding. The plan the ghosts
+  draw is the *support* plan, never the tunnel's.
 
 ## 5. What it costs, and what must not move
 
@@ -536,8 +587,9 @@ gate as it is. The pick works a face. A machine's breaker tool.
 
 **You can see:** swing an iron pick at an exposed vein and watch the face recede
 cube by cube, the worked cube shading as it goes, ore and rubble arriving in the
-Carried list; set a rover's breaker on a heading and come back to a metre of
-tunnel.
+Carried list; set a rover's breaker on a face and come back to a metre of tunnel
+the width the rover needed to get down it (§4.9), with no section declared
+anywhere.
 
 **Measured:** the work the solver measured against the model's own, the way the
 ground bite is measured today (within one step's travel); ground plus carried plus
@@ -549,10 +601,13 @@ each material.
 roof-span-v1, supports measured from the rigid world, pillars, groaning, collapse
 as a body or as rubble, and the ghosts with the rack's shortfall sentence.
 
-**You can see:** a 5 m chamber in granite under the weak bed comes down when you
-mine the last pillar out; the same chamber with three props holds; pull one prop
-and it comes down on the others; a soil heading refuses to be offered without
-timbering, and says why.
+**You can see:** a 5 m chamber in rock under the weak bed comes down when you mine
+the last pillar out; the same chamber with three props holds; pull one prop and it
+comes down on the others; widen a heading until the prop ghosts appear and watch
+the rule arrive; a roof that falls on a rover crushes it, as a falling body does;
+and one that falls on the person knocks them down, spills what they carry and pins
+them until they dig out — through the 1.6 m stand-in the water already uses, not a
+new body.
 
 **Measured:** the collapse conserves; the frontier stays small (a quiet mine asks
 nothing); the prop that fails is failed by the engine's own material response and
@@ -606,22 +661,23 @@ rock-cutting has:
   work a vein, not a mountain**, and the geology of §4.2 is what makes that
   possible.
 - A heading through fresh rock is a machine's job: at 30 MJ/m³ a 20 kW breaker
-  advances a 1 m × 1 m heading about a metre an hour. That is slow to watch and
-  perfectly fine to *run*, because the world keeps running when nobody is looking
-  at it (`playground/world_clock.py`) and never faster than the wall clock. You
-  set it going and you go and build something. The energy it spends is the real
+  gets through about 2.4 m³ an hour, so a metre of advance costs an hour for
+  every square metre of face. That is slow to watch and perfectly fine to *run*,
+  because the world keeps running when nobody is looking at it
+  (`playground/world_clock.py`) and never faster than the wall clock. You set it
+  going and you go and build something. The energy it spends is the real
   constraint, and it lands squarely on the battery and solar work that already
   exists.
-- The page should say the estimate before you commit, from the measured rate:
-  *"at what your breaker delivers, this heading is about 40 minutes"*. An honest
-  number, and the player's decision.
+- The page says the rate before you commit, from what the tool has actually been
+  measured delivering: *"about 9 minutes a cube in this rock; the face you have
+  cut is 16 cubes a metre"*. An honest number against the hole you chose to cut,
+  and then the player's decision.
 
-The three ways to make it faster, in order of how honest they are: smaller
-cross-sections (a 1 m × 1 m heading is enough for a person and a rover, and is a
-quarter of the rock of a 2 m one); more power (which is the game); and drill-and-
-blast, which is how rock is really moved and would be a genuinely fun later
-project — a charge breaks cubic metres because it loads the rock in tension. It is
-out of this plan.
+The three ways to make it faster, in order of how honest they are: **cut less
+rock** — the section is yours (§4.9), and a face half as wide is half the hours;
+more power, which is the game; and drill-and-blast, which is how rock is really
+moved and would be a genuinely fun later project — a charge breaks cubic metres
+because it loads the rock in tension. Blasting is out of this plan.
 
 ## 8. What this plan deliberately does not do
 
@@ -655,18 +711,22 @@ should be reported as progress.
    baseline. If it does, the fix is a fast path for the common case of one soil
    run over one rock run, which is most of any valley.
 
-## 10. What I need you to decide
+## 10. What the owner decided, 2026-09-27
 
-1. **How blocky?** My recommendation: geology continuous, voids in 0.25 m cubes
-   (§2) — the ground stays exact, the hole you make is visibly made of blocks.
-   The alternative is everything quantised, which looks more like Minecraft and
-   breaks the settling and conservation tests that pass today.
-2. **How big is a heading?** My recommendation: 1 m × 1 m as the standard, wide
-   enough for a person and a rover, a quarter of the rock of a 2 m one. Chambers
-   are what props are for.
-3. **Can a collapse hurt you?** My recommendation: yes — a falling roof is a real
-   body and it lands on whatever is under it, with the groaning warning as the
-   only fairness. Saying it cannot would mean the props are decoration.
-4. **Where does the first vein go?** My recommendation: in the knoll, with its
-   oxidised cap outcropping on the valley side, so the first mine is an adit of
-   two or three metres that a person can open by hand and a rover can drive into.
+1. **How blocky: smooth ground, blocky holes.** Geology keeps its real shapes;
+   the hole you cut is 0.25 m cubes. As §2 has it, and every settling and
+   conservation test that passes today still holds.
+2. **How big is a heading: let the tool decide.** No standard section. §4.9 is
+   what that means, and it turned out to be the more physical answer: a section
+   is whatever has to pass through it.
+3. **A collapse lands on you.** A fallen roof is a real body and crushes props and
+   machines outright; the roof groans at 0.7 of its strength first, and that
+   warning is the only fairness in it. For the *person* it has to go through the
+   1.6 m stand-in the water already uses, because the person is not a body —
+   knocked down, pinned, carrying nothing until they dig out. §4.6 says why, and
+   what the alternative would cost.
+
+Still open, and only a detail: **where the first vein goes.** My recommendation is
+the knoll, with its oxidised cap outcropping on the valley side, so the first mine
+is an adit of two or three metres that a person can open by hand and a rover can
+drive into.
