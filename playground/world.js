@@ -713,6 +713,26 @@ function growRuns(needed) {
   ground.runs = runs;
 }
 
+// What is underfoot at a point for somebody whose eye is at `y`: the top of the
+// highest SOLID run at or below them. On open ground that is the ground. Inside
+// a working it is the working's floor -- the hill over their head is not
+// something they are standing on, and asking the height field alone (which only
+// knows the hill) is what used to shove anyone who went in back out on top of it.
+const RUN_VOID = 8;
+function standingOn(x, z, y) {
+  const g = ground.grid, runs = ground.runs;
+  if (!g || !runs) return groundAt(x, z);
+  const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return groundAt(x, z);
+  const c = j * g.nx + i;
+  for (let k = runs.count[c] - 1; k >= 0; --k) {
+    const at = c * runs.stride + k;
+    if (runs.kind[at] === RUN_VOID) continue;
+    if (runs.top[at] <= y + 0.05) return runs.top[at];
+  }
+  return groundAt(x, z);
+}
+
 // The strata a step cuts, drawn on the step the collider already has.
 //
 // The ground is ONE surface. Where a dig leaves half a metre of drop between two
@@ -779,11 +799,53 @@ function buildFaces() {
     // Above the last run there is nothing but the air the ground ends in; a step
     // that reaches higher than the taller column's own top cannot happen.
   };
+  // A working: the hole itself, drawn from the inside. Its floor, the roof over
+  // it, and a wall wherever the rock beside it is solid -- which is every side
+  // the working does not carry on through. The hill above is drawn as it always
+  // was: a person outside sees a hillside, and a person inside sees a tunnel.
+  const working = (c) => {
+    const runs = ground.runs;
+    for (let k = 0; k < runs.count[c]; ++k)
+      if (runs.kind[c * runs.stride + k] === RUN_VOID)
+        return { floor: k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor,
+                 roof: runs.top[c * runs.stride + k],
+                 under: k > 0 ? runs.kind[c * runs.stride + k - 1] : 0,
+                 over: k + 1 < runs.count[c] ? runs.kind[c * runs.stride + k + 1] : 0 };
+    return null;
+  };
+  const flat = (x0, z0, x1, z1, y, colour) => {
+    points.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1);
+    for (let v = 0; v < 6; ++v) colours.push(colour.r, colour.g, colour.b);
+  };
   for (let j = 0; j < g.nz; ++j)
     for (let i = 0; i < g.nx; ++i) {
       const c = j * g.nx + i;
       if (i + 1 < g.nx) step(c, c + 1, false);
       if (j + 1 < g.nz) step(c, c + g.nx, true);
+      if (!ground.runs) continue;
+      const w = working(c);
+      if (!w) continue;
+      const seen = groundSeen(c);
+      const paint = (kind) => seen ? (GROUND_COLOURS[kind] || GROUND_COLOURS[0]) : GROUND_UNSEEN;
+      const x = g.x0 + i * g.dx - half, z = g.z0 + j * g.dx - half;
+      flat(x, z, x + g.dx, z + g.dx, w.floor, paint(w.under));
+      flat(x, z, x + g.dx, z + g.dx, w.roof, paint(w.over));
+      // A wall on each side the working stops at, in what it is cut from.
+      const sides = [[1, 0, i + 1 < g.nx], [-1, 0, i > 0], [0, 1, j + 1 < g.nz], [0, -1, j > 0]];
+      for (const [di, dj, inside] of sides) {
+        const n = inside ? working(c + di + dj * g.nx) : null;
+        const lo = n ? Math.min(w.roof, Math.max(w.floor, n.floor)) : w.floor;
+        const hi = n ? Math.max(w.floor, Math.min(w.roof, n.roof)) : w.roof;
+        // Wall the part of this side the neighbour's hole does not open.
+        if (!n || lo > w.floor + FACE_BAND_M)
+          band(x + (di > 0 ? g.dx : 0), z + (dj > 0 ? g.dx : 0),
+               x + (di !== 0 ? (di > 0 ? g.dx : 0) : g.dx), z + (dj !== 0 ? (dj > 0 ? g.dx : 0) : g.dx),
+               w.floor, n ? lo : w.roof, paint(w.under));
+        if (n && hi < w.roof - FACE_BAND_M)
+          band(x + (di > 0 ? g.dx : 0), z + (dj > 0 ? g.dx : 0),
+               x + (di !== 0 ? (di > 0 ? g.dx : 0) : g.dx), z + (dj !== 0 ? (dj > 0 ? g.dx : 0) : g.dx),
+               hi, w.roof, paint(w.over));
+      }
     }
   if (!points.length) return;
   const geometry = new THREE.BufferGeometry();
@@ -4882,7 +4944,11 @@ function walk(dt) {
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
-  const under = ground.heights ? groundAt(camera.position.x, camera.position.z) : 0;
+  // What they are standing on, which inside a working is its floor and not the
+  // hill over it.
+  const under = ground.heights
+    ? standingOn(camera.position.x, camera.position.z, camera.position.y - BODY_BELOW_EYE_M + 0.2)
+    : 0;
   camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
   camera.position.x = clamp(camera.position.x, -28, 28);
   camera.position.z = clamp(camera.position.z, -28, 28);

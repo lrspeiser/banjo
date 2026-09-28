@@ -697,9 +697,21 @@ valley_live 12/12): a pebble put in it rests at 2.05 m, its floor plus its
 radius, and not on the world's floor; fired up at 8 m/s it reaches 3.68 m and
 stops under the roof at 3.75, where free flight would have carried it to 5.33.
 
-**Not built:** the page draws none of it, so the tunnel is real to the solver and
-invisible to a person; and "which floor am I on" is untouched, so you cannot walk
-in yet. Both are the rest of stage 3.
+**And the other half, the same day: you can see it and stand in it.** The page
+draws a working from the inside off the runs it already receives -- its floor,
+the roof over it, and a wall wherever the rock beside it is solid -- and
+`standingOn(x, z, y)` gives whoever is there the top of the highest SOLID run at
+or below them, which on open ground is the ground and inside a working is its
+floor. Asking the height field alone, which only knows the hill, is what used to
+shove anyone who went in back out on top of it. Measured: the page builds 75
+columns of working into its mesh (1,752 triangles with the faces), and a person
+put inside at y = 3.60 m stays at 3.60 -- floor 2.00, roof 3.75, and the hill
+5.13 over their head -- where before they would have been lifted to 5.13.
+
+**Not built:** it is DARK in there, because a tunnel is, and nothing in the room
+carries a light yet; the walls are drawn as the cell-stepped shapes they are;
+and machines and their senses have not been told about workings at all, so a
+rover would still drive over the top of one.
 
 **Measured:** the collider rebuild for a void chunk against the budget; bodies
 woken by a void appearing; a person and a machine stand on the floor of the
