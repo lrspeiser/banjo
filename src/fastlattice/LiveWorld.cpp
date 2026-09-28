@@ -9909,6 +9909,12 @@ std::size_t LiveWorld::applyPending() {
     std::vector<std::string> island_names;
     for (const std::size_t body : island_bodies) island_names.push_back(impl_->described[body].name);
 
+    // How many cells each body brought in, kept because `nodes_of` is dropped
+    // below and the naming needs to ask whether anything actually came off.
+    std::unordered_map<std::string, std::size_t> cells_brought_in;
+    for (const std::size_t body : island_bodies)
+        cells_brought_in[impl_->described[body].name] = impl_->nodes_of[body].size();
+
     // Drop every body in the island and append what they became. A piece is a
     // hull: its cells ARE its surface now, so no authored primitive fits.
     std::vector<std::size_t> going = island_bodies;
@@ -9990,12 +9996,39 @@ std::size_t LiveWorld::applyPending() {
         LiveBodyPose piece{};
         // A piece that is still all of its parent kept its parent; only a piece
         // that is part of one is numbered.
-        const bool whole_parent = counted[dominant] == component.node_indices.size() &&
-                                  !parent_of_part[dominant].name.empty() &&
-                                  component.node_indices.size() ==
-                                      impl_->cellsOfPart(dominant);
-        piece.name = held || whole_parent ? parent.name
-                                          : parent.name + " piece " + std::to_string(++made);
+        const bool whole_part = counted[dominant] == component.node_indices.size() &&
+                                !parent_of_part[dominant].name.empty() &&
+                                component.node_indices.size() ==
+                                    impl_->cellsOfPart(dominant);
+        // And a body that came out of the run with every cell it went in with
+        // is still itself too, even if it is a piece of something and so can
+        // never be "all of its part". Without this, a run that breaks bonds
+        // inside a fragment but separates nothing renamed it anyway -- and a
+        // new name has never been tried at this contact, so it was offered
+        // again, run again, renamed again. Measured on a glass tabletop: one
+        // body asked sixteen times at a single instant, at about 250 ms a
+        // turn, its name grown to "... piece 1" thirty-four times over, and
+        // 9.7 s of a 14.3 s drop test spent on runs that separated nothing.
+        // `own` matters as much as the count. Without it a component whose
+        // part has no body of its own takes the name of whatever body it fell
+        // from, and two bodies end up with one name: the world then cannot be
+        // saved ("duplicate saved body name") and, worse, stops repeating
+        // itself, because every lookup keyed on a name has two answers.
+        const auto brought = own ? cells_brought_in.find(parent.name)
+                                 : cells_brought_in.end();
+        const bool nothing_came_off = brought != cells_brought_in.end() &&
+                                      component.node_indices.size() == brought->second;
+        // Only the NAME follows from this. Everything else below stays on
+        // `whole_part`: whether it counts as debris, whether it may record a
+        // deeper dent, whether its authored shape comes back. Those are
+        // statements about what the body IS, and a fragment that held is
+        // still a fragment -- and making them follow the identity test moved
+        // the world: `banjo_live_determinism_tests` caught the same scene
+        // coming out two ways, because a piece that stopped being debris
+        // stopped rolling like debris.
+        const bool same_body = whole_part || nothing_came_off;
+        piece.name = held || same_body ? parent.name
+                                      : parent.name + " piece " + std::to_string(++made);
         if (!source_of_cell.empty()) {
             std::unordered_map<std::string, std::size_t> from;
             for (const std::uint32_t node : parent_nodes) {
@@ -10007,14 +10040,14 @@ std::size_t LiveWorld::applyPending() {
         }
         // A piece that is still all of its parent is that parent, bent. Only
         // something that actually came off is debris.
-        piece.fragment = !whole_parent || parent.fragment;
+        piece.fragment = !whole_part || parent.fragment;
         // The deepest set it carries, and where. A piece keeps what its parent
         // had unless this run went deeper.
         piece.dent_m = parent.dent_m;
         // Kept in the rigid frame, and the piece is made facing the world's own
         // way: what the parent faced comes into it, or the mark would move.
         piece.dent_at_m = was.orientation_world.rotate(parent.dent_at_m);
-        if (whole_parent && dent_m > piece.dent_m) {
+        if (whole_part && dent_m > piece.dent_m) {
             piece.dent_m = dent_m;
             piece.dent_at_m = dent_at - fragment.mass_properties.center_of_mass_world_m;
         }
@@ -10099,7 +10132,7 @@ std::size_t LiveWorld::applyPending() {
         // micrometres and a genuinely squashed one at about half a cell, so the
         // two are nowhere near each other and the bar only has to sit between.
         const bool reshaped = moved > 0.25 * impl_->request.cell_size_m;
-        const bool untouched = whole_parent && !reshaped && parent.shape != "hull";
+        const bool untouched = whole_part && !reshaped && parent.shape != "hull";
         if (untouched) {
             piece.shape = parent.shape;
             piece.dimensions_m = parent.dimensions_m;

@@ -1030,6 +1030,13 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_determinism_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_live_determinism_tests)
             add_test(NAME banjo_live_determinism_tests COMMAND banjo_live_determinism_tests)
+
+            # A body that came out of a run with everything it went in with is
+            # still itself: rename it and the same contact is offered for ever.
+            add_executable(banjo_fragment_identity_tests tests/fragment_identity_tests.cpp)
+            target_link_libraries(banjo_fragment_identity_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fragment_identity_tests)
+            add_test(NAME banjo_fragment_identity_tests COMMAND banjo_fragment_identity_tests)
             # Its check against the wall clock -- a foreseen fracture's first
             # run done inside its warning -- is a claim about the machine as much
             # as the engine: beside other heavy work it fails on any build. It
