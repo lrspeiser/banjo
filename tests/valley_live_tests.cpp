@@ -108,6 +108,7 @@ struct Valley {
         land = terrain::Environment::fromScene(Json{{"terrain", block}}.dump());
     }
     const terrain::TerrainField &ground() const { return land->terrain(); }
+    const terrain::Mine &mine() const { return land->landscape().mine; }
     const water::ShallowWater &water() const { return *land->water(); }
     double groundAt(double x, double z) const { return ground().heightAt(x, z); }
     // Across the river at x: the deepest FLOWING column, its bed and surface,
@@ -560,6 +561,69 @@ void meltingIceFillsTheLake() {
 
 } // namespace
 
+// The adit is a hole you could walk into: rock under it, rock over it, hillside
+// untouched above. A ball put inside rests on its floor and cannot rise through
+// its roof, which is the whole of what a tunnel has to be to the solver
+// (docs/earth-and-mining-plan.md, stage 3; the arrangement was measured before
+// it was built in docs/evidence/earth-spikes/roof_spike.cpp).
+void theAditIsAHoleWithRockOverIt() {
+    Valley v;
+    require(v.mine().worked, "somebody worked this valley");
+    const auto &g = v.ground().grid();
+
+    // Find a column of the driven tunnel: a working with hill over its roof.
+    std::size_t inside = 0;
+    double best = -1.0;
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        const double cover = v.ground().height(c) - w->roof_m;
+        if (cover > best) { best = cover; inside = c; }
+    }
+    std::size_t workings = 0;
+    for (std::size_t c = 0; c < g.cells(); ++c) workings += v.ground().workingIn(c) ? 1 : 0;
+    std::cout << "    " << workings << " columns hold a working; the most hill over any roof is "
+              << best << " m\n";
+    require(best > 0.4, "the adit goes under the hill, with rock over its roof");
+    const auto working = *v.ground().workingIn(inside);
+    const double x = g.xOf(int(inside % std::size_t(g.nx)));
+    const double z = g.zOf(int(inside / std::size_t(g.nx)));
+    std::cout << "    the tunnel at [" << x << ", " << z << "]: floor " << working.floor_m
+              << " m, roof " << working.roof_m << " m, with " << best
+              << " m of hill over it (the ground there is " << v.ground().height(inside) << ")\n";
+
+    // A ball dropped into it from just under the roof.
+    const double r = 0.05;
+    auto world = open(v.scene(Json::array({
+        ball("pebble", "concrete", 2.0 * r, {x, working.roof_m - r - 0.02, z})})));
+    run(*world, 2.0);
+    const LiveBodyPose rest = poseOf(*world, "pebble");
+    std::cout << "    a pebble put in it rests at y=" << rest.position_m.y
+              << " (its floor plus its radius is " << working.floor_m + r << ")\n";
+    near(rest.position_m.y, working.floor_m + r, 0.05,
+         "the pebble rests on the tunnel's floor, not on the world's");
+    require(std::abs(rest.position_m.x - x) < 0.4 && std::abs(rest.position_m.z - z) < 0.4,
+            "and it is still in the tunnel");
+
+    // And the roof is over it. Fired up at 8 m/s from the floor -- free, not
+    // held, because the hand MOVES what it holds and would drag it through any
+    // collider at all, which is a fact about hands and not about roofs.
+    Json fired = ball("shot", "concrete", 2.0 * r, {x, working.floor_m + r + 0.02, z});
+    fired["velocity_m_s"] = {0.0, 8.0, 0.0};
+    auto again = open(v.scene(Json::array({fired})));
+    double highest = -1.0e30;
+    for (int k = 0; k < 120; ++k) {
+        run(*again, 0.02);
+        highest = std::max(highest, poseOf(*again, "shot").position_m.y);
+    }
+    const double free_flight = working.floor_m + r + 0.02 + 8.0 * 8.0 / (2.0 * 9.81);
+    std::cout << "    fired up at 8 m/s it got to y=" << highest << "; the roof is at "
+              << working.roof_m << " and free flight would reach " << free_flight << "\n";
+    require(free_flight > working.roof_m + 1.0, "it was trying hard enough to matter");
+    require(highest < working.roof_m + 0.05,
+            "the roof stopped it: a tunnel has rock over it");
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -575,6 +639,7 @@ int main(int argc, char **argv) {
         {"a dam of loose blocks raises the river", aDamOfLooseBlocksRaisesTheRiver},
         {"a new outlet drains the pond", aNewOutletDrainsThePond},
         {"a cut block is neither lost nor duplicated", aCutBlockIsNeitherLostNorDuplicated},
+        {"the adit is a hole with rock over it", theAditIsAHoleWithRockOverIt},
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"a boulder falls when dug under", aBoulderFallsWhenDugUnder},
         {"an oak log drifts and iron sinks", anOakLogDriftsAndIronSinks},

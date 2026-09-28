@@ -86,8 +86,18 @@ enum class Surface : std::uint8_t { Rock = 0, Soil = 1, Sand = 2 };
 enum class RunKind : std::uint8_t {
     Rock = 0, Soil = 1, Sand = 2, LooseSoil = 3,
     WeatheredRock = 4, Clay = 5, Ore = 6, OxidisedOre = 7,
+    // A bed of nothing: what somebody took out and did not fill in. A void is
+    // held as a bed because that is where it is -- between the rock under it
+    // and the rock over it -- and because everything that already walks a
+    // column then walks the hole too (docs/earth-and-mining-plan.md, stage 3).
+    Void = 8,
 };
-inline constexpr int kRunKinds = 8;
+inline constexpr int kRunKinds = 9;
+// A column's TOPMOST bed is never a void: a hole open to the sky is a hole in
+// the ground's own surface, which a height field already says. So the surface,
+// the soil on it and everything that reads them are untouched by a void, and a
+// void is always something with rock over it.
+[[nodiscard]] constexpr bool isVoid(RunKind kind) { return kind == RunKind::Void; }
 // Rock a block can be cut out of. Weathered rock is rock, rotted: it is the same
 // matter at the same density, so a block of it is a block. Clay and ore are not,
 // and a cut that would reach them is refused rather than counted as rock.
@@ -235,6 +245,11 @@ public:
         return beds_.top[beds_.start[c] + beds_.count[c] - 1];
     }
     [[nodiscard]] const Beds &beds() const { return beds_; }
+    // The working in a column, if it has one: the top of what is under it, and
+    // the underside of the rock over it. One to a column today.
+    struct Working { double floor_m{}; double roof_m{}; };
+    [[nodiscard]] std::optional<Working> workingIn(std::size_t c) const;
+    [[nodiscard]] bool hasWorkings() const { return workings_ > 0; }
     // The bed `k` of a column reaches from here to its own top; the lowest
     // reaches down to floor().
     [[nodiscard]] double bedBottom(std::size_t c, std::uint32_t k) const {
@@ -354,6 +369,8 @@ private:
 
     Grid grid_;
     Beds beds_;
+    std::size_t workings_{};     // how many columns hold one, so a world with
+                                 // none pays nothing for them
     std::vector<double> soil_, sand_, loose_;
     std::vector<float> moisture_;
     double floor_{};

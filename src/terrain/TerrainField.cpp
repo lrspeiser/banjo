@@ -36,6 +36,8 @@ void addByKind(Volumes &v, RunKind kind, double m3) {
     case RunKind::Ore:
     case RunKind::OxidisedOre: v.rock_m3 += m3; return;
     case RunKind::Sand: v.sand_m3 += m3; return;
+    // A void is nothing. It is not matter and the ledger counts none of it.
+    case RunKind::Void: return;
     case RunKind::Soil:
     case RunKind::Clay:
     case RunKind::LooseSoil: v.soil_m3 += m3; return;
@@ -89,6 +91,7 @@ void TerrainField::restore(const State &s) {
             if (!std::isfinite(top) || !(top >= below) || s.beds.kind[from + k] >= kRunKinds) refuse();
             below = top;
         }
+        if (isVoid(static_cast<RunKind>(s.beds.kind[from + s.beds.count[c] - 1]))) refuse();
         if (!std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
         for (double v : {s.soil[c], s.sand[c], s.loose[c]})
             if (!std::isfinite(v) || v < 0) refuse();
@@ -202,6 +205,10 @@ TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
             if (!std::isfinite(beds_.top[k]) ||
                 (k > beds_.start[c] && beds_.top[k] < beds_.top[k - 1]))
                 throw std::invalid_argument("a bed's top is not finite, or is below the bed under it");
+        // A hole open to the sky is a hole in the surface, which the height
+        // field says on its own; a void is always something with rock over it.
+        if (isVoid(static_cast<RunKind>(beds_.kind[beds_.start[c] + beds_.count[c] - 1])))
+            throw std::invalid_argument("a column's topmost bed cannot be a void");
         if (!(soil_[c] >= 0.0) || !(sand_[c] >= 0.0) ||
             !(loose_[c] >= 0.0) || !std::isfinite(soil_[c] + sand_[c] + loose_[c]))
             throw std::invalid_argument("a terrain layer is negative or not finite");
@@ -209,7 +216,11 @@ TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
     // How far the rock goes down. Every world before this had 2 m of it, which
     // is no earth to mine at all (docs/earth-and-mining-plan.md).
     double lowest_rock = std::numeric_limits<double>::infinity();
-    for (std::size_t c = 0; c < n; ++c) lowest_rock = std::min(lowest_rock, rockTop(c));
+    for (std::size_t c = 0; c < n; ++c) {
+        lowest_rock = std::min(lowest_rock, rockTop(c));
+        for (std::uint32_t k = beds_.start[c]; k < beds_.start[c] + beds_.count[c]; ++k)
+            if (isVoid(static_cast<RunKind>(beds_.kind[k]))) { ++workings_; break; }
+    }
     floor_ = lowest_rock - kEarthDepthM;
     chunks_x_ = std::max(1, (grid_.nx - 2) / kChunkCells + 1);
     chunks_z_ = std::max(1, (grid_.nz - 2) / kChunkCells + 1);
@@ -222,6 +233,14 @@ Surface TerrainField::surface(std::size_t c) const {
     if (sand_[c] + loose_[c] > 0.02) return sand_[c] >= loose_[c] ? Surface::Sand : Surface::Soil;
     if (soil_[c] + sand_[c] + loose_[c] > 0.02) return Surface::Soil;
     return Surface::Rock;
+}
+
+std::optional<TerrainField::Working> TerrainField::workingIn(std::size_t c) const {
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t k = 0; k < beds_.count[c]; ++k)
+        if (isVoid(static_cast<RunKind>(beds_.kind[from + k])))
+            return Working{bedBottom(c, k), beds_.top[from + k]};
+    return std::nullopt;
 }
 
 int TerrainField::runsOf(std::size_t c, Run *out) const {
@@ -545,7 +564,11 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
             const std::uint32_t from = beds_.start[c];
             for (std::uint32_t k = 0; k < beds_.count[c]; ++k) {
                 if (!(beds_.top[from + k] > bottom)) continue;
-                if (!isRockLike(static_cast<RunKind>(beds_.kind[from + k])))
+                const auto kind = static_cast<RunKind>(beds_.kind[from + k]);
+                if (isVoid(kind))
+                    return fail("there is a working under there: a block cut out of rock with a "
+                                "hole in it is not a block");
+                if (!isRockLike(kind))
                     return fail("the rock there is not all rock: cutting a block out of a bed of "
                                 "clay or ore is not accounted for yet");
             }

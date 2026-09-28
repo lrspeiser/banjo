@@ -49,7 +49,7 @@ namespace banjo::terrain {
 
 // Bumped whenever generation changes what it makes, so an old cached valley is
 // never read back as a new one.
-inline constexpr int kGeneratorVersion = 5;
+inline constexpr int kGeneratorVersion = 6;
 
 struct ValleyParameters {
     std::uint64_t seed{7};

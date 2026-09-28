@@ -678,6 +678,29 @@ room's authority.
 **You can see:** a tunnel declared into the hillside in a test room, walked into,
 looked out of; a rover driven in and out; the room reopened and it is still there.
 
+**Started, 2026-09-28: the ground can hold a hole, and the old adit is one.**
+`RunKind::Void` is a bed of nothing -- rock under it, rock over it -- with one
+invariant that keeps everything else untouched: **a column's topmost bed is never
+a void**, because a hole open to the sky is a hole in the surface, which a height
+field already says. So `height()`, `rockTop()`, the soil on top and everything
+that reads them are exactly as they were, and a void is always something with
+rock over it. `JoltWorld::addRoofPatch` is the spike's arrangement made real: the
+same height field on a static body turned half a turn about X, mostly holes,
+built and swapped like any other patch. A chunk with a working gets two more
+patches, its floor and its roof; a chunk without gets none.
+
+The generator drives the old adit in as a real tunnel where there is hill over
+it, and leaves it a notch where there is not: 75 columns of the valley are a
+working 1.75 m from floor to roof with up to 1.4 m of hill above. Measured, in
+the live world on the generated valley (`the adit is a hole with rock over it`,
+valley_live 12/12): a pebble put in it rests at 2.05 m, its floor plus its
+radius, and not on the world's floor; fired up at 8 m/s it reaches 3.68 m and
+stops under the roof at 3.75, where free flight would have carried it to 5.33.
+
+**Not built:** the page draws none of it, so the tunnel is real to the solver and
+invisible to a person; and "which floor am I on" is untouched, so you cannot walk
+in yet. Both are the rest of stage 3.
+
 **Measured:** the collider rebuild for a void chunk against the budget; bodies
 woken by a void appearing; a person and a machine stand on the floor of the
 tunnel and not on the hill above it; reopen is bit-identical.

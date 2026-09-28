@@ -37,6 +37,7 @@
 #include "water/WaterCoupling.hpp"
 
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -269,6 +270,11 @@ private:
     // goes on over the same stride on its own clock.
     void stepNetwork(double dt_s);
     std::vector<float> chunkHeights(int chunk) const;
+    // The two extra colliders a chunk with a working needs, and whether it has
+    // one at all (docs/earth-and-mining-plan.md, stage 3).
+    [[nodiscard]] std::vector<float> workingFloor(int chunk) const;
+    [[nodiscard]] std::vector<float> workingRoof(int chunk, double hang_from_m) const;
+    [[nodiscard]] bool chunkHasWorkings(int chunk) const;
 
     Landscape landscape_;
     std::unique_ptr<TerrainField> terrain_;
@@ -277,6 +283,9 @@ private:
     std::vector<water::Reaction> reactions_;
     std::vector<water::BodyForce> forces_;
     std::vector<unsigned> patch_of_chunk_;
+    // Per chunk that has a working: its floor patch and its roof patch.
+    std::map<int, std::pair<unsigned, unsigned>> working_patches_;
+    double hang_from_{};
     std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
     Volumes carried_{};

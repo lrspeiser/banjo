@@ -72,6 +72,7 @@ const char *runKindName(RunKind k) {
     case RunKind::Clay: return "clay";
     case RunKind::Ore: return "ore";
     case RunKind::OxidisedOre: return "oxidised ore";
+    case RunKind::Void: return "a working";
     }
     return "soil";
 }
@@ -641,6 +642,59 @@ std::vector<float> Environment::chunkHeights(int chunk) const {
     return heights;
 }
 
+// The floor of a chunk's workings, and the underside of their roof, for the two
+// extra colliders a chunk with a hole in it needs. Nothing where there is no
+// working: a non-finite height is a hole in a patch, which is most of any of
+// these, because a working is small and a chunk is not.
+std::vector<float> Environment::workingFloor(int chunk) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    std::vector<float> out(static_cast<std::size_t>(kCount) * kCount,
+                           std::numeric_limits<float>::quiet_NaN());
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i >= g.nx || j >= g.nz) continue;
+            if (const auto w = terrain_->workingIn(g.at(i, j)))
+                out[static_cast<std::size_t>(jj) * kCount + ii] = static_cast<float>(w->floor_m);
+        }
+    return out;
+}
+
+std::vector<float> Environment::workingRoof(int chunk, double hang_from_m) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    std::vector<float> out(static_cast<std::size_t>(kCount) * kCount,
+                           std::numeric_limits<float>::quiet_NaN());
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i >= g.nx || j >= g.nz) continue;
+            if (const auto w = terrain_->workingIn(g.at(i, j)))
+                // The rows run backwards: the body is turned half a turn about X.
+                out[static_cast<std::size_t>(kCount - 1 - jj) * kCount + ii] =
+                    static_cast<float>(hang_from_m - w->roof_m);
+        }
+    return out;
+}
+
+bool Environment::chunkHasWorkings(int chunk) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i < g.nx && j < g.nz && terrain_->workingIn(g.at(i, j))) return true;
+        }
+    return false;
+}
+
 std::string Environment::groundStateJson() const {
     const auto s=terrain_->state();
     const auto packed=[](const auto &v) { return encodeBase64(v.data(),v.size()*sizeof(v[0])); };
@@ -837,6 +891,23 @@ void Environment::attach(JoltWorld &world) {
     // One collider material for all of it, but not one ground: a ball on the
     // sand is held where one on the rock rolls. Asked where each contact is,
     // so a dig, a slump or a heap of sand changes it as it changes the ground.
+    // A chunk with a working in it gets two more patches: the floor somebody
+    // stands on inside it, and the roof over their head. Both are mostly holes,
+    // and a world nobody has dug under has neither.
+    if (terrain_->hasWorkings()) {
+        hang_from_ = terrain_->highest() + 10.0;
+        for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk) {
+            if (!chunkHasWorkings(chunk)) continue;
+            const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+            const double x0 = g.x0 + cx * TerrainField::kChunkCells * g.dx;
+            const double z0 = g.z0 + cz * TerrainField::kChunkCells * g.dx;
+            working_patches_[chunk] = {
+                world.addGroundPatch(workingFloor(chunk), TerrainField::kChunkCells + 1, g.dx,
+                                     x0, z0, contact),
+                world.addRoofPatch(workingRoof(chunk, hang_from_), TerrainField::kChunkCells + 1,
+                                   g.dx, x0, z0, hang_from_, contact)};
+        }
+    }
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
     if (!restored) (void)terrain_->takeDirtyChunks();
