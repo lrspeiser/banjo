@@ -748,7 +748,7 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         return {}
     if not isinstance(machines, dict):
         raise ValueError("machines must be an object with stores and motors")
-    unknown = set(machines) - {"stores", "motors", "controls", "programs", "panels"}
+    unknown = set(machines) - {"stores", "motors", "controls", "programs", "panels", "cables", "lamps"}
     if unknown:
         raise ValueError(f"machines has fields it does not know: {sorted(unknown)}")
     named = {str(body.get("name", "")) for body in bodies}
@@ -879,8 +879,96 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         controls.append(made)
     programs = _programs(machines.get("programs"), controls, named, stores)
     panels = _panels(machines.get("panels"), stores, named)
+    cables = _cables(machines.get("cables"), stores)
+    lamps = _lamps(machines.get("lamps"), cables, stores, named)
     return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {}),
-            **({"programs": programs} if programs else {}), **({"panels": panels} if panels else {})}
+            **({"programs": programs} if programs else {}), **({"panels": panels} if panels else {}),
+            **({"cables": cables} if cables else {}), **({"lamps": lamps} if lamps else {})}
+
+
+def _cables(given: Any, stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A room's runs of cable (docs/machine-world.md, "Light underground"): each
+    from one of its stores by name, pinned at the points of `run_mm` -- in
+    millimetres, like a pin -- with a conductor of `area_mm2` and, unless it says
+    otherwise, copper's resistivity. It does not move again, so it is checked
+    here and not against anything's pose."""
+    if given in (None, []):
+        return []
+    if not isinstance(given, list) or len(given) > 32:
+        raise ValueError("cables is a list of at most 32")
+    out: list[dict[str, Any]] = []
+    for i, cable in enumerate(given):
+        if not isinstance(cable, dict):
+            raise ValueError(f"cable {i} is not an object")
+        unknown = set(cable) - {"name", "store", "run_mm", "area_mm2", "resistivity_ohm_m"}
+        if unknown:
+            raise ValueError(f"cable {i} cannot say {sorted(unknown)}: it holds name, store, run_mm, area_mm2 "
+                             "and resistivity_ohm_m")
+        name = " ".join(str(cable.get("name") or "").split())[:60]
+        if not name or any(o["name"] == name for o in out):
+            raise ValueError(f"cable {i} needs a name of its own")
+        store = str(cable.get("store", ""))
+        if not any(s["name"] == store for s in stores):
+            raise ValueError(f"cable {name!r} runs from {store!r}, and there is no store called that")
+        run = cable.get("run_mm")
+        if not isinstance(run, list) or not 2 <= len(run) <= 256:
+            raise ValueError(f"cable {name!r} needs run_mm: from 2 to 256 points it is pinned at")
+        laid = []
+        for k, at in enumerate(run):
+            if not isinstance(at, list) or len(at) != 3:
+                raise ValueError(f"cable {name!r}: point {k} of its run is three numbers")
+            laid.append([_number(v, -100000.0, 100000.0, f"cable {name!r} run_mm") for v in at])
+        if all(a == laid[0] for a in laid):
+            raise ValueError(f"cable {name!r} goes nowhere: its run is all one point")
+        out.append({"name": name, "store": store, "run_mm": laid,
+                    "area_mm2": _number(cable.get("area_mm2", 2.5), 0.01, 1000.0, f"cable {name!r} area_mm2"),
+                    "resistivity_ohm_m": _number(cable.get("resistivity_ohm_m", 1.68e-8), 1e-9, 0.1,
+                                                 f"cable {name!r} resistivity_ohm_m")})
+    return out
+
+
+def _lamps(given: Any, cables: list[dict[str, Any]], stores: list[dict[str, Any]],
+           named: set[str]) -> list[dict[str, Any]]:
+    """A room's lamps (docs/machine-world.md, "Light underground"): each fed
+    along one of its cables by name, or wired straight to one of its stores;
+    asking `watts` and giving `efficacy_lm_w` lumens for each one it gets. On one
+    of the room's things, and moving with it, or pinned where it is put."""
+    if given in (None, []):
+        return []
+    if not isinstance(given, list) or len(given) > 64:
+        raise ValueError("lamps is a list of at most 64")
+    out: list[dict[str, Any]] = []
+    for i, lamp in enumerate(given):
+        if not isinstance(lamp, dict):
+            raise ValueError(f"lamp {i} is not an object")
+        unknown = set(lamp) - {"name", "body", "cable", "store", "at_mm", "watts", "efficacy_lm_w", "on"}
+        if unknown:
+            raise ValueError(f"lamp {i} cannot say {sorted(unknown)}: it holds name, body, cable, store, at_mm, "
+                             "watts, efficacy_lm_w and on")
+        name = " ".join(str(lamp.get("name") or "").split())[:60]
+        if not name or any(o["name"] == name for o in out):
+            raise ValueError(f"lamp {i} needs a name of its own")
+        body = str(lamp.get("body", ""))
+        if body and body not in named:
+            raise ValueError(f"lamp {name!r} is on {body!r}, which is not in this room")
+        cable = str(lamp.get("cable", ""))
+        store = str(lamp.get("store", ""))
+        if cable and not any(c["name"] == cable for c in cables):
+            raise ValueError(f"lamp {name!r} hangs on {cable!r}, and there is no cable called that")
+        if store and not any(s["name"] == store for s in stores):
+            raise ValueError(f"lamp {name!r} draws on {store!r}, and there is no store called that")
+        if not cable and not store:
+            raise ValueError(f"lamp {name!r} needs a cable to hang on or a store to be wired to")
+        at = lamp.get("at_mm")
+        if not isinstance(at, list) or len(at) != 3:
+            raise ValueError(f"lamp {name!r} needs at_mm as three numbers")
+        out.append({"name": name, "body": body, "cable": cable, "store": store,
+                    "at_mm": [_number(v, -100000.0, 100000.0, f"lamp {name!r} at_mm") for v in at],
+                    "watts": _number(lamp.get("watts", 20.0), 0.01, 100000.0, f"lamp {name!r} watts"),
+                    "efficacy_lm_w": _number(lamp.get("efficacy_lm_w", 120.0), 0.1, 1000.0,
+                                             f"lamp {name!r} efficacy_lm_w"),
+                    "on": bool(lamp.get("on", False))})
+    return out
 
 
 SUN_DAY_FIELDS = ("day_s", "noon_elevation_deg", "hour", "irradiance_w_m2")

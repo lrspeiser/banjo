@@ -265,6 +265,147 @@ fill.position.set(0, 2, 8);
 scene.add(fill);
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
+const FILL_LIGHT = fill.intensity;
+
+// Underground it is dark (docs/machine-world.md, "Light underground").
+//
+// The three daylight lights are directional and the hill does not stop them: a
+// tunnel drawn from the inside was lit as brightly as the meadow above it, so an
+// electric lamp in it was decoration. So the daylight is kept in one place --
+// what the sun says it should be, in `daylight` -- and what reaches the eye is
+// that turned down by how much rock is over it: out by half a metre of rock,
+// nearly out by two. It is cheap, it is read from the same runs the walls are
+// drawn from, so it agrees with what you can see, and it leaves the place lit by
+// whatever somebody has hung there.
+//
+// It is the EYE's cover, not each thing's, so the meadow seen through the adit
+// mouth darkens with you. That is the price of doing this with the scene's own
+// lights rather than per fragment, and standing in a 1.75 m adit there is not
+// much of the meadow to see anyway.
+const COVER_DARK_M = 2.0;
+const daylight = { key: KEY_LIGHT, sky: SKY_LIGHT, rim: RIM_LIGHT, fill: FILL_LIGHT };
+let underCover = 1;
+function applyDaylight() {
+  key.intensity = daylight.key * underCover;
+  // A little residual sky, so a mine with no lamp in it is gloom and not a black
+  // screen: you can still find your way back out towards the daylight.
+  sky.intensity = daylight.sky * Math.max(0.05, underCover);
+  rim.intensity = daylight.rim * underCover;
+  fill.intensity = daylight.fill * underCover;
+}
+function daylightUnderCover(eye) {
+  const over = coverOver(eye.x, eye.y, eye.z);
+  underCover = Math.max(0.04, 1 - Math.min(1, over / COVER_DARK_M));
+  applyDaylight();
+  return underCover;
+}
+
+// Every lamp the engine reports, as a light of its own (LiveLamp): a point light
+// where the lamp is, as bright as the lumens it is giving, and a small glowing
+// bead so you can see the fitting itself. A lamp that is off, or whose store is
+// flat, has the bead and no light.
+//
+// The lights are a POOL of a fixed size, not one per lamp. Three.js compiles the
+// number of lights into every material, so a light appearing or going out
+// rebuilds every shader in the scene -- a lamp flickering as its battery runs
+// down would have stuttered the whole room. Eight lights sit in the scene from
+// the start and are handed to the eight lit lamps nearest the eye, so the count
+// never changes; the rest of a big installation is beads, which cost nothing.
+const LAMPS_LIT_MOST = 8;
+const lights = new THREE.Group();
+lights.name = "lamps";
+scene.add(lights);
+const lampPool = [];
+for (let i = 0; i < LAMPS_LIT_MOST; ++i) {
+  const light = new THREE.PointLight(0xfff1d0, 0, 1, 2);
+  lights.add(light);
+  lampPool.push(light);
+}
+const lampParts = new Map();
+const LAMP_BEAD = new THREE.MeshBasicMaterial({ color: 0xfff0c8 });
+const LAMP_DARK = new THREE.MeshBasicMaterial({ color: 0x4a4a44 });
+// A drawn line is one pixel wide whatever the distance, which in a dark heading
+// is all but invisible. The run is a tube of 8 mm instead -- about what twin
+// 4 mm2 in its sheath measures -- so it reads as a cable somebody hung.
+const CABLE_LOOK = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.85, metalness: 0.0 });
+const CABLE_R = 0.008;
+function cableTube(run) {
+  const points = run.map((at) => new THREE.Vector3(at[0], at[1], at[2]));
+  const along = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.0);
+  return new THREE.TubeGeometry(along, Math.max(8, points.length * 6), CABLE_R, 5, false);
+}
+
+// The fittings and the runs of cable: with every step that carries machines,
+// because a lamp on a machine moves with it.
+function dressLights(block) {
+  const lamps = (block && block.lamps) || [];
+  const cables = (block && block.cables) || [];
+  const seen = new Set();
+  for (const lamp of lamps) {
+    if (!lamp || !Array.isArray(lamp.at_m)) continue;
+    const key_of = `lamp:${lamp.id}`;
+    seen.add(key_of);
+    let part = lampParts.get(key_of);
+    if (!part) {
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), LAMP_DARK);
+      lights.add(bead);
+      part = { bead };
+      lampParts.set(key_of, part);
+    }
+    part.bead.position.set(lamp.at_m[0], lamp.at_m[1], lamp.at_m[2]);
+    part.bead.material = lamp.lit ? LAMP_BEAD : LAMP_DARK;
+  }
+  for (const cable of cables) {
+    if (!cable || !Array.isArray(cable.run_m) || cable.run_m.length < 2) continue;
+    const key_of = `cable:${cable.id}`;
+    seen.add(key_of);
+    let part = lampParts.get(key_of);
+    if (!part) {
+      const line = new THREE.Mesh(cableTube(cable.run_m), CABLE_LOOK);
+      line.castShadow = false;
+      lights.add(line);
+      lampParts.set(key_of, { line, points: cable.run_m.length });
+    } else if (part.points !== cable.run_m.length) {
+      part.line.geometry.dispose();
+      part.line.geometry = cableTube(cable.run_m);
+      part.points = cable.run_m.length;
+    }
+  }
+  for (const [key_of, part] of lampParts) {
+    if (seen.has(key_of)) continue;
+    for (const thing of [part.bead, part.line]) {
+      if (!thing) continue;
+      lights.remove(thing);
+      if (thing.geometry) thing.geometry.dispose();
+    }
+    lampParts.delete(key_of);
+  }
+  aimLamps();
+}
+
+// Which lit lamps get one of the pool's lights: the nearest to the eye. Every
+// frame, because the eye moves between steps -- walking past a string of lamps
+// should not wait for the next reply to light the one you have reached.
+function aimLamps() {
+  const lamps = (world.machines && world.machines.lamps) || [];
+  const eye = camera.position;
+  const near = lamps.filter((l) => l && l.lit && Array.isArray(l.at_m) && Number(l.lumens) > 0)
+    .map((l) => ({ l, away: Math.hypot(l.at_m[0] - eye.x, l.at_m[1] - eye.y, l.at_m[2] - eye.z) }))
+    .sort((a, b) => a.away - b.away).slice(0, LAMPS_LIT_MOST);
+  for (let i = 0; i < lampPool.length; ++i) {
+    const light = lampPool[i];
+    const lamp = near[i] ? near[i].l : null;
+    if (!lamp) { light.intensity = 0; continue; }
+    light.position.set(lamp.at_m[0], lamp.at_m[1], lamp.at_m[2]);
+    // Lumens are not three.js intensity and no number here pretends to be
+    // photometric. A 20 W LED at 120 lm/W is 2400 lm, which reads right in a
+    // 1.75 m heading at about 2.4, and reaching about 6 m as the root of the
+    // lumens -- far enough to see the face, not the whole mine.
+    const lm = Math.max(0, Number(lamp.lumens) || 0);
+    light.intensity = lm / 1000;
+    light.distance = Math.max(1.5, Math.sqrt(lm) / 8);
+  }
+}
 
 // The sun's shadow, and why it follows the person.
 //
@@ -436,19 +577,21 @@ function lightFromSun(sun) {
     const share = sun.zenith_irradiance_w_m2 > 0
       ? Math.min(1, Math.max(0, sun.irradiance_w_m2 / sun.zenith_irradiance_w_m2)) : 0;
     const dusk = Math.min(1, Math.max(0, (sun.elevation_deg + 6) / 12));
-    key.intensity = sun.toward[1] > 0 ? KEY_LIGHT * share : 0;
+    daylight.key = sun.toward[1] > 0 ? KEY_LIGHT * share : 0;
     key.color.setRGB(1, 0.62 + 0.33 * share, 0.45 + 0.42 * share);
-    sky.intensity = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
-    rim.intensity = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    daylight.sky = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
+    daylight.rim = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    applyDaylight();
     skyTint.copy(LOW_SKY).lerp(DAY_SKY, Math.min(1, Math.max(0, sun.elevation_deg / 20)));
     scene.background.copy(NIGHT_SKY).lerp(skyTint, dusk);
     scene.fog.color.copy(NIGHT_FOG).lerp(skyTint, dusk);
     skyTinted = true;
   } else {
-    key.intensity = KEY_LIGHT;
+    daylight.key = KEY_LIGHT;
     key.color.setHex(0xfff2dd);
-    sky.intensity = SKY_LIGHT;
-    rim.intensity = RIM_LIGHT;
+    daylight.sky = SKY_LIGHT;
+    daylight.rim = RIM_LIGHT;
+    applyDaylight();
     if (skyTinted) {
       scene.background.copy(NIGHT_SKY);
       scene.fog.color.copy(NIGHT_FOG);
@@ -731,6 +874,27 @@ function standingOn(x, z, y) {
     if (runs.top[at] <= y + 0.05) return runs.top[at];
   }
   return groundAt(x, z);
+}
+
+// How much rock is over a point: 0 in the open, and the thickness of every
+// solid run above it where it is inside a working. This is what makes a mine
+// dark -- see daylightUnderCover -- and it is read from the same runs the walls
+// are drawn from, so it agrees with what you can see.
+function coverOver(x, y, z) {
+  const g = ground.grid, runs = ground.runs;
+  if (!g || !runs) return 0;
+  const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return 0;
+  const c = j * g.nx + i;
+  let over = 0;
+  for (let k = 0; k < runs.count[c]; ++k) {
+    const at = c * runs.stride + k;
+    const below = k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor;
+    if (runs.top[at] <= y) continue;                       // entirely under the point
+    if (runs.kind[at] === RUN_VOID) continue;              // a hole is not cover
+    over += runs.top[at] - Math.max(below, y);
+  }
+  return over;
 }
 
 // The strata a step cuts, drawn on the step the collider already has.
@@ -1962,6 +2126,7 @@ function drawRopes() {
 function followMachines(machines) {
   world.machines = machines || null;
   drawMachines(world.machines);
+  dressLights(world.machines);
   showMachinePanel();
   // THE ARCS AND THE BEADS ARE OFF (the owner, 2026-09-26: "i don't like the
   // green and yellow arcs on the screen ... what are the blue dots on lines
@@ -7305,6 +7470,10 @@ function frame() {
   stepFoam(dt);
   workbench.advance(now);
   followSun();
+  // How dark it is where the eye is: under a hill, the daylight is not there,
+  // and the lamps nearest the eye are the ones that light it.
+  daylightUnderCover(camera.position);
+  aimLamps();
   skyEnvironment();
   if (ground.facesStale) buildFaces();
   render();

@@ -227,10 +227,10 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     spec's entry index -> the id it keeps, "told": motor index -> (command,
     brake)}."""
     engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "controls": [], "programs": [],
-                              "solar_panels": [],
+                              "solar_panels": [], "cables": [], "lamps": [],
                               "blades": [], "tool_points": [], "declared_anew": []}
     pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "controls": {}, "programs": {},
-                                        "panels": {},
+                                        "panels": {}, "cables": {}, "lamps": {},
                                         "blades": {}, "tool_points": {}}
     told: dict[int, tuple[Any, Any]] = {}
     told_controls: dict[int, tuple[Any, Any, Any]] = {}
@@ -335,6 +335,24 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
             continue
         pairs["panels"][i] = ident
         engine["solar_panels"].append(ident)
+    # A cable is pinned in the world and does not hang on anything, so it comes
+    # back whenever its store does; a lamp needs its part, where it is on one.
+    pool = list(was.get("cables") or [])
+    for i, cable in enumerate(machines.get("cables") or []):
+        ident = keep(pool, _plain(cable)) if isinstance(cable, dict) else None
+        if ident is None:
+            continue
+        pairs["cables"][i] = ident
+        engine["cables"].append(ident)
+    pool = list(was.get("lamps") or [])
+    for i, lamp in enumerate(machines.get("lamps") or []):
+        ident = keep(pool, _plain(lamp)) if isinstance(lamp, dict) else None
+        if ident is None:
+            if isinstance(lamp, dict) and lamp.get("body"):
+                anew.add(str(lamp.get("body") or ""))
+            continue
+        pairs["lamps"][i] = ident
+        engine["lamps"].append(ident)
     engine["declared_anew"] = sorted(name for name in anew if name)
     return {"engine": engine, "pairs": pairs, "told": told, "told_controls": told_controls,
             "told_programs": told_programs}
@@ -1102,6 +1120,50 @@ class Live:
                 continue
             if made is not None and answer.get("solar_panel") is not None:
                 made["panels"][name] = answer.get("solar_panel")
+        # Each run of cable (docs/machine-world.md, "Light underground") from its
+        # store, and then each lamp on the run that feeds it -- both by name, as
+        # a panel names its store.
+        if made is not None:
+            made.setdefault("cables", {})
+            made.setdefault("lamps", {})
+        runs: dict[str, Any] = dict(made["cables"]) if made is not None else {}
+        for cable in machines.get("cables") or []:
+            name = str(cable.get("name", ""))
+            store = stores.get(str(cable.get("store", "")))
+            if store is None:
+                problems.append(f"the {name} has no store called {cable.get('store', '')!r} to run from")
+                continue
+            try:
+                answer = session.send(op="cable", name=name, store=store,
+                                      run_m=[[float(v) / 1000.0 for v in at] for at in cable.get("run_mm") or []],
+                                      area_mm2=float(cable.get("area_mm2", 2.5)),
+                                      resistivity_ohm_m=float(cable.get("resistivity_ohm_m", 1.68e-8)))
+            except Exception as error:
+                problems.append(f"the {name} would not run: {error}")
+                continue
+            if answer.get("cable") is not None:
+                runs[name] = answer.get("cable")
+                if made is not None:
+                    made["cables"][name] = answer.get("cable")
+        for lamp in machines.get("lamps") or []:
+            name = str(lamp.get("name", ""))
+            cable_id = runs.get(str(lamp.get("cable", ""))) if lamp.get("cable") else None
+            store = stores.get(str(lamp.get("store", ""))) if lamp.get("store") else None
+            if cable_id is None and store is None:
+                problems.append(f"the {name} has neither a cable nor a store to draw on")
+                continue
+            try:
+                answer = session.send(op="lamp", name=name, body=str(lamp.get("body", "")),
+                                      cable=int(cable_id or 0), store=int(store or 0),
+                                      at_m=[float(v) / 1000.0 for v in lamp.get("at_mm") or []],
+                                      watts=float(lamp.get("watts", 0.0)),
+                                      efficacy_lm_w=float(lamp.get("efficacy_lm_w", 120.0)),
+                                      on=bool(lamp.get("on", False)))
+            except Exception as error:
+                problems.append(f"the {name} would not light: {error}")
+                continue
+            if made is not None and answer.get("lamp") is not None:
+                made["lamps"][name] = answer.get("lamp")
         hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
                   for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
         # Each motor's id by its pin's two things -- those the world has
@@ -1846,6 +1908,13 @@ class Live:
         if op == "sun":
             # The room's sun as it stands, whether or not it has a day.
             return session.send(op="sun")
+        if op == "lamp_switch":
+            # A lamp turned on or off, by the id the room kept for it.
+            try:
+                lamp = int(body.get("lamp"))
+            except (TypeError, ValueError):
+                raise LiveError("lamp_switch needs a lamp's number") from None
+            return session.send(op="lamp_switch", lamp=lamp, on=bool(body.get("on", True)))
         if op == "draw":
             # Energy taken from a store for work the world does not otherwise
             # account for: a machine's scoop biting the ground, declared by
@@ -1864,11 +1933,12 @@ class Live:
             # from what the person carries (machine_tools).
             try:
                 sand, soil = float(body.get("sand_m3", 0.0)), float(body.get("soil_m3", 0.0))
+                rock = float(body.get("rock_m3", 0.0))
             except (TypeError, ValueError):
-                raise LiveError(f"{op} needs sand_m3 and soil_m3") from None
-            if not all(math.isfinite(v) and 0.0 <= v <= 100.0 for v in (sand, soil)):
+                raise LiveError(f"{op} needs sand_m3, soil_m3 and rock_m3") from None
+            if not all(math.isfinite(v) and 0.0 <= v <= 100.0 for v in (sand, soil, rock)):
                 raise LiveError("a packet holds from 0 to 100 cubic metres of each")
-            return session.send(op=op, sand_m3=sand, soil_m3=soil)
+            return session.send(op=op, sand_m3=sand, soil_m3=soil, rock_m3=rock)
         if op in ("environment", "environment_state", "terrain"):
             return session.send(op=op, full=bool(body.get("full", False)))
         if op == "discharge":

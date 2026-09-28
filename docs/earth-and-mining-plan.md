@@ -1043,17 +1043,35 @@ point over the adit is told the ground is 5.1 m up while the floor under it is a
 **Done when** the mine rover drives into the adit, works the face, and comes out
 with a load, unattended.
 
-### 4. LOAD-BEARING — you can see underground
+### 4. LOAD-BEARING — you can see underground — DONE, 2026-09-28
 
 The first photograph taken inside the adit was a black rectangle, which is
 correct and useless. A tunnel is dark.
 
-- A light that is a thing, not a rendering trick: a lamp the Workshop can make,
-  carried or set down, with fuel or a battery, throwing light the page draws.
-- It belongs to the crafting chain rather than beside it: the reason to make one
-  is that you cannot work what you cannot see.
+**The owner's decision, 2026-09-28:** the light is electric, on cables running
+up to a solar farm. Not torches.
 
-**Done when** a person carries a lamp into the adit and can work at the face.
+Built (docs/machine-world.md, "Light underground"):
+
+- A run of cable from a store: pinned where it is put, its resistance the
+  conductor's own, two conductors over the length of the run.
+- A lamp on that run, asking its watts and giving its lumens, on a part or
+  pinned in the world, switched on and off.
+- The cable in **series** with its lamps, so a long thin run dims them even off
+  a full battery and a second lamp dims the first. 60 m of 1.5 mm2 costs a 20 W
+  lamp 9% of its light; six 100 W lamps on 120 m of 1 mm2 get 3.7 W each.
+- A flat store puts them out and says so; a panel in the sun lights them again,
+  which is what the wire going up to the farm is for.
+- Underground is dark in the page: the daylight reaching the eye is turned down
+  by how much rock is over it, read from the same runs the walls are drawn from.
+
+Proved in the page by `tests/lamp_shots.py`, which stands in the old heading
+with the lamps off (0.025 of full brightness) and on (0.525, twenty times), on
+the room `tools/build_light_room.py` lays out at `/world?scene=tests-light`.
+
+**Still to do** before this is part of the crafting chain rather than beside it:
+a lamp and a cable as things the Workshop makes and the Explorer carries and
+strings, and a switch you can reach in the world rather than an operation.
 
 ### 5. The mine is dangerous (stage 5)
 
@@ -1069,11 +1087,24 @@ the rack shortfall come in -- and it is the whole reason to build anything.
 
 ### 6. The mine pays (stage 7, and stage 2's leftovers)
 
+Part of this landed on 2026-09-28: **what you break out, you carry**. Rock is
+counted in what a person or a machine is carrying, at rock's own density -- a
+0.25 m cell is 0.0156 m3 and 37.5 kg, so an 80 kg person holds two of them. A
+cell only comes out if whoever broke it can take it: a blow that would free one
+they cannot carry does not free it, the work stays credited to the cell, and the
+report says "cannot carry it". It goes into a lot with the sand and soil, and a
+lot with any rock in it says "rubble" rather than calling itself granular. And a
+chip works the cell the blow landed IN, at its own height, so a pick at a tunnel
+face takes the rock in front of the miner instead of bringing the hill down.
+
+Left:
+
 - Deposits read the ground: a vein's reserve is what is in the rock, not a
   declared number in the room's `goods` block.
 - Ore out of a face becomes a goods packet of its substance at its grade.
-- `Volumes` widened to a kind each, which is finally needed here: the mass of
-  what comes out from under a tool decides what it is worth carrying.
+- `Volumes` widened to a kind each: rock, ore and oxidised ore all count as
+  `rock_m3` today, so a barrow of vein and a barrow of country rock weigh the
+  same and are worth the same.
 - A breaker tool for machines, drawing its work from the battery, so the energy
   economy is what limits mining.
 - Timber props as Workshop products, which is the loop closing: you mine to

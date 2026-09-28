@@ -1117,6 +1117,13 @@ SCENES = {
     # rests while the solar panel on its deck charges it, and roams on. Laid
     # out by tools/build_rover_room.py; open it at /world?scene=tests-solar.
     "tests-solar": _saved_room("tests-solar"),
+    # Electric light underground (docs/machine-world.md, "Light underground"):
+    # the valley's old adit with a solar farm on the hill over it, a cable down
+    # the slope and in along the heading, and three lamps on that cable. The
+    # room's day is four minutes long and starts at four in the afternoon, so
+    # the sun goes down while you are in the mine. Laid out by
+    # tools/build_light_room.py; open it at /world?scene=tests-light.
+    "tests-light": _saved_room("tests-light"),
     # The same rover through a night: the room's sun has a day of four minutes
     # and the room begins at four in the afternoon. It roams on into the dark,
     # rests when its battery is low until the morning sun has charged it, and

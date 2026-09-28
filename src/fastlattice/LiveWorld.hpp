@@ -531,6 +531,53 @@ struct LiveSolarPanel {
     double sunlight_j{}, collected_j{}, spilled_j{}, heat_j{};
 };
 
+// A run of cable (docs/machine-world.md, "Light underground"): two conductors
+// from a store to wherever the light is wanted, pinned where they are put and
+// not moving again. Its resistance is the conductor's own -- resistivity times
+// twice the run's length, over its area -- and what that costs is real: a long
+// thin run up a hillside to a solar farm loses more of what it carries than a
+// short fat one, and the lamps on it are dimmer for it.
+struct LiveCable {
+    unsigned id{};
+    std::string name;
+    unsigned store{};                 // the far end: what feeds it
+    std::vector<Vec3> run_m;          // where it hangs, corner to corner
+    double area_mm2{};
+    double resistivity_ohm_m{};       // copper is 1.68e-8
+    double length_m{}, resistance_ohm{};
+    // As the last kept step left it: what it carried to its lamps, what it lost
+    // in itself, the current that did both, and how much of the store's voltage
+    // never reached the far end -- which is the number that says whether a run
+    // is thick enough.
+    double current_a{}, volts_lost{}, loss_w{}, carried_w{};
+    double carried_j{}, lost_j{};     // since it was made
+};
+
+// An electric lamp (docs/machine-world.md, "Light underground"): on a part, or
+// pinned where it is put, fed from a store along a cable. Switched on it asks
+// for its watts; what it gets is what the store can give after the cable has
+// taken its share, and a lamp that gets less than it asked for is dimmer, not
+// dark. `efficacy_lm_w` is lumens the watt, which is what tells a page how
+// bright to draw it: an LED is about 120, a filament about 15.
+struct LiveLamp {
+    unsigned id{};
+    std::string name;
+    std::string body;                 // the part it is on; "" for one pinned in the world
+    unsigned cable{};                 // the run that feeds it; 0 for one wired straight to its store
+    unsigned store{};                 // where its power comes from
+    Vec3 at_local_m{};                // on the part, about its centre of mass; in the world when body is ""
+    double watts{};                   // what it asks for, switched on
+    double efficacy_lm_w{};
+    bool on{};
+    // As the last kept step left it: where it is, what it drew, what it gives,
+    // and why it is not giving what it asked for.
+    Vec3 at_m{};
+    double drawn_w{}, lumens{};
+    bool lit{};
+    std::string why;
+    double drawn_j{};                 // since it was made
+};
+
 // A motor on a pin, wired to a store: a DC motor's torque-speed line, from the
 // two numbers a maker gives -- the torque it stalls at and the speed it runs at
 // unloaded, both at the store's voltage. The command runs from -1 to 1, the
@@ -1233,7 +1280,8 @@ struct LiveRestore {
         std::size_t placed{};     // whole things whose cells could not be found again, put back where left
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
-        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{}, blades{},
+        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{},
+            cables{}, lamps{}, blades{},
             tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
@@ -1261,7 +1309,8 @@ struct LiveRestore {
 struct LiveCarry {
     // Explicit host assertion that terrain declarations/edits are unchanged.
     bool ground{};
-    std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, blades, tool_points;
+    std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, cables, lamps,
+        blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1825,6 +1874,24 @@ public:
     unsigned solarPanel(const std::string &name, const std::string &body, unsigned store, const Vec3 &at_world_m,
                         const Vec3 &normal_world, double area_m2, double efficiency);
     [[nodiscard]] std::vector<LiveSolarPanel> solarPanels() const;
+    // A run of cable (LiveCable) from `store` to wherever it ends: at least two
+    // points in the world, a conductor of `area_mm2` (above 0, at most 1000) and
+    // `resistivity_ohm_m` (above 0; copper is 1.68e-8). Returns its id, above
+    // zero, or 0 when the store is not there or the numbers are not a cable's.
+    unsigned cable(const std::string &name, unsigned store, const std::vector<Vec3> &run_m,
+                   double area_mm2, double resistivity_ohm_m);
+    [[nodiscard]] std::vector<LiveCable> cables() const;
+    // A lamp (LiveLamp) asking `watts` (above 0, at most 100 kW) at
+    // `efficacy_lm_w` (above 0, at most 1000), fed along `cable` -- or, with
+    // cable 0, straight off `store`. On a part, given where it is now in the
+    // world, so it goes where the part goes; with no part it is pinned where it
+    // is put. It starts switched off. Returns its id, above zero, or 0 when the
+    // part, the cable or the store is not there or the numbers are not a lamp's.
+    unsigned lamp(const std::string &name, const std::string &body, unsigned cable, unsigned store,
+                  const Vec3 &at_world_m, double watts, double efficacy_lm_w);
+    // Switch a lamp on or off. False if there is no such lamp.
+    bool switchLamp(unsigned id, bool on);
+    [[nodiscard]] std::vector<LiveLamp> lamps() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;

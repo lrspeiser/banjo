@@ -281,7 +281,8 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
         out["carried"] = {{"placed", n.placed}, {"fresh", n.fresh}, {"gone", n.gone}, {"joints", n.joints},
                           {"energy_stores", n.energy_stores}, {"motors", n.motors},
                           {"controls", n.controls}, {"programs", n.programs},
-                          {"solar_panels", n.solar_panels}, {"blades", n.blades},
+                          {"solar_panels", n.solar_panels}, {"cables", n.cables}, {"lamps", n.lamps},
+                          {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
         out["woken"] = restored.woken;
@@ -305,6 +306,8 @@ LiveCarry carryFrom(const nlohmann::json &doc) {
     ids("controls", carry.controls);
     ids("programs", carry.programs);
     ids("solar_panels", carry.solar_panels);
+    ids("cables", carry.cables);
+    ids("lamps", carry.lamps);
     ids("blades", carry.blades);
     ids("tool_points", carry.tool_points);
     if (doc.contains("declared_anew"))
@@ -549,6 +552,43 @@ nlohmann::json panelOf(const LiveSolarPanel &panel) {
             {"heat_j", tidy(panel.heat_j)}};
 }
 
+// A run of cable and a lamp as a host reads them (LiveCable, LiveLamp). The
+// page draws the run as a line and the lamp as a light of its own.
+nlohmann::json cableOf(const LiveCable &cable) {
+    nlohmann::json run = nlohmann::json::array();
+    for (const Vec3 &at : cable.run_m) run.push_back(vec(at));
+    return {{"id", cable.id},
+            {"name", cable.name},
+            {"store", cable.store},
+            {"run_m", std::move(run)},
+            {"area_mm2", tidy(cable.area_mm2)},
+            {"length_m", tidy(cable.length_m)},
+            {"resistance_ohm", tidy(cable.resistance_ohm)},
+            {"current_a", tidy(cable.current_a)},
+            {"volts_lost", tidy(cable.volts_lost)},
+            {"carried_w", tidy(cable.carried_w)},
+            {"loss_w", tidy(cable.loss_w)},
+            {"carried_j", tidy(cable.carried_j)},
+            {"lost_j", tidy(cable.lost_j)}};
+}
+
+nlohmann::json lampOf(const LiveLamp &lamp) {
+    return {{"id", lamp.id},
+            {"name", lamp.name},
+            {"body", lamp.body},
+            {"cable", lamp.cable},
+            {"store", lamp.store},
+            {"at_m", vec(lamp.at_m)},
+            {"watts", tidy(lamp.watts)},
+            {"efficacy_lm_w", tidy(lamp.efficacy_lm_w)},
+            {"on", lamp.on},
+            {"lit", lamp.lit},
+            {"drawn_w", tidy(lamp.drawn_w)},
+            {"lumens", tidy(lamp.lumens)},
+            {"drawn_j", tidy(lamp.drawn_j)},
+            {"why", lamp.why}};
+}
+
 nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveEnergyStore> stores = world.energyStores();
     const std::vector<LiveMotor> motors = world.motors();
@@ -556,6 +596,8 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveControl> controls = world.controls();
     const std::vector<LiveProgram> programs = world.programs();
     const std::vector<LiveSolarPanel> panels = world.solarPanels();
+    const std::vector<LiveCable> cables = world.cables();
+    const std::vector<LiveLamp> lamps = world.lamps();
     nlohmann::json ropes = nlohmann::json::array();
     for (const LiveJoint &joint : joints) {
         if (joint.kind != "drum" || !joint.attached) continue;
@@ -566,7 +608,8 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                          {"leaves", vec(joint.leaves_m)},
                          {"meets", vec(joint.meets_m)}});
     }
-    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty() && panels.empty())
+    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty() && programs.empty() &&
+        panels.empty() && cables.empty() && lamps.empty())
         return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
@@ -623,6 +666,15 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     if (!panels.empty()) {
         out["panels"] = nlohmann::json::array();
         for (const LiveSolarPanel &panel : panels) out["panels"].push_back(panelOf(panel));
+    }
+    // And only a world with a cable or a lamp says anything of those.
+    if (!cables.empty()) {
+        out["cables"] = nlohmann::json::array();
+        for (const LiveCable &cable : cables) out["cables"].push_back(cableOf(cable));
+    }
+    if (!lamps.empty()) {
+        out["lamps"] = nlohmann::json::array();
+        for (const LiveLamp &lamp : lamps) out["lamps"].push_back(lampOf(lamp));
     }
     return out;
 }
@@ -2281,6 +2333,48 @@ int main(int argc, char **argv) {
                             "with a face that looks some way, an area above 0 and up to 100 m2, and an efficiency "
                             "above 0 and at most 1");
                     reply["solar_panel"] = made;
+                } else if (op == "cable") {
+                    // A run of cable (LiveCable) from a store to wherever the
+                    // light is wanted: the points it is pinned at, its conductor
+                    // and what the conductor is made of.
+                    std::vector<Vec3> run;
+                    for (const nlohmann::json &at : command.at("run_m"))
+                        run.push_back(Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()});
+                    const unsigned made =
+                        world->cable(command.value("name", std::string{}), command.at("store").get<unsigned>(), run,
+                                     command.value("area_mm2", 2.5),
+                                     command.value("resistivity_ohm_m", 1.68e-8));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a cable runs from a store that is there, through at least two points and at most 256, "
+                            "with a conductor above 0 and up to 1000 mm2 and a resistivity above 0");
+                    reply["cable"] = made;
+                    for (const LiveCable &cable : world->cables())
+                        if (cable.id == made) reply["ran"] = cableOf(cable);
+                } else if (op == "lamp") {
+                    // A lamp (LiveLamp) fed along a cable, or straight off a
+                    // store. On a part, or pinned where it is put. It starts off.
+                    const nlohmann::json &at = command.at("at_m");
+                    const unsigned made = world->lamp(
+                        command.value("name", std::string{}), command.value("body", std::string{}),
+                        command.value("cable", 0U), command.value("store", 0U),
+                        Vec3{at.at(0).get<double>(), at.at(1).get<double>(), at.at(2).get<double>()},
+                        command.value("watts", 0.0), command.value("efficacy_lm_w", 120.0));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a lamp goes on a part that is in the world or nowhere at all, fed along a cable that is "
+                            "there or straight off a store that is, asking above 0 and up to 100000 W at above 0 and "
+                            "up to 1000 lumens the watt");
+                    reply["lamp"] = made;
+                    if (command.value("on", false)) (void)world->switchLamp(made, true);
+                    for (const LiveLamp &lamp : world->lamps())
+                        if (lamp.id == made) reply["lit"] = lampOf(lamp);
+                } else if (op == "lamp_switch") {
+                    const unsigned id = command.at("lamp").get<unsigned>();
+                    if (!world->switchLamp(id, command.value("on", true)))
+                        throw std::invalid_argument("there is no lamp with that id");
+                    for (const LiveLamp &lamp : world->lamps())
+                        if (lamp.id == id) reply["lit"] = lampOf(lamp);
                 } else if (op == "program") {
                     // A program for a machine (LiveProgram): of a kind ("roam",
                     // "sit", "hover" or "still"), working the controllers of its
