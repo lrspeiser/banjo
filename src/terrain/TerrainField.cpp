@@ -24,6 +24,18 @@ double criticalHeight(const GroundMaterial &m) {
     return 2.67 * (m.cohesion_pa / gamma) * std::tan((45.0 + 0.5 * m.friction_angle_deg) * kPi / 180.0);
 }
 
+// A volume onto the kind it is made of. Loose soil is soil: it is the same
+// matter, and the ledger has always counted it there.
+void addByKind(Volumes &v, RunKind kind, double m3) {
+    switch (kind) {
+    case RunKind::Rock: v.rock_m3 += m3; return;
+    case RunKind::Sand: v.sand_m3 += m3; return;
+    case RunKind::Soil:
+    case RunKind::LooseSoil: v.soil_m3 += m3; return;
+    }
+    v.soil_m3 += m3;
+}
+
 } // namespace
 
 double TerrainField::stableDrop(const GroundMaterial &material, double run_m) {
@@ -31,11 +43,22 @@ double TerrainField::stableDrop(const GroundMaterial &material, double run_m) {
     return std::max(friction, criticalHeight(material)) + 2.0 * kStopLayerM;
 }
 
+Beds Beds::ofRock(const std::vector<double> &rock_top_m) {
+    Beds beds;
+    const std::size_t n = rock_top_m.size();
+    beds.start.resize(n + 1);
+    beds.count.assign(n, 1);
+    beds.kind.assign(n, static_cast<std::uint8_t>(RunKind::Rock));
+    beds.top = rock_top_m;
+    for (std::size_t c = 0; c <= n; ++c) beds.start[c] = static_cast<std::uint32_t>(c);
+    return beds;
+}
+
 TerrainField::State TerrainField::state() const {
     Rect changed{};
     if (changed_i1_ >= changed_i0_ && changed_j1_ >= changed_j0_)
         changed = {changed_i0_, changed_j0_, changed_i1_ - changed_i0_ + 1, changed_j1_ - changed_j0_ + 1};
-    return {grid_, rock_, soil_, sand_, loose_, moisture_, floor_, ledger_, frontier_,
+    return {grid_, beds_, soil_, sand_, loose_, moisture_, floor_, ledger_, frontier_,
             dirty_chunks_, changed, checked_total_, frontier_peak_};
 }
 
@@ -44,14 +67,25 @@ void TerrainField::restore(const State &s) {
     if (s.grid.nx != grid_.nx || s.grid.nz != grid_.nz || s.grid.dx != grid_.dx ||
         s.grid.x0 != grid_.x0 || s.grid.z0 != grid_.z0) refuse();
     const auto n = grid_.cells();
-    if (s.rock.size() != n || s.soil.size() != n || s.sand.size() != n ||
+    if (s.soil.size() != n || s.sand.size() != n ||
         s.loose.size() != n || s.moisture.size() != n || !std::isfinite(s.floor)) refuse();
+    if (s.beds.start.size() != n + 1 || s.beds.count.size() != n ||
+        s.beds.kind.size() != s.beds.top.size() || s.beds.start[n] != s.beds.top.size()) refuse();
     for (std::size_t c = 0; c < n; ++c) {
-        if (!std::isfinite(s.rock[c]) || s.rock[c] < s.floor ||
-            !std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
+        // At least one bed, no more than there is room for, and each bed's top
+        // above the one below it, from the floor up.
+        const std::uint32_t from = s.beds.start[c], to = s.beds.start[c + 1];
+        if (to < from || s.beds.count[c] < 1 || s.beds.count[c] > to - from) refuse();
+        double below = s.floor;
+        for (std::uint32_t k = 0; k < s.beds.count[c]; ++k) {
+            const double top = s.beds.top[from + k];
+            if (!std::isfinite(top) || !(top >= below) || s.beds.kind[from + k] > 3) refuse();
+            below = top;
+        }
+        if (!std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
         for (double v : {s.soil[c], s.sand[c], s.loose[c]})
             if (!std::isfinite(v) || v < 0) refuse();
-        if (!std::isfinite(s.rock[c] + s.soil[c] + s.sand[c] + s.loose[c])) refuse();
+        if (!std::isfinite(below + s.soil[c] + s.sand[c] + s.loose[c])) refuse();
     }
     for (const auto &v : {s.ledger.initial, s.ledger.dug, s.ledger.cut, s.ledger.deposited})
         for (double x : {v.rock_m3, v.soil_m3, v.sand_m3})
@@ -67,7 +101,7 @@ void TerrainField::restore(const State &s) {
 
     // Construct and validate a candidate before touching this field, including
     // allocations. The saved rock floor is not recomputed from the cut surface.
-    TerrainField candidate(grid_, s.rock, s.soil, s.sand, s.loose, s.moisture);
+    TerrainField candidate(grid_, s.beds, s.soil, s.sand, s.loose, s.moisture);
     candidate.floor_ = s.floor;
     candidate.ledger_ = s.ledger;
     const auto residual = candidate.residual();
@@ -131,26 +165,45 @@ const GroundMaterial &groundMaterialOf(Surface surface) {
 TerrainField::TerrainField(Grid grid, std::vector<double> rock_top_m, std::vector<double> soil_m,
                            std::vector<double> sand_m, std::vector<double> loose_soil_m,
                            std::vector<float> moisture)
-    : grid_(grid), rock_(std::move(rock_top_m)), soil_(std::move(soil_m)),
+    : TerrainField(grid, Beds::ofRock(rock_top_m), std::move(soil_m), std::move(sand_m),
+                   std::move(loose_soil_m), std::move(moisture)) {}
+
+TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
+                           std::vector<double> sand_m, std::vector<double> loose_soil_m,
+                           std::vector<float> moisture)
+    : grid_(grid), beds_(std::move(beds)), soil_(std::move(soil_m)),
       sand_(std::move(sand_m)), loose_(std::move(loose_soil_m)), moisture_(std::move(moisture)) {
     if (grid_.nx < 2 || grid_.nz < 2 || !(grid_.dx > 0.0))
         throw std::invalid_argument("terrain needs a grid of at least 2 x 2 points with a positive spacing");
     const std::size_t n = grid_.cells();
     if (loose_.empty()) loose_.assign(n, 0.0);
     if (moisture_.empty()) moisture_.assign(n, 0.0F);
-    if (rock_.size() != n || soil_.size() != n || sand_.size() != n || loose_.size() != n ||
-        moisture_.size() != n)
+    if (beds_.start.size() != n + 1 || beds_.count.size() != n ||
+        beds_.kind.size() != beds_.top.size() || beds_.start[n] != beds_.top.size())
+        throw std::invalid_argument("terrain needs a bed list per point");
+    if (soil_.size() != n || sand_.size() != n || loose_.size() != n || moisture_.size() != n)
         throw std::invalid_argument("terrain needs one value of each layer per point");
     // A layer rounded a hair below zero is a layer of nothing; anything more
     // than rounding below zero is a mistake and is refused below.
     for (std::vector<double> *layer : {&soil_, &sand_, &loose_})
         for (double &v : *layer)
             if (v < 0.0 && v > -1.0e-9) v = 0.0;
-    for (std::size_t c = 0; c < n; ++c)
-        if (!std::isfinite(rock_[c]) || !(soil_[c] >= 0.0) || !(sand_[c] >= 0.0) ||
+    for (std::size_t c = 0; c < n; ++c) {
+        if (beds_.count[c] < 1 || beds_.count[c] > beds_.start[c + 1] - beds_.start[c])
+            throw std::invalid_argument("every column needs at least one bed of rock");
+        for (std::uint32_t k = beds_.start[c]; k < beds_.start[c] + beds_.count[c]; ++k)
+            if (!std::isfinite(beds_.top[k]) ||
+                (k > beds_.start[c] && beds_.top[k] < beds_.top[k - 1]))
+                throw std::invalid_argument("a bed's top is not finite, or is below the bed under it");
+        if (!(soil_[c] >= 0.0) || !(sand_[c] >= 0.0) ||
             !(loose_[c] >= 0.0) || !std::isfinite(soil_[c] + sand_[c] + loose_[c]))
             throw std::invalid_argument("a terrain layer is negative or not finite");
-    floor_ = *std::min_element(rock_.begin(), rock_.end()) - 2.0;
+    }
+    // How far the rock goes down. Every world before this had 2 m of it, which
+    // is no earth to mine at all (docs/earth-and-mining-plan.md).
+    double lowest_rock = std::numeric_limits<double>::infinity();
+    for (std::size_t c = 0; c < n; ++c) lowest_rock = std::min(lowest_rock, rockTop(c));
+    floor_ = lowest_rock - kEarthDepthM;
     chunks_x_ = std::max(1, (grid_.nx - 2) / kChunkCells + 1);
     chunks_z_ = std::max(1, (grid_.nz - 2) / kChunkCells + 1);
     resetLedger();
@@ -166,12 +219,32 @@ Surface TerrainField::surface(std::size_t c) const {
 
 int TerrainField::runsOf(std::size_t c, Run *out) const {
     int n = 0;
-    // The rock goes down to the floor; nothing is dug below it.
-    out[n++] = {RunKind::Rock, rock_[c]};
-    if (soil_[c] > 0.0) out[n++] = {RunKind::Soil, rock_[c] + soil_[c]};
+    // The beds first: the lowest goes down to the floor, and nothing is dug
+    // below that.
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t k = 0; k < beds_.count[c] && n < kRunsMost - 2; ++k)
+        out[n++] = {static_cast<RunKind>(beds_.kind[from + k]), beds_.top[from + k]};
+    if (soil_[c] > 0.0) out[n++] = {RunKind::Soil, rockTop(c) + soil_[c]};
     const double loose = sand_[c] + loose_[c];
     if (loose > 0.0) out[n++] = {sand_[c] >= loose_[c] ? RunKind::Sand : RunKind::LooseSoil, height(c)};
     return n;
+}
+
+void TerrainField::takeRockDownTo(std::size_t c, double bottom, Volumes &took) {
+    const double area = grid_.dx * grid_.dx;
+    const std::uint32_t from = beds_.start[c];
+    while (beds_.count[c] > 0) {
+        const std::uint32_t k = beds_.count[c] - 1;
+        const double top = beds_.top[from + k];
+        if (!(top > bottom)) return;
+        const double below = bedBottom(c, k);
+        addByKind(took, static_cast<RunKind>(beds_.kind[from + k]),
+                  (top - std::max(bottom, below)) * area);
+        // A bed taken whole goes, unless it is the last one: a column always
+        // keeps a bed, and the cut is refused before it reaches the floor.
+        if (below > bottom && k > 0) --beds_.count[c];
+        else { beds_.top[from + k] = bottom; return; }
+    }
 }
 
 std::optional<std::size_t> TerrainField::cellAt(double x, double z) const {
@@ -436,8 +509,8 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
     for (int j = j0; j < j0 + cells_z; ++j)
         for (int i = i0; i < i0 + cells_x; ++i) {
             const std::size_t c = grid_.at(i, j);
-            lowest = std::min(lowest, rock_[c]);
-            mean += rock_[c];
+            lowest = std::min(lowest, rockTop(c));
+            mean += rockTop(c);
             cover = std::max(cover, soil_[c] + sand_[c] + loose_[c]);
         }
     mean /= static_cast<double>(cells_x * cells_z);
@@ -457,6 +530,19 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
         return fail(text);
     }
     if (bottom < floor_ + 0.05) return fail("that is deeper than the rock goes");
+    // Every bed the cut would reach has to be rock, because rock is the only
+    // kind the ledger counts. A block of anything else is said, not guessed.
+    for (int j = j0; j < j0 + cells_z; ++j)
+        for (int i = i0; i < i0 + cells_x; ++i) {
+            const std::size_t c = grid_.at(i, j);
+            const std::uint32_t from = beds_.start[c];
+            for (std::uint32_t k = 0; k < beds_.count[c]; ++k) {
+                if (!(beds_.top[from + k] > bottom)) continue;
+                if (static_cast<RunKind>(beds_.kind[from + k]) != RunKind::Rock)
+                    return fail("the rock there is not all rock: cutting a block out of a bed of "
+                                "anything else is not accounted for yet");
+            }
+        }
     const double area = grid_.dx * grid_.dx;
     double rock = 0.0;
     std::vector<std::size_t> cells;
@@ -468,8 +554,9 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
             const Volumes film = strip(c, soil_[c] + sand_[c] + loose_[c]);
             ledger_.dug.sand_m3 += film.sand_m3;
             ledger_.dug.soil_m3 += film.soil_m3;
-            rock += (rock_[c] - bottom) * area;
-            rock_[c] = bottom;
+            Volumes out;
+            takeRockDownTo(c, bottom, out);
+            rock += out.rock_m3;
             cells.push_back(c);
             touched(c);
         }
@@ -583,7 +670,10 @@ Volumes TerrainField::volumes() const {
     const double area = grid_.dx * grid_.dx;
     Volumes v;
     for (std::size_t c = 0; c < grid_.cells(); ++c) {
-        v.rock_m3 += (rock_[c] - floor_) * area;
+        const std::uint32_t from = beds_.start[c];
+        for (std::uint32_t k = 0; k < beds_.count[c]; ++k)
+            addByKind(v, static_cast<RunKind>(beds_.kind[from + k]),
+                      (beds_.top[from + k] - bedBottom(c, k)) * area);
         v.soil_m3 += (soil_[c] + loose_[c]) * area;
         v.sand_m3 += sand_[c] * area;
     }

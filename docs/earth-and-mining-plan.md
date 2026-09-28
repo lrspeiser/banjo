@@ -565,12 +565,28 @@ Nothing else moved: `world_room` 57, `api_docs` 12, `terrain_tests` 11/11,
 `water_tests` 19/19, `ground_work_tests` all, and **60 s of the valley in 4.638 s
 of wall clock, 0.0773x realtime**, against the 0.078x this plan set out from.
 
-**The other half has not been built**: the CSR storage inside `TerrainField`
-(today `runsOf` reads the three layers that are already there and says them as
-runs, which is why the format is right but the ground still holds only three),
-`Volumes` by kind with the total kept by the edits, and the 30 m earth. Those are
-what stage 2 needs, because a bed or a vein has nowhere to live until a column
-can hold more than three runs.
+**And the other half, the same day.** The rock under a column is now a stack of
+**beds** -- CSR, held the way the engine walks it -- and the earth goes down
+**30 m** instead of 2. A column with three beds keeps all three through a cut, a
+save and a restore; a bed is worth what it is MADE of in the ledger, so a lens of
+sand in the rock is counted as sand; and a cut that would reach a bed that is not
+rock is refused with the reason rather than counted as rock. Ground state is
+schema v4, and a room saved before it gets the deeper earth with the new rock put
+into its opening figure, so its own account still closes. Measured: a new
+`a column keeps its beds` check in `terrain_tests` (12/12) and
+`tests/deep_earth_tests.py` (a 3 m block, which the 2 m earth refused, comes out
+exactly its own volume and the ledger closes), with `valley_live` 11/11,
+`water_tests` 19/19, `environment_ffi` 15, `world_room` 57, `ground_work_mcp` 24.
+
+**Two things this deliberately did NOT do, against the plan as written.** The
+runs did not replace the soil, sand and loose layers: the loose layer is a
+MIXTURE of sand and loose soil, not two layers in an order, and a run holds one
+material -- so rewriting it as runs would have changed the spoil physics and the
+measured slump numbers for no gain, when what stage 2 needs (beds, veins, ore) all
+live in the rock. And `Volumes` was not widened to a kind each: it is read in a
+hundred places and has nothing new to count yet, so instead a bed adds to the kind
+it is made of, and a cut into a bed that is not rock is refused until it does.
+Widening it is stage 2's first job.
 
 Runs in `TerrainField`, three legacy layers as three runs, `Volumes` by kind with
 the total kept by the edits rather than swept (§9), faces drawn, the survey in
@@ -778,10 +794,13 @@ separate arrays cost four cache lines a column where the runs cost two. Against
 the valley's own budget (4.68 s of wall clock over 14,400 steps is 0.325 ms a
 step) every figure here is noise.
 
-**The one real finding:** totalling the ground by kind by sweeping every run is
-0.09 ms, six times what it costs today. So `volumes()` must stop being a sweep and
-become a running total kept by the edits — which the ledger already does for what
-is dug and deposited, so it is a small change and it belongs in stage 1.
+**The one real finding, and what came of it:** totalling the ground by kind by
+sweeping every run is 0.09 ms, six times what it costs today, and I concluded that
+`volumes()` should stop being a sweep and become a running total kept by the
+edits. **That was wrong, and building it showed why:** `residual()` is the check
+that the swept total still matches the ledger, so a running total would compare a
+number with itself and pass for ever. The sweep IS the test. It is asked four
+times a second, which is 0.036% of a second, and it stays a sweep.
 
 Neither spike touched the engine. The real cost figure is still 60 s of the valley
 once stage 1 lands, against the 0.078x baseline.

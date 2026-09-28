@@ -47,7 +47,9 @@ void settle(TerrainField &ground, double seconds) {
 }
 
 void sameContinuation(const TerrainField::State &a, const TerrainField::State &b) {
-    require(a.rock == b.rock && a.soil == b.soil && a.sand == b.sand && a.loose == b.loose &&
+    require(a.beds.start == b.beds.start && a.beds.count == b.beds.count &&
+            a.beds.kind == b.beds.kind && a.beds.top == b.beds.top &&
+            a.soil == b.soil && a.sand == b.sand && a.loose == b.loose &&
             a.moisture == b.moisture && a.floor == b.floor, "restored layers or floor differ");
     require(a.frontier == b.frontier && a.dirty_chunks == b.dirty_chunks &&
             a.changed.i0 == b.changed.i0 && a.changed.j0 == b.changed.j0 &&
@@ -91,7 +93,8 @@ void unsettledStateResumesExactly() {
     auto other=flat(8,8,0,0);
     other.restore(rock.state());
     sameContinuation(rock.state(),other.state());
-    require(other.floor()==-2.0,"restoring a cut must not lower the reference floor");
+    require(other.floor()==-TerrainField::kEarthDepthM,
+            "restoring a cut must not lower the reference floor");
 }
 
 void invalidContinuationIsAtomic() {
@@ -100,7 +103,10 @@ void invalidContinuationIsAtomic() {
     const auto before=original.state();
     const std::vector<std::function<void(TerrainField::State &)>> corrupt{
         [](auto &s){s.grid.dx*=2;}, [](auto &s){s.sand.pop_back();},
-        [](auto &s){s.soil[0]=-.01;}, [](auto &s){s.rock[0]=std::numeric_limits<double>::quiet_NaN();},
+        [](auto &s){s.soil[0]=-.01;},
+        [](auto &s){s.beds.top[0]=std::numeric_limits<double>::quiet_NaN();},
+        [](auto &s){s.beds.count[0]=0;}, [](auto &s){s.beds.count[0]=9;},
+        [](auto &s){s.beds.kind[0]=7;}, [](auto &s){s.beds.top.pop_back();},
         [](auto &s){s.moisture[0]=2;}, [](auto &s){s.frontier.insert(s.grid.cells());},
         [](auto &s){s.dirty_chunks.insert(-1);}, [](auto &s){s.changed.ni=s.grid.nx+1;},
         [](auto &s){s.ledger.dug.sand_m3+=1;}, [](auto &s){s.floor=1;},
@@ -386,6 +392,76 @@ void aValleyIsShapedByWaterAndSaved() {
 
 } // namespace
 
+// The rock under a column is a stack of BEDS, and a column that has more than
+// one of them keeps every one: its height, what it is worth, what a cut takes
+// out of it, and what it says it is made of (docs/earth-and-mining-plan.md).
+void aColumnKeepsItsBeds() {
+    Grid g{8, 8, 0.25, 0.0, 0.0};
+    const std::size_t n = g.cells();
+    // Bedrock to -1.0, a lens of sand to -0.6, rock again to 0, and 0.4 of soil
+    // on top: three beds and a soil layer.
+    Beds beds;
+    beds.start.resize(n + 1);
+    beds.count.assign(n, 3);
+    for (std::size_t c = 0; c <= n; ++c) beds.start[c] = static_cast<std::uint32_t>(3 * c);
+    for (std::size_t c = 0; c < n; ++c) {
+        beds.kind.push_back(static_cast<std::uint8_t>(RunKind::Rock));   beds.top.push_back(-1.0);
+        beds.kind.push_back(static_cast<std::uint8_t>(RunKind::Sand));   beds.top.push_back(-0.6);
+        beds.kind.push_back(static_cast<std::uint8_t>(RunKind::Rock));   beds.top.push_back(0.0);
+    }
+    TerrainField ground(g, beds, std::vector<double>(n, 0.4), std::vector<double>(n, 0.0),
+                        std::vector<double>(n, 0.0), std::vector<float>(n, 0.0F));
+
+    require(ground.rockTop(0) == 0.0, "the top of the rock is the top bed's top");
+    require(ground.height(0) == 0.4, "the ground is the top bed plus what is on it");
+    require(ground.floor() == -TerrainField::kEarthDepthM,
+            "the earth goes down from the lowest rock, not from the lowest bed");
+
+    // What it says it is made of, bottom to top.
+    Run runs[TerrainField::kRunsMost];
+    const int count = ground.runsOf(0, runs);
+    require(count == 4, "a column with three beds and soil on top has four runs");
+    require(runs[0].kind == RunKind::Rock && runs[1].kind == RunKind::Sand &&
+            runs[2].kind == RunKind::Rock && runs[3].kind == RunKind::Soil,
+            "the runs are not the beds and the soil, in order");
+    near(runs[1].top_m, -0.6, 1e-12, "the lens's top");
+    near(runs[3].top_m, 0.4, 1e-12, "the soil's top");
+
+    // Each bed is worth what it is MADE of, not what the rock is: the lens is
+    // sand in the ledger, and the residual closes.
+    const double area = 0.25 * 0.25;
+    const Volumes v = ground.volumes();
+    near(v.sand_m3, 0.4 * area * static_cast<double>(n), 1e-9, "the lens is counted as sand");
+    near(v.rock_m3, (TerrainField::kEarthDepthM - 1.0 + 0.6 - 0.4 + 0.4) * area * static_cast<double>(n),
+         1e-9, "the rock is the two rock beds");
+    near(v.soil_m3, 0.4 * area * static_cast<double>(n), 1e-9, "the soil on top");
+
+    // A block cut out of the top bed leaves the beds below it alone.
+    std::string why;
+    const auto block = ground.cut(0.875, 0.875, 4, 4, 0.5, &why);
+    require(!block.has_value(), "a cut through soil must be refused: " + why);
+    (void)ground.dig(0.875, 0.875, 0.875, 0.875, 1.2, 1.0);   // take the soil off
+    settle(ground, 4.0);
+    const auto cut = ground.cut(0.875, 0.875, 2, 2, 0.5, &why);
+    require(cut.has_value(), "cutting the top bed should work: " + why);
+    require(ground.runsOf(g.at(3, 3), runs) >= 3, "the beds under the cut are still there");
+
+    // Cutting deeper than the top bed reaches the lens, and a block of sand is
+    // not a block: it is refused, with the reason, and nothing is taken.
+    const Volumes before = ground.volumes();
+    const auto deep = ground.cut(0.875, 0.875, 2, 2, 1.0, &why);
+    require(!deep.has_value(), "a cut into the sand lens must be refused");
+    require(why.find("not all rock") != std::string::npos, "the refusal must say why: " + why);
+    const Volumes after = ground.volumes();
+    require(before.total() == after.total(), "a refused cut must take nothing");
+
+    // Saved and restored with its beds.
+    TerrainField other(g, beds, std::vector<double>(n, 0.4), std::vector<double>(n, 0.0),
+                       std::vector<double>(n, 0.0), std::vector<float>(n, 0.0F));
+    other.restore(ground.state());
+    sameContinuation(ground.state(), other.state());
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
@@ -398,6 +474,7 @@ int main() {
         {"a cut block is exactly the rock that left", aCutBlockIsExactlyTheRockThatLeft},
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"height follows the collider's split", heightAtFollowsTheColliderSplit},
+        {"a column keeps its beds", aColumnKeepsItsBeds},
         {"a valley is shaped by water and saved", aValleyIsShapedByWaterAndSaved},
     };
     unsigned failures = 0;

@@ -41,6 +41,18 @@ layer of sand or soil on top:
 | soil | 1600 kg/m3 | 30 deg | 2 kPa | holds a spade-deep wall |
 | sand | 1600 kg/m3 | 32 deg | 0 | slumps to its angle of repose |
 
+**The rock under a column is a stack of BEDS** -- what each bed is and the height
+it reaches -- and it goes down **30 m** below the lowest rock there is
+(`TerrainField::kEarthDepthM`), where it used to go down 2 m, which is no earth
+for a mine to work in. Every world there has been has one bed of rock, and that
+is what a generated valley still has; a bed is worth what it is MADE of in the
+ledger, so a lens of sand in the rock is counted as sand. A cut lowers the top
+bed and drops the ones it takes whole, and a cut that would reach a bed that is
+not rock is refused with the reason, because a block of anything else is not
+accounted for yet. A room saved before this gets the deeper earth when it is
+opened again, with the rock that appears under it added to the ledger's opening
+figure so the room's own account still closes.
+
 **What a column is, is what it is made of.** Every column is said in RUNS -- a
 material and the height it reaches, bottom to top -- which is what the three
 layers above already are, and what the ground goes on being said in when it

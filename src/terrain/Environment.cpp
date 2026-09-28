@@ -639,9 +639,14 @@ std::string Environment::groundStateJson() const {
     Json colliders=Json::array();
     for (int k=0;k<static_cast<int>(stats_.chunks);++k)
         colliders.push_back(packed(collider_heights_.empty()?chunkHeights(k):collider_heights_[static_cast<std::size_t>(k)]));
-    return Json{{"schema","banjo.ground-state.v3"},{"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
+    // v4 carries the rock as BEDS. Before it there was one number a column --
+    // the top of the rock -- and a v3 state read here becomes one bed of rock,
+    // which is what it was.
+    return Json{{"schema","banjo.ground-state.v4"},{"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
-        {"rock",packed(s.rock)},{"soil",packed(s.soil)},{"sand",packed(s.sand)},
+        {"beds",{{"start",packed(s.beds.start)},{"count",packed(s.beds.count)},
+                 {"kind",packed(s.beds.kind)},{"top",packed(s.beds.top)}}},
+        {"soil",packed(s.soil)},{"sand",packed(s.sand)},
         {"loose",packed(s.loose)},{"moisture",packed(s.moisture)},{"floor",s.floor},
         {"ledger",{{"initial",volumesJson(s.ledger.initial)},{"dug",volumesJson(s.ledger.dug)},
             {"cut",volumesJson(s.ledger.cut)},{"deposited",volumesJson(s.ledger.deposited)},
@@ -657,14 +662,17 @@ std::string Environment::groundStateJson() const {
 void Environment::restoreGroundState(const std::string &text) {
     if (attached_) throw std::invalid_argument("ground state must be restored before attachment");
     const Json d=Json::parse(text);
-    const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","soil","sand","loose","moisture",
+    const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","beds","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
         "carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
         "pending_chunks","pending_wake","colliders"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
-    for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && d.value("schema","")=="banjo.ground-state.v1") ||
-        (std::string(key)=="returned" && d.value("schema","")!="banjo.ground-state.v3")))
+    const std::string schema=d.value("schema","");
+    const bool v4=schema=="banjo.ground-state.v4";
+    for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && schema=="banjo.ground-state.v1") ||
+        (std::string(key)=="returned" && schema!="banjo.ground-state.v3" && !v4) ||
+        (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4)))
         throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
@@ -680,7 +688,8 @@ void Environment::restoreGroundState(const std::string &text) {
                 throw std::invalid_argument("duplicate ground index");
         }
     };
-    if (d.at("schema")!="banjo.ground-state.v1" && d.at("schema")!="banjo.ground-state.v2" && d.at("schema")!="banjo.ground-state.v3")
+    if (schema!="banjo.ground-state.v1" && schema!="banjo.ground-state.v2" &&
+        schema!="banjo.ground-state.v3" && !v4)
         throw std::invalid_argument("unsupported ground state");
     auto s=terrain_->state(); const auto &g=d.at("grid");
     if (!g.is_array() || g.size()!=5 || !g[0].is_number_integer() || !g[1].is_number_integer())
@@ -691,7 +700,34 @@ void Environment::restoreGroundState(const std::string &text) {
         if (bytes.size()!=v.size()*sizeof(v[0])) throw std::invalid_argument("ground array size mismatch");
         std::memcpy(v.data(),bytes.data(),bytes.size());
     };
-    unpack("rock",s.rock);unpack("soil",s.soil);unpack("sand",s.sand);unpack("loose",s.loose);unpack("moisture",s.moisture);
+    if (v4) {
+        const auto &b=d.at("beds");
+        if (!b.is_object()) throw std::invalid_argument("ground beds must be an object");
+        onlyKeys(b,{"start","count","kind","top"},"ground beds");
+        const auto bytes=[&](const char *key) { return decodeBase64(b.at(key).get<std::string>()); };
+        const auto starts=bytes("start");
+        if (starts.size()!=(s.grid.cells()+1)*sizeof(std::uint32_t))
+            throw std::invalid_argument("ground array size mismatch");
+        s.beds.start.resize(s.grid.cells()+1);
+        std::memcpy(s.beds.start.data(),starts.data(),starts.size());
+        const std::size_t room=s.beds.start.back();
+        // A bed list the size of what the offsets claim, and no bigger: a state
+        // that says a million beds is refused before anything is allocated.
+        if (room>16*s.grid.cells()) throw std::invalid_argument("ground beds do not fit the grid");
+        s.beds.count.resize(s.grid.cells());s.beds.kind.resize(room);s.beds.top.resize(room);
+        const auto fill=[&](const char *key,auto &v) {
+            const auto raw=bytes(key);
+            if (raw.size()!=v.size()*sizeof(v[0])) throw std::invalid_argument("ground array size mismatch");
+            std::memcpy(v.data(),raw.data(),raw.size());
+        };
+        fill("count",s.beds.count);fill("kind",s.beds.kind);fill("top",s.beds.top);
+    } else {
+        // One number a column, the top of the rock: one bed of rock.
+        std::vector<double> rock(s.grid.cells());
+        unpack("rock",rock);
+        s.beds=Beds::ofRock(rock);
+    }
+    unpack("soil",s.soil);unpack("sand",s.sand);unpack("loose",s.loose);unpack("moisture",s.moisture);
     s.floor=d.at("floor").get<double>();
     const auto volumes=[](const Json &v) {
         return Volumes{v.at("rock_m3").get<double>(),v.at("soil_m3").get<double>(),v.at("sand_m3").get<double>()};
@@ -699,6 +735,22 @@ void Environment::restoreGroundState(const std::string &text) {
     const auto &l=d.at("ledger");
     s.ledger={volumes(l.at("initial")),volumes(l.at("dug")),volumes(l.at("cut")),volumes(l.at("deposited")),
         l.at("slumped_m3").get<double>(),l.at("loosened_m3").get<double>()};
+    if (!v4) {
+        // A room saved when the earth was 2 m deep gets the earth it would have
+        // now. The rock that appears under it goes into the ledger's opening
+        // figure, so what is in the ground is still what was there less what has
+        // left it -- the room keeps its own digs and its own account, and only
+        // gains the rock it always should have stood on.
+        double lowest=std::numeric_limits<double>::infinity();
+        for (std::size_t c=0;c<s.grid.cells();++c)
+            lowest=std::min(lowest,s.beds.top[s.beds.start[c]+s.beds.count[c]-1]);
+        const double deeper=lowest-TerrainField::kEarthDepthM;
+        if (deeper<s.floor) {
+            s.ledger.initial.rock_m3+=(s.floor-deeper)*s.grid.dx*s.grid.dx*
+                static_cast<double>(s.grid.cells());
+            s.floor=deeper;
+        }
+    }
     indices(d.at("frontier"),s.frontier,s.grid.cells()-1);
     indices(d.at("dirty_chunks"),s.dirty_chunks,stats_.chunks-1);
     const auto rect=[](const Json &v) {

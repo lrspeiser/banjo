@@ -113,6 +113,27 @@ struct GroundMaterial {
 [[nodiscard]] const GroundMaterial &sandMaterial();
 [[nodiscard]] const GroundMaterial &groundMaterialOf(Surface surface);
 
+// The rock under a column, bottom to top: what each bed is and the height it
+// reaches. Every world there has been has one bed of rock, and that is what this
+// holds today; beds and veins are what the rest of it is for
+// (docs/earth-and-mining-plan.md). Held the way the engine walks it -- where a
+// column's beds begin, how many are live, what each is, and its top -- because a
+// column's beds are read far more often than they change.
+//
+// A column always keeps at least one bed. A cut lowers the top bed and drops the
+// ones it takes whole, so the count falls and never rises: nothing here ever
+// reallocates, and a column's room for beds is fixed when the ground is made.
+struct Beds {
+    std::vector<std::uint32_t> start;    // cells + 1 offsets into kind and top
+    std::vector<std::uint32_t> count;    // how many of each column's are live
+    std::vector<std::uint8_t> kind;
+    std::vector<double> top;
+    [[nodiscard]] bool empty() const { return start.empty(); }
+    // One bed of rock under every column, from a rock top per column: the ground
+    // as every world has had it.
+    [[nodiscard]] static Beds ofRock(const std::vector<double> &rock_top_m);
+};
+
 // Matter by kind, in cubic metres.
 struct Volumes {
     double rock_m3{};
@@ -178,15 +199,31 @@ public:
     // cohesive cut stands, plus the stopping layer on both sides.
     [[nodiscard]] static double stableDrop(const GroundMaterial &material, double run_m);
 
+    // How deep the rock goes below the lowest of it: the earth a mine has to
+    // work in. It was 2 m, which is no earth at all.
+    static constexpr double kEarthDepthM = 30.0;
+
     TerrainField(Grid grid, std::vector<double> rock_top_m, std::vector<double> soil_m,
                  std::vector<double> sand_m, std::vector<double> loose_soil_m = {},
                  std::vector<float> moisture = {});
+    // The same, with the rock said as beds.
+    TerrainField(Grid grid, Beds beds, std::vector<double> soil_m, std::vector<double> sand_m,
+                 std::vector<double> loose_soil_m, std::vector<float> moisture);
 
     [[nodiscard]] const Grid &grid() const { return grid_; }
     [[nodiscard]] double height(std::size_t c) const {
-        return rock_[c] + soil_[c] + sand_[c] + loose_[c];
+        return rockTop(c) + soil_[c] + sand_[c] + loose_[c];
     }
-    [[nodiscard]] double rockTop(std::size_t c) const { return rock_[c]; }
+    // The top of the topmost bed: where the rock stops and the soil starts.
+    [[nodiscard]] double rockTop(std::size_t c) const {
+        return beds_.top[beds_.start[c] + beds_.count[c] - 1];
+    }
+    [[nodiscard]] const Beds &beds() const { return beds_; }
+    // The bed `k` of a column reaches from here to its own top; the lowest
+    // reaches down to floor().
+    [[nodiscard]] double bedBottom(std::size_t c, std::uint32_t k) const {
+        return k == 0 ? floor_ : beds_.top[beds_.start[c] + k - 1];
+    }
     [[nodiscard]] double soil(std::size_t c) const { return soil_[c]; }
     [[nodiscard]] double sand(std::size_t c) const { return sand_[c]; }
     [[nodiscard]] double looseSoil(std::size_t c) const { return loose_[c]; }
@@ -194,10 +231,11 @@ public:
     [[nodiscard]] Surface surface(std::size_t c) const;
     // The runs of one column, bottom to top, into a buffer of at least
     // kRunsMost. Returns how many it wrote; never none, because there is always
-    // rock. The loose layer is sand and loose soil MIXED (see strip(): it is one
+    // rock. The beds come first, then the soil that formed on them, then the
+    // loose layer -- which is sand and loose soil MIXED (see strip(): it is one
     // mixture, not two layers in an order), so it is one run, of whichever it is
-    // mostly -- the rule surface() uses.
-    static constexpr int kRunsMost = 4;
+    // mostly, the rule surface() uses.
+    static constexpr int kRunsMost = 16;
     int runsOf(std::size_t c, Run *out) const;
     // The ground under a point, interpolated the way the collider is.
     [[nodiscard]] double heightAt(double x, double z) const;
@@ -261,7 +299,8 @@ public:
     // resume their next relaxation pass instead of settling during restore.
     struct State {
         Grid grid;
-        std::vector<double> rock, soil, sand, loose;
+        Beds beds;
+        std::vector<double> soil, sand, loose;
         std::vector<float> moisture;
         double floor{};
         Ledger ledger;
@@ -293,8 +332,13 @@ private:
     // What strip() would take, taking nothing.
     [[nodiscard]] Volumes wouldStrip(std::size_t c, double thickness) const;
 
+    // Take a column's rock down to `bottom`, dropping the beds that go whole,
+    // and add what left to `took`. A column always keeps its lowest bed.
+    void takeRockDownTo(std::size_t c, double bottom, Volumes &took);
+
     Grid grid_;
-    std::vector<double> rock_, soil_, sand_, loose_;
+    Beds beds_;
+    std::vector<double> soil_, sand_, loose_;
     std::vector<float> moisture_;
     double floor_{};
     Ledger ledger_;
