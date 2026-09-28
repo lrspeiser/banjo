@@ -345,6 +345,105 @@ void iceOnTheFloorShrinksAndItsWaterRunsOff() {
               << 1000.0 * ice_now.x << " mm across; glass, oak and iron warmed and kept their size\n";
 }
 
+// A basin with a lake standing in it, 24 m across.
+std::string lakeRoom(const std::string &bodies) {
+    return std::string(R"({"plasticity":true,"bodies":[)") + bodies +
+           R"(],"terrain":{"generate":{"kind":"basin","nx":96,"nz":96,"cell_m":0.25,)"
+           R"("lake_level_m":0.6,"sand_m":0}}})";
+}
+
+// Ice melting OVER WATER, which is the half that matters for a world with
+// rivers in it.
+//
+// The test above pins the dry case: with no water in the room every kilogram
+// of meltwater runs off across the floor. This is the other side of that
+// branch and it had never been checked -- `meltwaterIntoWaterKg()` was only
+// ever asserted to be zero. The meltwater goes into the column of water under
+// the ice, which carries it on downhill, and the lake is that much fuller.
+//
+// It matters now because boiling changed what ice melts INTO: the meltwater
+// used to become `moisture`, the water a material holds, and is now free
+// `water`, which is a different substance that can go on to boil. The path to
+// the lake is by kilograms and by the body's name, so that change should not
+// have touched it -- and this is what says so.
+void meltwaterOverALakeGoesIntoTheLake() {
+    auto world = openScene(lakeRoom(box("ice block", "ice", {0.4, 0.4, 0.4}, {0.0, 1.6, 0.0}, false)),
+                           0.05);
+    require(world->environment() != nullptr && world->environment()->water() != nullptr,
+            "the room has water in it");
+    const double lake_before = world->environment()->water()->volume();
+    world->heat("ice block", 8000.0, 25.0);
+    stepFor(*world, 26.0);
+
+    const thermo::BodyHeat ice = heatOf(*world, "ice block");
+    const double into = world->meltwaterIntoWaterKg(), off = world->meltwaterRanOffKg();
+    const double lake_after = world->environment()->water()->volume();
+    std::cout << "    over a lake: melted " << ice.melted_kg << " kg, " << into
+              << " kg into the water and " << off << " kg run off; the lake went from "
+              << lake_before << " to " << lake_after << " m3\n";
+    require(ice.melted_kg > 0.05, "the ice melted: " + std::to_string(ice.melted_kg) + " kg");
+    require(ice.temperature_k <= 273.15 + 1e-6, "and stayed at its melting point");
+    // Every kilogram is accounted once: into the water, or off across the floor.
+    require(std::abs((into + off) - ice.melted_kg) < 1e-6 * ice.melted_kg,
+            "meltwater is all accounted: " + std::to_string(into + off) + " against " +
+                std::to_string(ice.melted_kg));
+    require(into > 0.0, "and over a lake, some of it went INTO the lake");
+    require(into > 0.5 * ice.melted_kg,
+            "most of it, since the ice is over open water: " + std::to_string(into) + " of " +
+                std::to_string(ice.melted_kg));
+    require(lake_after >= lake_before, "the lake did not lose water for taking it");
+}
+
+// And boiling over the same lake leaves it alone.
+//
+// Steam is not river water. A body's free water that boils goes into the gas
+// region it stands in, or to the surroundings where there is none, and the
+// room's water never sees it -- so nothing is added to the lake and nothing is
+// taken out of it. This is the boundary the two systems meet at, and it is
+// worth a test because meltwater and steam leave the same body by nearly the
+// same road: both are matter leaving a lump, and only one of them is water the
+// room should keep.
+void boilingOverALakeLeavesTheLakeAlone() {
+    // The water is declared in the scene, the way a room declares it, rather
+    // than pushed in from here: that is the path the playground uses.
+    const std::string scene =
+        std::string(R"({"plasticity":true,"bodies":[)") +
+        box("pan", "iron", {0.4, 0.2, 0.4}, {0.0, 1.6, 0.0}, true) +
+        R"(],"thermo":{"contents":[{"body":"pan","contents":{"water":1},"temperature_k":373.15}]},)"
+        R"("terrain":{"generate":{"kind":"basin","nx":96,"nz":96,"cell_m":0.25,)"
+        R"("lake_level_m":0.6,"sand_m":0}}})";
+    auto world = openScene(scene, 0.05);
+    require(world->environment() != nullptr && world->environment()->water() != nullptr,
+            "the room has water in it");
+    require(world->thermo() != nullptr && world->thermo()->holds("pan"),
+            "the pan's water was declared");
+
+    const double lake_before = world->environment()->water()->volume();
+    world->heat("pan", 20000.0, 25.0);
+    stepFor(*world, 26.0);
+
+    const thermo::BodyHeat pan_now = heatOf(*world, "pan");
+    const double lake_after = world->environment()->water()->volume();
+    std::cout << "    boiling over a lake: " << pan_now.boiled_kg << " kg boiled away at "
+              << pan_now.temperature_k - 273.15 << " C; the lake went from " << lake_before
+              << " to " << lake_after << " m3\n";
+    require(pan_now.boiled_kg > 0.0, "the pan boiled: " + std::to_string(pan_now.boiled_kg) + " kg");
+    // A fiftieth of a kelvin under, because the pan is losing heat to a room at
+    // 20 C between one boiling step and the next: it rides just below the line
+    // rather than sitting exactly on it.
+    require(std::abs(pan_now.temperature_k - 373.15) < 0.05, "and held at its boiling point");
+    require(world->meltwaterIntoWaterKg() == 0.0,
+            "boiling is not melting: nothing ran into the lake");
+    require(world->meltwaterRanOffKg() == 0.0, "and nothing ran off across the floor either");
+    // The lake is a shallow-water solver and a basin settles, so this is not
+    // asked to be exact -- only that a kilogram of steam is not a kilogram of
+    // lake, either way.
+    require(std::abs(lake_after - lake_before) < 0.5 * pan_now.boiled_kg / 1000.0 + 1.0e-6,
+            "the lake neither gained nor lost the water that boiled: " +
+                std::to_string(lake_after - lake_before) + " m3 against " +
+                std::to_string(pan_now.boiled_kg / 1000.0));
+}
+
 // A small cube of ice heated until it is gone leaves the world, and says it
 // melted away -- not that it burned.
 void iceThatMeltsAwayLeavesTheWorld() {
@@ -436,6 +535,8 @@ int main(int argc, char **argv) {
         {"a burning plank that breaks shares out what it held", aBurningPlankThatBreaksSharesOutWhatItHeld},
         {"a burning log carried away takes its fire with it", aBurningLogCarriedAwayTakesItsFireWithIt},
         {"ice on the floor shrinks and its water runs off", iceOnTheFloorShrinksAndItsWaterRunsOff},
+        {"meltwater over a lake goes into the lake", meltwaterOverALakeGoesIntoTheLake},
+        {"boiling over a lake leaves the lake alone", boilingOverALakeLeavesTheLakeAlone},
         {"ice that melts away leaves the world", iceThatMeltsAwayLeavesTheWorld},
         {"ice saved before melting comes back at its temperature", iceSavedBeforeMeltingComesBackAtItsTemperature},
     };

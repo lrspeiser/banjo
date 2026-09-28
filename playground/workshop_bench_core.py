@@ -316,7 +316,14 @@ def kettle_setup(design: WorkshopDesign, config: dict[str, Any]) -> dict[str, An
         "size_mm": [safe_w * 1000, water_h * 1000, safe_d * 1000],
         "center_mm": [bottom.center_m[0] * 1000, (shift_y + water_base + water_h / 2) * 1000,
                       bottom.center_m[2] * 1000],
-        "contents": {"moisture": 1.0}, "temperature_k": 293.15,
+        # Free WATER, not the `moisture` a material holds. The two are the same
+        # liquid by every number that matters below boiling -- same heat
+        # capacity, same reference energy -- so nothing in this trial's range
+        # moves. They part company at 373.15 K: moisture is driven off by the
+        # drying reaction, which has a rate and so lets the water climb past
+        # its boiling point, while free water pins there and turns to steam.
+        # A kettle that reads 140 C is not a kettle, so a kettle holds water.
+        "contents": {"water": 1.0}, "temperature_k": 293.15,
     })
     cell = workshop_trials._effective_cell(shell_cell, bodies)
     spec = fracture_lab.validate({
