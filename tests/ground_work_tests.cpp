@@ -169,8 +169,27 @@ void theModelIsTheClosedForms() {
     // The gate.
     require(judgeGround(true, 0.0, 35.0e6, "oak").answer == GroundAnswer::TooHard,
             "an oak point on rock was not stopped");
-    require(judgeGround(true, 0.0, 1.5e9, "iron").answer == GroundAnswer::NotSupported,
-            "an iron point on rock was not 'not supported'");
+    require(judgeGround(true, 0.0, 1.5e9, "iron").answer == GroundAnswer::Breakable,
+            "an iron point on rock does not break it out");
+    // rock-work-v1: what a cubic metre of each ground costs to break, and what
+    // that means for the two things that will do the breaking.
+    const double rock_es = specificEnergyJPerM3(groundHardnessPa(RunKind::Rock));
+    const double cap_es = specificEnergyJPerM3(groundHardnessPa(RunKind::OxidisedOre));
+    require(rock_es > 25.0e6 && rock_es < 35.0e6, "fresh rock costs about 30 MJ the cubic metre");
+    require(cap_es < 0.1 * rock_es, "and the oxidised cap of a vein is far cheaper");
+    // A hand blow of a hundred joules, against a 0.25 m cube of each.
+    const double cube = 0.25 * 0.25 * 0.25;
+    const double blows_rock = cube / brokenVolumeM3(groundHardnessPa(RunKind::Rock), 100.0);
+    const double blows_cap = cube / brokenVolumeM3(groundHardnessPa(RunKind::OxidisedOre), 100.0);
+    std::printf("  rock-work-v1: fresh rock %.0f MJ/m^3, oxidised ore %.1f MJ/m^3; a 0.25 m cube is "
+                "%.0f hand blows of 100 J in the rock and %.0f in the cap\n",
+                rock_es / 1.0e6, cap_es / 1.0e6, blows_rock, blows_cap);
+    // 4,688 blows to a 0.25 m cube, which at a swing every two seconds is two
+    // and a half hours: nobody hand-mines fresh rock, and the model says so.
+    require(blows_rock > 3000.0, "fresh rock is hours of hand work to the cube, as it should be");
+    require(blows_cap < 1000.0, "the oxidised cap is what a person can work");
+    require(brokenVolumeM3(groundHardnessPa(RunKind::Void), 100.0) == 0.0,
+            "there is nothing in a void to break");
     require(judgeGround(false, 0.02, 35.0e6, "oak").answer == GroundAnswer::NotSupported,
             "wet ground was not 'not supported'");
     require(judgeGround(false, 0.0, 35.0e6, "oak").answer == GroundAnswer::Penetrable,
@@ -378,9 +397,15 @@ void soilAgainstRock() {
     require(!iron.work.empty(), "the iron stake met no rock");
     const LiveGroundWork &i = iron.work.front();
     std::printf("  iron onto rock %s: %s\n", iron.ended.c_str(), said(i).c_str());
-    require(i.kind == "not supported" && !i.supported, "an iron point on rock was not 'not supported'");
-    require(i.why.find("not supported yet") != std::string::npos, "the answer does not say 'not supported yet'");
-    require(i.loosened.total() == 0.0, "an unsupported regime loosened something");
+    // Since rock-work-v1 a point harder than the rock BREAKS IT OUT, where
+    // before there was no law and the engine said so. What it takes out is not
+    // wired to the ground yet (docs/earth-and-mining-plan.md, 11, item 1), so
+    // nothing comes loose -- but the answer is no longer "not supported".
+    require(i.kind == "breaks it out" && i.supported,
+            "an iron point on rock does not break it out: " + i.kind);
+    require(i.why.find("rock-work-v1") != std::string::npos,
+            "the answer does not name the model it used");
+    require(i.loosened.total() == 0.0, "nothing is wired to the ground yet, so nothing came loose");
 }
 
 void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {

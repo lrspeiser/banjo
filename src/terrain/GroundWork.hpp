@@ -112,10 +112,49 @@ struct BearingFactors {
 [[nodiscard]] double loosenedVolumeM3(const GroundMaterial &ground, double depth_m,
                                       double leading_width_m, double sideways_m);
 
+// ---- breaking rock out: rock-work-v1 ---------------------------------------
+//
+// The gap this model was written around, and the reason a mine was a museum:
+// "breaking rock out of the ground under a point has no law here". It has one
+// now, and it is the one the rock-cutting literature uses -- SPECIFIC ENERGY.
+// Rock is not pushed aside like soil; it is broken, and what it costs to break
+// is a volume-specific energy that scales with how hard the rock is:
+//
+//     e_s = k_c H              joules per cubic metre
+//     V   = W / e_s            what a blow of W joules takes out
+//
+// `H` is the material's own indentation hardness, the same number the cutting
+// model gates on (docs/cutting-model.md): the engine's stone is 100 MPa. `k_c`
+// is DECLARED, from the rock-cutting literature, where the specific energy of
+// efficient cutting runs at a fraction of the unconfined strength -- the ratio
+// is the "cutting efficiency" and is of order a third. It is not calibrated
+// against any pick in any rock, and nothing here takes a player, a level or a
+// technique.
+//
+// What this says out loud, because it decides the game: at 0.3 x 100 MPa a
+// cubic metre of fresh rock costs 30 MJ, so a hand blow of a hundred joules
+// takes out three cubic millimetres and NOBODY HAND-MINES FRESH ROCK. The
+// oxidised cap of a vein is soft -- a few MJ per cubic metre -- and that is
+// what a person works; the rest is a machine's job, and what limits the machine
+// is its battery (docs/earth-and-mining-plan.md, 7).
+inline constexpr const char *kRockWorkModel = "rock-work-v1";
+// The share of a material's indentation hardness that breaking a cubic metre of
+// it costs. DECLARED.
+inline constexpr double kCuttingEfficiency = 0.3;
+// Joules to break a cubic metre of ground of this hardness.
+[[nodiscard]] double specificEnergyJPerM3(double hardness_pa);
+// What `work_j` breaks out of it, m^3.
+[[nodiscard]] double brokenVolumeM3(double hardness_pa, double work_j);
+// What a bed of this kind is to a point: its indentation hardness. Rock is the
+// engine's stone; rock the weather has rotted, and ore the weather has
+// oxidised, are softer, which is the whole of the difficulty ramp.
+[[nodiscard]] double groundHardnessPa(RunKind kind);
+
 // What the ground at the point is to it.
 enum class GroundAnswer : std::uint8_t {
     Penetrable = 0,     // soil or sand the point goes into
     TooHard = 1,        // ground at least as hard as the point: it stops it
+    Breakable = 3,      // rock, under a point harder than it: rock-work-v1
     NotSupported = 2,   // a regime the model does not cover, said and never guessed
 };
 struct GroundVerdict {

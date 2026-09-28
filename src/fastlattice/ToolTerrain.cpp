@@ -503,9 +503,18 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     const terrain::GroundVerdict verdict = terrain::judgeGround(rock, water, hardness, material);
     const std::string layer = rock ? std::string("rock") : terrain::groundAt(field, column, 0.0).name;
     if (verdict.answer != terrain::GroundAnswer::Penetrable) {
+        // Breakable is rock under a point hard enough to break it: rock-work-v1
+        // says what a cubic metre of it costs. What the point then takes out is
+        // not wired to the ground yet -- the law and the ground's own
+        // Environment::breakOut both exist, and joining them is the next piece
+        // (docs/earth-and-mining-plan.md, 11, item 1).
+        const bool breaks = verdict.answer == terrain::GroundAnswer::Breakable;
         if (meeting)
-            note(host, p, verdict.answer == terrain::GroundAnswer::TooHard ? "stopped" : "not supported",
-                 layer, verdict.why, verdict.answer != terrain::GroundAnswer::NotSupported, at, closing);
+            note(host, p,
+                 verdict.answer == terrain::GroundAnswer::TooHard ? "stopped"
+                     : breaks ? "breaks it out" : "not supported",
+                 layer, verdict.why, verdict.answer != terrain::GroundAnswer::NotSupported,
+                 at, closing);
         return;
     }
     const double down = -a.y;

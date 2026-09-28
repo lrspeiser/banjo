@@ -975,6 +975,23 @@ you can look at what somebody else did and you cannot do any of it.
 oxidised ore out of it, and the same pick on fresh rock is refused for the
 reason the engine already gives.
 
+**The law is built, 2026-09-28; joining it to a tool is not.** rock-work-v1:
+`e_s = k_c H`, with `H` the material's own indentation hardness (the number the
+cutting model already gates on) and `k_c` declared at 0.3 from the rock-cutting
+literature, where the specific energy of efficient cutting runs at a fraction of
+the unconfined strength. `judgeGround` no longer answers "breaking rock out of
+the ground under a point has no law here": a point harder than the rock now
+answers **Breakable**, and says what a cubic metre costs. Measured
+(`ground_work_tests`): fresh rock 30 MJ/m3 and the oxidised cap of a vein
+1.5 MJ/m3, so a 0.25 m cube is **4,688 hand blows of 100 J in the rock and 234
+in the cap** -- two and a half hours against eight minutes, which is exactly the
+ramp 7 describes and the reason the old workings stop where the cap does.
+
+What is left is the join: a strike's MEASURED work into `brokenVolumeM3`, and
+that volume into `Environment::breakOut`, which is built and tested (item 2).
+Until it is joined a pick on rock says it breaks it out and nothing comes loose,
+and the test says so rather than pretending otherwise.
+
 ### 2. LOAD-BEARING — the ground can be dug into a void at runtime
 
 Voids exist, but **only the generator can make one**. Mining has to turn solid
