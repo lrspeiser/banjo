@@ -295,6 +295,15 @@ public:
     // how a caller that knows a VOLUME, not a depth, works out the depth.
     [[nodiscard]] std::vector<std::size_t> columnsAlong(double ax, double az, double bx, double bz,
                                                         double width_m) const;
+    // Take rock out of a column between two heights: what a tool has broken
+    // loose (docs/earth-and-mining-plan.md, stage 4). Cell-quantised, so a
+    // working is made of cubes. Broken out to daylight it is an open cut and
+    // everything over the rock comes off with it; under cover it is a hole with
+    // rock over it, and the beds it passes through are split into what is under
+    // the working, the working, and what is over it. What leaves is counted by
+    // what it was made of. Refused, with the reason, where the column has no
+    // room left to say another working.
+    EditReport breakOut(double x, double z, double from_m, double to_m);
     // Heap material up around a point: a cone of it within `radius`, which the
     // stability check then lets settle to whatever slope it can hold.
     EditReport deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);

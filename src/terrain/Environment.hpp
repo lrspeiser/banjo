@@ -132,6 +132,12 @@ public:
                    double width_m, double depth_m, double carried_objects_kg = 0);
     EditEffect deposit(JoltWorld &world, double x, double z, double radius_m,
                        double sand_m3, double soil_m3);
+    // Rock broken out of a column between two heights: a working, which is a
+    // hole with rock over it, or an open cut where it reaches daylight
+    // (docs/earth-and-mining-plan.md). The chunk's three colliders -- its
+    // surface, its working's floor and its working's roof -- follow, and
+    // whatever they held up is woken.
+    EditEffect breakOut(JoltWorld &world, double x, double z, double from_m, double to_m);
     // A cut out of bare rock; the host adds the block as a body.
     std::optional<CutBlock> cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                 double depth_m, std::string *why = nullptr);
@@ -275,6 +281,7 @@ private:
     [[nodiscard]] std::vector<float> workingFloor(int chunk) const;
     [[nodiscard]] std::vector<float> workingRoof(int chunk, double hang_from_m) const;
     [[nodiscard]] bool chunkHasWorkings(int chunk) const;
+    void syncWorkingPatches(JoltWorld &world, int chunk);
 
     Landscape landscape_;
     std::unique_ptr<TerrainField> terrain_;

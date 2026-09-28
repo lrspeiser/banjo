@@ -1921,6 +1921,10 @@ public:
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.
     terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    // Rock broken out of a column between two heights: a working with rock over
+    // it, or an open cut where it reaches daylight. What a tool that can break
+    // rock does to the ground (docs/earth-and-mining-plan.md).
+    terrain::EditEffect breakOut(double x, double z, double from_m, double to_m);
     // How much dug ground the person can carry (terrain::Environment). A world
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);

@@ -12168,6 +12168,10 @@ terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, d
     return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m, impl_->carriedObjectsKg());
 }
 
+terrain::EditEffect LiveWorld::breakOut(double x, double z, double from_m, double to_m) {
+    return requireEnvironment(impl_->environment).breakOut(*impl_->world, x, z, from_m, to_m);
+}
+
 double LiveWorld::carriedObjectsKg() const { return impl_->carriedObjectsKg(); }
 
 void LiveWorld::setCarryLimitKg(double kg) {

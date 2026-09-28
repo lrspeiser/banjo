@@ -624,6 +624,85 @@ void theAditIsAHoleWithRockOverIt() {
             "the roof stopped it: a tunnel has rock over it");
 }
 
+// The face can be worked back: rock taken out of a column while the world runs
+// becomes a hole you can stand in, and the ground's account still closes.
+// Until this, the only workings in any world were the ones the generator laid
+// down, so a mine was a ruin and not a thing anybody could make
+// (docs/earth-and-mining-plan.md, what it takes to be core, item 2).
+void theFaceCanBeWorkedBack() {
+    Valley v;
+    require(v.mine().worked, "somebody worked this valley");
+    const auto &g = v.ground().grid();
+
+    // The deepest column of the old adit, and the solid one beyond it: the face.
+    std::size_t inside = 0;
+    double best = -1.0;
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        const double cover = v.ground().height(c) - w->roof_m;
+        if (cover > best) { best = cover; inside = c; }
+    }
+    require(best > 0.4, "the old adit goes under the hill");
+    // The face: any solid column beside the working, with enough hill over it
+    // to still be a tunnel once it is cut. The deepest column of a heading is
+    // in the middle of it, so its own neighbours are all workings too.
+    std::size_t face = g.cells();
+    terrain::TerrainField::Working working{};
+    for (std::size_t c = 0; c < g.cells() && face == g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        const int ii = static_cast<int>(c % std::size_t(g.nx));
+        const int jj = static_cast<int>(c / std::size_t(g.nx));
+        for (const auto [di, dj] : {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
+            const int i = ii + di, j = jj + dj;
+            if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) continue;
+            const std::size_t n = g.at(i, j);
+            if (v.ground().workingIn(n)) continue;
+            if (v.ground().rockTop(n) > w->roof_m + 0.3) { face = n; working = *w; break; }
+        }
+    }
+    require(face < g.cells(), "the adit has a face to work");
+    const double fx = g.xOf(static_cast<int>(face % std::size_t(g.nx)));
+    const double fz = g.zOf(static_cast<int>(face / std::size_t(g.nx)));
+
+    auto world = open(v.scene(Json::array()));
+    const terrain::Volumes before = world->environment()->terrain().volumes();
+    require(!world->environment()->terrain().workingIn(face).has_value(),
+            "the face is solid before it is worked");
+
+    // Take the next cell of rock out, on the working's own level.
+    const terrain::EditEffect effect = world->breakOut(fx, fz, working.floor_m, working.roof_m);
+    std::cout << "    worked the face at [" << fx << ", " << fz << "]: "
+              << effect.edit.moved.total() << " m^3 out, " << effect.chunks_rebuilt
+              << " collider(s) rebuilt in " << effect.rebuild_ms << " ms, "
+              << effect.bodies_woken << " bodies woken\n";
+    require(effect.edit.moved.total() > 0.0, "the working took rock out");
+
+    const auto now = world->environment()->terrain().workingIn(face);
+    require(now.has_value(), "the face is a working now");
+    near(now->floor_m, working.floor_m, 1e-9, "its floor is the old working's floor");
+    near(now->roof_m, working.roof_m, 1e-9, "and so is its roof");
+
+    // The ground lost exactly what came out, and the ledger closes.
+    const terrain::Volumes after = world->environment()->terrain().volumes();
+    near(before.total() - after.total(), effect.edit.moved.total(), 1e-9,
+         "the ground lost what the working took");
+    const terrain::Volumes residual = world->environment()->terrain().residual();
+    for (const double x : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        require(std::abs(x) < 1e-9, "the ledger closes after a working");
+
+    // And the SOLVER has it, not only the ground: a ray dropped down the cell
+    // that was solid a moment ago stops on the working's floor, where before it
+    // would have stopped on the rock at the top of the column.
+    const LivePick down = world->pick({fx, working.roof_m - 0.02, fz}, {0.0, -1.0, 0.0}, 50.0);
+    std::cout << "    a ray dropped where the rock was stops at y=" << down.point_world_m.y
+              << " (the working's floor is " << working.floor_m << ")\n";
+    require(down.hit, "the ray found the ground");
+    near(down.point_world_m.y, working.floor_m, 0.05,
+         "the collider followed the edit: the ray stops on the floor just cut");
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -640,6 +719,7 @@ int main(int argc, char **argv) {
         {"a new outlet drains the pond", aNewOutletDrainsThePond},
         {"a cut block is neither lost nor duplicated", aCutBlockIsNeitherLostNorDuplicated},
         {"the adit is a hole with rock over it", theAditIsAHoleWithRockOverIt},
+        {"the face can be worked back", theFaceCanBeWorkedBack},
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"a boulder falls when dug under", aBoulderFallsWhenDugUnder},
         {"an oak log drifts and iron sinks", anOakLogDriftsAndIronSinks},

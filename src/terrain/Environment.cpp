@@ -682,6 +682,34 @@ std::vector<float> Environment::workingRoof(int chunk, double hang_from_m) const
     return out;
 }
 
+// The two colliders a chunk with a working needs, made or swapped. Called when
+// the world opens and again whenever an edit changes a chunk, because a working
+// can appear where there was none: a body added between steps is what the rigid
+// world allows, and what it forbids is only a change inside a trial.
+void Environment::syncWorkingPatches(JoltWorld &world, int chunk) {
+    const Grid &g = landscape_.grid;
+    const bool has = chunkHasWorkings(chunk);
+    const auto found = working_patches_.find(chunk);
+    if (!has && found == working_patches_.end()) return;
+    if (hang_from_ <= 0.0) hang_from_ = terrain_->highest() + 10.0;
+    const std::vector<float> floor = workingFloor(chunk);
+    const std::vector<float> roof = workingRoof(chunk, hang_from_);
+    if (found != working_patches_.end()) {
+        // A patch that has lost its working keeps its place and becomes all
+        // holes, which collides with nothing.
+        world.replaceGroundPatch(found->second.first, floor);
+        world.replaceRoofPatch(found->second.second, roof);
+        return;
+    }
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const double x0 = g.x0 + cx * TerrainField::kChunkCells * g.dx;
+    const double z0 = g.z0 + cz * TerrainField::kChunkCells * g.dx;
+    const MaterialDefinition contact = groundContact();
+    working_patches_[chunk] = {
+        world.addGroundPatch(floor, TerrainField::kChunkCells + 1, g.dx, x0, z0, contact),
+        world.addRoofPatch(roof, TerrainField::kChunkCells + 1, g.dx, x0, z0, hang_from_, contact)};
+}
+
 bool Environment::chunkHasWorkings(int chunk) const {
     const Grid &g = landscape_.grid;
     const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
@@ -895,18 +923,8 @@ void Environment::attach(JoltWorld &world) {
     // stands on inside it, and the roof over their head. Both are mostly holes,
     // and a world nobody has dug under has neither.
     if (terrain_->hasWorkings()) {
-        hang_from_ = terrain_->highest() + 10.0;
-        for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk) {
-            if (!chunkHasWorkings(chunk)) continue;
-            const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
-            const double x0 = g.x0 + cx * TerrainField::kChunkCells * g.dx;
-            const double z0 = g.z0 + cz * TerrainField::kChunkCells * g.dx;
-            working_patches_[chunk] = {
-                world.addGroundPatch(workingFloor(chunk), TerrainField::kChunkCells + 1, g.dx,
-                                     x0, z0, contact),
-                world.addRoofPatch(workingRoof(chunk, hang_from_), TerrainField::kChunkCells + 1,
-                                   g.dx, x0, z0, hang_from_, contact)};
-        }
+        for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk)
+            syncWorkingPatches(world, chunk);
     }
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
@@ -1231,6 +1249,28 @@ void Environment::returnCarried(double sand_m3, double soil_m3, double carried_o
         throw std::invalid_argument("returned material exceeds carrying capacity");
     carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;
     returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;
+}
+
+EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
+                                 double from_m, double to_m) {
+    EditEffect effect;
+    terrain_->resetActivity();
+    effect.edit = terrain_->breakOut(x, z, from_m, to_m);
+    if (effect.edit.cells.empty()) return effect;
+    // What comes out of a working is rubble, and rubble is not the sand and
+    // soil a person carries: it is counted as gone from the ground, and whose
+    // it is belongs to the goods account, which does not know about it yet
+    // (docs/earth-and-mining-plan.md, what it takes to be core, item 6).
+    for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
+    syncWaterBed(effect.edit.cells);
+    noteChanged(effect.edit.cells);
+    stats_.ground_checked = 0;
+    const std::set<int> chunks = terrain_->takeDirtyChunks();
+    rebuildChunks(world, chunks, &effect);
+    // And the working's own two colliders, wherever a chunk has gained or
+    // changed one.
+    for (const int chunk : chunks) syncWorkingPatches(world, chunk);
+    return effect;
 }
 
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,

@@ -475,6 +475,92 @@ EditReport TerrainField::dig(double ax, double az, double bx, double bz, double 
     return report;
 }
 
+EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m) {
+    EditReport report;
+    const auto cell = cellAt(x, z);
+    if (!cell) throw std::invalid_argument("that point is not on the ground");
+    if (!std::isfinite(from_m) || !std::isfinite(to_m))
+        throw std::invalid_argument("a working needs two finite heights");
+    const std::size_t c = *cell;
+    const double area = grid_.dx * grid_.dx;
+    // Cell-quantised, as every void is: a working is made of cubes, and its
+    // floor and roof land where the collider's two extra height fields can say
+    // them exactly.
+    const double q = grid_.dx;
+    double lo = std::floor(std::min(from_m, to_m) / q) * q;
+    double hi = std::ceil(std::max(from_m, to_m) / q) * q;
+    lo = std::max(lo, floor_ + q);          // never through the bottom of the world
+    const double top = rockTop(c);
+    if (!(hi > lo) || !(lo < top)) return report;
+    hi = std::min(hi, top);
+
+    // Broken out to daylight, or near enough: this is an open cut, not a hole
+    // with rock over it, and a column's topmost bed is never a void. Everything
+    // over the rock comes off with it.
+    if (hi >= top - 1.0e-9) {
+        const Volumes film = strip(c, soil_[c] + sand_[c] + loose_[c]);
+        report.moved.sand_m3 += film.sand_m3;
+        report.moved.soil_m3 += film.soil_m3;
+        takeRockDownTo(c, lo, report.moved);
+        report.cells.push_back(c);
+        touched(c);
+        ledger_.dug.rock_m3 += report.moved.rock_m3;
+        ledger_.dug.sand_m3 += report.moved.sand_m3;
+        ledger_.dug.soil_m3 += report.moved.soil_m3;
+        report.depth_m = top - lo;
+        markChanged(report.cells);
+        return report;
+    }
+
+    // A hole with rock over it: the beds it passes through are split into what
+    // is under the working, the working, and what is over it. A column with no
+    // room to say that keeps its rock -- which is a refusal, not a silence.
+    const std::uint32_t from = beds_.start[c];
+    const std::uint32_t room = beds_.start[c + 1] - from;
+    std::uint8_t kind[kRunsMost];
+    double bed_top[kRunsMost];
+    std::uint32_t n = 0;
+    double below = floor_;
+    const auto push = [&](std::uint8_t k, double t) {
+        if (n > 0 && kind[n - 1] == k) { bed_top[n - 1] = t; return; }
+        if (n + 1 >= static_cast<std::uint32_t>(kRunsMost)) return;
+        kind[n] = k; bed_top[n] = t; ++n;
+    };
+    for (std::uint32_t b = 0; b < beds_.count[c]; ++b) {
+        const double t = beds_.top[from + b];
+        const std::uint8_t k = beds_.kind[from + b];
+        const double bottom = below;
+        if (t <= lo) { push(k, t); below = t; continue; }
+        if (below < lo) { push(k, lo); below = lo; }
+        // What this bed loses to the working, counted as what it is made of.
+        // A bed that is already a void gives nothing: there is nothing in it.
+        const double gone = std::min(t, hi) - std::max(bottom, lo);
+        if (gone > 0.0) addByKind(report.moved, static_cast<RunKind>(k), gone * area);
+        if (t <= hi) { below = std::max(below, std::min(t, hi)); continue; }
+        if (below < hi) { push(static_cast<std::uint8_t>(RunKind::Void), hi); below = hi; }
+        push(k, t);
+        below = t;
+    }
+    if (n == 0 || n > room) {
+        throw std::invalid_argument("there is no room left in that column for another working");
+    }
+    const bool was_working = workingIn(c).has_value();
+    for (std::uint32_t b = 0; b < n; ++b) {
+        beds_.kind[from + b] = kind[b];
+        beds_.top[from + b] = bed_top[b];
+    }
+    beds_.count[c] = n;
+    if (!was_working) ++workings_;
+    ledger_.dug.rock_m3 += report.moved.rock_m3;
+    ledger_.dug.sand_m3 += report.moved.sand_m3;
+    ledger_.dug.soil_m3 += report.moved.soil_m3;
+    report.cells.push_back(c);
+    report.depth_m = hi - lo;
+    touched(c);
+    markChanged(report.cells);
+    return report;
+}
+
 EditReport TerrainField::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {
     EditReport report;
     if (!(radius_m > 0.0) || !(sand_m3 >= 0.0) || !(soil_m3 >= 0.0) || !(sand_m3 + soil_m3 > 0.0))
