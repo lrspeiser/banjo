@@ -591,6 +591,21 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/knowledge_tests.py)
         set_tests_properties(banjo_knowledge_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # What every column is made of, over the wire and in a survey's words:
+        # the block parses exactly, agrees with the heights beside it, and a dig
+        # changes the runs where it dug and nowhere else.
+        add_test(NAME banjo_terrain_runs_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terrain_runs_tests.py)
+        set_tests_properties(banjo_terrain_runs_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
+        # How far down the rock goes, and the block that comes out of it: 30 m of
+        # earth where there were 2 (docs/earth-and-mining-plan.md).
+        add_test(NAME banjo_deep_earth_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/deep_earth_tests.py)
+        set_tests_properties(banjo_deep_earth_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)

@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import struct
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -29,9 +30,12 @@ sys.path.insert(0, str(ROOT / "playground"))
 import fracture_lab  # noqa: E402
 import live_session  # noqa: E402
 
-ENGINE = ROOT / "build" / "integration" / "Release" / "banjo_live_world_run.exe"
-if not ENGINE.exists():
-    ENGINE = ROOT / "build" / "integration" / "banjo_live_world_run"
+# The engine THIS tree built, as ctest hands it over; else the usual place.
+ENGINE = next((p for p in [
+    *([Path(os.environ["BANJO_LIVE_ENGINE"])] if os.environ.get("BANJO_LIVE_ENGINE") else []),
+    ROOT / "build/integration/Release/banjo_live_world_run.exe",
+    ROOT / "build/integration/banjo_live_world_run",
+] if p.is_file()), ROOT / "build/integration/banjo_live_world_run")
 
 # Flat ground: soil over rock with a sandy layer on top, so every column has all
 # three runs and the check can tell them apart.

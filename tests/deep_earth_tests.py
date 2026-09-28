@@ -13,6 +13,7 @@ something to look at: breaking rock under a point has no law until stage 4.
 """
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -24,9 +25,12 @@ sys.path.insert(0, str(ROOT / "playground"))
 import fracture_lab  # noqa: E402
 import live_session  # noqa: E402
 
-ENGINE = ROOT / "build" / "integration" / "Release" / "banjo_live_world_run.exe"
-if not ENGINE.exists():
-    ENGINE = ROOT / "build" / "integration" / "banjo_live_world_run"
+# The engine THIS tree built, as ctest hands it over; else the usual place.
+ENGINE = next((p for p in [
+    *([Path(os.environ["BANJO_LIVE_ENGINE"])] if os.environ.get("BANJO_LIVE_ENGINE") else []),
+    ROOT / "build/integration/Release/banjo_live_world_run.exe",
+    ROOT / "build/integration/banjo_live_world_run",
+] if p.is_file()), ROOT / "build/integration/banjo_live_world_run")
 
 # Bare rock, level, with nothing on it: the clearing's own slab is the one place
 # a test can cut without digging first.
