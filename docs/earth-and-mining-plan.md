@@ -821,6 +821,36 @@ because it loads the rock in tension. Blasting is out of this plan.
 - **No new numbers where the engine has one.** Hardness, tensile strength and
   density come from the material catalogue and the cutting model.
 
+## 8a. A stale cache, and a wrong conclusion drawn from it
+
+Worth writing down, because it cost an hour and I told the owner something false
+along the way.
+
+A generated valley is cached by a key of its parameters and `kGeneratorVersion`.
+**Change what generation does without bumping that version and every cache on the
+machine hands back the old world** -- and there are several, in several places:
+`banjo-terrain-cache` and `banjo-terrain-test-cache` under the system temp, one
+per test suite (`banjo-valley-live-test-cache`), and whatever `BANJO_TERRAIN_CACHE`
+points at.
+
+What happened: the first version of the workings cut the riverbank, and the
+valley's own acceptance test noticed -- the oak log that drifts 0.234 m/s down the
+river dropped to 0.137. I gave the workings a standoff from the channel, and the
+number did not move. I then built with the whole mine pass switched OFF, and the
+number STILL did not move, to fifteen digits, and concluded the mine was innocent
+and the regression had come in from main. I said so.
+
+It had not. Every one of those runs was reading the same cached valley, made by
+the first version, because the version had not changed. With it bumped and the
+world regenerated the log drifts 0.554 m/s and valley_live is 12 of 12. The mine
+had slowed the river; the standoff had fixed it; and the experiment that was
+supposed to settle it was measuring a file.
+
+The lesson is not "clear the cache". It is that **an experiment which cannot
+distinguish the two cases is not evidence**, however decisive the number looks: a
+result identical to fifteen digits across a change that large should have been
+read as "nothing I did reached this code", not as "the change has no effect".
+
 ## 9. The two spikes, run 2026-09-27
 
 Both were measurements, not features, and neither is engine progress: they are two
