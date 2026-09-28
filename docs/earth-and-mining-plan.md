@@ -944,3 +944,149 @@ Still open, and only a detail: **where the first vein goes.** My recommendation 
 the knoll, with its oxidised cap outcropping on the valley side, so the first mine
 is an adit of two or three metres that a person can open by hand and a rover can
 drive into.
+
+## 11. What it takes to make this a core part of the world
+
+Asked for on 2026-09-28, after the abandoned mine landed. What exists now is a
+place you arrive at, read and walk into. What it is NOT yet is something the
+world runs on. This is everything between those two, in the order the
+dependencies actually fall, with what each one unblocks and what "done" means.
+
+The four marked **LOAD-BEARING** are the ones without which none of the rest is
+worth building. Everything else is real work, but it is work on a thing that
+already functions.
+
+### 1. LOAD-BEARING — a pick can break rock (stage 4)
+
+**Today nothing in the engine can take rock out of the ground.** `dig` strips
+loose material and soil and stops on rock, by declaration; `cut` takes a block
+of bare rock and hands it over as a body. `docs/ground-work.md` says outright
+that breaking rock out under a point "has no law here". So the mine is a museum:
+you can look at what somebody else did and you cannot do any of it.
+
+- rock-work-v1: specific energy `e_s = k_c H` under a point, the work measured
+  from the solver's own impulses as the ground bite already is.
+- Per-voxel damage accumulating on the working face only, so a face recedes cube
+  by cube and the page can shade the cube being worked.
+- Rubble with a bulking factor: what comes out does not fit back in the hole.
+- The hardness gate unchanged: an oak point on fresh rock still stops.
+
+**Done when** a person with an iron pick can stand at the old face and take the
+oxidised ore out of it, and the same pick on fresh rock is refused for the
+reason the engine already gives.
+
+### 2. LOAD-BEARING — the ground can be dug into a void at runtime
+
+Voids exist, but **only the generator can make one**. Mining has to turn solid
+into hole while the world is running, which means the edit path, not the
+generation path:
+
+- `TerrainField::breakOut` (or the same through `dig`): solid to `RunKind::Void`,
+  cell-quantised, splitting a bed into three, with the spare slots already there.
+- The collider follows: the surface patch, the floor patch and the roof patch of
+  the changed chunk rebuilt and swapped between steps, exactly as a dig rebuilds
+  one today, and whatever they held up woken.
+- The ledger: what leaves is counted, and `volumes()` still closes.
+- A column's topmost bed is still never a void, so breaking through to daylight
+  turns the working into a pit rather than leaving an overhang.
+
+**Done when** a heading driven by hand or by machine is a hole in the ground the
+next step, and the room reopened an hour later still has it.
+
+### 3. LOAD-BEARING — machines know a working is there
+
+`survey` answers `ground_m` with `heightAt`, which is the hill. A rover sent to a
+point over the adit is told the ground is 5.1 m up while the floor under it is at
+2.0. `standingOn` exists only in the page, in JavaScript.
+
+- The same rule in the engine: the top of the highest solid run at or below a
+  given height, used by `survey`, by placement, by the aiming ray and by
+  anything that asks where the ground is.
+- The senses: a working in `look`, so a machine can be sent into one and can
+  tell it is in one.
+- Routines and `go_to`: a way in and a way out, and the getting-nowhere sense
+  taught that a roof is not sky.
+
+**Done when** the mine rover drives into the adit, works the face, and comes out
+with a load, unattended.
+
+### 4. LOAD-BEARING — you can see underground
+
+The first photograph taken inside the adit was a black rectangle, which is
+correct and useless. A tunnel is dark.
+
+- A light that is a thing, not a rendering trick: a lamp the Workshop can make,
+  carried or set down, with fuel or a battery, throwing light the page draws.
+- It belongs to the crafting chain rather than beside it: the reason to make one
+  is that you cannot work what you cannot see.
+
+**Done when** a person carries a lamp into the adit and can work at the face.
+
+### 5. The mine is dangerous (stage 5)
+
+Nothing holds a roof up today, and nothing falls. This is where props, ghosts and
+the rack shortfall come in -- and it is the whole reason to build anything.
+
+- roof-span-v1 on a frontier, asked only where a void or a support changed.
+- Supports measured from the rigid world, never counted.
+- Collapse as a real body or as rubble, conserving; the groaning warning.
+- The support ghosts and the rack's "you are short one oak post".
+- What a falling roof does to a person, through the 1.6 m stand-in the water
+  work uses, because the person is not a body.
+
+### 6. The mine pays (stage 7, and stage 2's leftovers)
+
+- Deposits read the ground: a vein's reserve is what is in the rock, not a
+  declared number in the room's `goods` block.
+- Ore out of a face becomes a goods packet of its substance at its grade.
+- `Volumes` widened to a kind each, which is finally needed here: the mass of
+  what comes out from under a tool decides what it is worth carrying.
+- A breaker tool for machines, drawing its work from the battery, so the energy
+  economy is what limits mining.
+- Timber props as Workshop products, which is the loop closing: you mine to
+  build, and you build to mine deeper.
+
+### 7. Prospecting is a thing you do (stage 2's leftovers)
+
+- Test pits and a hand auger: one column, read in words.
+- The oxidised cap softer to work than fresh ore, which is the difficulty ramp
+  the geology is already shaped for.
+- Placer in the river, so panning points upstream.
+- Gravel lenses, which stage 6 needs as the flooding hazard.
+
+### 8. Water underground (stage 6)
+
+- A water table per column, generated.
+- Saturated ground: buoyant weight in the slope and roof checks, and the quick
+  condition for a sand face.
+- Darcy inflow into a working below the table; a pool at one level in a
+  connected void; drainage by a lower adit.
+- The wet law for tools, which `judgeGround` currently refuses outright.
+
+### 9. It looks like a place
+
+- The surface structures the mine site needs -- a headframe over the shaft, a
+  ruined hut, old timbers -- which need a way for a scene to anchor bodies to
+  generated features. The terrain block's `mine` already says where they go.
+- Wall and roof geometry better than the cell-stepped shapes drawn now.
+- The site dressed: rails, a barrow, a broken ladder in the shaft.
+
+### 10. It holds up
+
+- Persistence: a room with workings kept through both paths the playground has --
+  the saved world (which carries beds, schema v4) and the replayed edit list
+  (which cannot express a void, and has a 400-edit cap). One of them has to
+  become the authority.
+- Determinism and conservation tests for void edits, the way every other edit
+  has them.
+- The realtime budget with a mine being actively worked: collider churn on three
+  patches a chunk, the roof frontier, and the page's mesh rebuild.
+- More than one void level per column, if a heading ever has to cross another.
+
+### The order I would build them
+
+1, 2 and 4 together are the smallest thing that makes the mine real rather than
+a ruin: a light, a pick that bites rock, and a hole that grows. 3 makes it a
+place the world's machines share. 5 is what makes it a game rather than a
+sandbox. 6 is the reward. 7, 8 and 9 deepen it. 10 is the tax on all of it and
+should be paid as each lands rather than at the end.
