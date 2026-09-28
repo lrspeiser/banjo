@@ -144,7 +144,9 @@ and ore counted as anything but rock when it is carried.
 | A machine that stops before it turns, and turns from rest | World | automatic when one is told to go to a place or face one |
 | Solar panels that charge a battery from the room's sun | Test room | `/world?scene=tests-solar` |
 | A sun that crosses the sky and sets | Test room | `/world?scene=tests-day` |
-| Electric light underground: cables from a store, lamps on them | Test room | `/world?scene=tests-light`: the old adit, a solar farm on the hill over it |
+| Electric light underground: cables from a store, lamps on them | World, Test room | `/world?scene=tests-light`; **P** starts a run at a battery and makes it off at a fitting |
+| A powered breaker that drives a heading out of rock | World, Test room | `/world?scene=tests-light`: take up the breaker and hold **M** against the face |
+| A lamp, a breaker and a solar array made on the bench | Workshop | the `mine-lamp`, `breaker` and `solar-array` templates |
 | Raw materials into finished goods | Test room | `/world?scene=tests-mine`: ore, copper, wire, and the Workshop's rack |
 | Routines, conditions, watches and spoken orders | World, Page | a machine's panel, its chat, and the bench |
 | Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |

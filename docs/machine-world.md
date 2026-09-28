@@ -547,10 +547,30 @@ too, and a lamp names the run that feeds it:
 - A cable names its store and the points it is pinned at, at least two and at
   most 256. Its `area_mm2` is above 0 and up to 1000 (2.5 if it says nothing),
   and `resistivity_ohm_m` is copper's 1.68e-8 unless it says otherwise.
-- A lamp names its `cable`, or a `store` to be wired straight to. `watts` is
-  above 0 and up to 100 kW, `efficacy_lm_w` above 0 and up to 1000 (120 if it
-  says nothing), and `on` is false unless it says so. With a `body` it goes on
-  that part and moves with it; with none it is pinned where it is put.
+- A lamp names its `cable`, or a `store` to be wired straight to, or NEITHER: a
+  lamp with neither is a fitting nobody has wired yet, which is what comes out
+  of the Workshop. `watts` is above 0 and up to 100 kW, `efficacy_lm_w` above 0
+  and up to 1000 (120 if it says nothing), and `on` is false unless it says so.
+  With a `body` it goes on that part and moves with it; with none it is pinned
+  where it is put.
+
+**A breaker** ([Breaking rock with a machine](#breaking-rock-with-a-machine))
+goes in `machines` too:
+
+```json
+"machines": {"breakers": [{"name": "breaker", "body": "breaker", "store": "breaker battery",
+                           "at_mm": [0, 2070, 9800], "along": [0, 0, 1],
+                           "watts": 1500, "reach_m": 0.15}], ...}
+```
+
+- It names the thing its chisel is on and the store it draws on. `at_mm` is its
+  point and `along` the way the chisel looks, as the room is made, like a pin.
+  `watts` is 1 to 1e6 (1500 if it says nothing), `reach_m` 0 to 0.5 (0.12), and
+  `on` is false unless it says so.
+- The runner's `breaker` operation puts one on and `breaker_switch` holds its
+  trigger. `machines` reports each with `breakers`: where its point is, what it
+  drew, what that bought, how far through the cell it is, and why it is doing
+  nothing.
 
 **A sun with a day** ([A day for the sun](#a-day-for-the-sun)) says its day in
 place of where it stands:
@@ -1343,6 +1363,58 @@ lamp as a thing the Workshop builds and the Explorer carries; a cable that a
 person strings point by point, rather than one the room declares; heat from a
 lamp warming the air around it; a cable that can be cut or a lamp that can be
 broken.
+
+## Breaking rock with a machine
+
+**The owner, 2026-09-28:** "prove that we can take the same parts from the
+workshop, put them into our inventory, go into the world and dig a tunnel and
+install the lights to a solar panel."
+
+A pick swung by hand puts twenty-odd joules into rock a blow, and a cell of
+fresh rock costs 469 kJ (docs/earth-and-mining-plan.md, rock-work-v1), so a
+heading driven by arm alone is twenty thousand blows. A **powered breaker** is
+what makes a tunnel a thing a person can drive: a chisel on a part, wired to a
+store, that spends its store into whatever rock its point is against.
+
+- It works the rock its point is IN, or the first rock within `reach_m` ahead of
+  its point along the chisel. A collider will not let a tool inside a face, so a
+  breaker held against a wall has its point a hair outside it.
+- Nothing aims: where the point is and which way it looks is where the hand put
+  it. Held in the air it breaks nothing, and says "its point is not against
+  rock".
+- What it spends is its store's own joules, and the rock comes out by the same
+  law and the same rule a pick goes through: a cell only comes free if whoever
+  is working can carry it.
+
+Measured in the engine: a 1.5 kW breaker took **314 s of the world** to break
+one 0.25 m cell out of fresh rock -- 15.7 L, 471 kJ of its 1.5 MJ battery -- and
+the 37.5 kg of rock went into the hands of whoever broke it. One charge is three
+cells.
+
+**The loop, end to end.** Three things the Workshop makes from its own
+templates:
+
+- a `mine-lamp`: a glass globe on an iron bracket, on a foot you stand on the
+  floor. It comes out UNWIRED -- it names no store and no cable -- because a
+  lamp is a fitting, and it lights when somebody runs a cable to it.
+- a `breaker`: a handle with a battery on it and a chisel down the front.
+- a `solar-array`: the farm, which was already there.
+
+A lamp's light is on the lamp's own body, so it goes where the body goes. Stowed
+in a bag the body is parked and the lamp says it is not in the world; put down in
+a heading, it is in the heading. In the page, **P** starts a run of cable at a
+battery, pays it out as you walk, and makes it off at a fitting; **M** holds a
+breaker's trigger.
+
+Checked by `tests/mine_loop_tests.py` -- the Workshop's own templates, into the
+bag and out again, a heading driven, and a run of cable from the array -- and
+photographed by `tests/lamp_shots.py` on `/world?scene=tests-light`, which
+drives the page's own wiring action: standing in the heading with an unwired lamp
+in it the picture is 0.047 of full brightness, and 8.2 m of 4 mm2 later the lamp
+draws 20.0 W, gives 2,397 lumens, and the picture is 0.197 -- four times.
+
+Not built: a drum of cable as a thing you carry, with a length in it that runs
+out; a breaker that wears; cutting a run, or taking a fitting down off one.
 
 ## A day for the sun
 
