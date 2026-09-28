@@ -1442,6 +1442,118 @@ class AThrowIsAimedBeforeItIsMade(PageJourney):
     # to the arc's own case, not to the one about where it would land.
     BLOCKS = {"arc": "ceramic block", "grey": "oak block",
               "green": "rubber block", "escape": "aluminium block"}
+    def open_valley(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={self.SCENE}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{self.SCENE}'"
+                                      " && banjoRoom.ready()", 300), "the valley did not open")
+        # These share a server and a server holds ONE room, so the hand can
+        # still have in it whatever the last journey was carrying.
+        if self.js("!!banjoRoom.world.held"):
+            self.page.evaluate("banjoRoom.dropIt(); true")
+            self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                            f"the hand would not let go of what was left in it: {self.situation()}")
+
+    def take_the_block(self, which):
+        block = self.BLOCKS[which]
+        at = self.position(block)
+        self.assertIsNotNone(at, f"there is no {block} in the valley")
+        x, y, z = at
+        q = json.dumps(block)
+        ground = self.js(f"banjoRoom.groundAt({x}, {z + 1.0})") or 0.0
+        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z + 1.0}); "
+                           f"banjoRoom.lookAt({x}, {y}, {z}); true")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {q}", 30),
+                        f"the crosshair never found {block}: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for(f"banjoRoom.world.held && banjoRoom.world.held.name === {q}"
+                                      " && banjoRoom.world.held.throwable", 60),
+                        f"E did not pick up {block} as something throwable: {self.situation()}")
+        self.assertTrue(self.when_idle(), "the hand was still busy")
+        return x, y, z
+
+    def look_at_the_ground(self, x, z, far):
+        self.page.evaluate(f"banjoRoom.lookAt({x}, 0, {z - far}); true")
+        time.sleep(2.2)          # the preview is asked a few times a second
+        return self.js("banjoRoom.aiming()")
+
+    def hold_the_button(self, seconds):
+        for kind, buttons in (("mousePressed", 1), ("mouseReleased", 0)):
+            if kind == "mouseReleased":
+                time.sleep(seconds)
+            self.page.send("Input.dispatchMouseEvent",
+                           {"type": kind, "x": 400, "y": 350, "button": "left",
+                            "buttons": buttons, "clickCount": 1})
+
+    def press_escape(self):
+        for kind in ("keyDown", "keyUp"):
+            self.page.send("Input.dispatchKeyEvent",
+                           {"type": kind, "key": "Escape", "code": "Escape",
+                            "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27})
+            time.sleep(0.05)
+
+    def test_the_arc_goes_green_where_the_throw_would_land_and_grey_where_it_would_not(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("arc")
+        near = self.look_at_the_ground(x, z, 2)
+        far = self.look_at_the_ground(x, z, 18)
+        print(f"\n   2 m: {near}\n  18 m: {far}", flush=True)
+        # The arc is up either way. It used to vanish when the throw would not
+        # work, which reads as the page having stopped rather than as an answer.
+        for state in (near, far):
+            self.assertTrue(state["shown"], "the arc is not up at all")
+        self.assertTrue(near["onTarget"], "a throw at the ground two metres off is not on target")
+        self.assertFalse(far["onTarget"], "a throw at the ground eighteen metres off is on target")
+        self.assertNotEqual(near["colour"], far["colour"], "both read the same colour")
+        self.no_page_errors("while aiming a throw")
+
+    def test_grey_does_not_throw_and_says_why(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("grey")
+        self.assertFalse(self.look_at_the_ground(x, z, 18)["onTarget"])
+        # Wound all the way up and let go: the wind-up is NOT refused for being
+        # off target, because the ring moves further out as it fills and that is
+        # how you reach something far off. Letting go on grey is.
+        self.hold_the_button(1.4)
+        self.assertTrue(self.wait_for("(banjoRoom.world.use.mode === 'ready')", 30),
+                        "it did not come back down after letting go on grey")
+        self.assertEqual(self.js("banjoRoom.world.held && banjoRoom.world.held.name"),
+                         self.BLOCKS["grey"], "it left the hand on a grey arc")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertEqual(said["tone"], "refused")
+        self.assertIn("where you are pointing", said["text"],
+                      "grey for the wrong reason: this block is light enough to throw,"
+                      " so the only thing wrong with it is where it would land")
+        self.no_page_errors("after letting go on a grey arc")
+
+    def test_green_throws_it(self):
+        self.open_valley()
+        x, _y, z = self.take_the_block("green")
+        self.assertTrue(self.look_at_the_ground(x, z, 2)["onTarget"])
+        self.hold_the_button(1.4)
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                        f"it never left the hand: {self.js('banjoRoom.details().last')}")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertIn("left your hand at", said["text"])
+        self.no_page_errors("after a throw")
+
+    def test_escape_puts_it_back_instead(self):
+        self.open_valley()
+        self.take_the_block("escape")
+        # A throwable thing has a placing ghost up from the moment it is picked
+        # up, so Esc used to only ever dismiss the ghost. One press now means
+        # "never mind" and the block goes down.
+        self.press_escape()
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
+                        f"Esc did not put it down: {self.js('banjoRoom.details().last')}")
+        said = self.js("banjoRoom.details().last")
+        print(f"\n   {said}", flush=True)
+        self.assertNotIn("left your hand at", said["text"], "Esc threw it")
+        self.no_page_errors("after Esc put it back")
+
+
 class ADrawingOfTheMatterItIsMadeOf:
     """What both of the rooms below check about a hull.
 
@@ -1630,105 +1742,6 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
             self.page.evaluate("banjoRoom.dropIt(); true")
             self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
                             f"the hand would not let go of what was left in it: {self.situation()}")
-
-    def take_the_block(self, which):
-        block = self.BLOCKS[which]
-        at = self.position(block)
-        self.assertIsNotNone(at, f"there is no {block} in the valley")
-        x, y, z = at
-        q = json.dumps(block)
-        ground = self.js(f"banjoRoom.groundAt({x}, {z + 1.0})") or 0.0
-        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z + 1.0}); "
-                           f"banjoRoom.lookAt({x}, {y}, {z}); true")
-        self.assertTrue(self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {q}", 30),
-                        f"the crosshair never found {block}: {self.situation()}")
-        self.press_e()
-        self.assertTrue(self.wait_for(f"banjoRoom.world.held && banjoRoom.world.held.name === {q}"
-                                      " && banjoRoom.world.held.throwable", 60),
-                        f"E did not pick up {block} as something throwable: {self.situation()}")
-        self.assertTrue(self.when_idle(), "the hand was still busy")
-        return x, y, z
-
-    def look_at_the_ground(self, x, z, far):
-        self.page.evaluate(f"banjoRoom.lookAt({x}, 0, {z - far}); true")
-        time.sleep(2.2)          # the preview is asked a few times a second
-        return self.js("banjoRoom.aiming()")
-
-    def hold_the_button(self, seconds):
-        for kind, buttons in (("mousePressed", 1), ("mouseReleased", 0)):
-            if kind == "mouseReleased":
-                time.sleep(seconds)
-            self.page.send("Input.dispatchMouseEvent",
-                           {"type": kind, "x": 400, "y": 350, "button": "left",
-                            "buttons": buttons, "clickCount": 1})
-
-    def press_escape(self):
-        for kind in ("keyDown", "keyUp"):
-            self.page.send("Input.dispatchKeyEvent",
-                           {"type": kind, "key": "Escape", "code": "Escape",
-                            "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27})
-            time.sleep(0.05)
-
-    def test_the_arc_goes_green_where_the_throw_would_land_and_grey_where_it_would_not(self):
-        self.open_valley()
-        x, _y, z = self.take_the_block("arc")
-        near = self.look_at_the_ground(x, z, 2)
-        far = self.look_at_the_ground(x, z, 18)
-        print(f"\n   2 m: {near}\n  18 m: {far}", flush=True)
-        # The arc is up either way. It used to vanish when the throw would not
-        # work, which reads as the page having stopped rather than as an answer.
-        for state in (near, far):
-            self.assertTrue(state["shown"], "the arc is not up at all")
-        self.assertTrue(near["onTarget"], "a throw at the ground two metres off is not on target")
-        self.assertFalse(far["onTarget"], "a throw at the ground eighteen metres off is on target")
-        self.assertNotEqual(near["colour"], far["colour"], "both read the same colour")
-        self.no_page_errors("while aiming a throw")
-
-    def test_grey_does_not_throw_and_says_why(self):
-        self.open_valley()
-        x, _y, z = self.take_the_block("grey")
-        self.assertFalse(self.look_at_the_ground(x, z, 18)["onTarget"])
-        # Wound all the way up and let go: the wind-up is NOT refused for being
-        # off target, because the ring moves further out as it fills and that is
-        # how you reach something far off. Letting go on grey is.
-        self.hold_the_button(1.4)
-        self.assertTrue(self.wait_for("(banjoRoom.world.use.mode === 'ready')", 30),
-                        "it did not come back down after letting go on grey")
-        self.assertEqual(self.js("banjoRoom.world.held && banjoRoom.world.held.name"),
-                         self.BLOCKS["grey"], "it left the hand on a grey arc")
-        said = self.js("banjoRoom.details().last")
-        print(f"\n   {said}", flush=True)
-        self.assertEqual(said["tone"], "refused")
-        self.assertIn("where you are pointing", said["text"],
-                      "grey for the wrong reason: this block is light enough to throw,"
-                      " so the only thing wrong with it is where it would land")
-        self.no_page_errors("after letting go on a grey arc")
-
-    def test_green_throws_it(self):
-        self.open_valley()
-        x, _y, z = self.take_the_block("green")
-        self.assertTrue(self.look_at_the_ground(x, z, 2)["onTarget"])
-        self.hold_the_button(1.4)
-        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
-                        f"it never left the hand: {self.js('banjoRoom.details().last')}")
-        said = self.js("banjoRoom.details().last")
-        print(f"\n   {said}", flush=True)
-        self.assertIn("left your hand at", said["text"])
-        self.no_page_errors("after a throw")
-
-    def test_escape_puts_it_back_instead(self):
-        self.open_valley()
-        self.take_the_block("escape")
-        # A throwable thing has a placing ghost up from the moment it is picked
-        # up, so Esc used to only ever dismiss the ghost. One press now means
-        # "never mind" and the block goes down.
-        self.press_escape()
-        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
-                        f"Esc did not put it down: {self.js('banjoRoom.details().last')}")
-        said = self.js("banjoRoom.details().last")
-        print(f"\n   {said}", flush=True)
-        self.assertNotIn("left your hand at", said["text"], "Esc threw it")
-        self.no_page_errors("after Esc put it back")
 
     def look_at_the_ground(self):
         eye = self.js("banjoRoom.camera.position.toArray()")
