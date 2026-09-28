@@ -593,6 +593,12 @@ class Brains:
         # block, shared by every brain; and what a stockpile marked as the
         # Workshop's rack does with what lands on it (the server sets it).
         self.goods: Any = None
+        # And the room's containers (playground/vessels.py): what each holds,
+        # riding the body that carries it, pouring when it is turned over.
+        self.vessels: Any = None
+        #: The room's time when the containers last poured, so a step's span
+        #: is read off the clock rather than assumed.
+        self._poured_at = 0.0
         # And the room's ports (machine_ports.Ports): the mouths declared on
         # its machines, riding the bodies the engine reports, and which of them
         # are docked to which.
@@ -656,9 +662,12 @@ class Brains:
         import machine_goods
         import machine_ports
         import machine_sight
+        import vessels
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
         self.ports = machine_ports.Ports(spec if isinstance(spec, dict) else None, holder_for=self.holder_for)
+        self.vessels = vessels.Vessels(spec if isinstance(spec, dict) else None)
+        self._poured_at = 0.0
         self.sight = machine_sight.Sight(spec) if isinstance(spec, dict) else None
         # A brain for every program the room declares, now, so that the page
         # is told what each machine is doing and carrying the moment the room
@@ -702,12 +711,29 @@ class Brains:
         with the room's machines, bodies and knocks."""
         if not isinstance(reply, dict):
             return
+        bodies = reply.get("bodies") if isinstance(reply.get("bodies"), list) else None
+        t = float(reply.get("t") or 0.0)
+        # THE CONTAINERS FIRST, because a bucket is not a machine. What a
+        # room holds in its vessels rides the bodies and pours when they are
+        # turned over, and a room with a pail in it and no program at all
+        # still does that -- this used to sit below the guard that returns
+        # when a room declares no programs, so a bucket in a room without a
+        # machine never poured.
+        if self.vessels is not None and bodies is not None:
+            self.vessels.follow(bodies)
+            if self.vessels:
+                # How long this step was, off the room's own clock: a reply
+                # says the time it has reached, not how far it came. A first
+                # step, or a room reopened behind its old time, pours nothing
+                # rather than guessing a span.
+                since = t - self._poured_at
+                self._poured_at = t
+                if 0.0 < since <= 1.0:
+                    self.vessels.spill(since, self.goods)
         machines = reply.get("machines")
         if not isinstance(machines, dict) or not machines.get("programs"):
             return
         impacts = [i for i in (reply.get("impacts") or []) if isinstance(i, dict)]
-        bodies = reply.get("bodies") if isinstance(reply.get("bodies"), list) else None
-        t = float(reply.get("t") or 0.0)
         # The engine, for the senses read when something happens: the
         # session's own send, which this listener is already inside of (its
         # lock is reentrant), so a survey costs one line each.
@@ -779,6 +805,11 @@ class Brains:
         # it is a handful of small rows.
         if self.ports is not None and self.ports:
             answer["ports"] = self.ports.report()
+        # And every container, for the same reason: what a bucket holds
+        # changes as it is carried and tipped, so it is different on almost
+        # every step and there is nothing to be gained by holding it back.
+        if self.vessels is not None and self.vessels:
+            answer["vessels"] = self.vessels.holders()
         # What the room's heaps and its ore hold, when it has changed since
         # the page was last told. This one IS only sent on a change: a heap
         # sits still, and the account moves only when something is dug,

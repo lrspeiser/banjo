@@ -5607,7 +5607,18 @@ bool LiveWorld::judgeStep() {
         if (blade.attached && holder != impl_->index_of.end())
             blade_bodies.insert(impl_->body_of[holder->second]);
     }
-    for (const ImpactEvent &event : impl_->world->drainImpacts()) {
+    // In a total order of the contacts themselves, never the order Jolt's
+    // worker threads happened to report them in (ImpactEvent.hpp
+    // hardestContactFirst). Everything below reads them in sequence and some
+    // of it KEEPS the first or last of an equal pair -- `partner_of` takes the
+    // hardest contact on a struck body and two contacts can be equally hard --
+    // so on the arrival order the answer was a different one from run to run.
+    // Measured: the same held ball let go from 1.4 m came to rest as 376
+    // bodies, then 380, then 376 again, and the live world's two lanes stopped
+    // agreeing on what was in the room about a third of the time.
+    std::vector<ImpactEvent> events = impl_->world->drainImpacts();
+    std::sort(events.begin(), events.end(), hardestContactFirst);
+    for (const ImpactEvent &event : events) {
         // A blade's own contacts are kept for the cutting model, which reports
         // the ones that did not bite -- a flat strike, a glance -- from them.
         if (blade_bodies.count(event.body_a) || blade_bodies.count(event.body_b))
@@ -7810,8 +7821,18 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
     std::vector<LiveImpact> out;
     for (const LiveImpact &impact : impl_->reported)
         if (impact.closing_speed_m_s >= quiet_speed_m_s) out.push_back(impact);
+    // Hardest first, and then by name, because a speed alone is not an order:
+    // two contacts at the same speed would keep whatever order they were
+    // recorded in, and std::sort is free to permute equal keys however it
+    // likes. A host that reads "the hardest contact" has to get the same one
+    // twice (ImpactEvent.hpp hardestContactFirst says the same for the
+    // contacts the engine judges).
     std::sort(out.begin(), out.end(), [](const LiveImpact &lhs, const LiveImpact &rhs) {
-        return lhs.closing_speed_m_s > rhs.closing_speed_m_s;
+        if (lhs.closing_speed_m_s != rhs.closing_speed_m_s)
+            return lhs.closing_speed_m_s > rhs.closing_speed_m_s;
+        if (lhs.struck != rhs.struck) return lhs.struck < rhs.struck;
+        if (lhs.by != rhs.by) return lhs.by < rhs.by;
+        return lhs.energy_j > rhs.energy_j;
     });
     return out;
 }

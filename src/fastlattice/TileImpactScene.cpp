@@ -274,18 +274,15 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.audit_energy = r.audit_energy ? 1 : 0;
     s.plastic_yield_stretch = setup.compiled.yield_stretch;
     s.plastic_hardening = setup.compiled.plastic_hardening_ratio;
-    // Plate bending is OFF in the world (docs/plate-bending.md). Half a cell --
-    // the outermost fibre of matter one cell thick -- is what switches it on,
-    // and the term itself is built, tested and measured; what is not settled is
-    // its effect on a plate that is ALREADY breaking, where a curvature fitted
-    // through a shattering neighbourhood is the crack's and not the plate's and
-    // feeds itself. Measured: the fracture lab's 10 mm plate on piers went from
-    // eight pieces to 138, five levels of pieces-of-pieces deep, and the two
-    // live lanes stopped agreeing on what was in the world
-    // (tests/live_lanes_agree_tests.py). Four ways of telling bending from
-    // shattering were measured and none separated them; the numbers are in the
-    // note. Switched on by setting this to 0.5 * cell size.
-    s.plate_half_thickness = 0.0;
+    // Half a cell: the outermost fibre of matter one cell thick, which is what
+    // lets a sheet one cell thick answer a blow struck flat at it at all
+    // (LatticePhysics plateBendingStrain, docs/plate-bending.md). Only a
+    // coplanar neighbourhood reads it, so every body two cells thick or more is
+    // untouched. It is held by the fit-share guard next to it: a curvature is
+    // read only where a quadratic explains nine tenths of the out-of-plane
+    // motion, which is what keeps a plate that is ALREADY shattering from
+    // feeding its own noise back in. What that costs is in the note, measured.
+    s.plate_half_thickness = 0.5 * r.cell_size_m;
     // Node-node contact. The cell is a cube of side `cell`; its contact sphere
     // is the inscribed one, the same radius the support planes hold a cell
     // centre above a surface with, so two cells touch exactly one cell apart --
@@ -347,24 +344,9 @@ Vec3 nodePosition(const LatticeState &state, std::uint32_t i) {
                                state.x0[3 * i + 2] + state.u[3 * i + 2]};
 }
 
-// Jolt's impact collector is filled from its worker threads under a mutex, so
-// the order events arrive in is a thread-completion order. Every re-entry
-// decision is taken on this total order instead, which is a function of the
-// contacts themselves: same scene, same choice, on every backend and every run.
-bool impactOrder(const ImpactEvent &a, const ImpactEvent &b) {
-    if (a.body_a != b.body_a) return a.body_a < b.body_a;
-    if (a.body_b != b.body_b) return a.body_b < b.body_b;
-    const Vec3 &pa = a.contact_point_world_m, &pb = b.contact_point_world_m;
-    if (pa.x != pb.x) return pa.x < pb.x;
-    if (pa.y != pb.y) return pa.y < pb.y;
-    if (pa.z != pb.z) return pa.z < pb.z;
-    if (a.closing_speed_m_s != b.closing_speed_m_s) return a.closing_speed_m_s > b.closing_speed_m_s;
-    const Vec3 &na = a.normal_a_to_b, &nb = b.normal_a_to_b;
-    if (na.x != nb.x) return na.x < nb.x;
-    if (na.y != nb.y) return na.y < nb.y;
-    if (na.z != nb.z) return na.z < nb.z;
-    return a.available_normal_energy_j > b.available_normal_energy_j;
-}
+// The total order every lane judges contacts in lives with the contact
+// (ImpactEvent.hpp hardestContactFirst); this lane used to carry its own
+// copy, and two copies of an ordering drift.
 
 std::vector<std::uint32_t> componentIds(const ActiveMatter &matter, std::size_t *count,
                                         std::size_t *largest_cells, double *largest_mass) {
@@ -1488,7 +1470,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     const auto evaluate_impacts = [&](std::vector<ImpactEvent> impacts) {
         Candidate chosen{};
         if (impacts.empty()) return chosen;
-        std::sort(impacts.begin(), impacts.end(), impactOrder);
+        std::sort(impacts.begin(), impacts.end(), hardestContactFirst);
         if (refracture_debug) {
             for (const ImpactEvent &ev : impacts)
                 if (ev.closing_speed_m_s > 5.0)

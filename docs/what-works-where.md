@@ -29,7 +29,7 @@ The labels:
 | Denting: iron, aluminium, oak and rubber take a permanent set | World, Test room | on in every room; in `/world?scene=tests-motion` an iron ball hits an aluminium plate at 30 m/s as the room opens |
 | Breaking under a steady load (statics) | Test room | `/world?scene=courtyard`: load the thin concrete shelf. `/world?scene=armoury`: notch the loaded batten |
 | A thing's bar for breaking depends on how big it is | World | automatic (`admitRefracture`); small chips stop shattering on every landing |
-| Matter one cell thick answering a blow struck flat at it | Code only | the curvature term is built and tested and switched off in the world; it destabilises a plate that is already breaking ([plate-bending.md](plate-bending.md)) |
+| Matter one cell thick answers a blow struck flat at it | World | automatic; a sheet's curvature is read off how far its own neighbours have moved out of the plane, and its outermost fibre is what the failure criterion sees. A glass plate one cell thick now comes apart from 6 m up, more for a harder blow; below 6 m it is still not ordered by the blow, and a plate bridged on piers disintegrates much further than it did. `scripts/plate-ladder.py` is the ladder, both ways -- [plate-bending.md](plate-bending.md) |
 | Foresight and background fracture | World | automatic |
 | Cells colliding with each other while something breaks | World | automatic |
 | Heat weakening what breaks | World | heat a plank or beam, then load or hit it |
@@ -68,6 +68,8 @@ body that stays whole.
 | A heated peg or pin giving way | Chat | ask for a fixing made of a named member, then heat it (about 50 s under 2 kW) |
 | Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
 | Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away |
+| A container holds a mass of a substance and rides the body that carries it | Code only | declare `vessels` on a room; `tests/vessels_tests.py` |
+| Turning a container over pours it into another one, or onto the ground | Code only | the same; a pail over a pail fills it, 12 kg in 4 s |
 | Ice melting, and its meltwater running into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
 | Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`), with no link to the world's heat |
 | Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |

@@ -1023,6 +1023,13 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
+
+            # The same world twice, with the threads on: a contact order that is
+            # a function of the contacts and not of which worker finished first.
+            add_executable(banjo_live_determinism_tests tests/live_determinism_tests.cpp)
+            target_link_libraries(banjo_live_determinism_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_live_determinism_tests)
+            add_test(NAME banjo_live_determinism_tests COMMAND banjo_live_determinism_tests)
             # Its check against the wall clock -- a foreseen fracture's first
             # run done inside its warning -- is a claim about the machine as much
             # as the engine: beside other heavy work it fails on any build. It
@@ -1545,6 +1552,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_ROVER_LIVE_TESTS=required
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
     set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
+    # And containers: a mass of a substance carried BY A BODY rather than
+    # lying at a place, riding whatever carries it and pouring into another
+    # container -- or onto the ground -- when it is turned over.
+    add_test(NAME banjo_vessels_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/vessels_tests.py -v)
+    set_tests_properties(banjo_vessels_tests PROPERTIES TIMEOUT 120)
     # And the electric furnace: what its lining decides, that a recipe's own
     # temperature says which machine works it, that the Workshop's recipes
     # and the generator's chain cannot drift apart, and -- in the real engine
