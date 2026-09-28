@@ -768,6 +768,9 @@ def _mine_lamp_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 BREAKER_PARAMETERS = (
+    # What it puts into the rock while its trigger is held. The room declares
+    # the breaker itself (docs/machine-world.md, "Breaking rock with a machine")
+    # and says this there; here it is what the bench shows you before you build.
     w.Parameter("watts", "W", 1500.0, 50.0, 20000.0,
                 about="what it puts into the rock while its trigger is held"),
     w.Parameter("capacity_j", "J", 1.5e6, 1000.0, 1e9),
@@ -817,10 +820,7 @@ def _breaker_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[
         workshop_construction.CONSTRUCTION_KEY: {
             "schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
             "joints": joints, "added": [], "removed": []},
-        workshop_machines.MACHINES_KEY: machines,
-        # What the world needs to know to work it: the rate it spends at, on the
-        # store it carries. Read by the room when somebody holds it at a face.
-        "@breaker": {"watts": float(values["watts"]), "store": "breaker battery"}}
+        workshop_machines.MACHINES_KEY: machines}
     for part in parts:
         out[part.name] = {"mechanics": {"model": "rigid"}}
     return out
