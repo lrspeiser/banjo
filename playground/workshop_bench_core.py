@@ -133,6 +133,40 @@ def _thermo_body(report: dict[str, Any], name: str) -> dict[str, Any] | None:
     return next((b for b in report.get("bodies") or [] if b.get("name") == name), None)
 
 
+def _thermo_charge(report: dict[str, Any], name: str) -> dict[str, Any] | None:
+    """That body's heat, and if it has come apart, its pieces' together.
+
+    A break renames a body into "<name> piece 1", "piece 2" and so on, and a
+    reading that looks only for the original then finds nothing at all --
+    which is how this trial came to report NO water temperature rather than
+    a wrong one, and why no tolerance could have saved it. The matter is
+    still there and still has a temperature; it is in more than one place.
+    Mass-weighted, because averaging 640 pieces evenly would let a 2 g
+    corner count for as much as all the rest.
+    """
+    whole = _thermo_body(report, name)
+    if whole is not None:
+        return whole
+    pieces = [b for b in report.get("bodies") or []
+              if str(b.get("name", "")).startswith(f"{name} piece ")]
+    if not pieces:
+        return None
+    mass = sum(float(p.get("mass_kg") or 0.0) for p in pieces)
+    if mass <= 0.0:
+        return None
+    out: dict[str, Any] = {"name": name, "mass_kg": mass, "pieces": len(pieces)}
+    for key in ("temperature_k", "core_temperature_k"):
+        readings = [(float(p[key]), float(p.get("mass_kg") or 0.0))
+                    for p in pieces if p.get(key) is not None]
+        if readings:
+            out[key] = sum(v * m for v, m in readings) / sum(m for _, m in readings)
+    contents = [p.get("contents_kg") for p in pieces if isinstance(p.get("contents_kg"), dict)]
+    if contents:
+        out["contents_kg"] = {k: sum(float(c.get(k, 0.0)) for c in contents)
+                              for k in {k for c in contents for k in c}}
+    return out
+
+
 def run_contract(design: WorkshopDesign) -> dict[str, Any]:
     product = workshop_graph.product(design); product_doc = product.described(); contract = compile_contract(product)
     detailed = len(product.components); runtime = len(contract["runtime_bodies"])
@@ -305,10 +339,24 @@ def run_kettle(app: Any, design: WorkshopDesign, config: dict[str, Any], *, sess
     try:
         if session_wrapper is not None:
             session.sample_period_s = max(1/30, duration/500)
-        initial = session.send(op="thermo"); _advance(session, duration, read_thermo=session_wrapper is not None); final = session.send(op="thermo")
+        initial = session.send(op="thermo")
+        # AT 1/120, NOT THE 1/30 DEFAULT. This trial has a brittle body
+        # resting in it -- the water proxy is ice, for water's thermal
+        # properties -- and at 1/30 the engine offers it as breakable, the
+        # loop above fractures whatever is offered, and 1 kg of water becomes
+        # 640 pieces with new names. The trial then had nothing called "water
+        # charge" to read, and reported no temperature at all.
+        #
+        # Measured over 60 s at 5 kW: 1/30 shatters it; 1/120 and 1/240 never
+        # offer a break and agree on 26.85 C and 26.84 C, so this is the
+        # converged answer rather than a step artefact. The cart and load
+        # trials here already run at 1/120.
+        _advance(session, duration, dt=1 / 120.0, read_thermo=session_wrapper is not None)
+        final = session.send(op="thermo")
     finally: session.close()
     before_report = initial.get("thermo") or {}; report = final.get("thermo") or {}
-    before = _thermo_body(before_report, "water charge") or {}; after = _thermo_body(report, "water charge") or {}
+    before = _thermo_charge(before_report, "water charge") or {}
+    after = _thermo_charge(report, "water charge") or {}
     shell = _thermo_body(report, bottom.name) or {}; heater = _thermo_body(report, "heater plate") or {}
     return {
         "schema": BENCH_SCHEMA, "test": "kettle_heat", "evidence": "engine-trial",
