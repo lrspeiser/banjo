@@ -156,6 +156,11 @@ Changed:
   below the lowest rock, say) so there is something to mine into. The initial
   rock volume in the ledger changes with it, so the conservation tests get new
   numbers — expected, and each one is still an identity.
+- `volumes()` stops being a sweep. Totalling every run of every column to get the
+  ground by kind is 0.09 ms against today's 0.016 ms (§9, spike 2) — the one
+  regression either spike found. It becomes a running total the edits keep, the
+  way the ledger already keeps what is dug and deposited, and `residual()` stays
+  the identity it is.
 
 The ground materials table (`GroundMaterial`) grows from three to about ten:
 topsoil, subsoil, sand, gravel, clay, weathered rock, rock, and one entry per ore
@@ -272,31 +277,38 @@ start** — solid below, void, solid above (or open sky). Two levels later if a
 tunnel ever needs to cross over another; the storage already allows it, the
 collider and the drawing are what limit it.
 
-The collider, per chunk:
+**A column with a void needs THREE surfaces, not two** — the first draft of this
+plan got that wrong and the spike (§9) caught it before any of it was built:
 
-- **The floor patch** is the one that exists: the top of the topmost solid run
-  *below* the void, which is the surface you walk on. Where there is no void it is
-  today's ground exactly.
-- **The roof patch** is new: the underside of the solid run above the void, as a
-  height field turned upside down — the same `HeightFieldShape`, the same
-  compression, the same build-and-swap between steps, on a static body rotated
-  half a turn about X (with the rows reversed to match), and
-  `cNoCollisionValue` everywhere there is no void. A chunk with no voids has no
-  roof patch at all.
+    y=5   ----------------****----------------   (a) the hill you walk on,
+                           ||                        with a HOLE at the shaft
+    y=2   --------++++++++++  ++++++++++-------   (c) the tunnel's ceiling
+                  |                      |
+    y=1   --------++++++++++++++++++++++++-----   (b) the tunnel's floor
+
+So the collider, per chunk:
+
+- **(a) the surface patch** is the one that exists, unchanged — the terrain's own
+  top, which is still what you walk on when you are on the hill above a tunnel.
+  Where a void reaches the sky its columns become holes in it (a non-finite
+  height already means a hole), so you can fall down a shaft.
+- **(b) the floor patch** is an ordinary height field at the void's bottom, with
+  `cNoCollisionValue` everywhere there is no void. It is what you stand on inside.
+- **(c) the ceiling patch** is the same shape turned upside down so its surface
+  faces down: a static body rotated half a turn about X, with the rows reversed
+  to match and `cNoCollisionValue` outside the void.
 - **The walls** are already there: a 2 m step between adjacent floor columns is a
   steep triangle, the same way a pit's wall is today.
 
-`JoltWorld` gains `addRoofPatch` / `replaceRoofPatch` beside `addGroundPatch` /
-`replaceGroundPatch`, and nothing else changes: the rebuild, the wake
-(`wakeBodiesIn`), and the marking all work on chunks as they do now.
+A chunk with no voids has one patch, exactly as now. A chunk with a void has
+three, and with K void levels 1 + 2K.
 
-**The risk, and the fallback.** Whether Jolt is happy with an inverted height
-field on a rotated static body is the one thing in this plan I would not promise
-without trying it, and it is half a day to find out (§9). If it is not, the
-fallback is a replaceable static mesh patch per void chunk: `addTriangleSupport`
-already builds a `MeshShape` from triangles, so the work is generalising it from
-"the one support surface" to "a patch you can swap", and the surface itself comes
-from the void cubes' exposed faces — which the page is building anyway.
+`JoltWorld` gains `addVoidPatches` / `replaceVoidPatches` beside `addGroundPatch`
+/ `replaceGroundPatch`, and nothing else changes: the rebuild, the wake
+(`wakeBodiesIn`) and the marking all work on chunks as they do now.
+
+**Measured, in Jolt, before committing to it** (§9): all of it holds, including
+the shape swap on the turned body. The mesh-patch fallback is not needed.
 
 **Being in a hole** is the part that touches the most code outside the engine.
 The page and the senses ask for "the ground at x, z" in a dozen places and get
@@ -541,9 +553,9 @@ the owner can see it in 3D.
 
 ### Stage 1 — see the ground you already have
 
-Runs in `TerrainField`, three legacy layers as three runs, `Volumes` by kind,
-faces drawn, the survey in words, the earth made 30 m deep. No new materials, no
-new physics.
+Runs in `TerrainField`, three legacy layers as three runs, `Volumes` by kind with
+the total kept by the edits rather than swept (§9), faces drawn, the survey in
+words, the earth made 30 m deep. No new materials, no new physics.
 
 **You can see:** dig the same pit as today in the valley and its wall shows
 topsoil over subsoil over rock instead of one flat colour; the panel tells you
@@ -696,20 +708,64 @@ because it loads the rock in tension. Blasting is out of this plan.
 - **No new numbers where the engine has one.** Hardness, tensile strength and
   density come from the material catalogue and the cutting model.
 
-## 9. Two things to try before committing to the plan
+## 9. The two spikes, run 2026-09-27
 
-Both are half a day, both are measurements and neither is a feature. Neither
-should be reported as progress.
+Both were measurements, not features, and neither is engine progress: they are two
+standalone programs in a scratch directory, compiled against the Jolt the checkout
+has already built. They were run to find out whether the two load-bearing
+assumptions in this plan are true before anyone starts on it.
 
-1. **The inverted roof collider.** One chunk, a hand-built void, a `HeightFieldShape`
-   on a static body rotated half a turn about X with `cNoCollisionValue` outside
-   the void, and a ball dropped in the tunnel: does it stay in, does the roof stop
-   it going up, does `replaceGroundPatch`'s swap-in work on it. If Jolt refuses,
-   the mesh-patch fallback is the plan and stage 3 costs a little more.
-2. **The runs walk.** `TerrainField` with the three arrays, the valley loaded, and
-   60 s stepped: does the indirection cost anything measurable against the 0.078x
-   baseline. If it does, the fix is a fast path for the common case of one soil
-   run over one rock run, which is most of any valley.
+### Spike 1: a tunnel out of Jolt height fields — it holds
+
+`roof_spike.cpp`: a 32 x 32 chunk at the terrain's own 0.25 m, built through a
+copy of `JoltWorld::groundShape` so it measures the real thing. A hill at y = 5
+with a 1 m square hole in it, a chamber floor at y = 1, and a ceiling at y = 2 on
+a static body turned half a turn about X. Five checks, at 1/240 s:
+
+| | measured |
+|---|---|
+| a ball dropped down the shaft | falls through the hole in the hill, past the ceiling level, and rests at **y = 1.1000** — the chamber floor plus its radius |
+| a ball fired up at the ceiling from inside, 8 m/s | stopped at **y = 1.9000**, the ceiling less its radius; free flight would have reached 4.46 m. **The upside-down height field collides from below.** |
+| a ball dropped on the hill, clear of the void | rests at **y = 5.1000**: the surface patch still works with holes in it |
+| a ball fired up off the hill outside the void | reaches **8.4453 m** against 8.46 in free flight: nothing invisible overhead where the ceiling is `cNoCollisionValue` |
+| the ceiling swapped for one 0.4 m lower, between steps | `SetShape` on the turned body took it, and the next ball stopped at **y = 1.5008** |
+
+The first run failed two of the five, both because the spike had put two balls in
+the same column and they met in mid-air. Fixed, all five hold.
+
+**What it settles.** Stage 3 needs no new collider machinery and no mesh
+fallback: a void is three height patches, built and swapped exactly as the ground
+already is. It also found the error in §4.5 — three surfaces per column, not two.
+
+### Spike 2: walking the runs costs nothing that matters
+
+`runs_walk_spike.cpp`: the valley's own 19,500 columns, held both ways — four
+fixed doubles a column against CSR runs (5.44 runs a column fresh, 5.66 with a
+tenth of the columns mined) — doing the same work in the four shapes the engine
+actually reads the ground in. Per call, milliseconds:
+
+| | four layers | runs | |
+|---|---:|---:|---|
+| a full height sweep (the page) | 0.0049 | 0.0076 | +55%, and 7.6 microseconds |
+| a full volumes sweep (the ledger) | 0.0163 | 0.0922 | **+464%** |
+| 100,000 random column lookups (every contact) | 0.3134 | 0.1073 | **3x faster** |
+| a whole-field neighbour compare (relax's bound) | 0.0480 | 0.0260 | 1.8x faster |
+
+Memory: 609 KB against 1,009 KB, 1.66x, for the whole valley.
+
+**What it settles.** The indirection is not a problem, and the hottest path — a
+contact asking the ground what it is made of — gets *faster*, because four
+separate arrays cost four cache lines a column where the runs cost two. Against
+the valley's own budget (4.68 s of wall clock over 14,400 steps is 0.325 ms a
+step) every figure here is noise.
+
+**The one real finding:** totalling the ground by kind by sweeping every run is
+0.09 ms, six times what it costs today. So `volumes()` must stop being a sweep and
+become a running total kept by the edits — which the ledger already does for what
+is dug and deposited, so it is a small change and it belongs in stage 1.
+
+Neither spike touched the engine. The real cost figure is still 60 s of the valley
+once stage 1 lands, against the 0.078x baseline.
 
 ## 10. What the owner decided, 2026-09-27
 
