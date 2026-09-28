@@ -75,8 +75,14 @@ struct ThermoWorld::Impl {
     std::vector<double> air;
     double air_gas_constant{};
     std::vector<bool> fuel;
-    // Per substance: the transition that melts it, or kNone.
+    // Per substance: the transition that MELTS it into a liquid, or kNone. What
+    // the melting front is made of, and only that.
     std::vector<std::size_t> melts;
+    // Per substance: the transition that changes it at all, melting or boiling,
+    // or kNone. What caps a temperature -- matter holding water cannot be
+    // warmer than the water's boiling point any more than matter holding ice
+    // can be warmer than its melting point.
+    std::vector<std::size_t> changes;
     std::vector<double> quoted_heat;   // per reaction, J per kg of basis at 298.15 K
     ThermoState s;
     std::vector<BodyShape> shapes;
@@ -115,7 +121,12 @@ struct ThermoWorld::Impl {
         fuel.assign(model.size(), false);
         for (std::size_t i = 0; i < model.size(); ++i) fuel[i] = model.isFuel(i);
         melts.assign(model.size(), kNone);
-        for (std::size_t t = 0; t < model.transitions.size(); ++t) melts[model.transitions[t].solid] = t;
+        changes.assign(model.size(), kNone);
+        for (std::size_t t = 0; t < model.transitions.size(); ++t) {
+            const Transition &transition = model.transitions[t];
+            changes[transition.from] = t;
+            if (model[transition.to].phase == Phase::Liquid) melts[transition.from] = t;
+        }
         quoted_heat.clear();
         for (const Reaction &reaction : model.reactions)
             quoted_heat.push_back(model.heatOfReactionJPerKg(reaction, kQuotedTemperatureK));
@@ -174,14 +185,17 @@ struct ThermoWorld::Impl {
             if (melts[i] != kNone) total += p.kg[i];
         return total;
     }
-    // Matter holding a solid cannot be warmer than that solid's melting point,
-    // so where nothing says otherwise it starts no warmer: ice in a warm room
-    // is at its melting point, not at the room's temperature.
+    // Matter holding a phase cannot be warmer than the temperature that phase
+    // changes at, so where nothing says otherwise it starts no warmer: ice in a
+    // warm room is at its melting point, not at the room's temperature. Water
+    // is capped the same way at its boiling point, which in a room at 20 C
+    // changes nothing -- the cap only ever bites where the room is hotter than
+    // the change, which is the furnace case.
     [[nodiscard]] double startingTemperature(const std::vector<std::pair<std::size_t, double>> &fractions) const {
         double t = ambient.temperature_k;
         for (const auto &[substance, fraction] : fractions)
-            if (fraction > 0.0 && melts[substance] != kNone)
-                t = std::min(t, model.transitions[melts[substance]].melting_k);
+            if (fraction > 0.0 && changes[substance] != kNone)
+                t = std::min(t, model.transitions[changes[substance]].at_k);
         return t;
     }
     // Whether a material holds something that melts below the surroundings'
@@ -292,34 +306,74 @@ struct ThermoWorld::Impl {
         return s.lumps.size() - 1;
     }
 
-    // What heat above a melting point does: melt. For each solid in the parcel
-    // that melts, if the parcel is warmer than its melting point, exactly as
-    // much of it melts as brings the parcel back to it -- dm = C (T - Tm) / L,
-    // at constant internal energy, because the liquid's reference energy is
-    // the solid's plus the latent heat. Released meltwater then runs off at
-    // the temperature it melted at, carrying its energy: matter out.
-    void melt(Lump &lump, Parcel &p, double dt) {
+    // What heat above a change of phase does: change phase. For each lower
+    // phase in the parcel -- ice that melts, water that boils -- if the parcel
+    // is warmer than that change's temperature, exactly as much of it changes
+    // as brings the parcel back to it,
+    //
+    //     dm = C (T - Tc) / cost,
+    //
+    // and the parcel lands ON the change's temperature. That is what pins a
+    // kettle at 100 C: however hard it is driven, the heat above the boiling
+    // point leaves as steam instead of raising the water.
+    //
+    // THE COST OF A KILOGRAM is what LEAVES the parcel per kilogram changed,
+    // and it is not the same for the two directions off this shelf:
+    //
+    //   staying    the latent heat alone -- the two substances' internal
+    //              energies apart. The conversion is then at constant internal
+    //              energy, since the product's reference energy is the
+    //              reactant's plus exactly that.
+    //   released   the product's ENTHALPY less the reactant's energy: the
+    //              latent heat PLUS the flow work of pushing the product out
+    //              into whatever it goes to. For water at 373.15 K that is the
+    //              2.257 MJ/kg everyone quotes, against 2.085 of latent heat
+    //              alone.
+    //
+    // Melting shows no difference between the two, because a liquid's enthalpy
+    // IS its internal energy. Boiling does, and getting it wrong here is how a
+    // kettle boils a tenth faster than a real one.
+    void settlePhase(Lump &lump, Parcel &p, double dt) {
         for (const Transition &transition : model.transitions) {
-            const double solid = p.kg[transition.solid];
-            if (!(solid > 0.0)) continue;
+            const double lower = p.kg[transition.from];
+            if (!(lower > 0.0)) continue;
             const double t = temperature(p);
-            if (!(t > transition.melting_k)) continue;
-            const double latent = model.latentHeatJPerKg(transition);
-            const double melted = std::min(solid, capacity(p) * (t - transition.melting_k) / latent);
-            if (!(melted > 0.0)) continue;
-            p.kg[transition.solid] = melted >= solid ? 0.0 : solid - melted;
-            p.kg[transition.liquid] += melted;
-            lump.melt_kg_s += melted / dt;
-            if (transition.liquid_fate != Fate::Released) continue;
-            // At the melting point unless the solid ran out first, when the
-            // last of the heat is in the water too.
-            const double leaving_k = temperature(p);
-            const double carried = melted * specificEnthalpyJKg(model[transition.liquid], leaving_k);
-            p.kg[transition.liquid] = std::max(0.0, p.kg[transition.liquid] - melted);
+            if (!(t > transition.at_k)) continue;
+            const bool released = transition.product_fate == Fate::Released;
+            const double cost =
+                released ? specificEnthalpyJKg(model[transition.to], transition.at_k) -
+                               specificEnergyJKg(model[transition.from], transition.at_k)
+                         : model.latentHeatJPerKg(transition);
+            const double changed = std::min(lower, capacity(p) * (t - transition.at_k) / cost);
+            if (!(changed > 0.0)) continue;
+            const bool ran_out = changed >= lower;
+            p.kg[transition.from] = ran_out ? 0.0 : lower - changed;
+            p.kg[transition.to] += changed;
+            const bool boiling = model[transition.to].phase == Phase::Gas;
+            if (boiling) lump.boil_kg_s += changed / dt;
+            else lump.melt_kg_s += changed / dt;
+            if (!released) continue;
+            // It leaves at the change's temperature -- unless the lower phase
+            // ran out first, when the last of the heat is in the product too.
+            const double leaving_k = ran_out ? temperature(p) : transition.at_k;
+            const double carried = changed * specificEnthalpyJKg(model[transition.to], leaving_k);
+            p.kg[transition.to] = std::max(0.0, p.kg[transition.to] - changed);
             p.internal_energy_j -= carried;
+            // A gas goes into the region the body stands in, if it is in one,
+            // and presses on whatever bounds it -- it has not left the network,
+            // so it is not matter out. Anything condensed (meltwater) runs off
+            // and leaves, as it always did: a gas region holds gas.
+            GasRegion *region = lump.environment >= 0
+                                    ? &s.regions[static_cast<std::size_t>(lump.environment)]
+                                    : nullptr;
+            if (boiling && region != nullptr) {
+                region->gas.kg[transition.to] += changed;
+                region->gas.internal_energy_j += carried;
+                continue;
+            }
             s.ledger.matter_out_j += carried;
-            s.ledger.matter_out_kg += melted;
-            lump.meltwater_kg += melted;
+            s.ledger.matter_out_kg += changed;
+            if (!boiling) lump.meltwater_kg += changed;
         }
     }
 
@@ -337,8 +391,8 @@ struct ThermoWorld::Impl {
         if (model.transitions.empty()) return;
         for (Lump &lump : s.lumps) {
             if (lump.parked) continue;   // set aside: time stands still for it
-            melt(lump, lump.surface, dt);
-            if (massKg(lump.core) > 0.0) melt(lump, lump.core, dt);
+            settlePhase(lump, lump.surface, dt);
+            if (massKg(lump.core) > 0.0) settlePhase(lump, lump.core, dt);
             advanceMeltFront(lump);
         }
     }
@@ -842,14 +896,17 @@ void ThermoWorld::declareContents(const ContentsDeclaration &d) {
     const double t = d.temperature_k > 0.0 ? d.temperature_k : w.startingTemperature(fractions);
     require(std::isfinite(t) && t <= w.model.maximum_temperature_k,
             d.body + ": a temperature inside the model's range");
-    // Solid matter above its melting point is not solid: say how much of it is
-    // already water instead.
+    // Matter above the temperature its phase changes at is not in that phase:
+    // solid above its melting point is already water, water above its boiling
+    // point is already steam. Say so instead of declaring the impossible.
     for (const auto &[substance, fraction] : fractions) {
-        if (!(fraction > 0.0) || w.melts[substance] == kNone) continue;
-        const Transition &transition = w.model.transitions[w.melts[substance]];
-        require(t <= transition.melting_k,
-                d.body + ": it holds " + w.model[substance].id + ", which melts at " +
-                    std::to_string(transition.melting_k) + " K, so it cannot be declared warmer than that");
+        if (!(fraction > 0.0) || w.changes[substance] == kNone) continue;
+        const Transition &transition = w.model.transitions[w.changes[substance]];
+        const bool boils = w.model[transition.to].phase == Phase::Gas;
+        require(t <= transition.at_k,
+                d.body + ": it holds " + w.model[substance].id + ", which " +
+                    (boils ? "boils at " : "melts at ") + std::to_string(transition.at_k) +
+                    " K, so it cannot be declared warmer than that");
     }
     Lump lump = w.makeLump(*shape, fractions, t, d.layer_depth_m, true);
     if (!d.environment.empty()) {
@@ -996,7 +1053,8 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         w.s.ledger.initial_mass_kg = w.s.ledger.mass_kg;
         w.s.opened = true;
     }
-    for (Lump &l : w.s.lumps) l.heat_release_w = l.fuel_use_kg_s = l.heater_w = l.melt_kg_s = 0.0;
+    for (Lump &l : w.s.lumps)
+        l.heat_release_w = l.fuel_use_kg_s = l.heater_w = l.melt_kg_s = l.boil_kg_s = 0.0;
     for (GasRegion &r : w.s.regions) r.heater_w = r.vent_flow_kg_s = 0.0;
 
     // Boundary work: the gas pays for exactly the force that was applied, over
@@ -1240,10 +1298,14 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
         heat.parked = l.parked;
         heat.melt_kg_s = l.melt_kg_s;
         heat.melting = l.melt_kg_s > 0.0;
+        heat.boil_kg_s = l.boil_kg_s;
+        heat.boiling = l.boil_kg_s > 0.0;
         for (const Transition &transition : w.model.transitions) {
-            const std::size_t x = transition.solid;
+            const std::size_t x = transition.from;
             const double had = x < l.initial_kg.size() ? l.initial_kg[x] : 0.0;
-            heat.melted_kg += std::max(0.0, had - l.surface.kg[x] - l.core.kg[x]);
+            const double gone = std::max(0.0, had - l.surface.kg[x] - l.core.kg[x]);
+            if (w.model[transition.to].phase == Phase::Gas) heat.boiled_kg += gone;
+            else heat.melted_kg += gone;
         }
         for (std::size_t i = 0; i < w.model.size(); ++i) {
             const double kg = l.surface.kg[i] + l.core.kg[i];

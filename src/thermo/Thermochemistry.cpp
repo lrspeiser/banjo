@@ -94,13 +94,21 @@ void Model::addTransition(Transition transition) {
 
 const Transition *Model::meltingOf(std::size_t solid) const {
     for (const Transition &transition : transitions)
-        if (transition.solid == solid) return &transition;
+        if (transition.from == solid && substances.at(transition.to).phase == Phase::Liquid)
+            return &transition;
+    return nullptr;
+}
+
+const Transition *Model::boilingOf(std::size_t liquid) const {
+    for (const Transition &transition : transitions)
+        if (transition.from == liquid && substances.at(transition.to).phase == Phase::Gas)
+            return &transition;
     return nullptr;
 }
 
 double Model::latentHeatJPerKg(const Transition &transition) const {
-    return specificEnergyJKg(substances.at(transition.liquid), transition.melting_k) -
-           specificEnergyJKg(substances.at(transition.solid), transition.melting_k);
+    return specificEnergyJKg(substances.at(transition.to), transition.at_k) -
+           specificEnergyJKg(substances.at(transition.from), transition.at_k);
 }
 
 void Model::setComposition(const std::string &material,
@@ -179,21 +187,25 @@ void Model::validate() const {
         const Transition &transition = transitions[t];
         const std::string who = "transition \"" + transition.id + "\"";
         require(!transition.id.empty(), "a transition needs a name");
-        require(transition.solid < substances.size() && transition.liquid < substances.size(),
+        require(transition.from < substances.size() && transition.to < substances.size(),
                 who + " names a missing substance");
-        require(substances[transition.solid].phase == Phase::Solid &&
-                    substances[transition.liquid].phase == Phase::Liquid,
-                who + " melts a solid into a liquid");
+        // One step up the ladder and one only: a solid melts into a liquid, a
+        // liquid boils into a gas. Nothing here sublimes.
+        require((substances[transition.from].phase == Phase::Solid &&
+                 substances[transition.to].phase == Phase::Liquid) ||
+                    (substances[transition.from].phase == Phase::Liquid &&
+                     substances[transition.to].phase == Phase::Gas),
+                who + " melts a solid into a liquid or boils a liquid into a gas");
         for (std::size_t other = 0; other < t; ++other)
-            require(transitions[other].id != transition.id && transitions[other].solid != transition.solid,
-                    who + ": a solid melts one way, once");
-        require(finite(transition.melting_k) && transition.melting_k >= minimum_temperature_k &&
-                    transition.melting_k <= maximum_temperature_k,
-                who + ": the melting point is inside the model's range");
+            require(transitions[other].id != transition.id && transitions[other].from != transition.from,
+                    who + ": a substance changes one way, once");
+        require(finite(transition.at_k) && transition.at_k >= minimum_temperature_k &&
+                    transition.at_k <= maximum_temperature_k,
+                who + ": the temperature it changes at is inside the model's range");
         require(finite(transition.latent_j_kg) && transition.latent_j_kg > 0.0,
-                who + ": melting takes heat");
-        // The latent heat is the two substances' energies apart at the melting
-        // point, or melting would make or lose energy.
+                who + ": changing phase takes heat");
+        // The latent heat is the two substances' energies apart at that
+        // temperature, or changing phase would make or lose energy.
         const double implied = latentHeatJPerKg(transition);
         require(std::abs(implied - transition.latent_j_kg) <= 1.0e-9 * transition.latent_j_kg,
                 who + ": the reference energies imply " + std::to_string(implied) +
@@ -262,19 +274,40 @@ Model demonstrationModel() {
     const std::size_t carbon_dioxide =
         gas("carbon dioxide", 0.044009, 846.0, "cp 846 J/kg K at 300 K; rises to 1.2 kJ/kg K by 1000 K, held constant here");
 
-    // Liquid water held in a material, and the vapour it becomes. The vapour's
-    // reference energy is set so that turning the liquid into vapour at
-    // 373.15 K takes the latent heat of vaporisation, 2.257 MJ/kg, with the
-    // constant heat capacities used everywhere else.
+    // Liquid water, and the vapour it becomes. The vapour's reference energy is
+    // set so that turning the liquid into vapour at 373.15 K takes the latent
+    // heat of vaporisation, 2.257 MJ/kg, with the constant heat capacities used
+    // everywhere else.
+    //
+    // TWO LIQUID WATERS, and the difference is not pedantry. Water HELD IN A
+    // MATERIAL -- the tenth of an oak log that is moisture -- does not behave
+    // like water in a pan. It is bound in the wood, it leaves over a range of
+    // temperatures as the wood heats, and it is driven off by a rate: the
+    // "drying" reaction below, surface-limited. Water POURED INTO SOMETHING is
+    // free, and free water boils: it pins at 373.15 K and everything above that
+    // goes to steam, with no rate at all.
+    //
+    // Modelling both as one substance means choosing between a burning log that
+    // cannot be declared hot (because its moisture "must" have boiled) and a
+    // kettle that never holds at 100 C. They are the same molecule and two
+    // different behaviours, so they are two substances.
     Substance moisture;
     moisture.id = "moisture";
     moisture.phase = Phase::Liquid;
     moisture.cv_j_kg_k = 4186.0;
     moisture.conductivity_w_m_k = 0.6;
     moisture.provenance = Provenance::ReferenceDerived;
-    moisture.note = "liquid water held in a material";
+    moisture.note = "liquid water held in a material, driven off by drying rather than boiling";
     const double liquid_cv = moisture.cv_j_kg_k;
-    const std::size_t water = model.add(std::move(moisture));
+    const std::size_t moisture_in_matter = model.add(std::move(moisture));
+    Substance liquid_water;
+    liquid_water.id = "water";
+    liquid_water.phase = Phase::Liquid;
+    liquid_water.cv_j_kg_k = liquid_cv;
+    liquid_water.conductivity_w_m_k = 0.6;
+    liquid_water.provenance = Provenance::ReferenceDerived;
+    liquid_water.note = "free liquid water: what a vessel holds, and what boils at 373.15 K";
+    const std::size_t water = model.add(std::move(liquid_water));
     Substance vapour;
     vapour.id = "water vapour";
     vapour.phase = Phase::Gas;
@@ -407,7 +440,7 @@ Model demonstrationModel() {
             "held moisture evaporating from the exposed surface: 0.015 kg/m2 s at 373.15 K, "
             "Arrhenius in temperature, nothing below 300 K. The latent heat comes from the "
             "reference energies, so drying cools what it dries";
-        dry.reactants = {{water, 1.0, Supply::Material, Fate::Retained}};
+        dry.reactants = {{moisture_in_matter, 1.0, Supply::Material, Fate::Retained}};
         dry.products = {{steam, 1.0, Supply::Material, Fate::Released}};
         constexpr double kDryingTa = 4800.0;
         dry.rate = {RateKind::Surface, 0.015 * std::exp(kDryingTa / kBoilingK), kDryingTa, 300.0,
@@ -442,16 +475,44 @@ Model demonstrationModel() {
     {
         Transition melt;
         melt.id = "melting of ice";
-        melt.solid = ice;
-        melt.liquid = water;
-        melt.melting_k = kMeltingK;
+        melt.from = ice;
+        melt.to = water;
+        melt.at_k = kMeltingK;
         melt.latent_j_kg = kFusionJKg;
-        melt.liquid_fate = Fate::Released;
+        melt.product_fate = Fate::Released;
         melt.provenance = Provenance::ReferenceDerived;
         melt.note =
             "water's melting point and latent heat of fusion at one atmosphere, handbook values. "
             "The meltwater runs off the ice at once: a block of ice holds no liquid";
         model.addTransition(std::move(melt));
+    }
+    {
+        // Boiling, which is what makes a kettle a kettle: while there is water
+        // in it, it holds at 373.15 K however hard it is driven, and everything
+        // above that goes into steam.
+        //
+        // WHY THE NUMBER HERE IS NOT THE 2.257 MJ/kg EVERYONE QUOTES. That
+        // figure is the ENTHALPY of vaporisation -- what boiling costs when the
+        // steam is pushed out against a pressure, which includes the flow work
+        // of making room for it. `latent_j_kg` is the two substances' INTERNAL
+        // energies apart, which is that less RT/M, about 2.085 MJ/kg. The flow
+        // work is not lost: ThermoWorld charges it separately when the steam is
+        // released, so a kettle boiling into the open really does spend the
+        // full 2.257 MJ on every kilogram. Declaring the quoted figure here
+        // would charge that flow work twice, and validate() refuses it.
+        Transition boil;
+        boil.id = "boiling of water";
+        boil.from = water;
+        boil.to = steam;
+        boil.at_k = kBoilingK;
+        boil.latent_j_kg = kLatentJKg - kGasConstantJMolK / 0.018015 * kBoilingK;
+        boil.product_fate = Fate::Released;
+        boil.provenance = Provenance::ReferenceDerived;
+        boil.note =
+            "water's boiling point and latent heat of vaporisation at one atmosphere, handbook "
+            "values. The steam leaves the water for the gas region the body stands in, where it "
+            "presses; with no region around it, it leaves for the surroundings";
+        model.addTransition(std::move(boil));
     }
     (void)ash;
     model.validate();
@@ -465,7 +526,7 @@ double meltingPointOf(const Model &model, std::string_view material) {
     for (const auto &[substance, fraction] : composition->second)
         if (fraction > 0.0)
             if (const Transition *transition = model.meltingOf(substance))
-                lowest = std::min(lowest, transition->melting_k);
+                lowest = std::min(lowest, transition->at_k);
     return lowest;
 }
 

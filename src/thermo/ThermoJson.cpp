@@ -259,6 +259,9 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"melt_kg_s", b.melt_kg_s},
                           {"melted_kg", b.melted_kg},
                           {"melting", b.melting},
+                          {"boil_kg_s", b.boil_kg_s},
+                          {"boiled_kg", b.boiled_kg},
+                          {"boiling", b.boiling},
                           {"contents_kg", contentsOf(b.contents_kg)}});
         // Set aside with its body (ThermoWorld::park): held as it was put away.
         if (b.parked) bodies.back()["set_aside"] = true;
@@ -364,12 +367,14 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
         json transitions = json::array();
         for (const Transition &t : model.transitions)
             transitions.push_back({{"id", t.id},
-                                   {"solid", model[t.solid].id},
-                                   {"liquid", model[t.liquid].id},
-                                   {"melting_k", t.melting_k},
+                                   {"from", model[t.from].id},
+                                   {"into", model[t.to].id},
+                                   {"changes_at_k", t.at_k},
+                                   {"kind", model[t.to].phase == Phase::Gas ? "boiling" : "melting"},
                                    {"latent_j_kg", t.latent_j_kg},
-                                   {"liquid_goes", t.liquid_fate == Fate::Retained ? "stays in the material"
-                                                                                  : "runs off it"},
+                                   {"what_it_becomes_goes", t.product_fate == Fate::Retained
+                                                               ? "stays in the material"
+                                                               : "leaves it"},
                                    {"provenance", std::string(provenanceName(t.provenance))},
                                    {"note", t.note}});
         report["model"] = {{"id", model.id},

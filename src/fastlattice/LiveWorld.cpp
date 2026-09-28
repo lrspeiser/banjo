@@ -3636,6 +3636,7 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"lost_w", savedNumber(l.lost_w)},
             {"layer_melt_kg", savedNumber(l.layer_melt_kg)},
             {"melt_kg_s", savedNumber(l.melt_kg_s)},
+            {"boil_kg_s", savedNumber(l.boil_kg_s)},
             {"meltwater_kg", savedNumber(l.meltwater_kg)},
             {"parked", l.parked}};
 }
@@ -3684,10 +3685,15 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     if (j.contains("layer_melt_kg")) {
         l.layer_melt_kg = numberFrom(j.at("layer_melt_kg"));
     } else {
+        // What the MELTING front is made of: a liquid that boils is not part of
+        // it, so only transitions that end in a liquid count here.
         for (const thermo::Transition &transition : model.transitions)
-            if (transition.solid < l.surface.kg.size()) l.layer_melt_kg += l.surface.kg[transition.solid];
+            if (transition.from < l.surface.kg.size() &&
+                model[transition.to].phase == thermo::Phase::Liquid)
+                l.layer_melt_kg += l.surface.kg[transition.from];
     }
     l.melt_kg_s = j.contains("melt_kg_s") ? numberFrom(j.at("melt_kg_s")) : 0.0;
+    l.boil_kg_s = j.contains("boil_kg_s") ? numberFrom(j.at("boil_kg_s")) : 0.0;
     l.meltwater_kg = j.contains("meltwater_kg") ? numberFrom(j.at("meltwater_kg")) : 0.0;
     l.area_m2 = numberFrom(j.at("area_m2"));
     l.exposed_area_m2 = numberFrom(j.at("exposed_area_m2"));

@@ -151,6 +151,7 @@ struct Lump {
     double gained_w{};             // from other bodies, conduction and radiation
     double lost_w{};               // to the surroundings
     double melt_kg_s{};            // solid melted
+    double boil_kg_s{};            // liquid boiled away into gas
     // Meltwater that has run off this body and that the host has not yet
     // taken to put somewhere (ThermoWorld::takeMeltwater). It has left the
     // network already -- counted as matter out when it melted -- so this is
@@ -273,6 +274,12 @@ struct BodyHeat {
     double melt_kg_s{};
     double melted_kg{};
     bool melting{};
+    // Boiling: how fast now, and how much of what it started with has boiled
+    // away. Where the body stands in a gas region the steam went into it and
+    // is pressing; otherwise it went to the surroundings.
+    double boil_kg_s{};
+    double boiled_kg{};
+    bool boiling{};
     std::vector<std::pair<std::string, double>> contents_kg;
     // Set aside (ThermoWorld::park): held as it was put away, out of the world.
     bool parked{};
