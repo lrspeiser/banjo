@@ -97,7 +97,25 @@ OAK = 3382733567             # the colour the Workshop's cart is drawn in
 # wet. Wider than the wheels, and by more than they cut inside the line the
 # front takes on a curve: set within them, and looking for a centimetre, a back
 # wheel ran along the shore into water neither sensor had seen.
-SENSORS_LOCAL_M = ((0.55, 0.36, 1.0), (-0.55, 0.36, 1.0))
+# AND ONE DOWN THE MIDDLE, because two on the flanks leave the centreline
+# unwatched and that is where the caster runs. Wide sensors catch a shore
+# the rover meets at an angle or on a curve; they miss a BAY, where the
+# water reaches the middle before either flank. Measured: the caster 23 mm
+# in with both front sensors reading dry a moment before, then both wet
+# with the wheel already in it.
+# 1.5 m out rather than 1.0, which is how far AHEAD OF THE CASTER they have
+# to look. At 1.0 they led it by 0.62 m, and a rover doing a metre a second
+# needs that long just to notice and brake -- so the wheel was in the water
+# about as often as not. At 1.5 they lead it by 1.12 m.
+SENSORS_LOCAL_M = ((0.55, 0.36, 1.5), (0.0, 0.36, 1.5), (-0.55, 0.36, 1.5))
+# AND TWO BEHIND IT, because a machine with only forward sensors reverses
+# blind. Backing away from water it can see is the rover's whole answer to a
+# shore, and on a bay that put a wheel into the water behind it -- measured,
+# its caster 15 mm in while "backing off", with both front sensors dutifully
+# watching the lake in front. `stops` says which way a sensor looks: 1 ahead,
+# -1 behind, and the program stops reversing the moment one of these sees
+# water, whatever is still in front of it.
+REAR_SENSORS_LOCAL_M = ((0.55, 0.36, -0.9), (-0.55, 0.36, -0.9))
 SENSOR_DEPTH_MM = 3.0
 MACHINE = {"capacity_j": 100000.0, "voltage_v": 24.0,
            "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
@@ -222,10 +240,13 @@ def compose(ground: dict, kind: str) -> dict:
     bodies = rigid_assembly.scene_bodies(rover)
     pins = rigid_assembly.scene_joints(rover)
     q = bodies[0]["orientation_wxyz"]
-    sensors = [{"kind": "water", "body": "rover",
+    def sensor_at(local, watching):
+        return {"kind": "water", "body": "rover",
                 "at_mm": [round((bodies[0]["position_m"][k] + v) * 1000.0, 1)
                           for k, v in enumerate(grounds._turn(q, local))],
-                "depth_mm": SENSOR_DEPTH_MM} for local in SENSORS_LOCAL_M]
+                "depth_mm": SENSOR_DEPTH_MM, "stops": watching}
+    sensors = ([sensor_at(local, 1) for local in SENSORS_LOCAL_M] +
+               [sensor_at(local, -1) for local in REAR_SENSORS_LOCAL_M])
     print(f"  the rover at ({x:+.2f}, {z:+.2f}), tipped {math.degrees(pitch):.1f} deg to the shore; its sensors "
           f"look down at " + ", ".join(f"({s['at_mm'][0] / 1000:+.2f}, {s['at_mm'][2] / 1000:+.2f})" for s in sensors))
 

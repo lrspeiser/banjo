@@ -1299,8 +1299,13 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
     room is made, in the room's millimetres, like a pin's -- that reads the
     world, and the direction it stops the machine going when it reads more than
     its depth. The one kind there is yet is "water": the depth of the room's
-    water under the point, so a cart stops at a lake's edge. A program's
-    sensors (`stops` False) stop nothing themselves: the program reads them."""
+    water under the point, so a cart stops at a lake's edge.
+
+    A PROGRAM'S sensors stop nothing by themselves -- the program reads them
+    and decides -- but they still say `stops`, and for them it means which way
+    the sensor WATCHES: 1 ahead, -1 behind. A roaming machine with only
+    forward sensors reverses blind, and on a shore that is how it puts a back
+    wheel in the lake it has just backed away from."""
     if given in (None, []):
         return []
     if not isinstance(given, list) or len(given) > 8:
@@ -1310,7 +1315,7 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         what = f"control {name!r} sensor {k}"
         if not isinstance(sensor, dict):
             raise ValueError(f"{what} is not an object")
-        keys = {"kind", "body", "at_mm", "depth_mm"} | ({"stops"} if stops else set())
+        keys = {"kind", "body", "at_mm", "depth_mm", "stops"}
         unknown = set(sensor) - keys
         if unknown:
             raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds {', '.join(sorted(keys))}")
@@ -1323,14 +1328,14 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         if not isinstance(at, list) or len(at) != 3:
             raise ValueError(f"{what} needs at_mm as three numbers")
         way = sensor.get("stops", 1)
-        if stops and (way not in (1, -1) or isinstance(way, bool)):
-            raise ValueError(f"{what}: stops is the direction it stops the machine going, 1 or -1")
+        if way not in (1, -1) or isinstance(way, bool):
+            raise ValueError(f"{what}: stops is a direction, 1 or -1 -- for a control the way it "
+                             f"stops the machine going, for a program the way the sensor watches")
         made = {"kind": "water", "body": body,
                 "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
                 # The engine's own bound: deeper than 10 m is no edge.
                 "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm")}
-        if stops:
-            made["stops"] = int(way)
+        made["stops"] = int(way)
         out.append(made)
     return out
 

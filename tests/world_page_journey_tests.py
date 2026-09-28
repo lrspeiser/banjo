@@ -1246,6 +1246,7 @@ class ARoverRoamsTheShore(PageJourney):
         # Forty seconds of its world, however long the page takes to draw them.
         began = self.js("banjoRoom.status().time_s")
         path, wet, seen, was = 0.0, 0.0, [], self.position("rover")
+        wettest = ""      # what it was doing when a wheel was deepest
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline and self.js("banjoRoom.status().time_s") - began < 40.0:
             time.sleep(0.5)
@@ -1256,7 +1257,11 @@ class ARoverRoamsTheShore(PageJourney):
                 wx, _, wz = self.position(wheel)
                 water = self.js(f"banjoRoom.waterAt({wx}, {wz})")
                 if water and water.get("depth") is not None:
-                    wet = max(wet, water["depth"])
+                    if water["depth"] > wet:
+                        wet = water["depth"]
+                        wettest = (f"{wheel} {wet * 1000:.0f} mm while "
+                                   f"{self.js(f'{program}.doing')!r}, sensors seeing "
+                                   f"{self.js(f'{program}.sensors.map(s => s.sees)')}")
             doing = self.js(f"{program}.doing")
             if not seen or seen[-1] != doing:
                 seen.append(doing)
@@ -1266,7 +1271,7 @@ class ARoverRoamsTheShore(PageJourney):
               flush=True)
         self.assertGreater(path, 10.0, "it did not roam")
         self.assertGreaterEqual(said["turns"], 1, f"it never turned away from anything: {seen}")
-        self.assertLessEqual(wet, 0.003, "a wheel went into the water")
+        self.assertLessEqual(wet, 0.003, f"a wheel went into the water: {wettest}")
         # The panel says why, and it is still roaming: the reason it gave a
         # moment ago is not the reason now. Ask the page to compare the two
         # itself, so both come from one instant instead of two round-trips apart.

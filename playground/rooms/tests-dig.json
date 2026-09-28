@@ -177,22 +177,57 @@
      {
       "at_mm": [
        550.0,
-       1027.5,
-       -7966.1
+       971.8,
+       -7469.2
       ],
       "body": "rover",
       "depth_mm": 3.0,
-      "kind": "water"
+      "kind": "water",
+      "stops": 1
+     },
+     {
+      "at_mm": [
+       0.0,
+       971.8,
+       -7469.2
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water",
+      "stops": 1
      },
      {
       "at_mm": [
        -550.0,
-       1027.5,
-       -7966.1
+       971.8,
+       -7469.2
       ],
       "body": "rover",
       "depth_mm": 3.0,
-      "kind": "water"
+      "kind": "water",
+      "stops": 1
+     },
+     {
+      "at_mm": [
+       550.0,
+       1239.0,
+       -9854.3
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water",
+      "stops": -1
+     },
+     {
+      "at_mm": [
+       -550.0,
+       1239.0,
+       -9854.3
+      ],
+      "body": "rover",
+      "depth_mm": 3.0,
+      "kind": "water",
+      "stops": -1
      }
     ],
     "setting": 1.0

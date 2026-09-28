@@ -2228,7 +2228,8 @@ int main(int argc, char **argv) {
                             ? world->programSense(command.at("program").get<unsigned>(),
                                                   command.value("kind", std::string{}),
                                                   command.value("body", std::string{}), point,
-                                                  command.value("depth_m", 0.0))
+                                                  command.value("depth_m", 0.0),
+                                                  command.value("stops", 1))
                             : world->sense(command.at("control").get<unsigned>(), command.value("kind", std::string{}),
                                            command.value("body", std::string{}), point,
                                            command.value("depth_m", 0.0), command.value("stops", 1));
