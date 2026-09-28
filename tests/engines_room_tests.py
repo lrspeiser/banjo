@@ -109,6 +109,38 @@ class ThreeMachinesRunInOneRoom(unittest.TestCase):
         thrusted = max(r["motor"].get("thrust_work_j", 0.0) for _, (r, _) in self.track)
         self.assertGreater(thrusted, 0.0, "the nozzle should have done work on the rocket")
 
+    def test_the_kettle_carries_its_water_and_boils_it(self):
+        """What a body CARRIES, in a room: the kettle holds half a kilogram of
+        water, the ring heats the kettle, the kettle heats the water through
+        its wall, and the water holds at 100 C and boils away.
+
+        The carrying is the point. The water is not what the kettle is made of
+        -- tip it out and the kettle is the same iron -- so it is declared in
+        kilograms against the body rather than as a fraction of it, and the
+        kettle's own reported mass never counts it.
+        """
+        # The kettle is the slow one in this room: it takes about a minute to
+        # come to the boil, where the cannon goes at 3 s and the rocket at 9.
+        for _ in range(9):
+            self.session.send(op="step", dt=DT, n=240 * 10)
+        _, bodies = self._thermo()
+        kettle = bodies["kettle"]
+        carrying = kettle.get("carrying_kg") or {}
+        if not isinstance(carrying, dict):
+            carrying = dict(carrying)
+        left = carrying.get("water", 0.0)
+        print(f"\n   kettle {kettle['temperature_k'] - 273.15:.1f} C, its water "
+              f"{kettle.get('carrying_k', 0) - 273.15:.1f} C, {left:.3f} kg of 0.5 left", flush=True)
+
+        self.assertAlmostEqual(100.0, kettle.get("carrying_k", 0) - 273.15, places=1,
+                               msg="the water it carries should hold at its boiling point")
+        self.assertLess(left, 0.5, "and some of it should have boiled away")
+        self.assertGreater(left, 0.0, "but not all of it")
+        # Boiling costs 2.257 MJ/kg, so 8 kW can take about 3.5 g a second and
+        # no more, whatever else is going on.
+        self.assertLess(0.5 - left, 90.0 * 8000.0 / 2.257e6 * 1.05,
+                        "it cannot have boiled off more than the ring could pay for")
+
     def test_a_sealed_region_never_pushes_its_vessel(self):
         """The breech is sealed and enormous while it fires, and it pushes the
         ball, not the room. Thrust is the momentum of what LEAVES -- a region

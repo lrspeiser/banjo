@@ -953,6 +953,21 @@ def engines() -> dict[str, Any]:
              "size_mm": [400, 150, 400], "center_mm": [-2750, above(bench_top, 150), 0],
              "anchored": True},
 
+            # A KETTLE, the smallest of the four and the one that says most. It
+            # CARRIES half a kilogram of water rather than being made of it:
+            # tip it out and it is the same kettle, the same iron, the same
+            # strength. The ring heats the kettle, the kettle heats the water
+            # through its wall, and the water holds at 100 C and boils away.
+            #
+            # It is 100 mm because a room's bodies are SOLID. A kettle-sized
+            # 250 mm box of iron is 123 kg of metal, and 3 kW spends a quarter
+            # of an hour warming that before the water notices -- a fair
+            # simulation of heating an anvil. At 100 mm it is 7.9 kg, and the
+            # ring is bigger than a real one because it is heating the block
+            # as well as what is in it.
+            {"name": "kettle", "shape": "box", "material": "iron",
+             "size_mm": [100, 100, 100], "center_mm": [-1000, above(bench_top, 100), 0]},
+
             # The cannon at the EAST end, firing east off the end of the bench
             # into open ground, with nothing downrange.
             #
@@ -1016,6 +1031,19 @@ def engines() -> dict[str, Any]:
                  "vent_area_m2": 0.00006, "vent_open": True,
                  "wall_conductance_w_k": 0.0},
             ],
+            # In KILOGRAMS, and of a body rather than in it: this is what the
+            # kettle holds, not what it is made of.
+            "carrying": [
+                # 500 W/K through the wall, said rather than left to the
+                # default. The default is the generic conductance between two
+                # bodies TOUCHING -- about 18 W/K across a 100 mm box -- and a
+                # kettle's wall is not two things in contact, it is thin metal
+                # with water against it. Left at the default the kettle runs to
+                # 231 C while its water is still at 100, which is a kettle made
+                # of firebrick.
+                {"body": "kettle", "kg": {"water": 0.5}, "temperature_k": 288.0,
+                 "conductance_w_k": 500.0},
+            ],
             "contents": [
                 {"body": "boiler water", "contents": {"water": 1.0},
                  "temperature_k": 373.15, "environment": "cylinder gas"},
@@ -1049,6 +1077,8 @@ def engines() -> dict[str, Any]:
             "heaters": [
                 {"target": "boiler water", "power_w": 20000.0, "seconds": 600.0,
                  "label": "firebox"},
+                {"target": "kettle", "power_w": 8000.0, "seconds": 600.0,
+                 "label": "the ring under the kettle"},
                 # THE PRIMERS, and they are what make this a room rather than a
                 # test. Declared at 600 K each charge only smoulders -- the
                 # burning rate is exp(-15000/T), so 600 K is about a fortieth of

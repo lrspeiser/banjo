@@ -1854,10 +1854,10 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         return {}
     if not isinstance(thermo, dict):
         raise ValueError("thermo must be an object of gas_regions and heaters")
-    unknown = set(thermo) - {"gas_regions", "heaters", "ambient", "contents"}
+    unknown = set(thermo) - {"gas_regions", "heaters", "ambient", "contents", "carrying"}
     if unknown:
         raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters, "
-                         f"contents and ambient")
+                         f"contents, carrying and ambient")
     names = {b["name"] for b in bodies}
     out: dict[str, Any] = {}
     regions = thermo.get("gas_regions") or []
@@ -1904,6 +1904,20 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
                              f"which is not a gas region in this room")
     if contents:
         out["contents"] = contents
+    # What a body CARRIES rather than what it is made of: the water in a
+    # kettle, in kilograms. Poured in when the room opens; the engine owns it
+    # from then on, warms it through the body holding it, and boils it.
+    carrying = thermo.get("carrying") or []
+    if not isinstance(carrying, list) or len(carrying) > 32:
+        raise ValueError("carrying is a list of at most 32")
+    for load in carrying:
+        if not isinstance(load, dict) or load.get("body") not in names:
+            raise ValueError(f"only something in the room can carry anything: "
+                             f"{(load or {}).get('body')!r} is not")
+        if not isinstance(load.get("kg"), dict) or not load["kg"]:
+            raise ValueError(f"{load['body']!r} must say how many kilograms of what it carries")
+    if carrying:
+        out["carrying"] = carrying
     if thermo.get("ambient"):
         out["ambient"] = thermo["ambient"]
     return out

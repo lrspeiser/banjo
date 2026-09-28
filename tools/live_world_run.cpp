@@ -1217,7 +1217,12 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
             continue;
         }
         if (bodies.size() >= 48) continue;
-        if (!b.reacting && !b.melting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
+        // A body carrying something is always worth reporting even when it is
+        // at room temperature and nothing is happening to it: a pail of cold
+        // water is a pail of water, and whoever is drawing it needs to know.
+        if (!b.reacting && !b.melting && b.carrying_kg.empty() && !(b.heater_w > 0.0) &&
+            std::abs(b.temperature_k - ambient) < 1.0)
+            continue;
         bodies.push_back({{"name", b.body},
                           {"t_k", round(b.temperature_k, 0.1)},
                           {"core_k", round(b.core_temperature_k, 0.1)},
@@ -1230,6 +1235,12 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                           {"reacting", b.reacting}});
         // Melting, only for what melts: how fast, in grams a second, and how
         // much has gone since it was followed.
+        if (!b.carrying_kg.empty()) {
+            nlohmann::json carrying = nlohmann::json::object();
+            for (const auto &[what, kg] : b.carrying_kg) carrying[what] = round(kg, 1.0e-5);
+            bodies.back()["carrying_kg"] = std::move(carrying);
+            bodies.back()["carrying_c"] = round(b.carrying_k - 273.15, 0.1);
+        }
         if (b.melting || b.melted_kg > 0.0) {
             bodies.back()["melt_g_s"] = round(1000.0 * b.melt_kg_s, 0.01);
             bodies.back()["melted_kg"] = round(b.melted_kg, 1.0e-4);
