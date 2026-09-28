@@ -420,6 +420,88 @@ void aSealedChamberPushesNothing() {
     near(chamber.thrust_work_j, 0.0, 0.0, "no thrust, no work");
 }
 
+// ---------------------------------------------------------------------------
+// A kettle carries its water
+
+// What a body CARRIES is not what it is made of, and the difference is the
+// whole reason cargo exists. A kettle's water is not part of the kettle: pour
+// it out and the kettle is the same kettle, the same weight of iron, the same
+// strength. But it is really there -- it has to be warmed through the kettle's
+// own wall, it makes the kettle heavier to pick up, and it boils.
+void aKettleCarriesWaterAndBoilsIt() {
+    ThermoWorld world;
+    Ambient still;
+    still.floor_conductance_w_m2_k = 0.0;
+    world.setAmbient(still);
+    // A THIN-WALLED kettle: 1.2 kg of iron around a 200 mm space, which is
+    // what a kettle is. Solid iron at 7,870 would be 63 kg of metal around
+    // 1 kg of water, and 3 kW spends four hundred seconds getting that to
+    // 52 C -- a fair simulation of heating an anvil, and no test of boiling.
+    const BodyShape kettle = box("kettle", "iron", {0, 0.1, 0}, {0.2, 0.2, 0.2}, 150.0);
+    world.refresh({kettle}, 0.0);
+    world.declareContents({"kettle", {{"iron", 1.0}}, 293.15, 0.0, ""});
+    const double iron_kg = heatOf(world.bodies(), "kettle").mass_kg;
+
+    world.carry({"kettle", {{"water", 1.0}}, 293.15, -1.0});
+    const BodyHeat filled = heatOf(world.bodies(), "kettle");
+    require(filled.carrying_kg.size() == 1 && filled.carrying_kg.front().first == "water",
+            "the kettle is carrying water");
+    near(filled.carrying_kg.front().second, 1.0, 1.0e-12, "a kilogram of it");
+    near(filled.carrying_k, 293.15, 1.0e-9, "at the temperature it was poured in at");
+    // And it is NOT part of the kettle: the iron is still just the iron.
+    near(filled.mass_kg, iron_kg, 1.0e-12, "the kettle itself is no heavier for holding it");
+    for (const auto &[what, kg] : filled.contents_kg)
+        require(what != "water", "the water is carried, not what the kettle is made of");
+
+    // Now put it on a ring. The heater warms the KETTLE, and the kettle warms
+    // the water through its wall, which is how a kettle works.
+    world.heat({"kettle", 3000.0, 0.0, 200.0, "ring"});
+    const int steps = 200 * 240;
+    for (int i = 0; i < steps; ++i) world.advance(1.0 / 240.0, {});
+
+    const BodyHeat done = heatOf(world.bodies(), "kettle");
+    const Ledger ledger = world.ledger();
+    const double left = done.carrying_kg.empty() ? 0.0 : done.carrying_kg.front().second;
+    std::cout << "    3 kW for 200 s: the water reached " << done.carrying_k - 273.15
+              << " C and " << 1.0 - left << " kg of it boiled away\n";
+    near(done.carrying_k, kBoilingK, 0.2, "the water it carries is at its boiling point");
+    require(left < 1.0, "and some of it has boiled away");
+    require(left > 0.0, "but not all of it");
+    // The kettle is lighter to carry for what it lost, and the iron is
+    // untouched: boiling takes the water, never the pot.
+    near(done.mass_kg, iron_kg, 1.0e-12, "the kettle is still all the iron it was");
+    require(relativeResidual(ledger) < 1.0e-9,
+            "the ledger closes: " + std::to_string(ledger.residualJ()));
+}
+
+// Pouring from one into another, which is what a vessel is for. What comes out
+// of the first goes into the second at the heat it came out at, and the two of
+// them together hold what the first one did.
+void pouringCarriesTheHeatWithIt() {
+    ThermoWorld world;
+    Ambient still;
+    still.floor_conductance_w_m2_k = 0.0;
+    world.setAmbient(still);
+    world.refresh({box("full pail", "iron", {0, 0.1, 0}, {0.2, 0.2, 0.2}, 7870.0),
+                   box("empty pail", "iron", {1, 0.1, 0}, {0.2, 0.2, 0.2}, 7870.0)},
+                  0.0);
+    world.declareContents({"full pail", {{"iron", 1.0}}, 293.15, 0.0, ""});
+    world.declareContents({"empty pail", {{"iron", 1.0}}, 293.15, 0.0, ""});
+    world.carry({"full pail", {{"water", 2.0}}, 350.0, -1.0});
+
+    const auto [poured, at_k] = world.release("full pail", "water", 0.8);
+    near(poured, 0.8, 1.0e-12, "it poured out what was asked for");
+    near(at_k, 350.0, 0.01, "at the heat it was holding");
+    world.carry({"empty pail", {{"water", poured}}, at_k, -1.0});
+
+    const BodyHeat from = heatOf(world.bodies(), "full pail");
+    const BodyHeat into = heatOf(world.bodies(), "empty pail");
+    near(from.carrying_kg.front().second, 1.2, 1.0e-9, "the one poured from has the rest");
+    near(into.carrying_kg.front().second, 0.8, 1.0e-9, "and the other has what it was given");
+    near(into.carrying_k, 350.0, 0.01, "still at the heat it was poured at");
+    require(relativeResidual(world.ledger()) < 1.0e-9, "and the ledger closes across the pour");
+}
+
 const std::vector<std::pair<std::string, std::function<void()>>> &tests() {
     static const std::vector<std::pair<std::string, std::function<void()>>> all = {
         {"boiling costs the latent heat of vaporisation", boilingCostsTheLatentHeatOfVaporisation},
@@ -431,6 +513,8 @@ const std::vector<std::pair<std::string, std::function<void()>>> &tests() {
         {"a rocket pushes itself with what leaves", aRocketPushesItselfWithWhatLeaves},
         {"a wider throat pushes harder", aWiderThroatPushesHarder},
         {"a sealed chamber pushes nothing", aSealedChamberPushesNothing},
+        {"a kettle carries water and boils it", aKettleCarriesWaterAndBoilsIt},
+        {"pouring carries the heat with it", pouringCarriesTheHeatWithIt},
     };
     return all;
 }

@@ -3614,6 +3614,10 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"material", l.material},
             {"surface", savedParcel(l.surface)},
             {"core", savedParcel(l.core)},
+            // What it was carrying goes with it (thermo CargoDeclaration): a
+            // kettle saved full comes back full.
+            {"cargo", savedParcel(l.cargo)},
+            {"cargo_conductance_w_k", savedNumber(l.cargo_conductance_w_k)},
             {"layer_depth_m", savedNumber(l.layer_depth_m)},
             {"layer_fuel_kg", savedNumber(l.layer_fuel_kg)},
             {"area_m2", savedNumber(l.area_m2)},
@@ -3673,6 +3677,11 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     l.material = j.value("material", std::string{});
     l.surface = parcelFrom(j.at("surface"));
     l.core = parcelFrom(j.at("core"));
+    // Saves written before bodies could carry anything have neither, and an
+    // empty parcel is exactly right for them: they carried nothing.
+    if (j.contains("cargo")) l.cargo = parcelFrom(j.at("cargo"));
+    l.cargo_conductance_w_k =
+        j.contains("cargo_conductance_w_k") ? numberFrom(j.at("cargo_conductance_w_k")) : 0.0;
     l.initial_kg = unpackedArray<double>(j, "initial_kg_b64");
     if (l.surface.kg.size() != substances || l.core.kg.size() != substances || l.initial_kg.size() != substances)
         throw std::invalid_argument("the " + l.body + "'s heat is not one number a substance");

@@ -210,10 +210,23 @@ struct ThermoWorld::Impl {
         if (composition == model.composition_of.end()) return false;
         return startingTemperature(composition->second) < ambient.temperature_k;
     }
+    // What it is made of AND what it carries: a body joining or leaving the
+    // world takes the water in it with it, so the ledger has to count both.
     [[nodiscard]] static double lumpEnergy(const Lump &l) {
-        return l.surface.internal_energy_j + l.core.internal_energy_j;
+        return l.surface.internal_energy_j + l.core.internal_energy_j + l.cargo.internal_energy_j;
     }
-    [[nodiscard]] static double lumpMass(const Lump &l) { return massKg(l.surface) + massKg(l.core); }
+    // What the body IS: the iron of the kettle, and not the water in it. This
+    // is what it is reported as weighing and what its strength is reckoned on.
+    [[nodiscard]] static double lumpMass(const Lump &l) {
+        return massKg(l.surface) + massKg(l.core);
+    }
+    // What has to be CARRIED: the same, plus what it holds. This is the mass
+    // the rigid body is told (massesToMirror) and what goes on the ledger when
+    // a body joins or leaves, because a full pail really is heavier than an
+    // empty one and really does take its water with it.
+    [[nodiscard]] static double lumpTotalMass(const Lump &l) {
+        return lumpMass(l) + massKg(l.cargo);
+    }
 
     // How far heat has to go inside a lump to reach where it is exchanged.
     [[nodiscard]] static double reach(const Lump &l) {
@@ -290,13 +303,13 @@ struct ThermoWorld::Impl {
     void join(const Lump &lump) {
         if (!s.opened) return;
         s.ledger.joined_j += lumpEnergy(lump);
-        s.ledger.joined_kg += lumpMass(lump);
+        s.ledger.joined_kg += lumpTotalMass(lump);
     }
 
     void leave(const Lump &lump) {
         if (!s.opened) return;
         s.ledger.left_j += lumpEnergy(lump);
-        s.ledger.left_kg += lumpMass(lump);
+        s.ledger.left_kg += lumpTotalMass(lump);
     }
 
     std::size_t activate(const std::string &body) {
@@ -397,6 +410,10 @@ struct ThermoWorld::Impl {
             if (lump.parked) continue;   // set aside: time stands still for it
             settlePhase(lump, lump.surface, dt);
             if (massKg(lump.core) > 0.0) settlePhase(lump, lump.core, dt);
+            // And what it CARRIES, which is the whole point of a kettle: the
+            // water in it boils, and the steam goes wherever a released gas
+            // goes -- into the region the body stands in, or to the air.
+            if (massKg(lump.cargo) > 0.0) settlePhase(lump, lump.cargo, dt);
             advanceMeltFront(lump);
         }
     }
@@ -738,6 +755,18 @@ struct ThermoWorld::Impl {
                 l.surface.internal_energy_j -= q;
                 l.core.internal_energy_j += q;
             }
+            // What it carries is warmed through the body that holds it, and
+            // only through it: a kettle's water is heated by the kettle. It
+            // has no path of its own to the room, which is a declared
+            // simplification -- an open pail's water does not cool by its own
+            // surface here.
+            if (l.cargo_conductance_w_k > 0.0 && massKg(l.cargo) > 0.0) {
+                const double q = pairTransfer(temperature(l.surface), temperature(l.cargo),
+                                              capacity(l.surface), capacity(l.cargo),
+                                              l.cargo_conductance_w_k, dt);
+                l.surface.internal_energy_j -= q;
+                l.cargo.internal_energy_j += q;
+            }
             const double t = temperature(l.surface);
             const double c = capacity(l.surface);
             const double sky = i < s.sky_fraction.size() ? s.sky_fraction[i] : 1.0;
@@ -781,6 +810,7 @@ struct ThermoWorld::Impl {
         for (const Lump &l : s.lumps) {
             add(l.surface);
             add(l.core);
+            add(l.cargo);   // what it carries is on the ledger like everything else
         }
         for (const GasRegion &r : s.regions) add(r.gas);
         ledger.reference_j = reference;
@@ -872,6 +902,88 @@ void ThermoWorld::refresh(const std::vector<BodyShape> &bodies, double floor_y_m
     for (const BodyShape &shape : w.shapes)
         if (w.lumpOf(shape.name) == kNone && w.meltsInTheRoom(shape.material)) (void)w.activate(shape.name);
     w.couple();
+}
+
+void ThermoWorld::carry(const CargoDeclaration &d) {
+    Impl &w = *impl_;
+    const BodyShape *shape = w.shape(d.body);
+    require(shape != nullptr, "there is nothing called \"" + d.body + "\" to carry anything");
+    // The body has to be in the network to carry something: a kettle nothing
+    // has heated is not followed until it holds water.
+    if (w.lumpOf(d.body) == kNone) {
+        const auto composition = w.model.composition_of.find(shape->material);
+        require(composition != w.model.composition_of.end(),
+                d.body + " is " + shape->material + ", which the model has no composition for, so "
+                         "it cannot be drawn in to carry anything: declare its contents first");
+        Lump lump = w.makeLump(*shape, composition->second,
+                               w.startingTemperature(composition->second), -1.0, false);
+        w.s.lumps.push_back(std::move(lump));
+        w.join(w.s.lumps.back());
+        w.couple();
+    }
+    Lump &lump = w.s.lumps[w.lumpOf(d.body)];
+    const double t = d.temperature_k > 0.0 ? d.temperature_k : w.ambient.temperature_k;
+    require(std::isfinite(t) && t >= w.model.minimum_temperature_k && t <= w.model.maximum_temperature_k,
+            d.body + ": what it is given has a temperature inside the model's range");
+    std::vector<double> kg(w.model.size(), 0.0);
+    double total = 0.0;
+    for (const auto &[id, amount] : d.kg) {
+        require(std::isfinite(amount) && amount >= 0.0,
+                d.body + ": every amount carried is finite and not negative");
+        if (!(amount > 0.0)) continue;
+        const std::size_t substance = w.model.index(id);
+        // Matter above the temperature its phase changes at is not in that
+        // phase, the same rule declared contents follow.
+        if (w.changes[substance] != kNone) {
+            const Transition &transition = w.model.transitions[w.changes[substance]];
+            require(t <= transition.at_k,
+                    d.body + ": it is given " + id + ", which changes at " +
+                        std::to_string(transition.at_k) + " K, so it cannot be given warmer");
+        }
+        kg[substance] += amount;
+        total += amount;
+    }
+    require(total > 0.0, d.body + ": there is nothing to carry");
+    const Parcel given = parcelAt(w.model, kg, t);
+    // It comes from outside the network, bringing its energy with it -- but
+    // only once the ledger is OPEN. Poured in before the world has taken a
+    // step it is not a crossing at all, it is part of what the network started
+    // with, and booking it as both is how a ledger comes out short by exactly
+    // the thing you put in. The same guard join() and leave() use.
+    if (w.s.opened) {
+        w.s.ledger.matter_in_j += given.internal_energy_j;
+        w.s.ledger.matter_in_kg += total;
+    }
+    pour(lump.cargo, given);
+    // The wall between them. Declared from the body's own surface unless the
+    // caller says otherwise: a vessel's wall IS its surface.
+    lump.cargo_conductance_w_k =
+        d.conductance_w_k >= 0.0
+            ? d.conductance_w_k
+            : std::max(1.0, w.ambient.contact_conductance_w_m2_k * std::max(lump.area_m2, 1.0e-4));
+}
+
+std::pair<double, double> ThermoWorld::release(const std::string &body, const std::string &substance,
+                                               double kg) {
+    Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone || !(kg > 0.0)) return {0.0, 0.0};
+    Lump &lump = w.s.lumps[index];
+    const std::size_t which = w.model.index(substance);
+    const double held = which < lump.cargo.kg.size() ? lump.cargo.kg[which] : 0.0;
+    const double taken = std::min(held, kg);
+    if (!(taken > 0.0)) return {0.0, w.temperature(lump.cargo)};
+    const double t = w.temperature(lump.cargo);
+    // It leaves at the temperature it was at, carrying its energy out of the
+    // network. Whoever pours it somewhere else puts that energy back in.
+    const double carried = taken * specificEnergyJKg(w.model[which], t);
+    lump.cargo.kg[which] = held - taken;
+    lump.cargo.internal_energy_j -= carried;
+    if (w.s.opened) {
+        w.s.ledger.matter_out_j += carried;
+        w.s.ledger.matter_out_kg += taken;
+    }
+    return {taken, t};
 }
 
 void ThermoWorld::declareContents(const ContentsDeclaration &d) {
@@ -1226,6 +1338,9 @@ void ThermoWorld::split(const std::string &body,
         piece.body = pieces[k].first;
         piece.surface = takeShare(parent.surface, of_remaining);
         piece.core = takeShare(parent.core, of_remaining);
+        // What it was carrying is shared out with it. A pail of water that
+        // breaks in two does not hold all its water in each half.
+        piece.cargo = takeShare(parent.cargo, of_remaining);
         piece.layer_fuel_kg = parent.layer_fuel_kg * share;
         piece.layer_melt_kg = parent.layer_melt_kg * share;
         // Meltwater not yet handed over goes with the pieces, by share, so the
@@ -1364,6 +1479,11 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
             const double kg = l.surface.kg[i] + l.core.kg[i];
             if (kg > 1.0e-9) heat.contents_kg.emplace_back(w.model[i].id, kg);
         }
+        // And what it CARRIES, kept apart from what it is made of, at its own
+        // temperature: a kettle of cold water on a hot plate is two readings.
+        for (std::size_t i = 0; i < w.model.size() && i < l.cargo.kg.size(); ++i)
+            if (l.cargo.kg[i] > 1.0e-9) heat.carrying_kg.emplace_back(w.model[i].id, l.cargo.kg[i]);
+        if (!heat.carrying_kg.empty()) heat.carrying_k = w.temperature(l.cargo);
         out.push_back(std::move(heat));
     }
     return out;
@@ -1476,7 +1596,7 @@ std::vector<std::pair<std::string, double>> ThermoWorld::massesToMirror(double r
     for (Lump &l : impl_->s.lumps) {
         // Told when it is back in the world, not while it is set aside (park).
         if (l.parked) continue;
-        const double mass = Impl::lumpMass(l);
+        const double mass = Impl::lumpTotalMass(l);
         if (l.mirrored_mass_kg >= 0.0 && std::abs(mass - l.mirrored_mass_kg) <= relative * mass) continue;
         if (!(mass > 0.0)) continue;
         l.mirrored_mass_kg = mass;

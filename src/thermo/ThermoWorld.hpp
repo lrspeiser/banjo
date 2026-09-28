@@ -105,6 +105,28 @@ struct GasRegionDeclaration {
     Vec3 vent_axis{0.0, -1.0, 0.0};
 };
 
+// What a body CARRIES, as against what it is made of: the water in a kettle,
+// the sand in a pail.
+//
+// It is not the same thing as contents and must not be declared as them.
+// Contents say what the body IS -- by fraction of its own mass, load-bearing,
+// deciding its strength, and gone from its shape when they burn away. A
+// kettle's water is none of that: pour it out and the kettle is the same
+// kettle. But it is really there. It has to be warmed, it weighs something the
+// mechanics has to carry, and it can boil -- and when it does, the steam goes
+// into the gas region the body stands in, exactly as a reaction's would.
+//
+// Poured IN. Call it again and it pours more in; `release` pours out.
+struct CargoDeclaration {
+    std::string body;
+    // Absolute kilograms, not fractions of anything.
+    std::vector<std::pair<std::string, double>> kg;
+    double temperature_k{};          // 0: the surroundings' temperature
+    // Between what it holds and the body holding it. < 0: worked out from the
+    // body's own surface, which is what a vessel's wall is.
+    double conductance_w_k{-1.0};
+};
+
 struct HeaterDeclaration {
     std::string target;            // a body or a gas region
     double power_w{};
@@ -121,6 +143,14 @@ struct Lump {
     // one temperature throughout has everything in `surface` and nothing here.
     Parcel surface;
     Parcel core;
+    // What it carries rather than what it is (CargoDeclaration): its own
+    // parcel at its own temperature, in contact with the surface through
+    // `cargo_conductance_w_k`. Kept apart from the two above so that a
+    // kettle's water is never mistaken for the kettle: it is not in
+    // `initial_kg`, it bears no load, and it does not shrink the body when it
+    // boils away.
+    Parcel cargo;
+    double cargo_conductance_w_k{};
     double layer_depth_m{};
     // How much fuel the burning front keeps in the layer: when the layer's fuel
     // falls below this, the front advances into the core and brings its matter.
@@ -293,6 +323,14 @@ struct BodyHeat {
     double boil_kg_s{};
     double boiled_kg{};
     bool boiling{};
+    // What it CARRIES (CargoDeclaration), and how warm that is. Empty and zero
+    // for a body carrying nothing. `carrying_k` is the cargo's own temperature,
+    // which is not the body's: a kettle of cold water on a hot plate is two
+    // temperatures, and which one a person is asking about is the water.
+    std::vector<std::pair<std::string, double>> carrying_kg;
+    double carrying_k{};
+    // Of what it was given, how much has boiled away.
+    double carried_boiled_kg{};
     std::vector<std::pair<std::string, double>> contents_kg;
     // Set aside (ThermoWorld::park): held as it was put away, out of the world.
     bool parked{};
@@ -367,6 +405,15 @@ public:
 
     void declareContents(const ContentsDeclaration &declaration);
     void declareGasRegion(const GasRegionDeclaration &declaration);
+    // Pour matter INTO a body that is not part of it (CargoDeclaration). The
+    // body is drawn into the network if it is not already. Between steps.
+    void carry(const CargoDeclaration &declaration);
+    // And pour it out: takes up to `kg` of `substance`, and answers what it
+    // actually had and the temperature that left at, so a caller pouring from
+    // one vessel into another can put it in at the heat it came out at. What
+    // leaves is matter out of the network until it is carried somewhere else.
+    [[nodiscard]] std::pair<double, double> release(const std::string &body,
+                                                    const std::string &substance, double kg);
     unsigned heat(const HeaterDeclaration &declaration);
     void setVent(const std::string &region, bool open);
 
