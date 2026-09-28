@@ -226,6 +226,16 @@ public:
     // `shown_m`; the flow as int8 pairs in 5 cm/s.
     [[nodiscard]] std::vector<float> heights() const;
     [[nodiscard]] std::vector<std::uint8_t> surfaces() const;
+    // What every column is MADE of, all the way down, so a host can draw the
+    // face a cut exposes in the materials it goes through instead of painting
+    // the whole wall the colour of the grass above it. Per column: one byte of
+    // how many runs, then for each run a byte of kind and two of the height it
+    // reaches, in millimetres above floor(), least significant byte first.
+    // Sixteen bits of millimetres reach 65.5 m above the floor under all the
+    // rock, which no ground here comes near. Whole, or a rectangle of it, for a
+    // host that redraws only what moved.
+    [[nodiscard]] std::vector<std::uint8_t> runsPacked() const;
+    [[nodiscard]] std::vector<std::uint8_t> runsPacked(int i0, int j0, int ni, int nj) const;
     [[nodiscard]] std::vector<std::uint16_t> waterSurfaceMm(double base_m, double shown_m = 0.003) const;
     [[nodiscard]] std::vector<std::int8_t> waterFlow() const;
     // The same pictures for the columns that hold water and no others: the

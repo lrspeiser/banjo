@@ -1457,6 +1457,7 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
 nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights, double objects_kg) {
     const banjo::terrain::Grid &g = env.terrain().grid();
     const std::vector<std::uint8_t> ground = env.surfaces();
+    const std::vector<std::uint8_t> runs = env.runsPacked();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
             {"beyond", beyondBlock(env)},
@@ -1465,6 +1466,11 @@ nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::v
             {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
             {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
             {"ground_b64", banjo::terrain::encodeBase64(ground.data(), ground.size())},
+            // What each column is made of all the way down, so the page can draw
+            // a cut face in the materials it cuts. Heights in it are millimetres
+            // above the ground's floor, which the water block also measures from.
+            {"runs_b64", banjo::terrain::encodeBase64(runs.data(), runs.size())},
+            {"floor_m", env.terrain().floor()},
             {"view", {{"eye_m", {land.eye_m[0], land.eye_m[1], land.eye_m[2]}},
                       {"look_m", {land.look_m[0], land.look_m[1], land.look_m[2]}}}}};
 }
@@ -1549,10 +1555,12 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
                     rect[static_cast<std::size_t>(j) * ni + i] = static_cast<float>(field.height(c));
                     rect_ground[static_cast<std::size_t>(j) * ni + i] = static_cast<std::uint8_t>(field.surface(c));
                 }
+            const std::vector<std::uint8_t> rect_runs = env->runsPacked(i0, j0, ni, nj);
             reply["terrain_changed"] = {
                 {"box", {i0, j0, ni, nj}},
                 {"heights_b64", banjo::terrain::encodeBase64(rect.data(), rect.size() * sizeof(float))},
-                {"ground_b64", banjo::terrain::encodeBase64(rect_ground.data(), rect_ground.size())}};
+                {"ground_b64", banjo::terrain::encodeBase64(rect_ground.data(), rect_ground.size())},
+                {"runs_b64", banjo::terrain::encodeBase64(rect_runs.data(), rect_runs.size())}};
         }
     }
     const double t = world.time_s();
