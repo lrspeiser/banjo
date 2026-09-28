@@ -1639,10 +1639,70 @@ function forget(mesh) {
   if (mesh.userData && mesh.userData.ownMaterial && mesh.material) mesh.material.dispose();
 }
 
-function place(mesh, body) {
+// A body WALKS to each new state instead of appearing at it.
+//
+// The page draws at the display's rate and the room's state arrives at the
+// network's, and those are not the same number. Measured on this page with
+// latency injected: 29.2 states a second with none added and 7.2 at 100 ms,
+// with frames flat at both. A body set straight from each state therefore
+// jumps seven times a second while the view glides -- which reads as the room
+// running slowly when the frame rate is in fact perfect.
+//
+// So each new state becomes somewhere to walk TO, over the gap the last two
+// states actually took. It is one state behind by construction: that is what
+// this costs, and it is the price every game pays for the same thing.
+//
+// `?glide=0` turns it off, which is how the two were measured against each
+// other.
+const glides = new Map();   // mesh -> where it is walking from, to, and when
+let stateGapMs = 33, lastStateAt = 0;
+const gliding = new URLSearchParams(location.search).get("glide") !== "0";
+// Further than this in one state is a thing being PUT somewhere -- carried
+// across the room, swept up, respawned -- not a thing moving. Walking there
+// would draw it streaking through everything between. A ball thrown at 20 m/s
+// covers 2.9 m in a seventh of a second, so this has to clear that.
+const GLIDE_SNAP_M = 4.0;
+
+function snapTo(mesh, body) {
   mesh.position.set(body.position_m[0], body.position_m[1], body.position_m[2]);
   const q = body.orientation_wxyz;
   mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+  glides.delete(mesh);
+  mesh.userData.placed = true;
+}
+
+function place(mesh, body) {
+  // Snapped: the first time it is drawn, with gliding off, and for whatever is
+  // in the hand -- that one follows what the page itself asked the hand to do,
+  // so the state is a confirmation and walking to it would only add lag to the
+  // one thing whose lag is felt directly.
+  if (!gliding || !mesh.userData.placed
+      || (world.held && world.held.name === body.name)) {
+    snapTo(mesh, body);
+    return;
+  }
+  const to = new THREE.Vector3(body.position_m[0], body.position_m[1], body.position_m[2]);
+  if (mesh.position.distanceToSquared(to) > GLIDE_SNAP_M * GLIDE_SNAP_M) {
+    snapTo(mesh, body);
+    return;
+  }
+  const q = body.orientation_wxyz;
+  glides.set(mesh, { from: mesh.position.clone(), fromQ: mesh.quaternion.clone(),
+                     to, toQ: new THREE.Quaternion(q[1], q[2], q[3], q[0]),
+                     start: performance.now(), ms: stateGapMs });
+}
+
+// Every frame: as far along each walk as the clock says, and no further. A
+// glide that has run out is done and dropped, so a still room costs nothing.
+function advanceGlides(now) {
+  if (!glides.size) return;
+  for (const [mesh, g] of glides) {
+    if (!mesh.parent) { glides.delete(mesh); continue; }
+    const t = g.ms > 0 ? Math.min(1, (now - g.start) / g.ms) : 1;
+    mesh.position.lerpVectors(g.from, g.to, t);
+    mesh.quaternion.slerpQuaternions(g.fromQ, g.toQ, t);
+    if (t >= 1) glides.delete(mesh);
+  }
 }
 
 // Rebuild whatever changed.
@@ -1658,6 +1718,9 @@ function place(mesh, body) {
 // A full reply (the scene opening, or one carrying geometry) is not partial,
 // and then anything it leaves out really has gone.
 function draw(state) {
+  const at = performance.now();
+  if (lastStateAt) stateGapMs = Math.min(400, Math.max(16, at - lastStateAt));
+  lastStateAt = at;
   if (state.cell_size_m) world.cellSize = state.cell_size_m;
   rememberBlades(state);
   const seen = new Set();
@@ -7184,6 +7247,7 @@ function frame() {
   const dt = Math.min(0.1, gap / 1000);
   last = now;
   traceFrame(gap);
+  advanceGlides(now);
   lookFromKeys(dt);
   lookFromCursor(dt);
   walk(dt);
@@ -8188,6 +8252,10 @@ function roomReady() {
 // stage in this playground exposes the same thing for the same reason.
 window.banjoRoom = {
   world, camera, scene,
+  // Whether bodies are walking to their states rather than appearing at
+  // them, and how many are mid-walk right now -- so a check can tell that
+  // the smoothing is engaged and not merely switched on.  
+  glide: () => ({ on: gliding, walking: glides.size, state_gap_ms: Math.round(stateGapMs) }),
   lookAt(x, y, z) {
     const to = new THREE.Vector3(x, y, z).sub(camera.position);
     yaw = Math.atan2(-to.x, -to.z);
@@ -8377,7 +8445,23 @@ window.banjoRoom = {
 // that has stopped drawing is exactly the case worth hearing about and it
 // would never send anything. "0 frames in four seconds" is a report.
 setInterval(() => sendTrace("routine"), TRACE_EVERY_MS);
-setInterval(tick, 33);
+// The step loop paces ITSELF. It used to be setInterval(tick, 33) with a
+// world.busy guard, which meant a round trip was rounded UP to the next
+// multiple of 33 ms: at a measured 109 ms that is 132, and 7.6 states a second
+// where the network could give 9.2. Measured at 100 ms of added latency: 7.2
+// states a second on the interval. Now the next one is asked for as soon as
+// the last is answered, with the same 33 ms floor so a fast local server is
+// paced exactly as before.
+const TICK_FLOOR_MS = 33;
+async function tickLoop() {
+  const began = performance.now();
+  try {
+    await tick();
+  } finally {
+    setTimeout(tickLoop, Math.max(0, TICK_FLOOR_MS - (performance.now() - began)));
+  }
+}
+tickLoop();
 setInterval(aim, 90);
 if (qaBuild() === null) showSceneLink(sceneLink());
 open();
