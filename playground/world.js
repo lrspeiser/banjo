@@ -535,7 +535,11 @@ scene.add(floor);
 const GROUND_COLOURS = [new THREE.Color(0x7b776f),   // rock
                         new THREE.Color(0x6b4f32),   // soil
                         new THREE.Color(0xc9ad7c),   // sand
-                        new THREE.Color(0x8a6b4a)];  // loose soil: soil that was dug
+                        new THREE.Color(0x8a6b4a),   // loose soil: soil that was dug
+                        new THREE.Color(0x8d8274),   // weathered rock: paler, rotted
+                        new THREE.Color(0x5d6b6e),   // clay: the grey-green weak bed
+                        new THREE.Color(0x4e6b54),   // ore: the green of a fresh copper vein
+                        new THREE.Color(0xa8622c)];  // oxidised ore: the rust a vein shows
 const WATER_SHALLOW = new THREE.Color(0x58a7ad), WATER_DEEP = new THREE.Color(0x163f63);
 // Ground nobody has been near yet (machine_sight): drawn, because the lie of the
 // land is the shape of the room and hiding it would leave holes in the world, but
@@ -632,7 +636,14 @@ function groundSeen(index) {
 }
 
 function paintGround(colours, index) {
-  const c = groundSeen(index) ? (GROUND_COLOURS[ground.surfaces[index]] || GROUND_COLOURS[1]) : GROUND_UNSEEN;
+  // What the TOP of the column is made of, from the runs: a vein that reaches
+  // the surface is a stain on the hillside you can see from across the valley,
+  // and it cannot be if the ground is painted from three surface kinds. The
+  // engine's own `surfaces` is the fallback, and what the physics still uses.
+  const runs = ground.runs;
+  const kind = runs && runs.count[index] > 0
+    ? runs.kind[index * runs.stride + runs.count[index] - 1] : ground.surfaces[index];
+  const c = groundSeen(index) ? (GROUND_COLOURS[kind] || GROUND_COLOURS[1]) : GROUND_UNSEEN;
   colours[3 * index] = c.r; colours[3 * index + 1] = c.g; colours[3 * index + 2] = c.b;
 }
 
@@ -1921,6 +1932,18 @@ function followPorts(ports) {
   showMachineHolds();
 }
 
+// The room's containers (playground/vessels.py), sent with every step for the
+// same reason the mouths are: what a bucket holds changes as it is carried and
+// tipped, so it is different on almost every step. Nothing said means this
+// reply carried none, which is not the same as a room with no containers --
+// that is an empty list, when the room opens.
+world.vessels = [];
+function followVessels(vessels) {
+  if (vessels === undefined) return;
+  world.vessels = Array.isArray(vessels) ? vessels : [];
+  drawHolds();
+}
+
 // What a machine's controller was told, in a person's words.
 function commandedWords(c) {
   const hoist = c.kind === "hoist";
@@ -2826,6 +2849,17 @@ function holdersNow() {
                    slots: left > 0.0005 ? [{ what: seam.substance, kg: left }] : [],
                    kg: left, capacity_kg: Number(seam.of_kg) || 0 });
   }
+  // And every container. A heap is a place and stays where it is put; a
+  // container rides the body that carries it, so it says what it is riding
+  // and, when it has been turned far enough to pour, that it is pouring.
+  for (const vessel of world.vessels || []) {
+    const slots = Object.entries(vessel.holds_kg || {}).map(([what, kg]) => ({ what, kg: Number(kg) || 0 }));
+    const tipping = Number(vessel.pouring) > 0;
+    holders.push({ key: `vessel ${vessel.name}`, body: vessel.body, name: titled(vessel.name),
+                   kind: tipping ? "pouring" : "a container", slots,
+                   kg: slots.reduce((sum, s) => sum + s.kg, 0),
+                   capacity_kg: Number(vessel.capacity_kg) || 0 });
+  }
   return holders;
 }
 
@@ -3641,10 +3675,14 @@ function groundMadeOf(at) {
   const g = ground.grid;
   const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx) return null;
-  return ["rock", "soil", "sand", "loose soil"][ground.surfaces[j * g.nx + i]] || null;
+  const runs = ground.runs, c = j * g.nx + i;
+  const kind = runs && runs.count[c] > 0 ? runs.kind[c * runs.stride + runs.count[c] - 1]
+                                         : ground.surfaces[c];
+  return RUN_NAMES[kind] || null;
 }
 
-const RUN_NAMES = ["rock", "soil", "sand", "loose soil"];
+const RUN_NAMES = ["rock", "soil", "sand", "loose soil",
+                   "weathered rock", "clay", "ore", "oxidised ore"];
 
 // What the ground under a point is made of ALL THE WAY DOWN, in words, from the
 // runs the engine sends: "0.2 m of sand, then 0.6 m of soil, then rock". What a
@@ -6980,6 +7018,7 @@ async function tick() {
     followBrains(state.brains);
     followGoods(state.goods);
     followPorts(state.ports);
+    followVessels(state.vessels);
     // A sun with a day moves with every step the engine takes.
     if (state.sun) lightFromSun(state.sun);
     drawRopes();
@@ -8085,6 +8124,7 @@ async function open({ again = false } = {}) {
     // A room opening has no "unchanged": no goods said means this room has none.
     followGoods(data.goods || { stockpiles: [], deposits: [] });
     followPorts(data.ports || []);
+    followVessels(data.vessels || []);
     lightFromSun(data.sun);
     drawRopes();
     clearHeat();

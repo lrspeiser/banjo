@@ -599,6 +599,11 @@ class Brains:
         #: The room's time when the containers last poured, so a step's span
         #: is read off the clock rather than assumed.
         self._poured_at = 0.0
+        #: The room's own air temperature, which is what a vessel nobody has
+        #: heated sits at. Imported here as the other room modules are, when
+        #: it is wanted rather than at the top of the file.
+        import vessels as _vessels
+        self.ambient_k = _vessels.AMBIENT_K
         # And the room's ports (machine_ports.Ports): the mouths declared on
         # its machines, riding the bodies the engine reports, and which of them
         # are docked to which.
@@ -667,6 +672,11 @@ class Brains:
                       if isinstance(spec, dict) else None)
         self.ports = machine_ports.Ports(spec if isinstance(spec, dict) else None, holder_for=self.holder_for)
         self.vessels = vessels.Vessels(spec if isinstance(spec, dict) else None)
+        # The room's own air temperature, which is what a vessel nobody
+        # has heated sits at. A room that says nothing gets the thermal
+        # network's own default.
+        ambient = ((spec or {}).get("thermo") or {}).get("ambient") if isinstance(spec, dict) else None
+        self.ambient_k = float((ambient or {}).get("temperature_k") or vessels.AMBIENT_K)
         self._poured_at = 0.0
         self.sight = machine_sight.Sight(spec) if isinstance(spec, dict) else None
         # A brain for every program the room declares, now, so that the page
@@ -729,6 +739,11 @@ class Brains:
                 since = t - self._poured_at
                 self._poured_at = t
                 if 0.0 < since <= 1.0:
+                    # Warm first, then pour: what leaves carries the
+                    # temperature it had when it left. A body the heat
+                    # block does not name is within a kelvin of ambient,
+                    # which is what a vessel in a cold room follows.
+                    self.vessels.warm(since, reply.get("heat"), self.ambient_k)
                     self.vessels.spill(since, self.goods)
         machines = reply.get("machines")
         if not isinstance(machines, dict) or not machines.get("programs"):

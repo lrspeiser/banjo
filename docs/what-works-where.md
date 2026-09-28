@@ -68,8 +68,10 @@ body that stays whole.
 | A heated peg or pin giving way | Chat | ask for a fixing made of a named member, then heat it (about 50 s under 2 kW) |
 | Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
 | Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away |
-| A container holds a mass of a substance and rides the body that carries it | Code only | declare `vessels` on a room; `tests/vessels_tests.py` |
-| Turning a container over pours it into another one, or onto the ground | Code only | the same; a pail over a pail fills it, 12 kg in 4 s |
+| A container holds a mass of a substance and rides the body that carries it | Test room | `/world?scene=tests-pour`: two pails on a bench, 18 kg of sand in one. The Room tab's slots say what each holds |
+| What a container holds has a temperature, and follows the body holding it | Code only | `tests/vessels_tests.py`: 18 kg of sand is 14,940 J/K, so it lags by 747 s |
+| Pouring mixes two temperatures by heat capacity | Code only | boiling into freezing gives 50 C; boiling into sand gives 89 C |
+| Turning a container over pours it into another one, or onto the ground | Test room | the same room: hold the full pail over the empty one and turn it. What misses lands as a heap |
 | Ice melting, and its meltwater running into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
 | Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`), with no link to the world's heat |
 | Small thermal experiments | Code only | `banjo_thermal_experiment_cli` |
@@ -113,6 +115,7 @@ switching regions between coarse and detailed simulation as you walk.
 | Storing dug sand and soil | World | `/world?scene=fabrication` |
 | The ground kept across reloads and restarts | World | automatic |
 | Seeing what the ground is made of, all the way down | World | dig a pit and look at its wall; the panel says the column in words |
+| A vein, a clay bed and weathered rock in the valley's own geology | World | walk to the knoll: the rust stain on its bare rock is the vein at daylight |
 | Rock as a stack of beds, and 30 m of earth under the lowest of it | Code only | `tests/deep_earth_tests.py`; nothing in the page can reach rock yet |
 
 **Not built:** breaking rock (a pick stops on rock, or says the case is not

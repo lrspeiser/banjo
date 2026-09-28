@@ -417,6 +417,117 @@ void setView(Landscape &land, double ex, double ez, double lx, double lz, double
 
 // ---------------------------------------------------------------------------
 
+
+// ---- what the rock is made of ----------------------------------------------
+//
+// DECLARED, and the whole of the geology there is. Three things, each of them a
+// surface the ground's own shape does not follow, which is what makes them worth
+// having: you can find a bed in one place and know where it is in another.
+//
+//   the mantle   rock rotted by the weather, hugging the rock's own surface, so
+//                it is thickest where the ground has stood still longest;
+//   the bed      a plane of clay dipping across the valley: the weak ground a
+//                roof falls out of, and the floor a mine wants to stay above;
+//   the vein     a slab at its own strike and dip, pinching and swelling, only
+//                where it reaches -- oxidised and soft near the surface, which
+//                is the part a person can work by hand, and fresh below.
+//
+// A column is the sorted list of where those surfaces cross it, so every
+// boundary is exact and a column holds at most seven beds.
+struct Geology {
+    double mantle_m{1.4};          // how deep the weather has rotted the rock
+    double mantle_vary_m{0.5};
+    double clay_thickness_m{0.7};
+    double clay_dip{0.045};        // how much the bed falls along the valley
+    double clay_at_m{-3.2};        // where it is, under the rock at the valley's head
+    double vein_thickness_m{0.55};
+    double vein_reach_m{9.0};      // how far the slab goes before it is gone
+    double vein_dip_deg{72.0};
+    double vein_strike_deg{25.0};
+    double oxidised_m{2.6};        // how far down the weather has changed the ore
+};
+
+Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
+             double vein_x, double vein_z, std::uint64_t seed, const Geology &geology = {}) {
+    Beds beds;
+    const std::size_t n = g.cells();
+    beds.start.assign(n + 1, 0);
+    beds.count.assign(n, 0);
+    beds.kind.reserve(n * 4);
+    beds.top.reserve(n * 4);
+    // The vein's plane: its normal from a strike and a dip, and its middle at
+    // the knoll, which is where the rock is bare and it can be seen at all.
+    const double strike = geology.vein_strike_deg * kPi / 180.0;
+    const double dip = geology.vein_dip_deg * kPi / 180.0;
+    const Vec3 normal{std::cos(strike) * std::sin(dip), std::cos(dip),
+                      std::sin(strike) * std::sin(dip)};
+    const double vein_y = rock_top[g.at(std::clamp(static_cast<int>((vein_x - g.x0) / g.dx), 0, g.nx - 1),
+                                       std::clamp(static_cast<int>((vein_z - g.z0) / g.dx), 0, g.nz - 1))] - 3.0;
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+            const std::size_t c = g.at(i, j);
+            const double x = g.xOf(i), z = g.zOf(j), top = rock_top[c];
+            // Where each surface crosses this column, clamped into the rock.
+            const double mantle = top - std::max(0.2, geology.mantle_m +
+                geology.mantle_vary_m * (2.0 * fbm(seed ^ 0x9e37ULL, x, z, 3, 1.0 / 7.0) - 1.0));
+            const double clay_top = geology.clay_at_m - geology.clay_dip * (x - g.x0) +
+                0.35 * (2.0 * fbm(seed ^ 0x51edULL, x, z, 3, 1.0 / 11.0) - 1.0);
+            const double clay_bottom = clay_top - geology.clay_thickness_m;
+            // The vein: the plane's height in this column, and how thick it is
+            // measured down the column rather than across the slab.
+            double vein_lo = 1.0, vein_hi = -1.0;
+            const double reach = std::hypot(x - vein_x, z - vein_z);
+            if (reach < geology.vein_reach_m && std::abs(normal.y) > 1.0e-3) {
+                const double middle = vein_y - (normal.x * (x - vein_x) + normal.z * (z - vein_z)) / normal.y;
+                // It pinches and swells, and fades out at its reach.
+                const double swell = 0.55 + 0.9 * fbm(seed ^ 0x1234ULL, x * 1.7, z * 1.7, 3, 1.0 / 5.0);
+                const double thickness = geology.vein_thickness_m * swell *
+                    smoothstep(geology.vein_reach_m, geology.vein_reach_m - 3.5, reach);
+                if (thickness > 0.02) {
+                    const double half = 0.5 * thickness / std::abs(normal.y);
+                    vein_lo = middle - half;
+                    vein_hi = middle + half;
+                }
+            }
+            // Every boundary this column has, in order, and one bed between
+            // each pair of them.
+            double edges[8] = {floor_m, clay_bottom, clay_top, mantle, vein_lo, vein_hi, top, top};
+            int m = 0;
+            double kept[8];
+            for (const double e : edges)
+                if (e > floor_m && e < top) kept[m++] = e;
+            std::sort(kept, kept + m);
+            beds.start[c] = static_cast<std::uint32_t>(beds.top.size());
+            double below = floor_m;
+            const auto bed = [&](double bed_top) {
+                if (!(bed_top > below + 1.0e-6)) return;
+                const double middle = 0.5 * (below + bed_top);
+                RunKind kind = RunKind::Rock;
+                if (middle >= vein_lo && middle <= vein_hi)
+                    kind = middle > top - geology.oxidised_m ? RunKind::OxidisedOre : RunKind::Ore;
+                else if (middle > mantle) kind = RunKind::WeatheredRock;
+                else if (middle > clay_bottom && middle < clay_top) kind = RunKind::Clay;
+                // Two beds of the same thing are one bed.
+                if (beds.top.size() > beds.start[c] && beds.kind.back() == static_cast<std::uint8_t>(kind))
+                    beds.top.back() = bed_top;
+                else {
+                    beds.kind.push_back(static_cast<std::uint8_t>(kind));
+                    beds.top.push_back(bed_top);
+                }
+                below = bed_top;
+            };
+            for (int k = 0; k < m; ++k) bed(kept[k]);
+            bed(top);
+            if (beds.top.size() == beds.start[c]) {   // a column of nothing but floor
+                beds.kind.push_back(static_cast<std::uint8_t>(RunKind::Rock));
+                beds.top.push_back(top);
+            }
+            beds.count[c] = static_cast<std::uint32_t>(beds.top.size()) - beds.start[c];
+        }
+    beds.start[n] = static_cast<std::uint32_t>(beds.top.size());
+    return beds;
+}
+
 Landscape generateValley(const ValleyParameters &p) {
     const Clock::time_point t0 = Clock::now();
     if (p.chunks_x < 1 || p.chunks_z < 1 || p.chunks_x > 16 || p.chunks_z > 16 || !(p.cell_m >= 0.05 && p.cell_m <= 2.0))
@@ -610,6 +721,10 @@ Landscape generateValley(const ValleyParameters &p) {
             const double wetness = std::exp(-from_path[c] / 4.0);
             land.moisture[c] = static_cast<float>(std::clamp(land.depth[c] > 0.0 ? 1.0 : wetness, 0.0, 1.0));
         }
+
+    // ---- what the rock is made of: the mantle, the clay bed and the vein.
+    land.beds = layBeds(g, land.rock, *std::min_element(land.rock.begin(), land.rock.end()) -
+                            TerrainField::kEarthDepthM, knoll_x, knoll_z, p.seed);
 
     // ---- the river: in where the drainage starts, out at the mouth.
     int in_from = source_j, in_to = source_j;
@@ -806,6 +921,14 @@ template <typename T> bool takeVector(std::ifstream &in, std::vector<T> &v, std:
     in.read(reinterpret_cast<char *>(v.data()), static_cast<std::streamsize>(expected * sizeof(T)));
     return static_cast<bool>(in);
 }
+template <typename T> bool takeVectorUpTo(std::ifstream &in, std::vector<T> &v, std::size_t most) {
+    std::uint64_t size = 0;
+    if (!take(in, size) || size > most) return false;
+    v.resize(static_cast<std::size_t>(size));
+    if (size == 0) return static_cast<bool>(in);
+    in.read(reinterpret_cast<char *>(v.data()), static_cast<std::streamsize>(size * sizeof(T)));
+    return static_cast<bool>(in);
+}
 } // namespace
 
 bool saveLandscape(const Landscape &land, const std::string &path) {
@@ -827,6 +950,9 @@ bool saveLandscape(const Landscape &land, const std::string &path) {
         putVector(out, land.rock); putVector(out, land.soil); putVector(out, land.sand);
         putVector(out, land.loose); putVector(out, land.moisture);
         putVector(out, land.depth); putVector(out, land.qx); putVector(out, land.qz);
+        // In the order it is read back: the beds after the water, not before it.
+        putVector(out, land.beds.start); putVector(out, land.beds.count);
+        putVector(out, land.beds.kind); putVector(out, land.beds.top);
         put(out, static_cast<std::uint32_t>(land.inflows.size()));
         for (const auto &in : land.inflows) {
             putString(out, in.name); put(out, static_cast<std::uint8_t>(in.edge));
@@ -873,6 +999,14 @@ std::optional<Landscape> loadLandscape(const std::string &path) {
     if (!takeVector(in, land.rock, n) || !takeVector(in, land.soil, n) || !takeVector(in, land.sand, n) ||
         !takeVector(in, land.loose, n) || !takeVector(in, land.moisture, n) ||
         !takeVector(in, land.depth, n) || !takeVector(in, land.qx, n) || !takeVector(in, land.qz, n))
+        return std::nullopt;
+    // What the rock is made of. A column holds at most a few beds, and a file
+    // claiming more than sixteen a column is not one this wrote.
+    if (!takeVector(in, land.beds.start, n + 1) || !takeVector(in, land.beds.count, n) ||
+        !takeVectorUpTo(in, land.beds.kind, 16 * n) ||
+        !takeVectorUpTo(in, land.beds.top, 16 * n) ||
+        land.beds.kind.size() != land.beds.top.size() ||
+        land.beds.start[n] != land.beds.top.size())
         return std::nullopt;
     std::uint32_t count = 0;
     if (!take(in, count) || count > 64) return std::nullopt;

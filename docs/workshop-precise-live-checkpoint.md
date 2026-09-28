@@ -13,7 +13,12 @@ The native and Python scene interfaces independently bound the new representatio
 32 precise bodies / 256 collision boxes per room, 1–64 boxes per body, dimensions
 1–6000 mm, COM-relative offsets within 6 m, initial positions within 190 m,
 initial linear/angular speeds within 20 SI units, normalized orientation and
-supported homogeneous glass/oak/iron/concrete material. Unknown fields, overlapping
+supported material -- glass, oak, iron, concrete or ceramic, the alumina the
+catalogue calls "alumina ceramic" and the chain fires from clay. A scene names a
+material as `precise_rigid.MATERIALS` does, and the engine reads that same
+vocabulary (`kExactMaterials`, `src/fastlattice/PreciseRigidScene.cpp`); the
+rigid-v1 package keeps the catalogue's own names instead
+(`src/platform/PlatformWorld.cpp`). Unknown fields, overlapping
 boxes, separated parts, invalid numerical values and ambiguous geometry are refused.
 The initial boxes are axis aligned in the body's own COM frame; the body itself
 can rotate during native motion. These are shape/model limits, not a fracture law.

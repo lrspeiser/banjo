@@ -12049,11 +12049,7 @@ std::string LiveWorld::rollingReport() const {
 
 std::string LiveWorld::materialsJson() {
     // The names a scene uses for them.
-    const auto sceneName = [](MaterialPreset preset) -> std::string {
-        if (preset == MaterialPreset::Aluminum) return "aluminum";
-        if (preset == MaterialPreset::Ceramic) return "ceramic";
-        return std::string(materialPresetName(preset));
-    };
+    const auto sceneName = [](MaterialPreset preset) { return std::string(materialSceneName(preset)); };
     nlohmann::json materials = nlohmann::json::array();
     for (const MaterialPreset preset : kMaterialPresets) {
         const MaterialDefinition material = makeReferenceMaterial(preset, 0);

@@ -28,9 +28,16 @@ double criticalHeight(const GroundMaterial &m) {
 // matter, and the ledger has always counted it there.
 void addByKind(Volumes &v, RunKind kind, double m3) {
     switch (kind) {
-    case RunKind::Rock: v.rock_m3 += m3; return;
+    // Rock, the rock that has rotted, and the ore in it are all the ground's
+    // stone: the ledger counts matter, and what it is worth is the goods
+    // account's business, not the ground's (docs/earth-and-mining-plan.md).
+    case RunKind::Rock:
+    case RunKind::WeatheredRock:
+    case RunKind::Ore:
+    case RunKind::OxidisedOre: v.rock_m3 += m3; return;
     case RunKind::Sand: v.sand_m3 += m3; return;
     case RunKind::Soil:
+    case RunKind::Clay:
     case RunKind::LooseSoil: v.soil_m3 += m3; return;
     }
     v.soil_m3 += m3;
@@ -79,7 +86,7 @@ void TerrainField::restore(const State &s) {
         double below = s.floor;
         for (std::uint32_t k = 0; k < s.beds.count[c]; ++k) {
             const double top = s.beds.top[from + k];
-            if (!std::isfinite(top) || !(top >= below) || s.beds.kind[from + k] > 3) refuse();
+            if (!std::isfinite(top) || !(top >= below) || s.beds.kind[from + k] >= kRunKinds) refuse();
             below = top;
         }
         if (!std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
@@ -538,9 +545,9 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
             const std::uint32_t from = beds_.start[c];
             for (std::uint32_t k = 0; k < beds_.count[c]; ++k) {
                 if (!(beds_.top[from + k] > bottom)) continue;
-                if (static_cast<RunKind>(beds_.kind[from + k]) != RunKind::Rock)
+                if (!isRockLike(static_cast<RunKind>(beds_.kind[from + k])))
                     return fail("the rock there is not all rock: cutting a block out of a bed of "
-                                "anything else is not accounted for yet");
+                                "clay or ore is not accounted for yet");
             }
         }
     const double area = grid_.dx * grid_.dx;

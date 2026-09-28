@@ -31,6 +31,13 @@ inline constexpr std::array<MaterialPreset, 8> kMaterialPresets{
 };
 
 [[nodiscard]] std::string_view materialPresetName(MaterialPreset preset);
+// The name a SCENE or a package calls it, which is the catalogue's own name
+// for every material but the alumina: a scene says "ceramic" where the
+// catalogue says "alumina ceramic" (mcp/engine_materials.scene_name, and
+// presetFromName, which reads either). A body REPORTS the catalogue name,
+// because that is what it is made of; what is read back and echoed as a
+// declaration uses this one, so a caller's own words still match it.
+[[nodiscard]] std::string_view materialSceneName(MaterialPreset preset);
 [[nodiscard]] MaterialDefinition makeReferenceMaterial(
     MaterialPreset preset,
     std::uint64_t seed = 0);
