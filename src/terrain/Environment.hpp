@@ -138,6 +138,12 @@ public:
     // surface, its working's floor and its working's roof -- follow, and
     // whatever they held up is woken.
     EditEffect breakOut(JoltWorld &world, double x, double z, double from_m, double to_m);
+    // A blow's worth of rock, broken a little at a time: nothing leaves the
+    // ground until a whole cell has been paid for (TerrainField::chip). The
+    // effect is empty until then, and `broken` says how far through the cell
+    // the column has got.
+    struct Chipped { EditEffect effect; double broken{}; };
+    Chipped chip(JoltWorld &world, double x, double z, double volume_m3);
     // A cut out of bare rock; the host adds the block as a body.
     std::optional<CutBlock> cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                 double depth_m, std::string *why = nullptr);

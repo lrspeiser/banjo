@@ -987,10 +987,26 @@ answers **Breakable**, and says what a cubic metre costs. Measured
 in the cap** -- two and a half hours against eight minutes, which is exactly the
 ramp 7 describes and the reason the old workings stop where the cap does.
 
-What is left is the join: a strike's MEASURED work into `brokenVolumeM3`, and
-that volume into `Environment::breakOut`, which is built and tested (item 2).
-Until it is joined a pick on rock says it breaks it out and nothing comes loose,
-and the test says so rather than pretending otherwise.
+**And joined, the same day.** The join turned out to have a clean shape rather
+than a fudge: breaking a cubic metre costs `e_s`, so pushing a point of
+cross-section A through it costs `e_s A` newtons -- which is a RESISTANCE, and
+drops straight into the ground bite the soil already uses. So a point in rock it
+can break is held by what breaking costs, and the work is measured from the
+solver's own impulses exactly as it is in soil. Nothing is a rate and nothing is
+declared twice.
+
+What the blow buys, `W / e_s`, goes into the ground as a CHIP
+(`TerrainField::chip`): a volume smaller than a cell is not a hole, it is
+progress towards one, kept column by column, and a whole cell of rock leaves
+through `breakOut` on the blow that pays for it. Only the face being worked is
+ever in that map.
+
+Measured, end to end: an iron stake dropped on bare rock does **20.836 J** of
+work by the solver's own account, which at 30 MJ/m3 is **0.000695 of a 0.25 m
+cell** -- and the ground keeps it. `rock comes out a chip at a time`
+(terrain_tests 15/15) pays for a cell in eleven bites and checks that nothing
+leaves on the first ten, that exactly one cell leaves on the eleventh, that the
+rock comes down by exactly one cell, and that the ledger closes.
 
 ### 2. LOAD-BEARING — the ground can be dug into a void at runtime
 

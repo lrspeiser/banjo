@@ -133,6 +133,11 @@ private:
         Vec3 pry{};          // the sideways motion in the ground, added up
         bool broke_out{};
         bool at_rock{};
+        // Rock a point harder than it can break out (rock-work-v1), and what
+        // breaking this rock costs: its own indentation hardness.
+        bool breaks_rock{};
+        double rock_hardness_pa{};
+        double broke_m3{};      // what this meeting has broken out of the rock
         std::string ground;  // the layer the tip is in
         // As the step began, for what the step did.
         Vec3 tip_before{};

@@ -561,6 +561,49 @@ EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m
     return report;
 }
 
+RunKind TerrainField::kindAt(std::size_t c, double height_m) const {
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t k = 0; k < beds_.count[c]; ++k)
+        if (height_m <= beds_.top[from + k]) return static_cast<RunKind>(beds_.kind[from + k]);
+    // Above the rock: whatever is lying on it.
+    const double loose = sand_[c] + loose_[c];
+    if (loose > 0.0 && height_m > rockTop(c) + soil_[c])
+        return sand_[c] >= loose_[c] ? RunKind::Sand : RunKind::LooseSoil;
+    if (soil_[c] > 0.0) return RunKind::Soil;
+    return static_cast<RunKind>(beds_.kind[from + beds_.count[c] - 1]);
+}
+
+double TerrainField::brokenShare(std::size_t c) const {
+    const auto found = chipped_.find(c);
+    if (found == chipped_.end()) return 0.0;
+    const double cell = grid_.dx * grid_.dx * grid_.dx;
+    return cell > 0.0 ? std::clamp(found->second / cell, 0.0, 1.0) : 0.0;
+}
+
+TerrainField::Chipped TerrainField::chip(double x, double z, double volume_m3) {
+    Chipped out;
+    const auto cell = cellAt(x, z);
+    if (!cell || !(volume_m3 > 0.0)) return out;
+    const std::size_t c = *cell;
+    const double one = grid_.dx * grid_.dx * grid_.dx;
+    double &so_far = chipped_[c];
+    so_far += volume_m3;
+    if (so_far + 1.0e-12 < one) {
+        out.broken = so_far / one;
+        return out;
+    }
+    // Paid for: a cell of rock comes out, downwards from the top of the rock,
+    // and the column starts again on the next one.
+    const double top = rockTop(c);
+    out.edit = breakOut(grid_.xOf(static_cast<int>(c % static_cast<std::size_t>(grid_.nx))),
+                        grid_.zOf(static_cast<int>(c / static_cast<std::size_t>(grid_.nx))),
+                        top - grid_.dx, top);
+    so_far -= one;
+    if (!(so_far > 0.0)) chipped_.erase(c);
+    out.broken = brokenShare(c);
+    return out;
+}
+
 EditReport TerrainField::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {
     EditReport report;
     if (!(radius_m > 0.0) || !(sand_m3 >= 0.0) || !(soil_m3 >= 0.0) || !(sand_m3 + soil_m3 > 0.0))

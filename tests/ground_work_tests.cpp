@@ -397,15 +397,20 @@ void soilAgainstRock() {
     require(!iron.work.empty(), "the iron stake met no rock");
     const LiveGroundWork &i = iron.work.front();
     std::printf("  iron onto rock %s: %s\n", iron.ended.c_str(), said(i).c_str());
-    // Since rock-work-v1 a point harder than the rock BREAKS IT OUT, where
-    // before there was no law and the engine said so. What it takes out is not
-    // wired to the ground yet (docs/earth-and-mining-plan.md, 11, item 1), so
-    // nothing comes loose -- but the answer is no longer "not supported".
-    require(i.kind == "breaks it out" && i.supported,
-            "an iron point on rock does not break it out: " + i.kind);
-    require(i.why.find("rock-work-v1") != std::string::npos,
-            "the answer does not name the model it used");
-    require(i.loosened.total() == 0.0, "nothing is wired to the ground yet, so nothing came loose");
+    // Since rock-work-v1 a point harder than the rock breaks it, where before
+    // there was no law and the engine said so. A stake DROPPED on it does 20-odd
+    // joules of work, which at 30 MJ the cubic metre buys about a cubic
+    // millimetre: it chips the rock and the ground keeps the change until a
+    // whole cell has been paid for.
+    require(i.kind == "chipped the rock", "an iron point dropped on rock did not chip it: " + i.kind);
+    require(i.supported, "breaking rock is a regime the engine covers now");
+    require(i.work_j > 1.0, "the solver measured no work on the rock");
+    require(i.loosened.total() == 0.0, "one blow is not a cell of rock");
+    require(i.broken_share > 0.0 && i.broken_share < 0.01,
+            "the blow bought a sliver of the cell, and the ground kept it: " +
+            std::to_string(i.broken_share));
+    std::printf("  one blow on rock: %.3f J measured, %.6f of a cell paid for\n",
+                i.work_j, i.broken_share);
 }
 
 void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {

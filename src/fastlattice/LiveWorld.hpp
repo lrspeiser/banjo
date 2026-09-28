@@ -1072,6 +1072,10 @@ struct LiveGroundWork {
     // the work it took out of the tool -- going in, and being pried.
     double impulse_n_s{};
     double peak_force_n{};
+    // In rock it can break: how far through the cell it is working the column
+    // has got, 0 to 1. A blow buys a volume and a volume smaller than a cell is
+    // progress, not a hole (rock-work-v1).
+    double broken_share{};
     double work_j{};
     double penetration_work_j{};
     double breakout_work_j{};

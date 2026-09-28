@@ -584,6 +584,41 @@ void theValleyWasWorkedBeforeWeGotHere() {
             std::to_string(mine.spoil_m3) + ")");
 }
 
+// Rock comes out a chip at a time: a blow buys a volume (rock-work-v1), the
+// ground keeps the change, and a whole cell leaves only when it has been paid
+// for. Nothing is rounded in the ground's favour or the tool's.
+void rockComesOutAChipAtATime() {
+    TerrainField ground = flat(16, 16, 0.0, 0.0);      // bare rock at y = 0
+    const double dx = ground.grid().dx;
+    const double cell = dx * dx * dx;
+    const Volumes before = ground.volumes();
+    const auto c = ground.cellAt(1.0, 1.0);
+    require(c.has_value(), "the point is on the ground");
+    const double top = ground.rockTop(*c);
+
+    // Nine tenths of a cell, in ten bites: nothing leaves.
+    for (int k = 0; k < 10; ++k) {
+        const TerrainField::Chipped chipped = ground.chip(1.0, 1.0, 0.09 * cell);
+        require(chipped.edit.cells.empty(), "a cell left before it was paid for");
+        near(chipped.broken, 0.09 * (k + 1), 1e-9, "how far through the cell it is");
+    }
+    near(ground.volumes().total(), before.total(), 1e-12, "and the ground has lost nothing");
+    near(ground.rockTop(*c), top, 1e-12, "nor come down");
+
+    // The tenth of it that was owed: the cell comes out, and exactly one.
+    const TerrainField::Chipped paid = ground.chip(1.0, 1.0, 0.1 * cell);
+    require(!paid.edit.cells.empty(), "the cell did not come out when it was paid for");
+    near(paid.edit.moved.rock_m3, cell, 1e-9, "a cell of rock came out");
+    near(ground.rockTop(*c), top - dx, 1e-12, "the rock came down by one cell");
+    near(before.total() - ground.volumes().total(), cell, 1e-9, "the ground lost exactly that");
+    const Volumes residual = ground.residual();
+    for (const double v : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        require(std::abs(v) < 1e-9, "the ledger closes after a chip");
+    near(paid.broken, 0.0, 1e-9, "and the column starts again on the next cell");
+    std::cout << "    a 0.25 m cell of rock is " << cell << " m^3, and it came out on the blow "
+              << "that paid for it, not before\n";
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
@@ -597,6 +632,7 @@ int main() {
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"height follows the collider's split", heightAtFollowsTheColliderSplit},
         {"a column keeps its beds", aColumnKeepsItsBeds},
+        {"rock comes out a chip at a time", rockComesOutAChipAtATime},
         {"a valley is shaped by water and saved", aValleyIsShapedByWaterAndSaved},
         {"the valley has geology in it", theValleyHasGeologyInIt},
         {"the valley was worked before we got here", theValleyWasWorkedBeforeWeGotHere},

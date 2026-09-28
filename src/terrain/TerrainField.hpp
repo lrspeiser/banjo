@@ -43,6 +43,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -304,6 +305,20 @@ public:
     // what it was made of. Refused, with the reason, where the column has no
     // room left to say another working.
     EditReport breakOut(double x, double z, double from_m, double to_m);
+    // What one kind of ground is at a height in a column: what a point meets
+    // when it gets there.
+    [[nodiscard]] RunKind kindAt(std::size_t c, double height_m) const;
+    // Rock broken a little at a time. A blow buys a volume (rock-work-v1), and
+    // a volume smaller than a cell is not a hole -- it is progress towards one.
+    // This keeps that progress, column by column, and takes a whole cell of
+    // rock out when it has been paid for; `broken` is how far through the
+    // current cell the column is, 0 to 1, for anyone drawing it.
+    struct Chipped {
+        EditReport edit;         // empty until a cell is paid for
+        double broken{};         // how far through the cell this column now is
+    };
+    Chipped chip(double x, double z, double volume_m3);
+    [[nodiscard]] double brokenShare(std::size_t c) const;
     // Heap material up around a point: a cone of it within `radius`, which the
     // stability check then lets settle to whatever slope it can hold.
     EditReport deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
@@ -380,6 +395,9 @@ private:
     Beds beds_;
     std::size_t workings_{};     // how many columns hold one, so a world with
                                  // none pays nothing for them
+    // Rock broken but not yet a cell's worth, by column. Only the face being
+    // worked is ever in it.
+    std::map<std::size_t, double> chipped_;
     std::vector<double> soil_, sand_, loose_;
     std::vector<float> moisture_;
     double floor_{};

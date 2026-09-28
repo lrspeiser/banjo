@@ -1273,6 +1273,21 @@ EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
     return effect;
 }
 
+Environment::Chipped Environment::chip(JoltWorld &world, double x, double z, double volume_m3) {
+    Chipped out;
+    const TerrainField::Chipped chipped = terrain_->chip(x, z, volume_m3);
+    out.broken = chipped.broken;
+    out.effect.edit = chipped.edit;
+    if (chipped.edit.cells.empty()) return out;
+    for (const std::size_t c : chipped.edit.cells) out.effect.water_columns_moved += water_->depth(c) > 0.0;
+    syncWaterBed(chipped.edit.cells);
+    noteChanged(chipped.edit.cells);
+    const std::set<int> chunks = terrain_->takeDirtyChunks();
+    rebuildChunks(world, chunks, &out.effect);
+    for (const int chunk : chunks) syncWorkingPatches(world, chunk);
+    return out;
+}
+
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,
                             double width_m, double depth_m, double carried_objects_kg) {
     if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
