@@ -12172,6 +12172,29 @@ terrain::EditEffect LiveWorld::breakOut(double x, double z, double from_m, doubl
     return requireEnvironment(impl_->environment).breakOut(*impl_->world, x, z, from_m, to_m);
 }
 
+LiveWorld::Chipped LiveWorld::workRock(double x, double y, double z, double work_j) {
+    terrain::Environment &env = requireEnvironment(impl_->environment);
+    Chipped out;
+    if (!(work_j > 0.0)) return out;
+    const terrain::TerrainField &field = env.terrain();
+    const auto column = field.cellAt(x, z);
+    if (!column) return out;
+    // rock-work-v1: what this much work buys, at the hardness of the rock at
+    // that height in the face. The same law and the same call a swung point goes
+    // through -- this is the machine's way in, where a pick is the hand's.
+    const double hardness = terrain::groundHardnessPa(field.kindAt(*column, y));
+    if (!(hardness > 0.0)) return out;
+    const double bought = terrain::brokenVolumeM3(hardness, work_j);
+    if (!(bought > 0.0)) return out;
+    const terrain::Environment::Chipped chipped =
+        env.chip(*impl_->world, x, z, y, bought, impl_->carriedObjectsKg());
+    out.effect = chipped.effect;
+    out.broken_share = chipped.broken;
+    out.full = chipped.full;
+    out.bought_m3 = chipped.full ? 0.0 : bought;
+    return out;
+}
+
 double LiveWorld::carriedObjectsKg() const { return impl_->carriedObjectsKg(); }
 
 void LiveWorld::setCarryLimitKg(double kg) {
@@ -12182,12 +12205,13 @@ terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, doub
     return requireEnvironment(impl_->environment).deposit(*impl_->world, x, z, radius_m, sand_m3, soil_m3);
 }
 
-std::string LiveWorld::withdrawGround(double sand_m3, double soil_m3) {
-    return requireEnvironment(impl_->environment).withdrawCarried(sand_m3,soil_m3);
+std::string LiveWorld::withdrawGround(double sand_m3, double soil_m3, double rock_m3) {
+    return requireEnvironment(impl_->environment).withdrawCarried(sand_m3,soil_m3,rock_m3);
 }
 
-void LiveWorld::returnGround(double sand_m3, double soil_m3) {
-    requireEnvironment(impl_->environment).returnCarried(sand_m3,soil_m3,impl_->carriedObjectsKg());
+void LiveWorld::returnGround(double sand_m3, double soil_m3, double rock_m3) {
+    requireEnvironment(impl_->environment).returnCarried(sand_m3,soil_m3,rock_m3,
+                                                        impl_->carriedObjectsKg());
 }
 
 std::optional<terrain::CutBlock> LiveWorld::cutBlock(double x, double z, int cells_x, int cells_z,

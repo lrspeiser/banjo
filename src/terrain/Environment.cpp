@@ -95,9 +95,10 @@ Json volumesJson(const Volumes &v) {
 // Environment::carried. Not rounded: a heap of all of it is asked for with
 // these very numbers.
 Json carriedJson(const Volumes &c) {
-    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3}, {"rock_m3", c.rock_m3},
             {"sand_kg", c.sand_m3 * sandMaterial().density_kg_m3},
-            {"soil_kg", c.soil_m3 * soilMaterial().density_kg_m3}};
+            {"soil_kg", c.soil_m3 * soilMaterial().density_kg_m3},
+            {"rock_kg", c.rock_m3 * rockMaterial().density_kg_m3}};
 }
 
 double number(const Json &node, const char *key, double fallback, double low, double high) {
@@ -1185,7 +1186,9 @@ void Environment::stepNetwork(double dt_s) {
 }
 
 double Environment::carriedKg() const {
-    return carried_.sand_m3 * sandMaterial().density_kg_m3 + carried_.soil_m3 * soilMaterial().density_kg_m3;
+    return carried_.sand_m3 * sandMaterial().density_kg_m3 +
+           carried_.soil_m3 * soilMaterial().density_kg_m3 +
+           carried_.rock_m3 * rockMaterial().density_kg_m3;
 }
 
 void Environment::setCarryLimitKg(double kg) {
@@ -1196,6 +1199,10 @@ void Environment::setCarryLimitKg(double kg) {
 void Environment::carry(const Volumes &dug) {
     carried_.sand_m3 += dug.sand_m3;
     carried_.soil_m3 += dug.soil_m3;
+    // And the rock broken out of a working. It was counted as leaving the
+    // ground and then belonged to nobody, which is a hole in the account and
+    // not a design.
+    carried_.rock_m3 += dug.rock_m3;
 }
 
 void Environment::putBack(double sand_m3, double soil_m3) {
@@ -1215,11 +1222,14 @@ static double heldOrRefused(double asked_m3, double held_m3) {
     return asked_m3 > held_m3 && asked_m3 <= held_m3 + kLedgerSlackM3 ? held_m3 : asked_m3;
 }
 
-std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
+std::string Environment::withdrawCarried(double sand_m3, double soil_m3, double rock_m3) {
     sand_m3 = heldOrRefused(sand_m3, carried_.sand_m3);
     soil_m3 = heldOrRefused(soil_m3, carried_.soil_m3);
-    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
-        sand_m3+soil_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3)
+    rock_m3 = heldOrRefused(rock_m3, carried_.rock_m3);
+    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || !std::isfinite(rock_m3) ||
+        sand_m3<0 || soil_m3<0 || rock_m3<0 ||
+        sand_m3+soil_m3+rock_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3 ||
+        rock_m3>carried_.rock_m3)
         throw std::invalid_argument("transfer needs positive finite quantities already carried");
     // Allocate/serialize before mutation. The source has no thermal state, so
     // do not invent a cold temperature or pretend transported heat is known.
@@ -1228,27 +1238,37 @@ std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
         {"mass_kg",sand_m3*sandMaterial().density_kg_m3}});
     if (soil_m3>0) contents.push_back({{"substance","soil"},{"volume_m3",soil_m3},
         {"mass_kg",soil_m3*soilMaterial().density_kg_m3}});
+    if (rock_m3>0) contents.push_back({{"substance","rock"},{"volume_m3",rock_m3},
+        {"mass_kg",rock_m3*rockMaterial().density_kg_m3}});
+    // Broken rock is not granular: it is lumps of the cell it came out of, so a
+    // lot with any in it says so instead of calling the whole thing sand.
     const std::string packet=Json{{"schema","banjo.bulk-material.v1"},{"source","excavated_ground"},
-        {"form","granular"},{"thermal_state","unmodeled"},{"contents",contents}}.dump();
-    carried_.sand_m3-=sand_m3;carried_.soil_m3-=soil_m3;
-    exported_.sand_m3+=sand_m3;exported_.soil_m3+=soil_m3;
+        {"form",rock_m3>0?(sand_m3+soil_m3>0?"mixed":"rubble"):"granular"},
+        {"thermal_state","unmodeled"},{"contents",contents}}.dump();
+    carried_.sand_m3-=sand_m3;carried_.soil_m3-=soil_m3;carried_.rock_m3-=rock_m3;
+    exported_.sand_m3+=sand_m3;exported_.soil_m3+=soil_m3;exported_.rock_m3+=rock_m3;
     return packet;
 }
 
-void Environment::returnCarried(double sand_m3, double soil_m3, double carried_objects_kg) {
+void Environment::returnCarried(double sand_m3, double soil_m3, double rock_m3,
+                                double carried_objects_kg) {
     if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
         throw std::invalid_argument("invalid carried object mass");
     sand_m3 = heldOrRefused(sand_m3, exported_.sand_m3-returned_.sand_m3);
     soil_m3 = heldOrRefused(soil_m3, exported_.soil_m3-returned_.soil_m3);
-    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
-        sand_m3+soil_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
-        soil_m3>exported_.soil_m3-returned_.soil_m3)
+    rock_m3 = heldOrRefused(rock_m3, exported_.rock_m3-returned_.rock_m3);
+    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || !std::isfinite(rock_m3) ||
+        sand_m3<0 || soil_m3<0 || rock_m3<0 ||
+        sand_m3+soil_m3+rock_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
+        soil_m3>exported_.soil_m3-returned_.soil_m3 ||
+        rock_m3>exported_.rock_m3-returned_.rock_m3)
         throw std::invalid_argument("return needs positive quantities previously exported and not returned");
-    const double kg=sand_m3*sandMaterial().density_kg_m3+soil_m3*soilMaterial().density_kg_m3;
+    const double kg=sand_m3*sandMaterial().density_kg_m3+soil_m3*soilMaterial().density_kg_m3+
+                    rock_m3*rockMaterial().density_kg_m3;
     if (!std::isfinite(kg) || kg>carry_limit_kg_-carriedKg()-carried_objects_kg)
         throw std::invalid_argument("returned material exceeds carrying capacity");
-    carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;
-    returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;
+    carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;carried_.rock_m3+=rock_m3;
+    returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;returned_.rock_m3+=rock_m3;
 }
 
 EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
@@ -1257,10 +1277,11 @@ EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
     terrain_->resetActivity();
     effect.edit = terrain_->breakOut(x, z, from_m, to_m);
     if (effect.edit.cells.empty()) return effect;
-    // What comes out of a working is rubble, and rubble is not the sand and
-    // soil a person carries: it is counted as gone from the ground, and whose
-    // it is belongs to the goods account, which does not know about it yet
-    // (docs/earth-and-mining-plan.md, what it takes to be core, item 6).
+    // What comes out of a working is rubble, and the rubble is carried, the
+    // same as the sand and soil out of a dig: it left the ground, so somebody
+    // has it. A bulk cut is an authored operation and is not gated on what
+    // anybody can carry -- the route a person takes is chip(), which is.
+    carry(effect.edit.moved);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);
     noteChanged(effect.edit.cells);
@@ -1273,10 +1294,23 @@ EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
     return effect;
 }
 
-Environment::Chipped Environment::chip(JoltWorld &world, double x, double z, double volume_m3) {
+Environment::Chipped Environment::chip(JoltWorld &world, double x, double z, double at_height_m,
+                                       double volume_m3, double carried_objects_kg) {
     Chipped out;
-    const TerrainField::Chipped chipped = terrain_->chip(x, z, volume_m3);
+    // A cell of rock weighs 37 kg at 0.25 m columns, and it goes to whoever
+    // broke it out. So they have to be able to take it: a blow that would free
+    // a cell they cannot carry does not free it, and the work stays credited to
+    // the cell until they have put something down. This is the rule dig()
+    // already follows -- it takes out only what still fits -- said for a thing
+    // that leaves whole instead of by the spadeful.
+    const double room_kg = carry_limit_kg_ - carriedKg() - carried_objects_kg;
+    const double budget_m3 = std::isfinite(room_kg)
+                                 ? std::max(0.0, room_kg) / rockMaterial().density_kg_m3
+                                 : std::numeric_limits<double>::infinity();
+    const TerrainField::Chipped chipped = terrain_->chip(x, z, at_height_m, volume_m3, budget_m3);
+    carry(chipped.edit.moved);
     out.broken = chipped.broken;
+    out.full = chipped.full;
     out.effect.edit = chipped.edit;
     if (chipped.edit.cells.empty()) return out;
     for (const std::size_t c : chipped.edit.cells) out.effect.water_columns_moved += water_->depth(c) > 0.0;

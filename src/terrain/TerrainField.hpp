@@ -310,15 +310,32 @@ public:
     [[nodiscard]] RunKind kindAt(std::size_t c, double height_m) const;
     // Rock broken a little at a time. A blow buys a volume (rock-work-v1), and
     // a volume smaller than a cell is not a hole -- it is progress towards one.
-    // This keeps that progress, column by column, and takes a whole cell of
-    // rock out when it has been paid for; `broken` is how far through the
-    // current cell the column is, 0 to 1, for anyone drawing it.
+    // This keeps that progress and takes a cell of rock out when it has been
+    // paid for; `broken` is how far through that cell the work has got, 0 to 1,
+    // for anyone drawing it.
+    //
+    // The cell is the one the blow landed in, at `at_height_m`: a pick swung at
+    // a tunnel face takes rock out at the miner's chest, and does not bring the
+    // hill down from the top of the column. Working a different level in the
+    // same column starts that level, and what was owed on the old one is left
+    // there.
+    //
+    // A cell comes out only if `rock_budget_m3` of rock can be carried away,
+    // the same budget dig() takes: a cell of rock nobody can lift stays where it
+    // is, the account keeps what was paid, and `full` says why nothing moved.
     struct Chipped {
         EditReport edit;         // empty until a cell is paid for
         double broken{};         // how far through the cell this column now is
+        bool full{};             // paid for, and more rock than can be carried
     };
-    Chipped chip(double x, double z, double volume_m3);
+    Chipped chip(double x, double z, double at_height_m, double volume_m3,
+                 double rock_budget_m3 = std::numeric_limits<double>::infinity());
     [[nodiscard]] double brokenShare(std::size_t c) const;
+    // What a cell holds: the rock in the cell at this height in this column,
+    // which is what a chip there has to pay for. Less than a whole cell where
+    // the cell is the one the ground surface runs through, and 0 where there is
+    // no rock there at all.
+    [[nodiscard]] double cellRockM3(std::size_t c, double at_height_m) const;
     // Heap material up around a point: a cone of it within `radius`, which the
     // stability check then lets settle to whatever slope it can hold.
     EditReport deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
@@ -395,9 +412,10 @@ private:
     Beds beds_;
     std::size_t workings_{};     // how many columns hold one, so a world with
                                  // none pays nothing for them
-    // Rock broken but not yet a cell's worth, by column. Only the face being
-    // worked is ever in it.
-    std::map<std::size_t, double> chipped_;
+    // Rock broken but not yet a cell's worth, by column: the level being worked
+    // and what has been paid towards it. Only faces being worked are in it.
+    struct Owed { int level{}; double m3{}; };
+    std::map<std::size_t, Owed> chipped_;
     std::vector<double> soil_, sand_, loose_;
     std::vector<float> moisture_;
     double floor_{};

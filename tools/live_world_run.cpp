@@ -1301,15 +1301,16 @@ std::pair<double, double> readXZ(const nlohmann::json &node, const char *key) {
 double water_sent_at = -1.0e9;
 constexpr double kWaterEveryS = 0.25;
 
-// What the person carries out of the ground: the sand and soil dug, less what
-// went back (terrain::Environment::carried). Not rounded -- a heap of all of it
-// is asked for with these very numbers, and a heap bigger than what is carried
-// is refused.
+// What the person carries out of the ground: the sand and soil dug and the rock
+// broken out of a working, less what went back (terrain::Environment::carried).
+// Not rounded -- a heap of all of it is asked for with these very numbers, and a
+// heap bigger than what is carried is refused.
 nlohmann::json carriedJson(const banjo::terrain::Environment &env, double objects_kg) {
     const banjo::terrain::Volumes &c = env.carried();
-    nlohmann::json out{{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+    nlohmann::json out{{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3}, {"rock_m3", c.rock_m3},
                        {"sand_kg", c.sand_m3 * banjo::terrain::sandMaterial().density_kg_m3},
-                       {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3}};
+                       {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3},
+                       {"rock_kg", c.rock_m3 * banjo::terrain::rockMaterial().density_kg_m3}};
     // How much of it a person can carry, where a host has said.
     out["objects_kg"]=objects_kg;out["total_kg"]=objects_kg+env.carriedKg();
     if (std::isfinite(env.carryLimitKg())) {
@@ -2496,11 +2497,13 @@ int main(int argc, char **argv) {
                     // What came out is carried, and the reply says how much is.
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "ground_return") {
-                    world->returnGround(command.at("sand_m3").get<double>(),command.at("soil_m3").get<double>());
+                    world->returnGround(command.value("sand_m3",0.0),command.value("soil_m3",0.0),
+                                        command.value("rock_m3",0.0));
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "ground_withdraw") {
                     reply["material_packet"] = nlohmann::json::parse(world->withdrawGround(
-                        command.at("sand_m3").get<double>(),command.at("soil_m3").get<double>()));
+                        command.value("sand_m3",0.0),command.value("soil_m3",0.0),
+                        command.value("rock_m3",0.0)));
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "deposit") {
                     const auto at = readXZ(command, "at");

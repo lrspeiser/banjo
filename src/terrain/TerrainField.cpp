@@ -576,30 +576,73 @@ RunKind TerrainField::kindAt(std::size_t c, double height_m) const {
 double TerrainField::brokenShare(std::size_t c) const {
     const auto found = chipped_.find(c);
     if (found == chipped_.end()) return 0.0;
-    const double cell = grid_.dx * grid_.dx * grid_.dx;
-    return cell > 0.0 ? std::clamp(found->second / cell, 0.0, 1.0) : 0.0;
+    const double holds = cellRockM3(c, (found->second.level + 0.5) * grid_.dx);
+    return holds > 0.0 ? std::clamp(found->second.m3 / holds, 0.0, 1.0) : 0.0;
 }
 
-TerrainField::Chipped TerrainField::chip(double x, double z, double volume_m3) {
+double TerrainField::cellRockM3(std::size_t c, double at_height_m) const {
+    const double q = grid_.dx;
+    // The band the height falls in, counted (lo, hi]: a point pressing on a
+    // surface works the cell UNDER it, not the empty one above. A blow landing
+    // at or over the top of the rock works the topmost cell of it -- a tip
+    // resting on a hillside is a hair above the rock as often as a hair into it,
+    // and that is the same blow.
+    const double lo = std::max((std::ceil(std::min(at_height_m, rockTop(c)) / q) - 1.0) * q, floor_);
+    const double hi = std::min(lo + q, rockTop(c));
+    if (!(hi > lo)) return 0.0;
+    // Everything in the band that is not a void: what has to be broken to take
+    // the cell out. A band that straddles the top of the rock holds only the
+    // part below it, which is why a first bite at a hillside is cheaper than a
+    // cell.
+    double solid = 0.0, below = floor_;
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t b = 0; b < beds_.count[c]; ++b) {
+        const double top = beds_.top[from + b];
+        const double overlap = std::min(top, hi) - std::max(below, lo);
+        if (overlap > 0.0 && static_cast<RunKind>(beds_.kind[from + b]) != RunKind::Void)
+            solid += overlap;
+        below = top;
+        if (below >= hi) break;
+    }
+    return solid * grid_.dx * grid_.dx;
+}
+
+TerrainField::Chipped TerrainField::chip(double x, double z, double at_height_m, double volume_m3,
+                                         double rock_budget_m3) {
     Chipped out;
     const auto cell = cellAt(x, z);
-    if (!cell || !(volume_m3 > 0.0)) return out;
+    if (!cell || !(volume_m3 > 0.0) || !std::isfinite(at_height_m)) return out;
     const std::size_t c = *cell;
-    const double one = grid_.dx * grid_.dx * grid_.dx;
-    double &so_far = chipped_[c];
-    so_far += volume_m3;
-    if (so_far + 1.0e-12 < one) {
-        out.broken = so_far / one;
+    const double q = grid_.dx;
+    // The cell the blow landed in, named by its level so that working across to
+    // another one does not spend what was paid here.
+    const int level = static_cast<int>(std::ceil(std::min(at_height_m, rockTop(c)) / q)) - 1;
+    const double holds = cellRockM3(c, at_height_m);
+    if (!(holds > 0.0)) return out;      // no rock there to break
+    Owed &owed = chipped_[c];
+    if (owed.level != level) owed = Owed{level, 0.0};
+    owed.m3 += volume_m3;
+    if (owed.m3 + 1.0e-12 < holds) {
+        out.broken = owed.m3 / holds;
         return out;
     }
-    // Paid for: a cell of rock comes out, downwards from the top of the rock,
-    // and the column starts again on the next one.
-    const double top = rockTop(c);
+    // Paid for. It only comes out if it can be carried away: a cell of rock is
+    // 37 kg, and one nobody can lift stays in the wall with the work still
+    // credited to it.
+    if (holds > rock_budget_m3) {
+        out.broken = 1.0;
+        out.full = true;
+        return out;
+    }
+    const double lo = std::max(static_cast<double>(level) * q, floor_);
     out.edit = breakOut(grid_.xOf(static_cast<int>(c % static_cast<std::size_t>(grid_.nx))),
                         grid_.zOf(static_cast<int>(c / static_cast<std::size_t>(grid_.nx))),
-                        top - grid_.dx, top);
-    so_far -= one;
-    if (!(so_far > 0.0)) chipped_.erase(c);
+                        lo, std::min(lo + q, rockTop(c)));
+    // What it cost is what was in it, not a nominal cell: a bite that trims a
+    // hillside to the lattice is smaller than a cell and is charged as such, and
+    // anything overpaid is credited to the next one.
+    owed.m3 -= holds;
+    if (!(std::abs(owed.m3) > 1.0e-15)) chipped_.erase(c);
     out.broken = brokenShare(c);
     return out;
 }

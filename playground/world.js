@@ -4267,7 +4267,9 @@ function carryGround(carried) {
   world.carriedGround = carried || null;
   // What a person can carry is the room's to say, and a room with no ground says nothing.
   world.carryLimitKg = carried && Number.isFinite(Number(carried.limit_kg)) ? Number(carried.limit_kg) : null;
-  for (const what of ["sand", "soil"]) {
+  // Rock too, since a face can be worked by hand: a 0.25 m cell of it is 37 kg,
+  // so two of them is most of what a person can carry.
+  for (const what of ["sand", "soil", "rock"]) {
     const kg = carried ? Number(carried[`${what}_kg`]) || 0 : 0;
     if (kg > 0.0005) world.stock.set(what, { kg, pieces: 0 });
     else world.stock.delete(what);
@@ -4277,8 +4279,8 @@ function carryGround(carried) {
 
 function carriedSaid() {
   const c = world.carriedGround || {};
-  const parts = ["sand", "soil"].filter((what) => Number(c[`${what}_kg`]) > 0.0005)
-    .map((what) => `${grams(Number(c[`${what}_kg`]))} of ${what}`);
+  const parts = ["sand", "soil", "rock"].filter((what) => Number(c[`${what}_kg`]) > 0.0005)
+    .map((what) => `${grams(Number(c[`${what}_kg`]))} of ${what === "rock" ? "broken rock" : what}`);
   return parts.length ? parts.join(" and ") : "no sand or soil";
 }
 

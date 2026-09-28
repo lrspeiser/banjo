@@ -702,17 +702,29 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
             if (p.breaks_rock && host.environment != nullptr && work_in > 0.0) {
                 const double bought = terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
                 if (bought > 0.0) {
+                    // At the tip's own height: a pick swung at a tunnel face
+                    // takes the rock out in front of the miner, not off the top
+                    // of the hill above them.
                     const terrain::Environment::Chipped chipped =
-                        host.environment->chip(world, tip.x, tip.z, bought);
-                    p.broke_m3 += bought;
+                        host.environment->chip(world, tip.x, tip.z, tip.y, bought,
+                                               host.carried_objects_kg);
                     r.broken_share = chipped.broken;
-                    if (!chipped.effect.edit.cells.empty()) {
-                        r.loosened = chipped.effect.edit.moved;
-                        r.loosened_kg = chipped.effect.edit.mass_kg;
-                        r.kind = "broke rock out";
-                        p.broke_out = true;
-                    } else if (r.kind == "in the ground") {
-                        r.kind = "breaking rock";
+                    if (chipped.full) {
+                        // The cell is worked through and whoever is swinging
+                        // cannot take another 37 kg of rock. The blow was real
+                        // and the rock did not move: put something down.
+                        r.kind = "cannot carry it";
+                        r.why = "the next cell of rock is more than can be carried";
+                    } else {
+                        p.broke_m3 += bought;
+                        if (!chipped.effect.edit.cells.empty()) {
+                            r.loosened = chipped.effect.edit.moved;
+                            r.loosened_kg = chipped.effect.edit.mass_kg;
+                            r.kind = "broke rock out";
+                            p.broke_out = true;
+                        } else if (r.kind == "in the ground") {
+                            r.kind = "breaking rock";
+                        }
                     }
                 }
             }

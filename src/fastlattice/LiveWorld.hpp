@@ -1057,6 +1057,10 @@ struct LiveGroundWork {
     // "stopped"        ground at least as hard as the point stopped it
     // "glanced"        the point met the ground side-on: an ordinary contact
     // "not supported"  the ground there is a regime the model does not cover
+    // "breaking rock"  the point is working a cell of rock and has not got
+    //                  through it yet
+    // "broke rock out" a whole cell of rock came out and is now carried
+    // "cannot carry it" the cell is worked through and there is no room for it
     std::string kind;
     bool supported{true};
     // Why, for "stopped", "glanced" and "not supported"; what happened, for
@@ -1929,14 +1933,26 @@ public:
     // it, or an open cut where it reaches daylight. What a tool that can break
     // rock does to the ground (docs/earth-and-mining-plan.md).
     terrain::EditEffect breakOut(double x, double z, double from_m, double to_m);
+    // Work a face of rock with measured energy, the machine's way in: the same
+    // rock-work-v1 law a swung point goes through, and the same rule about who
+    // can carry the result. A cell of rock comes out whole once it is paid for,
+    // and goes to whoever is working; `full` is a cell paid for that cannot be
+    // carried, which breaks nothing and leaves the work owed against the cell.
+    struct Chipped {
+        terrain::EditEffect effect;
+        double bought_m3{};     // what this call paid for, 0 when refused
+        double broken_share{};  // how far through the cell the column has got, 0 to 1
+        bool full{};
+    };
+    Chipped workRock(double x, double y, double z, double work_j);
     // How much dug ground the person can carry (terrain::Environment). A world
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);
     [[nodiscard]] double carriedObjectsKg() const;
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
-    [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3);
-    void returnGround(double sand_m3, double soil_m3);
+    [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3, double rock_m3 = 0);
+    void returnGround(double sand_m3, double soil_m3, double rock_m3 = 0);
     // Cut a block out of bare rock, `height_m` tall (rounded to whole cells).
     // The ground loses it now; the host adds it as a body in the scene it
     // opens next -- a body cannot join a running world -- and until then the

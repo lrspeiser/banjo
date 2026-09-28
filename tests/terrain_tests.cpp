@@ -598,7 +598,7 @@ void rockComesOutAChipAtATime() {
 
     // Nine tenths of a cell, in ten bites: nothing leaves.
     for (int k = 0; k < 10; ++k) {
-        const TerrainField::Chipped chipped = ground.chip(1.0, 1.0, 0.09 * cell);
+        const TerrainField::Chipped chipped = ground.chip(1.0, 1.0, top, 0.09 * cell);
         require(chipped.edit.cells.empty(), "a cell left before it was paid for");
         near(chipped.broken, 0.09 * (k + 1), 1e-9, "how far through the cell it is");
     }
@@ -606,7 +606,7 @@ void rockComesOutAChipAtATime() {
     near(ground.rockTop(*c), top, 1e-12, "nor come down");
 
     // The tenth of it that was owed: the cell comes out, and exactly one.
-    const TerrainField::Chipped paid = ground.chip(1.0, 1.0, 0.1 * cell);
+    const TerrainField::Chipped paid = ground.chip(1.0, 1.0, top, 0.1 * cell);
     require(!paid.edit.cells.empty(), "the cell did not come out when it was paid for");
     near(paid.edit.moved.rock_m3, cell, 1e-9, "a cell of rock came out");
     near(ground.rockTop(*c), top - dx, 1e-12, "the rock came down by one cell");
