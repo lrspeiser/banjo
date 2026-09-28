@@ -1854,10 +1854,10 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         return {}
     if not isinstance(thermo, dict):
         raise ValueError("thermo must be an object of gas_regions and heaters")
-    unknown = set(thermo) - {"gas_regions", "heaters", "ambient"}
+    unknown = set(thermo) - {"gas_regions", "heaters", "ambient", "contents"}
     if unknown:
-        raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters "
-                         f"and ambient")
+        raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters, "
+                         f"contents and ambient")
     names = {b["name"] for b in bodies}
     out: dict[str, Any] = {}
     regions = thermo.get("gas_regions") or []
@@ -1866,7 +1866,9 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
     for region in regions:
         if not isinstance(region, dict) or not str(region.get("name", "")).strip():
             raise ValueError("a gas region needs a name")
-        for key in ("piston", "container"):
+        # piston: what the pressure pushes. container: what the cylinder is
+        # fixed to. vessel: what a nozzle's jet pushes the other way.
+        for key in ("piston", "container", "vessel"):
             if region.get(key) and region[key] not in names:
                 raise ValueError(f"gas region {region['name']}: there is nothing called "
                                  f"{region[key]!r} for it to push on")
@@ -1884,6 +1886,24 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         _number(heater.get("seconds", 0.0), 0.001, 36000.0, "heater seconds")
     if heaters:
         out["heaters"] = heaters
+    # What a body is MADE of, where its material does not say: the water in a
+    # boiler, the powder in a charge. Without this a body can only hold what its
+    # catalogue material is composed of, so a room could never put water in a
+    # kettle or propellant in a cannon.
+    regions_named = {str(r.get("name")) for r in regions}
+    contents = thermo.get("contents") or []
+    if not isinstance(contents, list) or len(contents) > 32:
+        raise ValueError("contents is a list of at most 32")
+    for held in contents:
+        if not isinstance(held, dict) or held.get("body") not in names:
+            raise ValueError(f"contents must be in something in the room: "
+                             f"{(held or {}).get('body')!r} is not")
+        where = held.get("environment")
+        if where and where not in regions_named:
+            raise ValueError(f"contents of {held['body']!r} stand in {where!r}, "
+                             f"which is not a gas region in this room")
+    if contents:
+        out["contents"] = contents
     if thermo.get("ambient"):
         out["ambient"] = thermo["ambient"]
     return out

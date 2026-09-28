@@ -1588,6 +1588,16 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/electric_furnace_tests.py -v)
     set_tests_properties(banjo_electric_furnace_tests PROPERTIES TIMEOUT 300)
+    # The three machines gas pressure drives, as a ROOM rather than as the
+    # network on its own: a steam engine whose piston climbs on boiling water,
+    # a cannon that throws its ball, and a rocket that leaves the bench on its
+    # own exhaust. tests/gas_pressure_tests.cpp pins the same three against a
+    # one-dimensional stand-in; this one runs them with Jolt underneath.
+    add_test(NAME banjo_engines_room_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/engines_room_tests.py -v)
+    set_tests_properties(banjo_engines_room_tests PROPERTIES TIMEOUT 300)
     # And devices that pair: the mouths goods go into a machine through and
     # come out of, the rule that pairs two of them, and the mine's rover
     # docking its store to the smelter's intake port in the real engine.

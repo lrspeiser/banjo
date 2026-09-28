@@ -98,7 +98,7 @@ GasRegionDeclaration readRegion(const json &node) {
     const std::string where = "gas region \"" + node.value("name", std::string("?")) + "\"";
     onlyKeys(node, {"name", "contents", "temperature_k", "pressure_pa", "balance", "volume_m3", "height_m",
                     "piston", "container", "axis", "area_m2", "wall_conductance_w_k", "vent_area_m2",
-                    "vent_open"},
+                    "vent_open", "vessel", "vent_axis"},
              where);
     GasRegionDeclaration d;
     d.name = text(node, "name", "", where);
@@ -115,6 +115,9 @@ GasRegionDeclaration readRegion(const json &node) {
     d.wall_conductance_w_k = number(node, "wall_conductance_w_k", -1.0, where);
     d.vent_area_m2 = number(node, "vent_area_m2", 0.0, where);
     d.vent_open = flag(node, "vent_open", true, where);
+    // The nozzle: name a vessel and the jet pushes it the other way.
+    d.vessel = text(node, "vessel", "", where);
+    d.vent_axis = vector3(node, "vent_axis", d.vent_axis, where);
     return d;
 }
 
@@ -285,6 +288,8 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                            {"work_to_bodies_j", r.work_to_bodies_j},
                            {"work_to_atmosphere_j", r.work_to_atmosphere_j},
                            {"heater_w", r.heater_w},
+                           {"thrust_n", r.thrust_n},
+                           {"thrust_work_j", r.thrust_work_j},
                            {"wall_loss_w", r.wall_loss_w},
                            {"vent_open", r.vent_open},
                            {"vent_flow_kg_s", r.vent_flow_kg_s}});

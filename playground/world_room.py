@@ -888,6 +888,128 @@ def pouring() -> dict[str, Any]:
     }
 
 
+def engines() -> dict[str, Any]:
+    """Three machines that gas pressure drives, side by side and all running.
+
+    One mechanism, three shapes of it: something makes gas fast inside a region,
+    the gas presses on what bounds it, and the pressing does work.
+
+      the steam engine   a firebox boils water into a cylinder and the steam
+                         lifts the piston and the block on top of it
+      the cannon         a charge burns behind the ball and the barrel has only
+                         one way out
+      the rocket         a charge burns and the gas leaves downwards, so the
+                         rocket goes up
+
+    The cannon and the rocket light a second or two in, to give you time to
+    stand somewhere and watch. Open it at /world?scene=tests-engines and look
+    west: the steam engine is the slow one on the left.
+    """
+    # The charge temperatures are where the propellant is already going. A
+    # primer's job, which this model does not have, is to get it there; the
+    # heaters below do it instead, so nothing goes off before you have looked.
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.05,
+        "plasticity": "on",
+        "terrain": {"generate": "flat"},
+        "bodies": [
+            {"name": "bench", "shape": "box", "material": "concrete",
+             "size_mm": [6000, 200, 1200], "center_mm": [0, 100, 0], "anchored": True},
+
+            # The steam engine, on the left. The cylinder is fixed and the
+            # piston sits on top of the gas; the block is what it has to lift.
+            {"name": "cylinder", "shape": "box", "material": "iron",
+             "size_mm": [500, 700, 500], "center_mm": [-2000, 550, 0], "anchored": True},
+            {"name": "piston", "shape": "box", "material": "iron",
+             "size_mm": [450, 100, 450], "center_mm": [-2000, 950, 0]},
+            # The boiler stands BESIDE the cylinder rather than inside it. A gas
+            # region has no inside to stand in -- it is a lump of gas with a
+            # volume and a temperature, not a space -- so what matters is that
+            # the water's environment is the cylinder's gas, not where it sits.
+            {"name": "boiler water", "shape": "box", "material": "iron",
+             "size_mm": [400, 150, 400], "center_mm": [-2700, 275, 0], "anchored": True},
+
+            # The cannon, in the middle, pointing east along x.
+            {"name": "barrel", "shape": "box", "material": "iron",
+             "size_mm": [1600, 300, 300], "center_mm": [-200, 350, 0], "anchored": True},
+            # At the muzzle rather than down the bore: a body cannot be inside
+            # another one here, and the bore is not modelled as a hole.
+            {"name": "ball", "shape": "box", "material": "iron",
+             "size_mm": [150, 150, 150], "center_mm": [750, 350, 0]},
+            # A powder keg, and it is mostly keg: see the contents below.
+            {"name": "cannon charge", "shape": "box", "material": "oak",
+             "size_mm": [200, 200, 200], "center_mm": [-1200, 300, 0], "anchored": True},
+
+            # The rocket, on the right, standing on the bench with its motor
+            # beside it for the same reason. Oak, and small: an iron one this
+            # size weighs 708 kg and would want 6.9 kN to leave the bench, which
+            # is not what a fifth of a kilogram of powder does.
+            {"name": "rocket", "shape": "box", "material": "oak",
+             "size_mm": [150, 450, 150], "center_mm": [2200, 425, 0]},
+            {"name": "rocket charge", "shape": "box", "material": "oak",
+             "size_mm": [100, 100, 100], "center_mm": [2700, 250, 0], "anchored": True},
+        ],
+        "joints": [],
+        "thermo": {
+            "gas_regions": [
+                # Balanced: the steam engine starts holding its own piston up,
+                # so the steam it makes is what lifts, not a pressure jump.
+                {"name": "cylinder gas", "contents": {"nitrogen": 1.0},
+                 "piston": "piston", "container": "cylinder", "balance": True,
+                 "height_m": 0.3, "area_m2": 0.19, "wall_conductance_w_k": 0.0},
+                # The powder chamber behind the ball. It pushes the ball east
+                # and the barrel back the other way, which is the recoil.
+                {"name": "breech", "contents": {"nitrogen": 1.0},
+                 "pressure_pa": 101325.0, "volume_m3": 0.004,
+                 "piston": "ball", "container": "barrel",
+                 "axis": [1.0, 0.0, 0.0], "area_m2": 0.0225,
+                 "wall_conductance_w_k": 0.0},
+                # The rocket: no piston at all. The gas leaves downwards
+                # through the throat and the momentum of it carries the rocket
+                # the other way.
+                {"name": "motor", "contents": {"nitrogen": 1.0},
+                 "pressure_pa": 101325.0, "volume_m3": 0.001,
+                 "vessel": "rocket", "vent_axis": [0.0, -1.0, 0.0],
+                 "vent_area_m2": 0.00006, "vent_open": True,
+                 "wall_conductance_w_k": 0.0},
+            ],
+            "contents": [
+                {"body": "boiler water", "contents": {"water": 1.0},
+                 "temperature_k": 373.15, "environment": "cylinder gas"},
+                # MOSTLY KEG. A 200 mm oak box weighs 5.6 kg, and 5.6 kg of
+                # powder in a four-litre breech is not a cannon, it is a bomb:
+                # the first try put 13.6 kg behind the ball and reached 380 MPa,
+                # which is fifty times what a gun barrel holds. These fractions
+                # are by the body's own mass, so the charge is 56 g of powder in
+                # a keg of ash, and the ash is there to be the keg.
+                {"body": "cannon charge", "contents": {"propellant": 0.01, "ash": 0.99},
+                 "temperature_k": 700.0, "environment": "breech"},
+                # The rocket's is a small keg with a lot of powder in it rather
+                # than the cannon's large one with a little. Thrust follows how
+                # fast gas is MADE, not how narrow the throat is -- narrowing
+                # the throat raises the pressure and the density together and
+                # the two cancel -- so a motor needs its powder to burn quickly,
+                # and a charge that is mostly inert ash cannot: the ash is a
+                # heat sink that holds it at a smoulder.
+                {"body": "rocket charge", "contents": {"propellant": 0.3, "ash": 0.7},
+                 "temperature_k": 800.0, "environment": "motor"},
+            ],
+            "heaters": [
+                {"target": "boiler water", "power_w": 20000.0, "seconds": 600.0,
+                 "label": "firebox"},
+                # The primers: a short hard push to take each charge from where
+                # it is smouldering to where it runs away on its own.
+                {"target": "cannon charge", "power_w": 4000.0, "start_s": 2.0,
+                 "seconds": 3.0, "label": "cannon primer"},
+                {"target": "rocket charge", "power_w": 4000.0, "start_s": 4.0,
+                 "seconds": 3.0, "label": "rocket primer"},
+            ],
+        },
+        "goods": {"deposits": [], "stockpiles": [], "recipes": []},
+    }
+
+
 def valley() -> dict[str, Any]:
     """A small valley with a river in it, made by the engine and saved.
 
@@ -1080,6 +1202,9 @@ SCENES = {
     # Two pails, one full of sand: the smallest room that shows what a
     # container is. Pick one up, hold it over the other and turn it over.
     "tests-pour": pouring,
+    # A steam engine, a cannon and a rocket in a row, all running on one
+    # mechanism: gas made fast inside a region presses on what bounds it.
+    "tests-engines": engines,
     # The Explore valley: one of everything the engine can make, standing on
     # ground you can walk. Laid out by tools/build_explore_world.py rather than
     # by hand, because every object has to be seated on the real heightfield and
