@@ -6351,6 +6351,8 @@ const heat = {
   glowing: new Map(),     // body name -> the material of its own it glows with
   flames: new Map(),      // body name -> { group, outer, inner, height, rx, rz }
   columns: new Map(),     // gas region name -> the column drawn for it
+  jets: new Map(),        // gas region name -> the nozzle plume drawn for it
+  jetsSeen: new Set(),    // and every one that has drawn at any point
   burning: new Set(),     // what was burning at the last reply, to say when it changes
   melting: new Set(),     // what was melting fast at the last reply, likewise
   // What heat has done to what things can carry: the engine's "mechanics"
@@ -6526,6 +6528,67 @@ function gasColumn(region) {
   const s = clamp((region.t_k - 293) / 300, 0, 1);
   column.material.color.copy(GAS_COOL).lerp(GAS_HOT, s);
   column.material.emissive.copy(GAS_HOT).multiplyScalar(0.4 * s);
+  // Thicker when there is more of it in the same room. A cylinder filling with
+  // steam should LOOK like it is filling, and pressure over temperature is
+  // what density is, so this is the gas's own number and not a mood.
+  const density = clamp((region.p_pa / 101325) * (293 / Math.max(region.t_k, 1)), 0, 6);
+  column.material.opacity = clamp(0.14 + 0.2 * density, 0.14, 0.75);
+}
+
+// A nozzle's jet, drawn as cells that leave.
+//
+// The owner, 2026-09-28: "steam within a container could also be represented
+// with transparentish voxels that have an outward pushing motion". This is
+// that, at the one place the engine knows gas is moving: out of a vent. Each
+// cell marches down the vent axis and starts again at the throat, and it goes
+// further and there are more of them the harder the nozzle is pushing.
+//
+// It is a PICTURE of the thrust the engine reports, never a source of it --
+// the same rule the flames follow. Take the drawing away and the rocket flies
+// exactly as high.
+const JET_CELLS = 8;
+const JET_BOX = new THREE.BoxGeometry(1, 1, 1);
+function nozzleJet(region) {
+  const vessel = world.bodies.get(region.vessel);
+  if (!vessel) return;
+  let jet = heat.jets.get(region.name);
+  if (!jet) {
+    const group = new THREE.Group();
+    const cells = [];
+    for (let i = 0; i < JET_CELLS; ++i) {
+      const cell = new THREE.Mesh(JET_BOX, new THREE.MeshStandardMaterial({
+        color: GAS_HOT, transparent: true, opacity: 0.5, depthWrite: false,
+        emissive: GAS_HOT, emissiveIntensity: 0.6, roughness: 0.4, metalness: 0 }));
+      group.add(cell);
+      cells.push(cell);
+    }
+    heatGroup.add(group);
+    jet = { group, cells, reach: 0.5, width: 0.05, vessel: region.vessel,
+            axis: new THREE.Vector3(0, -1, 0) };
+    heat.jets.set(region.name, jet);
+    heat.jetsSeen.add(region.name);
+  }
+  jet.vessel = region.vessel;
+  // How far it throws and how wide, from the thrust and the throat. A newton
+  // of push is not much of a plume; a kilonewton is a torch.
+  jet.reach = clamp(0.25 + 0.6 * Math.cbrt(Math.max(region.thrust_n, 0)), 0.25, 6.0);
+  jet.width = clamp(0.6 * Math.sqrt(Math.max(region.area_m2 || 0.0004, 0.0004)), 0.03, 0.4);
+  const axis = new THREE.Vector3(...(region.vent_axis || [0, -1, 0]));
+  if (axis.lengthSq() === 0) axis.set(0, -1, 0);
+  jet.axis = axis.normalize();
+  // From the vessel's own face, the way the gas goes.
+  const p = vessel.mesh.position;
+  const half = vessel.dims ? 0.5 * vessel.dims[1] : 0.1;
+  jet.group.position.set(p.x + jet.axis.x * half, p.y + jet.axis.y * half,
+                         p.z + jet.axis.z * half);
+}
+
+function dropJet(name) {
+  const jet = heat.jets.get(name);
+  if (!jet) return;
+  for (const cell of jet.cells) cell.material.dispose();
+  heatGroup.remove(jet.group);
+  heat.jets.delete(name);
 }
 
 // Said once when something catches and once when it goes out, with a gap
@@ -6674,9 +6737,14 @@ function drawHeat(block) {
   for (const name of [...heat.glowing.keys()]) if (!listed.has(name)) glow(name, 0);
   for (const name of [...heat.flames.keys()]) if (!listed.has(name)) dropFlame(name);
   const regions = new Set();
+  const jetting = new Set();
   for (const r of block.regions) {
     regions.add(r.name);
     if (r.piston) gasColumn(r);
+    // A jet only while something is actually leaving. A sealed region under
+    // any pressure at all draws nothing, which is the point: the plume is the
+    // gas going, not the gas being squeezed.
+    if (r.vessel && Number(r.thrust_n) > 0) { jetting.add(r.name); nozzleJet(r); }
   }
   for (const [name, column] of heat.columns) {
     if (regions.has(name)) continue;
@@ -6684,6 +6752,7 @@ function drawHeat(block) {
     column.material.dispose();
     heat.columns.delete(name);
   }
+  for (const name of [...heat.jets.keys()]) if (!jetting.has(name)) dropJet(name);
   narrateHeat(block);
   showHeat(block);
 }
@@ -6692,6 +6761,29 @@ function drawHeat(block) {
 // the engine's; the flicker is only drawing.
 function animateHeat(now) {
   const t = now / 1000;
+  // Every jet cell walks from the throat to the end of its reach and starts
+  // again, spread out so they leave one after another. They shrink and thin as
+  // they go, which is what a jet does as it spreads into the room.
+  for (const [, jet] of heat.jets) {
+    // On its vessel every frame, not once a reply: a rocket under thrust moves
+    // a long way between replies, and a plume left behind reads as a mistake.
+    const vessel = world.bodies.get(jet.vessel);
+    if (vessel) {
+      const p = vessel.mesh.position;
+      const half = vessel.dims ? 0.5 * vessel.dims[1] : 0.1;
+      jet.group.position.set(p.x + jet.axis.x * half, p.y + jet.axis.y * half,
+                             p.z + jet.axis.z * half);
+    }
+    for (let i = 0; i < jet.cells.length; ++i) {
+      const along = ((t * 2.4) + i / jet.cells.length) % 1;
+      const cell = jet.cells[i];
+      cell.position.set(jet.axis.x * along * jet.reach, jet.axis.y * along * jet.reach,
+                        jet.axis.z * along * jet.reach);
+      const spread = jet.width * (1 + 2.2 * along);
+      cell.scale.set(spread, spread, spread);
+      cell.material.opacity = 0.55 * (1 - along) * (1 - along);
+    }
+  }
   for (const [name, flame] of heat.flames) {
     const entry = world.bodies.get(name);
     if (!entry) { dropFlame(name); continue; }
@@ -8396,8 +8488,17 @@ window.banjoRoom = {
   }),
   // The workbench: what is on it, and where its clock is (workbench.js).
   workbench: () => workbench.state(),
+  // `jetsSeen` is every nozzle that has drawn a jet at any point, not just the
+  // ones drawing one now: a motor's burn is over in a fraction of a second and
+  // a check that has to catch it live would be a test of timing rather than of
+  // drawing.
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
-                      columns: [...heat.columns.keys()] }),
+                      columns: [...heat.columns.keys()], jets: [...heat.jets.keys()],
+                      jetsSeen: [...heat.jetsSeen],
+                      // How see-through each column actually is, so a check can
+                      // hold the drawing against the gas it is a drawing of.
+                      columnOpacity: Object.fromEntries(
+                        [...heat.columns].map(([name, mesh]) => [name, mesh.material.opacity])) }),
   // The ground and the water as drawn, for checking what is on screen against
   // what the engine said -- and a spade, for driving the room from outside.
   groundAt, waterAt, digAt,

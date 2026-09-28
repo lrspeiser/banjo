@@ -319,8 +319,11 @@ struct RegionState {
     double wall_loss_w{};
     bool vent_open{};
     double vent_flow_kg_s{};
-    // What the nozzle is pushing its vessel with now, and what that push has
-    // done in total. Zero unless the region names a vessel.
+    // The nozzle: what it pushes, which way the jet goes, what it is pushing
+    // with now and what that push has done in total. Empty and zero unless the
+    // region names a vessel.
+    std::string vessel;
+    Vec3 vent_axis{};
     double thrust_n{};
     double thrust_work_j{};
 };

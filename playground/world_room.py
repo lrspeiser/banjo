@@ -908,47 +908,89 @@ def engines() -> dict[str, Any]:
     # The charge temperatures are where the propellant is already going. A
     # primer's job, which this model does not have, is to get it there; the
     # heaters below do it instead, so nothing goes off before you have looked.
+    #
+    # EVERYTHING IS MEASURED FROM THE GROUND, not from zero. "flat" terrain's
+    # surface is 800 mm up, not at the origin, so a room laid out around y = 0
+    # is a room buried two thirds of a metre under the sand -- you open it and
+    # see nothing but ground. `on(mm)` puts the CENTRE of a body of height `mm`
+    # straight onto the surface, and `above(base, mm)` stacks the next thing on
+    # top of it, so the numbers below say what rests on what instead of
+    # repeating an offset that is easy to get wrong in one place only.
+    GROUND_MM = 800
+
+    def on(height_mm: float) -> float:
+        return GROUND_MM + height_mm / 2.0
+
+    def above(base_top_mm: float, height_mm: float) -> float:
+        return base_top_mm + height_mm / 2.0
+
+    bench_top = GROUND_MM + 100     # the plinth everything in the room sits on
     return {
         "algorithm": "lattice",
         "cell_m": 0.05,
         "plasticity": "on",
         "terrain": {"generate": "flat"},
         "bodies": [
+            # Thin, and no deeper than it needs to be. At 200 mm thick and
+            # 1200 deep this plinth was 11,520 of the room's 16,000 cells --
+            # four fifths of the budget spent on something nothing happens to.
+            # Its top is still at 200 mm, which is what everything stands on.
             {"name": "bench", "shape": "box", "material": "concrete",
-             "size_mm": [6000, 200, 1200], "center_mm": [0, 100, 0], "anchored": True},
+             "size_mm": [6000, 100, 800], "center_mm": [0, on(100), 0], "anchored": True},
 
             # The steam engine, on the left. The cylinder is fixed and the
             # piston sits on top of the gas; the block is what it has to lift.
             {"name": "cylinder", "shape": "box", "material": "iron",
-             "size_mm": [500, 700, 500], "center_mm": [-2000, 550, 0], "anchored": True},
+             "size_mm": [500, 700, 500], "center_mm": [-2000, above(bench_top, 700), 0],
+             "anchored": True},
             {"name": "piston", "shape": "box", "material": "iron",
-             "size_mm": [450, 100, 450], "center_mm": [-2000, 950, 0]},
+             "size_mm": [450, 100, 450], "center_mm": [-2000, above(bench_top + 700, 100), 0]},
             # The boiler stands BESIDE the cylinder rather than inside it. A gas
             # region has no inside to stand in -- it is a lump of gas with a
             # volume and a temperature, not a space -- so what matters is that
             # the water's environment is the cylinder's gas, not where it sits.
             {"name": "boiler water", "shape": "box", "material": "iron",
-             "size_mm": [400, 150, 400], "center_mm": [-2700, 275, 0], "anchored": True},
+             "size_mm": [400, 150, 400], "center_mm": [-2750, above(bench_top, 150), 0],
+             "anchored": True},
 
-            # The cannon, in the middle, pointing east along x.
+            # The cannon at the EAST end, firing east off the end of the bench
+            # into open ground, with nothing downrange.
+            #
+            # It was in the middle at first, firing straight at the rocket. That
+            # is worth recording, because it did not merely knock the rocket
+            # over: the ball arrived at 10.818 m/s against the rocket's breaking
+            # speed of 10.9, the engine took the step back to judge a break that
+            # close to the line, the retry produced the same borderline hit, and
+            # the world wedged at t = 3.4625 s and never advanced again. A room
+            # should not point one machine at another by accident.
             {"name": "barrel", "shape": "box", "material": "iron",
-             "size_mm": [1600, 300, 300], "center_mm": [-200, 350, 0], "anchored": True},
+             "size_mm": [1600, 300, 300], "center_mm": [1800, above(bench_top, 300), 0],
+             "anchored": True},
             # At the muzzle rather than down the bore: a body cannot be inside
             # another one here, and the bore is not modelled as a hole.
+            # The ball's middle is on the barrel's axis, so the gas pushes it
+            # down the line of the bore rather than at a slant.
             {"name": "ball", "shape": "box", "material": "iron",
-             "size_mm": [150, 150, 150], "center_mm": [750, 350, 0]},
-            # A powder keg, and it is mostly keg: see the contents below.
+             "size_mm": [150, 150, 150], "center_mm": [2750, above(bench_top, 300), 0]},
+            # A powder keg, and it is mostly keg: see the contents below. Small,
+            # because a primer has to be able to WARM it -- a 5.6 kg keg is
+            # 4.5 kJ per kelvin of inert ash to drag up to ignition, and a
+            # believable primer cannot.
             {"name": "cannon charge", "shape": "box", "material": "oak",
-             "size_mm": [200, 200, 200], "center_mm": [-1200, 300, 0], "anchored": True},
+             "size_mm": [100, 100, 100], "center_mm": [800, above(bench_top, 100), 0],
+             "anchored": True},
 
             # The rocket, on the right, standing on the bench with its motor
             # beside it for the same reason. Oak, and small: an iron one this
             # size weighs 708 kg and would want 6.9 kN to leave the bench, which
             # is not what a fifth of a kilogram of powder does.
+            # The rocket in the MIDDLE, out of the cannon's line, going straight
+            # up where nothing is.
             {"name": "rocket", "shape": "box", "material": "oak",
-             "size_mm": [150, 450, 150], "center_mm": [2200, 425, 0]},
+             "size_mm": [150, 450, 150], "center_mm": [0, above(bench_top, 450), 0]},
             {"name": "rocket charge", "shape": "box", "material": "oak",
-             "size_mm": [100, 100, 100], "center_mm": [2700, 250, 0], "anchored": True},
+             "size_mm": [100, 100, 100], "center_mm": [-500, above(bench_top, 100), 0],
+             "anchored": True},
         ],
         "joints": [],
         "thermo": {
@@ -983,8 +1025,8 @@ def engines() -> dict[str, Any]:
                 # which is fifty times what a gun barrel holds. These fractions
                 # are by the body's own mass, so the charge is 56 g of powder in
                 # a keg of ash, and the ash is there to be the keg.
-                {"body": "cannon charge", "contents": {"propellant": 0.01, "ash": 0.99},
-                 "temperature_k": 700.0, "environment": "breech"},
+                {"body": "cannon charge", "contents": {"propellant": 0.08, "ash": 0.92},
+                 "temperature_k": 500.0, "environment": "breech"},
                 # The rocket's is a small keg with a lot of powder in it rather
                 # than the cannon's large one with a little. Thrust follows how
                 # fast gas is MADE, not how narrow the throat is -- narrowing
@@ -992,18 +1034,42 @@ def engines() -> dict[str, Any]:
                 # the two cancel -- so a motor needs its powder to burn quickly,
                 # and a charge that is mostly inert ash cannot: the ash is a
                 # heat sink that holds it at a smoulder.
-                {"body": "rocket charge", "contents": {"propellant": 0.3, "ash": 0.7},
-                 "temperature_k": 800.0, "environment": "motor"},
+                # 154 g of powder, which is chosen by where it LANDS rather than
+                # by how high it goes. It rises 2.9 m and comes down at 7.5 m/s,
+                # under the 10.4 m/s at which oak starts to bend. At 182 g it
+                # rises 5.9 m and lands at 10.7, right on that line, and a hit
+                # that lands on a break threshold wedges the world -- the step
+                # is taken back to judge it, the retry makes the same borderline
+                # hit, and time stops. That is an engine fault and is filed as
+                # one; this room stays the safe side of it rather than pretending
+                # it is not there.
+                {"body": "rocket charge", "contents": {"propellant": 0.22, "ash": 0.78},
+                 "temperature_k": 500.0, "environment": "motor"},
             ],
             "heaters": [
                 {"target": "boiler water", "power_w": 20000.0, "seconds": 600.0,
                  "label": "firebox"},
-                # The primers: a short hard push to take each charge from where
-                # it is smouldering to where it runs away on its own.
-                {"target": "cannon charge", "power_w": 4000.0, "start_s": 2.0,
+                # THE PRIMERS, and they are what make this a room rather than a
+                # test. Declared at 600 K each charge only smoulders -- the
+                # burning rate is exp(-15000/T), so 600 K is about a fortieth of
+                # what 800 K does. A primer drags one charge up to where it runs
+                # away on its own, and the two go at different times, so someone
+                # who opens the room has a moment to stand somewhere and watch
+                # rather than arriving after both have already gone off.
+                #
+                # 40 kW because the keg has to come with it: 0.7 kg of oak and
+                # ash is about 560 J per kelvin, so 200 K of ignition is 112 kJ.
+                {"target": "cannon charge", "power_w": 40000.0, "start_s": 3.0,
                  "seconds": 3.0, "label": "cannon primer"},
-                {"target": "rocket charge", "power_w": 4000.0, "start_s": 4.0,
-                 "seconds": 3.0, "label": "rocket primer"},
+                # The rocket's primer is twice the cannon's and runs longer,
+                # because a motor fights its own nozzle to light: the vent
+                # carries heat out of the chamber as fast as the charge puts it
+                # in, and the charge sits in that chamber. A sealed breech has
+                # nowhere to lose it and catches on much less. At 40 kW the
+                # rocket only smouldered -- 2.1 kW of release, three minutes of
+                # fuel, nowhere near enough to lift itself.
+                {"target": "rocket charge", "power_w": 80000.0, "start_s": 9.0,
+                 "seconds": 5.0, "label": "rocket primer"},
             ],
         },
         "goods": {"deposits": [], "stockpiles": [], "recipes": []},

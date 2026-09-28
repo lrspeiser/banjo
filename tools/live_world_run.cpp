@@ -1249,6 +1249,10 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                            {"stroke_m", tidy(r.stroke_m)},
                            {"force_n", round(r.force_n, 0.1)},
                            {"work_j", round(r.work_to_bodies_j, 0.01)},
+                           // The nozzle, for the page to draw the jet with.
+                           {"vessel", r.vessel},
+                           {"vent_axis", vec(r.vent_axis)},
+                           {"thrust_n", round(r.thrust_n, 0.1)},
                            {"heater_w", round(r.heater_w, 1.0)}});
     const banjo::thermo::Ledger l = network.ledger();
     return {{"t", network.timeS()},

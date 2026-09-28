@@ -1396,6 +1396,8 @@ std::vector<RegionState> ThermoWorld::regions() const {
         state.heater_w = r.heater_w;
         state.wall_loss_w = r.wall_loss_w;
         state.vent_open = r.vent_open && r.vent_area_m2 > 0.0;
+        state.vessel = r.vessel;
+        state.vent_axis = r.vent_axis;
         state.thrust_work_j = r.thrust_work_j;
         state.thrust_n = 0.0;
         if (!r.vessel.empty() && state.vent_open) {

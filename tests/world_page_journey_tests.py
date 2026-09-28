@@ -1892,6 +1892,142 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
         self.no_page_errors("after turning the grain off and on")
 
 
+class ThreeMachinesRunWhereAPersonCanSeeThem(PageJourney):
+    """A steam engine, a cannon and a rocket, in one room, on screen.
+
+    tests/gas_pressure_tests.cpp pins the thermochemistry against a
+    one-dimensional stand-in and tests/engines_room_tests.py runs the same three
+    in the real engine. Neither of those looks at the PAGE, and the page is
+    where the owner's rule lives: it is not done until it is watchable in 3D.
+    So this opens /world?scene=tests-engines in a real browser and asks what a
+    person would see.
+
+    The sampler below runs every animation frame because the rocket's whole
+    flight -- light, climb, fall -- is over in about three seconds of room time,
+    and a check that polled from outside would step straight over it. For the
+    same reason the jet is checked through `jetsSeen` rather than `jets`: a
+    nozzle draws its plume only while it is actually pushing, which is under a
+    second, so asking "is one drawing now" would be a test of timing.
+    """
+
+    SCENE = "tests-engines"
+
+    WATCH = """(() => {
+      window.__seen = { rocket: 0, piston: 0, ball: 0, breech: 0, breechAt: 0 };
+      const dense = (r) => (r.p_pa / 101325) * (293 / r.t_k);
+      (function watch() {
+        const B = banjoRoom.world.bodies;
+        const r = B.get("rocket"), p = B.get("piston"), b = B.get("ball");
+        if (r) __seen.rocket = Math.max(__seen.rocket, r.mesh.position.y);
+        if (p) __seen.piston = Math.max(__seen.piston, p.mesh.position.y);
+        if (b) __seen.ball = Math.max(__seen.ball, b.mesh.position.x);
+        const h = banjoRoom.heatState();
+        const g = h && h.regions && h.regions.find((x) => x.name === "breech");
+        if (g && dense(g) > __seen.breech) {
+          __seen.breech = dense(g);
+          __seen.breechAt = banjoRoom.status().time_s;
+        }
+        requestAnimationFrame(watch);
+      })();
+      return true;
+    })()"""
+
+    def open_room(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene={self.SCENE}"})
+        self.assertTrue(
+            self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{self.SCENE}'"
+                          " && banjoRoom.world.bodies.size >= 9", 300),
+            "the engines room did not open")
+        self.page.evaluate(self.WATCH)
+
+    def test_all_three_machines_run_and_the_page_draws_what_they_do(self):
+        self.open_room()
+        # Past the cannon's primer at 3 s and the rocket's at 9 s, with room to
+        # spare for the rocket to come down again.
+        self.wait_world(18.0)
+        seen = self.js("window.__seen")
+        drawn = self.js("banjoRoom.heatDrawn()")
+        start = {"piston": 1.65, "ball": 2.75, "rocket": 1.125}   # where they sit at rest
+        print(f"\n   piston up to {seen['piston']:.2f} m, ball out to {seen['ball']:.2f} m,"
+              f" rocket up to {seen['rocket']:.2f} m; drawn {drawn}", flush=True)
+
+        # The steam engine: the piston climbs and the page moves it.
+        self.assertGreater(seen["piston"], start["piston"] + 0.3,
+                           "the piston should have been drawn climbing")
+        # The cannon: the ball is thrown east, well off its rest.
+        self.assertGreater(seen["ball"], start["ball"] + 1.0,
+                           "the ball should have been drawn thrown down the bench")
+        # The rocket: off the bench by more than any bounce would explain.
+        self.assertGreater(seen["rocket"], start["rocket"] + 1.5,
+                           "the rocket should have been drawn leaving the bench")
+
+        # And the gas itself is drawn: a column in each vessel that has a
+        # piston, and a jet at the one nozzle in the room.
+        self.assertIn("cylinder gas", drawn["columns"], "the cylinder's steam should be drawn")
+        self.assertIn("breech", drawn["columns"], "the breech's gas should be drawn")
+        self.assertIn("motor", drawn["jetsSeen"], "the rocket's nozzle should have drawn a jet")
+        self.assertEqual([], drawn["jets"], "and stopped drawing it once the motor was spent")
+        self.no_page_errors("after the three machines ran")
+
+    def test_a_gas_is_drawn_thicker_when_there_is_more_of_it(self):
+        """The owner, 2026-09-28: gas should read as something being made rather
+        than as a fixed pane of colour. A column's opacity follows the gas's own
+        density -- pressure over temperature -- so the picture is of that number
+        and not of the clock.
+
+        The BREECH is where this shows, and two things about it are worth
+        writing down because both surprised me.
+
+        The cylinder does NOT thicken. It is balanced against the piston's
+        weight, so as it takes on steam it holds the same pressure and GROWS
+        instead: its density hardly moves (0.865 to 0.860 over eight seconds)
+        and its column gets taller rather than denser.
+
+        And the breech ends up THINNER than it started. Firing spikes it, but
+        once the ball has gone the gas is left hot at nearly atmospheric
+        pressure, and hot gas at atmospheric pressure is thin -- 0.38 against
+        the 0.80 of cold air in the same box. So the thickening is a moment, not
+        a state, and it has to be watched for frame by frame rather than
+        compared before and after.
+
+        Which is why this does not try to CATCH the spike. The spike is a few
+        milliseconds of wall time and the page draws seven frames a second on
+        CI, so a check that waited for it would be a check on luck. What is
+        pinned instead is the link itself: every column the page is drawing is
+        held against the gas the engine reported in the same breath, and its
+        opacity has to be that gas's density put through the drawing's own rule.
+        Get the wiring wrong -- draw a constant, read the wrong region, forget
+        to update -- and this fails; a slow-moving number cannot hide it.
+        """
+        self.open_room()
+        # The first heat block is a reply or two behind the room opening.
+        self.assertTrue(self.wait_for("banjoRoom.heatState() && banjoRoom.heatState().regions"
+                                      " && banjoRoom.heatState().regions.length >= 3", 120),
+                        "the room never reported its gas")
+        self.wait_world(5.0)          # over the cannon's primer at 3 s
+        # Read the drawing and the gas in ONE turn, so nothing has moved between.
+        both = self.js("""(() => {
+          const drawn = banjoRoom.heatDrawn().columnOpacity;
+          const gas = {};
+          for (const r of banjoRoom.heatState().regions) {
+            if (drawn[r.name] === undefined) continue;
+            gas[r.name] = { density: (r.p_pa / 101325) * (293 / r.t_k), opacity: drawn[r.name] };
+          }
+          return gas;
+        })()""")
+        self.assertTrue(both, "the page should be drawing at least one gas column")
+        for name, seen in sorted(both.items()):
+            want = min(max(0.14 + 0.2 * seen["density"], 0.14), 0.75)
+            print(f"\n   {name}: density {seen['density']:.3f} drawn at"
+                  f" {seen['opacity']:.3f} (the rule says {want:.3f})", flush=True)
+            self.assertAlmostEqual(
+                seen["opacity"], want, places=3,
+                msg=f"{name} is drawn at {seen['opacity']:.3f} but holds gas at "
+                    f"{seen['density']:.3f} density, which the rule draws at {want:.3f}")
+        self.no_page_errors("holding the drawing against the gas")
+
+
 class AThingIsDrawnAsTheShapeItWasDrawnTo(PageJourney):
     """A room describes a thing as the boxes somebody laid out, and the engine
     compiles those onto its grid and collides the cells. The cells are the
