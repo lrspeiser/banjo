@@ -553,6 +553,25 @@ the owner can see it in 3D.
 
 ### Stage 1 — see the ground you already have
 
+**Half of this is done, 2026-09-27 — the half you can see.** What a column is
+made of now goes over the wire as runs (`TerrainField::runsOf`,
+`Environment::runsPacked`, `runs_b64` and `floor_m` in the terrain block and in
+every changed rectangle), a survey says the column in words, the page draws the
+face of every step in the materials the step cuts through, and its panel says
+what is under your feet all the way down. Measured: the five checks in
+`tests/terrain_runs_tests.py`, and in the real valley 10,780 bands in four
+materials, with a pit dug to rock photographed by `tests/ground_faces_shots.py`.
+Nothing else moved: `world_room` 57, `api_docs` 12, `terrain_tests` 11/11,
+`water_tests` 19/19, `ground_work_tests` all, and **60 s of the valley in 4.638 s
+of wall clock, 0.0773x realtime**, against the 0.078x this plan set out from.
+
+**The other half has not been built**: the CSR storage inside `TerrainField`
+(today `runsOf` reads the three layers that are already there and says them as
+runs, which is why the format is right but the ground still holds only three),
+`Volumes` by kind with the total kept by the edits, and the 30 m earth. Those are
+what stage 2 needs, because a bed or a vein has nowhere to live until a column
+can hold more than three runs.
+
 Runs in `TerrainField`, three legacy layers as three runs, `Volumes` by kind with
 the total kept by the edits rather than swept (§9), faces drawn, the survey in
 words, the earth made 30 m deep. No new materials, no new physics.

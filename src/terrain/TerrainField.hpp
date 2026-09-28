@@ -72,6 +72,23 @@ struct Grid {
 // What is on top of a column, for drawing and for saying what it is.
 enum class Surface : std::uint8_t { Rock = 0, Soil = 1, Sand = 2 };
 
+// What one run of a column is made of. The first three are the Surface values,
+// so a run's kind and a column's surface never disagree. Loose soil is its own
+// kind because it IS a different material -- soil that lost its cohesion when it
+// was dug -- and a pit someone has heaped back into should not look like the
+// bank it came out of.
+enum class RunKind : std::uint8_t { Rock = 0, Soil = 1, Sand = 2, LooseSoil = 3 };
+
+// A column bottom to top, as runs: a material and the height it reaches. A
+// column is already this -- rock, the soil that formed on it, and the loose
+// mixture on top -- and saying it in runs is what lets a cut face be drawn in
+// the materials it goes through, and what the ground will keep on holding when
+// it holds strata and veins (docs/earth-and-mining-plan.md).
+struct Run {
+    RunKind kind{};
+    double top_m{};
+};
+
 // A DECLARED simplified model: each material is a bulk density, a friction
 // angle and a cohesion. Values are textbook ranges for dry-ish ground, not a
 // calibration of any site. Rock is the engine's stone -- the "concrete" preset,
@@ -175,6 +192,13 @@ public:
     [[nodiscard]] double looseSoil(std::size_t c) const { return loose_[c]; }
     [[nodiscard]] float moisture(std::size_t c) const { return moisture_[c]; }
     [[nodiscard]] Surface surface(std::size_t c) const;
+    // The runs of one column, bottom to top, into a buffer of at least
+    // kRunsMost. Returns how many it wrote; never none, because there is always
+    // rock. The loose layer is sand and loose soil MIXED (see strip(): it is one
+    // mixture, not two layers in an order), so it is one run, of whichever it is
+    // mostly -- the rule surface() uses.
+    static constexpr int kRunsMost = 4;
+    int runsOf(std::size_t c, Run *out) const;
     // The ground under a point, interpolated the way the collider is.
     [[nodiscard]] double heightAt(double x, double z) const;
     [[nodiscard]] std::optional<std::size_t> cellAt(double x, double z) const;

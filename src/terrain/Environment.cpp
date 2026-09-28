@@ -62,6 +62,16 @@ const char *surfaceName(Surface s) {
     return "soil";
 }
 
+const char *runKindName(RunKind k) {
+    switch (k) {
+    case RunKind::Rock: return "rock";
+    case RunKind::Soil: return "soil";
+    case RunKind::Sand: return "sand";
+    case RunKind::LooseSoil: return "loose soil";
+    }
+    return "soil";
+}
+
 const char *edgeName(water::Edge e) {
     switch (e) {
     case water::Edge::West: return "west";
@@ -1465,6 +1475,25 @@ std::string Environment::surveyJson(double x, double z) const {
                 // is below the sum.
                 {"rolling_resistance", groundMaterialOf(terrain_->surface(c)).rolling_resistance},
                 {"slope_deg", terrain_->slopeDeg(c)}};
+    // What the column is made of, bottom to top: the runs themselves, so
+    // whoever is standing here can be told what is under their feet and how far
+    // down it starts, rather than being handed four thicknesses to add up.
+    {
+        Run runs[TerrainField::kRunsMost];
+        const int n = terrain_->runsOf(c, runs);
+        const double top = terrain_->height(c);
+        Json made = Json::array();
+        double below = terrain_->floor();
+        for (int k = 0; k < n; ++k) {
+            made.push_back({{"material", runKindName(runs[k].kind)},
+                            {"from_m", below},
+                            {"to_m", runs[k].top_m},
+                            {"thickness_m", runs[k].top_m - below},
+                            {"under_foot_m", top - runs[k].top_m}});
+            below = runs[k].top_m;
+        }
+        out["runs"] = std::move(made);
+    }
     if (water_->wet(c) && water_->depth(c) > 0.003) {
         const double u = water_->velocityX(c), w = water_->velocityZ(c);
         out["water"] = {{"depth_m", water_->depth(c)}, {"surface_m", water_->surface(c)},
@@ -1485,6 +1514,40 @@ std::vector<float> Environment::heights() const {
 std::vector<std::uint8_t> Environment::surfaces() const {
     std::vector<std::uint8_t> out(landscape_.grid.cells());
     for (std::size_t c = 0; c < out.size(); ++c) out[c] = static_cast<std::uint8_t>(terrain_->surface(c));
+    return out;
+}
+
+namespace {
+// One column's runs onto the end of a byte string. See Environment::runsPacked.
+void packRuns(const TerrainField &field, std::size_t c, double floor_m, std::vector<std::uint8_t> &out) {
+    Run runs[TerrainField::kRunsMost];
+    const int n = field.runsOf(c, runs);
+    out.push_back(static_cast<std::uint8_t>(n));
+    for (int k = 0; k < n; ++k) {
+        const double mm = std::round((runs[k].top_m - floor_m) * 1000.0);
+        const unsigned clamped = static_cast<unsigned>(std::clamp(mm, 0.0, 65535.0));
+        out.push_back(static_cast<std::uint8_t>(runs[k].kind));
+        out.push_back(static_cast<std::uint8_t>(clamped & 0xFFu));
+        out.push_back(static_cast<std::uint8_t>(clamped >> 8));
+    }
+}
+} // namespace
+
+std::vector<std::uint8_t> Environment::runsPacked() const {
+    const Grid &g = landscape_.grid;
+    return runsPacked(0, 0, g.nx, g.nz);
+}
+
+std::vector<std::uint8_t> Environment::runsPacked(int i0, int j0, int ni, int nj) const {
+    const Grid &g = landscape_.grid;
+    std::vector<std::uint8_t> out;
+    if (ni <= 0 || nj <= 0 || i0 < 0 || j0 < 0 || i0 + ni > g.nx || j0 + nj > g.nz) return out;
+    // Four runs at most, thirteen bytes a column: 254 KB for the whole valley,
+    // and a dig sends the rectangle it changed.
+    out.reserve(static_cast<std::size_t>(ni) * nj * (1 + 3 * TerrainField::kRunsMost));
+    const double floor_m = terrain_->floor();
+    for (int j = 0; j < nj; ++j)
+        for (int i = 0; i < ni; ++i) packRuns(*terrain_, g.at(i0 + i, j0 + j), floor_m, out);
     return out;
 }
 

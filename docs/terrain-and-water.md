@@ -41,6 +41,18 @@ layer of sand or soil on top:
 | soil | 1600 kg/m3 | 30 deg | 2 kPa | holds a spade-deep wall |
 | sand | 1600 kg/m3 | 32 deg | 0 | slumps to its angle of repose |
 
+**What a column is, is what it is made of.** Every column is said in RUNS -- a
+material and the height it reaches, bottom to top -- which is what the three
+layers above already are, and what the ground goes on being said in when it
+holds strata and veins (`TerrainField::runsOf`,
+[the earth plan](earth-and-mining-plan.md)). The page is sent them with the
+heights and redraws only the rectangle that changed, so **the face a cut exposes
+is drawn in the materials it cuts through** instead of in the colour of whatever
+is on top: a pit through sand into soil and down to rock has a sand band, a soil
+band and rock at its floor. A survey says the same column in words -- "18 cm of
+sand, then 96 cm of soil, then rock" -- and so does the page's own panel, for
+whoever is standing on it.
+
 **Stability is asked, not assumed.** When the ground changes, only the columns
 that changed and their neighbours are rechecked. A step between two columns
 fails if it is taller than the material can hold: for a cohesionless layer,
@@ -286,7 +298,7 @@ Still swept whole:
 | C API (ABI 15) | `banjo_terrain_info`, `banjo_water_info`, `banjo_dig`, `banjo_deposit`, `banjo_cut_block`, `banjo_set_discharge`, `banjo_terrain_heights`, `banjo_water_surface`, `banjo_environment_report`, `banjo_environment_state`, `banjo_survey`, `banjo_awake_bodies` |
 | Python | `World.terrain / water / dig / deposit / cut_block / set_discharge / terrain_heights / water_surface / environment_report / environment_state / survey / awake_bodies` |
 | scene | `"terrain": {"generate": ..., "edits": [...]}`, `"water": {"discharge_m3_s" / "rivers", "state", "watershed"}` -- the last declaring the river network beyond the edges: basins, junctions, the reaches between them, and where they meet this ground ([the watershed](watershed.md)) |
-| line protocol | ops `dig`, `deposit` (`from_carried`: no bigger than what is carried), `cut_block`, `discharge`, `survey`, `environment`, `environment_state`, `terrain`; the ground whole when a world opens and afterwards only the rectangle that changed (`terrain_changed`); `carried` in the ground block and in every dig's and heap's reply; the water's surface and flow four times a world second; with a river network beyond the edges, `beyond` in the ground block (its connections, basins and junctions, and each reach's course cut at its cells) and `basins`, `junctions`, `reaches` and `all_unaccounted_m3` in the water block |
+| line protocol | ops `dig`, `deposit` (`from_carried`: no bigger than what is carried), `cut_block`, `discharge`, `survey`, `environment`, `environment_state`, `terrain`; the ground whole when a world opens and afterwards only the rectangle that changed (`terrain_changed`); `runs_b64` and `floor_m` in both, which say what every column is MADE of all the way down -- a count, then a kind and the height it reaches in millimetres above the floor, for each run -- and `runs` in a survey's reply, which says the same column in words; `carried` in the ground block and in every dig's and heap's reply; the water's surface and flow four times a world second; with a river network beyond the edges, `beyond` in the ground block (its connections, basins and junctions, and each reach's course cut at its cells) and `basins`, `junctions`, `reaches` and `all_unaccounted_m3` in the water block |
 | MCP | `make_terrain`, `survey`, `water_state`, `dig`, `fill` (only from what is carried), `carried` (the ground's sand and soil with what was swept up), `cut_block`, `set_river`; `add_object` sets things on the ground and says if they are in water; every `run` carries a water summary; the room's opening message says what is carried (`the_ground.carried_m3`); `make_terrain(beyond_the_edges=true)` stands a river network beyond the river's source and mouth -- a reach down from a reservoir, and from the mouth a reach to a confluence where a brook from a spring joins it, and on to a lake -- `water_state`'s `beyond_the_edges` reports each basin, junction and river, and `set_river` feeds the reservoir, or the spring by its name |
 | playground | the valley room, built by the chat from the MCP's tools; the ground and the water drawn from the engine's own heights and depths; **Dig here**, **Heap here** and the **Carried** list; a water panel; the watershed room, the same valley within a river network, its basins and junction drawn as sheets and its reaches as ribbons of water beyond the edges, cell by cell at the levels the engine reports |
 

@@ -164,6 +164,16 @@ Surface TerrainField::surface(std::size_t c) const {
     return Surface::Rock;
 }
 
+int TerrainField::runsOf(std::size_t c, Run *out) const {
+    int n = 0;
+    // The rock goes down to the floor; nothing is dug below it.
+    out[n++] = {RunKind::Rock, rock_[c]};
+    if (soil_[c] > 0.0) out[n++] = {RunKind::Soil, rock_[c] + soil_[c]};
+    const double loose = sand_[c] + loose_[c];
+    if (loose > 0.0) out[n++] = {sand_[c] >= loose_[c] ? RunKind::Sand : RunKind::LooseSoil, height(c)};
+    return n;
+}
+
 std::optional<std::size_t> TerrainField::cellAt(double x, double z) const {
     const long i = std::lround((x - grid_.x0) / grid_.dx);
     const long j = std::lround((z - grid_.z0) / grid_.dx);
