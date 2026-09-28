@@ -1693,6 +1693,18 @@ function followPorts(ports) {
   showMachineHolds();
 }
 
+// The room's containers (playground/vessels.py), sent with every step for the
+// same reason the mouths are: what a bucket holds changes as it is carried and
+// tipped, so it is different on almost every step. Nothing said means this
+// reply carried none, which is not the same as a room with no containers --
+// that is an empty list, when the room opens.
+world.vessels = [];
+function followVessels(vessels) {
+  if (vessels === undefined) return;
+  world.vessels = Array.isArray(vessels) ? vessels : [];
+  drawHolds();
+}
+
 // What a machine's controller was told, in a person's words.
 function commandedWords(c) {
   const hoist = c.kind === "hoist";
@@ -2597,6 +2609,17 @@ function holdersNow() {
     holders.push({ key: `ore ${seam.name}`, name: titled(seam.name), kind: "in the ground",
                    slots: left > 0.0005 ? [{ what: seam.substance, kg: left }] : [],
                    kg: left, capacity_kg: Number(seam.of_kg) || 0 });
+  }
+  // And every container. A heap is a place and stays where it is put; a
+  // container rides the body that carries it, so it says what it is riding
+  // and, when it has been turned far enough to pour, that it is pouring.
+  for (const vessel of world.vessels || []) {
+    const slots = Object.entries(vessel.holds_kg || {}).map(([what, kg]) => ({ what, kg: Number(kg) || 0 }));
+    const tipping = Number(vessel.pouring) > 0;
+    holders.push({ key: `vessel ${vessel.name}`, body: vessel.body, name: titled(vessel.name),
+                   kind: tipping ? "pouring" : "a container", slots,
+                   kg: slots.reduce((sum, s) => sum + s.kg, 0),
+                   capacity_kg: Number(vessel.capacity_kg) || 0 });
   }
   return holders;
 }
@@ -6723,6 +6746,7 @@ async function tick() {
     followBrains(state.brains);
     followGoods(state.goods);
     followPorts(state.ports);
+    followVessels(state.vessels);
     // A sun with a day moves with every step the engine takes.
     if (state.sun) lightFromSun(state.sun);
     drawRopes();
@@ -7826,6 +7850,7 @@ async function open({ again = false } = {}) {
     // A room opening has no "unchanged": no goods said means this room has none.
     followGoods(data.goods || { stockpiles: [], deposits: [] });
     followPorts(data.ports || []);
+    followVessels(data.vessels || []);
     lightFromSun(data.sun);
     drawRopes();
     clearHeat();

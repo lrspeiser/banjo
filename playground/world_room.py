@@ -847,6 +847,47 @@ def yard() -> dict[str, Any]:
     }
 
 
+def pouring() -> dict[str, Any]:
+    """Two pails on the ground, one full of sand (playground/vessels.py).
+
+    The smallest room that shows what a container is: pick the full one up,
+    hold it over the empty one, and turn it. The sand goes from the slot of
+    the one into the slot of the other, and what misses lands on the ground
+    as a heap, where the goods ledger keeps it like any other.
+
+    A container is not a heap. A heap is a place and stays where it is put; a
+    pail rides the body that carries it, so what is in it goes where it goes.
+    Open it at /world?scene=tests-pour.
+    """
+    pail = lambda name, x: {
+        "name": name, "shape": "box", "material": "iron",
+        "size_mm": [260, 280, 260], "center_mm": [x, 140, 0], "rest_on": "bench",
+    }
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.04,
+        "plasticity": "on",
+        "terrain": {"generate": "flat"},
+        "bodies": [
+            {"name": "bench", "shape": "box", "material": "concrete",
+             "size_mm": [2400, 80, 800], "center_mm": [0, 40, 0], "anchored": True},
+            pail("sand pail", -600),
+            pail("empty pail", 600),
+        ],
+        "joints": [],
+        # 18 kg of sand in the first, and room for it in the second. The mouth
+        # is the rim: 140 mm up the body, which is where what comes out leaves
+        # from and where the other one has to be to catch it.
+        "vessels": [
+            {"name": "sand pail", "body": "sand pail", "capacity_kg": 20.0,
+             "holds": {"sand": 18.0}, "mouth_mm": [0, 140, 0]},
+            {"name": "empty pail", "body": "empty pail", "capacity_kg": 20.0,
+             "mouth_mm": [0, 140, 0]},
+        ],
+        "goods": {"deposits": [], "stockpiles": [], "recipes": []},
+    }
+
+
 def valley() -> dict[str, Any]:
     """A small valley with a river in it, made by the engine and saved.
 
@@ -1036,6 +1077,9 @@ SCENES = {
     # every material is reachable from the start is kept beside it in
     # docs/evidence/new-game-proof.json. Open it at /world?scene=new-game.
     "new-game": _saved_room("new-game"),
+    # Two pails, one full of sand: the smallest room that shows what a
+    # container is. Pick one up, hold it over the other and turn it over.
+    "tests-pour": pouring,
     # The Explore valley: one of everything the engine can make, standing on
     # ground you can walk. Laid out by tools/build_explore_world.py rather than
     # by hand, because every object has to be seated on the real heightfield and

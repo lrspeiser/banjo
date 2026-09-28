@@ -252,5 +252,51 @@ class InTheRoomItself(unittest.TestCase):
         self.assertEqual({"sand": 2.0}, answer["vessels"][0]["holds_kg"])
 
 
+
+
+class TheRoomYouCanWalkUpTo(unittest.TestCase):
+    """`/world?scene=tests-pour`: two pails on a bench, one full of sand."""
+
+    def test_the_room_is_two_pails_and_one_of_them_is_full(self):
+        import world_room, fracture_lab
+        spec = fracture_lab.validate(world_room.SCENES["tests-pour"]())
+        held = {v["name"]: v for v in spec["vessels"]}
+        self.assertEqual({"sand pail", "empty pail"}, set(held))
+        self.assertEqual({"sand": 18.0}, held["sand pail"]["holds"])
+        self.assertEqual({}, held["empty pail"]["holds"])
+        self.assertEqual(20.0, held["empty pail"]["capacity_kg"], "room for all of it")
+        # Both ride a body the room really has, which is what the room's own
+        # check is for -- and both rest on the bench rather than in it.
+        bodies = {b["name"] for b in spec["bodies"]}
+        for vessel in spec["vessels"]:
+            self.assertIn(vessel["body"], bodies)
+
+    def test_held_over_the_other_and_turned_it_pours_across(self):
+        """The room's own pails, driven the way the brains drive them."""
+        import world_room, fracture_lab, rover_brain
+        spec = fracture_lab.validate(world_room.SCENES["tests-pour"]())
+        brains = rover_brain.Brains(lambda: None)
+        brains.opened(spec)
+
+        def step(t, over):
+            # The full pail lifted above the empty one and turned right over.
+            brains.listen(None, {"t": t, "machines": {"programs": []}, "bodies": [
+                {"name": "sand pail", "position_m": [0.6, 0.9, 0.0],
+                 "orientation_wxyz": turned(180) if over else upright()},
+                {"name": "empty pail", "position_m": [0.6, 0.24, 0.0],
+                 "orientation_wxyz": upright()}]})
+
+        step(0.1, over=False)
+        self.assertEqual(18.0, brains.vessels.by_name("sand pail").held_kg())
+        for i in range(1, 61):
+            step(0.1 + i * 0.1, over=True)
+        sand, empty = brains.vessels.by_name("sand pail"), brains.vessels.by_name("empty pail")
+        self.assertAlmostEqual(0.0, sand.held_kg(), places=6, msg="it emptied")
+        self.assertAlmostEqual(18.0, empty.held_kg(), places=6,
+                               msg="and all 18 kg are in the other pail")
+        # Nothing was lost on the way: the ground's heaps are still empty.
+        self.assertEqual(0.0, sum(sum((s.get("holds") or {}).values()) for s in brains.goods.stockpiles))
+
+
 if __name__ == "__main__":
     unittest.main()
