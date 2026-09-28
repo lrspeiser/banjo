@@ -847,6 +847,104 @@ def yard() -> dict[str, Any]:
     }
 
 
+#: What "flat" ground is made of when a room does not say: 600 mm of soil with
+#: 200 mm of sand on it. Rock is at the origin and that goes ON TOP, so the
+#: SURFACE of a default flat room is 800 mm up and not zero -- and a room laid
+#: out around y = 0 is a room at rock level, buried under all of it, showing a
+#: person nothing but sand when they open it.
+FLAT_SOIL_M, FLAT_SAND_M = 0.6, 0.2
+
+
+def _flat_ground_mm(spec: dict[str, Any]) -> float:
+    """How far up a flat room's surface is, from its own terrain.
+
+    It is not a constant. The default is 800 mm, but a room that asks for
+    less soil gets less ground: tests-motor and tests-sit both declare
+    `soil_m: 0.4, sand_m: 0.0` and stand at 400. Assuming 800 for those left
+    them hovering 400 mm in the air, which is the same fault upside down.
+    """
+    generated = (spec.get("terrain") or {}).get("generate")
+    asked = generated if isinstance(generated, dict) else {}
+    soil = float(asked.get("soil_m", FLAT_SOIL_M))
+    sand = float(asked.get("sand_m", FLAT_SAND_M))
+    return (soil + sand) * 1000.0
+
+
+def _is_flat(spec: dict[str, Any]) -> bool:
+    """Only "flat" ground sits at a known height. Real terrain -- a valley, a
+    basin -- has its own surface everywhere, and a room on it is seated by the
+    tool that laid it out."""
+    generated = (spec.get("terrain") or {}).get("generate")
+    kind = generated if isinstance(generated, str) else (generated or {}).get("kind")
+    return kind == "flat"
+
+
+def _lowest_mm(spec: dict[str, Any]) -> float | None:
+    """The bottom of the lowest thing in a room, lattice or exact."""
+    low: float | None = None
+    for body in spec.get("bodies") or []:
+        # A body with `rest_on` has no height of its own worth reading: what
+        # it says is a placeholder the validator replaces by seating it on
+        # whatever it stands on. Measuring it would let a placeholder decide
+        # how far the room is lifted.
+        if body.get("rest_on") or "center_mm" not in body or "size_mm" not in body:
+            continue
+        bottom = body["center_mm"][1] - body["size_mm"][1] / 2.0
+        low = bottom if low is None else min(low, bottom)
+    for body in spec.get("precise_rigid_bodies") or []:
+        at = (body.get("position_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+        for part in body.get("parts") or []:
+            middle = (part.get("center_local_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+            tall = (part.get("dimensions_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+            bottom = at + middle - tall / 2.0
+            low = bottom if low is None else min(low, bottom)
+    return low
+
+
+def standing_on_the_ground(spec: dict[str, Any]) -> dict[str, Any]:
+    """Lift a flat room so its lowest thing rests ON the ground.
+
+    A room written around y = 0 is written around ROCK, 800 mm under the
+    surface (FLAT_GROUND_MM), and nothing catches it: the placement check
+    looks at bodies against each other, and the headless tests read positions
+    from the engine, which are right. Only opening it and looking shows an
+    empty field. tests-pour, tests-motor and tests-sit were all like that.
+
+    What moves is every ABSOLUTE height: a body's centre, a joint's anchor,
+    an exact body's position. What does not is everything measured from
+    something else -- a part's offset inside its body, a vessel's mouth, and
+    any body with `rest_on`, which the validator seats on whatever is under
+    it, so lifting that carries it up too.
+
+    It only ever RAISES. A room saved out of a world that has been played in
+    already has real heights in it, and pushing that DOWN onto the ground
+    would drop whatever was standing on something. Something left floating
+    above the ground is not the fault being fixed here.
+    """
+    if not _is_flat(spec):
+        return spec
+    low = _lowest_mm(spec)
+    if low is None:
+        return spec
+    lift = _flat_ground_mm(spec) - low
+    if lift <= 1e-9:
+        return spec
+    for body in spec.get("bodies") or []:
+        if body.get("rest_on") or "center_mm" not in body:
+            continue
+        x, y, z = body["center_mm"]
+        body["center_mm"] = [x, y + lift, z]
+    for joint in spec.get("joints") or []:
+        if "at_mm" in joint:
+            x, y, z = joint["at_mm"]
+            joint["at_mm"] = [x, y + lift, z]
+    for body in spec.get("precise_rigid_bodies") or []:
+        if "position_m" in body:
+            x, y, z = body["position_m"]
+            body["position_m"] = [x, y + lift / 1000.0, z]
+    return spec
+
+
 def pouring() -> dict[str, Any]:
     """Two pails on the ground, one full of sand (playground/vessels.py).
 
@@ -863,7 +961,10 @@ def pouring() -> dict[str, Any]:
         "name": name, "shape": "box", "material": "iron",
         "size_mm": [260, 280, 260], "center_mm": [x, 140, 0], "rest_on": "bench",
     }
-    return {
+    # Seated on the ground on the way out, because this room was written
+    # around y = 0 and flat ground is 800 mm up: it has been showing a person
+    # nothing but sand since it was written (standing_on_the_ground).
+    return standing_on_the_ground({
         "algorithm": "lattice",
         "cell_m": 0.04,
         "plasticity": "on",
@@ -885,7 +986,7 @@ def pouring() -> dict[str, Any]:
              "mouth_mm": [0, 140, 0]},
         ],
         "goods": {"deposits": [], "stockpiles": [], "recipes": []},
-    }
+    })
 
 
 def engines() -> dict[str, Any]:
@@ -1228,7 +1329,11 @@ ROOMS = Path(__file__).resolve().parent / "rooms"
 
 def _saved_room(name: str):
     def scene() -> dict[str, Any]:
-        return json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8"))
+        # Seated on the ground on the way out: several saved rooms were
+        # authored around y = 0, which on flat ground is 800 mm under the
+        # sand (standing_on_the_ground).
+        return standing_on_the_ground(
+            json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8")))
     scene.__name__ = name.replace("-", "_")
     return scene
 
