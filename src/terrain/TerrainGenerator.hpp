@@ -25,7 +25,12 @@
 //      is made or lost;
 //   6. soil thinned on steep ground until rock shows, and sand where the water
 //      has left it;
-//   7. the river itself, run with the real shallow-water solver from dry until
+//   7. what the rock under it is made of (docs/earth-and-mining-plan.md): a
+//      mantle of weathered rock following the rock's own surface, a bed of clay
+//      dipping across the valley under it, and a vein of ore cutting through
+//      both at its own strike and dip, with its top oxidised where the weather
+//      has reached it -- and outcropping on the knoll, where the rock is bare;
+//   8. the river itself, run with the real shallow-water solver from dry until
 //      it passes on what it is fed, so the world opens with a river that is
 //      already flowing.
 //
@@ -44,7 +49,7 @@ namespace banjo::terrain {
 
 // Bumped whenever generation changes what it makes, so an old cached valley is
 // never read back as a new one.
-inline constexpr int kGeneratorVersion = 3;
+inline constexpr int kGeneratorVersion = 4;
 
 struct ValleyParameters {
     std::uint64_t seed{7};
@@ -90,6 +95,9 @@ struct Landscape {
     std::string kind;             // "valley", "basin", "channel", "flat"
     Grid grid;
     std::vector<double> rock, soil, sand, loose;
+    // What the rock is made of, bottom to top. Empty means one bed of rock
+    // under every column, which is what a landscape made before beds has.
+    Beds beds;
     std::vector<float> moisture;
     // The water as the world opens with it: depth over the ground, discharge.
     std::vector<double> depth, qx, qz;

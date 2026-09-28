@@ -68,6 +68,10 @@ const char *runKindName(RunKind k) {
     case RunKind::Soil: return "soil";
     case RunKind::Sand: return "sand";
     case RunKind::LooseSoil: return "loose soil";
+    case RunKind::WeatheredRock: return "weathered rock";
+    case RunKind::Clay: return "clay";
+    case RunKind::Ore: return "ore";
+    case RunKind::OxidisedOre: return "oxidised ore";
     }
     return "soil";
 }
@@ -513,8 +517,13 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
 
 Environment::Environment(Landscape landscape) : landscape_(std::move(landscape)) {
     const Grid &g = landscape_.grid;
-    terrain_ = std::make_unique<TerrainField>(g, landscape_.rock, landscape_.soil, landscape_.sand,
-                                              landscape_.loose, landscape_.moisture);
+    // The rock as the generator laid it, if it said: beds, and otherwise the one
+    // bed of rock every landscape made before them has.
+    terrain_ = landscape_.beds.empty()
+        ? std::make_unique<TerrainField>(g, landscape_.rock, landscape_.soil, landscape_.sand,
+                                         landscape_.loose, landscape_.moisture)
+        : std::make_unique<TerrainField>(g, landscape_.beds, landscape_.soil, landscape_.sand,
+                                         landscape_.loose, landscape_.moisture);
     std::vector<double> ground(g.cells());
     for (std::size_t c = 0; c < ground.size(); ++c) ground[c] = terrain_->height(c);
     water_ = std::make_unique<water::ShallowWater>(water::Grid{g.nx, g.nz, g.dx, g.x0, g.z0}, ground);

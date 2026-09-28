@@ -586,7 +586,14 @@ measured slump numbers for no gain, when what stage 2 needs (beds, veins, ore) a
 live in the rock. And `Volumes` was not widened to a kind each: it is read in a
 hundred places and has nothing new to count yet, so instead a bed adds to the kind
 it is made of, and a cut into a bed that is not rock is refused until it does.
-Widening it is stage 2's first job.
+
+**And it turned out not to be stage 2's first job after all.** Stage 2 put clay
+and ore in the ground and `Volumes` still did not need widening: a bed adds to
+the bucket its matter belongs to (rock, weathered rock and ore are all the
+ground's stone; clay is soil-like), the ledger closes, and what a vein is WORTH
+is the goods account's business, not the ground's. The reason to widen it is the
+mass of what comes out from under a tool, which arrives with stage 4's rock law.
+That is where it belongs: where getting a density right decides something.
 
 Runs in `TerrainField`, three legacy layers as three runs, `Volumes` by kind with
 the total kept by the edits rather than swept (§9), faces drawn, the survey in
@@ -609,6 +616,28 @@ the ground. Test pits and the prospecting panel.
 **You can see:** walk the valley and spot a stained outcrop from across it; sink
 three test pits and read the vein's dip off them; `tests-mine`'s copper vein is
 now a body in the rock you can look at in the wall of a pit.
+
+**Half of this is done, 2026-09-28: the ground has geology in it.** A mantle of
+weathered rock over the rock, a bed of clay dipping along the valley under it,
+and a vein of ore through both at its own strike and dip, oxidised where the
+weather reached it. The page draws the top of a column in what the column is
+MADE of rather than in one of three surface kinds, so the vein shows as a rust
+stain on the knoll's bare rock and you can walk up to it; the panel says the
+whole column -- "1.2 m of weathered rock, then 7.3 m of rock, then 70 cm of
+clay, then rock". Measured (`the valley has geology in it`, terrain_tests
+13/13): 19,476 columns have the clay bed, 1,963 the vein, 28 show it at
+daylight, no column holds more than 8 runs, and the clay lies a metre lower at
+the valley's east end than its west -- so a bed found in one place says where it
+is in another. `kGeneratorVersion` is 4 and the beds are cached with the
+landscape. One thing fell out of it worth keeping: the valley's cut-block test
+used to look for bare level rock and now has to look for rock that is rock ALL
+THE WAY DOWN, because a block of clay or ore is refused.
+
+**Not built, and still stage 2's:** deposits reading the ground (a vein's
+reserve is still the room's declared number, not what is in the rock), test pits
+and the prospecting panel, the oxidised cap being softer to work than fresh ore
+(nothing can work rock at all until stage 4), placer in the river, and gravel
+lenses.
 
 **Measured:** generation still under 3 s and cached bit for bit; the vein's mass
 in the ground equals what the room's deposit used to declare; nothing in the

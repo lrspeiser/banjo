@@ -41,6 +41,21 @@ layer of sand or soil on top:
 | soil | 1600 kg/m3 | 30 deg | 2 kPa | holds a spade-deep wall |
 | sand | 1600 kg/m3 | 32 deg | 0 | slumps to its angle of repose |
 
+**What the rock is made of.** The valley's rock is not one thing. A mantle of
+**weathered rock** follows the rock's own surface, about 1.4 m of it; a bed of
+**clay** 0.7 m thick dips along the valley under it -- the weak ground a roof
+will fall out of, and a floor a mine wants to stay above; and a **vein of ore**
+cuts through both at its own strike and dip (25 degrees, dipping 72), pinching
+and swelling, reaching about 9 m from the knoll before it is gone. Its top is
+**oxidised** where the weather has been at it, which is the part a person can
+work by hand, and fresh below. Because the beds are surfaces the ground's shape
+does not follow, a bed found in one place says where it is in another: the clay
+is 1 m lower at the valley's east end than its west. Measured on the generated
+valley: 19,476 columns have the clay bed, 1,963 have the vein, **28 show it at
+daylight** on the knoll's bare rock -- a rust-coloured stain you can walk up to
+-- and no column holds more than 8 runs. All of it is declared, deterministic in
+the seed, and cached with the landscape.
+
 **The rock under a column is a stack of BEDS** -- what each bed is and the height
 it reaches -- and it goes down **30 m** below the lowest rock there is
 (`TerrainField::kEarthDepthM`), where it used to go down 2 m, which is no earth
