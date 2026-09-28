@@ -69,6 +69,8 @@ body that stays whole.
 | Gas in a cylinder pushing a piston | Test room, Chat | `/world?scene=tests-motion`: heat the piston |
 | Heat kept by things in the bag | World | a thing in the bag is kept exactly as it was put away |
 | A container holds a mass of a substance and rides the body that carries it | Test room | `/world?scene=tests-pour`: two pails on a bench, 18 kg of sand in one. The Room tab's slots say what each holds |
+| What a container holds has a temperature, and follows the body holding it | Code only | `tests/vessels_tests.py`: 18 kg of sand is 14,940 J/K, so it lags by 747 s |
+| Pouring mixes two temperatures by heat capacity | Code only | boiling into freezing gives 50 C; boiling into sand gives 89 C |
 | Turning a container over pours it into another one, or onto the ground | Test room | the same room: hold the full pail over the empty one and turn it. What misses lands as a heap |
 | Ice melting, and its meltwater running into the room's water | World | heat an ice block (B): 10 kW melts 30 g a second. The Explorer's valley has one: `/world?scene=explore` |
 | Freezing | Code only | only in a separate voxel thermal simulation (`SparseThermalWorld`, `EnthalpyLaw`), with no link to the world's heat |

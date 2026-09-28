@@ -298,5 +298,133 @@ class TheRoomYouCanWalkUpTo(unittest.TestCase):
         self.assertEqual(0.0, sum(sum((s.get("holds") or {}).values()) for s in brains.goods.stockpiles))
 
 
+class WhatItHoldsHasATemperature(unittest.TestCase):
+    def test_a_heat_capacity_is_the_sum_of_what_is_in_it(self):
+        held = vessels.Vessels(room(a_bucket("pail", "pail", {"water": 2.0, "sand": 1.0})))
+        pail = held.by_name("pail")
+        self.assertAlmostEqual(2.0 * 4182.0 + 1.0 * 830.0, pail.heat_capacity_j_k(), places=6)
+        self.assertEqual(vessels.AMBIENT_K, pail.temperature_k, "the room's own, unless it says")
+        self.assertEqual(vessels.DEFAULT_SPECIFIC_HEAT_J_KG_K, vessels.specific_heat("moondust"),
+                         "a substance the table does not name still warms believably")
+
+    def test_it_follows_the_body_that_holds_it_and_never_overshoots(self):
+        held = vessels.Vessels(room(a_bucket("pail", "pail", {"water": 1.0}, warms_w_k=20.0)))
+        pail = held.by_name("pail")
+        hot = {"bodies": [{"name": "pail", "t_k": 373.15}]}
+        held.warm(1.0, hot)
+        self.assertGreater(pail.temperature_k, vessels.AMBIENT_K, "it warms toward the body")
+        self.assertLess(pail.temperature_k, 373.15, "and not past it")
+        for _ in range(4000):
+            held.warm(1.0, hot)
+        self.assertAlmostEqual(373.15, pail.temperature_k, places=3,
+                               msg="left long enough it reaches the body's temperature")
+        # And a single enormous step must not fly past and ring.
+        cold = vessels.Vessels(room(a_bucket("p", "p", {"water": 0.01}, warms_w_k=1e4)))
+        cold.warm(60.0, {"bodies": [{"name": "p", "t_k": 500.0}]})
+        self.assertLessEqual(cold.by_name("p").temperature_k, 500.0 + 1e-9)
+
+    def test_a_body_the_heat_block_does_not_name_is_at_the_rooms_temperature(self):
+        """The engine leaves out anything within a kelvin of ambient, so an
+        absent body is a cold body and not an unknown one."""
+        held = vessels.Vessels(room(a_bucket("pail", "pail", {"water": 1.0}, temperature_k=350.0)))
+        for _ in range(2000):
+            held.warm(1.0, {"bodies": []})
+        self.assertAlmostEqual(vessels.AMBIENT_K, held.by_name("pail").temperature_k, places=2,
+                               msg="standing in a cold room, it cools to the room")
+
+    def test_pouring_mixes_the_two_temperatures(self):
+        held = vessels.Vessels(room(
+            a_bucket("hot", "hot", {"water": 1.0}, temperature_k=373.15),
+            a_bucket("cold", "cold", {"water": 1.0}, temperature_k=273.15)))
+        held.follow([{"name": "hot", "position_m": [0.0, 1.2, 0.0], "orientation_wxyz": turned(180)},
+                     {"name": "cold", "position_m": [0.0, 0.3, 0.0], "orientation_wxyz": upright()}])
+        for _ in range(20):
+            held.spill(0.1)
+        cold = held.by_name("cold")
+        self.assertAlmostEqual(2.0, cold.held_kg(), places=6, msg="all of it went across")
+        self.assertAlmostEqual(323.15, cold.temperature_k, places=3,
+                               msg="a kilogram of boiling into a kilogram of freezing is halfway")
+
+    def test_mixing_is_weighted_by_heat_capacity_not_by_mass(self):
+        """A kilogram of water carries five times the heat of a kilogram of
+        sand, and the mixture has to say so."""
+        held = vessels.Vessels(room(
+            a_bucket("hot", "hot", {"water": 1.0}, temperature_k=373.15),
+            a_bucket("cold", "cold", {"sand": 1.0}, temperature_k=273.15)))
+        held.follow([{"name": "hot", "position_m": [0.0, 1.2, 0.0], "orientation_wxyz": turned(180)},
+                     {"name": "cold", "position_m": [0.0, 0.3, 0.0], "orientation_wxyz": upright()}])
+        for _ in range(20):
+            held.spill(0.1)
+        got = held.by_name("cold").temperature_k
+        by_mass = (373.15 + 273.15) / 2.0
+        want = (373.15 * 4182.0 + 273.15 * 830.0) / (4182.0 + 830.0)
+        self.assertAlmostEqual(want, got, places=2)
+        self.assertGreater(got, by_mass + 10.0, "the water dominates, as it should")
+
+    def test_an_empty_vessel_takes_the_temperature_of_what_arrives(self):
+        held = vessels.Vessels(room(a_bucket("pail", "pail")))
+        held.by_name("pail").put({"water": 2.0}, at_k=350.0)
+        self.assertAlmostEqual(350.0, held.by_name("pail").temperature_k, places=6)
+
+    def test_the_page_and_the_room_are_told_the_temperature(self):
+        spec = room(a_bucket("pail", "pail", {"water": 1.0}, temperature_k=330.0))
+        held = vessels.Vessels(spec)
+        [slot] = held.holders()
+        self.assertEqual(330.0, slot["temperature_k"])
+        self.assertAlmostEqual(56.85, slot["temperature_c"], places=2)
+        held.warm(1.0, {"bodies": [{"name": "pail", "t_k": 373.15}]})
+        held.save()
+        self.assertGreater(spec["vessels"][0]["temperature_k"], 330.0,
+                           "the room's own block keeps how hot it is")
+
+
+class TheHeatReachesItThroughTheRoom(unittest.TestCase):
+    """The wiring: a step's own heat block warms what a vessel holds."""
+
+    def test_a_hot_body_warms_what_its_vessel_holds_as_the_room_steps(self):
+        import world_room, fracture_lab, rover_brain
+        spec = fracture_lab.validate(world_room.SCENES["tests-pour"]())
+        brains = rover_brain.Brains(lambda: None)
+        brains.opened(spec)
+        pail = brains.vessels.by_name("sand pail")
+        self.assertEqual(vessels.AMBIENT_K, pail.temperature_k)
+        for i in range(1, 121):
+            brains.listen(None, {
+                "t": i * 0.1, "machines": {"programs": []},
+                # The pail's own body is hot: a fire under it, say.
+                "heat": {"bodies": [{"name": "sand pail", "t_k": 400.0}]},
+                "bodies": [{"name": "sand pail", "position_m": [-0.6, 0.24, 0.0],
+                            "orientation_wxyz": upright()}]})
+        # AGAINST THE CLOSED FORM, not against a feeling. 18 kg of sand is
+        # 14,940 J/K and the pail passes 20 W/K, so its time constant is 747 s
+        # and twelve seconds of a 400 K body is worth 1.7 K -- thermal inertia
+        # is the whole point of giving contents a heat capacity.
+        tau = pail.heat_capacity_j_k() / pail.warms_w_k
+        want = 400.0 + (vessels.AMBIENT_K - 400.0) * math.exp(-12.0 / tau)
+        self.assertAlmostEqual(747.0, tau, places=0)
+        self.assertAlmostEqual(want, pail.temperature_k, places=1,
+                               msg="it follows the exponential a first-order lag gives")
+        self.assertGreater(pail.temperature_k, vessels.AMBIENT_K + 1.0, "it did warm")
+        self.assertEqual(18.0, pail.held_kg(), "warming it spills nothing")
+
+    def test_the_room_decides_what_cold_is(self):
+        import world_room, fracture_lab, rover_brain
+        spec = fracture_lab.validate(world_room.SCENES["tests-pour"]())
+        spec["thermo"] = {"ambient": {"temperature_k": 260.0}}
+        brains = rover_brain.Brains(lambda: None)
+        brains.opened(spec)
+        self.assertEqual(260.0, brains.ambient_k)
+        for i in range(1, 400):
+            brains.listen(None, {"t": i * 0.1, "machines": {"programs": []},
+                                 "bodies": [{"name": "sand pail", "position_m": [-0.6, 0.24, 0.0],
+                                             "orientation_wxyz": upright()}]})
+        pail = brains.vessels.by_name("sand pail")
+        tau = pail.heat_capacity_j_k() / pail.warms_w_k
+        want = 260.0 + (vessels.AMBIENT_K - 260.0) * math.exp(-39.9 / tau)
+        self.assertAlmostEqual(want, pail.temperature_k, places=1,
+                               msg="it cools toward the room's own cold, on the same lag")
+        self.assertLess(pail.temperature_k, vessels.AMBIENT_K - 1.0, "it did cool")
+
+
 if __name__ == "__main__":
     unittest.main()

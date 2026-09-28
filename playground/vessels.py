@@ -29,11 +29,18 @@ the way a port's mouth does (`machine_ports`). Drive the cart and its bucket
 goes with it, full. Tip the bucket and what it holds comes out where its mouth
 is pointing, not where the bucket was declared.
 
+**What it holds has a temperature**, and pouring MIXES: hot water into a cold
+pail comes out between the two, weighted by heat capacity. The contents follow
+the temperature of the body that holds them -- ONE WAY, and that is the honest
+limit: the body does not cool for having warmed them, because its heat is the
+engine's and nothing outside can take heat out of a lump in the thermal
+network. Making that conserve means the contents being a lump in it too, which
+is the same change that would let them boil.
+
 **What it is not, yet:** a stream you can see between the two, a vessel that
 fills partly and sloshes, a lid, a substance that will not pour (a bucket of
-set concrete tips out as readily as sand), and any notion of the contents
-having a temperature of their own -- the kettle's thermal proxy is still a
-separate body (`workshop_bench_core`), and joining the two is the next step.
+set concrete tips out as readily as sand), boiling and steam, and a vessel
+whose contents warm the vessel back.
 """
 from __future__ import annotations
 
@@ -56,6 +63,42 @@ POURS_KG_S = 5.0
 #: and how far below. A pail held over another catches; one beside it does not.
 CATCH_M = 0.45
 CATCH_BELOW_M = 1.5
+#: The room's own temperature when nothing says otherwise, in kelvin: the
+#: thermal network's, so a vessel nobody has heated reads the same as the air
+#: round it.
+AMBIENT_K = 293.15
+#: How fast heat crosses from the body into what it holds, in watts per kelvin
+#: of difference, when a vessel does not say. Declared, not derived: a real
+#: figure is the wetted area over the wall's resistance, and a vessel here has
+#: no wall -- it has a body somewhere near it and a mass in a ledger. Twenty
+#: takes a pail of water most of the way to a hot plate's temperature in a
+#: couple of minutes, which is what watching a kettle looks like.
+WARMS_W_K = 20.0
+#: What a kilogram of each substance takes to warm by a kelvin, J/kg/K, at
+#: room temperature. Handbook values: water 4182, dry sand 830, clay 920,
+#: limestone 910, hematite 650, bauxite 850, Portland cement 880, copper 385,
+#: soda-lime glass 840, concrete 880, alumina 880, aluminium 897, iron 449,
+#: dry oak about 2000.
+#:
+#: WHY A TABLE HERE AND NOT THE THERMAL MODEL'S. The engine's model knows the
+#: substances BODIES are made of -- iron, alumina, ice, dry wood -- and knows
+#: nothing of the goods the ledger moves: there is no "sand", no "clay", no
+#: "copper ore" in it, because none of those has ever been a body. Reading it
+#: would answer for a third of this list and raise for the rest.
+SPECIFIC_HEAT_J_KG_K = {
+    "water": 4182.0, "sand": 830.0, "clay": 920.0, "limestone": 910.0,
+    "iron ore": 650.0, "bauxite": 850.0, "cement": 880.0, "copper": 385.0,
+    "copper wire": 385.0, "copper ore": 700.0, "glass": 840.0,
+    "concrete": 880.0, "alumina ceramic": 880.0, "aluminum": 897.0,
+    "iron": 449.0, "oak": 2000.0, "soil": 800.0, "sand and soil": 800.0,
+}
+#: And for anything not in it: a middling mineral, so an unnamed substance
+#: warms at a believable rate rather than instantly or never.
+DEFAULT_SPECIFIC_HEAT_J_KG_K = 800.0
+
+
+def specific_heat(substance: str) -> float:
+    return SPECIFIC_HEAT_J_KG_K.get(substance, DEFAULT_SPECIFIC_HEAT_J_KG_K)
 
 
 def _turn(q: Iterable[float], v: Iterable[float]) -> list[float]:
@@ -95,10 +138,12 @@ def checked(given: Any) -> list[dict[str, Any]]:
         if not isinstance(vessel, dict):
             raise ValueError(f"vessel {i} is not an object")
         unknown = set(vessel) - {"name", "body", "capacity_kg", "accepts", "holds",
-                                 "pours_past_deg", "pours_kg_s", "mouth_mm"}
+                                 "pours_past_deg", "pours_kg_s", "mouth_mm",
+                                 "temperature_k", "warms_w_k"}
         if unknown:
             raise ValueError(f"a vessel cannot say {sorted(unknown)}: it holds name, body, "
-                             f"capacity_kg, accepts, holds, pours_past_deg, pours_kg_s and mouth_mm")
+                             f"capacity_kg, accepts, holds, pours_past_deg, pours_kg_s, "
+                             f"mouth_mm, temperature_k and warms_w_k")
         name = " ".join(str(vessel.get("name") or "").split())[:NAMES_MOST]
         if not name or any(o["name"] == name for o in out):
             raise ValueError(f"vessel {i} needs a name of its own")
@@ -120,6 +165,10 @@ def checked(given: Any) -> list[dict[str, Any]]:
             "pours_kg_s": _number(vessel.get("pours_kg_s", POURS_KG_S), 0.001, 1e4,
                                   f"vessel {name!r} pours_kg_s"),
             "mouth_mm": [float(v) for v in (vessel.get("mouth_mm") or [0.0, 0.0, 0.0])],
+            "temperature_k": _number(vessel.get("temperature_k", AMBIENT_K), 1.0, 5000.0,
+                                     f"vessel {name!r} temperature_k"),
+            "warms_w_k": _number(vessel.get("warms_w_k", WARMS_W_K), 0.0, 1e5,
+                                 f"vessel {name!r} warms_w_k"),
         }
         held = sum(made["holds"].values())
         if held > made["capacity_kg"] + 1e-9:
@@ -142,6 +191,10 @@ class Vessel:
         self.pours_past_deg = float(declared["pours_past_deg"])
         self.pours_kg_s = float(declared["pours_kg_s"])
         self.mouth_local_m = [float(v) / 1000.0 for v in declared["mouth_mm"]]
+        #: What is IN it is at this temperature -- one figure for the lot,
+        #: because a vessel holds a mass and not a body with an inside.
+        self.temperature_k = float(declared["temperature_k"])
+        self.warms_w_k = float(declared["warms_w_k"])
         #: Where the mouth is in the room, and how far the vessel is from
         #: upright. Both are None until a step has said where its body is.
         self.mouth_m: list[float] | None = None
@@ -152,6 +205,37 @@ class Vessel:
     def held_kg(self) -> float:
         return sum(self.holds.values())
 
+    def heat_capacity_j_k(self) -> float:
+        """What it takes to warm everything in it by a kelvin."""
+        return sum(kg * specific_heat(what) for what, kg in self.holds.items())
+
+    def warms(self, dt_s: float, toward_k: float) -> float:
+        """Heat crossing from the body it rides into what it holds, for that
+        long. Answers the joules that went.
+
+        ONE WAY, and this is the honest limit of it: the contents follow the
+        body's temperature and the BODY DOES NOT COOL for having warmed them.
+        The body's heat is the engine's -- it is a lump in the thermal network
+        with its own mass and its own losses -- and nothing outside can take
+        heat out of it; the `heat` op only puts external work IN. Making this
+        conserve means the contents being a lump in that network too, which is
+        the same change that would let them boil, and it is the next step
+        rather than this one.
+        """
+        capacity = self.heat_capacity_j_k()
+        if capacity <= 0.0 or self.warms_w_k <= 0.0 or dt_s <= 0.0:
+            return 0.0
+        gap = float(toward_k) - self.temperature_k
+        joules = self.warms_w_k * gap * float(dt_s)
+        # Never past the body's own temperature in one step: a big step and a
+        # small capacity would otherwise overshoot and swing about, which is
+        # the difference between a kettle warming and a kettle ringing.
+        most = abs(gap) * capacity
+        if abs(joules) > most:
+            joules = most if joules > 0.0 else -most
+        self.temperature_k += joules / capacity
+        return joules
+
     def room_kg(self) -> float:
         return max(0.0, self.capacity_kg - self.held_kg())
 
@@ -160,9 +244,19 @@ class Vessel:
         none takes anything, the way a port that names no goods does."""
         return not self.accepts or substance in self.accepts
 
-    def put(self, load: dict[str, float]) -> dict[str, float]:
+    def put(self, load: dict[str, float], at_k: float | None = None) -> dict[str, float]:
         """As much of that as will go in, in the order given. Answers what
-        actually went, so a caller can see what it still has."""
+        actually went, so a caller can see what it still has.
+
+        `at_k` is how hot what is arriving is, and the two MIX: the vessel
+        comes out at the heat-capacity-weighted mean of what it had and what
+        it got, which is what mixing is. Pouring boiling water into a cold
+        pail warms the pail's water and cools the boiling, in one figure.
+        An empty vessel simply takes the arriving temperature.
+        """
+        arriving_capacity = (sum(kg * specific_heat(what) for what, kg in load.items())
+                             if at_k is not None else 0.0)
+        had_capacity = self.heat_capacity_j_k()
         went: dict[str, float] = {}
         for substance, kg in load.items():
             kg = float(kg)
@@ -174,6 +268,14 @@ class Vessel:
             took = min(kg, room)
             self.holds[substance] = self.holds.get(substance, 0.0) + took
             went[substance] = went.get(substance, 0.0) + took
+        if at_k is not None and went:
+            # Only what actually went in mixes; what missed never arrived.
+            share = (sum(kg * specific_heat(what) for what, kg in went.items())
+                     / arriving_capacity if arriving_capacity > 0.0 else 0.0)
+            came = arriving_capacity * share
+            if had_capacity + came > 0.0:
+                self.temperature_k = ((self.temperature_k * had_capacity + float(at_k) * came)
+                                      / (had_capacity + came))
         return went
 
     def take(self, kg: float, substance: str | None = None) -> dict[str, float]:
@@ -228,6 +330,8 @@ class Vessel:
         return {"name": self.name, "body": self.body,
                 "holds_kg": {k: round(v, 3) for k, v in self.holds.items()},
                 "capacity_kg": round(self.capacity_kg, 3),
+                "temperature_k": round(self.temperature_k, 2),
+                "temperature_c": round(self.temperature_k - 273.15, 2),
                 "at_m": [round(v, 4) for v in self.mouth_m] if self.mouth_m else None,
                 "tilt_deg": round(self.tilt_deg, 1) if self.tilt_deg is not None else None,
                 "pouring": round(self.pouring(), 3)}
@@ -291,6 +395,28 @@ class Vessels:
                 best, nearest = other, across
         return best
 
+    def warm(self, dt_s: float, heat: Any = None, ambient_k: float = AMBIENT_K) -> None:
+        """Every vessel's contents, toward the temperature of the body that
+        holds it, for that long.
+
+        `heat` is the block a step carries (`reply["heat"]`). A body within a
+        kelvin of ambient is NOT in it -- the engine leaves those out, and
+        there are at most 48 -- so a body that is not named is a body at the
+        room's own temperature, which is exactly what a vessel standing in a
+        cold room should follow.
+        """
+        if dt_s <= 0.0:
+            return
+        hot: dict[str, float] = {}
+        if isinstance(heat, dict):
+            for body in (heat.get("bodies") or []):
+                if isinstance(body, dict) and body.get("name") is not None:
+                    t_k = body.get("t_k")
+                    if isinstance(t_k, (int, float)):
+                        hot[str(body["name"])] = float(t_k)
+        for vessel in self.vessels:
+            vessel.warms(dt_s, hot.get(vessel.body, float(ambient_k)))
+
     def spill(self, dt_s: float, goods: Any = None) -> list[dict[str, Any]]:
         """What came out of everything that has been turned over, this step.
 
@@ -311,7 +437,9 @@ class Vessels:
             # that substance -- misses it and goes on the ground.
             missed = dict(poured)
             if caught is not None:
-                went = caught.put(poured)
+                # What pours carries its temperature with it, and mixes into
+                # whatever is already in the other one.
+                went = caught.put(poured, at_k=vessel.temperature_k)
                 missed = {k: v - went.get(k, 0.0) for k, v in poured.items()
                           if v - went.get(k, 0.0) > 1e-9}
             if missed and goods is not None and vessel.mouth_m is not None:
@@ -341,3 +469,4 @@ class Vessels:
             for row in declared:
                 if isinstance(row, dict) and str(row.get("name") or "") == vessel.name:
                     row["holds"] = {k: round(v, 4) for k, v in vessel.holds.items()}
+                    row["temperature_k"] = round(vessel.temperature_k, 4)
