@@ -375,6 +375,12 @@ if(BANJO_BUILD_HEADLESS)
         target_link_libraries(banjo_thermochemistry_tests PRIVATE banjo_thermo)
         banjo_enable_warnings(banjo_thermochemistry_tests)
         add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
+        # The three machines that gas pressure makes: a steam engine, a cannon
+        # and a rocket, all one mechanism.
+        add_executable(banjo_gas_pressure_tests tests/gas_pressure_tests.cpp)
+        target_link_libraries(banjo_gas_pressure_tests PRIVATE banjo_thermo)
+        banjo_enable_warnings(banjo_gas_pressure_tests)
+        add_test(NAME banjo_gas_pressure_tests COMMAND banjo_gas_pressure_tests)
     endif()
     # Terrain and water: the ground as material held still, and rivers and
     # lakes as columns of water on it, run where they are changing rather than

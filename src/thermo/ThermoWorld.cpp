@@ -23,6 +23,10 @@ constexpr double kDefaultLayerM = 0.003;
 // Two bounding boxes touch when they meet face to face within this gap, or
 // overlap by no more than this much (resting contact has a little of both).
 constexpr double kTouchGapM = 0.006;
+// An orifice passes less than its area: the jet contracts just past the hole.
+// The vent's flow and the nozzle's thrust are two views of the same jet, so
+// they must use the same number.
+constexpr double kDischarge = 0.6;
 constexpr double kTouchPenetrationM = 0.02;
 // A body joins the network when something in it could move this much power
 // into the body. Below it the body stays at the surroundings' temperature.
@@ -657,7 +661,6 @@ struct ThermoWorld::Impl {
     // right for modest pressure differences, not for choked flow.
     void vent(GasRegion &region, double dt) {
         if (!region.vent_open || !(region.vent_area_m2 > 0.0) || !(region.volume_m3 > 0.0)) return;
-        constexpr double kDischarge = 0.6;
         const double t = temperature(region.gas);
         const double p = pressurePa(model, region.gas, region.volume_m3);
         const double dp = p - ambient.pressure_pa;
@@ -997,6 +1000,12 @@ void ThermoWorld::declareGasRegion(const GasRegionDeclaration &d) {
             : w.ambient.film_coefficient_w_m2_k * (2.0 * side * side + 4.0 * side * height);
     region.vent_area_m2 = std::max(0.0, d.vent_area_m2);
     region.vent_open = d.vent_open;
+    region.vessel = d.vessel;
+    region.vent_axis = d.vent_axis;
+    require(region.vessel.empty() || dot(region.vent_axis, region.vent_axis) > 0.0,
+            d.name + ": a nozzle needs a direction for the gas to leave by");
+    require(region.vessel.empty() || w.shape(region.vessel) != nullptr,
+            d.name + ": there is no body called " + region.vessel + " to hold it");
     if (w.s.opened) {
         w.s.ledger.joined_j += region.gas.internal_energy_j;
         w.s.ledger.joined_kg += massKg(region.gas);
@@ -1040,6 +1049,28 @@ std::vector<Push> ThermoWorld::pushes() {
         out.push_back({piston.body, piston.pushed_force_n});
         if (!piston.container.empty() && w.shape(piston.container) != nullptr)
             out.push_back({piston.container, -piston.pushed_force_n});
+    }
+    // And the nozzles. A jet leaving a hole carries momentum away, and the
+    // vessel gets it back the other way: that is a rocket, and it is the only
+    // one of these boundaries that pushes without anything to push against.
+    //
+    //     mdot = Cd A sqrt(2 rho dp)     what the vent lets out
+    //     v    =      sqrt(2 dp / rho)   how fast it is going when it leaves
+    //     F    = mdot v = 2 Cd A dp
+    //
+    // -- the density cancels, which is the tidy part. The same Cd as the vent,
+    // because it is the same jet.
+    for (GasRegion &region : w.s.regions) {
+        region.thrust_force_n = {};
+        if (region.vessel.empty() || w.shape(region.vessel) == nullptr) continue;
+        if (!region.vent_open || !(region.vent_area_m2 > 0.0) || !(region.volume_m3 > 0.0)) continue;
+        const double dp = pressurePa(w.model, region.gas, region.volume_m3) - w.ambient.pressure_pa;
+        if (!(dp > 0.0)) continue;
+        const double length = std::sqrt(dot(region.vent_axis, region.vent_axis));
+        if (!(length > 0.0)) continue;
+        // Opposite the way the gas goes.
+        region.thrust_force_n = region.vent_axis * (-2.0 * kDischarge * region.vent_area_m2 * dp / length);
+        out.push_back({region.vessel, region.thrust_force_n});
     }
     return out;
 }
@@ -1085,6 +1116,28 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
             w.s.ledger.numerical_j += floor - region.gas.internal_energy_j;
             region.gas.internal_energy_j = floor;
         }
+    }
+
+    // What the nozzles pushed their vessels with, over the displacement that
+    // actually happened -- the same bargain the piston makes above.
+    //
+    // WHERE THE ENERGY COMES FROM, which is the part to get right. The jet has
+    // already been charged for in full: vent() takes its enthalpy out of the
+    // region and books it as matter leaving. The work the thrust does on the
+    // vessel is not a second helping on top of that -- it is part of the same
+    // energy, moved from the jet to the vessel. So it is taken OUT of what the
+    // matter carried away and put into work delivered to bodies. The two moves
+    // cancel in the total, which is why the ledger still closes to rounding,
+    // and the split now says truthfully where the energy went.
+    for (GasRegion &region : w.s.regions) {
+        const Vec3 force = region.thrust_force_n;
+        region.thrust_force_n = {};
+        if (!(dot(force, force) > 0.0) || region.vessel.empty()) continue;
+        const double work = dot(force, find(moved, region.vessel));
+        if (!std::isfinite(work) || work == 0.0) continue;
+        w.s.ledger.work_to_bodies_j += work;
+        w.s.ledger.matter_out_j -= work;
+        region.thrust_work_j += work;
     }
 
     // Heaters: external work, in over the part of this step each one is on for.
@@ -1343,6 +1396,14 @@ std::vector<RegionState> ThermoWorld::regions() const {
         state.heater_w = r.heater_w;
         state.wall_loss_w = r.wall_loss_w;
         state.vent_open = r.vent_open && r.vent_area_m2 > 0.0;
+        state.thrust_work_j = r.thrust_work_j;
+        state.thrust_n = 0.0;
+        if (!r.vessel.empty() && state.vent_open) {
+            const double dp = r.volume_m3 > 0.0
+                                  ? pressurePa(w.model, r.gas, r.volume_m3) - w.ambient.pressure_pa
+                                  : 0.0;
+            if (dp > 0.0) state.thrust_n = 2.0 * kDischarge * r.vent_area_m2 * dp;
+        }
         state.vent_flow_kg_s = r.vent_flow_kg_s;
         out.push_back(std::move(state));
     }
@@ -1440,6 +1501,21 @@ std::vector<std::string> ThermoWorld::limitations() {
         "network, carrying its energy; the host puts it in the room's water where there is any",
         "Freezing is not modelled: nothing in the world is colder than the ice itself, and water "
         "in the room's rivers and pools has no temperature",
+        "Free water boils at 373.15 K and takes 2.257 MJ/kg to do it: while it has water, a body's "
+        "zone is never warmer than that, whatever is driving it. The steam goes into the gas "
+        "region the body stands in, where it presses, or to the surroundings where there is no "
+        "region. The boiling point does not move with pressure -- a sealed vessel's water still "
+        "boils at 373.15 K however hard it is pressed, which is wrong for a pressure cooker and "
+        "right for everything open",
+        "Water HELD IN A MATERIAL is a different substance from free water and does not boil: it "
+        "is driven off by the drying reaction, over a range of temperatures, as wet wood really "
+        "does. So a burning log can be declared hot while still holding its moisture",
+        "Condensation is not modelled: steam in a region stays steam however cold the region gets",
+        "A nozzle's thrust is the momentum of an incompressible orifice jet, 2 Cd A dp, with the "
+        "same discharge coefficient as the vent it leaves by. There is no converging-diverging "
+        "nozzle and no choked flow, so exhaust speeds are well below a real rocket's and the "
+        "thrust does not rise with a bell. The work the thrust does on the vessel is taken out of "
+        "the energy the jet carries away rather than charged again, so the ledger closes",
         "Ice that joins the network with nothing to say otherwise is at its melting point, since "
         "ice cannot be at a warm room's temperature: a scene can declare it colder",
         "Constant heat capacities over the model's declared range (150-3000 K); no dissociation",

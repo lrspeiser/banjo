@@ -97,6 +97,12 @@ struct GasRegionDeclaration {
     double wall_conductance_w_k{-1.0}; // < 0: from the column's own surface
     double vent_area_m2{};         // an opening to the surroundings; 0 is sealed
     bool vent_open{true};
+    // A NOZZLE: the body the region is held in, and the way gas leaves the
+    // vent. Name a vessel and the momentum of what leaves pushes it the other
+    // way -- which is a rocket. Leave it empty and the gas still leaves, it
+    // just pushes nothing, which is a safety valve.
+    std::string vessel;
+    Vec3 vent_axis{0.0, -1.0, 0.0};
 };
 
 struct HeaterDeclaration {
@@ -190,6 +196,13 @@ struct GasRegion {
     double heater_w{};
     double wall_loss_w{};
     double vent_flow_kg_s{};
+    // The nozzle. `thrust_force_n` is made in pushes() from the pressure then,
+    // and advance() charges it over the displacement that actually happened --
+    // the same bargain the piston makes.
+    std::string vessel;
+    Vec3 vent_axis{0.0, -1.0, 0.0};
+    Vec3 thrust_force_n{};
+    double thrust_work_j{};
 };
 
 struct Heater {
@@ -306,6 +319,10 @@ struct RegionState {
     double wall_loss_w{};
     bool vent_open{};
     double vent_flow_kg_s{};
+    // What the nozzle is pushing its vessel with now, and what that push has
+    // done in total. Zero unless the region names a vessel.
+    double thrust_n{};
+    double thrust_work_j{};
 };
 
 // Everything that changes as the network runs. Copy to save; assign to restore.
