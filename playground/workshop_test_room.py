@@ -124,10 +124,12 @@ THINGS = {
 }
 
 
-#: What a thing written into the room may be made of. Four, because a tilted
-#: thing has to be an exact body and an exact body takes only these; keeping the
-#: list the same either way means a ramp and a block can be the same material.
-AUTHORED_MATERIALS = ("oak", "iron", "concrete", "glass")
+#: What a thing written into the room may be made of: the exact-rigid set,
+#: because a tilted thing has to be an exact body and an exact body takes only
+#: these; keeping the list the same either way means a ramp and a block can be
+#: the same material. It follows precise_rigid rather than repeating it, so
+#: adding a material there adds it here.
+AUTHORED_MATERIALS = precise_rigid.MATERIALS
 #: How many things may be written into one room, and how big each may be.
 MAX_AUTHORED = 12
 MIN_AUTHORED_M = 0.01

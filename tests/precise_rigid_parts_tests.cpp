@@ -31,6 +31,9 @@
 //    chassis stands on its wheels at the height it was built, and neither
 //    wheelset leaves its pin. The axle inside its mounts is the bearing, held
 //    by the pin rather than jammed by the contact.
+// 9. Ceramic is one of them: a body or a part of the alumina the catalogue
+//    calls "alumina ceramic", declared as a scene calls it, weighing its own
+//    matter and standing on its own contact surface.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/PreciseRigidScene.hpp"
@@ -67,6 +70,10 @@ double density(MaterialPreset preset) { return makeReferenceMaterial(preset).den
 
 std::string name(MaterialPreset preset) { return std::string(materialPresetName(preset)); }
 
+// What a SCENE calls it, which is the catalogue's name for everything but the
+// alumina: a scene says "ceramic" where the catalogue says "alumina ceramic".
+std::string sceneName(MaterialPreset preset) { return std::string(materialSceneName(preset)); }
+
 // A quarter turn about z: a part's own y (a cylinder's axis) laid along x.
 const std::string kOntoX = "[0.7071067811865476, 0.0, 0.0, 0.7071067811865476]";
 
@@ -88,9 +95,10 @@ bool refused(const std::string &json, const std::string &because) {
 }
 
 void aCylinderWeighsAndTurnsAsACylinder() {
-    for (MaterialPreset preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+    for (MaterialPreset preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron,
+                                 MaterialPreset::Concrete, MaterialPreset::Ceramic}) {
         const PreciseRigidBody wheel = one(
-            R"([{"name":"wheel","material":")" + name(preset) +
+            R"([{"name":"wheel","material":")" + sceneName(preset) +
             R"(","position_m":[0,1,0],"parts":[{"shape":"cylinder","dimensions_m":[0.32,0.06,0.32],)"
             R"("center_local_m":[0,0,0],"rotation_wxyz":)" + kOntoX + "}]}]");
         const double r = 0.16, length = 0.06;
@@ -214,6 +222,41 @@ void malformedPartsAreRefused() {
                     "unsupported precise rigid material"), "a rubber part was accepted");
     require(refused(head + R"({"center_local_m":[0,0,0]}]}])", "needs dimensions_m"),
             "a part without dimensions was accepted");
+}
+
+// 9. Ceramic is one of the materials an exact body may be made of, by the name
+//    a scene calls it. An exact body asks its material for a density, so it
+//    weighs its own matter, and for a contact surface, so it lands as that
+//    stuff does; it never bonds, so the brittle-bond law the alumina shares
+//    with glass goes unused here. The declaration that comes back says what the
+//    scene said and not the catalogue's own name, so a caller's own words still
+//    match it -- and the catalogue's name is not a second spelling a scene may
+//    use.
+void aCeramicBodyIsMadeOfAlumina() {
+    const PreciseRigidBody brick = one(
+        R"([{"name":"brick","material":"ceramic","position_m":[0,0.6,0],)"
+        R"("parts":[{"dimensions_m":[0.2,0.1,0.1],"center_local_m":[0,0,0]}]}])");
+    require(brick.material == MaterialPreset::Ceramic, "a ceramic body was made of something else");
+    require(close(brick.mass_kg, density(MaterialPreset::Ceramic) * 0.2 * 0.1 * 0.1, 1e-12),
+            "a ceramic brick does not weigh its own matter");
+    require(brick.made_of.young_modulus_pa > 0 && brick.made_of.poisson_ratio > 0 &&
+                brick.made_of.static_friction > 0,
+            "ceramic has no contact surface for an exact body to stand on");
+    require(brick.definition_json.find(R"("material":"ceramic")") != std::string::npos,
+            "the ceramic declaration came back under another name: " + brick.definition_json);
+    require(refused(R"([{"name":"brick","material":"alumina ceramic","position_m":[0,0.6,0],)"
+                    R"("parts":[{"dimensions_m":[0.1,0.1,0.1],"center_local_m":[0,0,0]}]}])",
+                    "unsupported precise rigid material"),
+            "the catalogue's own name for the alumina was accepted in a scene");
+    // A part of its own ceramic inside a body of something else, as an iron
+    // axle sits in oak wheels.
+    const PreciseRigidBody lined = one(
+        R"([{"name":"lined","material":"iron","position_m":[0,0.6,0],"parts":[)"
+        R"({"dimensions_m":[0.1,0.1,0.1],"center_local_m":[0,0,0]},)"
+        R"({"material":"ceramic","dimensions_m":[0.1,0.1,0.1],"center_local_m":[0.1,0,0]}]}])");
+    require(lined.part_materials.at(1) == MaterialPreset::Ceramic, "a ceramic part was made of something else");
+    require(close(lined.mass_kg, (density(MaterialPreset::Iron) + density(MaterialPreset::Ceramic)) * 0.001, 1e-12),
+            "an iron body with a ceramic part does not weigh both");
 }
 
 // A ramp and a world to roll on it.
@@ -624,6 +667,7 @@ int main() {
         aBodyStandsAtItsCentreOfMass();
         partsThatDoNotMeetAreRefused();
         malformedPartsAreRefused();
+        aCeramicBodyIsMadeOfAlumina();
         aWheelsetRollsDownARamp();
         aWheelsetHoldsWhereItsRollingResistanceCanAndRollsWhereItCannot();
         aPartMeetsThingsAsItsOwnMaterial();

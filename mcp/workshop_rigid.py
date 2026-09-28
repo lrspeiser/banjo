@@ -65,7 +65,9 @@ def compile_rigid(design, overrides=None, *, require_request=True) -> dict[str, 
     if len(materials) != 1:
         raise ValueError("Precise rigid compounds currently require one material; mixed-material interfaces are unsupported")
     material = next(iter(materials))
-    if material not in {"oak", "glass", "iron", "concrete"}:
+    # The exact-rigid set, by the catalogue's names for it. The scene's own
+    # list is playground/precise_rigid.MATERIALS, which this layer cannot see.
+    if material not in {"oak", "glass", "iron", "concrete", "alumina ceramic"}:
         raise ValueError("The rigid-v1 adapter does not support material " + material)
     density = engine_materials.density(material)
     skins = workshop_visual.skin_overrides(overrides)

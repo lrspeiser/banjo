@@ -67,6 +67,10 @@ std::string_view materialPresetName(MaterialPreset preset) {
     return "unknown";
 }
 
+std::string_view materialSceneName(MaterialPreset preset) {
+    return preset == MaterialPreset::Ceramic ? "ceramic" : materialPresetName(preset);
+}
+
 MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t seed) {
     MaterialDefinition material;
     switch (preset) {
