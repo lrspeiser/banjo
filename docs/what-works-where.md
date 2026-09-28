@@ -29,7 +29,7 @@ The labels:
 | Denting: iron, aluminium, oak and rubber take a permanent set | World, Test room | on in every room; in `/world?scene=tests-motion` an iron ball hits an aluminium plate at 30 m/s as the room opens |
 | Breaking under a steady load (statics) | Test room | `/world?scene=courtyard`: load the thin concrete shelf. `/world?scene=armoury`: notch the loaded batten |
 | A thing's bar for breaking depends on how big it is | World | automatic (`admitRefracture`); small chips stop shattering on every landing |
-| Matter one cell thick answering a blow struck flat at it | Code only | the curvature term is built and tested and switched off in the world; it destabilises a plate that is already breaking ([plate-bending.md](plate-bending.md)) |
+| Matter one cell thick answers a blow struck flat at it | World | automatic; a sheet's curvature is read off how far its own neighbours have moved out of the plane, and its outermost fibre is what the failure criterion sees. A glass plate one cell thick now comes apart from 6 m up, more for a harder blow; below 6 m it is still not ordered by the blow, and a plate bridged on piers disintegrates much further than it did. `scripts/plate-ladder.py` is the ladder, both ways -- [plate-bending.md](plate-bending.md) |
 | Foresight and background fracture | World | automatic |
 | Cells colliding with each other while something breaks | World | automatic |
 | Heat weakening what breaks | World | heat a plank or beam, then load or hit it |

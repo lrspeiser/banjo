@@ -1,10 +1,10 @@
 # Plate bending: matter one cell thick
 
-**Status: built, tested and measured; switched OFF in the world.** The term is
-in the engine and `banjo_plate_bending_tests` pins what it computes, but
-`TileImpactScene` sets its thickness to zero, so no room runs it. This note is
-why it exists, what it fixes, and the thing that is not settled — which is the
-reason it is off.
+**Status: ON in the world since 27 September.** It fixes the reported fault from
+6 m up and does not fix it below that; this note is the measurement both ways,
+what it costs a plate bridged on piers, and the separate bug it flushed out on
+the way — the world not repeating itself — which had to be fixed before any of
+these numbers meant anything.
 
 ## What a plane can measure
 
@@ -43,8 +43,7 @@ Ten to twenty times less damage for the same blow, and none of it ever
 separated the plate. What the piece count actually reported was whether one
 20 mm cell had happened to lose its last bond: a 0.02 kg chip off 4.5 kg at
 3 m and at 7 m, five cells at 12 m, and nothing at 4, 5, 8 or 10. That is the
-whole of "it breaks at 3 m and 7 m but not at 10", and it is still true in the
-world today, because this term is off.
+whole of "it breaks at 3 m and 7 m but not at 10".
 
 ## The curvature is in the same data
 
@@ -88,73 +87,171 @@ the same thing: judging by the live set alone moved the 40 mm plate from 13
 pieces to 26, because nodes that had lost bonds began to be read as sheets
 halfway through the cascade.
 
-## What it does, with it switched on
+## What it does
 
-One blow, the same plate and ball, glass at 20 mm cells lying on the floor:
+The bug, reproduced: a 300 x 300 mm glass plate one cell thick at 20 mm cells,
+lying on the ground with nothing under it but the ground, and a 100 mm iron ball
+(4.5 kg) dropped on it. `scripts/plate-ladder.py` is this table, so anyone can
+run it; the left column is the same script against a build with the term off.
 
-| dropped | bonds broken | pieces |
-|---|---:|---:|
-| 5 m | 67 | 1 |
-| 6 m | 79 | 2 |
-| 7 m | 89 | 3 |
-| 8 m | 103 | 4 |
-| 10 m | 124 | 5 |
-| 12 m | 143 | 6 |
-
-Strictly more damage and strictly more pieces for a harder blow — the thing the
-term was written for. Matter two and three cells thick is bit for bit what it
-was, its neighbourhoods spanning three directions and measuring their own
-bending (`banjo_plate_bending_tests`). A plate under its own weight breaks
-nothing, in glass, oak and iron, at 1, 2 and 3 cells thick.
-
-## Why it is off
-
-**A plate that is already breaking is not bending, and the fit cannot tell.**
-The curvature is a second derivative of the displacement field, so it amplifies
-whatever noise is in that field; a lattice in the middle of shattering moves
-its nodes every way at once, and a quadratic put through that returns a large
-curvature which is not bending. That curvature breaks more bonds, which makes
-the next fit worse.
-
-Measured on the fracture lab's own default scene — a 10 mm glass plate bridged
-between two piers, struck at 6.26 m/s, **eight pieces** on the reference:
-
-| | pieces |
-|---|---|
-| bending off | 8 |
-| bending on | 138, with pieces of pieces five levels deep |
-
-and the two live lanes, which must describe the same world to within a tenth of
-a millimetre, stopped agreeing on what was even in it
-(`tests/live_lanes_agree_tests.py`, which passes on `main` in 14 s and failed
-here).
-
-Four ways of separating bending from shattering were written and measured, and
-none of them did it:
-
-| guard | the lanes test | the plate on the floor, 3–12 m |
+| dropped | bending off | bending on |
 |---|---|---|
-| none | fails | monotone |
-| fit explains ≥ 50% of the out-of-plane motion | fails | monotone |
-| fit explains ≥ 90% | passes | 1, 16, 1, 2, 3, 4, 4, 5, 4, 3 pieces |
-| ≥ 90%, and only where no bond has gone | fails | 1, –, 1, –, 1, –, –, 3, –, 2 |
+| 3 m | 2 pieces | whole |
+| 4 m | whole | 16 pieces |
+| 5 m | whole | whole |
+| 6 m | whole | 2 pieces |
+| 7 m | 2 pieces | 3 pieces |
+| 8 m | whole | 4 pieces |
+| 9 m | whole | 4 pieces |
+| 10 m | whole | 5 pieces |
+| 11 m | whole | 4 pieces |
+| 12 m | 2 pieces | 3 pieces |
 
-The two scenes sit in the same band, so no threshold separates them, and
-choosing one to thread between two tests would be fitting the constant to the
-tests rather than to the physics.
+The left column IS the reported fault, exactly: it breaks at 3 m and at 7 m and
+not at 10 m, and "breaks" means a 0.02 kg chip off 4.5 kg — the biggest piece
+is 4.48 kg every time. Nothing about it is a threshold; the plate never comes
+apart at any height, and which heights chip is which heights happened to take
+one cell's last bond.
 
-## What it would take
+**From 6 m up the right column is what the term was written for:** the plate
+comes apart at every height, and 6 -> 10 m gives 2, 3, 4, 4, 5 pieces, more for
+a harder blow. **Below 6 m it is still not right,** and that is worth saying
+plainly rather than averaging away:
 
-The instability is a feedback loop inside one lattice run: strain → failure →
-a worse neighbourhood → more strain. Breaking it needs something this shape
-does not have — a curvature that cannot feed on its own output. Two directions
-worth measuring, neither tried here: holding the curvature at what it was when
-the blow arrived rather than re-fitting it every substep (which needs it stored
-per node, and raises the question of what "when the blow arrived" means for a
-run that starts before contact); or giving the lattice real rotational degrees
-of freedom, which is a shell element and a different engine.
+- **3 m and 5 m leave the plate whole.** The blow is under the bar and nothing
+  breaks, which is a defensible answer — but 4 m between them is not whole, so
+  the sequence is not ordered by the blow.
+- **4 m gives 16 pieces,** the most of any height. It is not one blow: watched
+  against the clock, the ball first turns round at t = 0.892 s with the plate
+  still in one piece, and the plate comes apart at t = 1.700 s as the ball falls
+  back onto it. From 5 m up the ball goes through or rebounds clear instead. So
+  a drop height is not a dose, and a piece count from a bouncing ball is a count
+  for the whole aftermath.
+- **11 m and 12 m give 4 and 3** where 10 m gives 5. Measured, repeated, and not
+  explained — see below.
 
-## What it does not claim, even switched on
+Two controls, the same script — `--thickness-cells 2` and `--spanned`:
+
+| dropped | 3 m | 4 m | 5 m | 6 m | 7 m | 8 m | 9 m | 10 m | 11 m | 12 m |
+|---|---|---|---|---|---|---|---|---|---|---|
+| two cells thick, off | 13 | 142 | 47 | 24 | 35 | 47 | 30 | 48 | 64 | 58 |
+| two cells thick, on | 13 | 142 | **53** | 24 | 35 | 47 | 30 | 48 | 64 | 58 |
+| one cell, spanned, off | 44 | 83 | 31 | 62 | 25 | 82 | 24 | 96 | 31 | 209 |
+| one cell, spanned, on | 33 | 166 | 34 | 194 | 173 | 175 | 195 | 196 | 184 | 142 |
+
+**Two cells thick is untouched, with one cell of the ladder moved** — 5 m, 47
+to 53 pieces. That is not the term reading a solid body: it is that a cascade
+makes pieces, a piece of a two-cell plate can be one cell thick, and a piece one
+cell thick is exactly what this is for. The body as built never reads bending at
+any node, which is what `banjo_plate_bending_tests` checks directly; what
+changes is what its fragments can do. The same explains the one material that
+moved on the README's ladder: ice, which comes apart into dozens, at 5 m/s
+(30 -> 41 pieces) and 40 m/s (12 -> 32). Nothing else in those forty cases
+moved.
+
+**A plate bridged on piers is where this costs the most.** Its span was never
+blind — in-plane tension across it is something a coplanar neighbourhood can
+always see, which is why the off column already breaks it into tens of pieces --
+and with bending on it goes to near-total disintegration: 194 of the plate's 225
+cells at 6 m, 196 at 10 m. That is not obviously wrong for 4.5 kg of iron at
+11 m/s onto a 20 mm sheet of glass bridging 260 mm, and both columns are equally
+unordered in the blow, so neither is carrying information above about 6 m. It is
+a real change in what the world does, and anyone quoting a spanned piece count
+from before 27 September should re-measure it.
+
+**A glass table's top now shatters when the table is dropped, and that was a
+decision.** The Workshop's table is a 540-cell top on four 18-cell legs, and the
+top is one cell thick — so this term applies to it. The product guarantee is that
+a break parts the JOINTS and each leg comes away whole, and that still holds:
+four whole legs, every cell accounted for. What no longer holds is the top coming
+away as one piece. Measured with the term on, dropped: 0.5 m breaks nothing at
+all, and 1, 1.5 and 2 m leave a biggest piece of 88, 43 and 329 cells of 540. So
+there is no height that gives the old answer — the case could not be re-tuned,
+only re-decided. Oak is untouched (516 of 540 after 10 m, and a 20 kg striker at
+15 m/s parts the joints without taking the top). The owner's call was that 20 mm
+annealed glass does shatter and the test should say so, so
+`test_a_broken_table_comes_apart_at_its_joints_into_its_own_parts` now asserts
+the joints guarantee for every material and the shattered top for glass — which
+makes it the thing that would catch this term being switched off again: with it
+off, that top survives with 496 of 540 cells.
+
+**It costs about twice the time in a fracture run, and that is not free here.**
+The engine's own deadline check (`banjo_live_world_tests --deadline`) times the
+run a foreseen fracture starts on the way down and compares it with the warning
+it had. Measured on this machine, 24 hardware threads, the lattice on 16:
+
+| case | warning | run, term off | run, term on |
+|---|---|---|---|
+| 1.5 m, cold | 485 ms | 354 ms (margin +131) | — |
+| 6.0 m | 939 ms | 355 ms (margin +584) | 782 ms (margin +156) |
+| 1.5 m, warm | 485 ms | 360 ms (margin +125) | 878 ms (**margin −393**) |
+
+So a run takes 2.2 to 2.4 times as long, and in the 1.5 m case it no longer
+finishes inside its window: foresight misses. That is a second weighted fit and
+an eigen-decomposition per node per substep, plus the extra work of actually
+breaking more. Rule 2 of the design rules is "real time, or refused", and this
+does not change what the gate refuses — the gate prices a job before it starts —
+but it moves every fracture closer to it, and a scene that used to fit may now
+be refused. Worth knowing before blaming that on something else.
+
+(That deadline test fails either way, on a different and older complaint —
+"something still blocked at the moment of contact" — which is not this term:
+with it off, all three margins are positive and the test still fails.)
+
+A plate under its own weight still breaks nothing, in glass, oak and iron, at 1,
+2 and 3 cells thick.
+
+**Every number here repeats.** Each ladder was run at least twice and gave the
+same answer to the piece, and the forty-case materials ladder was run five times
+identically, which it did NOT do before the contact order went in (the next
+section). Numbers published before 27 September were taken without it and will
+not all match.
+
+## The thing that nearly sank it, which was a different bug
+
+Turned on, this term first made the fracture lab's own default scene — a 10 mm
+glass plate on piers at 6.26 m/s, eight pieces on the reference — come apart
+into 138, with pieces of pieces five levels deep, and the live world's two
+lanes stopped agreeing on what was even in the room about a third of the time
+(`tests/live_lanes_agree_tests.py`).
+
+That was **not** this term. It was that the world could not repeat itself.
+Jolt's contact collector is filled from its worker threads under a mutex, so
+contacts arrived in thread-completion order, and `judgeStep` keeps the hardest
+contact on a struck body as the partner for the island a fracture would build —
+so when two contacts were equally hard, whichever thread finished last decided
+the break. Measured: the same held ball let go from 1.4 m came to rest as 376
+bodies, then 380, then 376 again, one process, one binary, one input.
+
+Plate bending did not cause that; it revealed it, by moving that scene close
+enough to a threshold that a different partner meant a different answer. With
+the contacts in a total order of their own (`ImpactEvent.hpp`
+`hardestContactFirst`, and `banjo_live_determinism_tests` to keep it), the lab
+scene is 352 bodies four runs running, both lanes agree, and the lanes suite is
+green eight times out of eight.
+
+Four guards were written while that was being chased, on the theory that the
+fit had to be stopped from reading a shattering neighbourhood as a bend. One of
+them is still in the code — a curvature is read only where the quadratic
+explains nine tenths of the out-of-plane motion — and it is worth being exact
+about its status: **with the contact order fixed, taking it out changes nothing
+that has been measured.** The height curve is identical, the lab scene is 352
+either way, the lanes pass either way. It stays as a bound on what the fit may
+claim, not because it is carrying anything.
+
+## Still unexplained
+
+Above 10 m the piece count falls — 5 at 10 m, 4 at 11, 3 at 12 — and it
+repeats, so it is not noise. The guard is not the reason either: removing it
+does not move those numbers. A blow that violent is doing something else to the
+plate and it has not been run down. Two directions worth measuring if it
+matters, neither tried here: holding the curvature at what it was when the blow
+arrived rather than re-fitting it every substep (which needs it stored per node,
+and raises the question of what "when the blow arrived" means for a run that
+starts before contact); or giving the lattice real rotational degrees of
+freedom, which is a shell element and a different engine.
+
+## What it does not claim
 
 - **The bond is at the mid-plane and the strain is the surface's.** A plate
   cracks from its outermost fibre and the crack runs through, so failing the
