@@ -325,30 +325,27 @@ class VisibleSimulationEngine(unittest.TestCase):
         # a blow or a landing parts is the joint, and each leg comes away whole
         # -- all of it but the one cell let into the top -- whichever way it broke.
         #
-        # Whether the TOP survives is a question about the material, and the two
-        # answers here are both the point.
+        # Whether the TOP survives is a question about the material, and with
+        # plate bending OFF -- which it is, on the realtime rule -- both keep it.
         #
         # Oak keeps its top: 516 of 540 cells in one piece after a 10 m drop, and
         # a 20 kg striker at 15 m/s parts the joints without taking the top with
         # them. That is the two-stage break the product framework is built on.
         #
-        # Glass does not, and since 27 September it says so. A 20 mm annealed
-        # glass top one cell thick at 20 mm cells now answers a blow struck flat
-        # at it, which it could not before -- a coplanar neighbourhood is rank 2
-        # and its strain was blind to bending (docs/plate-bending.md). Dropped,
-        # the legs still come away whole and every cell is still accounted for,
-        # but the top comes apart, which is what annealed float glass does. There
-        # is no height that gives the old answer: measured with the term on,
-        # 0.5 m breaks nothing at all (the joints do not even part), and 1, 1.5
-        # and 2 m all shatter the top -- biggest piece 88, 43 and 329 of 540.
-        # This case is therefore also what would catch plate bending being
-        # switched off again: with it off, the glass top survives a 2 m drop
-        # nearly whole.
+        # Glass would NOT keep it if the engine could see a flat blow on a sheet
+        # one cell thick. That term exists, works, and is switched off because of
+        # what it costs here: the top comes apart into ~185 pieces and this very
+        # test then takes 15.0 s of wall clock for 1.7 s of world time, 8.8x
+        # realtime against design rule 2's 1.1x, and the bench's 30 s guard
+        # refuses it outright on slower hardware. docs/plate-bending.md has the
+        # measurement both ways. So `top_holds` is True for every case here, and
+        # the glass case is what would have to change first if that term is ever
+        # switched back on.
         import workshop_motion
         # top_holds: whether this material's top is expected to survive the case.
         for material, test, config, top_holds in (
                 ("oak", "impact_product", {"striker_kg": 20.0, "speed_m_s": 15.0}, True),
-                ("glass", "drop_product", {"height_m": 2.0, "duration_s": 1.7}, False),
+                ("glass", "drop_product", {"height_m": 2.0, "duration_s": 1.7}, True),
                 ("oak", "drop_product", {"height_m": 10.0, "duration_s": 2.2}, True)):
             with self.subTest(material=material, test=test):
                 design = assemble("table", parameters={"material": material})
@@ -364,6 +361,7 @@ class VisibleSimulationEngine(unittest.TestCase):
                     self.assertGreater(sizes[0], .85 * parts["top"], sizes)
                 else:
                     # The top came apart rather than coming away as one piece.
+                    # Nothing takes this branch while plate bending is off.
                     self.assertLess(sizes[0], .85 * parts["top"], sizes)
                 # Nothing is lost or invented, whichever way it broke.
                 self.assertEqual(sum(parts.values()), sum(sizes))
