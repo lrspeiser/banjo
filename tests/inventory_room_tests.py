@@ -367,6 +367,22 @@ class AThingOfSeveralPartsIsTakenUpWhole(unittest.TestCase):
         self.steps(40)
         self.assertLess(self.chain(self.bodies()), CHAIN_WHOLE_M, "put down, it landed in pieces")
 
+    def test_its_own_grip_is_where_the_hand_takes_it_whichever_part_was_pointed_at(self):
+        """A grip point its maker placed -- here 0.25 m along the handle from its
+        middle, near the end away from the head -- is where the hand goes, even
+        taken up by the head."""
+        self.app.room.spec["interaction_points"] = [{"body": "mace", "points": [
+            {"id": "grip", "kind": "grip", "label": "Handle", "position_m": [-0.25, 0.0, 0.0]}]}]
+        handle = self.bodies()["mace"]
+        took = self.ask("u1", 0, "take_up", "mace head")
+        self.assertTrue(took["ok"], took)
+        # The handle is the part named for the whole mace, so no other part is said.
+        self.assertNotIn("by", took["room"], "taken by its head, the hand did not go to its grip")
+        self.assertEqual(self.held(), "mace")
+        # The handle lies along x, unturned: its grip is 0.25 m back from its middle.
+        want = [handle["position_m"][0] - 0.25, handle["position_m"][1], handle["position_m"][2]]
+        self.assertLess(math.dist(took["room"]["grip_m"], want), 0.01, (took["room"]["grip_m"], want))
+
     def test_what_it_weighs_is_all_of_it(self):
         both = inventory_room.whole_kg(self.app, inventory_room.item_holding(self.app, "mace"))
         handle = self.bodies()["mace"]["mass_kg"]

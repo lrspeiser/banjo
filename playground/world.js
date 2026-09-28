@@ -534,7 +534,8 @@ scene.add(floor);
 // own velocity field: it decorates the flow and cannot contradict it.
 const GROUND_COLOURS = [new THREE.Color(0x7b776f),   // rock
                         new THREE.Color(0x6b4f32),   // soil
-                        new THREE.Color(0xc9ad7c)];  // sand
+                        new THREE.Color(0xc9ad7c),   // sand
+                        new THREE.Color(0x8a6b4a)];  // loose soil: soil that was dug
 const WATER_SHALLOW = new THREE.Color(0x58a7ad), WATER_DEEP = new THREE.Color(0x163f63);
 // Ground nobody has been near yet (machine_sight): drawn, because the lie of the
 // land is the shape of the room and hiding it would leave holes in the world, but
@@ -545,6 +546,11 @@ const FOAM_COUNT = 700;
 const WATER_EASE_MS = 260;
 const ground = {
   grid: null, heights: null, surfaces: null, view: null,
+  // What every column is MADE of, all the way down, as the engine sends it: the
+  // runs, held the way the engine holds them -- where each column's runs start,
+  // what each run is, and the height it reaches. This is what a cut face is
+  // drawn from (buildFaces).
+  runs: null, floor: 0, faces: null, facesStale: false,
   // What has been seen: a coarse grid of its own, a byte a cell, as the server
   // keeps it. Null until the server sends one, and then every cell is drawn
   // either as its surface or as unknown.
@@ -590,7 +596,7 @@ function waterAt(x, z) {
 }
 
 function clearGround() {
-  for (const key of ["mesh", "water", "foam"]) {
+  for (const key of ["mesh", "water", "foam", "faces"]) {
     const thing = ground[key];
     if (!thing) continue;
     scene.remove(thing);
@@ -630,6 +636,152 @@ function paintGround(colours, index) {
   colours[3 * index] = c.r; colours[3 * index + 1] = c.g; colours[3 * index + 2] = c.b;
 }
 
+// ---- what the ground is made of, and the faces a cut exposes ----------------
+//
+// The engine sends every column's RUNS: a material and the height it reaches,
+// bottom to top (Environment::runsPacked). A column is rock, the soil that
+// formed on it, and the loose mixture on top -- and will be strata and veins.
+// Heights come over as millimetres above the ground's floor.
+// Held at a fixed stride -- room for the same number of runs under every column
+// -- so that the rectangle a dig changes can be written straight in. A dig takes
+// runs away and a heap adds one, and if a column ever arrives with more runs
+// than there is room for, the room grows.
+function decodeRuns(raw, at, into, c, stride) {
+  const count = raw[at++];
+  into.count[c] = count;
+  for (let k = 0; k < count; ++k) {
+    if (k < stride) {
+      into.kind[c * stride + k] = raw[at];
+      into.top[c * stride + k] = ground.floor + (raw[at + 1] | (raw[at + 2] << 8)) / 1000;
+    }
+    at += 3;
+  }
+  return at;
+}
+
+function runsRoom(raw, cells) {
+  let most = 0, at = 0;
+  for (let c = 0; c < cells && at < raw.length; ++c) {
+    most = Math.max(most, raw[at]);
+    at += 1 + 3 * raw[at];
+  }
+  return Math.max(4, most);
+}
+
+function takeRuns(block, cells) {
+  const raw = bytesOf(block.runs_b64);
+  if (!raw.length) return null;
+  const stride = runsRoom(raw, cells);
+  const runs = { stride, count: new Uint8Array(cells),
+                 kind: new Uint8Array(cells * stride), top: new Float32Array(cells * stride) };
+  let at = 0;
+  for (let c = 0; c < cells && at < raw.length; ++c) at = decodeRuns(raw, at, runs, c, stride);
+  return runs;
+}
+
+// One column of a changed rectangle into the runs the page holds. `raw` is the
+// rectangle's own packing and `nth` which column of it this is.
+function patchRuns(c, raw, nth) {
+  const runs = ground.runs;
+  if (!runs) return;
+  let at = 0;
+  for (let k = 0; k < nth; ++k) at += 1 + 3 * raw[at];
+  if (raw[at] > runs.stride) growRuns(raw[at]);
+  decodeRuns(raw, at, ground.runs, c, ground.runs.stride);
+}
+
+function growRuns(needed) {
+  const was = ground.runs, cells = was.count.length, stride = Math.max(needed, was.stride + 2);
+  const runs = { stride, count: was.count,
+                 kind: new Uint8Array(cells * stride), top: new Float32Array(cells * stride) };
+  for (let c = 0; c < cells; ++c)
+    for (let k = 0; k < was.stride; ++k) {
+      runs.kind[c * stride + k] = was.kind[c * was.stride + k];
+      runs.top[c * stride + k] = was.top[c * was.stride + k];
+    }
+  ground.runs = runs;
+}
+
+// The strata a step cuts, drawn on the step the collider already has.
+//
+// The ground is ONE surface. Where a dig leaves half a metre of drop between two
+// columns, the collider spans it with a steep triangle and the page painted that
+// triangle the colour of whatever was on top of the column -- so the wall of your
+// own pit came out the colour of the grass above it, and there was nowhere for a
+// seam to show. These are vertical bands standing in the step, one for each run
+// the step cuts through, each in its own material.
+//
+// They add no surface and nothing stands on them: what things stand on is still
+// the ground mesh, and these are drawn with a polygon offset so that where the
+// two lie together the band is what you see. Both sides are drawn, because a
+// step is looked at from whichever side you are standing on.
+const FACE_STEP_M = 0.12;      // a drop worth drawing: 26 degrees across a 0.25 m cell
+const FACE_BAND_M = 0.01;      // thinner than this is not a band anyone can see
+
+function buildFaces() {
+  ground.facesStale = false;
+  if (ground.faces) {
+    scene.remove(ground.faces);
+    ground.faces.geometry.dispose();
+    ground.faces = null;
+  }
+  const g = ground.grid, runs = ground.runs;
+  if (!g || !runs || !ground.heights) return;
+  const H = ground.heights, half = g.dx / 2;
+  const points = [], colours = [];
+  // One band: a vertical quad from `lo` to `hi` in the plane the two columns
+  // meet in, across the width of a cell.
+  const band = (x0, z0, x1, z1, lo, hi, colour) => {
+    points.push(x0, lo, z0, x1, lo, z1, x1, hi, z1,
+                x0, lo, z0, x1, hi, z1, x0, hi, z0);
+    for (let v = 0; v < 6; ++v) colours.push(colour.r, colour.g, colour.b);
+  };
+  // The step between two columns, split at the runs of the taller one: what the
+  // drop actually cuts through.
+  const step = (a, b, along) => {
+    const ha = H[a], hb = H[b];
+    if (!(Math.abs(ha - hb) > FACE_STEP_M)) return;
+    const high = ha > hb ? a : b, lo = Math.min(ha, hb), hi = Math.max(ha, hb);
+    const i = high % g.nx, j = (high - i) / g.nx;
+    // The plane the two columns meet in: half a cell from the taller one,
+    // towards the shorter.
+    const toward = high === a ? 1 : -1;
+    const cx = g.x0 + i * g.dx + (along ? 0 : toward * half);
+    const cz = g.z0 + j * g.dx + (along ? toward * half : 0);
+    const [x0, z0, x1, z1] = along ? [cx - half, cz, cx + half, cz] : [cx, cz - half, cx, cz + half];
+    const seen = groundSeen(high);
+    let from = lo;
+    for (let k = 0; k < runs.count[high]; ++k) {
+      const at = high * runs.stride + k, to = Math.min(hi, runs.top[at]);
+      if (to - from > FACE_BAND_M) {
+        band(x0, z0, x1, z1, from, to,
+             seen ? (GROUND_COLOURS[runs.kind[at]] || GROUND_COLOURS[1]) : GROUND_UNSEEN);
+        from = to;
+      }
+      if (runs.top[at] >= hi) break;
+    }
+    // Above the last run there is nothing but the air the ground ends in; a step
+    // that reaches higher than the taller column's own top cannot happen.
+  };
+  for (let j = 0; j < g.nz; ++j)
+    for (let i = 0; i < g.nx; ++i) {
+      const c = j * g.nx + i;
+      if (i + 1 < g.nx) step(c, c + 1, false);
+      if (j + 1 < g.nz) step(c, c + g.nx, true);
+    }
+  if (!points.length) return;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(points), 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colours), 3));
+  geometry.computeVertexNormals();
+  ground.faces = new THREE.Mesh(geometry, dress(new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.97, metalness: 0.0, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), "ground"));
+  ground.faces.receiveShadow = true;
+  ground.faces.castShadow = false;
+  scene.add(ground.faces);
+}
+
 // What has been seen, as the server sends it with a room and with every step it
 // changes. Repaints the ground when the edge of what is known has moved, which
 // is what makes a machine's going about visibly uncover the room.
@@ -654,6 +806,8 @@ function repaintSeen() {
   const count = ground.grid.nx * ground.grid.nz;
   for (let k = 0; k < count; ++k) paintGround(col.array, k);
   col.needsUpdate = true;
+  // The faces of a step are coloured by what has been seen too.
+  ground.facesStale = true;
 }
 
 function drawTerrain(block) {
@@ -662,6 +816,10 @@ function drawTerrain(block) {
   ground.grid = { nx, nz, dx, x0, z0 };
   ground.heights = new Float32Array(bytesOf(block.heights_b64).buffer);
   ground.surfaces = bytesOf(block.ground_b64);
+  // The runs come over as millimetres above the ground's own floor, which is the
+  // level the water block is measured from as well.
+  ground.floor = Number(block.floor_m) || 0;
+  ground.runs = takeRuns(block, nx * nz);
   ground.view = block.view;
   const count = nx * nz;
   const positions = new Float32Array(3 * count), colours = new Float32Array(3 * count);
@@ -696,6 +854,8 @@ function drawTerrain(block) {
   ground.mesh.castShadow = true;
   ground.mesh.receiveShadow = true;
   scene.add(ground.mesh);
+  // And the faces of every step in it, in the materials the step cuts through.
+  ground.facesStale = true;
 
   // The water: the same points, lifted to the surface where there is water
   // and tucked under the ground where there is none.
@@ -743,6 +903,7 @@ function patchTerrain(changed) {
   const [i0, j0, ni, nj] = changed.box;
   const heights = new Float32Array(bytesOf(changed.heights_b64).buffer);
   const surfaces = bytesOf(changed.ground_b64);
+  const patched = changed.runs_b64 ? bytesOf(changed.runs_b64) : null;
   const g = ground.grid;
   const pos = ground.mesh.geometry.attributes.position, col = ground.mesh.geometry.attributes.color;
   for (let j = 0; j < nj; ++j)
@@ -750,12 +911,16 @@ function patchTerrain(changed) {
       const k = (j0 + j) * g.nx + (i0 + i);
       ground.heights[k] = heights[j * ni + i];
       ground.surfaces[k] = surfaces[j * ni + i];
+      if (patched) patchRuns(k, patched, j * ni + i);
       pos.array[3 * k + 1] = ground.heights[k];
       paintGround(col.array, k);
     }
   pos.needsUpdate = true;
   col.needsUpdate = true;
   ground.mesh.geometry.computeVertexNormals();
+  // The step a dig leaves is what the faces are drawn on, so they are stood up
+  // again -- once for the frame, however many changes arrive in it.
+  ground.facesStale = true;
 }
 
 // A surface for every point: the level where there is water, and where there
@@ -3436,7 +3601,32 @@ function groundMadeOf(at) {
   const g = ground.grid;
   const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
   if (i < 0 || j < 0 || i >= g.nx) return null;
-  return ["rock", "soil", "sand"][ground.surfaces[j * g.nx + i]] || null;
+  return ["rock", "soil", "sand", "loose soil"][ground.surfaces[j * g.nx + i]] || null;
+}
+
+const RUN_NAMES = ["rock", "soil", "sand", "loose soil"];
+
+// What the ground under a point is made of ALL THE WAY DOWN, in words, from the
+// runs the engine sends: "0.2 m of sand, then 0.6 m of soil, then rock". What a
+// test pit is for, and the same thing the survey says to a machine.
+function groundUnderfoot(at) {
+  const runs = ground.runs, g = ground.grid;
+  if (!Array.isArray(at) || !g || !runs) return "";
+  const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return "";
+  const c = j * g.nx + i, said = [];
+  // Down from the top, because that is the order you would dig it.
+  for (let k = runs.count[c] - 1; k >= 0; --k) {
+    const at_k = c * runs.stride + k;
+    const below = k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor;
+    const thick = runs.top[at_k] - below;
+    if (thick <= 0.001) continue;
+    const name = RUN_NAMES[runs.kind[at_k]] || "soil";
+    // The bottom run is the rock the ground stands on: it has no thickness worth
+    // saying, because nothing here digs to the bottom of it.
+    said.push(k === 0 ? name : `${thick < 1 ? `${Math.round(thick * 100)} cm` : `${thick.toFixed(1)} m`} of ${name}`);
+  }
+  return said.length ? said.join(", then ") : "";
 }
 
 // ---------------------------------------------------------------------------
@@ -3667,7 +3857,11 @@ function detailsModel() {
       const [x, , z] = world.groundAim;
       const water = waterAt(x, z);
       model.name = water && water.depth > 0.05 ? "Water" : titled(underfoot);
-      model.facts = [`the ground, ${underfoot}`, `${groundAt(x, z).toFixed(2)} m up`,
+      // What it is made of down there, not only what is on top: this is the
+      // whole of knowing where you are digging.
+      const under = groundUnderfoot(world.groundAim);
+      model.facts = [under ? `the ground: ${under}` : `the ground, ${underfoot}`,
+                     `${groundAt(x, z).toFixed(2)} m up`,
                      water && water.depth > 0.005
                        ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
                        : ""].filter(Boolean).join(" · ");
@@ -6960,6 +7154,7 @@ function frame() {
   workbench.advance(now);
   followSun();
   skyEnvironment();
+  if (ground.facesStale) buildFaces();
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);

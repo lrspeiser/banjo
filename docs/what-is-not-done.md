@@ -50,8 +50,6 @@ order. The ones most easily mistaken for done:
   nothing), so it refuses them, in words. Two smaller gaps come with it:
   - the engine's own carry budget, checked when the hand takes hold, counts
     only the part it grips; the page's "what you are carrying" adds the rest;
-  - the hand grips the part you point at, never a handle the product declares
-    (its grip point is stored, and nothing reads it yet);
   - put down as a whole shape, a thing of several parts is not judged for
     falling over on a slope: the engine's tall-thing rule reads one body.
 - **Nothing melts.** Heat softens oak, iron and concrete and chars oak.
