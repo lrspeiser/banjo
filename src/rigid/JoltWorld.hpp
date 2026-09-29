@@ -550,6 +550,47 @@ public:
     };
     [[nodiscard]] unsigned addPulley(const PulleyDescription &description);
 
+    // Two wheels turning together at a fixed ratio, which is what a pair of
+    // gears in mesh is and what a chain between two sprockets is.
+    //
+    // It couples the two PINS the wheels already turn on, so both must be
+    // hinges made before it. Jolt solves it as a relationship between those
+    // two constraints (JPH::GearConstraint::SetConstraints): the teeth never
+    // touch, and no tooth is ever drawn or collided with. What that buys is a
+    // gear train that costs two bodies and solves exactly; what it costs is
+    // that the coupling cannot jam or ride up, and the only way it can fail is
+    // the one below.
+    //
+    // MESHED GEARS TURN OPPOSITE WAYS AND A CHAIN DRIVE TURNS THE SAME WAY.
+    // That is the whole difference between the two here, and it is a sign.
+    struct GearDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // The pins they turn on. Both are joints already added with addHinge;
+        // a gear on a body that is not on a pin has nothing to couple.
+        unsigned pin_a{};
+        unsigned pin_b{};
+        // What the wheels have. The ratio is teeth_b / teeth_a, so a small
+        // wheel driving a large one turns it slower and harder.
+        unsigned teeth_a{1};
+        unsigned teeth_b{1};
+        // A chain between two sprockets rather than two gears in mesh: the
+        // wheels then turn the SAME way.
+        bool chain{false};
+        // What the teeth can carry before they strip, in newton metres, read
+        // at the first wheel. Zero means it cannot fail, which is not what
+        // anything built out of matter does: give it a real limit.
+        double strips_at_n_m{0.0};
+    };
+    [[nodiscard]] unsigned addGear(const GearDescription &description);
+
+    // What the coupling is carrying right now, in newton metres at the first
+    // wheel, from the impulse the solver applied in the last step. Always
+    // positive: which way it is being turned is not what a strength is about.
+    [[nodiscard]] double gearTorque(unsigned joint) const;
+    // The gears that stripped in the last step, and are gone.
+    [[nodiscard]] std::vector<unsigned> strippedGears() const;
+
     // A rope that winds onto a turning drum (rigid/DrumRope.hpp), from a drum
     // -- a body that turns on a pin of its own -- to a load. The rope leaves the
     // drum where it runs off it tangentially towards the load, and as the drum
@@ -697,7 +738,11 @@ public:
         GroundBite = 7,
         // A rope that winds onto a turning drum (rigid/DrumRope.hpp): a hoist,
         // a winch, a crane.
-        Drum = 8
+        Drum = 8,
+        // Two wheels that turn together at a fixed ratio: a pair of gears in
+        // mesh, or two sprockets with a chain between them. It is a coupling
+        // between two PINS, not a contact between teeth -- see GearDescription.
+        Gear = 9
     };
 
     // An edge engaged in matter, as the solver sees it.

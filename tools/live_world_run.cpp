@@ -2117,6 +2117,25 @@ int main(int argc, char **argv) {
                         throw std::invalid_argument(
                             "those two cannot be hung on a pin together");
                     reply["joint"] = pin;
+                } else if (op == "gear") {
+                    // Two wheels that turn together at a ratio. It couples two
+                    // PINS, not two bodies: each wheel is already turning on
+                    // one, and a gear is a relationship between those. The
+                    // teeth are numbers -- nothing is drawn or collided with --
+                    // and `chain` is the whole difference between a chain
+                    // drive, which turns both sprockets the same way, and teeth
+                    // in mesh, which turn them opposite ways.
+                    const unsigned coupling = world->gear(
+                        command.at("pin_a").get<unsigned>(),
+                        command.at("pin_b").get<unsigned>(),
+                        command.at("teeth_a").get<unsigned>(),
+                        command.at("teeth_b").get<unsigned>(),
+                        command.value("chain", false),
+                        command.value("strips_at_n_m", 0.0));
+                    if (coupling == 0)
+                        throw std::invalid_argument(
+                            "a gear couples two different pins, each with teeth");
+                    reply["joint"] = coupling;
                 } else if (op == "slide") {
                     // A line two things move along. A portcullis in its
                     // grooves, a sliding door, a bolt across a door -- and,

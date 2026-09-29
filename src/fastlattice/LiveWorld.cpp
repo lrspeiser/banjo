@@ -886,6 +886,15 @@ struct LiveWorld::Impl {
         double stand_off_a{}, stand_off_b{};
         JoltWorld::JointKind kind{JoltWorld::JointKind::Hinge};
         double lower{}, upper{}, friction{};
+        // A gear couples two PINS rather than two bodies directly: these are
+        // the ids of the joints the two wheels turn on, and the teeth each
+        // wheel has. `chain` makes them turn the same way instead of opposite
+        // ways, which is the whole difference between a chain drive and teeth
+        // in mesh. `strips_at` is what the teeth carry before they give way.
+        unsigned pin_a{}, pin_b{};
+        unsigned teeth_a{1}, teeth_b{1};
+        bool chain{};
+        double strips_at{};
         // A link's second attachment, which a pin and a slide do not have: they
         // are one point shared by two bodies, while a rope is tied at one place
         // on each and the two are not the same place.
@@ -3191,6 +3200,9 @@ struct LiveWorld::Impl {
     };
     HandStep hand_step;
     // What the last stroke that opened the hand let go of, and how.
+    // The gears whose teeth went in the last step, for the host to say so.
+    struct StrippedGear { unsigned id{}; std::string a, b; bool chain{}; };
+    std::vector<StrippedGear> stripped_gears;
     std::string let_go_body;
     Vec3 let_go_velocity{};
     double let_go_at_s{-1.0};
@@ -3555,6 +3567,7 @@ const char *savedKind(JoltWorld::JointKind kind) {
     case JoltWorld::JointKind::Fixing: return "fixing";
     case JoltWorld::JointKind::Elastic: return "elastic";
     case JoltWorld::JointKind::Drum: return "drum";
+    case JoltWorld::JointKind::Gear: return "gear";
     default: return "hinge";
     }
 }
@@ -3566,6 +3579,7 @@ JoltWorld::JointKind kindFrom(const std::string &word) {
     if (word == "fixing") return JoltWorld::JointKind::Fixing;
     if (word == "elastic") return JoltWorld::JointKind::Elastic;
     if (word == "drum") return JoltWorld::JointKind::Drum;
+    if (word == "gear") return JoltWorld::JointKind::Gear;
     if (word == "hinge") return JoltWorld::JointKind::Hinge;
     throw std::invalid_argument("\"" + word + "\" is not a kind of joint");
 }
@@ -6342,6 +6356,20 @@ void LiveWorld::step(double dt_s) {
     impl_->time_s += dt_s;
     impl_->advanceSun();
     impl_->rememberJointAngles(*impl_->world);
+    // Teeth that gave way in that step. The solver has already taken the
+    // coupling out; what is left is to forget the joint here too, or the room
+    // goes on reporting a gear that is not holding anything -- which is worse
+    // than no gear at all, because the drive looks whole and does nothing.
+    for (const unsigned rigid : impl_->world->strippedGears()) {
+        const auto gone = std::find_if(impl_->joints.begin(), impl_->joints.end(),
+                                       [&](const Impl::SceneJoint &j) {
+                                           return j.rigid == rigid &&
+                                                  j.kind == JoltWorld::JointKind::Gear;
+                                       });
+        if (gone == impl_->joints.end()) continue;
+        impl_->stripped_gears.push_back({gone->id, gone->a, gone->b, gone->chain});
+        impl_->joints.erase(gone);
+    }
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
     if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
@@ -6631,6 +6659,58 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
     impl_->settleJointedContacts();
+    return impl_->joints.back().id;
+}
+
+unsigned LiveWorld::gear(unsigned pin_a, unsigned pin_b, unsigned teeth_a, unsigned teeth_b,
+                         bool chain, double strips_at_n_m) {
+    if (pin_a == pin_b) return 0;
+    if (teeth_a == 0 || teeth_b == 0) return 0;
+    const auto findPin = [&](unsigned id) {
+        return std::find_if(impl_->joints.begin(), impl_->joints.end(),
+                            [&](const Impl::SceneJoint &j) {
+                                return j.id == id && j.kind == JoltWorld::JointKind::Hinge;
+                            });
+    };
+    const auto first = findPin(pin_a);
+    const auto second = findPin(pin_b);
+    // Each wheel has to be on a pin, because a gear is a relationship between
+    // two pins and there is nothing to relate without them.
+    if (first == impl_->joints.end() || second == impl_->joints.end()) return 0;
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    // The wheels are the turning halves of the two pins.
+    joint.a = first->b;
+    joint.b = second->b;
+    joint.kind = JoltWorld::JointKind::Gear;
+    joint.pin_a = pin_a;
+    joint.pin_b = pin_b;
+    joint.teeth_a = teeth_a;
+    joint.teeth_b = teeth_b;
+    joint.chain = chain;
+    joint.strips_at = std::max(0.0, strips_at_n_m);
+
+    const auto wheel_a = impl_->index_of.find(joint.a);
+    const auto wheel_b = impl_->index_of.find(joint.b);
+    if (wheel_a == impl_->index_of.end() || wheel_b == impl_->index_of.end()) return 0;
+    try {
+        JoltWorld::GearDescription d{};
+        d.a = impl_->body_of[wheel_a->second];
+        d.b = impl_->body_of[wheel_b->second];
+        d.pin_a = first->rigid;
+        d.pin_b = second->rigid;
+        d.teeth_a = teeth_a;
+        d.teeth_b = teeth_b;
+        d.chain = chain;
+        d.strips_at_n_m = joint.strips_at;
+        joint.rigid = impl_->world->addGear(d);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[wheel_a->second]);
+    impl_->world->wake(impl_->body_of[wheel_b->second]);
+    impl_->joints.push_back(std::move(joint));
     return impl_->joints.back().id;
 }
 
