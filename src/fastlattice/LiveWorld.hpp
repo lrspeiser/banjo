@@ -1848,8 +1848,11 @@ public:
     // of `kind` ("water"), on the named part at a point given where it is now,
     // seeing what is deeper than `depth_m`. Which side it is on is worked out
     // from where it is. False, with nothing changed, as sense() refuses.
+    // `watches` is 1 for a sensor that looks AHEAD of the machine and -1
+    // for one that looks behind: a machine with only forward sensors
+    // reverses blind.
     bool programSense(unsigned program, const std::string &kind, const std::string &body,
-                      const Vec3 &point_world_m, double depth_m);
+                      const Vec3 &point_world_m, double depth_m, int watches = 1);
     // What a program is told, by a sender and that sender's count: on or off.
     struct ProgramCommand {
         std::string sender;

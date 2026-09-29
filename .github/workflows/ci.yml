@@ -181,6 +181,7 @@ jobs:
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_seed_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_clock_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/electric_furnace_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/engines_room_tests.py -v
           BANJO_PLATFORM_ENGINE=$PWD/build/ci/banjo_platform_cli BANJO_RIGID_TESTS=required \
             python3 tests/workshop_rigid_engine_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run \

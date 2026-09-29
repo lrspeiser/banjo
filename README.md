@@ -353,11 +353,24 @@ floor where there is none.
 over 333.55 kJ/kg — and it is now 128 mm across. Its meltwater ran downhill and
 pooled below it, 5.41 kg into the valley's water, whose ledger still closes.*
 
+**A furnace is a chamber of gas with a lining that leaks.** An electric furnace
+built at the bench has a real inside: its element heats the gas, its lining
+loses heat to the room, and what it can reach is `ambient + P/U` — so a 40 mm
+lining cannot get hot enough to burn lime, an 80 mm one smelts iron, and asking
+the bench for one too thin to do the job is refused with the temperature it
+would top out at instead. Six recipes will not run until their machine is at
+temperature; click the copper smelter in `/world?scene=new-game` and its routine
+line reads "heating for smelt copper: 917 C of 1085 C". Left alone, a furnace is
+cold again within a minute.
+
 **Not built:** freezing or boiling in the world (the separate voxel thermal
 simulation still has its own, unconnected); fires that go out; thermal
-expansion; smoke and airflow; heat into water or into the ground — a burning
-log in the river keeps burning; and friction, impact, cutting or motor work
-turning into heat.
+expansion; smoke, flame gas and airflow; heat into water or into the ground — a
+burning log in the river keeps burning; friction, impact, cutting or motor work
+turning into heat; gas pressure on a container's walls; heat on an exact body
+(a gas region beside it, yes; the body itself, no); and thermal mass in a
+furnace's lining, so its warm-up is hundreds of times faster than a real one's
+even though where it settles is right.
 
 ---
 
@@ -387,8 +400,27 @@ fills a reservoir upstream.
 blue strips beyond its ends are the coarse network, running upstream to a
 reservoir and downstream to a lake.*
 
-The ground is columns of rock, soil and sand. After an edit, only the columns it
-disturbed are checked for stability (Mohr-Coulomb friction, and Terzaghi's
+The ground is columns, and **since 28 September a column is a list of runs — a
+material and the height it reaches, bottom to top — all the way down.** It goes
+down 30 m below the lowest rock there is, where it used to stop at 2 m, which is
+no earth for a mine to work in. The rock under that is a stack of beds, and the
+generated valley now has geology in it: a mantle of weathered rock over the
+rock, a bed of clay dipping along the valley under it, and a vein of ore cutting
+through both at its own strike and dip, oxidised where the weather reached it.
+
+Because the page draws the top of a column in what the column is *made of*
+rather than in one of three surface kinds, **the vein shows as a rust stain on
+the knoll's bare rock, and you can walk up to it.** Cut into the ground and the
+face is drawn in the materials it cuts through — a pit through sand into soil
+and down to rock has a sand band, a soil band and rock at its floor. Ask for a
+survey and it says the same column in words: "18 cm of sand, then 96 cm of soil,
+then rock". A cut that would reach a bed that is not rock is refused with the
+reason, because a block of anything else is not accounted for yet. A room saved
+before all this gets the deeper earth when it is opened again, with the rock
+that appears under it added to the ledger's opening figure, so the room's own
+account still closes.
+
+After an edit, only the columns it disturbed are checked for stability (Mohr-Coulomb friction, and Terzaghi's
 critical height for cohesive soil): a sand pit settles to its angle of repose,
 a 0.5 m soil trench stands and a 1.6 m one caves in, and whatever stood on the
 ground falls in. Digging one pit rechecked 65 columns, rebuilt 1 of 20 ground
@@ -404,9 +436,15 @@ of sand and 29 kg of soil carried: 80 of the 80 kg a person can carry, so
 walking slows to 40% and a second dig is refused. What you dig is carried, and
 heaping it puts back exactly what came out.*
 
+**Things hold things, and tip them out.** A container holds a mass of a
+substance, rides whatever carries it, and knows what temperature what it holds
+is at. Turn a full one over above an empty one and it pours; what misses lands
+as a heap on the ground. `/world?scene=tests-pour` is two pails on a bench with
+18 kg of sand in one of them, and the Room tab's slots say what each is holding.
+
 **Not built:** waves and wakes, sediment, rain, wet soil, water putting out
-fire; breaking rock with a pick, tool wear, landslides that rotate rather than
-slump.
+fire; breaking rock under a tool, tool wear, landslides that rotate rather than
+slump, and the holes and tunnels the earth is now deep enough to hold.
 
 ---
 
@@ -601,6 +639,20 @@ be (the braking kills the swing it predicted, so it stopped 35 degrees off and
 called itself faced) and easing the turn as it closes (at three tenths effort
 it could not come round on rough ground at all) — and both are written down in
 [machine-world.md](docs/machine-world.md) rather than quietly dropped.
+
+**A room only knows what something has been near.** A room used to answer about
+ground nobody had ever visited as readily as about the ground a machine was
+standing on: every deposit in the spec went into every machine's senses, and the
+page drew the whole basin from the first frame. A world like that has nothing to
+find out, and a routine sent to a vein was being told where to dig by the
+document rather than by anything that had happened. So a room now keeps what has
+been *seen* — a coarse grid, a metre a cell, kept with the room, so a place stays
+known once someone has been there and a reload does not forget it. Being there is
+the only thing that reveals it: after every step everything in the room marks a
+circle round where it stands, six metres for a machine on the ground or a person
+on foot, and a metre and a half more for every metre a machine is above it, up to
+thirty. Not a routine's places, not a deposit declared in the spec, not anything
+the chat knows.
 
 ### A machine that flies
 
@@ -899,7 +951,7 @@ It listens on `127.0.0.1` only and keeps its rooms in
 |---|---|
 | `/` and `/world` | the main world, with the chat and the side panel |
 | `/world?workshop=1` | the bench: design one product at a time, drive it, and make it |
-| `/world?scene=<room>` | any of the 26 rooms ([the list](docs/what-works-where.md#the-rooms)) |
+| `/world?scene=<room>` | any of the 27 rooms ([the list](docs/what-works-where.md#the-rooms)) |
 | `/debug` | not the game: every room one click away, what the engine reports, the QA suites |
 
 That is the whole site. The Explorer, the fabrication page, the three QA pages
@@ -928,7 +980,25 @@ hoist.
 |---|---|
 | ![The west terrace: a bell hanging on a rope in a frame, a self-closing door, a portcullis with its winch, and a latched gate, above the river](docs/images/readme/world-west-terrace.jpg) | ![The east terrace: a table and chair, the battery hoist's mast, a crate, a plank and a ball, the hearth and a bow, above the river](docs/images/readme/world-east-terrace.jpg) |
 
-**Twenty-four other rooms exist, and the menu offers two of them** —
+**A new game is generated from a seed, and then proved playable.**
+`/world?scene=new-game` is a valley laid out by `playground/world_seed.py`: ore
+in the high ground, sand and clay by the water, timber where it fell, each
+deposit dry, flat enough to work, clear of the others, and somewhere a machine
+can actually drive to. Then it *walks it* — from what a new game starts with,
+can you reach every material and every good the Workshop spends? A map that
+strands something is thrown away and another is seeded, because a generator that
+cannot say whether its world is playable is a random number generator.
+
+It exists because a new game used to be unwinnable, and the loop is worth
+stating: the only thing that digs is the Workshop's rover, the rover costs
+copper wire, wire is drawn from copper, copper is smelted from ore, and ore has
+to be dug. You need the digger to make the digger. The knowledge graph had
+forbidden exactly this for years — "a player must not need a pickaxe to obtain
+the only material capable of making their first pickaxe" — and the world had
+never been held to the same rule. It is now, and the circle is broken by what the
+start holds rather than by new physics: two machines and six yards to fill.
+
+**Twenty-five other rooms exist, and the menu offers two of them** —
 everything else opens by typing its address, which is the single biggest gap
 between what is built and what you can find.
 
@@ -937,6 +1007,7 @@ between what is built and what you can find.
 | Key | Does |
 |---|---|
 | W A S D, mouse | walk and look |
+| Left click on a thing | does what E does to that thing, in one click — the cursor picks, so it needs no lining up |
 | E | pick up what you look at, or do what the side panel marks with E; with something held, put it down where the see-through copy shows |
 | Tab | move E to the next action |
 | Q, 1–9 | put it in the bag; take a bag slot into the hand |
@@ -950,7 +1021,11 @@ between what is built and what you can find.
 
 And: W A S D walk, drag or the arrow keys look, E takes or puts down, J uses a
 thing, Q bags it, G sweeps up loose pieces, X lets go, and the mouse wheel
-pulls the camera back.
+pulls the camera back. A **zoom slider** on the view changes the field of view
+and nothing else: where you stand does not move, so what you can reach, dig,
+pick up and put down at 4× is exactly what it was at 1×. Pointing at a thing is
+enough to see what it is — the side view fills in without a click — and one
+click then does that thing's first action, where it used to take two.
 
 | Looking at it | Holding it |
 |---|---|
@@ -1108,7 +1183,7 @@ The project's own checklist of 30 player capabilities
 ([progression/physics-capabilities.json](progression/physics-capabilities.json))
 stands at **1 complete, 26 partial and 3 planned**. In rough priority order:
 
-**Get what is built into the world.** The menu shows 2 of 25 rooms, so breaking
+**Get what is built into the world.** The menu shows 2 of 27 rooms, so breaking
 under load, the gas piston, fine cells for cutting, the plates of every material
 and the whole watershed are reachable only by typing an address. The explore
 room still rebuilds its valley on every load, so nothing done in that one room
@@ -1120,8 +1195,8 @@ builder and renderer all assume one size.
 **Physics still to build.** Heat: freezing and boiling in the world, fires that
 go out, thermal expansion, smoke and airflow, heat into water and ground,
 mechanical work turning into heat. Water: waves, sediment, rain, wet soil, water
-putting out fire, containers and pouring. Ground: breaking rock, tool wear,
-rotational landslides. Machines: gears, motor heat, hinges with a strength,
+putting out fire. Ground: breaking rock under a tool, tool wear, rotational
+landslides, and the holes and tunnels the earth is now deep enough to hold. Machines: gears, motor heat, hinges with a strength,
 joints that fail by bending or prying, a bump sensor that feels a knock rather
 than a stall. Breaking: calibration against laboratory data, converged piece
 counts, a failure path for thin parts. Scale: a cell size per object, refining
@@ -1129,6 +1204,7 @@ on demand, dormant regions, beyond 16,000 cells a room and 2,000 bodies.
 Handling: two hands, grip and use points.
 
 **Known defects.**
+
 
 - **The material range no longer matches its recorded baseline.**
   `scripts/material_qa.py` compares 96 impact cases against

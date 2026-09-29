@@ -23,6 +23,10 @@ constexpr double kDefaultLayerM = 0.003;
 // Two bounding boxes touch when they meet face to face within this gap, or
 // overlap by no more than this much (resting contact has a little of both).
 constexpr double kTouchGapM = 0.006;
+// An orifice passes less than its area: the jet contracts just past the hole.
+// The vent's flow and the nozzle's thrust are two views of the same jet, so
+// they must use the same number.
+constexpr double kDischarge = 0.6;
 constexpr double kTouchPenetrationM = 0.02;
 // A body joins the network when something in it could move this much power
 // into the body. Below it the body stays at the surroundings' temperature.
@@ -75,8 +79,14 @@ struct ThermoWorld::Impl {
     std::vector<double> air;
     double air_gas_constant{};
     std::vector<bool> fuel;
-    // Per substance: the transition that melts it, or kNone.
+    // Per substance: the transition that MELTS it into a liquid, or kNone. What
+    // the melting front is made of, and only that.
     std::vector<std::size_t> melts;
+    // Per substance: the transition that changes it at all, melting or boiling,
+    // or kNone. What caps a temperature -- matter holding water cannot be
+    // warmer than the water's boiling point any more than matter holding ice
+    // can be warmer than its melting point.
+    std::vector<std::size_t> changes;
     std::vector<double> quoted_heat;   // per reaction, J per kg of basis at 298.15 K
     ThermoState s;
     std::vector<BodyShape> shapes;
@@ -115,7 +125,12 @@ struct ThermoWorld::Impl {
         fuel.assign(model.size(), false);
         for (std::size_t i = 0; i < model.size(); ++i) fuel[i] = model.isFuel(i);
         melts.assign(model.size(), kNone);
-        for (std::size_t t = 0; t < model.transitions.size(); ++t) melts[model.transitions[t].solid] = t;
+        changes.assign(model.size(), kNone);
+        for (std::size_t t = 0; t < model.transitions.size(); ++t) {
+            const Transition &transition = model.transitions[t];
+            changes[transition.from] = t;
+            if (model[transition.to].phase == Phase::Liquid) melts[transition.from] = t;
+        }
         quoted_heat.clear();
         for (const Reaction &reaction : model.reactions)
             quoted_heat.push_back(model.heatOfReactionJPerKg(reaction, kQuotedTemperatureK));
@@ -174,14 +189,17 @@ struct ThermoWorld::Impl {
             if (melts[i] != kNone) total += p.kg[i];
         return total;
     }
-    // Matter holding a solid cannot be warmer than that solid's melting point,
-    // so where nothing says otherwise it starts no warmer: ice in a warm room
-    // is at its melting point, not at the room's temperature.
+    // Matter holding a phase cannot be warmer than the temperature that phase
+    // changes at, so where nothing says otherwise it starts no warmer: ice in a
+    // warm room is at its melting point, not at the room's temperature. Water
+    // is capped the same way at its boiling point, which in a room at 20 C
+    // changes nothing -- the cap only ever bites where the room is hotter than
+    // the change, which is the furnace case.
     [[nodiscard]] double startingTemperature(const std::vector<std::pair<std::size_t, double>> &fractions) const {
         double t = ambient.temperature_k;
         for (const auto &[substance, fraction] : fractions)
-            if (fraction > 0.0 && melts[substance] != kNone)
-                t = std::min(t, model.transitions[melts[substance]].melting_k);
+            if (fraction > 0.0 && changes[substance] != kNone)
+                t = std::min(t, model.transitions[changes[substance]].at_k);
         return t;
     }
     // Whether a material holds something that melts below the surroundings'
@@ -192,10 +210,23 @@ struct ThermoWorld::Impl {
         if (composition == model.composition_of.end()) return false;
         return startingTemperature(composition->second) < ambient.temperature_k;
     }
+    // What it is made of AND what it carries: a body joining or leaving the
+    // world takes the water in it with it, so the ledger has to count both.
     [[nodiscard]] static double lumpEnergy(const Lump &l) {
-        return l.surface.internal_energy_j + l.core.internal_energy_j;
+        return l.surface.internal_energy_j + l.core.internal_energy_j + l.cargo.internal_energy_j;
     }
-    [[nodiscard]] static double lumpMass(const Lump &l) { return massKg(l.surface) + massKg(l.core); }
+    // What the body IS: the iron of the kettle, and not the water in it. This
+    // is what it is reported as weighing and what its strength is reckoned on.
+    [[nodiscard]] static double lumpMass(const Lump &l) {
+        return massKg(l.surface) + massKg(l.core);
+    }
+    // What has to be CARRIED: the same, plus what it holds. This is the mass
+    // the rigid body is told (massesToMirror) and what goes on the ledger when
+    // a body joins or leaves, because a full pail really is heavier than an
+    // empty one and really does take its water with it.
+    [[nodiscard]] static double lumpTotalMass(const Lump &l) {
+        return lumpMass(l) + massKg(l.cargo);
+    }
 
     // How far heat has to go inside a lump to reach where it is exchanged.
     [[nodiscard]] static double reach(const Lump &l) {
@@ -272,13 +303,13 @@ struct ThermoWorld::Impl {
     void join(const Lump &lump) {
         if (!s.opened) return;
         s.ledger.joined_j += lumpEnergy(lump);
-        s.ledger.joined_kg += lumpMass(lump);
+        s.ledger.joined_kg += lumpTotalMass(lump);
     }
 
     void leave(const Lump &lump) {
         if (!s.opened) return;
         s.ledger.left_j += lumpEnergy(lump);
-        s.ledger.left_kg += lumpMass(lump);
+        s.ledger.left_kg += lumpTotalMass(lump);
     }
 
     std::size_t activate(const std::string &body) {
@@ -292,34 +323,74 @@ struct ThermoWorld::Impl {
         return s.lumps.size() - 1;
     }
 
-    // What heat above a melting point does: melt. For each solid in the parcel
-    // that melts, if the parcel is warmer than its melting point, exactly as
-    // much of it melts as brings the parcel back to it -- dm = C (T - Tm) / L,
-    // at constant internal energy, because the liquid's reference energy is
-    // the solid's plus the latent heat. Released meltwater then runs off at
-    // the temperature it melted at, carrying its energy: matter out.
-    void melt(Lump &lump, Parcel &p, double dt) {
+    // What heat above a change of phase does: change phase. For each lower
+    // phase in the parcel -- ice that melts, water that boils -- if the parcel
+    // is warmer than that change's temperature, exactly as much of it changes
+    // as brings the parcel back to it,
+    //
+    //     dm = C (T - Tc) / cost,
+    //
+    // and the parcel lands ON the change's temperature. That is what pins a
+    // kettle at 100 C: however hard it is driven, the heat above the boiling
+    // point leaves as steam instead of raising the water.
+    //
+    // THE COST OF A KILOGRAM is what LEAVES the parcel per kilogram changed,
+    // and it is not the same for the two directions off this shelf:
+    //
+    //   staying    the latent heat alone -- the two substances' internal
+    //              energies apart. The conversion is then at constant internal
+    //              energy, since the product's reference energy is the
+    //              reactant's plus exactly that.
+    //   released   the product's ENTHALPY less the reactant's energy: the
+    //              latent heat PLUS the flow work of pushing the product out
+    //              into whatever it goes to. For water at 373.15 K that is the
+    //              2.257 MJ/kg everyone quotes, against 2.085 of latent heat
+    //              alone.
+    //
+    // Melting shows no difference between the two, because a liquid's enthalpy
+    // IS its internal energy. Boiling does, and getting it wrong here is how a
+    // kettle boils a tenth faster than a real one.
+    void settlePhase(Lump &lump, Parcel &p, double dt) {
         for (const Transition &transition : model.transitions) {
-            const double solid = p.kg[transition.solid];
-            if (!(solid > 0.0)) continue;
+            const double lower = p.kg[transition.from];
+            if (!(lower > 0.0)) continue;
             const double t = temperature(p);
-            if (!(t > transition.melting_k)) continue;
-            const double latent = model.latentHeatJPerKg(transition);
-            const double melted = std::min(solid, capacity(p) * (t - transition.melting_k) / latent);
-            if (!(melted > 0.0)) continue;
-            p.kg[transition.solid] = melted >= solid ? 0.0 : solid - melted;
-            p.kg[transition.liquid] += melted;
-            lump.melt_kg_s += melted / dt;
-            if (transition.liquid_fate != Fate::Released) continue;
-            // At the melting point unless the solid ran out first, when the
-            // last of the heat is in the water too.
-            const double leaving_k = temperature(p);
-            const double carried = melted * specificEnthalpyJKg(model[transition.liquid], leaving_k);
-            p.kg[transition.liquid] = std::max(0.0, p.kg[transition.liquid] - melted);
+            if (!(t > transition.at_k)) continue;
+            const bool released = transition.product_fate == Fate::Released;
+            const double cost =
+                released ? specificEnthalpyJKg(model[transition.to], transition.at_k) -
+                               specificEnergyJKg(model[transition.from], transition.at_k)
+                         : model.latentHeatJPerKg(transition);
+            const double changed = std::min(lower, capacity(p) * (t - transition.at_k) / cost);
+            if (!(changed > 0.0)) continue;
+            const bool ran_out = changed >= lower;
+            p.kg[transition.from] = ran_out ? 0.0 : lower - changed;
+            p.kg[transition.to] += changed;
+            const bool boiling = model[transition.to].phase == Phase::Gas;
+            if (boiling) lump.boil_kg_s += changed / dt;
+            else lump.melt_kg_s += changed / dt;
+            if (!released) continue;
+            // It leaves at the change's temperature -- unless the lower phase
+            // ran out first, when the last of the heat is in the product too.
+            const double leaving_k = ran_out ? temperature(p) : transition.at_k;
+            const double carried = changed * specificEnthalpyJKg(model[transition.to], leaving_k);
+            p.kg[transition.to] = std::max(0.0, p.kg[transition.to] - changed);
             p.internal_energy_j -= carried;
+            // A gas goes into the region the body stands in, if it is in one,
+            // and presses on whatever bounds it -- it has not left the network,
+            // so it is not matter out. Anything condensed (meltwater) runs off
+            // and leaves, as it always did: a gas region holds gas.
+            GasRegion *region = lump.environment >= 0
+                                    ? &s.regions[static_cast<std::size_t>(lump.environment)]
+                                    : nullptr;
+            if (boiling && region != nullptr) {
+                region->gas.kg[transition.to] += changed;
+                region->gas.internal_energy_j += carried;
+                continue;
+            }
             s.ledger.matter_out_j += carried;
-            s.ledger.matter_out_kg += melted;
-            lump.meltwater_kg += melted;
+            s.ledger.matter_out_kg += changed;
+            if (!boiling) lump.meltwater_kg += changed;
         }
     }
 
@@ -337,8 +408,12 @@ struct ThermoWorld::Impl {
         if (model.transitions.empty()) return;
         for (Lump &lump : s.lumps) {
             if (lump.parked) continue;   // set aside: time stands still for it
-            melt(lump, lump.surface, dt);
-            if (massKg(lump.core) > 0.0) melt(lump, lump.core, dt);
+            settlePhase(lump, lump.surface, dt);
+            if (massKg(lump.core) > 0.0) settlePhase(lump, lump.core, dt);
+            // And what it CARRIES, which is the whole point of a kettle: the
+            // water in it boils, and the steam goes wherever a released gas
+            // goes -- into the region the body stands in, or to the air.
+            if (massKg(lump.cargo) > 0.0) settlePhase(lump, lump.cargo, dt);
             advanceMeltFront(lump);
         }
     }
@@ -603,7 +678,6 @@ struct ThermoWorld::Impl {
     // right for modest pressure differences, not for choked flow.
     void vent(GasRegion &region, double dt) {
         if (!region.vent_open || !(region.vent_area_m2 > 0.0) || !(region.volume_m3 > 0.0)) return;
-        constexpr double kDischarge = 0.6;
         const double t = temperature(region.gas);
         const double p = pressurePa(model, region.gas, region.volume_m3);
         const double dp = p - ambient.pressure_pa;
@@ -681,6 +755,18 @@ struct ThermoWorld::Impl {
                 l.surface.internal_energy_j -= q;
                 l.core.internal_energy_j += q;
             }
+            // What it carries is warmed through the body that holds it, and
+            // only through it: a kettle's water is heated by the kettle. It
+            // has no path of its own to the room, which is a declared
+            // simplification -- an open pail's water does not cool by its own
+            // surface here.
+            if (l.cargo_conductance_w_k > 0.0 && massKg(l.cargo) > 0.0) {
+                const double q = pairTransfer(temperature(l.surface), temperature(l.cargo),
+                                              capacity(l.surface), capacity(l.cargo),
+                                              l.cargo_conductance_w_k, dt);
+                l.surface.internal_energy_j -= q;
+                l.cargo.internal_energy_j += q;
+            }
             const double t = temperature(l.surface);
             const double c = capacity(l.surface);
             const double sky = i < s.sky_fraction.size() ? s.sky_fraction[i] : 1.0;
@@ -724,6 +810,7 @@ struct ThermoWorld::Impl {
         for (const Lump &l : s.lumps) {
             add(l.surface);
             add(l.core);
+            add(l.cargo);   // what it carries is on the ledger like everything else
         }
         for (const GasRegion &r : s.regions) add(r.gas);
         ledger.reference_j = reference;
@@ -817,6 +904,88 @@ void ThermoWorld::refresh(const std::vector<BodyShape> &bodies, double floor_y_m
     w.couple();
 }
 
+void ThermoWorld::carry(const CargoDeclaration &d) {
+    Impl &w = *impl_;
+    const BodyShape *shape = w.shape(d.body);
+    require(shape != nullptr, "there is nothing called \"" + d.body + "\" to carry anything");
+    // The body has to be in the network to carry something: a kettle nothing
+    // has heated is not followed until it holds water.
+    if (w.lumpOf(d.body) == kNone) {
+        const auto composition = w.model.composition_of.find(shape->material);
+        require(composition != w.model.composition_of.end(),
+                d.body + " is " + shape->material + ", which the model has no composition for, so "
+                         "it cannot be drawn in to carry anything: declare its contents first");
+        Lump lump = w.makeLump(*shape, composition->second,
+                               w.startingTemperature(composition->second), -1.0, false);
+        w.s.lumps.push_back(std::move(lump));
+        w.join(w.s.lumps.back());
+        w.couple();
+    }
+    Lump &lump = w.s.lumps[w.lumpOf(d.body)];
+    const double t = d.temperature_k > 0.0 ? d.temperature_k : w.ambient.temperature_k;
+    require(std::isfinite(t) && t >= w.model.minimum_temperature_k && t <= w.model.maximum_temperature_k,
+            d.body + ": what it is given has a temperature inside the model's range");
+    std::vector<double> kg(w.model.size(), 0.0);
+    double total = 0.0;
+    for (const auto &[id, amount] : d.kg) {
+        require(std::isfinite(amount) && amount >= 0.0,
+                d.body + ": every amount carried is finite and not negative");
+        if (!(amount > 0.0)) continue;
+        const std::size_t substance = w.model.index(id);
+        // Matter above the temperature its phase changes at is not in that
+        // phase, the same rule declared contents follow.
+        if (w.changes[substance] != kNone) {
+            const Transition &transition = w.model.transitions[w.changes[substance]];
+            require(t <= transition.at_k,
+                    d.body + ": it is given " + id + ", which changes at " +
+                        std::to_string(transition.at_k) + " K, so it cannot be given warmer");
+        }
+        kg[substance] += amount;
+        total += amount;
+    }
+    require(total > 0.0, d.body + ": there is nothing to carry");
+    const Parcel given = parcelAt(w.model, kg, t);
+    // It comes from outside the network, bringing its energy with it -- but
+    // only once the ledger is OPEN. Poured in before the world has taken a
+    // step it is not a crossing at all, it is part of what the network started
+    // with, and booking it as both is how a ledger comes out short by exactly
+    // the thing you put in. The same guard join() and leave() use.
+    if (w.s.opened) {
+        w.s.ledger.matter_in_j += given.internal_energy_j;
+        w.s.ledger.matter_in_kg += total;
+    }
+    pour(lump.cargo, given);
+    // The wall between them. Declared from the body's own surface unless the
+    // caller says otherwise: a vessel's wall IS its surface.
+    lump.cargo_conductance_w_k =
+        d.conductance_w_k >= 0.0
+            ? d.conductance_w_k
+            : std::max(1.0, w.ambient.contact_conductance_w_m2_k * std::max(lump.area_m2, 1.0e-4));
+}
+
+std::pair<double, double> ThermoWorld::release(const std::string &body, const std::string &substance,
+                                               double kg) {
+    Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone || !(kg > 0.0)) return {0.0, 0.0};
+    Lump &lump = w.s.lumps[index];
+    const std::size_t which = w.model.index(substance);
+    const double held = which < lump.cargo.kg.size() ? lump.cargo.kg[which] : 0.0;
+    const double taken = std::min(held, kg);
+    if (!(taken > 0.0)) return {0.0, w.temperature(lump.cargo)};
+    const double t = w.temperature(lump.cargo);
+    // It leaves at the temperature it was at, carrying its energy out of the
+    // network. Whoever pours it somewhere else puts that energy back in.
+    const double carried = taken * specificEnergyJKg(w.model[which], t);
+    lump.cargo.kg[which] = held - taken;
+    lump.cargo.internal_energy_j -= carried;
+    if (w.s.opened) {
+        w.s.ledger.matter_out_j += carried;
+        w.s.ledger.matter_out_kg += taken;
+    }
+    return {taken, t};
+}
+
 void ThermoWorld::declareContents(const ContentsDeclaration &d) {
     Impl &w = *impl_;
     const BodyShape *shape = w.shape(d.body);
@@ -842,14 +1011,17 @@ void ThermoWorld::declareContents(const ContentsDeclaration &d) {
     const double t = d.temperature_k > 0.0 ? d.temperature_k : w.startingTemperature(fractions);
     require(std::isfinite(t) && t <= w.model.maximum_temperature_k,
             d.body + ": a temperature inside the model's range");
-    // Solid matter above its melting point is not solid: say how much of it is
-    // already water instead.
+    // Matter above the temperature its phase changes at is not in that phase:
+    // solid above its melting point is already water, water above its boiling
+    // point is already steam. Say so instead of declaring the impossible.
     for (const auto &[substance, fraction] : fractions) {
-        if (!(fraction > 0.0) || w.melts[substance] == kNone) continue;
-        const Transition &transition = w.model.transitions[w.melts[substance]];
-        require(t <= transition.melting_k,
-                d.body + ": it holds " + w.model[substance].id + ", which melts at " +
-                    std::to_string(transition.melting_k) + " K, so it cannot be declared warmer than that");
+        if (!(fraction > 0.0) || w.changes[substance] == kNone) continue;
+        const Transition &transition = w.model.transitions[w.changes[substance]];
+        const bool boils = w.model[transition.to].phase == Phase::Gas;
+        require(t <= transition.at_k,
+                d.body + ": it holds " + w.model[substance].id + ", which " +
+                    (boils ? "boils at " : "melts at ") + std::to_string(transition.at_k) +
+                    " K, so it cannot be declared warmer than that");
     }
     Lump lump = w.makeLump(*shape, fractions, t, d.layer_depth_m, true);
     if (!d.environment.empty()) {
@@ -940,6 +1112,12 @@ void ThermoWorld::declareGasRegion(const GasRegionDeclaration &d) {
             : w.ambient.film_coefficient_w_m2_k * (2.0 * side * side + 4.0 * side * height);
     region.vent_area_m2 = std::max(0.0, d.vent_area_m2);
     region.vent_open = d.vent_open;
+    region.vessel = d.vessel;
+    region.vent_axis = d.vent_axis;
+    require(region.vessel.empty() || dot(region.vent_axis, region.vent_axis) > 0.0,
+            d.name + ": a nozzle needs a direction for the gas to leave by");
+    require(region.vessel.empty() || w.shape(region.vessel) != nullptr,
+            d.name + ": there is no body called " + region.vessel + " to hold it");
     if (w.s.opened) {
         w.s.ledger.joined_j += region.gas.internal_energy_j;
         w.s.ledger.joined_kg += massKg(region.gas);
@@ -984,6 +1162,28 @@ std::vector<Push> ThermoWorld::pushes() {
         if (!piston.container.empty() && w.shape(piston.container) != nullptr)
             out.push_back({piston.container, -piston.pushed_force_n});
     }
+    // And the nozzles. A jet leaving a hole carries momentum away, and the
+    // vessel gets it back the other way: that is a rocket, and it is the only
+    // one of these boundaries that pushes without anything to push against.
+    //
+    //     mdot = Cd A sqrt(2 rho dp)     what the vent lets out
+    //     v    =      sqrt(2 dp / rho)   how fast it is going when it leaves
+    //     F    = mdot v = 2 Cd A dp
+    //
+    // -- the density cancels, which is the tidy part. The same Cd as the vent,
+    // because it is the same jet.
+    for (GasRegion &region : w.s.regions) {
+        region.thrust_force_n = {};
+        if (region.vessel.empty() || w.shape(region.vessel) == nullptr) continue;
+        if (!region.vent_open || !(region.vent_area_m2 > 0.0) || !(region.volume_m3 > 0.0)) continue;
+        const double dp = pressurePa(w.model, region.gas, region.volume_m3) - w.ambient.pressure_pa;
+        if (!(dp > 0.0)) continue;
+        const double length = std::sqrt(dot(region.vent_axis, region.vent_axis));
+        if (!(length > 0.0)) continue;
+        // Opposite the way the gas goes.
+        region.thrust_force_n = region.vent_axis * (-2.0 * kDischarge * region.vent_area_m2 * dp / length);
+        out.push_back({region.vessel, region.thrust_force_n});
+    }
     return out;
 }
 
@@ -996,7 +1196,8 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         w.s.ledger.initial_mass_kg = w.s.ledger.mass_kg;
         w.s.opened = true;
     }
-    for (Lump &l : w.s.lumps) l.heat_release_w = l.fuel_use_kg_s = l.heater_w = l.melt_kg_s = 0.0;
+    for (Lump &l : w.s.lumps)
+        l.heat_release_w = l.fuel_use_kg_s = l.heater_w = l.melt_kg_s = l.boil_kg_s = 0.0;
     for (GasRegion &r : w.s.regions) r.heater_w = r.vent_flow_kg_s = 0.0;
 
     // Boundary work: the gas pays for exactly the force that was applied, over
@@ -1027,6 +1228,28 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
             w.s.ledger.numerical_j += floor - region.gas.internal_energy_j;
             region.gas.internal_energy_j = floor;
         }
+    }
+
+    // What the nozzles pushed their vessels with, over the displacement that
+    // actually happened -- the same bargain the piston makes above.
+    //
+    // WHERE THE ENERGY COMES FROM, which is the part to get right. The jet has
+    // already been charged for in full: vent() takes its enthalpy out of the
+    // region and books it as matter leaving. The work the thrust does on the
+    // vessel is not a second helping on top of that -- it is part of the same
+    // energy, moved from the jet to the vessel. So it is taken OUT of what the
+    // matter carried away and put into work delivered to bodies. The two moves
+    // cancel in the total, which is why the ledger still closes to rounding,
+    // and the split now says truthfully where the energy went.
+    for (GasRegion &region : w.s.regions) {
+        const Vec3 force = region.thrust_force_n;
+        region.thrust_force_n = {};
+        if (!(dot(force, force) > 0.0) || region.vessel.empty()) continue;
+        const double work = dot(force, find(moved, region.vessel));
+        if (!std::isfinite(work) || work == 0.0) continue;
+        w.s.ledger.work_to_bodies_j += work;
+        w.s.ledger.matter_out_j -= work;
+        region.thrust_work_j += work;
     }
 
     // Heaters: external work, in over the part of this step each one is on for.
@@ -1115,6 +1338,9 @@ void ThermoWorld::split(const std::string &body,
         piece.body = pieces[k].first;
         piece.surface = takeShare(parent.surface, of_remaining);
         piece.core = takeShare(parent.core, of_remaining);
+        // What it was carrying is shared out with it. A pail of water that
+        // breaks in two does not hold all its water in each half.
+        piece.cargo = takeShare(parent.cargo, of_remaining);
         piece.layer_fuel_kg = parent.layer_fuel_kg * share;
         piece.layer_melt_kg = parent.layer_melt_kg * share;
         // Meltwater not yet handed over goes with the pieces, by share, so the
@@ -1240,15 +1466,24 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
         heat.parked = l.parked;
         heat.melt_kg_s = l.melt_kg_s;
         heat.melting = l.melt_kg_s > 0.0;
+        heat.boil_kg_s = l.boil_kg_s;
+        heat.boiling = l.boil_kg_s > 0.0;
         for (const Transition &transition : w.model.transitions) {
-            const std::size_t x = transition.solid;
+            const std::size_t x = transition.from;
             const double had = x < l.initial_kg.size() ? l.initial_kg[x] : 0.0;
-            heat.melted_kg += std::max(0.0, had - l.surface.kg[x] - l.core.kg[x]);
+            const double gone = std::max(0.0, had - l.surface.kg[x] - l.core.kg[x]);
+            if (w.model[transition.to].phase == Phase::Gas) heat.boiled_kg += gone;
+            else heat.melted_kg += gone;
         }
         for (std::size_t i = 0; i < w.model.size(); ++i) {
             const double kg = l.surface.kg[i] + l.core.kg[i];
             if (kg > 1.0e-9) heat.contents_kg.emplace_back(w.model[i].id, kg);
         }
+        // And what it CARRIES, kept apart from what it is made of, at its own
+        // temperature: a kettle of cold water on a hot plate is two readings.
+        for (std::size_t i = 0; i < w.model.size() && i < l.cargo.kg.size(); ++i)
+            if (l.cargo.kg[i] > 1.0e-9) heat.carrying_kg.emplace_back(w.model[i].id, l.cargo.kg[i]);
+        if (!heat.carrying_kg.empty()) heat.carrying_k = w.temperature(l.cargo);
         out.push_back(std::move(heat));
     }
     return out;
@@ -1281,6 +1516,16 @@ std::vector<RegionState> ThermoWorld::regions() const {
         state.heater_w = r.heater_w;
         state.wall_loss_w = r.wall_loss_w;
         state.vent_open = r.vent_open && r.vent_area_m2 > 0.0;
+        state.vessel = r.vessel;
+        state.vent_axis = r.vent_axis;
+        state.thrust_work_j = r.thrust_work_j;
+        state.thrust_n = 0.0;
+        if (!r.vessel.empty() && state.vent_open) {
+            const double dp = r.volume_m3 > 0.0
+                                  ? pressurePa(w.model, r.gas, r.volume_m3) - w.ambient.pressure_pa
+                                  : 0.0;
+            if (dp > 0.0) state.thrust_n = 2.0 * kDischarge * r.vent_area_m2 * dp;
+        }
         state.vent_flow_kg_s = r.vent_flow_kg_s;
         out.push_back(std::move(state));
     }
@@ -1351,7 +1596,7 @@ std::vector<std::pair<std::string, double>> ThermoWorld::massesToMirror(double r
     for (Lump &l : impl_->s.lumps) {
         // Told when it is back in the world, not while it is set aside (park).
         if (l.parked) continue;
-        const double mass = Impl::lumpMass(l);
+        const double mass = Impl::lumpTotalMass(l);
         if (l.mirrored_mass_kg >= 0.0 && std::abs(mass - l.mirrored_mass_kg) <= relative * mass) continue;
         if (!(mass > 0.0)) continue;
         l.mirrored_mass_kg = mass;
@@ -1378,6 +1623,21 @@ std::vector<std::string> ThermoWorld::limitations() {
         "network, carrying its energy; the host puts it in the room's water where there is any",
         "Freezing is not modelled: nothing in the world is colder than the ice itself, and water "
         "in the room's rivers and pools has no temperature",
+        "Free water boils at 373.15 K and takes 2.257 MJ/kg to do it: while it has water, a body's "
+        "zone is never warmer than that, whatever is driving it. The steam goes into the gas "
+        "region the body stands in, where it presses, or to the surroundings where there is no "
+        "region. The boiling point does not move with pressure -- a sealed vessel's water still "
+        "boils at 373.15 K however hard it is pressed, which is wrong for a pressure cooker and "
+        "right for everything open",
+        "Water HELD IN A MATERIAL is a different substance from free water and does not boil: it "
+        "is driven off by the drying reaction, over a range of temperatures, as wet wood really "
+        "does. So a burning log can be declared hot while still holding its moisture",
+        "Condensation is not modelled: steam in a region stays steam however cold the region gets",
+        "A nozzle's thrust is the momentum of an incompressible orifice jet, 2 Cd A dp, with the "
+        "same discharge coefficient as the vent it leaves by. There is no converging-diverging "
+        "nozzle and no choked flow, so exhaust speeds are well below a real rocket's and the "
+        "thrust does not rise with a bell. The work the thrust does on the vessel is taken out of "
+        "the energy the jet carries away rather than charged again, so the ledger closes",
         "Ice that joins the network with nothing to say otherwise is at its melting point, since "
         "ice cannot be at a warm room's temperature: a scene can declare it colder",
         "Constant heat capacities over the model's declared range (150-3000 K); no dissociation",

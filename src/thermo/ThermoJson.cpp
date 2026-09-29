@@ -98,7 +98,7 @@ GasRegionDeclaration readRegion(const json &node) {
     const std::string where = "gas region \"" + node.value("name", std::string("?")) + "\"";
     onlyKeys(node, {"name", "contents", "temperature_k", "pressure_pa", "balance", "volume_m3", "height_m",
                     "piston", "container", "axis", "area_m2", "wall_conductance_w_k", "vent_area_m2",
-                    "vent_open"},
+                    "vent_open", "vessel", "vent_axis"},
              where);
     GasRegionDeclaration d;
     d.name = text(node, "name", "", where);
@@ -115,6 +115,27 @@ GasRegionDeclaration readRegion(const json &node) {
     d.wall_conductance_w_k = number(node, "wall_conductance_w_k", -1.0, where);
     d.vent_area_m2 = number(node, "vent_area_m2", 0.0, where);
     d.vent_open = flag(node, "vent_open", true, where);
+    // The nozzle: name a vessel and the jet pushes it the other way.
+    d.vessel = text(node, "vessel", "", where);
+    d.vent_axis = vector3(node, "vent_axis", d.vent_axis, where);
+    return d;
+}
+
+// What a body carries, in absolute KILOGRAMS -- not fractions of anything,
+// which is the one way this differs from contents in the writing as well as
+// in the meaning.
+CargoDeclaration readCarryingEntry(const json &node) {
+    onlyKeys(node, {"body", "kg", "temperature_k", "conductance_w_k"}, "carrying");
+    CargoDeclaration d;
+    d.body = text(node, "body", "", "carrying");
+    require(!d.body.empty(), "what is carried needs the body carrying it");
+    require(node.contains("kg"), d.body + ": say how many kilograms of what it carries");
+    const json &kg = node.at("kg");
+    require(kg.is_object(), d.body + ": what it carries is an object of substance to kilograms");
+    for (const auto &item : kg.items())
+        d.kg.emplace_back(item.key(), item.value().get<double>());
+    d.temperature_k = number(node, "temperature_k", 0.0, d.body);
+    d.conductance_w_k = number(node, "conductance_w_k", -1.0, d.body);
     return d;
 }
 
@@ -143,7 +164,7 @@ ContentsDeclaration readContentsEntry(const json &node) {
 }
 
 void readBlock(const json &block, Declarations &out, const std::string &where) {
-    onlyKeys(block, {"ambient", "gas_regions", "heaters", "contents"}, where);
+    onlyKeys(block, {"ambient", "gas_regions", "heaters", "contents", "carrying"}, where);
     if (block.contains("ambient")) out.ambient = readAmbient(block.at("ambient"));
     const auto list = [&](const char *key) -> const json & {
         const json &node = block.at(key);
@@ -156,6 +177,8 @@ void readBlock(const json &block, Declarations &out, const std::string &where) {
         for (const json &node : list("heaters")) out.heaters.push_back(readHeater(node));
     if (block.contains("contents"))
         for (const json &node : list("contents")) out.contents.push_back(readContentsEntry(node));
+    if (block.contains("carrying"))
+        for (const json &node : list("carrying")) out.carrying.push_back(readCarryingEntry(node));
 }
 
 json finiteOrNull(double value) { return std::isfinite(value) ? json(value) : json(nullptr); }
@@ -235,6 +258,8 @@ Declarations readDeclarations(const std::string &text_json) {
 void apply(ThermoWorld &world, const Declarations &declarations) {
     if (declarations.ambient) world.setAmbient(*declarations.ambient);
     for (const GasRegionDeclaration &region : declarations.regions) world.declareGasRegion(region);
+    // After the regions, so a body's water can boil into the one it stands in.
+    for (const CargoDeclaration &cargo : declarations.carrying) world.carry(cargo);
     for (const ContentsDeclaration &contents : declarations.contents) world.declareContents(contents);
     for (const HeaterDeclaration &heater : declarations.heaters) world.heat(heater);
 }
@@ -259,6 +284,14 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"melt_kg_s", b.melt_kg_s},
                           {"melted_kg", b.melted_kg},
                           {"melting", b.melting},
+                          {"boil_kg_s", b.boil_kg_s},
+                          {"boiled_kg", b.boiled_kg},
+                          {"boiling", b.boiling},
+                          // What it CARRIES, apart from what it is made of,
+                          // and how warm that is -- which is not the body's
+                          // own reading.
+                          {"carrying_kg", contentsOf(b.carrying_kg)},
+                          {"carrying_k", b.carrying_k},
                           {"contents_kg", contentsOf(b.contents_kg)}});
         // Set aside with its body (ThermoWorld::park): held as it was put away.
         if (b.parked) bodies.back()["set_aside"] = true;
@@ -282,6 +315,8 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                            {"work_to_bodies_j", r.work_to_bodies_j},
                            {"work_to_atmosphere_j", r.work_to_atmosphere_j},
                            {"heater_w", r.heater_w},
+                           {"thrust_n", r.thrust_n},
+                           {"thrust_work_j", r.thrust_work_j},
                            {"wall_loss_w", r.wall_loss_w},
                            {"vent_open", r.vent_open},
                            {"vent_flow_kg_s", r.vent_flow_kg_s}});
@@ -364,12 +399,14 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
         json transitions = json::array();
         for (const Transition &t : model.transitions)
             transitions.push_back({{"id", t.id},
-                                   {"solid", model[t.solid].id},
-                                   {"liquid", model[t.liquid].id},
-                                   {"melting_k", t.melting_k},
+                                   {"from", model[t.from].id},
+                                   {"into", model[t.to].id},
+                                   {"changes_at_k", t.at_k},
+                                   {"kind", model[t.to].phase == Phase::Gas ? "boiling" : "melting"},
                                    {"latent_j_kg", t.latent_j_kg},
-                                   {"liquid_goes", t.liquid_fate == Fate::Retained ? "stays in the material"
-                                                                                  : "runs off it"},
+                                   {"what_it_becomes_goes", t.product_fate == Fate::Retained
+                                                               ? "stays in the material"
+                                                               : "leaves it"},
                                    {"provenance", std::string(provenanceName(t.provenance))},
                                    {"note", t.note}});
         report["model"] = {{"id", model.id},

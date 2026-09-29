@@ -433,6 +433,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json sensors = nlohmann::json::array();
     for (const LiveSensor &s : p.sensors)
         sensors.push_back({{"kind", s.kind}, {"body", s.body}, {"depth_m", tidy(s.depth_m)}, {"side", s.side},
+                           // Which way it looks: 1 ahead, -1 behind.
+                           {"stops", s.stops},
                            {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
                            {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
     return {{"id", p.id},
@@ -1294,7 +1296,12 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
             continue;
         }
         if (bodies.size() >= 48) continue;
-        if (!b.reacting && !b.melting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
+        // A body carrying something is always worth reporting even when it is
+        // at room temperature and nothing is happening to it: a pail of cold
+        // water is a pail of water, and whoever is drawing it needs to know.
+        if (!b.reacting && !b.melting && b.carrying_kg.empty() && !(b.heater_w > 0.0) &&
+            std::abs(b.temperature_k - ambient) < 1.0)
+            continue;
         bodies.push_back({{"name", b.body},
                           {"t_k", round(b.temperature_k, 0.1)},
                           {"core_k", round(b.core_temperature_k, 0.1)},
@@ -1307,6 +1314,12 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                           {"reacting", b.reacting}});
         // Melting, only for what melts: how fast, in grams a second, and how
         // much has gone since it was followed.
+        if (!b.carrying_kg.empty()) {
+            nlohmann::json carrying = nlohmann::json::object();
+            for (const auto &[what, kg] : b.carrying_kg) carrying[what] = round(kg, 1.0e-5);
+            bodies.back()["carrying_kg"] = std::move(carrying);
+            bodies.back()["carrying_c"] = round(b.carrying_k - 273.15, 0.1);
+        }
         if (b.melting || b.melted_kg > 0.0) {
             bodies.back()["melt_g_s"] = round(1000.0 * b.melt_kg_s, 0.01);
             bodies.back()["melted_kg"] = round(b.melted_kg, 1.0e-4);
@@ -1326,6 +1339,10 @@ nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
                            {"stroke_m", tidy(r.stroke_m)},
                            {"force_n", round(r.force_n, 0.1)},
                            {"work_j", round(r.work_to_bodies_j, 0.01)},
+                           // The nozzle, for the page to draw the jet with.
+                           {"vessel", r.vessel},
+                           {"vent_axis", vec(r.vent_axis)},
+                           {"thrust_n", round(r.thrust_n, 0.1)},
                            {"heater_w", round(r.heater_w, 1.0)}});
     const banjo::thermo::Ledger l = network.ledger();
     return {{"t", network.timeS()},
@@ -2302,7 +2319,8 @@ int main(int argc, char **argv) {
                             ? world->programSense(command.at("program").get<unsigned>(),
                                                   command.value("kind", std::string{}),
                                                   command.value("body", std::string{}), point,
-                                                  command.value("depth_m", 0.0))
+                                                  command.value("depth_m", 0.0),
+                                                  command.value("stops", 1))
                             : world->sense(command.at("control").get<unsigned>(), command.value("kind", std::string{}),
                                            command.value("body", std::string{}), point,
                                            command.value("depth_m", 0.0), command.value("stops", 1));

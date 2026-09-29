@@ -2096,10 +2096,13 @@ about 1000 J/kg/K, several hundred times that, so a real box of this size
 takes hours to reach 1538 C and not the 35 seconds here. The steady state is
 a real furnace's; the warm-up is a game's. The honest way to slow it down is
 to give the lining thermal mass in the network, not to spoil the
-conductance. The lining is modelled as insulating refractory castable at
-0.3 W/m/K, which is a real furnace lining and really is a concrete; it would
-rather be the ceramic the game already fires, and the engine does not yet
-allow ceramic for exact bodies.
+conductance. The lining is insulating FIREBRICK -- alumina ceramic, the
+thing this machine itself makes by `fire ceramic`, which closes the chain on
+itself. Its conductivity is the porous form's, about 0.3 W/m/K, and NOT the
+model's dense alumina at 30, which would need fifteen metres of wall to hold
+1500 C. (It was cast refractory concrete until main's `fcc5a6b`, because an
+exact body could not be ceramic and every Workshop machine compiles to exact
+bodies.)
 
 **Measured**, in the valley: the furnaces heat before they work and they do
 it in temperature order, which is the physics and not a schedule -- lime

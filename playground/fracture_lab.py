@@ -1433,8 +1433,13 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
     room is made, in the room's millimetres, like a pin's -- that reads the
     world, and the direction it stops the machine going when it reads more than
     its depth. The one kind there is yet is "water": the depth of the room's
-    water under the point, so a cart stops at a lake's edge. A program's
-    sensors (`stops` False) stop nothing themselves: the program reads them."""
+    water under the point, so a cart stops at a lake's edge.
+
+    A PROGRAM'S sensors stop nothing by themselves -- the program reads them
+    and decides -- but they still say `stops`, and for them it means which way
+    the sensor WATCHES: 1 ahead, -1 behind. A roaming machine with only
+    forward sensors reverses blind, and on a shore that is how it puts a back
+    wheel in the lake it has just backed away from."""
     if given in (None, []):
         return []
     if not isinstance(given, list) or len(given) > 8:
@@ -1444,7 +1449,7 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         what = f"control {name!r} sensor {k}"
         if not isinstance(sensor, dict):
             raise ValueError(f"{what} is not an object")
-        keys = {"kind", "body", "at_mm", "depth_mm"} | ({"stops"} if stops else set())
+        keys = {"kind", "body", "at_mm", "depth_mm", "stops"}
         unknown = set(sensor) - keys
         if unknown:
             raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds {', '.join(sorted(keys))}")
@@ -1457,14 +1462,14 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         if not isinstance(at, list) or len(at) != 3:
             raise ValueError(f"{what} needs at_mm as three numbers")
         way = sensor.get("stops", 1)
-        if stops and (way not in (1, -1) or isinstance(way, bool)):
-            raise ValueError(f"{what}: stops is the direction it stops the machine going, 1 or -1")
+        if way not in (1, -1) or isinstance(way, bool):
+            raise ValueError(f"{what}: stops is a direction, 1 or -1 -- for a control the way it "
+                             f"stops the machine going, for a program the way the sensor watches")
         made = {"kind": "water", "body": body,
                 "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
                 # The engine's own bound: deeper than 10 m is no edge.
                 "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm")}
-        if stops:
-            made["stops"] = int(way)
+        made["stops"] = int(way)
         out.append(made)
     return out
 
@@ -1988,10 +1993,10 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         return {}
     if not isinstance(thermo, dict):
         raise ValueError("thermo must be an object of gas_regions and heaters")
-    unknown = set(thermo) - {"gas_regions", "heaters", "ambient"}
+    unknown = set(thermo) - {"gas_regions", "heaters", "ambient", "contents", "carrying"}
     if unknown:
-        raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters "
-                         f"and ambient")
+        raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters, "
+                         f"contents, carrying and ambient")
     names = {b["name"] for b in bodies}
     out: dict[str, Any] = {}
     regions = thermo.get("gas_regions") or []
@@ -2000,7 +2005,9 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
     for region in regions:
         if not isinstance(region, dict) or not str(region.get("name", "")).strip():
             raise ValueError("a gas region needs a name")
-        for key in ("piston", "container"):
+        # piston: what the pressure pushes. container: what the cylinder is
+        # fixed to. vessel: what a nozzle's jet pushes the other way.
+        for key in ("piston", "container", "vessel"):
             if region.get(key) and region[key] not in names:
                 raise ValueError(f"gas region {region['name']}: there is nothing called "
                                  f"{region[key]!r} for it to push on")
@@ -2018,8 +2025,90 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         _number(heater.get("seconds", 0.0), 0.001, 36000.0, "heater seconds")
     if heaters:
         out["heaters"] = heaters
+    # What a body is MADE of, where its material does not say: the water in a
+    # boiler, the powder in a charge. Without this a body can only hold what its
+    # catalogue material is composed of, so a room could never put water in a
+    # kettle or propellant in a cannon.
+    regions_named = {str(r.get("name")) for r in regions}
+    contents = thermo.get("contents") or []
+    if not isinstance(contents, list) or len(contents) > 32:
+        raise ValueError("contents is a list of at most 32")
+    for held in contents:
+        if not isinstance(held, dict) or held.get("body") not in names:
+            raise ValueError(f"contents must be in something in the room: "
+                             f"{(held or {}).get('body')!r} is not")
+        where = held.get("environment")
+        if where and where not in regions_named:
+            raise ValueError(f"contents of {held['body']!r} stand in {where!r}, "
+                             f"which is not a gas region in this room")
+    if contents:
+        out["contents"] = contents
+    # What a body CARRIES rather than what it is made of: the water in a
+    # kettle, in kilograms. Poured in when the room opens; the engine owns it
+    # from then on, warms it through the body holding it, and boils it.
+    carrying = thermo.get("carrying") or []
+    if not isinstance(carrying, list) or len(carrying) > 32:
+        raise ValueError("carrying is a list of at most 32")
+    for load in carrying:
+        if not isinstance(load, dict) or load.get("body") not in names:
+            raise ValueError(f"only something in the room can carry anything: "
+                             f"{(load or {}).get('body')!r} is not")
+        if not isinstance(load.get("kg"), dict) or not load["kg"]:
+            raise ValueError(f"{load['body']!r} must say how many kilograms of what it carries")
+    if carrying:
+        out["carrying"] = carrying
     if thermo.get("ambient"):
         out["ambient"] = thermo["ambient"]
+    return out
+
+
+#: What the engine's thermochemistry knows how to be, out of everything a
+#: vessel can hold. Water is the whole of it today, and it is the one that
+#: matters: it is the one that BOILS, and a kettle that cannot boil is the
+#: thing this is all for. Sand and ore and clay have no thermochemistry in the
+#: model -- no heat capacity it knows, no reference energy, nothing to melt or
+#: boil into -- so they stay on the vessel's own simple warming until they do.
+CARRIED_BY_THE_ENGINE = ("water",)
+
+
+def _vessel_water_is_carried(vessels: list[dict[str, Any]], thermo: dict[str, Any],
+                             bodies: list[dict[str, Any]]) -> dict[str, Any]:
+    """A room says what is in its kettle ONCE.
+
+    A vessel's `holds` is the room's own words for what is in it. Where that is
+    something the engine can be trusted with, it is also declared to the
+    thermal network as what the body CARRIES (thermo.carrying), so the engine
+    warms it, boils it, and makes the body heavier for it -- rather than the
+    room writing the same water down twice and the two drifting apart.
+
+    A room that declares `thermo.carrying` for a body itself is left alone:
+    saying it by hand is a deliberate act and beats a derivation.
+    """
+    if not vessels:
+        return thermo
+    named = {b["name"] for b in bodies}
+    out = dict(thermo)
+    already = {str(c.get("body")) for c in (out.get("carrying") or [])}
+    # Two vessels on one body pool into one load, because the engine carries
+    # things per BODY: a cart with two buckets of water on it is a cart with
+    # that much water on it.
+    made: dict[str, dict[str, Any]] = {}
+    for vessel in vessels:
+        body = str(vessel.get("body") or "")
+        if body in already or body not in named:
+            continue
+        holds = vessel.get("holds") or {}
+        water = {k: float(v) for k, v in holds.items()
+                 if k in CARRIED_BY_THE_ENGINE and float(v) > 0.0}
+        if not water:
+            continue
+        load = made.setdefault(body, {"body": body, "kg": {},
+                                      "temperature_k": float(vessel.get("temperature_k", 293.15)),
+                                      "conductance_w_k": float(vessel.get("warms_w_k", 20.0))})
+        for what, kg in water.items():
+            load["kg"][what] = load["kg"].get(what, 0.0) + kg
+    if made:
+        out["carrying"] = list(out.get("carrying") or []) + list(made.values())
     return out
 
 
@@ -2702,6 +2791,8 @@ def validate(spec: Any) -> dict[str, Any]:
         result["vessels"] = normalise_vessels(result.get("vessels"),
                                               result["bodies"] + result.get("precise_rigid_bodies", []))
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
+        result["thermo"] = _vessel_water_is_carried(result["vessels"], result["thermo"],
+                                                    result["bodies"])
         _chambers_exist(result.get("machines") or {}, result["thermo"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))

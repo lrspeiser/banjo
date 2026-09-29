@@ -29,10 +29,14 @@ namespace banjo::thermo {
 struct Declarations {
     std::optional<Ambient> ambient;
     std::vector<ContentsDeclaration> contents;
+    // What bodies CARRY as against what they are made of: the water in a
+    // kettle. Poured in when the room opens.
+    std::vector<CargoDeclaration> carrying;
     std::vector<GasRegionDeclaration> regions;
     std::vector<HeaterDeclaration> heaters;
     [[nodiscard]] bool any() const {
-        return ambient.has_value() || !contents.empty() || !regions.empty() || !heaters.empty();
+        return ambient.has_value() || !contents.empty() || !carrying.empty() ||
+               !regions.empty() || !heaters.empty();
     }
 };
 

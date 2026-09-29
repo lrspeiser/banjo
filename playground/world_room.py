@@ -847,6 +847,104 @@ def yard() -> dict[str, Any]:
     }
 
 
+#: What "flat" ground is made of when a room does not say: 600 mm of soil with
+#: 200 mm of sand on it. Rock is at the origin and that goes ON TOP, so the
+#: SURFACE of a default flat room is 800 mm up and not zero -- and a room laid
+#: out around y = 0 is a room at rock level, buried under all of it, showing a
+#: person nothing but sand when they open it.
+FLAT_SOIL_M, FLAT_SAND_M = 0.6, 0.2
+
+
+def _flat_ground_mm(spec: dict[str, Any]) -> float:
+    """How far up a flat room's surface is, from its own terrain.
+
+    It is not a constant. The default is 800 mm, but a room that asks for
+    less soil gets less ground: tests-motor and tests-sit both declare
+    `soil_m: 0.4, sand_m: 0.0` and stand at 400. Assuming 800 for those left
+    them hovering 400 mm in the air, which is the same fault upside down.
+    """
+    generated = (spec.get("terrain") or {}).get("generate")
+    asked = generated if isinstance(generated, dict) else {}
+    soil = float(asked.get("soil_m", FLAT_SOIL_M))
+    sand = float(asked.get("sand_m", FLAT_SAND_M))
+    return (soil + sand) * 1000.0
+
+
+def _is_flat(spec: dict[str, Any]) -> bool:
+    """Only "flat" ground sits at a known height. Real terrain -- a valley, a
+    basin -- has its own surface everywhere, and a room on it is seated by the
+    tool that laid it out."""
+    generated = (spec.get("terrain") or {}).get("generate")
+    kind = generated if isinstance(generated, str) else (generated or {}).get("kind")
+    return kind == "flat"
+
+
+def _lowest_mm(spec: dict[str, Any]) -> float | None:
+    """The bottom of the lowest thing in a room, lattice or exact."""
+    low: float | None = None
+    for body in spec.get("bodies") or []:
+        # A body with `rest_on` has no height of its own worth reading: what
+        # it says is a placeholder the validator replaces by seating it on
+        # whatever it stands on. Measuring it would let a placeholder decide
+        # how far the room is lifted.
+        if body.get("rest_on") or "center_mm" not in body or "size_mm" not in body:
+            continue
+        bottom = body["center_mm"][1] - body["size_mm"][1] / 2.0
+        low = bottom if low is None else min(low, bottom)
+    for body in spec.get("precise_rigid_bodies") or []:
+        at = (body.get("position_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+        for part in body.get("parts") or []:
+            middle = (part.get("center_local_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+            tall = (part.get("dimensions_m") or [0.0, 0.0, 0.0])[1] * 1000.0
+            bottom = at + middle - tall / 2.0
+            low = bottom if low is None else min(low, bottom)
+    return low
+
+
+def standing_on_the_ground(spec: dict[str, Any]) -> dict[str, Any]:
+    """Lift a flat room so its lowest thing rests ON the ground.
+
+    A room written around y = 0 is written around ROCK, 800 mm under the
+    surface (FLAT_GROUND_MM), and nothing catches it: the placement check
+    looks at bodies against each other, and the headless tests read positions
+    from the engine, which are right. Only opening it and looking shows an
+    empty field. tests-pour, tests-motor and tests-sit were all like that.
+
+    What moves is every ABSOLUTE height: a body's centre, a joint's anchor,
+    an exact body's position. What does not is everything measured from
+    something else -- a part's offset inside its body, a vessel's mouth, and
+    any body with `rest_on`, which the validator seats on whatever is under
+    it, so lifting that carries it up too.
+
+    It only ever RAISES. A room saved out of a world that has been played in
+    already has real heights in it, and pushing that DOWN onto the ground
+    would drop whatever was standing on something. Something left floating
+    above the ground is not the fault being fixed here.
+    """
+    if not _is_flat(spec):
+        return spec
+    low = _lowest_mm(spec)
+    if low is None:
+        return spec
+    lift = _flat_ground_mm(spec) - low
+    if lift <= 1e-9:
+        return spec
+    for body in spec.get("bodies") or []:
+        if body.get("rest_on") or "center_mm" not in body:
+            continue
+        x, y, z = body["center_mm"]
+        body["center_mm"] = [x, y + lift, z]
+    for joint in spec.get("joints") or []:
+        if "at_mm" in joint:
+            x, y, z = joint["at_mm"]
+            joint["at_mm"] = [x, y + lift, z]
+    for body in spec.get("precise_rigid_bodies") or []:
+        if "position_m" in body:
+            x, y, z = body["position_m"]
+            body["position_m"] = [x, y + lift / 1000.0, z]
+    return spec
+
+
 def pouring() -> dict[str, Any]:
     """Two pails on the ground, one full of sand (playground/vessels.py).
 
@@ -861,9 +959,18 @@ def pouring() -> dict[str, Any]:
     """
     pail = lambda name, x: {
         "name": name, "shape": "box", "material": "iron",
-        "size_mm": [260, 280, 260], "center_mm": [x, 140, 0], "rest_on": "bench",
+        # `rest_on` puts it on the bench's own surface, so this y is not used.
+        "size_mm": [260, 280, 260], "center_mm": [x, 0, 0], "rest_on": "bench",
     }
-    return {
+    # Seated on the ground on the way out. This room was written around y = 0,
+    # and a generated surface is not at zero -- rock is, with the soil and sand
+    # on top of it -- so the bench sat 760 mm UNDER the sand with both pails on
+    # it and the room opened on bare ground: three bodies, all reported
+    # visible, none of them in sight. `standing_on_the_ground` lifts the whole
+    # room and reads the height from the room's own terrain, which matters
+    # because it is not always 800: tests-motor and tests-sit ask for less soil
+    # and stand at 400.
+    return standing_on_the_ground({
         "algorithm": "lattice",
         "cell_m": 0.04,
         "plasticity": "on",
@@ -883,6 +990,230 @@ def pouring() -> dict[str, Any]:
              "holds": {"sand": 18.0}, "mouth_mm": [0, 140, 0]},
             {"name": "empty pail", "body": "empty pail", "capacity_kg": 20.0,
              "mouth_mm": [0, 140, 0]},
+        ],
+        "goods": {"deposits": [], "stockpiles": [], "recipes": []},
+    })
+
+
+def engines() -> dict[str, Any]:
+    """Three machines that gas pressure drives, side by side and all running.
+
+    One mechanism, three shapes of it: something makes gas fast inside a region,
+    the gas presses on what bounds it, and the pressing does work.
+
+      the steam engine   a firebox boils water into a cylinder and the steam
+                         lifts the piston and the block on top of it
+      the cannon         a charge burns behind the ball and the barrel has only
+                         one way out
+      the rocket         a charge burns and the gas leaves downwards, so the
+                         rocket goes up
+
+    The cannon and the rocket light a second or two in, to give you time to
+    stand somewhere and watch. Open it at /world?scene=tests-engines and look
+    west: the steam engine is the slow one on the left.
+    """
+    # The charge temperatures are where the propellant is already going. A
+    # primer's job, which this model does not have, is to get it there; the
+    # heaters below do it instead, so nothing goes off before you have looked.
+    #
+    # EVERYTHING IS MEASURED FROM THE GROUND, not from zero. "flat" terrain's
+    # surface is 800 mm up, not at the origin, so a room laid out around y = 0
+    # is a room buried two thirds of a metre under the sand -- you open it and
+    # see nothing but ground. `on(mm)` puts the CENTRE of a body of height `mm`
+    # straight onto the surface, and `above(base, mm)` stacks the next thing on
+    # top of it, so the numbers below say what rests on what instead of
+    # repeating an offset that is easy to get wrong in one place only.
+    GROUND_MM = 800
+
+    def on(height_mm: float) -> float:
+        return GROUND_MM + height_mm / 2.0
+
+    def above(base_top_mm: float, height_mm: float) -> float:
+        return base_top_mm + height_mm / 2.0
+
+    bench_top = GROUND_MM + 100     # the plinth everything in the room sits on
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.05,
+        "plasticity": "on",
+        "terrain": {"generate": "flat"},
+        "bodies": [
+            # Thin, and no deeper than it needs to be. At 200 mm thick and
+            # 1200 deep this plinth was 11,520 of the room's 16,000 cells --
+            # four fifths of the budget spent on something nothing happens to.
+            # Its top is still at 200 mm, which is what everything stands on.
+            {"name": "bench", "shape": "box", "material": "concrete",
+             "size_mm": [6000, 100, 800], "center_mm": [0, on(100), 0], "anchored": True},
+
+            # The steam engine, on the left. The cylinder is fixed and the
+            # piston sits on top of the gas; the block is what it has to lift.
+            {"name": "cylinder", "shape": "box", "material": "iron",
+             "size_mm": [500, 700, 500], "center_mm": [-2000, above(bench_top, 700), 0],
+             "anchored": True},
+            {"name": "piston", "shape": "box", "material": "iron",
+             "size_mm": [450, 100, 450], "center_mm": [-2000, above(bench_top + 700, 100), 0]},
+            # The boiler stands BESIDE the cylinder rather than inside it. A gas
+            # region has no inside to stand in -- it is a lump of gas with a
+            # volume and a temperature, not a space -- so what matters is that
+            # the water's environment is the cylinder's gas, not where it sits.
+            {"name": "boiler water", "shape": "box", "material": "iron",
+             "size_mm": [400, 150, 400], "center_mm": [-2750, above(bench_top, 150), 0],
+             "anchored": True},
+
+            # A KETTLE, the smallest of the four and the one that says most. It
+            # CARRIES half a kilogram of water rather than being made of it:
+            # tip it out and it is the same kettle, the same iron, the same
+            # strength. The ring heats the kettle, the kettle heats the water
+            # through its wall, and the water holds at 100 C and boils away.
+            #
+            # It is 100 mm because a room's bodies are SOLID. A kettle-sized
+            # 250 mm box of iron is 123 kg of metal, and 3 kW spends a quarter
+            # of an hour warming that before the water notices -- a fair
+            # simulation of heating an anvil. At 100 mm it is 7.9 kg, and the
+            # ring is bigger than a real one because it is heating the block
+            # as well as what is in it.
+            {"name": "kettle", "shape": "box", "material": "iron",
+             "size_mm": [100, 100, 100], "center_mm": [-1000, above(bench_top, 100), 0]},
+
+            # The cannon at the EAST end, firing east off the end of the bench
+            # into open ground, with nothing downrange. It was in the middle at
+            # first, firing straight at the rocket, which is no way to lay out
+            # a room: one machine should not be in another's line by accident.
+            {"name": "barrel", "shape": "box", "material": "iron",
+             "size_mm": [1600, 300, 300], "center_mm": [1800, above(bench_top, 300), 0],
+             "anchored": True},
+            # At the muzzle rather than down the bore: a body cannot be inside
+            # another one here, and the bore is not modelled as a hole.
+            # The ball's middle is on the barrel's axis, so the gas pushes it
+            # down the line of the bore rather than at a slant.
+            {"name": "ball", "shape": "box", "material": "iron",
+             "size_mm": [150, 150, 150], "center_mm": [2750, above(bench_top, 300), 0]},
+            # A powder keg, and it is mostly keg: see the contents below. Small,
+            # because a primer has to be able to WARM it -- a 5.6 kg keg is
+            # 4.5 kJ per kelvin of inert ash to drag up to ignition, and a
+            # believable primer cannot.
+            {"name": "cannon charge", "shape": "box", "material": "oak",
+             "size_mm": [100, 100, 100], "center_mm": [800, above(bench_top, 100), 0],
+             "anchored": True},
+
+            # The rocket, on the right, standing on the bench with its motor
+            # beside it for the same reason. Oak, and small: an iron one this
+            # size weighs 708 kg and would want 6.9 kN to leave the bench, which
+            # is not what a fifth of a kilogram of powder does.
+            # The rocket in the MIDDLE, out of the cannon's line, going straight
+            # up where nothing is.
+            {"name": "rocket", "shape": "box", "material": "oak",
+             "size_mm": [150, 450, 150], "center_mm": [0, above(bench_top, 450), 0]},
+            {"name": "rocket charge", "shape": "box", "material": "oak",
+             "size_mm": [100, 100, 100], "center_mm": [-500, above(bench_top, 100), 0],
+             "anchored": True},
+        ],
+        "joints": [],
+        "thermo": {
+            "gas_regions": [
+                # Balanced: the steam engine starts holding its own piston up,
+                # so the steam it makes is what lifts, not a pressure jump.
+                {"name": "cylinder gas", "contents": {"nitrogen": 1.0},
+                 "piston": "piston", "container": "cylinder", "balance": True,
+                 "height_m": 0.3, "area_m2": 0.19, "wall_conductance_w_k": 0.0},
+                # The powder chamber behind the ball. It pushes the ball east
+                # and the barrel back the other way, which is the recoil.
+                {"name": "breech", "contents": {"nitrogen": 1.0},
+                 "pressure_pa": 101325.0, "volume_m3": 0.004,
+                 "piston": "ball", "container": "barrel",
+                 "axis": [1.0, 0.0, 0.0], "area_m2": 0.0225,
+                 "wall_conductance_w_k": 0.0},
+                # The rocket: no piston at all. The gas leaves downwards
+                # through the throat and the momentum of it carries the rocket
+                # the other way.
+                {"name": "motor", "contents": {"nitrogen": 1.0},
+                 "pressure_pa": 101325.0, "volume_m3": 0.001,
+                 "vessel": "rocket", "vent_axis": [0.0, -1.0, 0.0],
+                 "vent_area_m2": 0.00006, "vent_open": True,
+                 "wall_conductance_w_k": 0.0},
+            ],
+            "contents": [
+                {"body": "boiler water", "contents": {"water": 1.0},
+                 "temperature_k": 373.15, "environment": "cylinder gas"},
+                # MOSTLY KEG. A 200 mm oak box weighs 5.6 kg, and 5.6 kg of
+                # powder in a four-litre breech is not a cannon, it is a bomb:
+                # the first try put 13.6 kg behind the ball and reached 380 MPa,
+                # which is fifty times what a gun barrel holds. These fractions
+                # are by the body's own mass, so the charge is 56 g of powder in
+                # a keg of ash, and the ash is there to be the keg.
+                {"body": "cannon charge", "contents": {"propellant": 0.08, "ash": 0.92},
+                 "temperature_k": 500.0, "environment": "breech"},
+                # The rocket's is a small keg with a lot of powder in it rather
+                # than the cannon's large one with a little. Thrust follows how
+                # fast gas is MADE, not how narrow the throat is -- narrowing
+                # the throat raises the pressure and the density together and
+                # the two cancel -- so a motor needs its powder to burn quickly,
+                # and a charge that is mostly inert ash cannot: the ash is a
+                # heat sink that holds it at a smoulder.
+                # 210 g of powder: it climbs about 10 m and comes down hard
+                # enough to break, which is worth watching and is the sort of
+                # thing this world is for.
+                #
+                # A NOTE FOR WHOEVER DRIVES THIS ROOM FROM A SCRIPT. A landing
+                # that hard puts the rocket over its breaking speed, and the
+                # engine answers that by taking the step back and offering the
+                # body in `breakable` -- it is asking. Answer it (`op`
+                # "fracture" on the name) and the clock moves on; ignore it and
+                # the world sits at that instant for ever, because nobody has
+                # said what happened. The page does answer (world.js, where it
+                # takes `state.breakable[0]`), so a person opening the room
+                # never sees this. A bare stepping loop that does not is the
+                # commonest way to conclude the engine has hung when it is
+                # waiting to be told.
+                {"body": "rocket charge", "contents": {"propellant": 0.30, "ash": 0.70},
+                 "temperature_k": 500.0, "environment": "motor"},
+            ],
+            "heaters": [
+                {"target": "boiler water", "power_w": 20000.0, "seconds": 600.0,
+                 "label": "firebox"},
+                {"target": "kettle", "power_w": 8000.0, "seconds": 600.0,
+                 "label": "the ring under the kettle"},
+                # THE PRIMERS, and they are what make this a room rather than a
+                # test. Declared at 600 K each charge only smoulders -- the
+                # burning rate is exp(-15000/T), so 600 K is about a fortieth of
+                # what 800 K does. A primer drags one charge up to where it runs
+                # away on its own, and the two go at different times, so someone
+                # who opens the room has a moment to stand somewhere and watch
+                # rather than arriving after both have already gone off.
+                #
+                # 40 kW because the keg has to come with it: 0.7 kg of oak and
+                # ash is about 560 J per kelvin, so 200 K of ignition is 112 kJ.
+                {"target": "cannon charge", "power_w": 40000.0, "start_s": 3.0,
+                 "seconds": 3.0, "label": "cannon primer"},
+                # The rocket's primer is twice the cannon's and runs longer,
+                # because a motor fights its own nozzle to light: the vent
+                # carries heat out of the chamber as fast as the charge puts it
+                # in, and the charge sits in that chamber. A sealed breech has
+                # nowhere to lose it and catches on much less. At 40 kW the
+                # rocket only smouldered -- 2.1 kW of release, three minutes of
+                # fuel, nowhere near enough to lift itself.
+                {"target": "rocket charge", "power_w": 80000.0, "start_s": 9.0,
+                 "seconds": 5.0, "label": "rocket primer"},
+            ],
+        },
+        # THE KETTLE IS A CONTAINER, the same kind the pour room's pails are
+        # (playground/vessels.py), and its water is written down once. Because
+        # water is something the engine's thermochemistry knows, validate()
+        # also declares it to the thermal network as what the kettle CARRIES,
+        # so the engine warms it through the kettle's wall, holds it at its
+        # boiling point and boils it away -- and the container reads those
+        # numbers back rather than keeping its own.
+        #
+        # 500 W/K through that wall, said rather than left to the default. The
+        # default is the generic conductance between two bodies TOUCHING,
+        # about 18 W/K across a 100 mm box, and a kettle's wall is not two
+        # things in contact but thin metal with water against it. Left at the
+        # default the kettle runs to 231 C while its water is still at 100,
+        # which is a kettle made of firebrick.
+        "vessels": [
+            {"name": "kettle", "body": "kettle", "capacity_kg": 2.0,
+             "holds": {"water": 0.5}, "mouth_mm": [0, 50, 0],
+             "temperature_k": 288.0, "warms_w_k": 500.0},
         ],
         "goods": {"deposits": [], "stockpiles": [], "recipes": []},
     }
@@ -1004,7 +1335,11 @@ ROOMS = Path(__file__).resolve().parent / "rooms"
 
 def _saved_room(name: str):
     def scene() -> dict[str, Any]:
-        return json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8"))
+        # Seated on the ground on the way out: several saved rooms were
+        # authored around y = 0, which on flat ground is 800 mm under the
+        # sand (standing_on_the_ground).
+        return standing_on_the_ground(
+            json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8")))
     scene.__name__ = name.replace("-", "_")
     return scene
 
@@ -1080,6 +1415,9 @@ SCENES = {
     # Two pails, one full of sand: the smallest room that shows what a
     # container is. Pick one up, hold it over the other and turn it over.
     "tests-pour": pouring,
+    # A steam engine, a cannon and a rocket in a row, all running on one
+    # mechanism: gas made fast inside a region presses on what bounds it.
+    "tests-engines": engines,
     # The Explore valley: one of everything the engine can make, standing on
     # ground you can walk. Laid out by tools/build_explore_world.py rather than
     # by hand, because every object has to be seated on the real heightfield and

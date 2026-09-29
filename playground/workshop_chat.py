@@ -73,6 +73,7 @@ DOING = {
     "define_interaction_points": "saying where you take hold of it",
     "program_use": "writing what it is for",
     "try_it_in_a_room": "trying it in a little world",
+    "offer_it_to_the_world": "offering it to your world",
     "find_the_limit": "finding where it gives way",
     "save_design": "saving it",
     "list_saved_designs": "looking at what you saved",
@@ -607,6 +608,26 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                 "properties": {"when": {"anyOf": [{"type": "string"}, {"type": "object"}]},
                                                "do": {"type": "array", "items": {"type": "object"}},
                                                "then": {"type": "string", "enum": ["resume", "restart"]}}}}}}},
+        {"type": "function", "name": "offer_it_to_the_world",
+         "description": "Offer the finished design to the world the person came from, standing at a "
+                        "place they choose, and say what would happen if they took it. This is how a "
+                        "thing LEAVES the bench: designing, checking and testing it here all end in a "
+                        "drawing, and this is the step that makes it a thing in their room. It does "
+                        "NOT put it there -- it works out where it would stand, what it would take "
+                        "out of the room and what it would cost, and answers with that for the person "
+                        "to say yes to. Their world is theirs; this asks. Call check_validity and "
+                        "try_it_in_a_room first, because what is offered is what they get.",
+         "parameters": {"type": "object", "additionalProperties": False, "required": ["position_m"],
+                        "properties": {
+                            "position_m": {"type": "array", "minItems": 2, "maxItems": 2,
+                                           "items": {"type": "number", "minimum": -100, "maximum": 100},
+                                           "description": "where it stands in their room, [x, z] in "
+                                                          "metres; the ground decides how high"},
+                            "replace": {"type": "boolean",
+                                        "description": "true (the default) puts it where the last one "
+                                                       "of this design stands, because making a design "
+                                                       "again is one thing and not two; false stands "
+                                                       "another beside it"}}}},
         {"type": "function", "name": "try_it_in_a_room",
          "description": "Make the design in a little room with real ground, gravity and a sky, let it run, and "
                         "say what happened. It is the world's own physics and the world's own way of making a "
@@ -1190,6 +1211,21 @@ class _State:
                                       "changed_at": found["changed_at"],
                                       "watching": found["watching"]})
 
+        if tool == "offer_it_to_the_world":
+            import workshop_install
+            where = [float(v) for v in (args.get("position_m") or [])]
+            # The room it would go to, and the session it belongs to: asked for
+            # rather than carried about, so a bench left open while the person
+            # opened another world cannot offer into the old one.
+            standing = workshop_install.context(self.app, {})
+            answer = workshop_install.preview(self.app, {
+                "session": standing["session"], "scene": standing["scene"], "mode": "authoring",
+                "candidate": _spec(self.candidate), "position_m": where,
+                "replace": bool(args.get("replace", True))})
+            # Said as an offer, because it is one: nothing has been put
+            # anywhere and the person has still to say yes.
+            return {"ok": True, "offered": answer, "waiting_for": "the person to take it",
+                    "into": {"scene": standing["scene"], "at": where}}
         if tool == "try_it_in_a_room":
             answer = test_room.try_it(
                 self.app, {"kind": self.design.kind, "design_id": self.design.design_id,

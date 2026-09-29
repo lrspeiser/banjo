@@ -118,26 +118,35 @@ struct Reaction {
     RateLaw rate;
 };
 
-// A change of phase at one temperature: a solid that melts into a liquid.
+// A change of phase at one temperature: a solid that melts into a liquid, or a
+// liquid that boils into a gas. One struct for both, because the physics is one
+// physics -- only the two phases differ.
 //
-// It has no rate. While the solid is there, matter holding it cannot be warmer
-// than its melting point: the heat that would take it higher goes into melting
-// instead, exactly as much solid as that heat melts. (Freezing, the same line
-// crossed the other way, is not modelled yet: ThermoWorld::limitations.) The
-// latent heat is not a number added to anything: it IS the difference between
-// the liquid's and the solid's specific energies at the melting point, which
-// the two substances' reference energies must say, and validate() checks that
-// they do -- as the vapour's reference energy is what makes drying take the
-// latent heat of vaporisation.
+// It has no rate, and that is the whole point of it. While the lower phase is
+// there, matter holding it cannot be warmer than this temperature: the heat that
+// would take it higher changes phase instead, exactly as much as that heat can
+// change. That is what makes a kettle hold at 100 C however hard it is driven,
+// and it is why boiling cannot be written as a reaction -- a reaction has a
+// rate, so it would let the water climb past its boiling point.
+//
+// (The line crossed the other way -- freezing, condensing -- is not modelled:
+// ThermoWorld::limitations.)
+//
+// The latent heat is not a number added to anything: it IS the difference
+// between the two substances' specific energies at this temperature, which
+// their reference energies must say, and validate() checks that they do.
 struct Transition {
     std::string id;
-    std::size_t solid{};
-    std::size_t liquid{};
-    double melting_k{};
+    std::size_t from{};   // the lower phase: the solid that melts, the liquid that boils
+    std::size_t to{};     // what it becomes: the liquid, or the vapour
+    double at_k{};
     double latent_j_kg{};
-    // Where the liquid goes: Retained stays in the matter; Released runs off
-    // it, carrying its energy -- meltwater off a block of ice, which holds none.
-    Fate liquid_fate{Fate::Released};
+    // Where what it becomes goes. Retained stays in the matter. Released leaves
+    // it carrying its energy -- meltwater off a block of ice, which holds none;
+    // steam off boiling water. Released matter goes into the body's gas region
+    // when it is in one, where it presses on whatever bounds it, and to the
+    // surroundings when it is not (ThermoWorld).
+    Fate product_fate{Fate::Released};
     Provenance provenance{Provenance::ReferenceDerived};
     std::string note;
 };
@@ -161,6 +170,10 @@ struct Model {
     void addTransition(Transition transition);
     // The transition that melts this solid, or null if it does not melt here.
     [[nodiscard]] const Transition *meltingOf(std::size_t solid) const;
+    // The transition that boils this liquid away, or null if it does not boil
+    // here. Asked of a solid it finds nothing: melting and boiling are looked up
+    // by what goes IN, and a substance is only ever the lower phase of one.
+    [[nodiscard]] const Transition *boilingOf(std::size_t liquid) const;
     // What melting one kilogram takes by the substances' own energies: u of the
     // liquid less u of the solid, both at the melting point.
     [[nodiscard]] double latentHeatJPerKg(const Transition &transition) const;

@@ -3099,6 +3099,25 @@ function substanceColour(what) {
 const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
   : kg >= 1 ? `${kg.toFixed(1)} kg` : `${Math.round(kg * 1000)} g`);
 
+// What a container on that body holds, said in the fewest words that are
+// still true: "holding 18.0 kg of sand, 20 C", or "empty". Temperature only
+// when it is worth saying -- a pail at room temperature is just a pail, and a
+// line that always ends in "20 C" stops being read.
+function vesselLine(body) {
+  const mine = (world.vessels || []).filter((v) => v.body === body);
+  if (!mine.length) return "";
+  return mine.map((vessel) => {
+    const slots = Object.entries(vessel.holds_kg || {})
+      .filter(([, kg]) => Number(kg) > 0.0005)
+      .map(([what, kg]) => `${Number(kg).toFixed(1)} kg of ${what}`);
+    const warmth = Math.abs(Number(vessel.temperature_c) - 20) >= 2
+      ? `, ${Math.round(Number(vessel.temperature_c))} C` : "";
+    const tipping = Number(vessel.pouring) > 0 ? ", pouring" : "";
+    return slots.length ? `holding ${slots.join(" and ")}${warmth}${tipping}`
+                        : `empty${tipping}`;
+  }).join(" · ");
+}
+
 // Everything in the room that holds something, in an order that does not move:
 // each machine's hopper, then the room's heaps as the room declares them, then
 // the ore in its ground. Never sorted by how much is in them -- a row that
@@ -3318,6 +3337,11 @@ function machineHolders(c, all) {
     mine.push({ ...behind, key: `${behind.key} at ${port.name}`,
                 name: `${titled(port.name)}: ${behind.name.toLowerCase()}`,
                 kind: atThe(port) });
+  }
+  // And any container riding the machine's own body -- a bucket on a cart
+  // goes where the cart goes, so what is in it belongs on the cart's panel.
+  for (const holder of all) {
+    if (holder.body && holder.body === c.body) mine.push(holder);
   }
   return mine;
 }
@@ -4213,6 +4237,10 @@ function detailsModel() {
     const part = tools.profileOf(name) || profileOf(name);
     model.name = titled(part ? part.object : name);
     model.facts = factsOf(name, entry, world.aim.distance_m);
+    // And what it holds, if it is a container: walking up to a pail should
+    // tell you about the pail without opening a panel.
+    const holding = vesselLine(name);
+    if (holding) model.facts += ` · ${holding}`;
     choiceRows();
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
       rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"
@@ -4970,6 +4998,7 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
@@ -4985,6 +5014,8 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 canvas.addEventListener("pointermove", (e) => {
   cursor = cursorAt(e);
+  if (cursor) cursor.touch = e.pointerType !== "mouse";
+  offerStick(e);
   markAt(cursor);
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -5023,6 +5054,9 @@ canvas.addEventListener("pointerup", (e) => {
   }
   const was = drag;
   drag = null;
+  // A finger that has lifted is nowhere, so nothing stays aimed at where it
+  // last was -- and the crosshair goes back to the middle.
+  if (e.pointerType !== "mouse") { cursor = null; markAt(null); }
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
   if (was && was.moved) return;          // that was a look, not a click
   // A tool is never dropped by a click -- E puts it down. A second click with
@@ -5084,6 +5118,10 @@ function lookPush(v) {
 function lookFromCursor(dt) {
   // Dragging already turns the view, and a wind-up is aimed by hand.
   if (!cursor || drag) return;
+  // And a finger is not a cursor. It has no hover: the last place it touched
+  // stays put once it lifts, so an edge push would turn the room for ever.
+  // On a touch screen looking around IS the drag, which already works.
+  if (cursor.touch) return;
   const box = canvas.getBoundingClientRect();
   if (!box.width || !box.height) return;
   // The side panel sits ON the canvas, so the canvas's own right edge is
@@ -5170,8 +5208,92 @@ function inTheWater() {
            head_under: camera.position.y < wet.level };
 }
 
+// A THUMBSTICK, for a screen with no keyboard. How far it is pushed, -1 to 1
+// each way, and whether a finger is on it. Fed into walk() exactly where W, A,
+// S and D are read, so everything downstream -- load, water, the ground under
+// you -- is the same walk it always was.
+const stick = { x: 0, y: 0, hard: 0, on: false };
+const STICK_REACH = 40;   // pixels from the middle that count as fully pushed
+// A shove PAST the pad is a run. Not a full push, which is just how a thumb
+// says "forward" -- measured at 0.92 of the rim it ran everywhere and never
+// walked. There is no Shift on a phone, so the extra has to be in the gesture.
+const STICK_RUN = 1.6;
+
+function installStick() {
+  const pad = $("stick");
+  if (!pad) return;
+  const thumb = pad.querySelector("i");
+  let holding = null;
+  const show = (dx, dy) => {
+    thumb.style.setProperty("--dx", `${dx}px`);
+    thumb.style.setProperty("--dy", `${dy}px`);
+  };
+  const move = (e) => {
+    const box = pad.getBoundingClientRect();
+    let dx = e.clientX - (box.left + box.width / 2);
+    let dy = e.clientY - (box.top + box.height / 2);
+    const out = Math.hypot(dx, dy);
+    // Held past the rim, the thumb stays on the rim and the push stays full:
+    // a thumb slides off a small pad constantly and should not cut the walk.
+    stick.hard = out / STICK_REACH;
+    if (out > STICK_REACH) { dx *= STICK_REACH / out; dy *= STICK_REACH / out; }
+    show(dx, dy);
+    stick.x = dx / STICK_REACH;
+    stick.y = dy / STICK_REACH;
+    stick.on = true;
+  };
+  const let_go = () => {
+    holding = null; stick.x = 0; stick.y = 0; stick.hard = 0; stick.on = false;
+    pad.dataset.held = "no"; show(0, 0);
+  };
+  pad.addEventListener("pointerdown", (e) => {
+    holding = e.pointerId; pad.dataset.held = "yes";
+    try { pad.setPointerCapture(e.pointerId); } catch { /* works without it */ }
+    move(e); e.preventDefault();
+  });
+  pad.addEventListener("pointermove", (e) => { if (holding === e.pointerId) move(e); });
+  for (const end of ["pointerup", "pointercancel", "pointerleave"]) {
+    pad.addEventListener(end, (e) => { if (holding === e.pointerId) let_go(); });
+  }
+}
+
+// The stick is for fingers, so it appears the first time one arrives and not
+// before: a mouse never sees it, and nobody has to choose.
+function offerStick(e) {
+  const pad = $("stick");
+  if (!pad || !pad.hidden || e.pointerType === "mouse") return;
+  pad.hidden = false;
+  pad.dataset.held = "no";
+}
+
+// FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
+// panel starts folded on one and is remembered either way.
+function foldPanel(away) {
+  document.body.classList.toggle("panel-away", away);
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.setAttribute("aria-expanded", String(!away));
+  if (show) show.hidden = !away;
+  try { localStorage.setItem("banjo.panel", away ? "away" : "out"); } catch { /* private */ }
+}
+
+function installPanelFold() {
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.addEventListener("click", () => foldPanel(true));
+  if (show) show.addEventListener("click", () => foldPanel(false));
+  let kept = null;
+  try { kept = localStorage.getItem("banjo.panel"); } catch { /* private */ }
+  foldPanel(kept ? kept === "away" : window.innerWidth <= 760);
+}
+
+installStick();
+installPanelFold();
+
 function walk(dt) {
-  const running = (keys.has("ShiftLeft") || keys.has("ShiftRight")) && loadFraction() < 0.5;
+  // How far the stick is pushed, which is also how fast: a gentle push is a
+  // gentle walk. Keys stay what they were -- one key or two, always full pace.
+  const pushed = stick.on ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
+  const running = ((keys.has("ShiftLeft") || keys.has("ShiftRight")) || stick.hard > STICK_RUN)
+    && loadFraction() < 0.5;
   const water = inTheWater();
   world.inWater = water;
   document.body.classList.toggle("head-under-water", !!(water && water.head_under));
@@ -5183,7 +5305,16 @@ function walk(dt) {
   if (keys.has("KeyS")) move.sub(forward);
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
-  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+  // Up the screen is away from you, which is what a thumb means by it.
+  if (stick.on) { move.addScaledVector(forward, -stick.y); move.addScaledVector(right, stick.x); }
+  if (move.lengthSq() > 0) {
+    // The keys are all or nothing and the stick is not, so the pace is how far
+    // the stick is pushed. A key held is always a full walk -- and it has to be
+    // a WALKING key: Shift is in `keys` too, and counting it made a feather
+    // touch on the stick run.
+    const keyed = keys.has("KeyW") || keys.has("KeyS") || keys.has("KeyA") || keys.has("KeyD");
+    move.normalize().multiplyScalar(speed * (keyed ? 1 : Math.min(1, pushed || 1)));
+  }
   // Up, and down with Shift held (interaction.js BINDINGS). E used to be up and
   // Q down: E is the hand's and Q the bag's now.
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
@@ -6643,6 +6774,8 @@ const heat = {
   glowing: new Map(),     // body name -> the material of its own it glows with
   flames: new Map(),      // body name -> { group, outer, inner, height, rx, rz }
   columns: new Map(),     // gas region name -> the column drawn for it
+  jets: new Map(),        // gas region name -> the nozzle plume drawn for it
+  jetsSeen: new Set(),    // and every one that has drawn at any point
   burning: new Set(),     // what was burning at the last reply, to say when it changes
   melting: new Set(),     // what was melting fast at the last reply, likewise
   // What heat has done to what things can carry: the engine's "mechanics"
@@ -6818,6 +6951,67 @@ function gasColumn(region) {
   const s = clamp((region.t_k - 293) / 300, 0, 1);
   column.material.color.copy(GAS_COOL).lerp(GAS_HOT, s);
   column.material.emissive.copy(GAS_HOT).multiplyScalar(0.4 * s);
+  // Thicker when there is more of it in the same room. A cylinder filling with
+  // steam should LOOK like it is filling, and pressure over temperature is
+  // what density is, so this is the gas's own number and not a mood.
+  const density = clamp((region.p_pa / 101325) * (293 / Math.max(region.t_k, 1)), 0, 6);
+  column.material.opacity = clamp(0.14 + 0.2 * density, 0.14, 0.75);
+}
+
+// A nozzle's jet, drawn as cells that leave.
+//
+// The owner, 2026-09-28: "steam within a container could also be represented
+// with transparentish voxels that have an outward pushing motion". This is
+// that, at the one place the engine knows gas is moving: out of a vent. Each
+// cell marches down the vent axis and starts again at the throat, and it goes
+// further and there are more of them the harder the nozzle is pushing.
+//
+// It is a PICTURE of the thrust the engine reports, never a source of it --
+// the same rule the flames follow. Take the drawing away and the rocket flies
+// exactly as high.
+const JET_CELLS = 8;
+const JET_BOX = new THREE.BoxGeometry(1, 1, 1);
+function nozzleJet(region) {
+  const vessel = world.bodies.get(region.vessel);
+  if (!vessel) return;
+  let jet = heat.jets.get(region.name);
+  if (!jet) {
+    const group = new THREE.Group();
+    const cells = [];
+    for (let i = 0; i < JET_CELLS; ++i) {
+      const cell = new THREE.Mesh(JET_BOX, new THREE.MeshStandardMaterial({
+        color: GAS_HOT, transparent: true, opacity: 0.5, depthWrite: false,
+        emissive: GAS_HOT, emissiveIntensity: 0.6, roughness: 0.4, metalness: 0 }));
+      group.add(cell);
+      cells.push(cell);
+    }
+    heatGroup.add(group);
+    jet = { group, cells, reach: 0.5, width: 0.05, vessel: region.vessel,
+            axis: new THREE.Vector3(0, -1, 0) };
+    heat.jets.set(region.name, jet);
+    heat.jetsSeen.add(region.name);
+  }
+  jet.vessel = region.vessel;
+  // How far it throws and how wide, from the thrust and the throat. A newton
+  // of push is not much of a plume; a kilonewton is a torch.
+  jet.reach = clamp(0.25 + 0.6 * Math.cbrt(Math.max(region.thrust_n, 0)), 0.25, 6.0);
+  jet.width = clamp(0.6 * Math.sqrt(Math.max(region.area_m2 || 0.0004, 0.0004)), 0.03, 0.4);
+  const axis = new THREE.Vector3(...(region.vent_axis || [0, -1, 0]));
+  if (axis.lengthSq() === 0) axis.set(0, -1, 0);
+  jet.axis = axis.normalize();
+  // From the vessel's own face, the way the gas goes.
+  const p = vessel.mesh.position;
+  const half = vessel.dims ? 0.5 * vessel.dims[1] : 0.1;
+  jet.group.position.set(p.x + jet.axis.x * half, p.y + jet.axis.y * half,
+                         p.z + jet.axis.z * half);
+}
+
+function dropJet(name) {
+  const jet = heat.jets.get(name);
+  if (!jet) return;
+  for (const cell of jet.cells) cell.material.dispose();
+  heatGroup.remove(jet.group);
+  heat.jets.delete(name);
 }
 
 // Said once when something catches and once when it goes out, with a gap
@@ -6966,9 +7160,14 @@ function drawHeat(block) {
   for (const name of [...heat.glowing.keys()]) if (!listed.has(name)) glow(name, 0);
   for (const name of [...heat.flames.keys()]) if (!listed.has(name)) dropFlame(name);
   const regions = new Set();
+  const jetting = new Set();
   for (const r of block.regions) {
     regions.add(r.name);
     if (r.piston) gasColumn(r);
+    // A jet only while something is actually leaving. A sealed region under
+    // any pressure at all draws nothing, which is the point: the plume is the
+    // gas going, not the gas being squeezed.
+    if (r.vessel && Number(r.thrust_n) > 0) { jetting.add(r.name); nozzleJet(r); }
   }
   for (const [name, column] of heat.columns) {
     if (regions.has(name)) continue;
@@ -6976,6 +7175,7 @@ function drawHeat(block) {
     column.material.dispose();
     heat.columns.delete(name);
   }
+  for (const name of [...heat.jets.keys()]) if (!jetting.has(name)) dropJet(name);
   narrateHeat(block);
   showHeat(block);
 }
@@ -6984,6 +7184,29 @@ function drawHeat(block) {
 // the engine's; the flicker is only drawing.
 function animateHeat(now) {
   const t = now / 1000;
+  // Every jet cell walks from the throat to the end of its reach and starts
+  // again, spread out so they leave one after another. They shrink and thin as
+  // they go, which is what a jet does as it spreads into the room.
+  for (const [, jet] of heat.jets) {
+    // On its vessel every frame, not once a reply: a rocket under thrust moves
+    // a long way between replies, and a plume left behind reads as a mistake.
+    const vessel = world.bodies.get(jet.vessel);
+    if (vessel) {
+      const p = vessel.mesh.position;
+      const half = vessel.dims ? 0.5 * vessel.dims[1] : 0.1;
+      jet.group.position.set(p.x + jet.axis.x * half, p.y + jet.axis.y * half,
+                             p.z + jet.axis.z * half);
+    }
+    for (let i = 0; i < jet.cells.length; ++i) {
+      const along = ((t * 2.4) + i / jet.cells.length) % 1;
+      const cell = jet.cells[i];
+      cell.position.set(jet.axis.x * along * jet.reach, jet.axis.y * along * jet.reach,
+                        jet.axis.z * along * jet.reach);
+      const spread = jet.width * (1 + 2.2 * along);
+      cell.scale.set(spread, spread, spread);
+      cell.material.opacity = 0.55 * (1 - along) * (1 - along);
+    }
+  }
   for (const [name, flame] of heat.flames) {
     const entry = world.bodies.get(name);
     if (!entry) { dropFlame(name); continue; }
@@ -8758,8 +8981,17 @@ window.banjoRoom = {
   }),
   // The workbench: what is on it, and where its clock is (workbench.js).
   workbench: () => workbench.state(),
+  // `jetsSeen` is every nozzle that has drawn a jet at any point, not just the
+  // ones drawing one now: a motor's burn is over in a fraction of a second and
+  // a check that has to catch it live would be a test of timing rather than of
+  // drawing.
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
-                      columns: [...heat.columns.keys()] }),
+                      columns: [...heat.columns.keys()], jets: [...heat.jets.keys()],
+                      jetsSeen: [...heat.jetsSeen],
+                      // How see-through each column actually is, so a check can
+                      // hold the drawing against the gas it is a drawing of.
+                      columnOpacity: Object.fromEntries(
+                        [...heat.columns].map(([name, mesh]) => [name, mesh.material.opacity])) }),
   // The ground and the water as drawn, for checking what is on screen against
   // what the engine said -- and a spade, for driving the room from outside.
   groundAt, waterAt, digAt,

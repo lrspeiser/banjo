@@ -173,6 +173,7 @@ moon.
 | Room | Cell | Reached by | What to try |
 |---|---|---|---|
 | `world` | 40 mm | menu | nearly everything: breaking, burning, water, digging, joints, the hoist, the bow, the sword, the pick |
+| `new-game` | 40 mm | address | a seeded valley proved playable: ore in the high ground, sand and clay by the water, two machines and six yards to fill, and the copper smelter |
 | `expedition` | 40 mm | menu | gather stone and wood, build a dryer, dry timber (a bookkeeping model, not native physics) |
 | `explore` | 40 mm | address | a block of every material, furniture, a mace on its chain and a cart on pins; picking up, placing, using |
 | `bench` | 20 mm | address | plates of all eight materials, 20 and 40 mm thick, on piers: break them |
@@ -189,6 +190,7 @@ moon.
 | `tests-solar` | 50 mm | address | the rover with its battery nearly flat: it rests while its panel charges it |
 | `tests-day` | 50 mm | address | the rover under a sun with a four-minute day, from four in the afternoon |
 | `tests-motor` | 50 mm | address | three turntables that answer which end of a motor turns |
+| `tests-pour` | 40 mm | address | two pails on a bench, 18 kg of sand in one: tip one into the other, or onto the ground |
 | `tests-sit` | 50 mm | address | a robot told where a stool is, which goes to it and sits down |
 | `tests-mine` | 50 mm | address | a copper vein, a rover, a smelter, a drone and a mill: ore to wire |
 | `tests-break` | 20 mm | address | an oak plank on piers and a ball dropped on it: the room says what breaking it cost |

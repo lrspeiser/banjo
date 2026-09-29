@@ -217,10 +217,17 @@ class Vessel:
         body's temperature and the BODY DOES NOT COOL for having warmed them.
         The body's heat is the engine's -- it is a lump in the thermal network
         with its own mass and its own losses -- and nothing outside can take
-        heat out of it; the `heat` op only puts external work IN. Making this
-        conserve means the contents being a lump in that network too, which is
-        the same change that would let them boil, and it is the next step
-        rather than this one.
+        heat out of it; the `heat` op only puts external work IN.
+
+        WATER NO LONGER COMES THROUGH HERE. Making this conserve meant the
+        contents being a lump in that network too, which is the same change
+        that lets them boil, and that is done: a vessel holding water is
+        declared to the engine as what its body CARRIES
+        (fracture_lab._vessel_water_is_carried), and `Vessels.warm` reads the
+        engine's kilograms and temperature back instead of calling this. What
+        still comes through here is everything the model has no
+        thermochemistry for -- sand, clay, ore -- for which this remains the
+        rule until it has.
         """
         capacity = self.heat_capacity_j_k()
         if capacity <= 0.0 or self.warms_w_k <= 0.0 or dt_s <= 0.0:
@@ -408,13 +415,44 @@ class Vessels:
         if dt_s <= 0.0:
             return
         hot: dict[str, float] = {}
+        # What the ENGINE is carrying for each body, where it is carrying
+        # anything: {body: (kilograms by substance, its temperature)}.
+        carried: dict[str, tuple[dict[str, float], float]] = {}
         if isinstance(heat, dict):
             for body in (heat.get("bodies") or []):
-                if isinstance(body, dict) and body.get("name") is not None:
-                    t_k = body.get("t_k")
-                    if isinstance(t_k, (int, float)):
-                        hot[str(body["name"])] = float(t_k)
+                if not isinstance(body, dict) or body.get("name") is None:
+                    continue
+                name = str(body["name"])
+                t_k = body.get("t_k")
+                if isinstance(t_k, (int, float)):
+                    hot[name] = float(t_k)
+                kg = body.get("carrying_kg")
+                at_c = body.get("carrying_c")
+                if isinstance(kg, dict) and kg and isinstance(at_c, (int, float)):
+                    carried[name] = ({str(k): float(v) for k, v in kg.items()},
+                                     float(at_c) + 273.15)
         for vessel in self.vessels:
+            # WHERE THE ENGINE IS CARRYING IT, the engine is right and this is
+            # only reading. Water declared to the thermal network is a lump in
+            # it: the engine warms it through the body's wall, holds it at its
+            # boiling point, and boils it away, none of which the rule below
+            # can do. So take its kilograms and its temperature and do not
+            # relax toward anything.
+            #
+            # Anything else in the same vessel rides that one temperature, the
+            # way it always has -- a vessel holds a mass, not a body with an
+            # inside.
+            engine = carried.get(vessel.body)
+            if engine is not None:
+                kg, at_k = engine
+                for what, amount in kg.items():
+                    if what in vessel.holds or amount > 0.0:
+                        vessel.holds[what] = amount
+                for what in [w for w, a in vessel.holds.items()
+                             if w in kg and not (a > 0.0)]:
+                    vessel.holds.pop(what, None)
+                vessel.temperature_k = at_k
+                continue
             vessel.warms(dt_s, hot.get(vessel.body, float(ambient_k)))
 
     def spill(self, dt_s: float, goods: Any = None) -> list[dict[str, Any]]:

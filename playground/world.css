@@ -32,7 +32,12 @@ html, body {
   font: var(--t-read)/1.55 var(--font);
 }
 
-#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#stage {
+  position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+  /* A drag across the room is a look, not a scroll, and two fingers are
+     not a pinch-zoom of the page. Without this a phone takes both. */
+  touch-action: none;
+}
 /* The view from under the surface: dim and blue, so a head under water looks it. */
 body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155deg) saturate(1.7); }
 
@@ -514,3 +519,53 @@ input[type="range"] { background: transparent; accent-color: var(--ink); }
 #panel .workshop-entry { color: var(--ink); border-color: var(--edge); }
 #panel .workshop-entry + .workshop-entry { margin-left: .4rem; }
 #panel .debug-entry { color: var(--dim); }
+
+/* FOLDING THE PANEL AWAY. On a phone the side panel is most of the screen, and
+   the room is what you came for. It slides off to the right and leaves a
+   handle; --panel-w goes to nothing so everything placed against its edge --
+   the zoom slider, the crosshair's reach -- comes with it. */
+#panel-fold {
+  order: 9; margin-left: auto; padding: 2px 9px; line-height: 1;
+  font-size: 18px; border-radius: 6px;
+}
+body.panel-away { --panel-w: 0px; }
+body.panel-away #panel { transform: translateX(100%); }
+#panel { transition: transform .18s ease; }
+#panel-show {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 7;
+  width: 26px; height: 64px; padding: 0; border-radius: 8px 0 0 8px;
+  border: 1px solid var(--edge); border-right: 0; background: var(--panel);
+  color: var(--ink); font-size: 18px; cursor: pointer;
+}
+#panel-show:hover { color: var(--warm); }
+
+/* THE THUMBSTICK. Bottom left, where a thumb already is, and only on a screen
+   that is being touched -- world.js unhides it the first time a touch arrives,
+   so a mouse never sees it. */
+#stick {
+  position: fixed; left: 18px; bottom: 18px; z-index: 7;
+  width: 108px; height: 108px; border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / .28); background: rgb(12 20 26 / .38);
+  touch-action: none; user-select: none;
+}
+#stick i {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px;
+  margin: -23px 0 0 -23px; border-radius: 50%;
+  background: rgb(255 255 255 / .34); border: 2px solid rgb(255 255 255 / .5);
+  transform: translate(var(--dx, 0px), var(--dy, 0px));
+}
+#stick[data-held="yes"] i { background: rgb(255 255 255 / .52); }
+#stick[hidden] { display: none; }
+
+@media (max-width: 760px) {
+  /* A phone: the panel starts folded, and the room has the screen. */
+  :root { --panel-w: 300px; }
+  #panel { width: min(300px, 86vw); }
+  #zoom { display: none; }
+  /* The bag sits ABOVE the thumbstick rather than under it: both want the
+     bottom left, and the stick is 108 px tall on an 18 px margin. And it is
+     centred outright: the desktop rule keeps it clear of the panel by
+     measuring back from the right edge, which on a 390 px screen with the
+     panel out works out at -172 px -- off the side of the screen.  */
+  #hotbar { bottom: 136px; left: 50vw; }
+}

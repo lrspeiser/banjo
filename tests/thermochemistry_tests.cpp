@@ -678,7 +678,7 @@ double taken(ThermoWorld &world) {
 // reference energies say, and a transition that disagreed would be refused.
 void theLatentHeatIsTheReferenceEnergiesApart() {
     const Model model = demonstrationModel();
-    require(model.transitions.size() == 1, "one transition: ice melting");
+    require(model.transitions.size() == 2, "two transitions: ice melting and water boiling");
     const Transition &melt = model.transitions.front();
     near(model.latentHeatJPerKg(melt), kFusionJKg, 1e-6, "melting takes 333.55 kJ/kg at 273.15 K");
     near(meltingPointOf(model, "ice"), kMeltingK, 0.0, "ice melts at 273.15 K");
@@ -698,9 +698,9 @@ void theLatentHeatIsTheReferenceEnergiesApart() {
     const std::size_t l = wrong.add(liquid);
     Transition melting;
     melting.id = "melting";
-    melting.solid = s;
-    melting.liquid = l;
-    melting.melting_k = 300.0;
+    melting.from = s;
+    melting.to = l;
+    melting.at_k = 300.0;
     melting.latent_j_kg = 1.0e5;   // the references say 2000 x 300 = 6e5
     bool refused = false;
     try {

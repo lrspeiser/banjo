@@ -2405,9 +2405,19 @@ struct LiveWorld::Impl {
             p.turn_least_deg = least;
             ++s.turns;
         };
-        bool water_left = false, water_right = false;
+        // Which way each sensor WATCHES: `stops` is 1 for one that looks
+        // ahead and -1 for one that looks behind. A machine with only forward
+        // sensors reverses blind, and on a shore that is how it puts a back
+        // wheel into the lake it has just backed away from -- measured on the
+        // roaming rover, its caster 15 mm in while "backing off" with the
+        // front sensors watching the water in front of it.
+        bool water_left = false, water_right = false, water_behind = false;
         for (const LiveSensor &sensor : s.sensors) {
             if (!sensor.sees) continue;
+            if (sensor.stops < 0) {
+                water_behind = true;
+                continue;
+            }
             if (sensor.side >= 0) water_left = true;
             if (sensor.side <= 0) water_right = true;
         }
@@ -2680,7 +2690,29 @@ struct LiveWorld::Impl {
             const double back_off_s = p.back_off_for_s > 0.0 ? p.back_off_for_s
                                     : p.interrupted ? 2.0 * kBackOffS : kBackOffS;
             const bool backing_out = p.back_off_for_s > 0.0;
-            if (s.doing_s >= back_off_s || (!backing_out && (stalled(*left) || stalled(*right)))) {
+            // NOT WHILE IT CAN STILL SEE WATER. A fixed run of reverse is
+            // enough from open ground, but at the very edge it is not, and
+            // two things end it early there: the time is up, or a wheel
+            // stalls -- and a wheel stalling in the shallows is exactly what
+            // happens at a shore. It would then turn where it stood, and a
+            // machine turning in place sweeps its own diagonal, which is
+            // wider than it is. Measured on the shore rover: a wheel 12 to
+            // 176 mm into the lake it is supposed to keep out of, while the
+            // sensors watched it happen, because turning was the answer to
+            // water and the turn began too close.
+            //
+            // So it backs off until its sensors are clear and only then
+            // turns. Capped at three times the run: a rover that cannot get
+            // clear has a different problem, and says so by getting nowhere.
+            const bool sees_water = water_left || water_right;
+            const double most_s = 3.0 * back_off_s;
+            const bool cut_short = !backing_out && !sees_water &&
+                                   (stalled(*left) || stalled(*right));
+            // And it stops reversing the moment anything behind it sees water,
+            // whatever is still in front: better to turn where it is than to
+            // reverse into a lake it cannot see.
+            if (water_behind || (s.doing_s >= back_off_s && !sees_water) ||
+                s.doing_s >= most_s || cut_short) {
                 const std::string why = s.why;
                 p.back_off_for_s = 0.0;
                 turn(p.then_turn, p.turn_least_deg, why);
@@ -3818,6 +3850,10 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"material", l.material},
             {"surface", savedParcel(l.surface)},
             {"core", savedParcel(l.core)},
+            // What it was carrying goes with it (thermo CargoDeclaration): a
+            // kettle saved full comes back full.
+            {"cargo", savedParcel(l.cargo)},
+            {"cargo_conductance_w_k", savedNumber(l.cargo_conductance_w_k)},
             {"layer_depth_m", savedNumber(l.layer_depth_m)},
             {"layer_fuel_kg", savedNumber(l.layer_fuel_kg)},
             {"area_m2", savedNumber(l.area_m2)},
@@ -3840,6 +3876,7 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"lost_w", savedNumber(l.lost_w)},
             {"layer_melt_kg", savedNumber(l.layer_melt_kg)},
             {"melt_kg_s", savedNumber(l.melt_kg_s)},
+            {"boil_kg_s", savedNumber(l.boil_kg_s)},
             {"meltwater_kg", savedNumber(l.meltwater_kg)},
             {"parked", l.parked}};
 }
@@ -3876,6 +3913,11 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     l.material = j.value("material", std::string{});
     l.surface = parcelFrom(j.at("surface"));
     l.core = parcelFrom(j.at("core"));
+    // Saves written before bodies could carry anything have neither, and an
+    // empty parcel is exactly right for them: they carried nothing.
+    if (j.contains("cargo")) l.cargo = parcelFrom(j.at("cargo"));
+    l.cargo_conductance_w_k =
+        j.contains("cargo_conductance_w_k") ? numberFrom(j.at("cargo_conductance_w_k")) : 0.0;
     l.initial_kg = unpackedArray<double>(j, "initial_kg_b64");
     if (l.surface.kg.size() != substances || l.core.kg.size() != substances || l.initial_kg.size() != substances)
         throw std::invalid_argument("the " + l.body + "'s heat is not one number a substance");
@@ -3888,10 +3930,15 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     if (j.contains("layer_melt_kg")) {
         l.layer_melt_kg = numberFrom(j.at("layer_melt_kg"));
     } else {
+        // What the MELTING front is made of: a liquid that boils is not part of
+        // it, so only transitions that end in a liquid count here.
         for (const thermo::Transition &transition : model.transitions)
-            if (transition.solid < l.surface.kg.size()) l.layer_melt_kg += l.surface.kg[transition.solid];
+            if (transition.from < l.surface.kg.size() &&
+                model[transition.to].phase == thermo::Phase::Liquid)
+                l.layer_melt_kg += l.surface.kg[transition.from];
     }
     l.melt_kg_s = j.contains("melt_kg_s") ? numberFrom(j.at("melt_kg_s")) : 0.0;
+    l.boil_kg_s = j.contains("boil_kg_s") ? numberFrom(j.at("boil_kg_s")) : 0.0;
     l.meltwater_kg = j.contains("meltwater_kg") ? numberFrom(j.at("meltwater_kg")) : 0.0;
     l.area_m2 = numberFrom(j.at("area_m2"));
     l.exposed_area_m2 = numberFrom(j.at("exposed_area_m2"));
@@ -5585,6 +5632,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             sensor.at_local_m = vecFrom(q.at("at_local_m"));
             sensor.depth_m = numberFrom(q.at("depth_m"));
             sensor.side = std::clamp(q.at("side").get<int>(), -1, 1);
+            // Saved before a program's sensors could look behind: those
+            // all looked ahead, which is what 1 means.
+            sensor.stops = q.value("stops", 1) < 0 ? -1 : 1;
             if (sensor.kind != "water" || !(sensor.depth_m > 0.0))
                 throw std::invalid_argument("a saved program's sensor is not one this engine knows");
             p.said.sensors.push_back(std::move(sensor));
@@ -7342,7 +7392,7 @@ unsigned LiveWorld::hoverProgram(const std::string &name, const std::string &bod
 }
 
 bool LiveWorld::programSense(unsigned program, const std::string &kind, const std::string &body,
-                             const Vec3 &point_world_m, double depth_m) {
+                             const Vec3 &point_world_m, double depth_m, int watches) {
     Impl &I = *impl_;
     Impl::Program *p = nullptr;
     for (Impl::Program &each : I.programs)
@@ -7370,6 +7420,7 @@ bool LiveWorld::programSense(unsigned program, const std::string &kind, const st
     const double across =
         dot(frame.orientation_world.rotate(p->left_local), point_world_m - frame.center_of_mass_world_m);
     sensor.side = across > kMiddleM ? 1 : across < -kMiddleM ? -1 : 0;
+    sensor.stops = watches < 0 ? -1 : 1;
     p->said.sensors.push_back(sensor);
     I.readSensorList(p->said.sensors);
     return true;
@@ -15629,7 +15680,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
             for (const LiveSensor &sensor : p.said.sensors)
                 sensors.push_back({{"kind", sensor.kind}, {"body", sensor.body},
                                    {"at_local_m", savedVec(sensor.at_local_m)},
-                                   {"depth_m", savedNumber(sensor.depth_m)}, {"side", sensor.side}});
+                                   {"depth_m", savedNumber(sensor.depth_m)}, {"side", sensor.side},
+                                   {"stops", sensor.stops}});
             programs.push_back({{"id", p.said.id},
                                 {"name", p.said.name},
                                 {"kind", p.said.kind},
