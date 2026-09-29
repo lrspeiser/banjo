@@ -151,7 +151,14 @@ def _told_control(control: dict[str, Any]) -> tuple[Any, Any, Any]:
 
 # What a program can be asked to do for a while (LiveWorld::behave), and ""
 # for nothing more: it decides for itself again.
-ASKS = ("going forward", "backing off", "turning left", "turning right", "waiting", "facing", "approaching", "")
+#
+# `rising` and `descending` are a flying machine's only -- LiveWorld::behave
+# refuses them to anything else -- and they were missing here, so anything
+# coming through this gate could not fly a drone at all: the engine would
+# have taken the ask and the gate in front of it would not. Found when the
+# world page started driving what a person is riding.
+ASKS = ("going forward", "backing off", "turning left", "turning right", "waiting", "facing",
+        "approaching", "rising", "descending", "")
 
 
 def _made_program(program: dict[str, Any]) -> dict[str, Any]:

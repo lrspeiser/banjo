@@ -2173,6 +2173,8 @@ function drawRopes() {
 // (docs/machine-world.md): every step that has any carries them all.
 function followMachines(machines) {
   world.machines = machines || null;
+  chooseSomethingToRide();
+  showRidingSettings();
   drawMachines(world.machines);
   dressLights(world.machines);
   showMachinePanel();
@@ -5288,7 +5290,318 @@ function installPanelFold() {
 installStick();
 installPanelFold();
 
+// ---------------------------------------------------------------------------
+// WHO YOU ARE: a machine in the room, or a camera above it
+// ---------------------------------------------------------------------------
+//
+// The owner, 2026-09-29, asked for the player to walk with gravity rather than
+// fly, and then asked the better question: "can we always inhabit the body of a
+// robot and choose which one we want to inhabit?" So there is no person. You
+// are always looking out of something that is really there.
+//
+// That is not a shortcut, it is the whole point. A machine is already a body
+// the engine simulates: it has mass, it collides with a crate, it falls off the
+// lip of the adit, its wheels slip on a slope, and it can be run over. A
+// walking person would have needed every one of those written again, and they
+// would have been an approximation of what the rover already does exactly.
+//
+// GOD MODE is the old behaviour kept whole: the free camera that rises with
+// Space, sinks with Shift+Space and passes through everything. It is for
+// looking at the room rather than being in it, and it is off by default.
+//
+// The keys mean the same here as they do at the bench (workshop_drive.py):
+// one machine does one thing at a time, and the ask that wins is the first of
+// up, down, left, right, forward, back that is held.
+
+const RIDE_ASKS = [["up", "rising"], ["down", "descending"], ["left", "turning left"],
+                   ["right", "turning right"], ["forward", "going forward"], ["back", "backing off"]];
+const RIDE_FLIES_ONLY = new Set(["rising", "descending"]);
+//: How long an ask stands if the page stops sending. Long enough to cover a
+//: slow frame, short enough that letting go of the key stops the machine
+//: rather than leaving it driving into the lake.
+const RIDE_FOR_S = 0.6;
+//: Where the eye sits above the middle of what you are riding. A rover's deck
+//: is about a third of a metre up and you want to see over it, not along it.
+const RIDE_EYE_M = 1.1;
+
+// GOD MODE IS WHERE YOU START, and that is not what was asked for -- it is
+// what the room can carry today. Being a machine by default was tried and
+// measured: it takes six things away at once. Three are the machine's own
+// life -- a rover cannot roam, rest in the sun or wake in the morning
+// while somebody is sitting in it holding it still -- and three are the
+// person's, because a rover has no hands: you cannot click what the side
+// view marks, learn a technique by doing it, or carry ore along the chain.
+// The hand, the bag, digging and throwing all belong to somebody who is
+// not a machine.
+//
+// So you begin as the camera and get into something when you choose to,
+// from the Settings tab. Everything the owner asked for is there; what is
+// not there is it being the only way to be.
+const riding = { name: null, asked: null, at: 0, seq: 0, sending: false, godMode: true,
+                 powering: false, poweredAt: 0 };
+
+function ridingRemembered() {
+  try {
+    // Only a remembered CHOICE puts you in something; the absence of a
+    // memory leaves you the camera.
+    const was = localStorage.getItem("banjo.riding");
+    riding.godMode = localStorage.getItem("banjo.godMode") !== "0" || !was;
+    if (was) riding.name = was;
+  } catch { /* a private window has no memory, and that is not an error */ }
+}
+
+function rememberRiding() {
+  try {
+    localStorage.setItem("banjo.godMode", riding.godMode ? "1" : "0");
+    if (riding.name) localStorage.setItem("banjo.riding", riding.name);
+    else localStorage.removeItem("banjo.riding");
+  } catch { /* nothing to do about it */ }
+}
+
+// Every machine in the room that can be inhabited, as {name, kind, program}.
+// A machine with a program is driven through the program; one without is
+// driven by its wheels, which is what the bench does too.
+function whatCanBeRidden() {
+  const machines = world.machines || {};
+  return (machines.programs || [])
+    .filter((p) => p && p.body)
+    .map((p) => ({ name: String(p.body), kind: String(p.kind || "machine"), program: p }));
+}
+
+function whatIsRidden() {
+  if (riding.godMode || !riding.name) return null;
+  return whatCanBeRidden().find((m) => m.name === riding.name) || null;
+}
+
+// Riding is the ordinary way to be here, so something is chosen for you: the
+// machine you rode last if it is still in the room, else the first one there
+// is. A room with no machines at all leaves you as the camera, and says so.
+// Only ever keeps a choice honest: what you were riding is gone from the
+// room, so you are the camera again. Nothing is chosen FOR you -- getting
+// into a machine is a thing you do.
+function chooseSomethingToRide() {
+  if (riding.godMode || !riding.name) return;
+  if (!whatCanBeRidden().some((m) => m.name === riding.name)) {
+    riding.name = null;
+    riding.godMode = true;
+  }
+}
+
+// The keys, as the thing being ridden hears them.
+function ridingKeys() {
+  const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  return {
+    forward: keys.has("KeyW"), back: keys.has("KeyS"),
+    left: keys.has("KeyA"), right: keys.has("KeyD"),
+    up: keys.has("Space") && !shifted, down: keys.has("Space") && shifted,
+  };
+}
+
+// What one press means, in the order one key wins over another.
+function ridingAsk(flies) {
+  const held = ridingKeys();
+  for (const [key, doing] of RIDE_ASKS) {
+    if (!held[key]) continue;
+    if (RIDE_FLIES_ONLY.has(doing) && !flies) continue;
+    return doing;
+  }
+  return "";
+}
+
+// Tell the machine what the keys say. Sent when the ask CHANGES and again
+// while it is held, because an ask lapses on its own -- a page that stops
+// asking leaves a machine stopped rather than driving on without anybody.
+// Getting into a machine turns it on. A rover you are sitting in that does
+// not answer the keys is not a machine with its power off, it is a broken
+// game -- and nothing else on the page would tell you which it was. Tried
+// again no more than once a second, so a machine that refuses (a flat
+// battery) says so through its own panel instead of being nagged.
+async function powerWhatIsRidden(mine, now) {
+  if (mine.program.power || riding.powering || now - riding.poweredAt < 1000) return;
+  riding.powering = true;
+  riding.poweredAt = now;
+  try {
+    const said = await api("/api/world/machine", { session: world.session, program: mine.program.id,
+                                                  sender: "person", seq: ++riding.seq, power: true });
+    // The page is told what a step CHANGED, and a machine block does not
+    // come with every step -- so without taking the answer here the page
+    // goes on believing the machine is off and turns it on again every
+    // second for ever. Measured: fifteen of them before I looked.
+    if (said && said.program) { mergeProgram(said.program); showRidingSettings(); }
+  } catch { /* its panel says why; the next second tries again */ }
+  finally { riding.powering = false; }
+}
+
+async function driveWhatIsRidden(now) {
+  const mine = whatIsRidden();
+  if (!mine || riding.sending) return;
+  if (!mine.program.power) { powerWhatIsRidden(mine, now); return; }
+  const flies = String(mine.program.kind || "") === "hover";
+  // `asked` starts as null rather than "", so the FIRST thing a machine
+  // you get into hears is that nobody is asking for anything -- it holds
+  // still. Starting it at "" made the two equal, nothing was sent, and a
+  // roaming rover drove off with you aboard before you touched a key.
+  const want = ridingAsk(flies);
+  // Renewed whether or not a key is down. An ask lapses on purpose, so a
+  // machine you are sitting in with your hands off the keys has to go on
+  // being told that nobody is asking for anything -- or it takes itself
+  // back and starts roaming with you aboard. Measured: it turned away from
+  // the lake on its own while I sat in it.
+  const again = now - riding.at > RIDE_FOR_S * 500;
+  if (want === riding.asked && !again) return;
+  riding.sending = true;
+  riding.asked = want;
+  riding.at = now;
+  try {
+    // by_person, because it is: a person at the keys outranks the water
+    // reflex, which is the owner's own rule ("your order wins"). A machine
+    // you are riding goes where you steer it, into the lake if you insist.
+    const said = await act("behave", { program: mine.program.id, sender: "person", by_person: true,
+                                      seq: ++riding.seq, doing: want || "waiting", for_s: RIDE_FOR_S,
+                                      why: want ? "you are driving it" : "you let go of the keys" });
+    if (said && said.program) mergeProgram(said.program);
+  } catch {
+    // The room may have been rebuilt under it; the next frame asks again.
+    riding.asked = null;
+  } finally { riding.sending = false; }
+}
+
+// The eye goes where the machine is. Looking about is still the mouse's --
+// you turn your head in the seat, and the keys turn the machine.
+function rideTheCamera() {
+  const mine = whatIsRidden();
+  if (!mine) return false;
+  const body = world.bodies && world.bodies.get(mine.name);
+  if (!body || !body.mesh) return false;
+  camera.position.copy(body.mesh.position);
+  camera.position.y += RIDE_EYE_M;
+  camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// The Settings tab: what you are, and god mode
+// ---------------------------------------------------------------------------
+//
+// Built here rather than written into world.html, so that adding a tab does
+// not touch the page's inline blocks: their hashes are in the CSP, and
+// editing one takes down every server already running until it restarts
+// (docs, and the hard way).
+
+function buildRidingSettings() {
+  const strip = document.querySelector("#tabs > div[role=tablist]");
+  const tabs = $("tabs");
+  if (!strip || !tabs || $("tab-settings")) return;
+
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.id = "tab-settings";
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-controls", "pane-settings");
+  tab.setAttribute("aria-selected", "false");
+  tab.textContent = "Settings";
+  strip.append(tab);
+
+  const pane = document.createElement("div");
+  pane.id = "pane-settings";
+  pane.setAttribute("role", "tabpanel");
+  pane.setAttribute("aria-labelledby", "tab-settings");
+  pane.hidden = true;
+  pane.innerHTML = "";
+
+  const who = document.createElement("section");
+  who.setAttribute("aria-label", "What you are");
+  const title = document.createElement("h3");
+  title.textContent = "What you are";
+  const said = document.createElement("p");
+  said.id = "settings-said";
+  said.textContent = "Looking for something to be…";
+  const list = document.createElement("ul");
+  list.id = "settings-riders";
+  who.append(title, said, list);
+
+  const god = document.createElement("section");
+  god.setAttribute("aria-label", "God mode");
+  const godTitle = document.createElement("h3");
+  godTitle.textContent = "God mode";
+  const godWhy = document.createElement("p");
+  godWhy.className = "mp-hint";
+  godWhy.textContent = "Leave the machine and float: Space rises, Shift+Space sinks, "
+    + "and nothing in the room can stop you. For looking at the room rather than being in it.";
+  const godButton = document.createElement("button");
+  godButton.type = "button";
+  godButton.id = "settings-god";
+  godButton.setAttribute("aria-pressed", "false");
+  godButton.textContent = "Fly";
+  godButton.addEventListener("click", () => {
+    godButton.blur();
+    riding.godMode = !riding.godMode;
+    riding.asked = null;
+    chooseSomethingToRide();
+    rememberRiding();
+    showRidingSettings();
+  });
+  god.append(godTitle, godWhy, godButton);
+
+  pane.append(who, god);
+  tabs.append(pane);
+  TABS.push("settings");
+  tab.addEventListener("click", (e) => { e.currentTarget.blur(); showTab("settings"); });
+  showRidingSettings();
+}
+
+// What the tab says now: what you are, and what else you could be.
+function showRidingSettings() {
+  const said = $("settings-said"), list = $("settings-riders"), god = $("settings-god");
+  if (!said || !list || !god) return;
+  god.setAttribute("aria-pressed", String(!!riding.godMode));
+  god.textContent = riding.godMode ? "Stop flying" : "Fly";
+
+  const all = whatCanBeRidden();
+  const mine = whatIsRidden();
+  said.textContent = riding.godMode
+    ? "Flying. Nothing in the room can stop you, and nothing in it is yours to drive."
+    : mine
+      ? `You are ${mine.name}. W A S D drive it`
+        + (mine.kind === "hover" ? ", Space up, Shift+Space down." : ".")
+      : all.length
+        ? "Pick something to be."
+        : "There is no machine in this room to be, so you are a camera above it.";
+
+  list.replaceChildren(...all.map((m) => {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quiet";
+    button.dataset.rides = m.name;
+    const now = !riding.godMode && mine && mine.name === m.name;
+    button.setAttribute("aria-pressed", String(!!now));
+    button.textContent = now ? `${m.name} — you` : m.name;
+    button.addEventListener("click", () => {
+      button.blur();
+      riding.name = m.name;
+      riding.godMode = false;
+      riding.asked = null;
+      rememberRiding();
+      showRidingSettings();
+    });
+    li.append(button);
+    return li;
+  }));
+}
+
 function walk(dt) {
+  // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and
+  // the eye goes where the machine is; everything below -- the free camera,
+  // its ceiling of twelve metres, wading and being carried by a current --
+  // is god mode, which is a way of LOOKING at the room rather than being in
+  // it. A machine in the water is the machine's own problem and the engine's.
+  if (rideTheCamera()) {
+    world.inWater = null;
+    document.body.classList.remove("head-under-water");
+    driveWhatIsRidden(performance.now());
+    return;
+  }
   // How far the stick is pushed, which is also how fast: a gentle push is a
   // gentle walk. Keys stay what they were -- one key or two, always full pace.
   const pushed = stick.on ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
@@ -9055,6 +9368,8 @@ async function tickLoop() {
     setTimeout(tickLoop, Math.max(0, TICK_FLOOR_MS - (performance.now() - began)));
   }
 }
+ridingRemembered();
+buildRidingSettings();
 tickLoop();
 setInterval(aim, 90);
 if (qaBuild() === null) showSceneLink(sceneLink());

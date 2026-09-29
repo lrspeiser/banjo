@@ -220,6 +220,20 @@ class PageJourney(unittest.TestCase):
                 **({"text": key, "unmodifiedText": key} if kind == "keyDown" else {})})
             time.sleep(0.05)
 
+    def hold_key(self, code, key, seconds):
+        """A key held down, as driving something needs. press_key taps it."""
+        def send(kind):
+            self.page.send("Input.dispatchKeyEvent", {
+                "type": kind, "key": key, "code": code,
+                "windowsVirtualKeyCode": ord(key.upper()), "nativeVirtualKeyCode": ord(key.upper()),
+                **({"text": key, "unmodifiedText": key} if kind == "keyDown" else {})})
+        send("keyDown")
+        try:
+            time.sleep(seconds)
+        finally:
+            send("keyUp")
+            time.sleep(0.2)
+
     def press_e(self):
         self.press_key("KeyE", "e")
 
@@ -1202,6 +1216,126 @@ class LearningSomethingIsSaidWhereYouAreLooking(PageJourney):
             return [b.right <= p.left + 1, b.bottom < c.top, b.top >= 0]; })()""")
         self.assertEqual([True, True, True], room,
                          "the card is over the panel, over the crosshair, or off the top")
+
+class YouAreAMachineInTheRoom(PageJourney):
+    """There is no person: you are always looking out of something real.
+
+    The owner, 2026-09-29, asked for the player to walk with gravity instead
+    of flying, and then asked the better question -- "can we always inhabit
+    the body of a robot and choose which one we want to inhabit?" So we do.
+    A machine is already a body the engine simulates: it has mass, it collides
+    with a crate, it falls off the lip of the adit, its wheels slip. A walking
+    person would have needed every one of those written again, worse.
+
+    God mode is the old free camera kept whole, for looking at a room rather
+    than being in it.
+    """
+
+    def settings(self):
+        self.click("tab-settings")
+        return self.js("document.getElementById('settings-said').textContent")
+
+    def get_into(self, name):
+        """Choose a machine to be, from the Settings tab.
+
+        You start as the camera: being a machine is something you do, not
+        where you begin. See the note on `riding` in world.js for the six
+        things that being one by default took away."""
+        self.click("tab-settings")
+        self.assertTrue(self.wait_for(
+            f"!!document.querySelector('[data-rides=\"{name}\"]')", 30),
+            f"{name} is not offered as something to be")
+        self.js(f"(document.querySelector('[data-rides=\"{name}\"]')"
+                f".scrollIntoView({{block: 'center'}}), true)")
+        time.sleep(0.2)
+        self.js(f"(document.querySelector('[data-rides=\"{name}\"]').click(), true)")
+        self.assertTrue(self.wait_for(
+            f"document.getElementById('settings-said').textContent.includes('You are {name}')", 15),
+            f"choosing {name} did not make you it")
+
+    def rover_at(self):
+        return self.position("rover")
+
+    def test_you_are_the_machine_and_the_eye_rides_it(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-rover'"
+                                      " && banjoRoom.ready()", 300), "the rover room did not open")
+        self.assertTrue(self.wait_for("!!document.getElementById('tab-settings')", 30),
+                        "there is no Settings tab")
+        self.assertIn("god", self.settings().lower() + " god",
+                      "you should start as the camera")
+        self.get_into("rover")
+        # The eye is ON it, not beside it: the camera sits a fixed height over
+        # the body wherever the body has got to.
+        self.assertTrue(self.wait_for(
+            "(() => { const r = banjoRoom.world.bodies.get('rover');"
+            " return r && Math.abs(banjoRoom.camera.position.y - r.mesh.position.y - 1.1) < 0.35"
+            " && Math.hypot(banjoRoom.camera.position.x - r.mesh.position.x,"
+            " banjoRoom.camera.position.z - r.mesh.position.z) < 0.35; })()", 30),
+            f"the eye is not on the rover: {self.js('banjoRoom.camera.position.toArray()')}")
+
+    def test_getting_in_turns_it_on_and_it_holds_still_until_you_drive(self):
+        """A machine you are sitting in does not wander off by itself.
+
+        Both halves were wrong first time and both are worth a test. It opened
+        with its power OFF, so the keys did nothing and nothing said why. And
+        an ask lapses on purpose, so with the page only sending one when the
+        keys CHANGED, the rover took itself back and went roaming with me
+        aboard -- it turned away from the lake on its own.
+        """
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.get_into("rover")
+        program = "banjoRoom.world.machines.programs[0]"
+        self.assertTrue(self.wait_for(f"{program}.power === true", 60),
+                        "getting into it did not turn it on")
+        was = self.rover_at()
+        time.sleep(5.0)
+        now = self.rover_at()
+        self.assertLess(math.dist(was, now), 0.25,
+                        f"it wandered off with nobody driving: {was} -> {now}")
+
+    def test_the_keys_drive_it_and_letting_go_stops_it(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.get_into("rover")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.programs[0].power === true", 60))
+        was = self.rover_at()
+        self.hold_key("KeyW", "w", 6.0)
+        drove = self.rover_at()
+        self.assertGreater(math.dist(was, drove), 0.5,
+                           f"W did not drive it: {was} -> {drove}")
+        time.sleep(3.0)
+        stopped = self.rover_at()
+        self.assertLess(math.dist(drove, stopped), 0.5,
+                        f"it did not stop when the key came up: {drove} -> {stopped}")
+
+    def test_god_mode_lets_go_of_the_machine_and_flies(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.get_into("rover")
+        self.assertTrue(self.wait_for("!!document.getElementById('settings-god')", 30))
+        # The panel scrolls, and a button below its fold is one a person
+        # scrolls to before pressing.
+        self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
+        time.sleep(0.2)
+        self.click("settings-god")
+        self.assertIn("Flying", self.js("document.getElementById('settings-said').textContent"))
+        # Free of it: Space now takes the eye up, and the rover is left alone.
+        above = self.js("banjoRoom.camera.position.y")
+        self.hold_key("Space", " ", 2.0)
+        self.assertGreater(self.js("banjoRoom.camera.position.y"), above + 0.3,
+                           "Space did not take the eye up in god mode")
+        # And back into it.
+        self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
+        time.sleep(0.2)
+        self.click("settings-god")
+        self.assertIn("You are rover", self.js("document.getElementById('settings-said').textContent"))
+
 
 class ARoverRoamsTheShore(PageJourney):
     """The machine world's autonomous creature, its second step
