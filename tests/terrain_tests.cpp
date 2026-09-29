@@ -515,6 +515,110 @@ void theValleyHasGeologyInIt() {
                 "the beds end where the rock always did");
 }
 
+// Somebody worked this valley before we got here, and the ground says so: a cut
+// down the vein where it could be reached from the surface, a shaft at the high
+// end of it, an adit mouth in the hillside below, and the spoil from all of it
+// in heaps. What makes it worth having is that none of it is scenery -- the cut
+// exposes the ore it was dug for, and the heaps hold exactly what came out.
+void theValleyWasWorkedBeforeWeGotHere() {
+    namespace fs = std::filesystem;
+    const fs::path folder = fs::temp_directory_path() / "banjo-terrain-test-cache";
+    const Landscape made = valley(ValleyParameters{}, folder.string());
+    const Mine &mine = made.mine;
+    require(mine.worked, "the valley was worked");
+    const TerrainField ground(made.grid, made.beds, made.soil, made.sand, made.loose, made.moisture);
+    const auto at = [&](const double p[2]) {
+        const auto c = ground.cellAt(p[0], p[1]);
+        require(c.has_value(), "a piece of the working is on the ground");
+        return *c;
+    };
+    const std::size_t collar = at(mine.shaft_m), mouth = at(mine.adit_m);
+    std::cout << "    they cut from [" << mine.cut_from_m[0] << ", " << mine.cut_from_m[1]
+              << "] to [" << mine.cut_to_m[0] << ", " << mine.cut_to_m[1] << "], sank a shaft at ["
+              << mine.shaft_m[0] << ", " << mine.shaft_m[1] << "] to " << mine.shaft_floor_m
+              << " m, cut a mouth at [" << mine.adit_m[0] << ", " << mine.adit_m[1]
+              << "] and threw out " << mine.spoil_m3 << " m^3\n";
+
+    // A shaft is sunk from the top of a hill, and an adit comes in underneath:
+    // against the ground the collar was sunk FROM, which is the ground around
+    // it, because at the collar itself the ground is now the shaft's floor.
+    double rim = -1.0e30;
+    for (int dj = -10; dj <= 10; ++dj)
+        for (int di = -10; di <= 10; ++di) {
+            const auto c = ground.cellAt(mine.shaft_m[0] + di * made.grid.dx,
+                                         mine.shaft_m[1] + dj * made.grid.dx);
+            if (c && std::hypot(di, dj) * made.grid.dx > 2.0) rim = std::max(rim, ground.height(*c));
+        }
+    require(mine.shaft_floor_m < rim - 1.0,
+            "the shaft goes down from the ground around it (floor " +
+            std::to_string(mine.shaft_floor_m) + ", rim " + std::to_string(rim) + ")");
+    require(ground.height(mouth) < rim - 1.0,
+            "the adit's mouth is below the ground the shaft was sunk from (mouth " +
+            std::to_string(ground.height(mouth)) + ", rim " + std::to_string(rim) + ")");
+    require(mine.shaft_floor_m > ground.floor(), "and not through the bottom of the world");
+
+    // The working is on the vein: somewhere along it the ore is at the surface
+    // or within a pick's reach of it, which is why anybody dug here.
+    const double length = std::hypot(mine.cut_to_m[0] - mine.cut_from_m[0],
+                                     mine.cut_to_m[1] - mine.cut_from_m[1]);
+    require(length > 2.0, "the working is more than a scratch");
+    std::size_t exposed = 0;
+    for (std::size_t c = 0; c < made.grid.cells(); ++c) {
+        Run runs[TerrainField::kRunsMost];
+        const int count = ground.runsOf(c, runs);
+        for (int k = 0; k < count; ++k)
+            if ((runs[k].kind == RunKind::Ore || runs[k].kind == RunKind::OxidisedOre) &&
+                ground.height(c) - runs[k].top_m < 0.35) { ++exposed; break; }
+    }
+    std::cout << "    " << exposed << " columns show the ore within a hand's reach of the surface\n";
+    require(exposed > 20, "the cut left the ore where it can be got at");
+
+    // The spoil is in the valley, not invented and not lost: the heaps hold at
+    // least what the working took out.
+    double loose = 0.0;
+    const double area = made.grid.dx * made.grid.dx;
+    for (std::size_t c = 0; c < made.grid.cells(); ++c) loose += made.loose[c] * area;
+    require(mine.spoil_m3 > 1.0, "the working took something out");
+    require(loose >= mine.spoil_m3 * 0.999,
+            "the heaps hold what came out (loose " + std::to_string(loose) + " m^3, spoil " +
+            std::to_string(mine.spoil_m3) + ")");
+}
+
+// Rock comes out a chip at a time: a blow buys a volume (rock-work-v1), the
+// ground keeps the change, and a whole cell leaves only when it has been paid
+// for. Nothing is rounded in the ground's favour or the tool's.
+void rockComesOutAChipAtATime() {
+    TerrainField ground = flat(16, 16, 0.0, 0.0);      // bare rock at y = 0
+    const double dx = ground.grid().dx;
+    const double cell = dx * dx * dx;
+    const Volumes before = ground.volumes();
+    const auto c = ground.cellAt(1.0, 1.0);
+    require(c.has_value(), "the point is on the ground");
+    const double top = ground.rockTop(*c);
+
+    // Nine tenths of a cell, in ten bites: nothing leaves.
+    for (int k = 0; k < 10; ++k) {
+        const TerrainField::Chipped chipped = ground.chip(1.0, 1.0, top, 0.09 * cell);
+        require(chipped.edit.cells.empty(), "a cell left before it was paid for");
+        near(chipped.broken, 0.09 * (k + 1), 1e-9, "how far through the cell it is");
+    }
+    near(ground.volumes().total(), before.total(), 1e-12, "and the ground has lost nothing");
+    near(ground.rockTop(*c), top, 1e-12, "nor come down");
+
+    // The tenth of it that was owed: the cell comes out, and exactly one.
+    const TerrainField::Chipped paid = ground.chip(1.0, 1.0, top, 0.1 * cell);
+    require(!paid.edit.cells.empty(), "the cell did not come out when it was paid for");
+    near(paid.edit.moved.rock_m3, cell, 1e-9, "a cell of rock came out");
+    near(ground.rockTop(*c), top - dx, 1e-12, "the rock came down by one cell");
+    near(before.total() - ground.volumes().total(), cell, 1e-9, "the ground lost exactly that");
+    const Volumes residual = ground.residual();
+    for (const double v : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        require(std::abs(v) < 1e-9, "the ledger closes after a chip");
+    near(paid.broken, 0.0, 1e-9, "and the column starts again on the next cell");
+    std::cout << "    a 0.25 m cell of rock is " << cell << " m^3, and it came out on the blow "
+              << "that paid for it, not before\n";
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
@@ -528,8 +632,10 @@ int main() {
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"height follows the collider's split", heightAtFollowsTheColliderSplit},
         {"a column keeps its beds", aColumnKeepsItsBeds},
+        {"rock comes out a chip at a time", rockComesOutAChipAtATime},
         {"a valley is shaped by water and saved", aValleyIsShapedByWaterAndSaved},
         {"the valley has geology in it", theValleyHasGeologyInIt},
+        {"the valley was worked before we got here", theValleyWasWorkedBeforeWeGotHere},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

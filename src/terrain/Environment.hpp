@@ -37,6 +37,7 @@
 #include "water/WaterCoupling.hpp"
 
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -131,6 +132,23 @@ public:
                    double width_m, double depth_m, double carried_objects_kg = 0);
     EditEffect deposit(JoltWorld &world, double x, double z, double radius_m,
                        double sand_m3, double soil_m3);
+    // Rock broken out of a column between two heights: a working, which is a
+    // hole with rock over it, or an open cut where it reaches daylight
+    // (docs/earth-and-mining-plan.md). The chunk's three colliders -- its
+    // surface, its working's floor and its working's roof -- follow, and
+    // whatever they held up is woken.
+    EditEffect breakOut(JoltWorld &world, double x, double z, double from_m, double to_m);
+    // A blow's worth of rock, broken a little at a time: nothing leaves the
+    // ground until a whole cell has been paid for (TerrainField::chip). The
+    // effect is empty until then, and `broken` says how far through the cell
+    // the column has got.
+    struct Chipped {
+        EditEffect effect;
+        double broken{};    // how far through the cell the work has got
+        bool full{};        // the cell was paid for and cannot be carried
+    };
+    Chipped chip(JoltWorld &world, double x, double z, double at_height_m, double volume_m3,
+                 double carried_objects_kg = 0.0);
     // A cut out of bare rock; the host adds the block as a body.
     std::optional<CutBlock> cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                 double depth_m, std::string *why = nullptr);
@@ -170,9 +188,10 @@ public:
     // Transfer already excavated bulk material out of the carried account.
     // A host must durably accept the returned packet with the saved world in
     // one transaction. This does not turn sand into glass or consume an object.
-    [[nodiscard]] std::string withdrawCarried(double sand_m3, double soil_m3);
+    [[nodiscard]] std::string withdrawCarried(double sand_m3, double soil_m3, double rock_m3 = 0);
     // Host atomically debits stored lots with this return into carrying.
-    void returnCarried(double sand_m3, double soil_m3, double carried_objects_kg = 0);
+    void returnCarried(double sand_m3, double soil_m3, double rock_m3 = 0,
+                       double carried_objects_kg = 0);
     // What that weighs, and how much of it a person can carry. Carried ground
     // had no weight and no end: six presses of Dig here put 435 kg of sand and
     // soil on the person in the owner's room, who walked off with it. With a
@@ -269,6 +288,12 @@ private:
     // goes on over the same stride on its own clock.
     void stepNetwork(double dt_s);
     std::vector<float> chunkHeights(int chunk) const;
+    // The two extra colliders a chunk with a working needs, and whether it has
+    // one at all (docs/earth-and-mining-plan.md, stage 3).
+    [[nodiscard]] std::vector<float> workingFloor(int chunk) const;
+    [[nodiscard]] std::vector<float> workingRoof(int chunk, double hang_from_m) const;
+    [[nodiscard]] bool chunkHasWorkings(int chunk) const;
+    void syncWorkingPatches(JoltWorld &world, int chunk);
 
     Landscape landscape_;
     std::unique_ptr<TerrainField> terrain_;
@@ -277,6 +302,9 @@ private:
     std::vector<water::Reaction> reactions_;
     std::vector<water::BodyForce> forces_;
     std::vector<unsigned> patch_of_chunk_;
+    // Per chunk that has a working: its floor patch and its roof patch.
+    std::map<int, std::pair<unsigned, unsigned>> working_patches_;
+    double hang_from_{};
     std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
     Volumes carried_{};

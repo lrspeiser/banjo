@@ -155,13 +155,45 @@ GroundVerdict judgeGround(bool rock, double water_depth_m, double tool_hardness_
         out.why = text;
         return out;
     }
+    // Harder than the rock: it breaks it out, at what rock-work-v1 says a cubic
+    // metre of it costs.
     std::snprintf(text, sizeof text,
-                  "not supported yet: %s (%.0f MPa) is harder than the rock (%.0f MPa), but breaking "
-                  "rock out of the ground under a point has no law here",
-                  tool_material.c_str(), tool_hardness_pa / 1.0e6, rock_h / 1.0e6);
-    out.answer = GroundAnswer::NotSupported;
+                  "%s (%.0f MPa) is harder than the rock (%.0f MPa), so it breaks it out: "
+                  "%.0f MJ of work to the cubic metre (%s)",
+                  tool_material.c_str(), tool_hardness_pa / 1.0e6, rock_h / 1.0e6,
+                  specificEnergyJPerM3(rock_h) / 1.0e6, kRockWorkModel);
+    out.answer = GroundAnswer::Breakable;
     out.why = text;
     return out;
+}
+
+double specificEnergyJPerM3(double hardness_pa) {
+    return kCuttingEfficiency * std::max(0.0, hardness_pa);
+}
+
+double brokenVolumeM3(double hardness_pa, double work_j) {
+    const double e_s = specificEnergyJPerM3(hardness_pa);
+    if (!(e_s > 0.0) || !(work_j > 0.0)) return 0.0;
+    return work_j / e_s;
+}
+
+double groundHardnessPa(RunKind kind) {
+    switch (kind) {
+    case RunKind::Rock: return rockHardnessPa();
+    // Rotted by the weather: a tenth of the stone it was. Declared, in the
+    // range weathered rock is usually given against its fresh parent.
+    case RunKind::WeatheredRock: return 0.1 * rockHardnessPa();
+    case RunKind::Ore: return rockHardnessPa();
+    // The oxidised cap of a vein: the part a person can work, and the reason
+    // the old workings stop where they do.
+    case RunKind::OxidisedOre: return 0.05 * rockHardnessPa();
+    case RunKind::Clay: return 0.01 * rockHardnessPa();
+    case RunKind::Void: return 0.0;
+    case RunKind::Soil:
+    case RunKind::Sand:
+    case RunKind::LooseSoil: break;
+    }
+    return 0.0;   // ground a spade takes: not this model's business
 }
 
 GroundAtDepth groundAt(const TerrainField &field, std::size_t column, double depth_m) {

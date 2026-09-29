@@ -11,6 +11,14 @@ import workshop_articulation as articulation
 
 LOCK = threading.RLock()
 COMMON = {"session", "scene"}
+
+#: Ground accounts a bulk transfer can be made against: one that counts what has
+#: been taken out (v2 and after) and, to put any back, what has gone back (v3
+#: and after). v4 is the same account with the beds of rock under the surface
+#: added to it (docs/earth-and-mining-plan.md); only v1, which counted neither,
+#: is refused.
+ACCOUNTED = ("banjo.ground-state.v2", "banjo.ground-state.v3", "banjo.ground-state.v4")
+RETURNS = ("banjo.ground-state.v3", "banjo.ground-state.v4")
 COMMAND_FIELDS = {
     "state": set(), "configure": {"settings", "request_id"},
     "quote": {"candidate", "stock_kg"},
@@ -167,9 +175,9 @@ def transfer_ground(app,body,operation):
         if sum(quantities.values())<=0: raise ValueError("Choose a positive amount of carried ground")
         before=install._snapshot(live)
         ground=before.get("ground") or {}
-        if ground.get("schema") not in ("banjo.ground-state.v2","banjo.ground-state.v3"): raise ValueError("Native runtime needs accounted bulk transfers")
+        if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
         retrieving=operation=="retrieve_ground"
-        if retrieving and ground["schema"]!="banjo.ground-state.v3": raise ValueError("Native runtime needs accounted returns")
+        if retrieving and ground["schema"] not in RETURNS: raise ValueError("Native runtime needs accounted returns")
         model.validate_ground_stock(state,before)
         if retrieving:
             state,_=model.return_bulk(state,action)

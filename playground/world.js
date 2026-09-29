@@ -265,6 +265,195 @@ fill.position.set(0, 2, 8);
 scene.add(fill);
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
+const FILL_LIGHT = fill.intensity;
+
+// Underground it is dark (docs/machine-world.md, "Light underground").
+//
+// The three daylight lights are directional and the hill does not stop them: a
+// tunnel drawn from the inside was lit as brightly as the meadow above it, so an
+// electric lamp in it was decoration. So the daylight is kept in one place --
+// what the sun says it should be, in `daylight` -- and what reaches the eye is
+// that turned down by how much rock is over it: out by half a metre of rock,
+// nearly out by two. It is cheap, it is read from the same runs the walls are
+// drawn from, so it agrees with what you can see, and it leaves the place lit by
+// whatever somebody has hung there.
+//
+// It is the EYE's cover, not each thing's, so the meadow seen through the adit
+// mouth darkens with you. That is the price of doing this with the scene's own
+// lights rather than per fragment, and standing in a 1.75 m adit there is not
+// much of the meadow to see anyway.
+const COVER_DARK_M = 2.0;
+const daylight = { key: KEY_LIGHT, sky: SKY_LIGHT, rim: RIM_LIGHT, fill: FILL_LIGHT };
+let underCover = 1;
+function applyDaylight() {
+  key.intensity = daylight.key * underCover;
+  // A little residual sky, so a mine with no lamp in it is gloom and not a black
+  // screen: you can still find your way back out towards the daylight.
+  sky.intensity = daylight.sky * Math.max(0.05, underCover);
+  rim.intensity = daylight.rim * underCover;
+  fill.intensity = daylight.fill * underCover;
+}
+function daylightUnderCover(eye) {
+  const over = coverOver(eye.x, eye.y, eye.z);
+  underCover = Math.max(0.04, 1 - Math.min(1, over / COVER_DARK_M));
+  applyDaylight();
+  return underCover;
+}
+
+// Every lamp the engine reports, as a light of its own (LiveLamp): a point light
+// where the lamp is, as bright as the lumens it is giving, and a small glowing
+// bead so you can see the fitting itself. A lamp that is off, or whose store is
+// flat, has the bead and no light.
+//
+// The lights are a POOL of a fixed size, not one per lamp. Three.js compiles the
+// number of lights into every material, so a light appearing or going out
+// rebuilds every shader in the scene -- a lamp flickering as its battery runs
+// down would have stuttered the whole room. Eight lights sit in the scene from
+// the start and are handed to the eight lit lamps nearest the eye, so the count
+// never changes; the rest of a big installation is beads, which cost nothing.
+const LAMPS_LIT_MOST = 8;
+const lights = new THREE.Group();
+lights.name = "lamps";
+scene.add(lights);
+const lampPool = [];
+for (let i = 0; i < LAMPS_LIT_MOST; ++i) {
+  const light = new THREE.PointLight(0xfff1d0, 0, 1, 2);
+  lights.add(light);
+  lampPool.push(light);
+}
+const lampParts = new Map();
+const LAMP_BEAD = new THREE.MeshBasicMaterial({ color: 0xfff0c8 });
+const LAMP_DARK = new THREE.MeshBasicMaterial({ color: 0x4a4a44 });
+// A drawn line is one pixel wide whatever the distance, which in a dark heading
+// is all but invisible. The run is a tube of 8 mm instead -- about what twin
+// 4 mm2 in its sheath measures -- so it reads as a cable somebody hung.
+const CABLE_LOOK = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.85, metalness: 0.0 });
+const CABLE_R = 0.008;
+function cableTube(run) {
+  const points = run.map((at) => new THREE.Vector3(at[0], at[1], at[2]));
+  const along = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.0);
+  return new THREE.TubeGeometry(along, Math.max(8, points.length * 6), CABLE_R, 5, false);
+}
+
+// The fittings and the runs of cable: with every step that carries machines,
+// because a lamp on a machine moves with it.
+function dressLights(block) {
+  const lamps = (block && block.lamps) || [];
+  const cables = (block && block.cables) || [];
+  const seen = new Set();
+  for (const lamp of lamps) {
+    if (!lamp || !Array.isArray(lamp.at_m)) continue;
+    const key_of = `lamp:${lamp.id}`;
+    seen.add(key_of);
+    let part = lampParts.get(key_of);
+    if (!part) {
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), LAMP_DARK);
+      lights.add(bead);
+      part = { bead };
+      lampParts.set(key_of, part);
+    }
+    part.bead.position.set(lamp.at_m[0], lamp.at_m[1], lamp.at_m[2]);
+    part.bead.material = lamp.lit ? LAMP_BEAD : LAMP_DARK;
+  }
+  for (const cable of cables) {
+    if (!cable || !Array.isArray(cable.run_m) || cable.run_m.length < 2) continue;
+    const key_of = `cable:${cable.id}`;
+    seen.add(key_of);
+    let part = lampParts.get(key_of);
+    if (!part) {
+      const line = new THREE.Mesh(cableTube(cable.run_m), CABLE_LOOK);
+      line.castShadow = false;
+      lights.add(line);
+      lampParts.set(key_of, { line, points: cable.run_m.length });
+    } else if (part.points !== cable.run_m.length) {
+      part.line.geometry.dispose();
+      part.line.geometry = cableTube(cable.run_m);
+      part.points = cable.run_m.length;
+    }
+  }
+  for (const [key_of, part] of lampParts) {
+    if (seen.has(key_of)) continue;
+    for (const thing of [part.bead, part.line]) {
+      if (!thing) continue;
+      lights.remove(thing);
+      if (thing.geometry) thing.geometry.dispose();
+    }
+    lampParts.delete(key_of);
+  }
+  aimLamps();
+}
+
+// The powered breaker in your hand, if you are holding one (LiveBreaker): the
+// room's breaker whose part is the thing the hand has. A breaker is a compound,
+// so its chisel's body may be a part of the group the hand holds.
+function breakerInHand() {
+  const held = world.held && world.held.name;
+  if (!held) return null;
+  const mine = (world.machines && world.machines.breakers) || [];
+  return mine.find((b) => b && (b.body === held || sameThing(b.body, held))) || null;
+}
+
+// Two names for one thing: a product installed as exact bodies is a group whose
+// parts share a root name, so "breaker: chisel" and "breaker" are the same
+// thing to a hand (docs, "Same name, several bodies").
+function sameThing(a, b) {
+  if (!a || !b) return false;
+  const root = (n) => String(n).split(":")[0].trim();
+  return root(a) === root(b);
+}
+
+// The lamp and the store on a thing, for wiring: which of the room's fittings
+// and batteries belong to the thing you are looking at.
+function lampOn(name) {
+  const lamps = (world.machines && world.machines.lamps) || [];
+  return lamps.find((l) => l && (l.body === name || sameThing(l.body, name))) || null;
+}
+function storeOn(name) {
+  const stores = (world.machines && world.machines.stores) || [];
+  return stores.find((s) => s && (s.body === name || sameThing(s.body, name))) || null;
+}
+
+// A run of cable being paid out: where it started, and where you have walked
+// since. The run follows your feet, so going the long way round really does
+// cost you volts (docs/machine-world.md, "Light underground").
+const CABLE_STEP_M = 0.6;
+world.laying = null;
+function layCable(from, store) {
+  world.laying = { store, points: [from.slice()] };
+}
+function payOutCable() {
+  if (!world.laying) return;
+  const at = [camera.position.x, standingOn(camera.position.x, camera.position.z, camera.position.y) + 0.06,
+              camera.position.z];
+  const last = world.laying.points[world.laying.points.length - 1];
+  if (Math.hypot(at[0] - last[0], at[1] - last[1], at[2] - last[2]) < CABLE_STEP_M) return;
+  if (world.laying.points.length > 250) return;    // the engine takes 256 points
+  world.laying.points.push(at);
+}
+
+// Which lit lamps get one of the pool's lights: the nearest to the eye. Every
+// frame, because the eye moves between steps -- walking past a string of lamps
+// should not wait for the next reply to light the one you have reached.
+function aimLamps() {
+  const lamps = (world.machines && world.machines.lamps) || [];
+  const eye = camera.position;
+  const near = lamps.filter((l) => l && l.lit && Array.isArray(l.at_m) && Number(l.lumens) > 0)
+    .map((l) => ({ l, away: Math.hypot(l.at_m[0] - eye.x, l.at_m[1] - eye.y, l.at_m[2] - eye.z) }))
+    .sort((a, b) => a.away - b.away).slice(0, LAMPS_LIT_MOST);
+  for (let i = 0; i < lampPool.length; ++i) {
+    const light = lampPool[i];
+    const lamp = near[i] ? near[i].l : null;
+    if (!lamp) { light.intensity = 0; continue; }
+    light.position.set(lamp.at_m[0], lamp.at_m[1], lamp.at_m[2]);
+    // Lumens are not three.js intensity and no number here pretends to be
+    // photometric. A 20 W LED at 120 lm/W is 2400 lm, which reads right in a
+    // 1.75 m heading at about 2.4, and reaching about 6 m as the root of the
+    // lumens -- far enough to see the face, not the whole mine.
+    const lm = Math.max(0, Number(lamp.lumens) || 0);
+    light.intensity = lm / 1000;
+    light.distance = Math.max(1.5, Math.sqrt(lm) / 8);
+  }
+}
 
 // The sun's shadow, and why it follows the person.
 //
@@ -436,19 +625,21 @@ function lightFromSun(sun) {
     const share = sun.zenith_irradiance_w_m2 > 0
       ? Math.min(1, Math.max(0, sun.irradiance_w_m2 / sun.zenith_irradiance_w_m2)) : 0;
     const dusk = Math.min(1, Math.max(0, (sun.elevation_deg + 6) / 12));
-    key.intensity = sun.toward[1] > 0 ? KEY_LIGHT * share : 0;
+    daylight.key = sun.toward[1] > 0 ? KEY_LIGHT * share : 0;
     key.color.setRGB(1, 0.62 + 0.33 * share, 0.45 + 0.42 * share);
-    sky.intensity = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
-    rim.intensity = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    daylight.sky = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
+    daylight.rim = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    applyDaylight();
     skyTint.copy(LOW_SKY).lerp(DAY_SKY, Math.min(1, Math.max(0, sun.elevation_deg / 20)));
     scene.background.copy(NIGHT_SKY).lerp(skyTint, dusk);
     scene.fog.color.copy(NIGHT_FOG).lerp(skyTint, dusk);
     skyTinted = true;
   } else {
-    key.intensity = KEY_LIGHT;
+    daylight.key = KEY_LIGHT;
     key.color.setHex(0xfff2dd);
-    sky.intensity = SKY_LIGHT;
-    rim.intensity = RIM_LIGHT;
+    daylight.sky = SKY_LIGHT;
+    daylight.rim = RIM_LIGHT;
+    applyDaylight();
     if (skyTinted) {
       scene.background.copy(NIGHT_SKY);
       scene.fog.color.copy(NIGHT_FOG);
@@ -713,6 +904,47 @@ function growRuns(needed) {
   ground.runs = runs;
 }
 
+// What is underfoot at a point for somebody whose eye is at `y`: the top of the
+// highest SOLID run at or below them. On open ground that is the ground. Inside
+// a working it is the working's floor -- the hill over their head is not
+// something they are standing on, and asking the height field alone (which only
+// knows the hill) is what used to shove anyone who went in back out on top of it.
+const RUN_VOID = 8;
+function standingOn(x, z, y) {
+  const g = ground.grid, runs = ground.runs;
+  if (!g || !runs) return groundAt(x, z);
+  const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return groundAt(x, z);
+  const c = j * g.nx + i;
+  for (let k = runs.count[c] - 1; k >= 0; --k) {
+    const at = c * runs.stride + k;
+    if (runs.kind[at] === RUN_VOID) continue;
+    if (runs.top[at] <= y + 0.05) return runs.top[at];
+  }
+  return groundAt(x, z);
+}
+
+// How much rock is over a point: 0 in the open, and the thickness of every
+// solid run above it where it is inside a working. This is what makes a mine
+// dark -- see daylightUnderCover -- and it is read from the same runs the walls
+// are drawn from, so it agrees with what you can see.
+function coverOver(x, y, z) {
+  const g = ground.grid, runs = ground.runs;
+  if (!g || !runs) return 0;
+  const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return 0;
+  const c = j * g.nx + i;
+  let over = 0;
+  for (let k = 0; k < runs.count[c]; ++k) {
+    const at = c * runs.stride + k;
+    const below = k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor;
+    if (runs.top[at] <= y) continue;                       // entirely under the point
+    if (runs.kind[at] === RUN_VOID) continue;              // a hole is not cover
+    over += runs.top[at] - Math.max(below, y);
+  }
+  return over;
+}
+
 // The strata a step cuts, drawn on the step the collider already has.
 //
 // The ground is ONE surface. Where a dig leaves half a metre of drop between two
@@ -726,7 +958,12 @@ function growRuns(needed) {
 // the ground mesh, and these are drawn with a polygon offset so that where the
 // two lie together the band is what you see. Both sides are drawn, because a
 // step is looked at from whichever side you are standing on.
-const FACE_STEP_M = 0.12;      // a drop worth drawing: 26 degrees across a 0.25 m cell
+// A drop worth drawing is one the ground could not have come to rest at: at
+// 0.25 m columns this is 55 degrees, well past the angle any soil or sand stands
+// at (30 to 32), so what shows is a cut, a pit's wall or bare rock -- and not
+// every gentle step down a hillside, which at a lower threshold covered the
+// whole valley in dark chevrons.
+const FACE_STEP_M = 0.35;
 const FACE_BAND_M = 0.01;      // thinner than this is not a band anyone can see
 
 function buildFaces() {
@@ -774,11 +1011,53 @@ function buildFaces() {
     // Above the last run there is nothing but the air the ground ends in; a step
     // that reaches higher than the taller column's own top cannot happen.
   };
+  // A working: the hole itself, drawn from the inside. Its floor, the roof over
+  // it, and a wall wherever the rock beside it is solid -- which is every side
+  // the working does not carry on through. The hill above is drawn as it always
+  // was: a person outside sees a hillside, and a person inside sees a tunnel.
+  const working = (c) => {
+    const runs = ground.runs;
+    for (let k = 0; k < runs.count[c]; ++k)
+      if (runs.kind[c * runs.stride + k] === RUN_VOID)
+        return { floor: k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor,
+                 roof: runs.top[c * runs.stride + k],
+                 under: k > 0 ? runs.kind[c * runs.stride + k - 1] : 0,
+                 over: k + 1 < runs.count[c] ? runs.kind[c * runs.stride + k + 1] : 0 };
+    return null;
+  };
+  const flat = (x0, z0, x1, z1, y, colour) => {
+    points.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1);
+    for (let v = 0; v < 6; ++v) colours.push(colour.r, colour.g, colour.b);
+  };
   for (let j = 0; j < g.nz; ++j)
     for (let i = 0; i < g.nx; ++i) {
       const c = j * g.nx + i;
       if (i + 1 < g.nx) step(c, c + 1, false);
       if (j + 1 < g.nz) step(c, c + g.nx, true);
+      if (!ground.runs) continue;
+      const w = working(c);
+      if (!w) continue;
+      const seen = groundSeen(c);
+      const paint = (kind) => seen ? (GROUND_COLOURS[kind] || GROUND_COLOURS[0]) : GROUND_UNSEEN;
+      const x = g.x0 + i * g.dx - half, z = g.z0 + j * g.dx - half;
+      flat(x, z, x + g.dx, z + g.dx, w.floor, paint(w.under));
+      flat(x, z, x + g.dx, z + g.dx, w.roof, paint(w.over));
+      // A wall on each side the working stops at, in what it is cut from.
+      const sides = [[1, 0, i + 1 < g.nx], [-1, 0, i > 0], [0, 1, j + 1 < g.nz], [0, -1, j > 0]];
+      for (const [di, dj, inside] of sides) {
+        const n = inside ? working(c + di + dj * g.nx) : null;
+        const lo = n ? Math.min(w.roof, Math.max(w.floor, n.floor)) : w.floor;
+        const hi = n ? Math.max(w.floor, Math.min(w.roof, n.roof)) : w.roof;
+        // Wall the part of this side the neighbour's hole does not open.
+        if (!n || lo > w.floor + FACE_BAND_M)
+          band(x + (di > 0 ? g.dx : 0), z + (dj > 0 ? g.dx : 0),
+               x + (di !== 0 ? (di > 0 ? g.dx : 0) : g.dx), z + (dj !== 0 ? (dj > 0 ? g.dx : 0) : g.dx),
+               w.floor, n ? lo : w.roof, paint(w.under));
+        if (n && hi < w.roof - FACE_BAND_M)
+          band(x + (di > 0 ? g.dx : 0), z + (dj > 0 ? g.dx : 0),
+               x + (di !== 0 ? (di > 0 ? g.dx : 0) : g.dx), z + (dj !== 0 ? (dj > 0 ? g.dx : 0) : g.dx),
+               hi, w.roof, paint(w.over));
+      }
     }
   if (!points.length) return;
   const geometry = new THREE.BufferGeometry();
@@ -1895,6 +2174,7 @@ function drawRopes() {
 function followMachines(machines) {
   world.machines = machines || null;
   drawMachines(world.machines);
+  dressLights(world.machines);
   showMachinePanel();
   // THE ARCS AND THE BEADS ARE OFF (the owner, 2026-09-26: "i don't like the
   // green and yellow arcs on the screen ... what are the blue dots on lines
@@ -3932,6 +4212,19 @@ function detailsModel() {
       rows.push([[k("stow")], entry && entry.shape === "hull" ? "sweep it up into what you carry"
                                                              : "put it in your bag"]);
     if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
+    const breaker = breakerInHand();
+    if (breaker) {
+      rows.push([[k("breaker")], breaker.on ? "let the trigger go" : "hold the trigger against the face"]);
+      const battery = ((world.machines && world.machines.stores) || [])
+        .find((s) => s.id === breaker.store);
+      const left = battery ? ` · ${(battery.charge_j / 1000).toFixed(0)} kJ left` : "";
+      model.note = [breaker.on
+        ? (breaker.working
+            ? `breaking: ${Math.round(breaker.drawn_w)} W into the rock, ` +
+              `${Math.round(100 * breaker.broken_share)}% through this cell`
+            : `running, doing nothing: ${breaker.why}`)
+        : `${Math.round(breaker.watts)} W against rock${left}`, model.note].filter(Boolean).join(" · ");
+    }
     // Placing: what the copy is doing is the only help -- not a throw's preview,
     // nor the wheel as it is when only holding.
     const help = world.placing ? { rows: [], note: "", meter: null } : handHelp(world.use);
@@ -3952,6 +4245,25 @@ function detailsModel() {
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
       rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"
                                                      : "put it in your bag"]);
+    // Wiring: a run starts at a battery and is made off at a fitting. What you
+    // are looking at decides which end this is.
+    const store = storeOn(name), fitting = lampOn(name);
+    if (world.laying && fitting && !fitting.cable) {
+      const paid = runLength(world.laying.points.concat([[camera.position.x, camera.position.y, camera.position.z]]));
+      rows.push([[k("cable")], `make the cable off here — ${paid.toFixed(1)} m paid out`]);
+    } else if (world.laying && store) {
+      rows.push([[k("cable")], "drop the drum: this run goes nowhere"]);
+    } else if (!world.laying && store) {
+      rows.push([[k("cable")], "start a run of cable here"]);
+    } else if (!world.laying && fitting && !fitting.cable) {
+      model.note = ["it is not wired to anything: start a run at a battery and walk it here",
+                    model.note].filter(Boolean).join(" · ");
+    }
+    if (fitting) {
+      model.facts = [model.facts, fitting.lit
+        ? `lit: ${Math.round(fitting.drawn_w)} W, ${Math.round(fitting.lumens)} lumens`
+        : `dark — ${fitting.why || "not wired"}`].filter(Boolean).join(" · ");
+    }
     rows.push([[k("heat")], "heat it"]);
   } else if (world.groundAim) {
     const underfoot = groundMadeOf(world.groundAim);
@@ -4228,7 +4540,9 @@ function carryGround(carried) {
   world.carriedGround = carried || null;
   // What a person can carry is the room's to say, and a room with no ground says nothing.
   world.carryLimitKg = carried && Number.isFinite(Number(carried.limit_kg)) ? Number(carried.limit_kg) : null;
-  for (const what of ["sand", "soil"]) {
+  // Rock too, since a face can be worked by hand: a 0.25 m cell of it is 37 kg,
+  // so two of them is most of what a person can carry.
+  for (const what of ["sand", "soil", "rock"]) {
     const kg = carried ? Number(carried[`${what}_kg`]) || 0 : 0;
     if (kg > 0.0005) world.stock.set(what, { kg, pieces: 0 });
     else world.stock.delete(what);
@@ -4238,8 +4552,8 @@ function carryGround(carried) {
 
 function carriedSaid() {
   const c = world.carriedGround || {};
-  const parts = ["sand", "soil"].filter((what) => Number(c[`${what}_kg`]) > 0.0005)
-    .map((what) => `${grams(Number(c[`${what}_kg`]))} of ${what}`);
+  const parts = ["sand", "soil", "rock"].filter((what) => Number(c[`${what}_kg`]) > 0.0005)
+    .map((what) => `${grams(Number(c[`${what}_kg`]))} of ${what === "rock" ? "broken rock" : what}`);
   return parts.length ? parts.join(" and ") : "no sand or soil";
 }
 
@@ -4507,6 +4821,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyL") markLag();
   // The room's buttons from the keyboard (interaction.js BINDINGS), so what the
   // side view offers, it offers with the key that does it.
+  if (isKey("breaker", e.code)) { e.preventDefault(); pullTheTrigger(); }
+  if (isKey("cable", e.code)) { e.preventDefault(); workTheCable(); }
   if (isKey("dig", e.code)) $("dig-it").click();
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
@@ -4682,6 +4998,7 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
@@ -4697,6 +5014,8 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 canvas.addEventListener("pointermove", (e) => {
   cursor = cursorAt(e);
+  if (cursor) cursor.touch = e.pointerType !== "mouse";
+  offerStick(e);
   markAt(cursor);
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -4735,6 +5054,9 @@ canvas.addEventListener("pointerup", (e) => {
   }
   const was = drag;
   drag = null;
+  // A finger that has lifted is nowhere, so nothing stays aimed at where it
+  // last was -- and the crosshair goes back to the middle.
+  if (e.pointerType !== "mouse") { cursor = null; markAt(null); }
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
   if (was && was.moved) return;          // that was a look, not a click
   // A tool is never dropped by a click -- E puts it down. A second click with
@@ -4796,6 +5118,10 @@ function lookPush(v) {
 function lookFromCursor(dt) {
   // Dragging already turns the view, and a wind-up is aimed by hand.
   if (!cursor || drag) return;
+  // And a finger is not a cursor. It has no hover: the last place it touched
+  // stays put once it lifts, so an edge push would turn the room for ever.
+  // On a touch screen looking around IS the drag, which already works.
+  if (cursor.touch) return;
   const box = canvas.getBoundingClientRect();
   if (!box.width || !box.height) return;
   // The side panel sits ON the canvas, so the canvas's own right edge is
@@ -4882,8 +5208,92 @@ function inTheWater() {
            head_under: camera.position.y < wet.level };
 }
 
+// A THUMBSTICK, for a screen with no keyboard. How far it is pushed, -1 to 1
+// each way, and whether a finger is on it. Fed into walk() exactly where W, A,
+// S and D are read, so everything downstream -- load, water, the ground under
+// you -- is the same walk it always was.
+const stick = { x: 0, y: 0, hard: 0, on: false };
+const STICK_REACH = 40;   // pixels from the middle that count as fully pushed
+// A shove PAST the pad is a run. Not a full push, which is just how a thumb
+// says "forward" -- measured at 0.92 of the rim it ran everywhere and never
+// walked. There is no Shift on a phone, so the extra has to be in the gesture.
+const STICK_RUN = 1.6;
+
+function installStick() {
+  const pad = $("stick");
+  if (!pad) return;
+  const thumb = pad.querySelector("i");
+  let holding = null;
+  const show = (dx, dy) => {
+    thumb.style.setProperty("--dx", `${dx}px`);
+    thumb.style.setProperty("--dy", `${dy}px`);
+  };
+  const move = (e) => {
+    const box = pad.getBoundingClientRect();
+    let dx = e.clientX - (box.left + box.width / 2);
+    let dy = e.clientY - (box.top + box.height / 2);
+    const out = Math.hypot(dx, dy);
+    // Held past the rim, the thumb stays on the rim and the push stays full:
+    // a thumb slides off a small pad constantly and should not cut the walk.
+    stick.hard = out / STICK_REACH;
+    if (out > STICK_REACH) { dx *= STICK_REACH / out; dy *= STICK_REACH / out; }
+    show(dx, dy);
+    stick.x = dx / STICK_REACH;
+    stick.y = dy / STICK_REACH;
+    stick.on = true;
+  };
+  const let_go = () => {
+    holding = null; stick.x = 0; stick.y = 0; stick.hard = 0; stick.on = false;
+    pad.dataset.held = "no"; show(0, 0);
+  };
+  pad.addEventListener("pointerdown", (e) => {
+    holding = e.pointerId; pad.dataset.held = "yes";
+    try { pad.setPointerCapture(e.pointerId); } catch { /* works without it */ }
+    move(e); e.preventDefault();
+  });
+  pad.addEventListener("pointermove", (e) => { if (holding === e.pointerId) move(e); });
+  for (const end of ["pointerup", "pointercancel", "pointerleave"]) {
+    pad.addEventListener(end, (e) => { if (holding === e.pointerId) let_go(); });
+  }
+}
+
+// The stick is for fingers, so it appears the first time one arrives and not
+// before: a mouse never sees it, and nobody has to choose.
+function offerStick(e) {
+  const pad = $("stick");
+  if (!pad || !pad.hidden || e.pointerType === "mouse") return;
+  pad.hidden = false;
+  pad.dataset.held = "no";
+}
+
+// FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
+// panel starts folded on one and is remembered either way.
+function foldPanel(away) {
+  document.body.classList.toggle("panel-away", away);
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.setAttribute("aria-expanded", String(!away));
+  if (show) show.hidden = !away;
+  try { localStorage.setItem("banjo.panel", away ? "away" : "out"); } catch { /* private */ }
+}
+
+function installPanelFold() {
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.addEventListener("click", () => foldPanel(true));
+  if (show) show.addEventListener("click", () => foldPanel(false));
+  let kept = null;
+  try { kept = localStorage.getItem("banjo.panel"); } catch { /* private */ }
+  foldPanel(kept ? kept === "away" : window.innerWidth <= 760);
+}
+
+installStick();
+installPanelFold();
+
 function walk(dt) {
-  const running = (keys.has("ShiftLeft") || keys.has("ShiftRight")) && loadFraction() < 0.5;
+  // How far the stick is pushed, which is also how fast: a gentle push is a
+  // gentle walk. Keys stay what they were -- one key or two, always full pace.
+  const pushed = stick.on ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
+  const running = ((keys.has("ShiftLeft") || keys.has("ShiftRight")) || stick.hard > STICK_RUN)
+    && loadFraction() < 0.5;
   const water = inTheWater();
   world.inWater = water;
   document.body.classList.toggle("head-under-water", !!(water && water.head_under));
@@ -4895,7 +5305,16 @@ function walk(dt) {
   if (keys.has("KeyS")) move.sub(forward);
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
-  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+  // Up the screen is away from you, which is what a thumb means by it.
+  if (stick.on) { move.addScaledVector(forward, -stick.y); move.addScaledVector(right, stick.x); }
+  if (move.lengthSq() > 0) {
+    // The keys are all or nothing and the stick is not, so the pace is how far
+    // the stick is pushed. A key held is always a full walk -- and it has to be
+    // a WALKING key: Shift is in `keys` too, and counting it made a feather
+    // touch on the stick run.
+    const keyed = keys.has("KeyW") || keys.has("KeyS") || keys.has("KeyA") || keys.has("KeyD");
+    move.normalize().multiplyScalar(speed * (keyed ? 1 : Math.min(1, pushed || 1)));
+  }
   // Up, and down with Shift held (interaction.js BINDINGS). E used to be up and
   // Q down: E is the hand's and Q the bag's now.
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
@@ -4905,7 +5324,11 @@ function walk(dt) {
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
-  const under = ground.heights ? groundAt(camera.position.x, camera.position.z) : 0;
+  // What they are standing on, which inside a working is its floor and not the
+  // hill over it.
+  const under = ground.heights
+    ? standingOn(camera.position.x, camera.position.z, camera.position.y - BODY_BELOW_EYE_M + 0.2)
+    : 0;
   camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
   camera.position.x = clamp(camera.position.x, -28, 28);
   camera.position.z = clamp(camera.position.z, -28, 28);
@@ -7343,6 +7766,7 @@ function frame() {
   lookFromKeys(dt);
   lookFromCursor(dt);
   walk(dt);
+  payOutCable();
   turnFromKeys(dt);
   updateGuides();
   updatePlacing(now);
@@ -7352,6 +7776,10 @@ function frame() {
   stepFoam(dt);
   workbench.advance(now);
   followSun();
+  // How dark it is where the eye is: under a hill, the daylight is not there,
+  // and the lamps nearest the eye are the ones that light it.
+  daylightUnderCover(camera.position);
+  aimLamps();
   skyEnvironment();
   if (ground.facesStale) buildFaces();
   render();
@@ -8050,6 +8478,67 @@ async function digAt(x, z, width = 0.8, depth = 0.4) {
   if (answer.water) drawWater(answer.water);
   return answer;
 }
+// The breaker's trigger. The engine decides whether anything happens: a chisel
+// in the air breaks nothing, and it says so.
+async function pullTheTrigger() {
+  const breaker = breakerInHand();
+  if (!breaker) { lastAction("Nothing in your hand breaks rock.", "refused"); return; }
+  const answer = await act("breaker_switch", { breaker: breaker.id, on: !breaker.on });
+  const now = (answer && answer.working) || null;
+  if (now) {
+    for (const b of (world.machines && world.machines.breakers) || [])
+      if (b.id === now.id) Object.assign(b, now);
+    lastAction(now.on ? `The breaker is running: ${Math.round(now.watts)} W.` : "You let the trigger go.");
+  }
+  showDetails();
+}
+
+function runLength(points) {
+  let out = 0;
+  for (let i = 1; i < points.length; ++i)
+    out += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1],
+                      points[i][2] - points[i - 1][2]);
+  return out;
+}
+
+// Stringing a run: start it at a battery, walk it where you want it, make it off
+// at a fitting. The run is where YOU walked, so the cable is as long as the way
+// you took and the lamp is dimmer for every metre of it.
+async function workTheCable() {
+  const name = world.aim && world.aim.name;
+  const store = name ? storeOn(name) : null;
+  const fitting = name ? lampOn(name) : null;
+  if (!world.laying) {
+    if (!store) { lastAction("Start a run of cable at a battery.", "refused"); return; }
+    const entry = world.bodies.get(name);
+    const at = entry ? entry.mesh.position : camera.position;
+    layCable([at.x, at.y, at.z], store.id);
+    lastAction(`A run of cable started at ${titled(name)}. Walk it to the fitting.`);
+    showDetails();
+    return;
+  }
+  if (!fitting) {
+    world.laying = null;
+    lastAction("You put the drum down. Nothing was run.", "refused");
+    showDetails();
+    return;
+  }
+  const entry = world.bodies.get(name);
+  const end = entry ? entry.mesh.position : camera.position;
+  const points = world.laying.points.concat([[end.x, end.y, end.z]]);
+  const answer = await act("cable", { store: world.laying.store, run_m: points, area_mm2: 4.0 });
+  const run = answer && answer.ran;
+  if (!run) { lastAction("The run would not go in.", "refused"); return; }
+  const wired = await act("lamp_wire", { lamp: fitting.id, cable: run.id });
+  world.laying = null;
+  const lit = wired && wired.lit;
+  // What it will draw is not known until the next step settles the run, so the
+  // line says what was RUN, and the fitting's own line says what it is giving.
+  lastAction(`${run.length_m.toFixed(1)} m of cable from the battery to ${titled(name)}: `
+             + `${run.resistance_ohm.toFixed(3)} ohm.`);
+  showDetails();
+}
+
 $("dig-it").addEventListener("click", async () => {
   if (!world.session) return;
   if (!ground.grid) {
@@ -8356,6 +8845,10 @@ window.banjoRoom = {
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
   aim, pickUp, dropIt, putDown, letFly, intend,
+  // Mining: the breaker's trigger and the cable drum, which the M and P keys
+  // are bound to (tests/lamp_shots.py drives these, not the engine behind the
+  // page's back, so what a check photographs is what a person does).
+  pullTheTrigger, workTheCable, breakerInHand,
   // Where the hand hauls what it holds on a joint, and what it moves along.
   haulTarget: () => world.held && haulTarget(),
   haulGuide: () => world.held && world.held.guide && ({

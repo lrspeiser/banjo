@@ -116,10 +116,13 @@ switching regions between coarse and detailed simulation as you walk.
 | The ground kept across reloads and restarts | World | automatic |
 | Seeing what the ground is made of, all the way down | World | dig a pit and look at its wall; the panel says the column in words |
 | A vein, a clay bed and weathered rock in the valley's own geology | World | walk to the knoll: the rust stain on its bare rock is the vein at daylight |
-| Rock as a stack of beds, and 30 m of earth under the lowest of it | Code only | `tests/deep_earth_tests.py`; nothing in the page can reach rock yet |
+| An abandoned working on the vein: an open cut, a shaft, an adit mouth and the spoil | World | it is where the vein is; the terrain block says where each piece is |
+| Rock as a stack of beds, and 30 m of earth under the lowest of it | Code only | `tests/deep_earth_tests.py` |
+| Breaking rock with a point harder than it (rock-work-v1) | World | take up an iron pick and swing it at bare rock; the panel says how far through the cell you are |
+| A working cut back cell by cell, and the rubble carried (37.5 kg a cell) | Code only | `LiveWorld::workRock`; `broken rock is carried and weighs` in `tests/valley_live_tests.cpp` |
 
-**Not built:** breaking rock (a pick stops on rock, or says the case is not
-supported), wet soil, tool wear, and landslides that rotate rather than slump.
+**Not built:** wet soil, tool wear, landslides that rotate rather than slump,
+and ore counted as anything but rock when it is carried.
 
 ## Joints, machines and energy
 
@@ -141,6 +144,9 @@ supported), wet soil, tool wear, and landslides that rotate rather than slump.
 | A machine that stops before it turns, and turns from rest | World | automatic when one is told to go to a place or face one |
 | Solar panels that charge a battery from the room's sun | Test room | `/world?scene=tests-solar` |
 | A sun that crosses the sky and sets | Test room | `/world?scene=tests-day` |
+| Electric light underground: cables from a store, lamps on them | World, Test room | `/world?scene=tests-light`; **P** starts a run at a battery and makes it off at a fitting |
+| A powered breaker that drives a heading out of rock | World, Test room | `/world?scene=tests-light`: take up the breaker and hold **M** against the face |
+| A lamp, a breaker and a solar array made on the bench | Workshop | the `mine-lamp`, `breaker` and `solar-array` templates |
 | Raw materials into finished goods | Test room | `/world?scene=tests-mine`: ore, copper, wire, and the Workshop's rack |
 | Routines, conditions, watches and spoken orders | World, Page | a machine's panel, its chat, and the bench |
 | Electrical and thermal circuits | Code only | the MCP's standalone world, the C API, `examples/authoring/circuit_drive.py`; the room refuses them |

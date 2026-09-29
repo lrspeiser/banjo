@@ -192,6 +192,18 @@ public:
     void replaceGroundPatch(unsigned patch, const std::vector<float> &heights,
                             double max_error_m = 0.002);
     [[nodiscard]] std::size_t groundPatchCount() const;
+    // A patch of ROOF: the underside of the rock over a working, which a body
+    // inside it meets from below. The same height field, on a body turned half
+    // a turn about X so its surface faces down -- so the rows run backwards and
+    // a sample's height is measured DOWN from `hang_from_m`. A non-finite
+    // height is a hole, which is most of any roof patch, because a working is
+    // small and a chunk is not. Measured before it was built:
+    // docs/evidence/earth-spikes/roof_spike.cpp.
+    unsigned addRoofPatch(const std::vector<float> &down_from, unsigned count, double spacing_m,
+                          double origin_x_m, double origin_z_m, double hang_from_m,
+                          const MaterialDefinition &material, double max_error_m = 0.002);
+    void replaceRoofPatch(unsigned patch, const std::vector<float> &down_from,
+                          double max_error_m = 0.002);
     // Put back into the step every body overlapping a box: what a changed
     // patch of ground was holding up has to find out whether it still is.
     // Returns how many were asleep and are now awake.

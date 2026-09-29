@@ -534,6 +534,44 @@ saved world keeps its programs.
 - A program can say `rest_below` and `rest_until`: the shares of full at which
   it stops to rest and at which it goes on.
 
+**Cables and lamps** ([Light underground](#light-underground)) go in `machines`
+too, and a lamp names the run that feeds it:
+
+```json
+"machines": {"cables": [{"name": "the mine feeder", "store": "the farm battery",
+                         "run_mm": [[2000, 9500, 0], [2000, 8200, -4000]], "area_mm2": 4}],
+             "lamps": [{"name": "the heading lamp", "cable": "the mine feeder",
+                        "at_mm": [2000, 8300, -3800], "watts": 20, "on": true}], ...}
+```
+
+- A cable names its store and the points it is pinned at, at least two and at
+  most 256. Its `area_mm2` is above 0 and up to 1000 (2.5 if it says nothing),
+  and `resistivity_ohm_m` is copper's 1.68e-8 unless it says otherwise.
+- A lamp names its `cable`, or a `store` to be wired straight to, or NEITHER: a
+  lamp with neither is a fitting nobody has wired yet, which is what comes out
+  of the Workshop. `watts` is above 0 and up to 100 kW, `efficacy_lm_w` above 0
+  and up to 1000 (120 if it says nothing), and `on` is false unless it says so.
+  With a `body` it goes on that part and moves with it; with none it is pinned
+  where it is put.
+
+**A breaker** ([Breaking rock with a machine](#breaking-rock-with-a-machine))
+goes in `machines` too:
+
+```json
+"machines": {"breakers": [{"name": "breaker", "body": "breaker", "store": "breaker battery",
+                           "at_mm": [0, 2070, 9800], "along": [0, 0, 1],
+                           "watts": 1500, "reach_m": 0.15}], ...}
+```
+
+- It names the thing its chisel is on and the store it draws on. `at_mm` is its
+  point and `along` the way the chisel looks, as the room is made, like a pin.
+  `watts` is 1 to 1e6 (1500 if it says nothing), `reach_m` 0 to 0.5 (0.12), and
+  `on` is false unless it says so.
+- The runner's `breaker` operation puts one on and `breaker_switch` holds its
+  trigger. `machines` reports each with `breakers`: where its point is, what it
+  drew, what that bought, how far through the cell it is, and why it is doing
+  nothing.
+
 **A sun with a day** ([A day for the sun](#a-day-for-the-sun)) says its day in
 place of where it stands:
 
@@ -545,6 +583,16 @@ place of where it stands:
   day's 86,400. `noon_elevation_deg` is from 1 to 90, `hour` is the hour the
   room begins at, 0 to 24, and `irradiance_w_m2`, 0 to 1400, is the sun's
   overhead.
+
+The runner's `cable` operation runs a cable
+(`{"op": "cable", "name", "store": store id, "run_m", "area_mm2",
+"resistivity_ohm_m"}`), `lamp` hangs a lamp
+(`{"op": "lamp", "name", "body", "cable": cable id, "store": store id, "at_m",
+"watts", "efficacy_lm_w", "on"}`), and `lamp_switch` turns one on or off
+(`{"op": "lamp_switch", "lamp": lamp id, "on"}`). `machines` reports each with
+`cables` -- its run, its length and resistance, the current, the volts lost, what
+it carried and what it lost -- and `lamps`: where each is, what it drew, the
+lumens it gives, whether it is lit, and why not.
 
 The runner's `sun` operation puts the sun in the sky and says it back, with
 `toward`, the unit vector to it. `solar_panel` puts a panel on
@@ -1228,6 +1276,145 @@ Checked by `tests/solar_panel_tests.cpp`, `tests/rover_roam_tests.cpp`,
 
 Not built yet: a battery charged at a post from a panel elsewhere; heat from a
 panel's losses warming anything; a panel that turns to follow the sun.
+
+## Light underground
+
+**The owner's decision, 2026-09-28:** light in a mine is electric, on cables
+running up to a solar farm. Not torches.
+
+**Status, 2026-09-28.** A room can run cables from a store and hang lamps on
+them, the lamps draw real power and the page is lit by them, and inside a
+working the daylight is not there, so they are the only light you have.
+
+**A run of cable** goes from a store to wherever the light is wanted. It is
+pinned where it is put and does not move again. Its resistance is the
+conductor's own: the resistivity times **twice** the length of the run --
+out and back, because a circuit needs two conductors -- over the area of the
+conductor. Copper is 1.68e-8 ohm m.
+
+**A lamp** hangs on a run, or is wired straight to a store. It asks for its
+watts and gives `efficacy_lm_w` lumens for each one it gets: an LED is about
+120 lumens the watt, a filament lamp about 15. It is on a part, and goes where
+the part goes, or it is pinned where it is put. It starts switched off.
+
+**The cable is in series with its lamps**, which is the whole reason for it
+being a thing with a resistance rather than a line drawn between two machines.
+A lamp rated `watts` at the store's voltage is a resistance of
+voltage squared over watts. The lamps on one run together are one resistance,
+and the run's own is in front of them:
+
+```
+I = V / (R_lamps + R_run)      to the lamps  I^2 R_lamps      lost in the run  I^2 R_run
+```
+
+So a long thin run dims its lamps **even off a full battery**, and a second
+lamp on that run dims the first: more current, and the run keeps more of the
+voltage. A cable reports the volts that never reached the far end, which is the
+number that says whether a run is thick enough.
+
+A store that cannot give even that does not cut some lamps off and leave the
+rest at full: its voltage sags, power goes as the square of voltage, and
+everything on the run -- the lamps and the run's own loss alike -- falls by the
+same share of what it wanted. A lamp says why it is not giving what it asked
+for: "switched off", "the store is flat", "dim: the store cannot give all this
+run asks for", or "dim: the run drops some of the voltage on the way".
+
+**Underground is dark.** The page's three daylight lights are directional and
+the hill does not stop them, so a tunnel drawn from the inside was lit as
+brightly as the meadow above it and a lamp in it was decoration. The daylight
+reaching the eye is now turned down by how much rock is over it, read from the
+same runs the tunnel walls are drawn from: out by half a metre of rock, nearly
+out by two, with a little sky left so an unlit mine is gloom rather than a black
+screen and you can find your way back to the daylight. It is the **eye's**
+cover, not each thing's, so the meadow seen through the adit mouth darkens with
+you -- the price of doing it with the scene's own lights instead of per
+fragment, and from inside a 1.75 m adit there is not much of the meadow to see.
+
+The lamps themselves are a pool of eight point lights, handed to the eight lit
+lamps nearest the eye. Three.js compiles the number of lights into every
+material, so a light appearing or going out rebuilds every shader in the scene:
+a lamp flickering as its battery ran down would have stuttered the whole room.
+The pool never changes size. Lamps beyond the eighth keep their bead.
+
+Measured in the engine:
+
+- A 20 W lamp wired straight to a battery at 120 lm/W drew exactly 20 W, gave
+  2,400 lumens, and the battery paid for every joule.
+- 60 m of 1.5 mm2 copper is 1.344 ohm. One 20 W lamp on it draws 0.796 A, loses
+  1.07 V on the way, and gets 18.26 W of the 20 it asked for -- 0.85 W stays in
+  the cable. The same run in 6 mm2 is a quarter of the resistance and the lamp
+  gets 19.54 W.
+- Six 100 W lamps on 120 m of 1 mm2 (4.032 ohm) lose 19.4 of the 24 volts in the
+  run: each lamp gets 3.7 W and 93 W is wasted in the cable. One of those lamps
+  alone on the same run gets 34.6 W -- nine times as much.
+- A 2 J battery ran a 20 W lamp for 0.1 s and went out, saying so and saying
+  what it could not give. A 1 m2 panel at 20% in an overhead 1000 W/m2 sun lit
+  the same lamp again and the battery gained on it, which is what the wire going
+  up to the farm is for.
+- A saved world keeps its cables and its lamps, their accounts, and which are
+  switched on, and lights the same on the next step.
+
+Checked by `tests/solar_panel_tests.cpp` ("a lamp draws its watts and gives its
+lumens", "a long thin run loses more of it", "a flat store puts the lights out",
+"lamps on one run share it", "a saved world keeps its cables and lamps").
+
+Not built yet: a switch you can reach in the world rather than an operation; a
+lamp as a thing the Workshop builds and the Explorer carries; a cable that a
+person strings point by point, rather than one the room declares; heat from a
+lamp warming the air around it; a cable that can be cut or a lamp that can be
+broken.
+
+## Breaking rock with a machine
+
+**The owner, 2026-09-28:** "prove that we can take the same parts from the
+workshop, put them into our inventory, go into the world and dig a tunnel and
+install the lights to a solar panel."
+
+A pick swung by hand puts twenty-odd joules into rock a blow, and a cell of
+fresh rock costs 469 kJ (docs/earth-and-mining-plan.md, rock-work-v1), so a
+heading driven by arm alone is twenty thousand blows. A **powered breaker** is
+what makes a tunnel a thing a person can drive: a chisel on a part, wired to a
+store, that spends its store into whatever rock its point is against.
+
+- It works the rock its point is IN, or the first rock within `reach_m` ahead of
+  its point along the chisel. A collider will not let a tool inside a face, so a
+  breaker held against a wall has its point a hair outside it.
+- Nothing aims: where the point is and which way it looks is where the hand put
+  it. Held in the air it breaks nothing, and says "its point is not against
+  rock".
+- What it spends is its store's own joules, and the rock comes out by the same
+  law and the same rule a pick goes through: a cell only comes free if whoever
+  is working can carry it.
+
+Measured in the engine: a 1.5 kW breaker took **314 s of the world** to break
+one 0.25 m cell out of fresh rock -- 15.7 L, 471 kJ of its 1.5 MJ battery -- and
+the 37.5 kg of rock went into the hands of whoever broke it. One charge is three
+cells.
+
+**The loop, end to end.** Three things the Workshop makes from its own
+templates:
+
+- a `mine-lamp`: a glass globe on an iron bracket, on a foot you stand on the
+  floor. It comes out UNWIRED -- it names no store and no cable -- because a
+  lamp is a fitting, and it lights when somebody runs a cable to it.
+- a `breaker`: a handle with a battery on it and a chisel down the front.
+- a `solar-array`: the farm, which was already there.
+
+A lamp's light is on the lamp's own body, so it goes where the body goes. Stowed
+in a bag the body is parked and the lamp says it is not in the world; put down in
+a heading, it is in the heading. In the page, **P** starts a run of cable at a
+battery, pays it out as you walk, and makes it off at a fitting; **M** holds a
+breaker's trigger.
+
+Checked by `tests/mine_loop_tests.py` -- the Workshop's own templates, into the
+bag and out again, a heading driven, and a run of cable from the array -- and
+photographed by `tests/lamp_shots.py` on `/world?scene=tests-light`, which
+drives the page's own wiring action: standing in the heading with an unwired lamp
+in it the picture is 0.047 of full brightness, and 8.2 m of 4 mm2 later the lamp
+draws 20.0 W, gives 2,397 lumens, and the picture is 0.197 -- four times.
+
+Not built: a drum of cable as a thing you carry, with a length in it that runs
+out; a breaker that wears; cutting a run, or taking a fitting down off one.
 
 ## A day for the sun
 

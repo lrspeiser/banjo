@@ -36,6 +36,8 @@ void addByKind(Volumes &v, RunKind kind, double m3) {
     case RunKind::Ore:
     case RunKind::OxidisedOre: v.rock_m3 += m3; return;
     case RunKind::Sand: v.sand_m3 += m3; return;
+    // A void is nothing. It is not matter and the ledger counts none of it.
+    case RunKind::Void: return;
     case RunKind::Soil:
     case RunKind::Clay:
     case RunKind::LooseSoil: v.soil_m3 += m3; return;
@@ -89,6 +91,7 @@ void TerrainField::restore(const State &s) {
             if (!std::isfinite(top) || !(top >= below) || s.beds.kind[from + k] >= kRunKinds) refuse();
             below = top;
         }
+        if (isVoid(static_cast<RunKind>(s.beds.kind[from + s.beds.count[c] - 1]))) refuse();
         if (!std::isfinite(s.moisture[c]) || s.moisture[c] < 0 || s.moisture[c] > 1) refuse();
         for (double v : {s.soil[c], s.sand[c], s.loose[c]})
             if (!std::isfinite(v) || v < 0) refuse();
@@ -202,6 +205,10 @@ TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
             if (!std::isfinite(beds_.top[k]) ||
                 (k > beds_.start[c] && beds_.top[k] < beds_.top[k - 1]))
                 throw std::invalid_argument("a bed's top is not finite, or is below the bed under it");
+        // A hole open to the sky is a hole in the surface, which the height
+        // field says on its own; a void is always something with rock over it.
+        if (isVoid(static_cast<RunKind>(beds_.kind[beds_.start[c] + beds_.count[c] - 1])))
+            throw std::invalid_argument("a column's topmost bed cannot be a void");
         if (!(soil_[c] >= 0.0) || !(sand_[c] >= 0.0) ||
             !(loose_[c] >= 0.0) || !std::isfinite(soil_[c] + sand_[c] + loose_[c]))
             throw std::invalid_argument("a terrain layer is negative or not finite");
@@ -209,7 +216,11 @@ TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
     // How far the rock goes down. Every world before this had 2 m of it, which
     // is no earth to mine at all (docs/earth-and-mining-plan.md).
     double lowest_rock = std::numeric_limits<double>::infinity();
-    for (std::size_t c = 0; c < n; ++c) lowest_rock = std::min(lowest_rock, rockTop(c));
+    for (std::size_t c = 0; c < n; ++c) {
+        lowest_rock = std::min(lowest_rock, rockTop(c));
+        for (std::uint32_t k = beds_.start[c]; k < beds_.start[c] + beds_.count[c]; ++k)
+            if (isVoid(static_cast<RunKind>(beds_.kind[k]))) { ++workings_; break; }
+    }
     floor_ = lowest_rock - kEarthDepthM;
     chunks_x_ = std::max(1, (grid_.nx - 2) / kChunkCells + 1);
     chunks_z_ = std::max(1, (grid_.nz - 2) / kChunkCells + 1);
@@ -222,6 +233,14 @@ Surface TerrainField::surface(std::size_t c) const {
     if (sand_[c] + loose_[c] > 0.02) return sand_[c] >= loose_[c] ? Surface::Sand : Surface::Soil;
     if (soil_[c] + sand_[c] + loose_[c] > 0.02) return Surface::Soil;
     return Surface::Rock;
+}
+
+std::optional<TerrainField::Working> TerrainField::workingIn(std::size_t c) const {
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t k = 0; k < beds_.count[c]; ++k)
+        if (isVoid(static_cast<RunKind>(beds_.kind[from + k])))
+            return Working{bedBottom(c, k), beds_.top[from + k]};
+    return std::nullopt;
 }
 
 int TerrainField::runsOf(std::size_t c, Run *out) const {
@@ -456,6 +475,178 @@ EditReport TerrainField::dig(double ax, double az, double bx, double bz, double 
     return report;
 }
 
+EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m) {
+    EditReport report;
+    const auto cell = cellAt(x, z);
+    if (!cell) throw std::invalid_argument("that point is not on the ground");
+    if (!std::isfinite(from_m) || !std::isfinite(to_m))
+        throw std::invalid_argument("a working needs two finite heights");
+    const std::size_t c = *cell;
+    const double area = grid_.dx * grid_.dx;
+    // Cell-quantised, as every void is: a working is made of cubes, and its
+    // floor and roof land where the collider's two extra height fields can say
+    // them exactly.
+    const double q = grid_.dx;
+    double lo = std::floor(std::min(from_m, to_m) / q) * q;
+    double hi = std::ceil(std::max(from_m, to_m) / q) * q;
+    lo = std::max(lo, floor_ + q);          // never through the bottom of the world
+    const double top = rockTop(c);
+    if (!(hi > lo) || !(lo < top)) return report;
+    hi = std::min(hi, top);
+
+    // Broken out to daylight, or near enough: this is an open cut, not a hole
+    // with rock over it, and a column's topmost bed is never a void. Everything
+    // over the rock comes off with it.
+    if (hi >= top - 1.0e-9) {
+        const Volumes film = strip(c, soil_[c] + sand_[c] + loose_[c]);
+        report.moved.sand_m3 += film.sand_m3;
+        report.moved.soil_m3 += film.soil_m3;
+        takeRockDownTo(c, lo, report.moved);
+        report.cells.push_back(c);
+        touched(c);
+        ledger_.dug.rock_m3 += report.moved.rock_m3;
+        ledger_.dug.sand_m3 += report.moved.sand_m3;
+        ledger_.dug.soil_m3 += report.moved.soil_m3;
+        report.depth_m = top - lo;
+        markChanged(report.cells);
+        return report;
+    }
+
+    // A hole with rock over it: the beds it passes through are split into what
+    // is under the working, the working, and what is over it. A column with no
+    // room to say that keeps its rock -- which is a refusal, not a silence.
+    const std::uint32_t from = beds_.start[c];
+    const std::uint32_t room = beds_.start[c + 1] - from;
+    std::uint8_t kind[kRunsMost];
+    double bed_top[kRunsMost];
+    std::uint32_t n = 0;
+    double below = floor_;
+    const auto push = [&](std::uint8_t k, double t) {
+        if (n > 0 && kind[n - 1] == k) { bed_top[n - 1] = t; return; }
+        if (n + 1 >= static_cast<std::uint32_t>(kRunsMost)) return;
+        kind[n] = k; bed_top[n] = t; ++n;
+    };
+    for (std::uint32_t b = 0; b < beds_.count[c]; ++b) {
+        const double t = beds_.top[from + b];
+        const std::uint8_t k = beds_.kind[from + b];
+        const double bottom = below;
+        if (t <= lo) { push(k, t); below = t; continue; }
+        if (below < lo) { push(k, lo); below = lo; }
+        // What this bed loses to the working, counted as what it is made of.
+        // A bed that is already a void gives nothing: there is nothing in it.
+        const double gone = std::min(t, hi) - std::max(bottom, lo);
+        if (gone > 0.0) addByKind(report.moved, static_cast<RunKind>(k), gone * area);
+        if (t <= hi) { below = std::max(below, std::min(t, hi)); continue; }
+        if (below < hi) { push(static_cast<std::uint8_t>(RunKind::Void), hi); below = hi; }
+        push(k, t);
+        below = t;
+    }
+    if (n == 0 || n > room) {
+        throw std::invalid_argument("there is no room left in that column for another working");
+    }
+    const bool was_working = workingIn(c).has_value();
+    for (std::uint32_t b = 0; b < n; ++b) {
+        beds_.kind[from + b] = kind[b];
+        beds_.top[from + b] = bed_top[b];
+    }
+    beds_.count[c] = n;
+    if (!was_working) ++workings_;
+    ledger_.dug.rock_m3 += report.moved.rock_m3;
+    ledger_.dug.sand_m3 += report.moved.sand_m3;
+    ledger_.dug.soil_m3 += report.moved.soil_m3;
+    report.cells.push_back(c);
+    report.depth_m = hi - lo;
+    touched(c);
+    markChanged(report.cells);
+    return report;
+}
+
+RunKind TerrainField::kindAt(std::size_t c, double height_m) const {
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t k = 0; k < beds_.count[c]; ++k)
+        if (height_m <= beds_.top[from + k]) return static_cast<RunKind>(beds_.kind[from + k]);
+    // Above the rock: whatever is lying on it.
+    const double loose = sand_[c] + loose_[c];
+    if (loose > 0.0 && height_m > rockTop(c) + soil_[c])
+        return sand_[c] >= loose_[c] ? RunKind::Sand : RunKind::LooseSoil;
+    if (soil_[c] > 0.0) return RunKind::Soil;
+    return static_cast<RunKind>(beds_.kind[from + beds_.count[c] - 1]);
+}
+
+double TerrainField::brokenShare(std::size_t c) const {
+    const auto found = chipped_.find(c);
+    if (found == chipped_.end()) return 0.0;
+    const double holds = cellRockM3(c, (found->second.level + 0.5) * grid_.dx);
+    return holds > 0.0 ? std::clamp(found->second.m3 / holds, 0.0, 1.0) : 0.0;
+}
+
+double TerrainField::cellRockM3(std::size_t c, double at_height_m) const {
+    const double q = grid_.dx;
+    // The band the height falls in, counted (lo, hi]: a point pressing on a
+    // surface works the cell UNDER it, not the empty one above. A blow landing
+    // at or over the top of the rock works the topmost cell of it -- a tip
+    // resting on a hillside is a hair above the rock as often as a hair into it,
+    // and that is the same blow.
+    const double lo = std::max((std::ceil(std::min(at_height_m, rockTop(c)) / q) - 1.0) * q, floor_);
+    const double hi = std::min(lo + q, rockTop(c));
+    if (!(hi > lo)) return 0.0;
+    // Everything in the band that is not a void: what has to be broken to take
+    // the cell out. A band that straddles the top of the rock holds only the
+    // part below it, which is why a first bite at a hillside is cheaper than a
+    // cell.
+    double solid = 0.0, below = floor_;
+    const std::uint32_t from = beds_.start[c];
+    for (std::uint32_t b = 0; b < beds_.count[c]; ++b) {
+        const double top = beds_.top[from + b];
+        const double overlap = std::min(top, hi) - std::max(below, lo);
+        if (overlap > 0.0 && static_cast<RunKind>(beds_.kind[from + b]) != RunKind::Void)
+            solid += overlap;
+        below = top;
+        if (below >= hi) break;
+    }
+    return solid * grid_.dx * grid_.dx;
+}
+
+TerrainField::Chipped TerrainField::chip(double x, double z, double at_height_m, double volume_m3,
+                                         double rock_budget_m3) {
+    Chipped out;
+    const auto cell = cellAt(x, z);
+    if (!cell || !(volume_m3 > 0.0) || !std::isfinite(at_height_m)) return out;
+    const std::size_t c = *cell;
+    const double q = grid_.dx;
+    // The cell the blow landed in, named by its level so that working across to
+    // another one does not spend what was paid here.
+    const int level = static_cast<int>(std::ceil(std::min(at_height_m, rockTop(c)) / q)) - 1;
+    const double holds = cellRockM3(c, at_height_m);
+    if (!(holds > 0.0)) return out;      // no rock there to break
+    Owed &owed = chipped_[c];
+    if (owed.level != level) owed = Owed{level, 0.0};
+    owed.m3 += volume_m3;
+    if (owed.m3 + 1.0e-12 < holds) {
+        out.broken = owed.m3 / holds;
+        return out;
+    }
+    // Paid for. It only comes out if it can be carried away: a cell of rock is
+    // 37 kg, and one nobody can lift stays in the wall with the work still
+    // credited to it.
+    if (holds > rock_budget_m3) {
+        out.broken = 1.0;
+        out.full = true;
+        return out;
+    }
+    const double lo = std::max(static_cast<double>(level) * q, floor_);
+    out.edit = breakOut(grid_.xOf(static_cast<int>(c % static_cast<std::size_t>(grid_.nx))),
+                        grid_.zOf(static_cast<int>(c / static_cast<std::size_t>(grid_.nx))),
+                        lo, std::min(lo + q, rockTop(c)));
+    // What it cost is what was in it, not a nominal cell: a bite that trims a
+    // hillside to the lattice is smaller than a cell and is charged as such, and
+    // anything overpaid is credited to the next one.
+    owed.m3 -= holds;
+    if (!(std::abs(owed.m3) > 1.0e-15)) chipped_.erase(c);
+    out.broken = brokenShare(c);
+    return out;
+}
+
 EditReport TerrainField::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {
     EditReport report;
     if (!(radius_m > 0.0) || !(sand_m3 >= 0.0) || !(soil_m3 >= 0.0) || !(sand_m3 + soil_m3 > 0.0))
@@ -545,7 +736,11 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
             const std::uint32_t from = beds_.start[c];
             for (std::uint32_t k = 0; k < beds_.count[c]; ++k) {
                 if (!(beds_.top[from + k] > bottom)) continue;
-                if (!isRockLike(static_cast<RunKind>(beds_.kind[from + k])))
+                const auto kind = static_cast<RunKind>(beds_.kind[from + k]);
+                if (isVoid(kind))
+                    return fail("there is a working under there: a block cut out of rock with a "
+                                "hole in it is not a block");
+                if (!isRockLike(kind))
                     return fail("the rock there is not all rock: cutting a block out of a bed of "
                                 "clay or ore is not accounted for yet");
             }

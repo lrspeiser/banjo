@@ -1,5 +1,7 @@
 """Actual native carry, persistence and rollback tests for Workshop installation."""
 from __future__ import annotations
+from array import array
+from base64 import b64decode, b64encode
 from copy import deepcopy
 import json
 import itertools
@@ -18,6 +20,32 @@ import workshop_bench_core
 import workshop_articulation
 from mcp import workshop_components
 ENGINE=Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_LIVE_ENGINE') else None
+
+
+def _rock_tops(ground):
+    """The top of the rock in every column, off whichever way the save says it.
+
+    Before v4 a save held one height for each column; since v4 it holds the beds
+    under the surface, and the top of the rock is the top of a column's last bed
+    (docs/earth-and-mining-plan.md)."""
+    if "rock" in ground:
+        return list(array("d",b64decode(ground["rock"])))
+    beds=ground["beds"]
+    start=array("I",b64decode(beds["start"]));count=array("I",b64decode(beds["count"]))
+    top=array("d",b64decode(beds["top"]))
+    return [top[start[c]+count[c]-1] for c in range(len(count))]
+
+
+def _as_legacy(ground,schema):
+    """A save as a world of that vintage would have written it: one height for
+    the top of the rock in each column, and no beds. Relabelling today's save is
+    not enough -- a v2 world had never heard of a bed, and the engine refuses a
+    save that says v2 and carries them."""
+    out=deepcopy(ground)
+    out["schema"]=schema
+    out.pop("beds",None)
+    out["rock"]=b64encode(array("d",_rock_tops(ground)).tobytes()).decode("ascii")
+    return out
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),'BANJO_LIVE_ENGINE is required')
 class NativeInstallation(unittest.TestCase):
@@ -533,22 +561,45 @@ class NativeInstallation(unittest.TestCase):
         have=self.snap()["ground"]["carried"]
         self.live.session.send(op="ground_withdraw",sand_m3=have["sand_m3"],soil_m3=have["soil_m3"])
         original=self.snap();legacy=deepcopy(original)
-        legacy["ground"]["schema"]="banjo.ground-state.v2";legacy["ground"].pop("returned")
+        legacy["ground"]=_as_legacy(legacy["ground"],"banjo.ground-state.v2")
+        legacy["ground"].pop("returned")
         resumed=live_session.Live();self.addCleanup(resumed.shutdown)
         resumed.open(self.app,{"spec":self.room.spec,"snapshot":legacy})
-        self.assertEqual(original["ground"],install._snapshot(resumed)["ground"])
+        came_back=install._snapshot(resumed)["ground"]
+        # What was dug and taken out of the world is still taken out of it; what
+        # a v2 save could not say, that none of it went back, is said now.
+        self.assertEqual(came_back["schema"],"banjo.ground-state.v4")
+        self.assertEqual(original["ground"]["exported"],came_back["exported"])
+        self.assertEqual(original["ground"]["carried"],came_back["carried"])
+        self.assertEqual(came_back["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
+        self.assertEqual(_rock_tops(original["ground"]),_rock_tops(came_back),
+                         "the dug ground came back as it was left")
+        for key in ("grid","soil","sand","loose","moisture"):
+            self.assertEqual(original["ground"][key],came_back[key],key)
 
     def test_ground_v1_save_migrates_with_zero_exports(self):
-        self.room=world_room.Room("world");self.app.room=self.room;self.open()
-        saved=self.snap();saved["ground"]["schema"]="banjo.ground-state.v1"
-        saved["ground"].pop("exported");saved["ground"].pop("returned")
+        # Flat ground, as the v2 case has: a save of that vintage held ONE
+        # height a column, so a world with beds in it cannot be written back
+        # into one without changing what is in the ground.
+        self.room=world_room.Room("world");self.app.room=self.room
+        self.room.spec["terrain"]={"generate":{"kind":"flat","nx":32,"nz":32,
+            "cell_m":.25,"sand_m":.02,"soil_m":.2}}
+        self.open()
+        saved=self.snap();ground=_as_legacy(saved["ground"],"banjo.ground-state.v1")
+        rock=_rock_tops(saved["ground"])
+        ground.pop("exported");ground.pop("returned")
+        saved["ground"]=ground
         resumed=live_session.Live();self.addCleanup(resumed.shutdown)
         resumed.open(self.app,{"spec":self.room.spec,"snapshot":saved})
         migrated=install._snapshot(resumed)["ground"]
-        self.assertEqual(migrated["schema"],"banjo.ground-state.v3")
+        # A save from before any of this is the ground it always was, with an
+        # account that begins at nothing and the deep earth under it.
+        self.assertEqual(migrated["schema"],"banjo.ground-state.v4")
         self.assertEqual(migrated["exported"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
-        for key in saved["ground"]:
-            if key!="schema":self.assertEqual(saved["ground"][key],migrated[key],key)
+        self.assertEqual(migrated["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
+        self.assertEqual(_rock_tops(migrated),rock,"the rock came back where it was")
+        for key in ("grid","soil","sand","loose","moisture","carried"):
+            self.assertEqual(ground[key],migrated[key],key)
 
     def test_precise_rigid_is_seated_on_the_terrain_under_it(self):
         from fabrication_tests import candidate

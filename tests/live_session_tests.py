@@ -42,6 +42,21 @@ def scene(**changes):
     return spec
 
 
+
+def _held(lock) -> bool:
+    """Whether another thread is holding this lock.
+
+    `RLock.locked()` is Python 3.14 and this runs on 3.13, where asking for it
+    raised AttributeError and took this whole case down with it. Trying for the
+    lock without blocking says the same thing on every version: a lock another
+    thread holds refuses.
+    """
+    if lock.acquire(blocking=False):
+        lock.release()
+        return False
+    return True
+
+
 class LiveSession(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -316,9 +331,9 @@ class AWorldClosedUnderACall(unittest.TestCase):
         # In once it holds the world's lock; from then on it is waiting on an
         # engine that will not answer.
         deadline = time.monotonic() + 10
-        while not session._lock.locked() and time.monotonic() < deadline:
+        while not _held(session._lock) and time.monotonic() < deadline:
             time.sleep(0.005)
-        self.assertTrue(session._lock.locked(), "the pick never went in")
+        self.assertTrue(_held(session._lock), "the pick never went in")
         with mock.patch.object(live_session, "CLOSE_WAIT_S", 0.5):
             began = time.monotonic()
             closer = threading.Thread(target=session.close, daemon=True)
@@ -347,9 +362,15 @@ class AWorldClosedUnderACall(unittest.TestCase):
         import json
         import server as playground_server
 
+        # A real app carries the machines' deciders, and the act route asks them
+        # before and after every step. This case is about a world closing under
+        # a call, so it brings the real Brains with no decider in it rather than
+        # an app the server has to be defensive about.
+        import rover_brain
         app = types.SimpleNamespace(csrf_token="token", live=live_session.Live(),
                                     engine_path=ENGINE, runs_path=Path(self._temp.name),
-                                    live_inprocess=False)
+                                    live_inprocess=False,
+                                    brains=rover_brain.Brains(lambda: []))
         self.addCleanup(app.live.shutdown)
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), playground_server.Handler)
         httpd.app = app

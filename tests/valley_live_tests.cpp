@@ -19,6 +19,7 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
 #include "terrain/Environment.hpp"
+#include "terrain/GroundWork.hpp"
 #include "thermo/ThermoWorld.hpp"
 
 #include <nlohmann/json.hpp>
@@ -108,6 +109,7 @@ struct Valley {
         land = terrain::Environment::fromScene(Json{{"terrain", block}}.dump());
     }
     const terrain::TerrainField &ground() const { return land->terrain(); }
+    const terrain::Mine &mine() const { return land->landscape().mine; }
     const water::ShallowWater &water() const { return *land->water(); }
     double groundAt(double x, double z) const { return ground().heightAt(x, z); }
     // Across the river at x: the deepest FLOWING column, its bed and surface,
@@ -560,6 +562,238 @@ void meltingIceFillsTheLake() {
 
 } // namespace
 
+// The adit is a hole you could walk into: rock under it, rock over it, hillside
+// untouched above. A ball put inside rests on its floor and cannot rise through
+// its roof, which is the whole of what a tunnel has to be to the solver
+// (docs/earth-and-mining-plan.md, stage 3; the arrangement was measured before
+// it was built in docs/evidence/earth-spikes/roof_spike.cpp).
+void theAditIsAHoleWithRockOverIt() {
+    Valley v;
+    require(v.mine().worked, "somebody worked this valley");
+    const auto &g = v.ground().grid();
+
+    // Find a column of the driven tunnel: a working with hill over its roof.
+    std::size_t inside = 0;
+    double best = -1.0;
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        const double cover = v.ground().height(c) - w->roof_m;
+        if (cover > best) { best = cover; inside = c; }
+    }
+    std::size_t workings = 0;
+    for (std::size_t c = 0; c < g.cells(); ++c) workings += v.ground().workingIn(c) ? 1 : 0;
+    std::cout << "    " << workings << " columns hold a working; the most hill over any roof is "
+              << best << " m\n";
+    require(best > 0.4, "the adit goes under the hill, with rock over its roof");
+    const auto working = *v.ground().workingIn(inside);
+    const double x = g.xOf(int(inside % std::size_t(g.nx)));
+    const double z = g.zOf(int(inside / std::size_t(g.nx)));
+    std::cout << "    the tunnel at [" << x << ", " << z << "]: floor " << working.floor_m
+              << " m, roof " << working.roof_m << " m, with " << best
+              << " m of hill over it (the ground there is " << v.ground().height(inside) << ")\n";
+
+    // A ball dropped into it from just under the roof.
+    const double r = 0.05;
+    auto world = open(v.scene(Json::array({
+        ball("pebble", "concrete", 2.0 * r, {x, working.roof_m - r - 0.02, z})})));
+    run(*world, 2.0);
+    const LiveBodyPose rest = poseOf(*world, "pebble");
+    std::cout << "    a pebble put in it rests at y=" << rest.position_m.y
+              << " (its floor plus its radius is " << working.floor_m + r << ")\n";
+    near(rest.position_m.y, working.floor_m + r, 0.05,
+         "the pebble rests on the tunnel's floor, not on the world's");
+    require(std::abs(rest.position_m.x - x) < 0.4 && std::abs(rest.position_m.z - z) < 0.4,
+            "and it is still in the tunnel");
+
+    // And the roof is over it. Fired up at 8 m/s from the floor -- free, not
+    // held, because the hand MOVES what it holds and would drag it through any
+    // collider at all, which is a fact about hands and not about roofs.
+    Json fired = ball("shot", "concrete", 2.0 * r, {x, working.floor_m + r + 0.02, z});
+    fired["velocity_m_s"] = {0.0, 8.0, 0.0};
+    auto again = open(v.scene(Json::array({fired})));
+    double highest = -1.0e30;
+    for (int k = 0; k < 120; ++k) {
+        run(*again, 0.02);
+        highest = std::max(highest, poseOf(*again, "shot").position_m.y);
+    }
+    const double free_flight = working.floor_m + r + 0.02 + 8.0 * 8.0 / (2.0 * 9.81);
+    std::cout << "    fired up at 8 m/s it got to y=" << highest << "; the roof is at "
+              << working.roof_m << " and free flight would reach " << free_flight << "\n";
+    require(free_flight > working.roof_m + 1.0, "it was trying hard enough to matter");
+    require(highest < working.roof_m + 0.05,
+            "the roof stopped it: a tunnel has rock over it");
+}
+
+// The face can be worked back: rock taken out of a column while the world runs
+// becomes a hole you can stand in, and the ground's account still closes.
+// Until this, the only workings in any world were the ones the generator laid
+// down, so a mine was a ruin and not a thing anybody could make
+// (docs/earth-and-mining-plan.md, what it takes to be core, item 2).
+// The solid rock at the end of the old adit: the column a miner would be
+// standing in front of. Any solid column beside a working with enough hill over
+// it to still be a tunnel once it is cut -- the deepest column of a heading is
+// in the middle of it, so its own neighbours are all workings too.
+struct Face {
+    std::size_t column{};
+    double x{}, z{};
+    terrain::TerrainField::Working working{};
+};
+
+Face findTheFace(const Valley &v) {
+    const auto &g = v.ground().grid();
+    double best = -1.0;
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        best = std::max(best, v.ground().height(c) - w->roof_m);
+    }
+    require(best > 0.4, "the old adit goes under the hill");
+    Face out;
+    out.column = g.cells();
+    for (std::size_t c = 0; c < g.cells() && out.column == g.cells(); ++c) {
+        const auto w = v.ground().workingIn(c);
+        if (!w) continue;
+        const int ii = static_cast<int>(c % std::size_t(g.nx));
+        const int jj = static_cast<int>(c / std::size_t(g.nx));
+        for (const auto [di, dj] : {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
+            const int i = ii + di, j = jj + dj;
+            if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) continue;
+            const std::size_t n = g.at(i, j);
+            if (v.ground().workingIn(n)) continue;
+            if (v.ground().rockTop(n) > w->roof_m + 0.3) { out.column = n; out.working = *w; break; }
+        }
+    }
+    require(out.column < g.cells(), "the adit has a face to work");
+    out.x = g.xOf(static_cast<int>(out.column % std::size_t(g.nx)));
+    out.z = g.zOf(static_cast<int>(out.column / std::size_t(g.nx)));
+    return out;
+}
+
+void theFaceCanBeWorkedBack() {
+    Valley v;
+    require(v.mine().worked, "somebody worked this valley");
+    const Face f = findTheFace(v);
+    const std::size_t face = f.column;
+    const terrain::TerrainField::Working working = f.working;
+    const double fx = f.x, fz = f.z;
+
+    auto world = open(v.scene(Json::array()));
+    const terrain::Volumes before = world->environment()->terrain().volumes();
+    require(!world->environment()->terrain().workingIn(face).has_value(),
+            "the face is solid before it is worked");
+
+    // Take the next cell of rock out, on the working's own level.
+    const terrain::EditEffect effect = world->breakOut(fx, fz, working.floor_m, working.roof_m);
+    std::cout << "    worked the face at [" << fx << ", " << fz << "]: "
+              << effect.edit.moved.total() << " m^3 out, " << effect.chunks_rebuilt
+              << " collider(s) rebuilt in " << effect.rebuild_ms << " ms, "
+              << effect.bodies_woken << " bodies woken\n";
+    require(effect.edit.moved.total() > 0.0, "the working took rock out");
+
+    const auto now = world->environment()->terrain().workingIn(face);
+    require(now.has_value(), "the face is a working now");
+    near(now->floor_m, working.floor_m, 1e-9, "its floor is the old working's floor");
+    near(now->roof_m, working.roof_m, 1e-9, "and so is its roof");
+
+    // The ground lost exactly what came out, and the ledger closes.
+    const terrain::Volumes after = world->environment()->terrain().volumes();
+    near(before.total() - after.total(), effect.edit.moved.total(), 1e-9,
+         "the ground lost what the working took");
+    const terrain::Volumes residual = world->environment()->terrain().residual();
+    for (const double x : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        require(std::abs(x) < 1e-9, "the ledger closes after a working");
+
+    // And the SOLVER has it, not only the ground: a ray dropped down the cell
+    // that was solid a moment ago stops on the working's floor, where before it
+    // would have stopped on the rock at the top of the column.
+    const LivePick down = world->pick({fx, working.roof_m - 0.02, fz}, {0.0, -1.0, 0.0}, 50.0);
+    std::cout << "    a ray dropped where the rock was stops at y=" << down.point_world_m.y
+              << " (the working's floor is " << working.floor_m << ")\n";
+    require(down.hit, "the ray found the ground");
+    near(down.point_world_m.y, working.floor_m, 0.05,
+         "the collider followed the edit: the ray stops on the floor just cut");
+}
+
+// What comes out of the rock is carried, and a full person cannot take the next
+// cell. A cell of rock at 0.25 m columns is 0.0156 m^3 and 37.5 kg: two of them
+// is nearly everything a person can carry, which is the whole shape of mining
+// by hand -- you work, you fill up, you put it down somewhere
+// (docs/earth-and-mining-plan.md, what it takes to be core, item 6).
+void brokenRockIsCarriedAndWeighs() {
+    Valley v;
+    require(v.mine().worked, "somebody worked this valley");
+    const Face f = findTheFace(v);
+
+    auto world = open(v.scene(Json::array()));
+    const terrain::Environment &env = *world->environment();
+    const double cell = env.terrain().grid().dx;
+    const double one_cell_m3 = cell * cell * cell;
+    const double one_cell_kg = one_cell_m3 * terrain::rockMaterial().density_kg_m3;
+    std::cout << "    a cell of rock is " << one_cell_m3 << " m^3 and " << one_cell_kg << " kg\n";
+    require(env.carried().rock_m3 == 0.0, "nothing is carried before any rock is broken");
+
+    // rock-work-v1 says what a cell of this rock costs: its hardness, the
+    // cutting constant, and the volume.
+    const double hardness = terrain::groundHardnessPa(
+        env.terrain().kindAt(f.column, f.working.floor_m + 0.5 * cell));
+    const double a_cell_j = terrain::specificEnergyJPerM3(hardness) * one_cell_m3;
+    require(a_cell_j > 0.0, "the face has a price");
+    std::cout << "    it costs " << a_cell_j / 1000.0 << " kJ to break one out (rock-work-v1)\n";
+
+    // Work the face upwards, a cell at a time, in eighths of what a cell costs.
+    const auto workOneCell = [&](double at) {
+        LiveWorld::Chipped c;
+        for (int i = 0; i < 20; ++i) {
+            c = world->workRock(f.x, at, f.z, a_cell_j / 8.0);
+            if (c.full || !c.effect.edit.cells.empty()) break;
+        }
+        return c;
+    };
+
+    const LiveWorld::Chipped first = workOneCell(f.working.floor_m + 0.5 * cell);
+    require(!first.effect.edit.cells.empty(), "eight eighths of a cell did not break one out");
+    std::cout << "    broke one out; carrying " << env.carried().rock_m3 << " m^3 of rock, "
+              << env.carriedKg() << " kg\n";
+    near(env.carried().rock_m3, one_cell_m3, 1.0e-9, "a cell of rock is carried");
+    near(env.carriedKg(), one_cell_kg, 1.0e-6, "and it weighs what rock weighs");
+
+    // A person who can hold 80 kg has room for two cells and not three. The
+    // third is paid for and does not come free: the blow is real, the rock does
+    // not move, and the work stays credited to the cell.
+    world->setCarryLimitKg(80.0);
+    const LiveWorld::Chipped second = workOneCell(f.working.floor_m + 1.5 * cell);
+    require(!second.effect.edit.cells.empty() && !second.full,
+            "the second cell would not come out under an 80 kg limit");
+    near(env.carriedKg(), 2.0 * one_cell_kg, 1.0e-6, "two cells of rock are carried");
+
+    const LiveWorld::Chipped third = workOneCell(f.working.floor_m + 2.5 * cell);
+    require(third.full, "a person with 5 kg of room took another 37 kg of rock");
+    require(third.effect.edit.cells.empty(), "a refused cell came out anyway");
+    require(third.bought_m3 == 0.0, "a refused blow bought something");
+    near(third.broken_share, 1.0, 1.0e-9, "the refused cell is worked right through");
+    std::cout << "    at " << env.carriedKg() << " kg of 80 the next cell would not come free\n";
+
+    // Put it down -- into a lot, which is what a barrow or a hopper is -- and
+    // the cell already paid for comes straight out. This is the shape of mining
+    // by hand: work, fill up, carry it somewhere, come back.
+    const Json packet = Json::parse(world->withdrawGround(0.0, 0.0, env.carried().rock_m3));
+    require(packet.at("form") == "rubble", "broken rock is not granular: " + packet.dump());
+    require(env.carriedKg() < 1.0e-9, "the rock did not go into the lot");
+    const LiveWorld::Chipped again = world->workRock(f.x, f.working.floor_m + 2.5 * cell, f.z, 1.0);
+    require(!again.full && !again.effect.edit.cells.empty(),
+            "the cell already paid for did not come out once there was room for it");
+    near(env.carried().rock_m3, one_cell_m3, 1.0e-9, "and it is carried, like the others");
+    std::cout << "    emptied into a lot ("
+              << packet.at("contents")[0].at("mass_kg").get<double>()
+              << " kg of rubble); the cell already paid for came out on the next blow\n";
+
+    // The ground's account still closes over all of it.
+    const terrain::Volumes residual = world->environment()->terrain().residual();
+    for (const double r : {residual.rock_m3, residual.soil_m3, residual.sand_m3})
+        require(std::abs(r) < 1.0e-9, "the ledger closes after a face is worked by hand");
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -575,6 +809,9 @@ int main(int argc, char **argv) {
         {"a dam of loose blocks raises the river", aDamOfLooseBlocksRaisesTheRiver},
         {"a new outlet drains the pond", aNewOutletDrainsThePond},
         {"a cut block is neither lost nor duplicated", aCutBlockIsNeitherLostNorDuplicated},
+        {"the adit is a hole with rock over it", theAditIsAHoleWithRockOverIt},
+        {"the face can be worked back", theFaceCanBeWorkedBack},
+        {"broken rock is carried and weighs", brokenRockIsCarriedAndWeighs},
         {"digging one corner does not activate the rest", diggingOneCornerDoesNotActivateTheRest},
         {"a boulder falls when dug under", aBoulderFallsWhenDugUnder},
         {"an oak log drifts and iron sinks", anOakLogDriftsAndIronSinks},

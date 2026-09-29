@@ -565,6 +565,28 @@ def _solar_panel(*, name: str, at_m: Iterable[float], material: str, width_m: fl
     return Component(parts=[part], anchors={"bottom": bottom, "top": (bottom[0], bottom[1] + thickness_m, bottom[2])})
 
 
+def _lamp(*, name: str, at_m: Iterable[float], material: str, globe_m: float,
+          bracket_m: float) -> Component:
+    """A lamp: a glass globe on a short iron bracket, hung or stood.
+
+    Two parts, because the globe is what gives the light and the bracket is what
+    it hangs off -- a cable is made off to the bracket, and the engine's lamp is
+    declared on the globe, so the light comes from where the light is.
+    """
+    foot = _finite3("at_m", at_m)
+    bracket = WirePart(name=f"{name} bracket", role="post",
+                       size_m=(0.04, bracket_m, 0.04),
+                       center_m=(foot[0], foot[1] + bracket_m / 2, foot[2]),
+                       material=material, family="lamp")
+    globe = WirePart(name=name, role="post", size_m=(globe_m, globe_m, globe_m),
+                     center_m=(foot[0], foot[1] + bracket_m + globe_m / 2, foot[2]),
+                     material="glass", family="lamp")
+    return Component(parts=[bracket, globe],
+                     anchors={"bottom": foot,
+                              "globe": (foot[0], foot[1] + bracket_m + globe_m / 2, foot[2]),
+                              "top": (foot[0], foot[1] + bracket_m + globe_m, foot[2])})
+
+
 MACHINE_FAMILIES = (
     Family("mount", "bearing_mount", "A bearing mount: a block hung under a deck that a wheel's stub turns in.",
            (Parameter("section_m", "m", 0.0345, 0.02, 0.2), Parameter("height_m", "m", 0.18, 0.02, 0.6)),
@@ -602,6 +624,10 @@ MACHINE_FAMILIES = (
            (Parameter("width_m", "m", 0.5, 0.1, 2.0), Parameter("height_m", "m", 0.3, 0.05, 1.5),
             Parameter("depth_m", "m", 0.5, 0.1, 2.0)),
            _block("post", "bin"), offers=("bottom", "top", "centre")),
+    Family("lamp", "post", "A lamp: a glass globe on an iron bracket (declare the lamp on the globe). It is "
+                           "dark until a cable is made off to it.",
+           (Parameter("globe_m", "m", 0.12, 0.04, 0.4), Parameter("bracket_m", "m", 0.10, 0.02, 0.6)),
+           _lamp, offers=("bottom", "globe", "top")),
     Family("hopper", "post", "A hopper: a bin on the deck that a dig routine fills (declare hopper_kg on the "
                              "routine).",
            (Parameter("width_m", "m", 0.3, 0.05, 1.5), Parameter("height_m", "m", 0.15, 0.03, 1.0),

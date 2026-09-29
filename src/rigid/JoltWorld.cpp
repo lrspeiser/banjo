@@ -2953,6 +2953,42 @@ void JoltWorld::replaceGroundPatch(unsigned patch, const std::vector<float> &hei
                                                  JPH::EActivation::DontActivate);
 }
 
+unsigned JoltWorld::addRoofPatch(const std::vector<float> &down_from, unsigned count,
+                                 double spacing_m, double origin_x_m, double origin_z_m,
+                                 double hang_from_m, const MaterialDefinition &material,
+                                 double max_error_m) {
+    impl_->requireConfigurationMutable();
+    const JPH::RefConst<JPH::Shape> shape = groundShape(down_from, count, spacing_m, 0.0, 0.0, max_error_m);
+    const CompiledContactMaterial contact = compileContactMaterial(material);
+    // Half a turn about X takes (x, y, z) to (x, -y, -z): the surface faces
+    // down, and the patch's own z runs backwards, which is why the caller hands
+    // the rows over backwards too.
+    const JPH::Quat turned = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), 3.14159265358979323846F);
+    JPH::BodyCreationSettings settings(
+        shape.GetPtr(),
+        JPH::RVec3(origin_x_m, hang_from_m, origin_z_m + (count - 1) * spacing_m), turned,
+        JPH::EMotionType::Static, Layers::kNonMoving);
+    settings.mFriction = static_cast<float>(contact.dynamic_friction);
+    settings.mRestitution = static_cast<float>(contact.restitution);
+    settings.mUserData = kGroundPatchMatterId;
+    const JPH::BodyID id =
+        impl_->physics_->GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
+    if (id.IsInvalid()) throw std::runtime_error("Jolt could not create a roof patch");
+    impl_->ground_.push_back({id, count, spacing_m, origin_x_m, origin_z_m});
+    impl_->contact_states_[kGroundPatchMatterId] = {contact, 0.0, 0.0, false};
+    return static_cast<unsigned>(impl_->ground_.size());
+}
+
+void JoltWorld::replaceRoofPatch(unsigned patch, const std::vector<float> &down_from,
+                                 double max_error_m) {
+    impl_->requireConfigurationMutable();
+    if (patch == 0 || patch > impl_->ground_.size()) throw std::invalid_argument("there is no such ground patch");
+    const Impl::GroundPatch &ground = impl_->ground_[patch - 1];
+    const JPH::RefConst<JPH::Shape> shape = groundShape(down_from, ground.count, ground.spacing, 0.0, 0.0, max_error_m);
+    impl_->physics_->GetBodyInterface().SetShape(ground.body, shape.GetPtr(), false,
+                                                 JPH::EActivation::DontActivate);
+}
+
 std::size_t JoltWorld::groundPatchCount() const { return impl_->ground_.size(); }
 
 unsigned JoltWorld::wakeBodiesIn(const Vec3 &low_world_m, const Vec3 &high_world_m) {

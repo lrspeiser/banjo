@@ -43,6 +43,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -86,8 +87,18 @@ enum class Surface : std::uint8_t { Rock = 0, Soil = 1, Sand = 2 };
 enum class RunKind : std::uint8_t {
     Rock = 0, Soil = 1, Sand = 2, LooseSoil = 3,
     WeatheredRock = 4, Clay = 5, Ore = 6, OxidisedOre = 7,
+    // A bed of nothing: what somebody took out and did not fill in. A void is
+    // held as a bed because that is where it is -- between the rock under it
+    // and the rock over it -- and because everything that already walks a
+    // column then walks the hole too (docs/earth-and-mining-plan.md, stage 3).
+    Void = 8,
 };
-inline constexpr int kRunKinds = 8;
+inline constexpr int kRunKinds = 9;
+// A column's TOPMOST bed is never a void: a hole open to the sky is a hole in
+// the ground's own surface, which a height field already says. So the surface,
+// the soil on it and everything that reads them are untouched by a void, and a
+// void is always something with rock over it.
+[[nodiscard]] constexpr bool isVoid(RunKind kind) { return kind == RunKind::Void; }
 // Rock a block can be cut out of. Weathered rock is rock, rotted: it is the same
 // matter at the same density, so a block of it is a block. Clay and ore are not,
 // and a cut that would reach them is refused rather than counted as rock.
@@ -235,6 +246,11 @@ public:
         return beds_.top[beds_.start[c] + beds_.count[c] - 1];
     }
     [[nodiscard]] const Beds &beds() const { return beds_; }
+    // The working in a column, if it has one: the top of what is under it, and
+    // the underside of the rock over it. One to a column today.
+    struct Working { double floor_m{}; double roof_m{}; };
+    [[nodiscard]] std::optional<Working> workingIn(std::size_t c) const;
+    [[nodiscard]] bool hasWorkings() const { return workings_ > 0; }
     // The bed `k` of a column reaches from here to its own top; the lowest
     // reaches down to floor().
     [[nodiscard]] double bedBottom(std::size_t c, std::uint32_t k) const {
@@ -280,6 +296,46 @@ public:
     // how a caller that knows a VOLUME, not a depth, works out the depth.
     [[nodiscard]] std::vector<std::size_t> columnsAlong(double ax, double az, double bx, double bz,
                                                         double width_m) const;
+    // Take rock out of a column between two heights: what a tool has broken
+    // loose (docs/earth-and-mining-plan.md, stage 4). Cell-quantised, so a
+    // working is made of cubes. Broken out to daylight it is an open cut and
+    // everything over the rock comes off with it; under cover it is a hole with
+    // rock over it, and the beds it passes through are split into what is under
+    // the working, the working, and what is over it. What leaves is counted by
+    // what it was made of. Refused, with the reason, where the column has no
+    // room left to say another working.
+    EditReport breakOut(double x, double z, double from_m, double to_m);
+    // What one kind of ground is at a height in a column: what a point meets
+    // when it gets there.
+    [[nodiscard]] RunKind kindAt(std::size_t c, double height_m) const;
+    // Rock broken a little at a time. A blow buys a volume (rock-work-v1), and
+    // a volume smaller than a cell is not a hole -- it is progress towards one.
+    // This keeps that progress and takes a cell of rock out when it has been
+    // paid for; `broken` is how far through that cell the work has got, 0 to 1,
+    // for anyone drawing it.
+    //
+    // The cell is the one the blow landed in, at `at_height_m`: a pick swung at
+    // a tunnel face takes rock out at the miner's chest, and does not bring the
+    // hill down from the top of the column. Working a different level in the
+    // same column starts that level, and what was owed on the old one is left
+    // there.
+    //
+    // A cell comes out only if `rock_budget_m3` of rock can be carried away,
+    // the same budget dig() takes: a cell of rock nobody can lift stays where it
+    // is, the account keeps what was paid, and `full` says why nothing moved.
+    struct Chipped {
+        EditReport edit;         // empty until a cell is paid for
+        double broken{};         // how far through the cell this column now is
+        bool full{};             // paid for, and more rock than can be carried
+    };
+    Chipped chip(double x, double z, double at_height_m, double volume_m3,
+                 double rock_budget_m3 = std::numeric_limits<double>::infinity());
+    [[nodiscard]] double brokenShare(std::size_t c) const;
+    // What a cell holds: the rock in the cell at this height in this column,
+    // which is what a chip there has to pay for. Less than a whole cell where
+    // the cell is the one the ground surface runs through, and 0 where there is
+    // no rock there at all.
+    [[nodiscard]] double cellRockM3(std::size_t c, double at_height_m) const;
     // Heap material up around a point: a cone of it within `radius`, which the
     // stability check then lets settle to whatever slope it can hold.
     EditReport deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
@@ -354,6 +410,12 @@ private:
 
     Grid grid_;
     Beds beds_;
+    std::size_t workings_{};     // how many columns hold one, so a world with
+                                 // none pays nothing for them
+    // Rock broken but not yet a cell's worth, by column: the level being worked
+    // and what has been paid towards it. Only faces being worked are in it.
+    struct Owed { int level{}; double m3{}; };
+    std::map<std::size_t, Owed> chipped_;
     std::vector<double> soil_, sand_, loose_;
     std::vector<float> moisture_;
     double floor_{};

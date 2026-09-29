@@ -1,0 +1,495 @@
+{
+ "algorithm": "lattice",
+ "bodies": [
+  {
+   "anchored": true,
+   "center_mm": [
+    -5925.0,
+    4983.6,
+    8300.0
+   ],
+   "color_rgba": "8a6b45ff",
+   "material": "oak",
+   "name": "claim post",
+   "shape": "box",
+   "size_mm": [
+    80.0,
+    1200.0,
+    80.0
+   ]
+  }
+ ],
+ "cell_m": 0.01,
+ "machines": {
+  "breakers": [
+   {
+    "along": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "at_mm": [
+     -9225.0,
+     2070.0,
+     10300.0
+    ],
+    "body": "breaker",
+    "name": "breaker",
+    "on": false,
+    "reach_m": 0.15,
+    "store": "breaker battery",
+    "watts": 1500.0
+   }
+  ],
+  "lamps": [
+   {
+    "at_mm": [
+     -9625.0,
+     2250.0,
+     10000.0
+    ],
+    "body": "mine-lamp",
+    "cable": "",
+    "efficacy_lm_w": 120.0,
+    "name": "lamp",
+    "on": true,
+    "store": "",
+    "watts": 20.0
+   }
+  ],
+  "panels": [
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -11835.0,
+     5620.0,
+     14420.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-1",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -10875.0,
+     5620.0,
+     14420.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-2",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -9915.0,
+     5620.0,
+     14420.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-3",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -11835.0,
+     5620.0,
+     15080.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-4",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -10875.0,
+     5620.0,
+     15080.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-5",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   },
+   {
+    "area_m2": 0.54,
+    "at_mm": [
+     -9915.0,
+     5620.0,
+     15080.0
+    ],
+    "body": "solar-array",
+    "efficiency": 0.2,
+    "name": "panel-6",
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "store": "array battery"
+   }
+  ],
+  "stores": [
+   {
+    "body": "solar-array",
+    "capacity_j": 20000000.0,
+    "charge_j": 2000000.0,
+    "name": "array battery",
+    "voltage_v": 48.0
+   },
+   {
+    "body": "breaker",
+    "capacity_j": 1500000.0,
+    "charge_j": 1500000.0,
+    "name": "breaker battery",
+    "voltage_v": 48.0
+   }
+  ]
+ },
+ "precise_rigid_bodies": [
+  {
+   "material": "oak",
+   "name": "solar-array",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.58,
+      0.0
+     ],
+     "dimensions_m": [
+      3.44,
+      0.04,
+      1.38
+     ],
+     "material": "oak",
+     "name": "frame"
+    },
+    {
+     "center_local_m": [
+      1.548,
+      0.28,
+      0.567
+     ],
+     "dimensions_m": [
+      0.05,
+      0.56,
+      0.05
+     ],
+     "material": "oak",
+     "name": "leg-1"
+    },
+    {
+     "center_local_m": [
+      -1.548,
+      0.28,
+      0.567
+     ],
+     "dimensions_m": [
+      0.05,
+      0.56,
+      0.05
+     ],
+     "material": "oak",
+     "name": "leg-2"
+    },
+    {
+     "center_local_m": [
+      1.548,
+      0.28,
+      -0.567
+     ],
+     "dimensions_m": [
+      0.05,
+      0.56,
+      0.05
+     ],
+     "material": "oak",
+     "name": "leg-3"
+    },
+    {
+     "center_local_m": [
+      -1.548,
+      0.28,
+      -0.567
+     ],
+     "dimensions_m": [
+      0.05,
+      0.56,
+      0.05
+     ],
+     "material": "oak",
+     "name": "leg-4"
+    },
+    {
+     "center_local_m": [
+      -1.21,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-1"
+    },
+    {
+     "center_local_m": [
+      -0.25,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-2"
+    },
+    {
+     "center_local_m": [
+      0.71,
+      0.605,
+      -0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-3"
+    },
+    {
+     "center_local_m": [
+      -1.21,
+      0.605,
+      0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-4"
+    },
+    {
+     "center_local_m": [
+      -0.25,
+      0.605,
+      0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-5"
+    },
+    {
+     "center_local_m": [
+      0.71,
+      0.605,
+      0.33
+     ],
+     "dimensions_m": [
+      0.9,
+      0.01,
+      0.6
+     ],
+     "material": "glass",
+     "name": "panel-6"
+    },
+    {
+     "center_local_m": [
+      1.41,
+      0.725,
+      0.0
+     ],
+     "dimensions_m": [
+      0.4,
+      0.25,
+      0.4
+     ],
+     "material": "oak",
+     "name": "battery"
+    }
+   ],
+   "position_m": [
+    -10.625,
+    5.01,
+    14.75
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "mine-lamp",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.015,
+      0.0
+     ],
+     "dimensions_m": [
+      0.22,
+      0.03,
+      0.22
+     ],
+     "material": "iron",
+     "name": "foot"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.08,
+      0.0
+     ],
+     "dimensions_m": [
+      0.04,
+      0.1,
+      0.04
+     ],
+     "material": "iron",
+     "name": "globe bracket"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.19,
+      0.0
+     ],
+     "dimensions_m": [
+      0.12,
+      0.12,
+      0.12
+     ],
+     "material": "glass",
+     "name": "globe"
+    }
+   ],
+   "position_m": [
+    -9.625,
+    2.0,
+    10.0
+   ]
+  },
+  {
+   "material": "iron",
+   "name": "breaker",
+   "orientation_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "parts": [
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      -0.275
+     ],
+     "dimensions_m": [
+      0.07,
+      0.07,
+      0.55
+     ],
+     "material": "iron",
+     "name": "handle"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.0,
+      0.15
+     ],
+     "dimensions_m": [
+      0.04,
+      0.04,
+      0.3
+     ],
+     "material": "iron",
+     "name": "chisel"
+    },
+    {
+     "center_local_m": [
+      0.0,
+      0.085,
+      -0.3025
+     ],
+     "dimensions_m": [
+      0.14,
+      0.1,
+      0.2
+     ],
+     "material": "iron",
+     "name": "battery"
+    }
+   ],
+   "position_m": [
+    -9.225,
+    2.05,
+    10.0
+   ]
+  }
+ ],
+ "sun": {
+  "day_s": 240,
+  "hour": 16,
+  "irradiance_w_m2": 1000,
+  "noon_elevation_deg": 60
+ },
+ "terrain": {
+  "generate": "valley"
+ }
+}

@@ -81,6 +81,32 @@ columns is drawn as a stretched flat triangle. Drawn as a face split at every ru
 boundary, the same pit suddenly shows topsoil over subsoil over rock, and a vein
 shows as a band you can follow. No physics changes to get that.
 
+## 2a. Why there is already a mine here
+
+The owner, 2026-09-28: *"We land at this spot to find an abandoned mine site. So
+there are already mine shafts and tunnels and some structures on the surface.
+This would allow us to immediately experience what is possible, even though we
+have to start from the bottom of the tech tree to build up."*
+
+That is the best argument for all of this, and it costs nothing extra, because
+**the workings are made of the same ground everything else is**. Somebody found
+the vein where it broke surface and followed it: an open cut while the ore was
+within reach of the top, a shaft at the high end when it got too deep to throw
+spoil out of, an adit mouth notched into the hillside below to come in
+underneath, and the spoil in heaps where it was thrown.
+
+It teaches the tech tree without a word of tutorial, because the ground says what
+stopped them: **the cut runs out where the ore stops being oxidised and soft and
+turns fresh and hard.** You arrive, you can see the whole shape of what mining is
+-- follow the vein, take the cover off, sink a shaft, drive in from below -- and
+you cannot do any of it yet, for exactly the reason they could not carry on.
+
+Built, 2026-09-28: the cut, the shaft, the mouth, the heaps, and `mine` in the
+terrain block saying where each piece is. NOT built: the underground (the mouth
+stops at a notch until stage 3 gives it a void), and the surface structures --
+a headframe over the shaft, a ruined hut, old timbers -- which are bodies a
+scene stands up at the places the terrain block reports.
+
 ## 3. What a person does — the loop this is for
 
 1. **Walk and look.** A vein that reaches the surface shows as a stained outcrop:
@@ -652,6 +678,41 @@ room's authority.
 **You can see:** a tunnel declared into the hillside in a test room, walked into,
 looked out of; a rover driven in and out; the room reopened and it is still there.
 
+**Started, 2026-09-28: the ground can hold a hole, and the old adit is one.**
+`RunKind::Void` is a bed of nothing -- rock under it, rock over it -- with one
+invariant that keeps everything else untouched: **a column's topmost bed is never
+a void**, because a hole open to the sky is a hole in the surface, which a height
+field already says. So `height()`, `rockTop()`, the soil on top and everything
+that reads them are exactly as they were, and a void is always something with
+rock over it. `JoltWorld::addRoofPatch` is the spike's arrangement made real: the
+same height field on a static body turned half a turn about X, mostly holes,
+built and swapped like any other patch. A chunk with a working gets two more
+patches, its floor and its roof; a chunk without gets none.
+
+The generator drives the old adit in as a real tunnel where there is hill over
+it, and leaves it a notch where there is not: 75 columns of the valley are a
+working 1.75 m from floor to roof with up to 1.4 m of hill above. Measured, in
+the live world on the generated valley (`the adit is a hole with rock over it`,
+valley_live 12/12): a pebble put in it rests at 2.05 m, its floor plus its
+radius, and not on the world's floor; fired up at 8 m/s it reaches 3.68 m and
+stops under the roof at 3.75, where free flight would have carried it to 5.33.
+
+**And the other half, the same day: you can see it and stand in it.** The page
+draws a working from the inside off the runs it already receives -- its floor,
+the roof over it, and a wall wherever the rock beside it is solid -- and
+`standingOn(x, z, y)` gives whoever is there the top of the highest SOLID run at
+or below them, which on open ground is the ground and inside a working is its
+floor. Asking the height field alone, which only knows the hill, is what used to
+shove anyone who went in back out on top of it. Measured: the page builds 75
+columns of working into its mesh (1,752 triangles with the faces), and a person
+put inside at y = 3.60 m stays at 3.60 -- floor 2.00, roof 3.75, and the hill
+5.13 over their head -- where before they would have been lifted to 5.13.
+
+**Not built:** it is DARK in there, because a tunnel is, and nothing in the room
+carries a light yet; the walls are drawn as the cell-stepped shapes they are;
+and machines and their senses have not been told about workings at all, so a
+rover would still drive over the top of one.
+
 **Measured:** the collider rebuild for a void chunk against the budget; bodies
 woken by a void appearing; a person and a machine stand on the floor of the
 tunnel and not on the hill above it; reopen is bit-identical.
@@ -772,6 +833,36 @@ because it loads the rock in tension. Blasting is out of this plan.
 - **No new numbers where the engine has one.** Hardness, tensile strength and
   density come from the material catalogue and the cutting model.
 
+## 8a. A stale cache, and a wrong conclusion drawn from it
+
+Worth writing down, because it cost an hour and I told the owner something false
+along the way.
+
+A generated valley is cached by a key of its parameters and `kGeneratorVersion`.
+**Change what generation does without bumping that version and every cache on the
+machine hands back the old world** -- and there are several, in several places:
+`banjo-terrain-cache` and `banjo-terrain-test-cache` under the system temp, one
+per test suite (`banjo-valley-live-test-cache`), and whatever `BANJO_TERRAIN_CACHE`
+points at.
+
+What happened: the first version of the workings cut the riverbank, and the
+valley's own acceptance test noticed -- the oak log that drifts 0.234 m/s down the
+river dropped to 0.137. I gave the workings a standoff from the channel, and the
+number did not move. I then built with the whole mine pass switched OFF, and the
+number STILL did not move, to fifteen digits, and concluded the mine was innocent
+and the regression had come in from main. I said so.
+
+It had not. Every one of those runs was reading the same cached valley, made by
+the first version, because the version had not changed. With it bumped and the
+world regenerated the log drifts 0.554 m/s and valley_live is 12 of 12. The mine
+had slowed the river; the standoff had fixed it; and the experiment that was
+supposed to settle it was measuring a file.
+
+The lesson is not "clear the cache". It is that **an experiment which cannot
+distinguish the two cases is not evidence**, however decisive the number looks: a
+result identical to fifteen digits across a change that large should have been
+read as "nothing I did reached this code", not as "the change has no effect".
+
 ## 9. The two spikes, run 2026-09-27
 
 Both were measurements, not features, and neither is engine progress: they are two
@@ -853,3 +944,213 @@ Still open, and only a detail: **where the first vein goes.** My recommendation 
 the knoll, with its oxidised cap outcropping on the valley side, so the first mine
 is an adit of two or three metres that a person can open by hand and a rover can
 drive into.
+
+## 11. What it takes to make this a core part of the world
+
+Asked for on 2026-09-28, after the abandoned mine landed. What exists now is a
+place you arrive at, read and walk into. What it is NOT yet is something the
+world runs on. This is everything between those two, in the order the
+dependencies actually fall, with what each one unblocks and what "done" means.
+
+The four marked **LOAD-BEARING** are the ones without which none of the rest is
+worth building. Everything else is real work, but it is work on a thing that
+already functions.
+
+### 1. LOAD-BEARING — a pick can break rock (stage 4)
+
+**Today nothing in the engine can take rock out of the ground.** `dig` strips
+loose material and soil and stops on rock, by declaration; `cut` takes a block
+of bare rock and hands it over as a body. `docs/ground-work.md` says outright
+that breaking rock out under a point "has no law here". So the mine is a museum:
+you can look at what somebody else did and you cannot do any of it.
+
+- rock-work-v1: specific energy `e_s = k_c H` under a point, the work measured
+  from the solver's own impulses as the ground bite already is.
+- Per-voxel damage accumulating on the working face only, so a face recedes cube
+  by cube and the page can shade the cube being worked.
+- Rubble with a bulking factor: what comes out does not fit back in the hole.
+- The hardness gate unchanged: an oak point on fresh rock still stops.
+
+**Done when** a person with an iron pick can stand at the old face and take the
+oxidised ore out of it, and the same pick on fresh rock is refused for the
+reason the engine already gives.
+
+**The law is built, 2026-09-28; joining it to a tool is not.** rock-work-v1:
+`e_s = k_c H`, with `H` the material's own indentation hardness (the number the
+cutting model already gates on) and `k_c` declared at 0.3 from the rock-cutting
+literature, where the specific energy of efficient cutting runs at a fraction of
+the unconfined strength. `judgeGround` no longer answers "breaking rock out of
+the ground under a point has no law here": a point harder than the rock now
+answers **Breakable**, and says what a cubic metre costs. Measured
+(`ground_work_tests`): fresh rock 30 MJ/m3 and the oxidised cap of a vein
+1.5 MJ/m3, so a 0.25 m cube is **4,688 hand blows of 100 J in the rock and 234
+in the cap** -- two and a half hours against eight minutes, which is exactly the
+ramp 7 describes and the reason the old workings stop where the cap does.
+
+**And joined, the same day.** The join turned out to have a clean shape rather
+than a fudge: breaking a cubic metre costs `e_s`, so pushing a point of
+cross-section A through it costs `e_s A` newtons -- which is a RESISTANCE, and
+drops straight into the ground bite the soil already uses. So a point in rock it
+can break is held by what breaking costs, and the work is measured from the
+solver's own impulses exactly as it is in soil. Nothing is a rate and nothing is
+declared twice.
+
+What the blow buys, `W / e_s`, goes into the ground as a CHIP
+(`TerrainField::chip`): a volume smaller than a cell is not a hole, it is
+progress towards one, kept column by column, and a whole cell of rock leaves
+through `breakOut` on the blow that pays for it. Only the face being worked is
+ever in that map.
+
+Measured, end to end: an iron stake dropped on bare rock does **20.836 J** of
+work by the solver's own account, which at 30 MJ/m3 is **0.000695 of a 0.25 m
+cell** -- and the ground keeps it. `rock comes out a chip at a time`
+(terrain_tests 15/15) pays for a cell in eleven bites and checks that nothing
+leaves on the first ten, that exactly one cell leaves on the eleventh, that the
+rock comes down by exactly one cell, and that the ledger closes.
+
+### 2. LOAD-BEARING — the ground can be dug into a void at runtime
+
+Voids exist, but **only the generator can make one**. Mining has to turn solid
+into hole while the world is running, which means the edit path, not the
+generation path:
+
+- `TerrainField::breakOut` (or the same through `dig`): solid to `RunKind::Void`,
+  cell-quantised, splitting a bed into three, with the spare slots already there.
+- The collider follows: the surface patch, the floor patch and the roof patch of
+  the changed chunk rebuilt and swapped between steps, exactly as a dig rebuilds
+  one today, and whatever they held up woken.
+- The ledger: what leaves is counted, and `volumes()` still closes.
+- A column's topmost bed is still never a void, so breaking through to daylight
+  turns the working into a pit rather than leaving an overhang.
+
+**Done when** a heading driven by hand or by machine is a hole in the ground the
+next step, and the room reopened an hour later still has it.
+
+### 3. LOAD-BEARING — machines know a working is there
+
+`survey` answers `ground_m` with `heightAt`, which is the hill. A rover sent to a
+point over the adit is told the ground is 5.1 m up while the floor under it is at
+2.0. `standingOn` exists only in the page, in JavaScript.
+
+- The same rule in the engine: the top of the highest solid run at or below a
+  given height, used by `survey`, by placement, by the aiming ray and by
+  anything that asks where the ground is.
+- The senses: a working in `look`, so a machine can be sent into one and can
+  tell it is in one.
+- Routines and `go_to`: a way in and a way out, and the getting-nowhere sense
+  taught that a roof is not sky.
+
+**Done when** the mine rover drives into the adit, works the face, and comes out
+with a load, unattended.
+
+### 4. LOAD-BEARING — you can see underground — DONE, 2026-09-28
+
+The first photograph taken inside the adit was a black rectangle, which is
+correct and useless. A tunnel is dark.
+
+**The owner's decision, 2026-09-28:** the light is electric, on cables running
+up to a solar farm. Not torches.
+
+Built (docs/machine-world.md, "Light underground"):
+
+- A run of cable from a store: pinned where it is put, its resistance the
+  conductor's own, two conductors over the length of the run.
+- A lamp on that run, asking its watts and giving its lumens, on a part or
+  pinned in the world, switched on and off.
+- The cable in **series** with its lamps, so a long thin run dims them even off
+  a full battery and a second lamp dims the first. 60 m of 1.5 mm2 costs a 20 W
+  lamp 9% of its light; six 100 W lamps on 120 m of 1 mm2 get 3.7 W each.
+- A flat store puts them out and says so; a panel in the sun lights them again,
+  which is what the wire going up to the farm is for.
+- Underground is dark in the page: the daylight reaching the eye is turned down
+  by how much rock is over it, read from the same runs the walls are drawn from.
+
+Proved in the page by `tests/lamp_shots.py`, which stands in the old heading
+with the lamps off (0.025 of full brightness) and on (0.525, twenty times), on
+the room `tools/build_light_room.py` lays out at `/world?scene=tests-light`.
+
+**Still to do** before this is part of the crafting chain rather than beside it:
+a lamp and a cable as things the Workshop makes and the Explorer carries and
+strings, and a switch you can reach in the world rather than an operation.
+
+### 5. The mine is dangerous (stage 5)
+
+Nothing holds a roof up today, and nothing falls. This is where props, ghosts and
+the rack shortfall come in -- and it is the whole reason to build anything.
+
+- roof-span-v1 on a frontier, asked only where a void or a support changed.
+- Supports measured from the rigid world, never counted.
+- Collapse as a real body or as rubble, conserving; the groaning warning.
+- The support ghosts and the rack's "you are short one oak post".
+- What a falling roof does to a person, through the 1.6 m stand-in the water
+  work uses, because the person is not a body.
+
+### 6. The mine pays (stage 7, and stage 2's leftovers)
+
+Part of this landed on 2026-09-28: **what you break out, you carry**. Rock is
+counted in what a person or a machine is carrying, at rock's own density -- a
+0.25 m cell is 0.0156 m3 and 37.5 kg, so an 80 kg person holds two of them. A
+cell only comes out if whoever broke it can take it: a blow that would free one
+they cannot carry does not free it, the work stays credited to the cell, and the
+report says "cannot carry it". It goes into a lot with the sand and soil, and a
+lot with any rock in it says "rubble" rather than calling itself granular. And a
+chip works the cell the blow landed IN, at its own height, so a pick at a tunnel
+face takes the rock in front of the miner instead of bringing the hill down.
+
+Left:
+
+- Deposits read the ground: a vein's reserve is what is in the rock, not a
+  declared number in the room's `goods` block.
+- Ore out of a face becomes a goods packet of its substance at its grade.
+- `Volumes` widened to a kind each: rock, ore and oxidised ore all count as
+  `rock_m3` today, so a barrow of vein and a barrow of country rock weigh the
+  same and are worth the same.
+- A breaker tool for machines, drawing its work from the battery, so the energy
+  economy is what limits mining.
+- Timber props as Workshop products, which is the loop closing: you mine to
+  build, and you build to mine deeper.
+
+### 7. Prospecting is a thing you do (stage 2's leftovers)
+
+- Test pits and a hand auger: one column, read in words.
+- The oxidised cap softer to work than fresh ore, which is the difficulty ramp
+  the geology is already shaped for.
+- Placer in the river, so panning points upstream.
+- Gravel lenses, which stage 6 needs as the flooding hazard.
+
+### 8. Water underground (stage 6)
+
+- A water table per column, generated.
+- Saturated ground: buoyant weight in the slope and roof checks, and the quick
+  condition for a sand face.
+- Darcy inflow into a working below the table; a pool at one level in a
+  connected void; drainage by a lower adit.
+- The wet law for tools, which `judgeGround` currently refuses outright.
+
+### 9. It looks like a place
+
+- The surface structures the mine site needs -- a headframe over the shaft, a
+  ruined hut, old timbers -- which need a way for a scene to anchor bodies to
+  generated features. The terrain block's `mine` already says where they go.
+- Wall and roof geometry better than the cell-stepped shapes drawn now.
+- The site dressed: rails, a barrow, a broken ladder in the shaft.
+
+### 10. It holds up
+
+- Persistence: a room with workings kept through both paths the playground has --
+  the saved world (which carries beds, schema v4) and the replayed edit list
+  (which cannot express a void, and has a 400-edit cap). One of them has to
+  become the authority.
+- Determinism and conservation tests for void edits, the way every other edit
+  has them.
+- The realtime budget with a mine being actively worked: collider churn on three
+  patches a chunk, the roof frontier, and the page's mesh rebuild.
+- More than one void level per column, if a heading ever has to cross another.
+
+### The order I would build them
+
+1, 2 and 4 together are the smallest thing that makes the mine real rather than
+a ruin: a light, a pick that bites rock, and a hole that grows. 3 makes it a
+place the world's machines share. 5 is what makes it a game rather than a
+sandbox. 6 is the reward. 7, 8 and 9 deepen it. 10 is the tax on all of it and
+should be paid as each lands rather than at the end.

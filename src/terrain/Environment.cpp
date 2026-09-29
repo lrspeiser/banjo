@@ -72,6 +72,7 @@ const char *runKindName(RunKind k) {
     case RunKind::Clay: return "clay";
     case RunKind::Ore: return "ore";
     case RunKind::OxidisedOre: return "oxidised ore";
+    case RunKind::Void: return "a working";
     }
     return "soil";
 }
@@ -94,9 +95,10 @@ Json volumesJson(const Volumes &v) {
 // Environment::carried. Not rounded: a heap of all of it is asked for with
 // these very numbers.
 Json carriedJson(const Volumes &c) {
-    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3}, {"rock_m3", c.rock_m3},
             {"sand_kg", c.sand_m3 * sandMaterial().density_kg_m3},
-            {"soil_kg", c.soil_m3 * soilMaterial().density_kg_m3}};
+            {"soil_kg", c.soil_m3 * soilMaterial().density_kg_m3},
+            {"rock_kg", c.rock_m3 * rockMaterial().density_kg_m3}};
 }
 
 double number(const Json &node, const char *key, double fallback, double low, double high) {
@@ -641,6 +643,87 @@ std::vector<float> Environment::chunkHeights(int chunk) const {
     return heights;
 }
 
+// The floor of a chunk's workings, and the underside of their roof, for the two
+// extra colliders a chunk with a hole in it needs. Nothing where there is no
+// working: a non-finite height is a hole in a patch, which is most of any of
+// these, because a working is small and a chunk is not.
+std::vector<float> Environment::workingFloor(int chunk) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    std::vector<float> out(static_cast<std::size_t>(kCount) * kCount,
+                           std::numeric_limits<float>::quiet_NaN());
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i >= g.nx || j >= g.nz) continue;
+            if (const auto w = terrain_->workingIn(g.at(i, j)))
+                out[static_cast<std::size_t>(jj) * kCount + ii] = static_cast<float>(w->floor_m);
+        }
+    return out;
+}
+
+std::vector<float> Environment::workingRoof(int chunk, double hang_from_m) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    std::vector<float> out(static_cast<std::size_t>(kCount) * kCount,
+                           std::numeric_limits<float>::quiet_NaN());
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i >= g.nx || j >= g.nz) continue;
+            if (const auto w = terrain_->workingIn(g.at(i, j)))
+                // The rows run backwards: the body is turned half a turn about X.
+                out[static_cast<std::size_t>(kCount - 1 - jj) * kCount + ii] =
+                    static_cast<float>(hang_from_m - w->roof_m);
+        }
+    return out;
+}
+
+// The two colliders a chunk with a working needs, made or swapped. Called when
+// the world opens and again whenever an edit changes a chunk, because a working
+// can appear where there was none: a body added between steps is what the rigid
+// world allows, and what it forbids is only a change inside a trial.
+void Environment::syncWorkingPatches(JoltWorld &world, int chunk) {
+    const Grid &g = landscape_.grid;
+    const bool has = chunkHasWorkings(chunk);
+    const auto found = working_patches_.find(chunk);
+    if (!has && found == working_patches_.end()) return;
+    if (hang_from_ <= 0.0) hang_from_ = terrain_->highest() + 10.0;
+    const std::vector<float> floor = workingFloor(chunk);
+    const std::vector<float> roof = workingRoof(chunk, hang_from_);
+    if (found != working_patches_.end()) {
+        // A patch that has lost its working keeps its place and becomes all
+        // holes, which collides with nothing.
+        world.replaceGroundPatch(found->second.first, floor);
+        world.replaceRoofPatch(found->second.second, roof);
+        return;
+    }
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const double x0 = g.x0 + cx * TerrainField::kChunkCells * g.dx;
+    const double z0 = g.z0 + cz * TerrainField::kChunkCells * g.dx;
+    const MaterialDefinition contact = groundContact();
+    working_patches_[chunk] = {
+        world.addGroundPatch(floor, TerrainField::kChunkCells + 1, g.dx, x0, z0, contact),
+        world.addRoofPatch(roof, TerrainField::kChunkCells + 1, g.dx, x0, z0, hang_from_, contact)};
+}
+
+bool Environment::chunkHasWorkings(int chunk) const {
+    const Grid &g = landscape_.grid;
+    const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
+    const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
+    constexpr int kCount = TerrainField::kChunkCells + 1;
+    for (int jj = 0; jj < kCount; ++jj)
+        for (int ii = 0; ii < kCount; ++ii) {
+            const int i = i0 + ii, j = j0 + jj;
+            if (i < g.nx && j < g.nz && terrain_->workingIn(g.at(i, j))) return true;
+        }
+    return false;
+}
+
 std::string Environment::groundStateJson() const {
     const auto s=terrain_->state();
     const auto packed=[](const auto &v) { return encodeBase64(v.data(),v.size()*sizeof(v[0])); };
@@ -837,6 +920,13 @@ void Environment::attach(JoltWorld &world) {
     // One collider material for all of it, but not one ground: a ball on the
     // sand is held where one on the rock rolls. Asked where each contact is,
     // so a dig, a slump or a heap of sand changes it as it changes the ground.
+    // A chunk with a working in it gets two more patches: the floor somebody
+    // stands on inside it, and the roof over their head. Both are mostly holes,
+    // and a world nobody has dug under has neither.
+    if (terrain_->hasWorkings()) {
+        for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk)
+            syncWorkingPatches(world, chunk);
+    }
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
     if (!restored) (void)terrain_->takeDirtyChunks();
@@ -1096,7 +1186,9 @@ void Environment::stepNetwork(double dt_s) {
 }
 
 double Environment::carriedKg() const {
-    return carried_.sand_m3 * sandMaterial().density_kg_m3 + carried_.soil_m3 * soilMaterial().density_kg_m3;
+    return carried_.sand_m3 * sandMaterial().density_kg_m3 +
+           carried_.soil_m3 * soilMaterial().density_kg_m3 +
+           carried_.rock_m3 * rockMaterial().density_kg_m3;
 }
 
 void Environment::setCarryLimitKg(double kg) {
@@ -1107,6 +1199,10 @@ void Environment::setCarryLimitKg(double kg) {
 void Environment::carry(const Volumes &dug) {
     carried_.sand_m3 += dug.sand_m3;
     carried_.soil_m3 += dug.soil_m3;
+    // And the rock broken out of a working. It was counted as leaving the
+    // ground and then belonged to nobody, which is a hole in the account and
+    // not a design.
+    carried_.rock_m3 += dug.rock_m3;
 }
 
 void Environment::putBack(double sand_m3, double soil_m3) {
@@ -1126,11 +1222,14 @@ static double heldOrRefused(double asked_m3, double held_m3) {
     return asked_m3 > held_m3 && asked_m3 <= held_m3 + kLedgerSlackM3 ? held_m3 : asked_m3;
 }
 
-std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
+std::string Environment::withdrawCarried(double sand_m3, double soil_m3, double rock_m3) {
     sand_m3 = heldOrRefused(sand_m3, carried_.sand_m3);
     soil_m3 = heldOrRefused(soil_m3, carried_.soil_m3);
-    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
-        sand_m3+soil_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3)
+    rock_m3 = heldOrRefused(rock_m3, carried_.rock_m3);
+    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || !std::isfinite(rock_m3) ||
+        sand_m3<0 || soil_m3<0 || rock_m3<0 ||
+        sand_m3+soil_m3+rock_m3<=0 || sand_m3>carried_.sand_m3 || soil_m3>carried_.soil_m3 ||
+        rock_m3>carried_.rock_m3)
         throw std::invalid_argument("transfer needs positive finite quantities already carried");
     // Allocate/serialize before mutation. The source has no thermal state, so
     // do not invent a cold temperature or pretend transported heat is known.
@@ -1139,27 +1238,88 @@ std::string Environment::withdrawCarried(double sand_m3, double soil_m3) {
         {"mass_kg",sand_m3*sandMaterial().density_kg_m3}});
     if (soil_m3>0) contents.push_back({{"substance","soil"},{"volume_m3",soil_m3},
         {"mass_kg",soil_m3*soilMaterial().density_kg_m3}});
+    if (rock_m3>0) contents.push_back({{"substance","rock"},{"volume_m3",rock_m3},
+        {"mass_kg",rock_m3*rockMaterial().density_kg_m3}});
+    // Broken rock is not granular: it is lumps of the cell it came out of, so a
+    // lot with any in it says so instead of calling the whole thing sand.
     const std::string packet=Json{{"schema","banjo.bulk-material.v1"},{"source","excavated_ground"},
-        {"form","granular"},{"thermal_state","unmodeled"},{"contents",contents}}.dump();
-    carried_.sand_m3-=sand_m3;carried_.soil_m3-=soil_m3;
-    exported_.sand_m3+=sand_m3;exported_.soil_m3+=soil_m3;
+        {"form",rock_m3>0?(sand_m3+soil_m3>0?"mixed":"rubble"):"granular"},
+        {"thermal_state","unmodeled"},{"contents",contents}}.dump();
+    carried_.sand_m3-=sand_m3;carried_.soil_m3-=soil_m3;carried_.rock_m3-=rock_m3;
+    exported_.sand_m3+=sand_m3;exported_.soil_m3+=soil_m3;exported_.rock_m3+=rock_m3;
     return packet;
 }
 
-void Environment::returnCarried(double sand_m3, double soil_m3, double carried_objects_kg) {
+void Environment::returnCarried(double sand_m3, double soil_m3, double rock_m3,
+                                double carried_objects_kg) {
     if (!std::isfinite(carried_objects_kg) || carried_objects_kg<0)
         throw std::invalid_argument("invalid carried object mass");
     sand_m3 = heldOrRefused(sand_m3, exported_.sand_m3-returned_.sand_m3);
     soil_m3 = heldOrRefused(soil_m3, exported_.soil_m3-returned_.soil_m3);
-    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || sand_m3<0 || soil_m3<0 ||
-        sand_m3+soil_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
-        soil_m3>exported_.soil_m3-returned_.soil_m3)
+    rock_m3 = heldOrRefused(rock_m3, exported_.rock_m3-returned_.rock_m3);
+    if (!std::isfinite(sand_m3) || !std::isfinite(soil_m3) || !std::isfinite(rock_m3) ||
+        sand_m3<0 || soil_m3<0 || rock_m3<0 ||
+        sand_m3+soil_m3+rock_m3<=0 || sand_m3>exported_.sand_m3-returned_.sand_m3 ||
+        soil_m3>exported_.soil_m3-returned_.soil_m3 ||
+        rock_m3>exported_.rock_m3-returned_.rock_m3)
         throw std::invalid_argument("return needs positive quantities previously exported and not returned");
-    const double kg=sand_m3*sandMaterial().density_kg_m3+soil_m3*soilMaterial().density_kg_m3;
+    const double kg=sand_m3*sandMaterial().density_kg_m3+soil_m3*soilMaterial().density_kg_m3+
+                    rock_m3*rockMaterial().density_kg_m3;
     if (!std::isfinite(kg) || kg>carry_limit_kg_-carriedKg()-carried_objects_kg)
         throw std::invalid_argument("returned material exceeds carrying capacity");
-    carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;
-    returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;
+    carried_.sand_m3+=sand_m3;carried_.soil_m3+=soil_m3;carried_.rock_m3+=rock_m3;
+    returned_.sand_m3+=sand_m3;returned_.soil_m3+=soil_m3;returned_.rock_m3+=rock_m3;
+}
+
+EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
+                                 double from_m, double to_m) {
+    EditEffect effect;
+    terrain_->resetActivity();
+    effect.edit = terrain_->breakOut(x, z, from_m, to_m);
+    if (effect.edit.cells.empty()) return effect;
+    // What comes out of a working is rubble, and the rubble is carried, the
+    // same as the sand and soil out of a dig: it left the ground, so somebody
+    // has it. A bulk cut is an authored operation and is not gated on what
+    // anybody can carry -- the route a person takes is chip(), which is.
+    carry(effect.edit.moved);
+    for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
+    syncWaterBed(effect.edit.cells);
+    noteChanged(effect.edit.cells);
+    stats_.ground_checked = 0;
+    const std::set<int> chunks = terrain_->takeDirtyChunks();
+    rebuildChunks(world, chunks, &effect);
+    // And the working's own two colliders, wherever a chunk has gained or
+    // changed one.
+    for (const int chunk : chunks) syncWorkingPatches(world, chunk);
+    return effect;
+}
+
+Environment::Chipped Environment::chip(JoltWorld &world, double x, double z, double at_height_m,
+                                       double volume_m3, double carried_objects_kg) {
+    Chipped out;
+    // A cell of rock weighs 37 kg at 0.25 m columns, and it goes to whoever
+    // broke it out. So they have to be able to take it: a blow that would free
+    // a cell they cannot carry does not free it, and the work stays credited to
+    // the cell until they have put something down. This is the rule dig()
+    // already follows -- it takes out only what still fits -- said for a thing
+    // that leaves whole instead of by the spadeful.
+    const double room_kg = carry_limit_kg_ - carriedKg() - carried_objects_kg;
+    const double budget_m3 = std::isfinite(room_kg)
+                                 ? std::max(0.0, room_kg) / rockMaterial().density_kg_m3
+                                 : std::numeric_limits<double>::infinity();
+    const TerrainField::Chipped chipped = terrain_->chip(x, z, at_height_m, volume_m3, budget_m3);
+    carry(chipped.edit.moved);
+    out.broken = chipped.broken;
+    out.full = chipped.full;
+    out.effect.edit = chipped.edit;
+    if (chipped.edit.cells.empty()) return out;
+    for (const std::size_t c : chipped.edit.cells) out.effect.water_columns_moved += water_->depth(c) > 0.0;
+    syncWaterBed(chipped.edit.cells);
+    noteChanged(chipped.edit.cells);
+    const std::set<int> chunks = terrain_->takeDirtyChunks();
+    rebuildChunks(world, chunks, &out.effect);
+    for (const int chunk : chunks) syncWorkingPatches(world, chunk);
+    return out;
 }
 
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,

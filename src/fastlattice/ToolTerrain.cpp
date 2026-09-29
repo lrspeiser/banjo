@@ -408,7 +408,14 @@ ToolTerrain::Resistance ToolTerrain::resistance(const Point &p, const terrain::G
     // the rest of the tool meets the ground as a surface.
     const double reach = std::min(p.shape.length_m, depth_m + std::max(0.0, closing_m_s) * dt_s);
     if (p.at_rock) {
-        out.into = kRockN;
+        // Rock it cannot break stops it dead. Rock it CAN break resists at what
+        // breaking costs: rock-work-v1 says a cubic metre of this ground takes
+        // e_s joules, so pushing a point of cross-section A through it takes
+        // e_s A newtons -- and the work the solver then measures is the work
+        // that was really done, exactly as it is in soil.
+        out.into = p.breaks_rock
+            ? terrain::specificEnergyJPerM3(p.rock_hardness_pa) * terrain::pointAreaAt(p.shape, d)
+            : kRockN;
     } else if (reach > depth_m + 1e-6 && reach > 0.0) {
         const double work = terrain::penetrationWorkJ(ground, p.shape, reach) -
                             terrain::penetrationWorkJ(ground, p.shape, d);
@@ -502,10 +509,20 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     const double water = env->water() != nullptr ? env->water()->depth(column) : 0.0;
     const terrain::GroundVerdict verdict = terrain::judgeGround(rock, water, hardness, material);
     const std::string layer = rock ? std::string("rock") : terrain::groundAt(field, column, 0.0).name;
-    if (verdict.answer != terrain::GroundAnswer::Penetrable) {
+    const bool breaks_here = verdict.answer == terrain::GroundAnswer::Breakable;
+    if (verdict.answer != terrain::GroundAnswer::Penetrable && !breaks_here) {
+        // Breakable is rock under a point hard enough to break it: rock-work-v1
+        // says what a cubic metre of it costs. What the point then takes out is
+        // not wired to the ground yet -- the law and the ground's own
+        // Environment::breakOut both exist, and joining them is the next piece
+        // (docs/earth-and-mining-plan.md, 11, item 1).
+        const bool breaks = verdict.answer == terrain::GroundAnswer::Breakable;
         if (meeting)
-            note(host, p, verdict.answer == terrain::GroundAnswer::TooHard ? "stopped" : "not supported",
-                 layer, verdict.why, verdict.answer != terrain::GroundAnswer::NotSupported, at, closing);
+            note(host, p,
+                 verdict.answer == terrain::GroundAnswer::TooHard ? "stopped"
+                     : breaks ? "breaks it out" : "not supported",
+                 layer, verdict.why, verdict.answer != terrain::GroundAnswer::NotSupported,
+                 at, closing);
         return;
     }
     const double down = -a.y;
@@ -543,7 +560,14 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     p.sideways = 0.0;
     p.pry = {};
     p.broke_out = false;
-    p.at_rock = false;
+    // Bare rock a point can break: the bite opens IN the rock, and what it
+    // resists with is what breaking costs (rock-work-v1), not the soil model.
+    p.at_rock = rock && breaks_here;
+    p.breaks_rock = p.at_rock;
+    p.broke_m3 = 0.0;
+    p.rock_hardness_pa = p.at_rock
+        ? terrain::groundHardnessPa(field.kindAt(column, field.rockTop(column) - 0.01)) : 0.0;
+    if (p.at_rock && !(p.rock_hardness_pa > 0.0)) { p.breaks_rock = false; p.at_rock = false; }
     const double depth = dot(tip - p.entry, a);
     const terrain::GroundAtDepth in = terrain::groundAt(field, column, std::max(0.0, depth));
     p.ground = in.name;
@@ -590,6 +614,12 @@ void ToolTerrain::holdIn(const ToolTerrainHost &host, Point &p, MatterBodyId id,
             const MaterialDefinition *made_of = host.material_of(p.body);
             const terrain::GroundVerdict rock = terrain::judgeGround(
                 true, 0.0, made_of != nullptr ? made_of->hardness_pa : 0.0, host.material_name_of(p.body));
+            // What the rock here IS decides what breaking it costs: the fresh
+            // stone, the mantle the weather has rotted, or the oxidised cap of
+            // a vein, which is the part anybody can work by hand.
+            p.rock_hardness_pa = terrain::groundHardnessPa(field.kindAt(*c, field.rockTop(*c) - 0.01));
+            p.breaks_rock = rock.answer == terrain::GroundAnswer::Breakable &&
+                            p.rock_hardness_pa > 0.0;
             if (p.report < log_.size()) {
                 LiveGroundWork &r = log_[p.report];
                 r.why = "met rock " + mm(std::max(0.0, depth)) + " down: " + rock.why;
@@ -664,6 +694,39 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
             if (!p.broke_out && loosened(host, p) > 0.0) {
                 p.broke_out = true;
                 r.kind = "broke out";
+            }
+            // In rock it can break: the work this step measured buys a volume
+            // (rock-work-v1), and the ground keeps it until a whole cell has
+            // been paid for. Nothing here is a rate or a guess -- the work is
+            // the solver's own, as it is in soil.
+            if (p.breaks_rock && host.environment != nullptr && work_in > 0.0) {
+                const double bought = terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
+                if (bought > 0.0) {
+                    // At the tip's own height: a pick swung at a tunnel face
+                    // takes the rock out in front of the miner, not off the top
+                    // of the hill above them.
+                    const terrain::Environment::Chipped chipped =
+                        host.environment->chip(world, tip.x, tip.z, tip.y, bought,
+                                               host.carried_objects_kg);
+                    r.broken_share = chipped.broken;
+                    if (chipped.full) {
+                        // The cell is worked through and whoever is swinging
+                        // cannot take another 37 kg of rock. The blow was real
+                        // and the rock did not move: put something down.
+                        r.kind = "cannot carry it";
+                        r.why = "the next cell of rock is more than can be carried";
+                    } else {
+                        p.broke_m3 += bought;
+                        if (!chipped.effect.edit.cells.empty()) {
+                            r.loosened = chipped.effect.edit.moved;
+                            r.loosened_kg = chipped.effect.edit.mass_kg;
+                            r.kind = "broke rock out";
+                            p.broke_out = true;
+                        } else if (r.kind == "in the ground") {
+                            r.kind = "breaking rock";
+                        }
+                    }
+                }
             }
         }
         // Out of the ground -- clear of the surface where the tip now is, or
@@ -750,7 +813,13 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
             r.dug_depth_m = effect.edit.depth_m;
         }
     }
-    r.kind = p.broke_out ? "broke out" : "pulled out";
+    // What the meeting was. In rock: a cell of it came out, or the blow paid
+    // towards one and the ground is keeping the change.
+    if (p.breaks_rock)
+        r.kind = r.loosened.total() > 0.0 ? "broke rock out"
+                 : p.broke_m3 > 0.0 ? "chipped the rock" : "stopped";
+    else
+        r.kind = p.broke_out ? "broke out" : "pulled out";
     if (!tool_here && r.why.empty()) r.why = "the tool was gone before its point came out";
     condition(host, r, p);
     r.open = false;

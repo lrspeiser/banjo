@@ -712,6 +712,124 @@ def _solar_array_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+MINE_LAMP_PARAMETERS = (
+    w.Parameter("watts", "W", 20.0, 1.0, 500.0, about="what it asks for when it is switched on"),
+    w.Parameter("efficacy_lm_w", "lm/W", 120.0, 5.0, 200.0,
+                about="lumens for each watt it gets; an LED is about 120, a filament about 15"),
+    w.Parameter("globe_m", "m", 0.12, 0.05, 0.3),
+    w.Parameter("bracket_m", "m", 0.10, 0.04, 0.4),
+    w.Parameter("foot_m", "m", 0.22, 0.10, 0.6, about="the plate it stands on"),
+    w.Parameter("material", "", "iron", choices=("iron", "oak")),
+)
+
+
+def _build_mine_lamp(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    """A lamp on a foot: what you carry into a heading and stand on the floor.
+
+    It comes out of the Workshop DARK. A lamp is a fitting, not a torch -- it
+    lights when somebody runs a cable to it (docs/machine-world.md, "Light
+    underground"), which is the whole reason for making the cable a real thing.
+    """
+    material = str(values["material"])
+    foot = float(values["foot_m"])
+    parts: list[w.WirePart] = []
+    parts += library.make("surface", name="foot", material=material, at_m=(0.0, 0.03, 0.0),
+                          parameters={"width_m": foot, "thickness_m": 0.03, "depth_m": foot,
+                                      "profile": "square"}).parts
+    parts += library.make("lamp", name="globe", material=material, at_m=(0.0, 0.03, 0.0),
+                          parameters={"globe_m": float(values["globe_m"]),
+                                      "bracket_m": float(values["bracket_m"])}).parts
+    return parts
+
+
+def _mine_lamp_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    from . import workshop_construction, workshop_machines
+    joints = [{"id": f"joint-{i + 1}", "kind": "fixed", "a": "foot", "b": b, "method": "bonded"}
+              for i, b in enumerate(["globe bracket", "globe"])]
+    machines = workshop_machines.checked({
+        "stores": [], "motors": [], "controls": [], "programs": [], "panels": [],
+        # No store and no cable: unwired, and switched on so that it lights the
+        # moment a run reaches it rather than needing a second thing done.
+        "lamps": [{"name": "lamp", "on": "globe", "watts": values["watts"],
+                   "efficacy_lm_w": values["efficacy_lm_w"], "on_at_first": True}],
+    })
+    out: dict[str, Any] = {
+        workshop_construction.CONSTRUCTION_KEY: {
+            "schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+            "joints": joints, "added": [], "removed": []},
+        workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _mine_lamp_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    return []
+
+
+BREAKER_PARAMETERS = (
+    # What it puts into the rock while its trigger is held. The room declares
+    # the breaker itself (docs/machine-world.md, "Breaking rock with a machine")
+    # and says this there; here it is what the bench shows you before you build.
+    w.Parameter("watts", "W", 1500.0, 50.0, 20000.0,
+                about="what it puts into the rock while its trigger is held"),
+    w.Parameter("capacity_j", "J", 1.5e6, 1000.0, 1e9),
+    w.Parameter("charge_j", "J", 1.5e6, 0.0, 1e9),
+    w.Parameter("handle_m", "m", 0.55, 0.3, 1.2),
+    w.Parameter("chisel_m", "m", 0.30, 0.1, 0.6),
+    w.Parameter("material", "", "iron", choices=("iron",)),
+)
+
+
+def _build_breaker(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
+    """A powered breaker: a handle, a battery on it, and a chisel down the front.
+
+    A pick swung by hand puts twenty-odd joules into rock a blow, and a cell of
+    fresh rock costs 469 kJ (rock-work-v1), so a heading driven by arm alone is
+    twenty thousand blows. This is the tool that makes a tunnel a thing a person
+    can drive: it spends its battery into the rock at a declared rate, and when
+    the battery is flat you go and charge it.
+    """
+    material = str(values["material"])
+    handle = float(values["handle_m"])
+    chisel = float(values["chisel_m"])
+    parts: list[w.WirePart] = []
+    # Lying along +z: the handle at the back, the chisel out in front of it.
+    parts.append(w.WirePart(name="handle", role="post", size_m=(0.07, 0.07, handle),
+                            center_m=(0.0, 0.0, -handle / 2.0), material=material, family="leg"))
+    # 40 mm square, not 35: every side of a product has to be a whole number of
+    # the room's cells, and 35 is not a multiple of the 10 and 20 mm rooms use.
+    parts.append(w.WirePart(name="chisel", role="post", size_m=(0.04, 0.04, chisel),
+                            center_m=(0.0, 0.0, chisel / 2.0), material=material, family="leg"))
+    parts += library.make("battery", name="battery", material=material,
+                          at_m=(0.0, 0.035, -handle * 0.55),
+                          parameters={"width_m": 0.14, "height_m": 0.10, "depth_m": 0.20}).parts
+    return parts
+
+
+def _breaker_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[str, Any]:
+    from . import workshop_construction, workshop_machines
+    joints = [{"id": "joint-1", "kind": "fixed", "a": "handle", "b": "chisel", "method": "bonded"},
+              {"id": "joint-2", "kind": "fixed", "a": "handle", "b": "battery", "method": "bonded"}]
+    machines = workshop_machines.checked({
+        "stores": [{"name": "breaker battery", "in": "battery", "capacity_j": values["capacity_j"],
+                    "charge_j": values["charge_j"], "voltage_v": 48.0}],
+        "motors": [], "controls": [], "programs": [], "panels": [], "lamps": [],
+    })
+    out: dict[str, Any] = {
+        workshop_construction.CONSTRUCTION_KEY: {
+            "schema": workshop_construction.CONSTRUCTION_SCHEMA, "joints_authored": True,
+            "joints": joints, "added": [], "removed": []},
+        workshop_machines.MACHINES_KEY: machines}
+    for part in parts:
+        out[part.name] = {"mechanics": {"model": "rigid"}}
+    return out
+
+
+def _breaker_trials(values: dict[str, Any]) -> list[dict[str, Any]]:
+    return []
+
+
 def _build_processor(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
     material = str(values["material"])
     side, deck_y, top_t = float(values["deck_m"]), float(values["deck_height_m"]), float(values["top_thickness_m"])
@@ -911,7 +1029,24 @@ def install() -> None:
         uses={"primary_use_component": "shell-floor",
               "interaction_point_components": {"deck": "shell-roof", "grip": "shell-left",
                                                "use": "intake bin"}})
+    existing["mine-lamp"] = w.Assembly(
+        "mine-lamp", "light a place that has no daylight in it",
+        "A glass globe on an iron bracket, on a foot you stand on the floor. It comes out of the Workshop "
+        "dark: a lamp is a fitting, and it lights when a cable is run to it.",
+        MINE_LAMP_PARAMETERS, _build_mine_lamp, _mine_lamp_trials, _mine_lamp_overrides,
+        uses={"primary_use_component": "foot",
+              "interaction_point_components": {"deck": "foot", "grip": "globe bracket", "use": "globe"}})
+    existing["breaker"] = w.Assembly(
+        "breaker", "break rock out of a face faster than an arm can",
+        "A powered breaker: a handle with a battery on it and a chisel down the front. Held against rock it "
+        "spends its battery into the face at its own rate, and a cell of rock comes out when it has been "
+        "paid for.",
+        BREAKER_PARAMETERS, _build_breaker, _breaker_trials, _breaker_overrides,
+        uses={"primary_use_component": "handle",
+              "interaction_point_components": {"deck": "handle", "grip": "handle", "use": "chisel"}})
     if "processor" not in seen: ordered.append(existing["processor"])
+    if "mine-lamp" not in seen: ordered.append(existing["mine-lamp"])
+    if "breaker" not in seen: ordered.append(existing["breaker"])
     if "solar-array" not in seen: ordered.append(existing["solar-array"])
     if "electric-furnace" not in seen: ordered.append(existing["electric-furnace"])
     w.ASSEMBLIES = tuple(ordered)

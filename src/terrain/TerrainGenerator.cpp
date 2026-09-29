@@ -1,4 +1,4 @@
-#include "terrain/TerrainGenerator.hpp"
+﻿#include "terrain/TerrainGenerator.hpp"
 #include "numeric/FpProfile.hpp"
 
 #include <algorithm>
@@ -434,6 +434,10 @@ void setView(Landscape &land, double ex, double ez, double lx, double lz, double
 //
 // A column is the sorted list of where those surfaces cross it, so every
 // boundary is exact and a column holds at most seven beds.
+// How many beds a column keeps room for beyond the ones it is made of: enough
+// for a working to be driven through it (see layBeds).
+inline constexpr int kSpareBeds = 3;
+
 struct Geology {
     double mantle_m{1.4};          // how deep the weather has rotted the rock
     double mantle_vary_m{0.5};
@@ -523,9 +527,322 @@ Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
                 beds.top.push_back(top);
             }
             beds.count[c] = static_cast<std::uint32_t>(beds.top.size()) - beds.start[c];
+            // Room to spare in every column, because driving a working through a
+            // bed splits it into three -- what is under the hole, the hole, and
+            // what is over it -- and a column with no room for that stays solid
+            // and the tunnel quietly does not happen. The count says how many
+            // are live; the spare costs half a megabyte for the valley.
+            for (int k = 0; k < kSpareBeds; ++k) {
+                beds.kind.push_back(static_cast<std::uint8_t>(RunKind::Rock));
+                beds.top.push_back(top);
+            }
         }
     beds.start[n] = static_cast<std::uint32_t>(beds.top.size());
     return beds;
+}
+
+// ---- what somebody left behind ---------------------------------------------
+//
+// They found the vein where it broke surface and did what anyone does: followed
+// it. An OPEN CUT along its strike, as deep as a man can still throw spoil out
+// of; a SHAFT sunk at the far end when it got deeper than that; the SPOIL from
+// both, heaped where it was thrown; and an ADIT mouth cut into the hillside
+// lower down, the level they meant to drive in on. Then they stopped -- which is
+// the story the ground itself tells, because the cut runs out where the ore
+// stops being oxidised and soft and turns fresh and hard, and nothing anybody
+// had could work that.
+//
+// The workings are made of the same ground as everything else: the cut takes
+// what is over the rock with it, truncates the beds it passes through, and every
+// cubic metre it removes goes into the heaps. None of it is scenery.
+// How far the workings keep off the river, said as the moisture the erosion pass
+// left: it falls as exp(-distance / 4 m) from the channel, so this is about
+// three metres of bank. Nobody swings a pick in the stream or heaps spoil into
+// it. (This was 5.5 m for a while, on a suspicion that the workings had slowed
+// the valley's river. They had not: the log drifts at exactly the same speed
+// with the whole mine pass switched off, to fifteen digits.)
+inline constexpr float kClearOfTheRiver = 0.5F;
+
+struct MineShape {
+    double workable_cover_m{1.6};  // how much cover a pick could take off the ore
+    double cut_into_ore_m{0.35};   // and how far into the ore they got
+    double cut_depth_m{1.4};       // as deep as spoil can still be thrown out
+    double shaft_side_m{1.3};
+    double shaft_depth_m{2.8};
+    double adit_back_m{7.0};       // how far from the shaft the mouth is
+    double adit_below_m{1.4};      // and how far below its collar
+    double adit_width_m{1.2};
+    double adit_length_m{6.0};
+    double adit_height_m{1.75};    // headroom: a person walks in stooping a little
+    double adit_cover_m{0.6};      // rock over the roof before it IS a roof
+    double heap_radius_m{2.4};
+};
+
+// Take one column's ground down to `to_m` and return what that removed. The beds
+// it passes through are truncated the way a cut truncates them: a working that
+// did not cut the rock it went through would be a hole in a picture.
+double cutColumnTo(Landscape &land, const Grid &g, std::size_t c, double to_m) {
+    const double area = g.dx * g.dx;
+    double removed = 0.0;
+    for (std::vector<double> *layer : {&land.loose, &land.sand, &land.soil}) {
+        const double top = land.rock[c] + land.soil[c] + land.sand[c] + land.loose[c];
+        if (!(top > to_m)) return removed;
+        const double take = std::min((*layer)[c], top - to_m);
+        (*layer)[c] -= take;
+        removed += take * area;
+    }
+    if (!(land.rock[c] > to_m)) return removed;
+    removed += (land.rock[c] - to_m) * area;
+    const std::uint32_t from = land.beds.start[c];
+    while (land.beds.count[c] > 1 &&
+           land.beds.top[from + land.beds.count[c] - 2] > to_m) --land.beds.count[c];
+    land.beds.top[from + land.beds.count[c] - 1] = to_m;
+    land.rock[c] = to_m;
+    return removed;
+}
+
+// Every column within `half_width` of the segment, as a dig is: the column, how
+// far along it lies, and how far off the line it is.
+template <typename Body>
+void alongTheWorking(const Grid &g, double ax, double az, double bx, double bz,
+                     double half_width, Body &&body) {
+    const double lx = bx - ax, lz = bz - az, length2 = lx * lx + lz * lz;
+    const int i0 = std::max(0, int(std::floor((std::min(ax, bx) - half_width - g.x0) / g.dx)));
+    const int i1 = std::min(g.nx - 1, int(std::ceil((std::max(ax, bx) + half_width - g.x0) / g.dx)));
+    const int j0 = std::max(0, int(std::floor((std::min(az, bz) - half_width - g.z0) / g.dx)));
+    const int j1 = std::min(g.nz - 1, int(std::ceil((std::max(az, bz) + half_width - g.z0) / g.dx)));
+    for (int j = j0; j <= j1; ++j)
+        for (int i = i0; i <= i1; ++i) {
+            const double px = g.xOf(i) - ax, pz = g.zOf(j) - az;
+            const double t = length2 > 0.0 ? std::clamp((px * lx + pz * lz) / length2, 0.0, 1.0) : 0.0;
+            const double ox = px - t * lx, oz = pz - t * lz;
+            const double d = std::hypot(ox, oz);
+            if (d <= half_width) body(g.at(i, j), t, d);
+        }
+}
+
+// Drive the adit in: from the mouth, on the level, towards the shaft. Where it
+// goes under the hill it is a VOID -- rock under it, rock over it, and the
+// hillside untouched above (TerrainField::RunKind::Void). The mouth itself is a
+// notch, because the first column of a tunnel has no rock over it to be a roof.
+//
+// Cell-quantised in y, as every void is: the floor and the roof land on exact
+// multiples of the column spacing, which is what lets the collider be two more
+// height fields and the drawing be cubes.
+double driveTheAdit(const Grid &g, Landscape &land, const Mine &mine, const MineShape &shape) {
+    const auto groundAt = [&](std::size_t c) {
+        return land.rock[c] + land.soil[c] + land.sand[c] + land.loose[c];
+    };
+    const auto cellOf = [&](double x, double z) {
+        const int i = std::clamp(int(std::lround((x - g.x0) / g.dx)), 0, g.nx - 1);
+        const int j = std::clamp(int(std::lround((z - g.z0) / g.dx)), 0, g.nz - 1);
+        return g.at(i, j);
+    };
+    const double quantum = g.dx;
+    const double sill = std::floor((groundAt(cellOf(mine.adit_m[0], mine.adit_m[1])) - 0.15) /
+                                   quantum) * quantum;
+    const double roof = sill + std::round(shape.adit_height_m / quantum) * quantum;
+    double taken = 0.0;
+    const double area = g.dx * g.dx;
+    alongTheWorking(g, mine.adit_m[0], mine.adit_m[1],
+                    mine.adit_m[0] + mine.adit_into_m[0] * shape.adit_length_m,
+                    mine.adit_m[1] + mine.adit_into_m[1] * shape.adit_length_m,
+                    0.5 * shape.adit_width_m, [&](std::size_t c, double, double) {
+        const double top = groundAt(c);
+        if (top <= roof + shape.adit_cover_m) {
+            // Not enough hill over it to be a tunnel: this much is the mouth,
+            // cut open to the sky.
+            if (top > sill) taken += cutColumnTo(land, g, c, sill);
+            return;
+        }
+        // Under the hill: a void between sill and roof, with the rock over it
+        // left where it is. The beds are cut into three -- what is under the
+        // working, the working, and what is over it.
+        const std::uint32_t from = land.beds.start[c];
+        const std::uint32_t room = land.beds.start[c + 1] - from;
+        std::uint8_t kind[16];
+        double bed_top[16];
+        std::uint32_t n = 0;
+        double below = 0.0;
+        const auto push = [&](std::uint8_t k, double t) {
+            if (n > 0 && kind[n - 1] == k) { bed_top[n - 1] = t; return; }
+            if (n + 1 >= 16) return;
+            kind[n] = k; bed_top[n] = t; ++n;
+        };
+        for (std::uint32_t b = 0; b < land.beds.count[c]; ++b) {
+            const double t = land.beds.top[from + b];
+            const std::uint8_t k = land.beds.kind[from + b];
+            // Everything below the working, then the working, then above it.
+            if (t <= sill) { push(k, t); below = t; continue; }
+            if (below < sill) { push(k, sill); below = sill; }
+            if (t <= roof) continue;                       // this bed is inside the working
+            if (below < roof) {
+                push(static_cast<std::uint8_t>(RunKind::Void), roof);
+                below = roof;
+            }
+            push(k, t);
+            below = t;
+        }
+        if (n == 0 || n > room) return;                   // no room to say it: leave it solid
+        taken += (roof - sill) * area;
+        for (std::uint32_t b = 0; b < n; ++b) {
+            land.beds.kind[from + b] = kind[b];
+            land.beds.top[from + b] = bed_top[b];
+        }
+        land.beds.count[c] = n;
+    });
+    return taken;
+}
+
+Mine workOldMine(const Grid &g, Landscape &land, const MineShape &shape = {}) {
+    Mine mine;
+    const auto groundAt = [&](std::size_t c) {
+        return land.rock[c] + land.soil[c] + land.sand[c] + land.loose[c];
+    };
+    // Nobody works a pick under the river, and nobody throws spoil into it. The
+    // river has not been run yet at this point, so its own depth is still
+    // nothing: what says where it will be is the moisture the erosion pass left,
+    // which is 1 in the channel and falls away from it. Dry ground only, for the
+    // cut and for the heaps alike.
+    const auto dry = [&](std::size_t c) {
+        return (land.depth.empty() || !(land.depth[c] > 0.02)) &&
+               (land.moisture.empty() || land.moisture[c] < kClearOfTheRiver);
+    };
+    // Where the vein is worth working from the surface: the ore is there, and it
+    // is near enough the top that a man with a pick could get at it by taking
+    // the cover off. That is where the old workings are, because that is where
+    // anybody's workings would be.
+    std::vector<std::size_t> workable;
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        const std::uint32_t from = land.beds.start[c];
+        double ore_top = -1.0e30;
+        for (std::uint32_t k = 0; k < land.beds.count[c]; ++k) {
+            const auto kind = static_cast<RunKind>(land.beds.kind[from + k]);
+            if (kind == RunKind::Ore || kind == RunKind::OxidisedOre)
+                ore_top = std::max(ore_top, land.beds.top[from + k]);
+        }
+        if (ore_top > -1.0e29 && groundAt(c) - ore_top < shape.workable_cover_m && dry(c))
+            workable.push_back(c);
+    }
+    if (workable.empty()) return mine;    // a valley with nothing in it to work
+
+    // The two ends of what they worked, and the highest of it -- which is where
+    // the shaft goes, because a shaft is sunk from the top of the hill and not
+    // from the foot of it.
+    std::size_t highest = workable.front(), first = workable.front(), last = workable.front();
+    const auto xOf = [&](std::size_t c) { return g.xOf(int(c % std::size_t(g.nx))); };
+    const auto zOf = [&](std::size_t c) { return g.zOf(int(c / std::size_t(g.nx))); };
+    for (const std::size_t c : workable) {
+        if (groundAt(c) > groundAt(highest)) highest = c;
+        if (xOf(c) < xOf(first)) first = c;
+        if (xOf(c) > xOf(last)) last = c;
+    }
+    mine.cut_from_m[0] = xOf(first);
+    mine.cut_from_m[1] = zOf(first);
+    mine.cut_to_m[0] = xOf(last);
+    mine.cut_to_m[1] = zOf(last);
+
+    // The cut: the cover comes off the vein, and a little of the rock with it.
+    // Deeper where the ore lies deeper, because that is how far they had to go
+    // to reach it, and never deeper than a man can throw spoil out of.
+    double spoil = 0.0;
+    for (const std::size_t c : workable) {
+        const std::uint32_t from = land.beds.start[c];
+        double ore_top = -1.0e30;
+        for (std::uint32_t k = 0; k < land.beds.count[c]; ++k) {
+            const auto kind = static_cast<RunKind>(land.beds.kind[from + k]);
+            if (kind == RunKind::Ore || kind == RunKind::OxidisedOre)
+                ore_top = std::max(ore_top, land.beds.top[from + k]);
+        }
+        const double floor_m = std::max(ore_top - shape.cut_into_ore_m,
+                                        groundAt(c) - shape.cut_depth_m);
+        if (groundAt(c) > floor_m) spoil += cutColumnTo(land, g, c, floor_m);
+    }
+
+    // The shaft, sunk at the high end of the working.
+    mine.shaft_m[0] = xOf(highest);
+    mine.shaft_m[1] = zOf(highest);
+    const double collar = groundAt(highest);
+    const int reach = std::max(1, int(std::round(0.5 * shape.shaft_side_m / g.dx)));
+    const int ci = int(highest % std::size_t(g.nx)), cj = int(highest / std::size_t(g.nx));
+    for (int j = cj - reach; j <= cj + reach; ++j)
+        for (int i = ci - reach; i <= ci + reach; ++i) {
+            if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) continue;
+            if (dry(g.at(i, j))) spoil += cutColumnTo(land, g, g.at(i, j), collar - shape.shaft_depth_m);
+        }
+    mine.shaft_floor_m = collar - shape.shaft_depth_m;
+
+    // The adit's mouth: they meant to come in underneath, so it is cut into the
+    // hillside below the shaft -- far enough down it to be under the working,
+    // and at the steepest ground within reach, because that is where a mouth
+    // stands up on its own instead of having to be dug out of a slope.
+    double steepest = -1.0;
+    double mouth_x = mine.shaft_m[0], mouth_z = mine.shaft_m[1];
+    for (int step = 0; step < 4; ++step)
+    for (int k = 0; k < 24; ++k) {
+        const double out = shape.adit_back_m + 2.0 * step;
+        const double a = 2.0 * kPi * k / 24.0;
+        const double x = mine.shaft_m[0] + std::cos(a) * out;
+        const double z = mine.shaft_m[1] + std::sin(a) * out;
+        if (x < g.x0 + 2.0 || z < g.z0 + 2.0 ||
+            x > g.xOf(g.nx - 1) - 2.0 || z > g.zOf(g.nz - 1) - 2.0) continue;
+        const int i = std::clamp(int(std::lround((x - g.x0) / g.dx)), 1, g.nx - 2);
+        const int j = std::clamp(int(std::lround((z - g.z0) / g.dx)), 1, g.nz - 2);
+        const double here = groundAt(g.at(i, j));
+        // Below the collar, or it is not an adit at all; and the steeper the
+        // better, measured as the fall across two cells towards the shaft.
+        // Below the collar by enough to be worth driving, and on dry ground:
+        // a mouth in the riverbank is not a mouth.
+        if (!(here < collar - shape.adit_below_m) || !dry(g.at(i, j))) continue;
+        const double toward_x = (mine.shaft_m[0] - x), toward_z = (mine.shaft_m[1] - z);
+        const double n = std::hypot(toward_x, toward_z);
+        if (!(n > 0.0)) continue;
+        const int bi = std::clamp(int(std::lround((x + 2.0 * g.dx * toward_x / n - g.x0) / g.dx)), 0, g.nx - 1);
+        const int bj = std::clamp(int(std::lround((z + 2.0 * g.dx * toward_z / n - g.z0) / g.dx)), 0, g.nz - 1);
+        const double rise = groundAt(g.at(bi, bj)) - here;
+        if (rise > steepest) { steepest = rise; mouth_x = x; mouth_z = z; }
+    }
+    mine.adit_m[0] = mouth_x;
+    mine.adit_m[1] = mouth_z;
+    const double into = std::hypot(mine.shaft_m[0] - mouth_x, mine.shaft_m[1] - mouth_z);
+    mine.adit_into_m[0] = into > 0.0 ? (mine.shaft_m[0] - mouth_x) / into : 1.0;
+    mine.adit_into_m[1] = into > 0.0 ? (mine.shaft_m[1] - mouth_z) / into : 0.0;
+    // The adit itself: a mouth cut open where there is no hill over it yet, and
+    // a driven tunnel where there is.
+    if (steepest > 0.0) spoil += driveTheAdit(g, land, mine, shape);
+
+    // The spoil, where it was thrown: below the working, below the collar, and
+    // outside the mouth. It is what came out, so the heaps hold exactly that
+    // and the valley has neither gained nor lost matter by being worked.
+    const double area = g.dx * g.dx;
+    struct Heap { double x, z, share; };
+    const double down_x = mine.cut_from_m[0] - mine.shaft_m[0];
+    const double down_z = mine.cut_from_m[1] - mine.shaft_m[1];
+    const double dn = std::max(1.0e-6, std::hypot(down_x, down_z));
+    const Heap heaps[3] = {
+        {mine.shaft_m[0] - down_z / dn * shape.heap_radius_m,
+         mine.shaft_m[1] + down_x / dn * shape.heap_radius_m, 0.45},
+        {mine.cut_from_m[0] - down_z / dn * shape.heap_radius_m,
+         mine.cut_from_m[1] + down_x / dn * shape.heap_radius_m, 0.25},
+        {mine.adit_m[0] - mine.adit_into_m[0] * (shape.heap_radius_m + 0.6),
+         mine.adit_m[1] - mine.adit_into_m[1] * (shape.heap_radius_m + 0.6), 0.30},
+    };
+    for (const Heap &h : heaps) {
+        double weight = 0.0;
+        alongTheWorking(g, h.x, h.z, h.x, h.z, shape.heap_radius_m,
+                        [&](std::size_t c, double, double d) {
+            if (dry(c)) weight += std::max(0.0, 1.0 - d / shape.heap_radius_m);
+        });
+        if (!(weight > 0.0)) continue;
+        const double each = spoil * h.share / (weight * area);
+        alongTheWorking(g, h.x, h.z, h.x, h.z, shape.heap_radius_m,
+                        [&](std::size_t c, double, double d) {
+            if (dry(c)) land.loose[c] += each * std::max(0.0, 1.0 - d / shape.heap_radius_m);
+        });
+    }
+    mine.spoil_m3 = spoil;
+    mine.worked = true;
+    return mine;
 }
 
 Landscape generateValley(const ValleyParameters &p) {
@@ -725,6 +1042,9 @@ Landscape generateValley(const ValleyParameters &p) {
     // ---- what the rock is made of: the mantle, the clay bed and the vein.
     land.beds = layBeds(g, land.rock, *std::min_element(land.rock.begin(), land.rock.end()) -
                             TerrainField::kEarthDepthM, knoll_x, knoll_z, p.seed);
+
+    // ---- and what somebody made of it before we got here.
+    land.mine = workOldMine(g, land);
 
     // ---- the river: in where the drainage starts, out at the mouth.
     int in_from = source_j, in_to = source_j;
@@ -953,6 +1273,14 @@ bool saveLandscape(const Landscape &land, const std::string &path) {
         // In the order it is read back: the beds after the water, not before it.
         putVector(out, land.beds.start); putVector(out, land.beds.count);
         putVector(out, land.beds.kind); putVector(out, land.beds.top);
+        put(out, static_cast<std::uint8_t>(land.mine.worked ? 1 : 0));
+        for (const double v : {land.mine.cut_from_m[0], land.mine.cut_from_m[1],
+                               land.mine.cut_to_m[0], land.mine.cut_to_m[1],
+                               land.mine.shaft_m[0], land.mine.shaft_m[1], land.mine.shaft_floor_m,
+                               land.mine.adit_m[0], land.mine.adit_m[1],
+                               land.mine.adit_into_m[0], land.mine.adit_into_m[1],
+                               land.mine.spoil_m3})
+            put(out, v);
         put(out, static_cast<std::uint32_t>(land.inflows.size()));
         for (const auto &in : land.inflows) {
             putString(out, in.name); put(out, static_cast<std::uint8_t>(in.edge));
@@ -1008,6 +1336,16 @@ std::optional<Landscape> loadLandscape(const std::string &path) {
         land.beds.kind.size() != land.beds.top.size() ||
         land.beds.start[n] != land.beds.top.size())
         return std::nullopt;
+    std::uint8_t worked = 0;
+    if (!take(in, worked)) return std::nullopt;
+    land.mine.worked = worked != 0;
+    for (double *v : {&land.mine.cut_from_m[0], &land.mine.cut_from_m[1],
+                      &land.mine.cut_to_m[0], &land.mine.cut_to_m[1],
+                      &land.mine.shaft_m[0], &land.mine.shaft_m[1], &land.mine.shaft_floor_m,
+                      &land.mine.adit_m[0], &land.mine.adit_m[1],
+                      &land.mine.adit_into_m[0], &land.mine.adit_into_m[1],
+                      &land.mine.spoil_m3})
+        if (!take(in, *v)) return std::nullopt;
     std::uint32_t count = 0;
     if (!take(in, count) || count > 64) return std::nullopt;
     for (std::uint32_t k = 0; k < count; ++k) {

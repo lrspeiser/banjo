@@ -49,6 +49,11 @@ export const BINDINGS = {
   dig:       { label: "F", keys: ["KeyF"] },
   heap:      { label: "H", keys: ["KeyH"] },
   heat:      { label: "B", keys: ["KeyB"] },
+  // Mining. M holds a powered breaker's trigger against the face; P starts a
+  // run of cable where you stand and makes it off at the next thing you point
+  // it at (docs/machine-world.md, "Light underground").
+  breaker:   { label: "M", keys: ["KeyM"] },
+  cable:     { label: "P", keys: ["KeyP"] },
   // The workbench: the lab's recorded runs, played back on a bench in front of
   // you (workbench.js).
   workbench: { label: "K", keys: ["KeyK"] },

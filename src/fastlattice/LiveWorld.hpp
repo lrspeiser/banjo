@@ -531,6 +531,84 @@ struct LiveSolarPanel {
     double sunlight_j{}, collected_j{}, spilled_j{}, heat_j{};
 };
 
+// A run of cable (docs/machine-world.md, "Light underground"): two conductors
+// from a store to wherever the light is wanted, pinned where they are put and
+// not moving again. Its resistance is the conductor's own -- resistivity times
+// twice the run's length, over its area -- and what that costs is real: a long
+// thin run up a hillside to a solar farm loses more of what it carries than a
+// short fat one, and the lamps on it are dimmer for it.
+struct LiveCable {
+    unsigned id{};
+    std::string name;
+    unsigned store{};                 // the far end: what feeds it
+    std::vector<Vec3> run_m;          // where it hangs, corner to corner
+    double area_mm2{};
+    double resistivity_ohm_m{};       // copper is 1.68e-8
+    double length_m{}, resistance_ohm{};
+    // As the last kept step left it: what it carried to its lamps, what it lost
+    // in itself, the current that did both, and how much of the store's voltage
+    // never reached the far end -- which is the number that says whether a run
+    // is thick enough.
+    double current_a{}, volts_lost{}, loss_w{}, carried_w{};
+    double carried_j{}, lost_j{};     // since it was made
+};
+
+// An electric lamp (docs/machine-world.md, "Light underground"): on a part, or
+// pinned where it is put, fed from a store along a cable. Switched on it asks
+// for its watts; what it gets is what the store can give after the cable has
+// taken its share, and a lamp that gets less than it asked for is dimmer, not
+// dark. `efficacy_lm_w` is lumens the watt, which is what tells a page how
+// bright to draw it: an LED is about 120, a filament about 15.
+struct LiveLamp {
+    unsigned id{};
+    std::string name;
+    std::string body;                 // the part it is on; "" for one pinned in the world
+    unsigned cable{};                 // the run that feeds it; 0 for one wired straight to its store
+    unsigned store{};                 // where its power comes from
+    Vec3 at_local_m{};                // on the part, about its centre of mass; in the world when body is ""
+    double watts{};                   // what it asks for, switched on
+    double efficacy_lm_w{};
+    bool on{};
+    // As the last kept step left it: where it is, what it drew, what it gives,
+    // and why it is not giving what it asked for.
+    Vec3 at_m{};
+    double drawn_w{}, lumens{};
+    bool lit{};
+    std::string why;
+    double drawn_j{};                 // since it was made
+};
+
+// A powered breaker (docs/machine-world.md, "Breaking rock with a machine"): a
+// chisel on a part, wired to a store, that spends its store into whatever rock
+// its point is against. A pick swung by hand puts twenty-odd joules into rock a
+// blow and a cell of fresh rock costs 469 kJ (rock-work-v1), so a heading driven
+// by arm alone is twenty thousand blows; this is what makes a tunnel a thing a
+// person can drive.
+//
+// It works the rock its point is IN, or the first rock within `reach_m` ahead of
+// its point along the chisel -- a collider will not let a tool inside the face,
+// so a breaker held against a wall has its point a hair outside it. Nothing here
+// aims: where the point is and which way it looks is where the hand put it.
+struct LiveBreaker {
+    unsigned id{};
+    std::string name;
+    std::string body;             // the part the chisel is on
+    unsigned store{};             // what it draws from
+    Vec3 point_local_m{};         // its point, in the part's own frame
+    Vec3 along_local{0.0, 0.0, 1.0};  // which way the chisel looks
+    double watts{};               // what it puts in while it is on
+    double reach_m{};             // how far ahead of the point it can reach rock
+    bool on{};
+    // As the last kept step left it: where its point is and which way it looks,
+    // what it drew, what that bought, how far through the cell it is working,
+    // and why it is doing nothing.
+    Vec3 at_m{}, along{};
+    double drawn_w{}, broke_m3{}, broken_share{};
+    bool working{};
+    std::string why;
+    double drawn_j{}, broke_total_m3{};
+};
+
 // A motor on a pin, wired to a store: a DC motor's torque-speed line, from the
 // two numbers a maker gives -- the torque it stalls at and the speed it runs at
 // unloaded, both at the store's voltage. The command runs from -1 to 1, the
@@ -1057,6 +1135,10 @@ struct LiveGroundWork {
     // "stopped"        ground at least as hard as the point stopped it
     // "glanced"        the point met the ground side-on: an ordinary contact
     // "not supported"  the ground there is a regime the model does not cover
+    // "breaking rock"  the point is working a cell of rock and has not got
+    //                  through it yet
+    // "broke rock out" a whole cell of rock came out and is now carried
+    // "cannot carry it" the cell is worked through and there is no room for it
     std::string kind;
     bool supported{true};
     // Why, for "stopped", "glanced" and "not supported"; what happened, for
@@ -1072,6 +1154,10 @@ struct LiveGroundWork {
     // the work it took out of the tool -- going in, and being pried.
     double impulse_n_s{};
     double peak_force_n{};
+    // In rock it can break: how far through the cell it is working the column
+    // has got, 0 to 1. A blow buys a volume and a volume smaller than a cell is
+    // progress, not a hole (rock-work-v1).
+    double broken_share{};
     double work_j{};
     double penetration_work_j{};
     double breakout_work_j{};
@@ -1225,7 +1311,8 @@ struct LiveRestore {
         std::size_t placed{};     // whole things whose cells could not be found again, put back where left
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
-        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{}, blades{},
+        std::size_t joints{}, energy_stores{}, motors{}, controls{}, programs{}, solar_panels{},
+            cables{}, lamps{}, breakers{}, blades{},
             tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
@@ -1253,7 +1340,8 @@ struct LiveRestore {
 struct LiveCarry {
     // Explicit host assertion that terrain declarations/edits are unchanged.
     bool ground{};
-    std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, blades, tool_points;
+    std::set<unsigned> joints, energy_stores, motors, controls, programs, solar_panels, cables, lamps,
+        breakers, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1820,6 +1908,32 @@ public:
     unsigned solarPanel(const std::string &name, const std::string &body, unsigned store, const Vec3 &at_world_m,
                         const Vec3 &normal_world, double area_m2, double efficiency);
     [[nodiscard]] std::vector<LiveSolarPanel> solarPanels() const;
+    // A run of cable (LiveCable) from `store` to wherever it ends: at least two
+    // points in the world, a conductor of `area_mm2` (above 0, at most 1000) and
+    // `resistivity_ohm_m` (above 0; copper is 1.68e-8). Returns its id, above
+    // zero, or 0 when the store is not there or the numbers are not a cable's.
+    unsigned cable(const std::string &name, unsigned store, const std::vector<Vec3> &run_m,
+                   double area_mm2, double resistivity_ohm_m);
+    [[nodiscard]] std::vector<LiveCable> cables() const;
+    // A lamp (LiveLamp) asking `watts` (above 0, at most 100 kW) at
+    // `efficacy_lm_w` (above 0, at most 1000), fed along `cable` -- or, with
+    // cable 0, straight off `store`. On a part, given where it is now in the
+    // world, so it goes where the part goes; with no part it is pinned where it
+    // is put. It starts switched off. Returns its id, above zero, or 0 when the
+    // part, the cable or the store is not there or the numbers are not a lamp's.
+    //
+    // A lamp with neither a cable nor a store is a lamp nobody has wired yet:
+    // it is a real fitting standing where it was put, and it is dark until a
+    // run reaches it. That is how one comes out of the Workshop.
+    unsigned lamp(const std::string &name, const std::string &body, unsigned cable, unsigned store,
+                  const Vec3 &at_world_m, double watts, double efficacy_lm_w);
+    // Make a lamp off onto a run, or (with cable 0) onto a store directly, which
+    // is what stringing a cable to a fitting does. False if there is no such
+    // lamp, or no such run or store.
+    bool wireLamp(unsigned id, unsigned cable, unsigned store = 0);
+    // Switch a lamp on or off. False if there is no such lamp.
+    bool switchLamp(unsigned id, bool on);
+    [[nodiscard]] std::vector<LiveLamp> lamps() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;
@@ -1924,14 +2038,40 @@ public:
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.
     terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    // Rock broken out of a column between two heights: a working with rock over
+    // it, or an open cut where it reaches daylight. What a tool that can break
+    // rock does to the ground (docs/earth-and-mining-plan.md).
+    terrain::EditEffect breakOut(double x, double z, double from_m, double to_m);
+    // Work a face of rock with measured energy, the machine's way in: the same
+    // rock-work-v1 law a swung point goes through, and the same rule about who
+    // can carry the result. A cell of rock comes out whole once it is paid for,
+    // and goes to whoever is working; `full` is a cell paid for that cannot be
+    // carried, which breaks nothing and leaves the work owed against the cell.
+    struct Chipped {
+        terrain::EditEffect effect;
+        double bought_m3{};     // what this call paid for, 0 when refused
+        double broken_share{};  // how far through the cell the column has got, 0 to 1
+        bool full{};
+    };
+    Chipped workRock(double x, double y, double z, double work_j);
+    // A powered breaker (LiveBreaker) on the named part, wired to `store`: its
+    // point given where it is now in the world, the chisel looking along
+    // `along_world`, putting `watts` (above 0, at most 1 MW) into the rock and
+    // reaching `reach_m` (0 to 0.5) ahead of its point. It starts switched off.
+    // Returns its id, above zero, or 0 when the part or the store is not there
+    // or the numbers are not a breaker's.
+    unsigned breaker(const std::string &name, const std::string &body, unsigned store,
+                     const Vec3 &point_world_m, const Vec3 &along_world, double watts, double reach_m);
+    bool switchBreaker(unsigned id, bool on);
+    [[nodiscard]] std::vector<LiveBreaker> breakers() const;
     // How much dug ground the person can carry (terrain::Environment). A world
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);
     [[nodiscard]] double carriedObjectsKg() const;
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
-    [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3);
-    void returnGround(double sand_m3, double soil_m3);
+    [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3, double rock_m3 = 0);
+    void returnGround(double sand_m3, double soil_m3, double rock_m3 = 0);
     // Cut a block out of bare rock, `height_m` tall (rounded to whole cells).
     // The ground loses it now; the host adds it as a body in the scene it
     // opens next -- a body cannot join a running world -- and until then the

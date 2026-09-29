@@ -10,6 +10,18 @@
 // 4. A full store takes no more: the rest is spilled, and the account still
 //    closes.
 // 5. A saved world keeps its sun, its panels and their accounts.
+//
+// And the other end of the wire (docs/machine-world.md, "Light underground"),
+// the owner's answer, 2026-09-28, to how a mine is lit: electric light, on
+// cables running up to the solar farm, rather than torches.
+//
+// 6. A lamp draws its watts and gives its lumens, and the store pays.
+// 7. A cable's resistance is real, and in series with the lamps on it: a long
+//    thin run keeps some of the voltage, so its lamps are dim even off a full
+//    battery, and a short fat one hardly any.
+// 8. A flat store puts the lights out; the sun charging it lights them again.
+// 9. Lamps on one run share it: a second lamp dims the first.
+// 10. A saved world keeps its cables and its lamps.
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
@@ -18,8 +30,10 @@
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace banjo;
 using namespace banjo::fastlattice;
@@ -182,6 +196,198 @@ void aSavedWorldKeepsItsSunAndPanels() {
 
 } // namespace
 
+// ---- light underground -----------------------------------------------------
+
+// A 20 W lamp at 120 lm/W, fed from the slab's battery along a run of cable of
+// `length_m` and `area_mm2` (copper). One lamp unless `lamps` says more.
+struct Lit {
+    std::unique_ptr<LiveWorld> world;
+    unsigned store{}, cable{};
+    std::vector<unsigned> lamps;
+};
+Lit lit(double length_m, double area_mm2, double charge_j = 1.0e6, int lamps = 1, double watts = 20.0) {
+    Lit l;
+    l.world = LiveWorld::open(slabRoom());
+    l.store = l.world->energyStore("battery", "slab", 1.0e6, charge_j, 24.0, 0.0);
+    if (l.store == 0) throw std::runtime_error("the battery would not go in");
+    if (length_m > 0.0) {
+        // A straight run, off along +x from the slab: its length is what decides
+        // its resistance, and where it goes does not matter to this.
+        l.cable = l.world->cable("feeder", l.store, {{0.0, 0.2, 0.0}, {length_m, 0.2, 0.0}}, area_mm2, 1.68e-8);
+        if (l.cable == 0) throw std::runtime_error("the cable would not run");
+    }
+    for (int i = 0; i < lamps; ++i) {
+        const unsigned id = l.world->lamp("lamp " + std::to_string(i + 1), "", l.cable, l.store,
+                                          {1.0 + 0.5 * i, 1.8, 0.0}, watts, 120.0);
+        if (id == 0) throw std::runtime_error("the lamp would not go up");
+        if (!l.world->switchLamp(id, true)) throw std::runtime_error("the lamp would not switch on");
+        l.lamps.push_back(id);
+    }
+    return l;
+}
+LiveLamp lampNamed(const LiveWorld &world, unsigned id) {
+    for (const LiveLamp &lamp : world.lamps())
+        if (lamp.id == id) return lamp;
+    throw std::runtime_error("no such lamp");
+}
+LiveCable cableOf(const LiveWorld &world) { return world.cables().front(); }
+
+void aLampDrawsItsWattsAndGivesItsLumens() {
+    // Wired straight to the store: no cable, so nothing lost on the way.
+    Lit l = lit(0.0, 0.0);
+    const double seconds = 240 * kDt;
+    const LiveEnergyStore was = storeOf(*l.world);
+    for (int i = 0; i < 240; ++i) tick(*l.world);
+    const LiveLamp lamp = lampNamed(*l.world, l.lamps.front());
+    const LiveEnergyStore store = storeOf(*l.world);
+    std::cout << "    20 W straight off the battery for " << seconds << " s: " << lamp.drawn_w << " W, "
+              << lamp.lumens << " lm, " << was.charge_j - store.charge_j << " J out of the battery\n";
+    require(lamp.lit && lamp.why.empty(), "it is lit, with nothing to explain: " + lamp.why);
+    require(near(lamp.drawn_w, 20.0) && near(lamp.lumens, 2400.0), "its watts and its lumens");
+    require(near(was.charge_j - store.charge_j, 20.0 * seconds, 1e-9), "and the battery paid for every joule");
+    require(near(store.given_j, 20.0 * seconds, 1e-9), "which is what the store says it gave");
+    require(near(lamp.drawn_j, 20.0 * seconds, 1e-9), "and what the lamp says it took");
+    // Switched off it draws nothing, and says why it is dark.
+    require(l.world->switchLamp(l.lamps.front(), false), "it would not switch off");
+    for (int i = 0; i < 24; ++i) tick(*l.world);
+    const LiveLamp off = lampNamed(*l.world, l.lamps.front());
+    require(!off.lit && off.drawn_w == 0.0 && off.why == "switched off", "off, and it says so: " + off.why);
+    require(near(storeOf(*l.world).charge_j, store.charge_j, 1e-12), "and the battery is not paying for it");
+}
+
+// A lamp rated `watts` at `volts` on a run of `ohm`, worked out with nothing but
+// Ohm's law: the lamp's own resistance, the current through the pair of them in
+// series, and what each of them then takes.
+struct Series { double amps{}, at_lamps_w{}, in_run_w{}; };
+Series series(double watts, double volts, double ohm) {
+    Series out;
+    const double load = volts * volts / watts;
+    out.amps = volts / (load + ohm);
+    out.at_lamps_w = out.amps * out.amps * load;
+    out.in_run_w = out.amps * out.amps * ohm;
+    return out;
+}
+
+void aLongThinRunLosesMoreOfIt() {
+    // 60 m of 1.5 mm2 copper, out and back: 2 x 1.68e-8 x 60 / 1.5e-6 = 1.344 ohm.
+    Lit thin = lit(60.0, 1.5);
+    for (int i = 0; i < 240; ++i) tick(*thin.world);
+    const LiveCable run = cableOf(*thin.world);
+    const LiveLamp lamp = lampNamed(*thin.world, thin.lamps.front());
+    const double ohm = 2.0 * 1.68e-8 * 60.0 / 1.5e-6;
+    const Series want = series(20.0, 24.0, ohm);
+    std::cout << "    60 m of 1.5 mm2 to one 20 W lamp: " << run.resistance_ohm << " ohm, " << run.current_a
+              << " A, " << run.volts_lost << " V lost on the way, " << run.loss_w << " W in the cable, the lamp at "
+              << lamp.drawn_w << " W of the 20 it asked for\n";
+    require(near(run.resistance_ohm, ohm, 1e-9), "resistivity times twice the run, over the conductor");
+    require(near(run.length_m, 60.0, 1e-9), "and the run is as long as it was laid");
+    // The run is in series with the lamp, so even off a full battery the lamp
+    // does not get its 20 W: the cable keeps some of the voltage.
+    require(near(run.current_a, want.amps, 1e-9), "the current is the voltage over both resistances");
+    require(near(lamp.drawn_w, want.at_lamps_w, 1e-9), "and the lamp gets I squared times its own resistance");
+    require(near(run.loss_w, want.in_run_w, 1e-9), "the run keeps I squared R");
+    require(near(run.volts_lost, want.amps * ohm, 1e-9), "and that much of the voltage never arrives");
+    require(lamp.drawn_w < 20.0 && lamp.why.find("dim") == 0, "it is dim, and says why: " + lamp.why);
+    require(near(run.carried_w, lamp.drawn_w, 1e-12), "what the run carried is what the lamp took");
+    // Four times the conductor: a quarter of the resistance, and the lamp gets
+    // nearly all of what it asked for.
+    Lit fat = lit(60.0, 6.0);
+    for (int i = 0; i < 240; ++i) tick(*fat.world);
+    const LiveCable fatter = cableOf(*fat.world);
+    const LiveLamp brighter = lampNamed(*fat.world, fat.lamps.front());
+    std::cout << "    the same run in 6 mm2: " << fatter.resistance_ohm << " ohm, " << fatter.loss_w
+              << " W in the cable, the lamp at " << brighter.drawn_w << " W\n";
+    require(near(fatter.resistance_ohm, ohm / 4.0, 1e-9), "four times the copper, a quarter of the resistance");
+    require(near(brighter.drawn_w, series(20.0, 24.0, ohm / 4.0).at_lamps_w, 1e-9), "and Ohm's law again");
+    require(brighter.drawn_w > lamp.drawn_w && fatter.loss_w < run.loss_w, "the fat run is better on both counts");
+    // What the store gave is what the lamp took plus what the cable lost.
+    const LiveEnergyStore store = storeOf(*thin.world);
+    require(near(store.given_j, run.carried_j + run.lost_j, 1e-9),
+            "the store gave the lamp's joules and the cable's together");
+}
+
+void aFlatStorePutsTheLightsOut() {
+    // A lamp with almost nothing behind it: 2 J will not run 20 W for a second.
+    Lit l = lit(0.0, 0.0, 2.0);
+    for (int i = 0; i < 240; ++i) tick(*l.world);
+    LiveLamp lamp = lampNamed(*l.world, l.lamps.front());
+    LiveEnergyStore store = storeOf(*l.world);
+    std::cout << "    2 J of battery and a 20 W lamp: out after " << store.given_j / 20.0 << " s, "
+              << store.short_j << " J it could not give\n";
+    require(!lamp.lit && lamp.why == "the store is flat", "the light went out, and it says why: " + lamp.why);
+    require(near(store.charge_j, 0.0, 1e-12) && near(store.given_j, 2.0, 1e-9), "it gave all it had and no more");
+    require(store.short_j > 0.0, "and it says what it could not give");
+    // The sun on a panel charges it, and the same lamp lights again -- which is
+    // the whole point of the wire going up to the farm.
+    require(l.world->solarPanel("panel", "slab", l.store, {0.0, 0.1, 0.0}, {0.0, 1.0, 0.0}, 1.0, 0.2) != 0,
+            "the panel would not go on");
+    require(l.world->setSun(90.0, 0.0, 1000.0), "the sun would not go in the sky");
+    for (int i = 0; i < 240; ++i) tick(*l.world);
+    lamp = lampNamed(*l.world, l.lamps.front());
+    store = storeOf(*l.world);
+    std::cout << "    200 W of panel on it: the lamp is back at " << lamp.drawn_w << " W and the battery is "
+              << "gaining " << store.taken_j - store.given_j << " J\n";
+    require(lamp.lit && near(lamp.drawn_w, 20.0), "the panel lit it again");
+    require(store.taken_j > store.given_j, "and the farm is making more than the light spends");
+}
+
+void lampsOnOneRunShareIt() {
+    // Six 100 W lamps on 120 m of 1 mm2: 4.032 ohm in front of 0.96 ohm of lamps,
+    // which is a run far too thin for the load and a heading barely lit.
+    const double ohm = 2.0 * 1.68e-8 * 120.0 / 1.0e-6;
+    Lit l = lit(120.0, 1.0, 1.0e6, 6, 100.0);
+    for (int i = 0; i < 240; ++i) tick(*l.world);
+    const LiveCable run = cableOf(*l.world);
+    const LiveLamp one = lampNamed(*l.world, l.lamps.front());
+    const Series six = series(600.0, 24.0, ohm);
+    std::cout << "    six 100 W lamps on 120 m of 1 mm2 (" << run.resistance_ohm << " ohm, " << run.volts_lost
+              << " V lost): each at " << one.drawn_w << " W, " << run.loss_w << " W in the run\n";
+    require(one.lit && one.drawn_w < 100.0, "they are dim, not dark");
+    require(one.why.find("dim") == 0, "and it says they are dim: " + one.why);
+    for (const unsigned id : l.lamps)
+        require(near(lampNamed(*l.world, id).drawn_w, one.drawn_w, 1e-9), "every lamp on the run dims the same");
+    require(near(run.carried_w, six.at_lamps_w, 1e-9), "the six together take what Ohm's law gives them");
+    require(near(one.drawn_w, six.at_lamps_w / 6.0, 1e-9), "and each takes a sixth of it");
+    require(near(run.loss_w, six.in_run_w, 1e-9), "the run keeps the rest");
+    require(near(run.current_a, six.amps, 1e-9), "at the current through the pair of them");
+    // One lamp alone on the same run gets far more than one of six does: fewer
+    // lamps, less current, and the run keeps less of the voltage.
+    Lit alone = lit(120.0, 1.0, 1.0e6, 1, 100.0);
+    for (int i = 0; i < 240; ++i) tick(*alone.world);
+    const LiveLamp only = lampNamed(*alone.world, alone.lamps.front());
+    std::cout << "    one of them alone on the same run: " << only.drawn_w << " W -- "
+              << only.drawn_w / one.drawn_w << " times as much\n";
+    require(near(only.drawn_w, series(100.0, 24.0, ohm).at_lamps_w, 1e-9), "Ohm's law for the one");
+    require(only.drawn_w > one.drawn_w, "a lamp alone on a run is brighter than one of six");
+}
+
+void aSavedWorldKeepsItsCablesAndLamps() {
+    Lit l = lit(60.0, 1.5);
+    for (int i = 0; i < 240; ++i) tick(*l.world);
+    const LiveCable was_run = cableOf(*l.world);
+    const LiveLamp was_lamp = lampNamed(*l.world, l.lamps.front());
+    std::string why;
+    const std::string saved = l.world->snapshot(why);
+    require(!saved.empty(), "the world would not save: " + why);
+    if (saved.empty()) return;
+    const auto again = LiveWorld::open(slabRoom(), saved);
+    require(again->restored().tier == "whole", "the world did not come back whole: " + again->restored().why);
+    require(again->cables().size() == 1 && again->lamps().size() == 1, "its cable and its lamp came back");
+    const LiveCable run = again->cables().front();
+    const LiveLamp lamp = again->lamps().front();
+    require(near(run.resistance_ohm, was_run.resistance_ohm, 1e-12) && near(run.length_m, was_run.length_m, 1e-12),
+            "the run is the same run");
+    require(near(run.carried_j, was_run.carried_j, 1e-12) && near(run.lost_j, was_run.lost_j, 1e-12),
+            "and its account came with it");
+    require(lamp.on && near(lamp.watts, 20.0) && near(lamp.drawn_j, was_lamp.drawn_j, 1e-12),
+            "the lamp is still on, and still says what it has drawn");
+    for (int i = 0; i < 240; ++i) tick(*again);
+    const LiveLamp now = again->lamps().front();
+    std::cout << "    saved and opened again: the lamp is at " << now.drawn_w << " W on a "
+              << run.resistance_ohm << " ohm run\n";
+    require(now.lit && near(now.drawn_w, was_lamp.drawn_w, 1e-9), "and it lights the same on the next step");
+}
+
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
         {"square to the sun, it puts in what the sun gives", squareToTheSunItPutsInWhatTheSunGives},
@@ -189,6 +395,11 @@ int main() {
         {"in shade nothing, and it says what shades it", inShadeNothingAndItSaysWhat},
         {"a full store takes no more", aFullStoreTakesNoMore},
         {"a saved world keeps its sun and panels", aSavedWorldKeepsItsSunAndPanels},
+        {"a lamp draws its watts and gives its lumens", aLampDrawsItsWattsAndGivesItsLumens},
+        {"a long thin run loses more of it", aLongThinRunLosesMoreOfIt},
+        {"a flat store puts the lights out", aFlatStorePutsTheLightsOut},
+        {"lamps on one run share it", lampsOnOneRunShareIt},
+        {"a saved world keeps its cables and lamps", aSavedWorldKeepsItsCablesAndLamps},
     };
     for (const auto &[name, test] : tests) {
         const int before = failures;
