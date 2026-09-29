@@ -429,6 +429,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
     nlohmann::json sensors = nlohmann::json::array();
     for (const LiveSensor &s : p.sensors)
         sensors.push_back({{"kind", s.kind}, {"body", s.body}, {"depth_m", tidy(s.depth_m)}, {"side", s.side},
+                           // Which way it looks: 1 ahead, -1 behind.
+                           {"stops", s.stops},
                            {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
                            {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
     return {{"id", p.id},
