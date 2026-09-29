@@ -957,20 +957,19 @@ def pouring() -> dict[str, Any]:
     pail rides the body that carries it, so what is in it goes where it goes.
     Open it at /world?scene=tests-pour.
     """
-    # The flat terrain's surface is 800 mm up, as it is in every room that
-    # generates one, and a body's centre is absolute. Authored at 40 the bench
-    # sat 760 mm UNDER the sand with both pails on it, so the room opened on
-    # bare ground: three bodies, all reported visible, none of them in sight.
-    GROUND_MM = 800
-
     pail = lambda name, x: {
         "name": name, "shape": "box", "material": "iron",
         # `rest_on` puts it on the bench's own surface, so this y is not used.
         "size_mm": [260, 280, 260], "center_mm": [x, 0, 0], "rest_on": "bench",
     }
-    # Seated on the ground on the way out, because this room was written
-    # around y = 0 and flat ground is 800 mm up: it has been showing a person
-    # nothing but sand since it was written (standing_on_the_ground).
+    # Seated on the ground on the way out. This room was written around y = 0,
+    # and a generated surface is not at zero -- rock is, with the soil and sand
+    # on top of it -- so the bench sat 760 mm UNDER the sand with both pails on
+    # it and the room opened on bare ground: three bodies, all reported
+    # visible, none of them in sight. `standing_on_the_ground` lifts the whole
+    # room and reads the height from the room's own terrain, which matters
+    # because it is not always 800: tests-motor and tests-sit ask for less soil
+    # and stand at 400.
     return standing_on_the_ground({
         "algorithm": "lattice",
         "cell_m": 0.04,
@@ -978,8 +977,7 @@ def pouring() -> dict[str, Any]:
         "terrain": {"generate": "flat"},
         "bodies": [
             {"name": "bench", "shape": "box", "material": "concrete",
-             "size_mm": [2400, 80, 800], "center_mm": [0, GROUND_MM + 40, 0],
-             "anchored": True},
+             "size_mm": [2400, 80, 800], "center_mm": [0, 40, 0], "anchored": True},
             pail("sand pail", -600),
             pail("empty pail", 600),
         ],
