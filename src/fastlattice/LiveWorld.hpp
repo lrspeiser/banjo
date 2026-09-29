@@ -687,6 +687,15 @@ struct LiveSensor {
     Vec3 at_m{};
     double reading_m{};
     bool sees{};
+    // How long it has been seeing, in seconds, and zero the moment it stops.
+    //
+    // `sees` alone is an edge: a host or a brain that reads it can be told
+    // once that there is water ahead and never told again, however long the
+    // machine stays in it. That is how a roaming rover slid down a basin into
+    // its lake over thirty-nine seconds having raised exactly one event. This
+    // is what says "and it still is" -- of any sensor, on any machine, so
+    // nothing has to know what a rover is.
+    double seeing_s{};
 };
 
 // A machine's controller (docs/machine-world.md, "Operating a machine"): what a

@@ -46,11 +46,11 @@ def a_program(**changes) -> dict:
     return program
 
 
-def sees(program: dict, side: int, mm: float = 12.0) -> dict:
+def sees(program: dict, side: int, mm: float = 12.0, seconds: float = 0.0) -> dict:
     program = deepcopy(program)
     for s in program["sensors"]:
         if s["side"] == side:
-            s.update(sees=True, reading_m=mm / 1000.0)
+            s.update(sees=True, reading_m=mm / 1000.0, seeing_s=seconds)
     return program
 
 
@@ -95,6 +95,38 @@ class WhatHappensToIt(unittest.TestCase):
                          rover_brain.situations(a_program(charge_share=0.4), low, None, []))
         knocked = [{"struck": "rover", "by": "boulder", "closing_speed_m_s": 1.234}]
         self.assertEqual(["boulder struck it at 1.2 m/s"], rover_brain.situations(a_program(), a_program(), None, knocked))
+
+    def test_being_still_in_it_is_its_own_event_and_reads_the_same_every_time(self):
+        """The one reading that is not an edge.
+
+        Everything else here fires on a change, so a machine that is still in
+        the same trouble a minute later says nothing. Measured on the roaming
+        rover: one "water ahead on its left", then thirty-nine seconds of
+        sliding down the basin into the lake without another word. This is
+        what says "and it still is", and it has to read the SAME every time --
+        with the seconds in the words a brain would answer each reading as a
+        fresh thing rather than as the thing it has not fixed yet.
+        """
+        still = "it is still in the water and not getting clear"
+        under = sees(a_program(), 1, seconds=machine_senses.STILL_IN_S - 0.1)
+        self.assertEqual(["water ahead on its left"], rover_brain.situations(a_program(), under, None, []))
+        over = sees(a_program(), 1, seconds=machine_senses.STILL_IN_S)
+        self.assertIn(still, rover_brain.situations(under, over, None, []))
+        longer = sees(a_program(), 1, seconds=90.0)
+        self.assertEqual([still], rover_brain.situations(over, longer, None, []))
+        # Out of it: the engine zeroes the clock, and it stops being said.
+        self.assertEqual([], rover_brain.situations(longer, a_program(), None, []))
+
+    def test_being_still_in_it_is_heard_through_an_ask(self):
+        """An ask silences the chatter, not the news that the ask is failing.
+
+        Without this a brain cannot tell a plan that worked from one that did
+        not: it is deaf from the moment it says anything until the ask lapses,
+        so it gets exactly one try at every situation.
+        """
+        asked = sees(a_program(asked={"doing": "backing off", "by": "jev"}), 1, seconds=20.0)
+        self.assertEqual(["it is still in the water and not getting clear"],
+                         rover_brain.situations(a_program(), asked, None, []))
 
     def test_nothing_is_noticed_while_it_is_off_or_asked(self):
         self.assertEqual([], rover_brain.situations(a_program(), sees(a_program(power=False), 1), None, []))
@@ -227,6 +259,51 @@ class TheBrainOffTheStep(unittest.TestCase):
         self.assertNotIn("brains", again, "the page hears of a brain once per change")
         brains.before(app, {"session": "s", "op": "step"})
         self.assertEqual(1, len(sent), "a decision is applied once")
+
+    def test_while_it_is_still_in_it_the_brain_is_asked_again_and_knows_what_it_tried(self):
+        """The point of the whole thing: more than one go at getting out.
+
+        A machine that is stuck in something gets exactly one decision out of
+        an edge-triggered event -- and if that decision does not work, nothing
+        ever asks again. Measured on the roaming rover: one question at the
+        shore, then thirty-nine seconds of sliding into the lake in silence.
+
+        With "it is still in the water and not getting clear" the brain is
+        asked afresh every AGAIN_S for as long as it is in, and each question
+        carries what it just tried, so it can try something else. Nothing here
+        knows what a rover is: any machine with a sensor that stops it gets
+        this.
+        """
+        ask = jev_says("back_off", 0.9)
+        brain = rover_brain.Brain("rover", rover_brain.JevClient("unused"), "jev")
+        brains = rover_brain.Brains(lambda: None)
+        brains.brains["rover"] = brain
+        app = SimpleNamespace(live=SimpleNamespace(
+            act=lambda body: {"program": {"doing": "backing off", "why": "x"}}))
+        # What the page's own loop does: think on the reply, apply on the step.
+        def observe_and_apply(program, at):
+            brain.observe(program, None, [], at, ask=ask)
+            self.wait_for(brain)
+            brains.before(app, {"session": "s", "op": "step"})
+
+        in_it = sees(a_program(), 1, seconds=20.0)
+        observe_and_apply(a_program(), 0.0)
+        for at in (1.0, 1.5, 2.0):          # inside AGAIN_S: asked once
+            observe_and_apply(in_it, at)
+        self.assertEqual(1, len(ask.asked))
+        self.assertIn("it is still in the water and not getting clear", ask.asked[0][0]["event"])
+        # Still in it, and long enough after: asked again, and this time the
+        # question carries the answer it has already tried. By now the edge
+        # has passed, so being still in it is the whole of what is wrong.
+        for at in (1.0 + rover_brain.AGAIN_S, 1.0 + 2 * rover_brain.AGAIN_S):
+            observe_and_apply(in_it, at)
+        self.assertEqual(3, len(ask.asked), "it goes on being asked while it is still in it")
+        self.assertEqual("it is still in the water and not getting clear", ask.asked[-1][0]["event"])
+        tried = [d["tool"] for d in ask.asked[-1][0]["recent_decisions"]]
+        self.assertEqual(["back_off", "back_off"], tried)
+        # Out of it, and it stops being asked.
+        observe_and_apply(a_program(), 100.0)
+        self.assertEqual(3, len(ask.asked))
 
     def test_a_jev_that_fails_leaves_the_reflexes_in_charge(self):
         def broken(state, questions):

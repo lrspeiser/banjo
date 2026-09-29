@@ -422,6 +422,36 @@ def _side(sensor: dict[str, Any]) -> str:
     return "left" if side > 0 else "right" if side < 0 else "middle"
 
 
+# How long a sensor goes on seeing before that is news in its own right. Long
+# enough that the machine's own reflexes have had their go: backing off and
+# turning away is about eight seconds end to end, and a machine interrupted
+# in the middle of getting itself out does not need a second opinion.
+STILL_IN_S = 8.0
+
+
+def _still_in(now: dict[str, Any]) -> str:
+    """The one event that says a thing is not over.
+
+    Every other reading here is an EDGE -- it fires when a sensor starts
+    seeing, when a wheel starts to stall -- so a machine that is still in the
+    same trouble a minute later has said nothing since the first moment of it.
+    Measured on the roaming rover: it raised one "water ahead on its left" and
+    then slid down the basin into its lake over the next thirty-nine seconds
+    without another word, because no sensor ever newly saw anything.
+
+    This is the word for "and it still is", off `seeing_s`, which the engine
+    keeps for any sensor on any machine. The text does not carry the seconds:
+    it has to read the same every time, or a brain would treat each reading as
+    a new thing to answer instead of the same thing it has not fixed yet.
+    """
+    longest = max((float(s.get("seeing_s") or 0.0) for s in now.get("sensors") or []), default=0.0)
+    if longest < STILL_IN_S:
+        return ""
+    kind = next((str(s.get("kind") or "water") for s in now.get("sensors") or []
+                 if float(s.get("seeing_s") or 0.0) >= STILL_IN_S), "water")
+    return f"it is still in the {kind} and not getting clear"
+
+
 def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dict[str, Any] | None,
                impacts: list[dict[str, Any]]) -> list[str]:
     """What happened to the machine between two readings of its program, in
@@ -441,6 +471,13 @@ def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dic
             out.append(f"{i.get('by')} struck it at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
         elif i.get("by") in parts and i.get("struck") not in parts:
             out.append(f"it ran into {i.get('struck')} at {float(i.get('closing_speed_m_s') or 0.0):.1f} m/s")
+    # Not over yet, and that survives an ask. Everything below is silenced
+    # while someone has asked the machine for something, on the grounds that
+    # it is busy -- but "what you are doing is not working" is the one thing
+    # it needs to hear WHILE it is doing it, or a brain cannot tell a plan
+    # that worked from one that did not and can only ever try one.
+    if still := _still_in(now):
+        out.append(still)
     if now.get("asked"):
         return out
     seen_was = {_side(s) for s in was.get("sensors") or [] if s.get("sees")}

@@ -1166,6 +1166,42 @@ void anAskThatIsNotAPersonsNeverDrivesItIntoTheWater() {
 // watched it turn away: "your order wins". A person's order outranks the
 // water reflex. The ask here is the same ask as above, to the same point, in
 // the same room; the only difference is that it says a person made it.
+// A sensor says HOW LONG it has been seeing, not only that it is.
+//
+// Every reading a host or a brain gets off a machine is otherwise an edge: a
+// sensor starts seeing and that is the last word on it, however long the
+// machine then stays where it is. Measured on this rover, it raised one
+// "water ahead on its left" and slid down the basin into the lake over the
+// next thirty-nine seconds without another word. `seeing_s` is what says "and
+// it still is", and it belongs to the sensor rather than to anything that
+// knows what a rover is.
+void aSensorSaysHowLongItHasBeenSeeing() {
+    Rover r = roverOnTheShore();
+    LiveWorld &world = *r.world;
+    runIt(world, r.program, true, 1);
+    for (int i = 0; i < 240; ++i) tick(world);
+    for (const LiveSensor &sensor : programOf(world, r.program).sensors)
+        require(sensor.seeing_s == 0.0, "a dry sensor has been seeing for no time at all");
+    // Ordered in, because the reflexes exist to stop it being wet for long.
+    const Vec3 middle{0.0, 0.0, 0.0};
+    askIt(world, r.program, "approaching", 60.0, 2, "the person sent it into the lake", &middle, true);
+    double longest = 0.0;
+    for (int i = 0; i < 60 * 240 && longest < 5.0; ++i) {
+        tick(world);
+        for (const LiveSensor &sensor : programOf(world, r.program).sensors) {
+            // The whole of the invariant: seeing, and it counts; not seeing,
+            // and it is zero the same step.
+            require(sensor.sees || sensor.seeing_s == 0.0,
+                    "a sensor that sees nothing says it has been seeing for " +
+                        std::to_string(sensor.seeing_s) + " s");
+            longest = std::max(longest, sensor.seeing_s);
+        }
+    }
+    std::cout << "    a sensor had been seeing for " << longest << " s" << std::endl;
+    require(longest >= 5.0, "a sensor counted the time it was in the water, and it did not: " +
+                                std::to_string(longest) + " s");
+}
+
 void aPersonsOrderDrivesItIntoTheWater() {
     Rover r = roverOnTheShore();
     LiveWorld &world = *r.world;
@@ -1233,6 +1269,7 @@ int main() {
         {"an ask that is not a person's never drives it into the water",
          anAskThatIsNotAPersonsNeverDrivesItIntoTheWater},
         {"a person's order drives it into the water", aPersonsOrderDrivesItIntoTheWater},
+        {"a sensor says how long it has been seeing", aSensorSaysHowLongItHasBeenSeeing},
         {"it frees itself from a wall it drove into and roams on", itFreesItselfFromAWallItDroveIntoAndRoamsOn},
         {"it backs out of where it gets nowhere, and says when it cannot",
          itBacksOutOfWhereItGetsNowhereAndSaysWhenItCannot},

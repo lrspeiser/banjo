@@ -1597,8 +1597,10 @@ struct LiveWorld::Impl {
     }
     // What each of a controller's sensors reads now: for "water", the depth of
     // the room's water under its point, wherever its part has got to.
-    void readSensors(Control &c) { readSensorList(c.said.sensors); }
-    void readSensorList(std::vector<LiveSensor> &sensors) {
+    void readSensors(Control &c, double dt_s = 0.0) { readSensorList(c.said.sensors, dt_s); }
+    // dt_s is how much time this reading covers, for `seeing_s`. A read that
+    // is only answering a question passes nothing and leaves the clock alone.
+    void readSensorList(std::vector<LiveSensor> &sensors, double dt_s = 0.0) {
         for (LiveSensor &sensor : sensors) {
             sensor.reading_m = 0.0;
             const auto found = index_of.find(sensor.body);
@@ -1608,6 +1610,7 @@ struct LiveWorld::Impl {
                 if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);
             }
             sensor.sees = sensor.reading_m > sensor.depth_m;
+            sensor.seeing_s = sensor.sees ? sensor.seeing_s + dt_s : 0.0;
         }
     }
     // A motor of a machine a person has ordered somewhere (LiveProgram::
@@ -1679,7 +1682,7 @@ struct LiveWorld::Impl {
                     c.turned_from = s.forward * motor.turned_rad;
                 }
             }
-            readSensors(c);
+            readSensors(c, dt_s);
             decide(c, dt_s);
         }
     }
@@ -1982,9 +1985,9 @@ struct LiveWorld::Impl {
         const Motor *motor = left != nullptr ? motorById(left->said.motor) : nullptr;
         return motor != nullptr ? energyStoreById(motor->said.store) : nullptr;
     }
-    void readProgram(Program &p) {
+    void readProgram(Program &p, double dt_s = 0.0) {
         constexpr double kDegPerRad = 57.295779513082320876798;
-        readSensorList(p.said.sensors);
+        readSensorList(p.said.sensors, dt_s);
         if (const LiveEnergyStore *store = storeOfProgram(p); store != nullptr && store->capacity_j > 0.0)
             p.said.charge_share = store->charge_j / store->capacity_j;
         // Where its pose pin has got to: the pin itself, not what its motor was
@@ -2917,7 +2920,7 @@ struct LiveWorld::Impl {
         constexpr double kDegPerRad = 180.0 / kPi;
         for (Program &p : programs) {
             const double was = p.heading_rad;
-            readProgram(p);
+            readProgram(p, dt_s);
             p.last_dt_s = dt_s;
             // Getting nowhere: told to be going somewhere, and still inside a
             // small circle around where it stood when it was told. The circle

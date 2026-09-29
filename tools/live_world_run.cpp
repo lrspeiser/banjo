@@ -393,7 +393,8 @@ nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &mot
     for (const LiveSensor &s : c.sensors)
         sensors.push_back({{"kind", s.kind}, {"body", s.body}, {"depth_m", tidy(s.depth_m)},
                            {"stops", s.stops}, {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
-                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
+                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees},
+                           {"seeing_s", tidy(s.seeing_s)}});
     return {{"id", c.id},
             {"sensors", std::move(sensors)},
             {"name", c.name},
@@ -436,7 +437,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
                            // Which way it looks: 1 ahead, -1 behind.
                            {"stops", s.stops},
                            {"at_m", {tidy(s.at_m.x), tidy(s.at_m.y), tidy(s.at_m.z)}},
-                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees}});
+                           {"reading_m", tidy(s.reading_m)}, {"sees", s.sees},
+                           {"seeing_s", tidy(s.seeing_s)}});
     return {{"id", p.id},
             {"name", p.name},
             {"kind", p.kind},

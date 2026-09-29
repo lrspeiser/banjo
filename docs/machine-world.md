@@ -885,6 +885,25 @@ is getting itself out" and "it cannot get itself out of where it is" -- both
 said even while something is asking it to do something, as a knock is, because
 both happen to it rather than being anything it chose.
 
+**And the one that says a thing is not over.** Every other reading a brain gets
+is an EDGE: a sensor starts seeing, a wheel starts to stall, the ground turns
+too steep. So a machine that is still in the same trouble a minute later has
+said nothing since the first moment of it. Measured on the roaming rover, which
+is the whole reason this exists: it raised one "water ahead on its left" at the
+shore and then slid down the basin into the lake over the next thirty-nine
+seconds without another word, because no sensor ever NEWLY saw anything. Every
+sensor now keeps `seeing_s`, how long it has been seeing, zeroed the step it
+stops; past eight seconds -- long enough that backing off and turning away have
+had their go -- a brain is told "it is still in the <kind> and not getting
+clear". It reads the same every time, deliberately: with the seconds in the
+words a brain would answer each reading as a fresh thing instead of as the
+thing it has not fixed yet, and it is asked again every three seconds for as
+long as it is in, each question carrying what it has already tried. It is also
+said THROUGH an ask, unlike the rest of the sensor readings, because a brain
+that goes deaf the moment it says anything cannot tell a plan that worked from
+one that did not, and so only ever gets one. None of this knows what a rover
+is: any machine with a sensor that stops it gets it.
+
 **The reflex, for a machine that drives.** Twenty seconds of getting nowhere and
 it backs out: reverse, turn 110 degrees, reverse again along the new line.
 Reversing alone barely rocked it; reversing again after the turn pulled it
