@@ -5480,6 +5480,108 @@ function rideTheCamera() {
 }
 
 // ---------------------------------------------------------------------------
+// SOMEWHERE TO GO BACK TO
+// ---------------------------------------------------------------------------
+//
+// The owner, having driven one: "it was way too easy to get the rover stuck",
+// and "allow the user to choose multiple historic spawn points so it can never
+// end the game for a user".
+//
+// That last clause is the requirement and the rest is detail. A world you can
+// drive a machine into is a world you can wedge a machine in -- down a hole,
+// on its back, through the lip of the adit -- and a sandbox that can be put
+// beyond use by ordinary play is broken however good the physics is. So there
+// is always somewhere to go back to, there is always more than one, and the
+// first one is made for you before you can lose anything.
+//
+// It is `park` and `unpark`, which the engine already has for the bag: park
+// sets a thing aside whole -- every part, on its joints -- and unpark puts it
+// back AT REST at a place and a facing. At rest is the point: a machine that
+// went back still spinning would wedge itself again on the way down.
+
+const SPAWNS_MOST = 8;
+const spawns = { byScene: {}, sending: false };
+
+function spawnKey() { return `banjo.spawns.${(world && world.scene) || "world"}`; }
+
+function spawnsHere() {
+  const key = spawnKey();
+  if (!spawns.byScene[key]) {
+    let kept = null;
+    try { kept = JSON.parse(localStorage.getItem(key) || "null"); } catch { kept = null; }
+    spawns.byScene[key] = Array.isArray(kept) ? kept.slice(0, SPAWNS_MOST) : [];
+  }
+  return spawns.byScene[key];
+}
+
+function rememberSpawns() {
+  try { localStorage.setItem(spawnKey(), JSON.stringify(spawnsHere())); }
+  catch { /* a private window keeps none, and the room still works */ }
+}
+
+// Where a machine stands now, as a place to come back to.
+function hereIsASpawn(mine, why) {
+  const body = world.bodies && world.bodies.get(mine.name);
+  if (!body || !body.mesh) return null;
+  const q = body.mesh.quaternion;
+  return { name: mine.name, why, at: [body.mesh.position.x, body.mesh.position.y + 0.15,
+                                      body.mesh.position.z],
+           // Upright, keeping only the way it faces. A machine put back on its
+           // side is a machine you have to rescue twice.
+           q: uprightFacing(q), when: Date.now() };
+}
+
+// The turn about the vertical only: a quaternion's yaw, with the tip and roll
+// thrown away.
+function uprightFacing(q) {
+  const yawOf = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.x * q.x));
+  return [Math.cos(yawOf / 2), 0, Math.sin(yawOf / 2), 0];
+}
+
+// The first one is made for you, the moment you get into something, so that
+// there is a way back before there is anything to come back from.
+function firstSpawnFor(mine) {
+  const all = spawnsHere();
+  if (all.some((s) => s.name === mine.name)) return;
+  const made = hereIsASpawn(mine, "where it stood when you got in");
+  if (!made) return;
+  all.unshift(made);
+  rememberSpawns();
+}
+
+function addSpawnHere() {
+  const mine = whatIsRidden();
+  if (!mine) return;
+  const made = hereIsASpawn(mine, "you put it here");
+  if (!made) return;
+  const all = spawnsHere();
+  all.unshift(made);
+  while (all.length > SPAWNS_MOST) all.pop();
+  rememberSpawns();
+  showRidingSettings();
+}
+
+// Back to one of them: set aside whole, and put down again at rest.
+async function sendItBack(spawn) {
+  const mine = whatIsRidden();
+  if (!mine || spawns.sending) return;
+  spawns.sending = true;
+  try {
+    await act("park", { name: mine.name });
+    await act("unpark", { name: mine.name, at: spawn.at, q: spawn.q });
+    // It comes back stopped, and stays stopped until you drive it: the ask
+    // that was standing was the one that drove it into the hole.
+    riding.asked = null;
+  } catch (error) {
+    const line = $("settings-said");
+    if (line) line.textContent = `It could not be sent back: ${error.message || error}`;
+  } finally {
+    spawns.sending = false;
+    showRidingSettings();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The Settings tab: what you are, and god mode
 // ---------------------------------------------------------------------------
 //
@@ -5543,7 +5645,27 @@ function buildRidingSettings() {
   });
   god.append(godTitle, godWhy, godButton);
 
-  pane.append(who, god);
+  // SOMEWHERE TO GO BACK TO. Above god mode, because flying away from a
+  // wedged rover is not the same as getting it out.
+  const back = document.createElement("section");
+  back.setAttribute("aria-label", "Where it goes back to");
+  const backTitle = document.createElement("h3");
+  backTitle.textContent = "Where it goes back to";
+  const backWhy = document.createElement("p");
+  backWhy.className = "mp-hint";
+  backWhy.textContent = "A machine can always be sent back, upright and stopped. "
+    + "The first place is where it stood when you got in; add more as you go.";
+  const put = document.createElement("button");
+  put.type = "button";
+  put.id = "settings-spawn-here";
+  put.className = "quiet";
+  put.textContent = "Set a spawn point here";
+  put.addEventListener("click", () => { put.blur(); addSpawnHere(); });
+  const backList = document.createElement("ul");
+  backList.id = "settings-spawns";
+  back.append(backTitle, backWhy, put, backList);
+
+  pane.append(who, back, god);
   tabs.append(pane);
   TABS.push("settings");
   tab.addEventListener("click", (e) => { e.currentTarget.blur(); showTab("settings"); });
@@ -5588,7 +5710,34 @@ function showRidingSettings() {
     li.append(button);
     return li;
   }));
-}
+
+  // The way back. Made before there is anything to come back from.
+  if (mine) firstSpawnFor(mine);
+  const backList = $("settings-spawns"), put = $("settings-spawn-here");
+  if (!backList || !put) return;
+  put.disabled = !mine;
+  const ways = spawnsHere().filter((spot) => !mine || spot.name === mine.name);
+  if (!ways.length) {
+    const li = document.createElement("li");
+    li.className = "none";
+    li.textContent = mine ? "No way back yet." : "Be a machine, and it gets one.";
+    backList.replaceChildren(li);
+    return;
+  }
+  backList.replaceChildren(...ways.map((spot, at) => {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quiet";
+    button.dataset.spawn = String(at);
+    button.disabled = !mine || spawns.sending;
+    const where = spot.at.map((v) => v.toFixed(1)).join(", ");
+    button.textContent = `Send it back to ${where} — ${spot.why}`;
+    button.addEventListener("click", () => { button.blur(); sendItBack(spot); });
+    li.append(button);
+    return li;
+  }));
+}
 
 function walk(dt) {
   // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and

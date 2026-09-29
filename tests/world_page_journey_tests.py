@@ -1313,6 +1313,50 @@ class YouAreAMachineInTheRoom(PageJourney):
         self.assertLess(math.dist(drove, stopped), 0.5,
                         f"it did not stop when the key came up: {drove} -> {stopped}")
 
+    def test_a_machine_can_always_be_sent_back(self):
+        """A sandbox you can wedge a machine in needs a way out.
+
+        The owner, having driven one: "it was way too easy to get the rover
+        stuck", and "allow the user to choose multiple historic spawn points
+        so it can never end the game for a user". So: the first way back is
+        made the moment you get in, before there is anything to come back
+        from; you can add more as you go; and going back puts the machine
+        down UPRIGHT and STOPPED, because one that arrived still spinning
+        would wedge itself again on the way down.
+        """
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.get_into("rover")
+        # A way back exists before anything has gone wrong.
+        self.assertTrue(self.wait_for("document.querySelectorAll('[data-spawn]').length >= 1", 20),
+                        "getting in did not make a way back")
+        home = self.position("rover")
+        # Drive it somewhere else, and remember THAT too.
+        self.hold_key("KeyW", "w", 5.0)
+        away = self.position("rover")
+        self.assertGreater(math.dist(home, away), 0.5, f"it did not move: {home} -> {away}")
+        self.js("(document.getElementById('settings-spawn-here').scrollIntoView({block: 'center'}), true)")
+        self.js("(document.getElementById('settings-spawn-here').click(), true)")
+        self.assertTrue(self.wait_for("document.querySelectorAll('[data-spawn]').length >= 2", 20),
+                        "a second way back was not kept")
+        # Back to the first one, which is the last in the list.
+        self.js("(document.querySelectorAll('[data-spawn]')"
+                "[document.querySelectorAll('[data-spawn]').length - 1].click(), true)")
+        self.assertTrue(self.wait_for(
+            f"(() => {{ const r = banjoRoom.world.bodies.get('rover');"
+            f" return r && Math.hypot(r.mesh.position.x - {home[0]}, r.mesh.position.z - {home[2]}) < 1.0; }})()",
+            30), f"it did not go back to {home}: now {self.position('rover')}")
+        # Upright, and not still driving.
+        self.assertTrue(self.wait_for(
+            "(() => { const r = banjoRoom.world.bodies.get('rover');"
+            " return r && Math.abs(r.mesh.quaternion.x) < 0.2 && Math.abs(r.mesh.quaternion.z) < 0.2; })()",
+            20), "it did not come back upright")
+        was = self.position("rover")
+        time.sleep(3.0)
+        self.assertLess(math.dist(was, self.position("rover")), 0.3,
+                        "it came back still driving")
+
     def test_god_mode_lets_go_of_the_machine_and_flies(self):
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
