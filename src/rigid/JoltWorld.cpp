@@ -247,6 +247,35 @@ struct RollingContact {
     int wheel{-1};                        // which round part, for a body with wheels; -1 for a ball
 };
 
+// A total order over the rolling contacts of one step, for the same reason
+// ImpactEvent.hpp has one over impacts: they are pushed from Jolt's worker
+// threads under a mutex, so the order they arrive in is a thread-completion
+// order and is not the same twice.
+//
+// It matters here because a ball is reported by both the discrete pass and
+// the swept one when it is moving fast enough for CCD, so the same manifold
+// arrives twice with two different normals and two different points, and only
+// one of them is kept. Keeping "the first" off the arrival order picks a
+// different normal from run to run, and the couple that resists the roll is
+// built on that normal: measured, a glass plate struck by an iron ball settled
+// into one of three different rooms over six runs of the identical world.
+//
+// The ball and the manifold are what this is sorted BY; everything after them
+// is there only to break the tie the same way twice.
+[[nodiscard]] inline bool steadiestRollingContactFirst(const RollingContact &a,
+                                                       const RollingContact &b) {
+    if (a.sphere != b.sphere) return a.sphere < b.sphere;
+    if (!(a.key == b.key)) return a.key < b.key;
+    if (a.normal.x != b.normal.x) return a.normal.x < b.normal.x;
+    if (a.normal.y != b.normal.y) return a.normal.y < b.normal.y;
+    if (a.normal.z != b.normal.z) return a.normal.z < b.normal.z;
+    if (a.point_world_m.x != b.point_world_m.x) return a.point_world_m.x < b.point_world_m.x;
+    if (a.point_world_m.y != b.point_world_m.y) return a.point_world_m.y < b.point_world_m.y;
+    if (a.point_world_m.z != b.point_world_m.z) return a.point_world_m.z < b.point_world_m.z;
+    if (a.other != b.other) return a.other < b.other;
+    return a.wheel < b.wheel;
+}
+
 // Jolt keeps, for warm starting, the total normal impulse its solver applied
 // at every contact point in the last update, and the only public way to read
 // it is the state recorder. This reads the contact section that
@@ -866,10 +895,11 @@ public:
         rolling_.clear();
         if (found.empty()) return;
         // One entry per manifold and ball: a body fast enough for the swept
-        // test can be reported by both the discrete and the swept pass.
-        std::sort(found.begin(), found.end(), [](const RollingContact &a, const RollingContact &b) {
-            return a.sphere != b.sphere ? a.sphere < b.sphere : a.key < b.key;
-        });
+        // test can be reported by both the discrete and the swept pass, and
+        // the two do not agree about where it touches. std::unique keeps the
+        // first of each run, so the order has to be total or the scheduler
+        // chooses the normal (steadiestRollingContactFirst).
+        std::sort(found.begin(), found.end(), steadiestRollingContactFirst);
         found.erase(std::unique(found.begin(), found.end(),
                                 [](const RollingContact &a, const RollingContact &b) {
                                     return a.sphere == b.sphere && a.key == b.key;

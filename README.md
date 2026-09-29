@@ -176,7 +176,7 @@ pieces.
 
 And here is what that produces. A 100 mm ball of each material, starting just
 above a concrete floor at a given speed, 20 mm cells, half a second of world
-time — measured on **27 September 2026**. Run it yourself in about eight
+time — measured on **28 September 2026**. Run it yourself in about eight
 minutes: `python scripts/drop-ladder.py`, which drives the engine through the
 same [Python binding](#use-the-engine-from-a-program) you would.
 
@@ -189,7 +189,7 @@ same [Python binding](#use-the-engine-from-a-program) you would.
 | glass | held | 6 pieces | 29 pieces | 12 pieces | 12 pieces |
 | ceramic | held | held | held | 29 pieces | 12 pieces |
 | concrete | 44 pieces | 26 pieces | 33 pieces | 16 pieces | 25 pieces |
-| ice | 41 pieces | 16 pieces | 12 pieces | 32 pieces | 12 pieces |
+| ice | 30 pieces | 16 pieces | 12 pieces | 12 pieces | 12 pieces |
 
 Nothing in that table was chosen. Rubber never breaks because its modulus is
 four orders of magnitude below iron's; concrete comes apart at walking pace
@@ -201,10 +201,22 @@ used to swing by up to a factor of two between runs. That was not a property of
 the materials; it was that contacts reached the fracture judgement in the order
 Jolt's worker threads happened to finish, so two equally hard contacts were
 broken apart by whichever thread won ([the world repeating
-itself](docs/plate-bending.md)). What the counts still do not do is settle as
-the grid is refined, which remains one of the things this engine cannot claim.
-The numbers above were measured on 27 September; a count published before that
-was taken without the contact order and will not all match.
+itself](docs/plate-bending.md)). There turned out to be two such lists, not
+one: the contacts a break is judged on, and the contacts a rolling ball is
+slowed by — a fast ball is reported twice, by the discrete pass and the swept
+one, and which of the two normals was kept went with whichever worker finished
+first. The second was found on 28 September. It changes nothing in this table,
+which was measured either side of it to the piece; what it changes is that the
+whole world now repeats itself between processes and not only within one.
+
+What the counts still do not do is settle as the grid is refined, which remains
+one of the things this engine cannot claim. **The ice row moved on 28 September
+and the reason is worth saying**, because it is the kind of thing a table like
+this is for: 41 and 32 pieces at 5 and 40 m/s were measured while one-cell
+plate bending was switched on, that term was switched back off a commit later
+on the realtime rule, and the table was not re-run. It now reads what the
+engine shipped today, 30 and 12. A count published before 28 September may have
+been taken with plate bending on and will not all match.
 
 | Before | After |
 |---|---|
