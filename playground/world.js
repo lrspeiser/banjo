@@ -5381,7 +5381,12 @@ function whatIsRidden() {
 // into a machine is a thing you do.
 function chooseSomethingToRide() {
   if (riding.godMode || !riding.name) return;
-  if (!whatCanBeRidden().some((m) => m.name === riding.name)) {
+  // An EMPTY list is not an answer. A room being started again has a
+  // moment with no machines in it yet, and treating that as "what you
+  // were is gone" threw you out of the machine you had just got into.
+  const all = whatCanBeRidden();
+  if (!all.length) return;
+  if (!all.some((m) => m.name === riding.name)) {
     riding.name = null;
     riding.godMode = true;
   }

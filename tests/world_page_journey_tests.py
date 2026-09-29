@@ -1231,6 +1231,25 @@ class YouAreAMachineInTheRoom(PageJourney):
     than being in it.
     """
 
+    def a_fresh_room(self, scene="tests-rover"):
+        """The room as it was authored, for every test in this class.
+
+        The class shares ONE server and ONE room, so a test that drives the
+        rover four metres leaves it there for the next one -- which then sees
+        a machine somebody else moved and calls it wandering off. Starting
+        the room again puts every body back where the room says it goes.
+        (Each test does get its own Chrome and so its own localStorage; that
+        part was never the problem.)
+        """
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene={scene}"})
+        self.assertTrue(self.wait_for(f"window.banjoRoom && banjoRoom.status().scene === '{scene}'"
+                                      " && banjoRoom.ready()", 300), f"{scene} did not open")
+        session = self.js("banjoRoom.world.session")
+        self.page.evaluate("document.getElementById('reset').click(); true")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.session !== {json.dumps(session)}"
+                                      " && banjoRoom.ready()", 180), "the room did not start again")
+
+
     def settings(self):
         self.click("tab-settings")
         return self.js("document.getElementById('settings-said').textContent")
@@ -1257,10 +1276,7 @@ class YouAreAMachineInTheRoom(PageJourney):
         return self.position("rover")
 
     def test_you_are_the_machine_and_the_eye_rides_it(self):
-        self.page.send("Page.navigate",
-                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
-        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-rover'"
-                                      " && banjoRoom.ready()", 300), "the rover room did not open")
+        self.a_fresh_room()
         self.assertTrue(self.wait_for("!!document.getElementById('tab-settings')", 30),
                         "there is no Settings tab")
         self.assertIn("god", self.settings().lower() + " god",
@@ -1284,9 +1300,7 @@ class YouAreAMachineInTheRoom(PageJourney):
         keys CHANGED, the rover took itself back and went roaming with me
         aboard -- it turned away from the lake on its own.
         """
-        self.page.send("Page.navigate",
-                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
-        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.a_fresh_room()
         self.get_into("rover")
         program = "banjoRoom.world.machines.programs[0]"
         self.assertTrue(self.wait_for(f"{program}.power === true", 60),
@@ -1298,11 +1312,8 @@ class YouAreAMachineInTheRoom(PageJourney):
                         f"it wandered off with nobody driving: {was} -> {now}")
 
     def test_the_keys_drive_it_and_letting_go_stops_it(self):
-        self.page.send("Page.navigate",
-                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
-        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.a_fresh_room()
         self.get_into("rover")
-        self.assertTrue(self.wait_for("banjoRoom.world.machines.programs[0].power === true", 60))
         was = self.rover_at()
         self.hold_key("KeyW", "w", 6.0)
         drove = self.rover_at()
@@ -1324,13 +1335,17 @@ class YouAreAMachineInTheRoom(PageJourney):
         down UPRIGHT and STOPPED, because one that arrived still spinning
         would wedge itself again on the way down.
         """
-        self.page.send("Page.navigate",
-                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
-        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
-        self.get_into("rover")
+        self.a_fresh_room()
         # A way back exists before anything has gone wrong.
         self.assertTrue(self.wait_for("document.querySelectorAll('[data-spawn]').length >= 1", 20),
-                        "getting in did not make a way back")
+                        "getting in did not make a way back: " + self.js(
+                            "JSON.stringify({said: document.getElementById('settings-said').textContent,"
+                            " riders: [...document.querySelectorAll('[data-rides]')].map(b => b.textContent),"
+                            " spawns: document.getElementById('settings-spawns').textContent,"
+                            " kept: localStorage.getItem('banjo.spawns.tests-rover'),"
+                            " god: localStorage.getItem('banjo.godMode'),"
+                            " ride: localStorage.getItem('banjo.riding'),"
+                            " scene: banjoRoom.world.scene, why: window.__whyFlying})"))
         home = self.position("rover")
         # Drive it somewhere else, and remember THAT too.
         self.hold_key("KeyW", "w", 5.0)
@@ -1358,11 +1373,7 @@ class YouAreAMachineInTheRoom(PageJourney):
                         "it came back still driving")
 
     def test_god_mode_lets_go_of_the_machine_and_flies(self):
-        self.page.send("Page.navigate",
-                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
-        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
-        self.get_into("rover")
-        self.assertTrue(self.wait_for("!!document.getElementById('settings-god')", 30))
+        self.a_fresh_room()
         # The panel scrolls, and a button below its fold is one a person
         # scrolls to before pressing.
         self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
