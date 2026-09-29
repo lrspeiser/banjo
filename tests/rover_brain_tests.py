@@ -305,6 +305,35 @@ class TheBrainOffTheStep(unittest.TestCase):
         observe_and_apply(a_program(), 100.0)
         self.assertEqual(3, len(ask.asked))
 
+    def test_it_gets_a_few_goes_at_one_episode_and_then_stops_asking(self):
+        """No timer, no surprise spend (docs/how-robots-think.md D3).
+
+        "It is still in the water and not getting clear" repeats on purpose,
+        so that a decider whose first answer did not work can try something
+        else. Uncapped, that is a question every AGAIN_S for as long as
+        somebody watches a stuck machine -- which on a real key is real
+        money. It gets TRIES_MOST goes at one episode and then leaves it to
+        its reflexes.
+        """
+        ask = jev_says("back_off", 0.9)
+        brain = rover_brain.Brain("rover", rover_brain.JevClient("unused"), "jev")
+        in_it = sees(a_program(), 1, seconds=20.0)
+        at = 0.0
+        for _ in range(12):                      # plenty of goes, well spaced
+            at += rover_brain.AGAIN_S + 0.1
+            brain.observe(in_it, None, [], at, ask=ask)
+            self.wait_for(brain)
+        self.assertEqual(rover_brain.TRIES_MOST, len(ask.asked),
+                         "a machine in one long piece of trouble asks a few times, not for ever")
+        # Out of it and into it again is a NEW episode, and it asks afresh.
+        at += 1.0
+        brain.observe(a_program(), None, [], at, ask=ask)
+        self.wait_for(brain)
+        at += 1.0
+        brain.observe(in_it, None, [], at, ask=ask)
+        self.wait_for(brain)
+        self.assertEqual(rover_brain.TRIES_MOST + 1, len(ask.asked))
+
     def test_a_jev_that_fails_leaves_the_reflexes_in_charge(self):
         def broken(state, questions):
             raise ValueError("Jev answered HTTP 529")

@@ -904,6 +904,16 @@ that goes deaf the moment it says anything cannot tell a plan that worked from
 one that did not, and so only ever gets one. None of this knows what a rover
 is: any machine with a sensor that stops it gets it.
 
+**And it gets a few goes, not endless ones.** A thing that repeats is a
+timer, and a timer that asks a model is a bill: a machine stuck in front of
+somebody would ask every three seconds for as long as they watched it. So a
+decider gets `rover_brain.TRIES_MOST` goes at ONE episode -- three -- and
+then the machine stops asking and leaves it to its reflexes, which is what
+D3 below recommends. The count is per episode: the trouble clearing and
+happening again is a new one, asked afresh. Nothing is asked at all while
+nobody is watching (`Brains.unattended`), so a world left running overnight
+still costs only the processor.
+
 **The reflex, for a machine that drives.** Twenty seconds of getting nowhere and
 it backs out: reverse, turn 110 degrees, reverse again along the new line.
 Reversing alone barely rocked it; reversing again after the turn pulled it

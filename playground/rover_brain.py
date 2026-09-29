@@ -53,6 +53,18 @@ CONFIDENCE_LEAST = 0.55
 # The same thing happening again within this much of the world's time is not
 # asked about again: a sensor that sees water for two seconds is one event.
 AGAIN_S = 3.0
+#: How many goes a decider gets at ONE episode of the same thing before the
+#: machine stops asking and leaves it to its reflexes.
+#:
+#: Every reading used to be an edge, so a machine in trouble asked once and
+#: then went quiet whatever happened. "It is still in the water and not
+#: getting clear" deliberately repeats, which is what lets a decider try
+#: something else when its first answer did not work -- and, uncapped, turns
+#: a machine stuck in front of somebody into a question every AGAIN_S for as
+#: long as they watch. docs/how-robots-think.md D3 is exactly that worry: "no
+#: timer, no surprise spend". So it gets a few goes and then stops. The count
+#: is per episode: the thing clearing and happening again is a new one.
+TRIES_MOST = 3
 DECISIONS_KEPT = 12
 
 # What is asked when something happens, whoever answers: which of the
@@ -433,6 +445,7 @@ class Brain:
         self.t = 0.0
         self.person: dict[str, Any] | None = None
         self.asked_at: dict[str, float] = {}       # event text -> world time it was asked at
+        self.asked_times: dict[str, int] = {}      # and how many goes it has had at it
         self.decisions: deque[dict[str, Any]] = deque(maxlen=DECISIONS_KEPT)
         self.talk: deque[dict[str, Any]] = deque(maxlen=24)
         self.orders_given: dict[int, str] = {}     # order id -> what the person said
@@ -488,12 +501,22 @@ class Brain:
         with self._lock:
             if self.thinking is not None:
                 return                             # one question at a time
-            fresh = [e for e in events if t - self.asked_at.get(e, -1e9) >= AGAIN_S]
+            # An episode ends when the thing stops being the case. Forgetting
+            # it here is what makes the count per episode rather than per
+            # room, and what lets the same trouble be asked about afresh when
+            # it comes back.
+            for gone in [e for e in self.asked_times if e not in events]:
+                self.asked_times.pop(gone, None)
+                self.asked_at.pop(gone, None)
+            fresh = [e for e in events
+                     if t - self.asked_at.get(e, -1e9) >= AGAIN_S
+                     and self.asked_times.get(e, 0) < TRIES_MOST]
             if not fresh:
                 return
             event = "; ".join(fresh)
             for e in fresh:
                 self.asked_at[e] = t
+                self.asked_times[e] = self.asked_times.get(e, 0) + 1
             self.thinking = event
         # The senses are read now, on this thread, with the engine at hand:
         # the question goes on another, with the state in hand.
