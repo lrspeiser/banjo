@@ -29,6 +29,7 @@
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/GearConstraint.h>
 #include <Jolt/Physics/Constraints/PulleyConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
@@ -1255,6 +1256,12 @@ public:
     // rope is pulling means.
     double last_dt_s{0.0};
     std::unordered_map<unsigned,Joint> joints_;
+    // What each gear's teeth can carry, and the ones that gave way in the last
+    // step. A gear that strips is gone: its coupling is removed, and the two
+    // wheels turn on their own pins from then on, which is what a drive with
+    // its teeth off does.
+    std::unordered_map<unsigned,double> gear_strength_;
+    std::vector<unsigned> stripped_gears_;
     unsigned next_joint_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
     // Bodies set aside (park): out of the broadphase and out of bodies_, not
@@ -2535,6 +2542,66 @@ unsigned JoltWorld::addPulley(const PulleyDescription &d) {
     return id;
 }
 
+unsigned JoltWorld::addGear(const GearDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a gear needs two different wheels that are both in the world");
+    if (impl_->joints_.size() >= 4096) throw std::invalid_argument("joint budget exceeded");
+    if (d.teeth_a == 0 || d.teeth_b == 0)
+        throw std::invalid_argument("a gear's wheels each need at least one tooth");
+    if (!(d.strips_at_n_m >= 0.0) || !std::isfinite(d.strips_at_n_m))
+        throw std::invalid_argument("a gear strips at zero newton metres or more");
+    // The pins, which must be pins: Jolt solves a gear as a relationship
+    // between two hinge constraints, so there is nothing to couple without
+    // them. Saying so here names the mistake where it is made.
+    const auto pin_a = impl_->joints_.find(d.pin_a);
+    const auto pin_b = impl_->joints_.find(d.pin_b);
+    if (pin_a == impl_->joints_.end() || pin_b == impl_->joints_.end())
+        throw std::invalid_argument("a gear coupless two pins that exist");
+    if (pin_a->second.kind != JointKind::Hinge || pin_b->second.kind != JointKind::Hinge)
+        throw std::invalid_argument("a gear couples two PINS: each wheel turns on one");
+    if (d.pin_a == d.pin_b)
+        throw std::invalid_argument("a gear couples two different pins");
+
+    JPH::GearConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    // Jolt's ratio is signed: Gear1Rotation = -ratio * Gear2Rotation, so a
+    // POSITIVE ratio is two wheels turning opposite ways, which is what teeth
+    // in mesh do. A chain runs round both sprockets the same way round, so it
+    // turns them the same way, which is the sign flipped. That one sign is the
+    // whole difference between the two things this joint can be.
+    const double ratio = static_cast<double>(d.teeth_b) / static_cast<double>(d.teeth_a);
+    settings.mRatio = static_cast<float>(d.chain ? -ratio : ratio);
+    // The axes each wheel turns about, which are its pin's.
+    settings.mHingeAxis1 = static_cast<JPH::HingeConstraint *>(pin_a->second.constraint.GetPtr())->GetLocalSpaceHingeAxis1();
+    settings.mHingeAxis2 = static_cast<JPH::HingeConstraint *>(pin_b->second.constraint.GetPtr())->GetLocalSpaceHingeAxis1();
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("gear creation failed");
+    auto *gear = static_cast<JPH::GearConstraint *>(raw);
+    gear->SetConstraints(pin_a->second.constraint.GetPtr(), pin_b->second.constraint.GetPtr());
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Gear,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->gear_strength_.emplace(id, d.strips_at_n_m);
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+double JoltWorld::gearTorque(unsigned joint) const {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Gear) return 0.0;
+    // Jolt accumulates an ANGULAR IMPULSE over the step; the torque is that
+    // impulse over the step it was applied in, the same way jointTension turns
+    // a constraint's impulse into a force.
+    const auto *gear = static_cast<const JPH::GearConstraint *>(found->second.constraint.GetPtr());
+    if (!(impl_->last_dt_s > 0.0)) return 0.0;
+    return std::abs(static_cast<double>(gear->GetTotalLambda())) / impl_->last_dt_s;
+}
+
+std::vector<unsigned> JoltWorld::strippedGears() const { return impl_->stripped_gears_; }
+
 unsigned JoltWorld::addSlider(const SliderDescription &d) {
     impl_->requireConfigurationMutable();
     if (d.a == d.b || !contains(d.a) || !contains(d.b))
@@ -3687,6 +3754,31 @@ void JoltWorld::step(double fixed_dt_s) {
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
     impl_->measureRolling(fixed_dt_s);
+    // Teeth that could not carry what was put through them. Read after the
+    // solve, because the impulse this asks about is the one the solve just
+    // applied; a gear that gives way is taken out here and is gone, so the
+    // next step has two wheels turning on their own pins with nothing between
+    // them, which is what a stripped drive is.
+    impl_->stripped_gears_.clear();
+    for (const auto &[id, limit] : impl_->gear_strength_) {
+        if (!(limit > 0.0)) continue;
+        const auto found = impl_->joints_.find(id);
+        if (found == impl_->joints_.end()) continue;
+        const auto *gear = static_cast<const JPH::GearConstraint *>(found->second.constraint.GetPtr());
+        const double carried = std::abs(static_cast<double>(gear->GetTotalLambda())) / fixed_dt_s;
+        if (carried > limit) impl_->stripped_gears_.push_back(id);
+    }
+    // In its own order, not the map's, so the same overload strips the same
+    // teeth in the same order on every run (ImpactEvent.hpp says the same
+    // about contacts, and for the same reason).
+    std::sort(impl_->stripped_gears_.begin(), impl_->stripped_gears_.end());
+    for (const unsigned id : impl_->stripped_gears_) {
+        const auto found = impl_->joints_.find(id);
+        if (found == impl_->joints_.end()) continue;
+        impl_->physics_->RemoveConstraint(found->second.constraint.GetPtr());
+        impl_->joints_.erase(found);
+        impl_->gear_strength_.erase(id);
+    }
     auto &diagnostics=impl_->contact_diagnostics_;
     diagnostics.last_manifolds=collector.manifolds.load(std::memory_order_relaxed);
     diagnostics.last_points=collector.points.load(std::memory_order_relaxed);

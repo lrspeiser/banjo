@@ -1022,6 +1022,13 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_pair_impulse_tests)
         add_test(NAME banjo_pair_impulse_tests COMMAND banjo_pair_impulse_tests)
 
+    # Two wheels that turn together at a ratio: gears in mesh, a chain between
+    # sprockets, and teeth that strip when too much goes through them.
+    add_executable(banjo_gear_tests tests/gear_tests.cpp)
+    target_link_libraries(banjo_gear_tests PRIVATE banjo_runtime)
+    banjo_enable_warnings(banjo_gear_tests)
+    add_test(NAME banjo_gear_tests COMMAND banjo_gear_tests)
+
         add_executable(banjo_tetrahedron_contact_tests tests/tetrahedron_contact_tests.cpp)
         target_link_libraries(banjo_tetrahedron_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_tetrahedron_contact_tests)
