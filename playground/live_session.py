@@ -1266,7 +1266,11 @@ class Live:
                     session.send(op="sense", program=made_id, kind=str(sensor.get("kind", "water")),
                                  body=str(sensor.get("body", "")),
                                  at_m=[float(v) / 1000.0 for v in sensor.get("at_mm") or []],
-                                 depth_m=float(sensor.get("depth_mm", 10.0)) / 1000.0)
+                                 depth_m=float(sensor.get("depth_mm", 10.0)) / 1000.0,
+                                 # Which way it looks: 1 ahead, -1 behind. Dropped here,
+                                 # a rear sensor arrives as a forward one and the machine
+                                 # thinks the water behind it is in front.
+                                 stops=int(sensor.get("stops", 1)))
                 except Exception as error:
                     problems.append(f"the {name}'s {sensor.get('kind', 'water')} sensor on "
                                     f"{sensor.get('body', '?')} would not go on: {error}")

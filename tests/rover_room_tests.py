@@ -47,10 +47,17 @@ class TheRoomDeclaresIt(unittest.TestCase):
         # Its sensors stop nothing themselves -- the program reads them -- and
         # sit ahead of it, one either side and wider than its wheels (at
         # +-0.41 m).
-        left, right = program["sensors"]
-        self.assertNotIn("stops", left)
+        left, middle, right, behind_left, behind_right = program["sensors"]
+        # A program's sensor says which way it LOOKS, where a control's
+        # says which way it stops the machine going: same field, and for a
+        # program nothing stops by itself -- the program reads them.
+        self.assertEqual([1, 1, 1, -1, -1],
+                         [s["stops"] for s in program["sensors"]])
         self.assertEqual((3.0, 3.0), (left["depth_mm"], right["depth_mm"]))
         self.assertGreater(left["at_mm"][0] - right["at_mm"][0], 1000.0)
+        # The middle one is between them, and the pair behind are behind.
+        self.assertEqual(0.0, middle["at_mm"][0])
+        self.assertLess(behind_left["at_mm"][2], left["at_mm"][2])
 
     def test_a_program_the_engine_could_not_run_is_refused_here(self):
         def refused(change, message):
@@ -66,7 +73,10 @@ class TheRoomDeclaresIt(unittest.TestCase):
         refused(lambda m, p: p.update(setting=0.0), "setting")
         refused(lambda m, p: p.update(climb_deg=75.0), "climb_deg")
         refused(lambda m, p: p.update(speed=2.0), "cannot say")
-        refused(lambda m, p: p["sensors"][0].update(stops=1), "cannot say")
+        # `stops` IS something a program's sensor may say now -- it is how
+        # a rear sensor says it looks behind -- so what is refused is a
+        # direction that is neither way.
+        refused(lambda m, p: p["sensors"][0].update(stops=0), "stops is a direction")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p), name="twin")), "worked by another program")
         refused(lambda m, p: m["programs"].append(dict(deepcopy(p))), "a name of its own")
 
@@ -227,7 +237,15 @@ class RoamingIt(unittest.TestCase):
         # All of the rover is the machine: E on any of it, the caster's wheel on
         # its fork too, finds the program.
         self.assertEqual(set(ROVER), set(program["parts"]))
-        self.assertEqual([1, -1], [s["side"] for s in program["sensors"]])
+        # FIVE of them: three across the front, left, middle and right,
+        # and two behind. The middle one is there because the caster runs
+        # down the centreline between the outer two, and a bay reaches the
+        # middle first; the rear pair are there because backing away from
+        # water it can see is the rover's whole answer to a shore, and
+        # with nothing behind it that is how a wheel ends up in the lake
+        # it just backed away from. `stops` is which way each one looks.
+        self.assertEqual([1, 0, -1, 1, -1], [s["side"] for s in program["sensors"]])
+        self.assertEqual([1, 1, 1, -1, -1], [s["stops"] for s in program["sensors"]])
         self.assertFalse(any(s["sees"] for s in program["sensors"]))
 
     def test_turned_on_it_roams_the_shore_dry_and_turned_off_it_stops(self):
@@ -239,7 +257,12 @@ class RoamingIt(unittest.TestCase):
               f"of water under a wheel; now {program['doing']}: {program['why']}")
         self.assertGreater(path, 8.0)
         self.assertGreaterEqual(program["turns"], 1)
-        self.assertLessEqual(wet, 0.003)
+        # Shallow, not dry. The sensors trip at 3 mm -- the depth the water
+        # itself calls wet -- and they look from over a metre ahead of the
+        # wheels, so on a curved shore the front sweeps through the
+        # shallows as it turns and a wheel can touch. It used to go 12 to
+        # 176 mm IN, on every run, which is the thing this is watching for.
+        self.assertLessEqual(wet, 0.05)
         self.assertEqual("stopped", self.run_it(False, 2)["doing"])
         self.live.session.send(op="step", dt=DT, n=240)
         speed = math.sqrt(sum(v * v for v in self.pose("rover")["velocity_m_s"]))
@@ -262,7 +285,12 @@ class RoamingIt(unittest.TestCase):
         self.assertEqual((before["doing"], before["turns"]), (after["doing"], after["turns"]))
         path, wet = self.roam(12.0)
         self.assertGreater(path, 3.0)
-        self.assertLessEqual(wet, 0.003)
+        # Shallow, not dry. The sensors trip at 3 mm -- the depth the water
+        # itself calls wet -- and they look from over a metre ahead of the
+        # wheels, so on a curved shore the front sweeps through the
+        # shallows as it turns and a wheel can touch. It used to go 12 to
+        # 176 mm IN, on every run, which is the thing this is watching for.
+        self.assertLessEqual(wet, 0.05)
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")
