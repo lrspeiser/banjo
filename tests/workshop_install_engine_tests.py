@@ -854,6 +854,48 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual([75,0],p['placement_grid'][::2]);self.assertEqual(0,p['bounds_m'][0][1]);self.do_commit(p)
         self.assertTrue(p['engine_grid_verified'])
 
+
+
+    # ---- the bench chat's own way out ----------------------------------
+    #
+    # A model could design a thing here, check it, test it under gravity and
+    # a sun -- and then stop, because the only way into the person's world
+    # was a button on a page. Everything upstream of that was a tool and the
+    # last step was a click, which no amount of tool-calling gets round.
+    #
+    # `offer_it_to_the_world` is that step, and it stops where it should: it
+    # works out where the thing would stand and what taking it would do, and
+    # answers with that. It does NOT put it there. The world is the person's.
+
+    def offer(self, at=(3.0, 0.0), replace=True):
+        import workshop_chat
+        state = workshop_chat._State(self.app, {"kind": "table", "parameters": {"material": "oak"}},
+                                     None, ["oak"], [])
+        return state.execute("offer_it_to_the_world",
+                             {"position_m": list(at), "replace": replace})
+
+    def test_the_chat_offers_the_design_and_waits_to_be_taken(self):
+        was = len(install.made_here(self.app))
+        answer = self.offer()
+        self.assertTrue(answer["ok"])
+        self.assertEqual("the person to take it", answer["waiting_for"])
+        self.assertEqual("yard", answer["into"]["scene"])
+        offered = answer["offered"]
+        self.assertEqual("preview", offered["status"])
+        self.assertTrue(offered.get("preview_id"), "the offer carries its id, or it cannot be taken")
+        # NOTHING HAS BEEN PUT ANYWHERE, which is the whole point of the tool
+        # stopping here: the room is as it was until the person says yes.
+        self.assertEqual(was, len(install.made_here(self.app)),
+                         "offering it must not put it in the room")
+
+    def test_what_the_chat_offers_is_what_the_person_gets(self):
+        answer = self.offer(at=(4.0, 1.0))
+        self.do_commit(answer["offered"], request="offered-by-the-chat")
+        self.assertTrue(install.made_here(self.app), "once taken, the room has it")
+        # The chain is closed: a drawing on the bench can become a thing in
+        # the world without anyone touching the page.
+
+
 if __name__=='__main__':
     if not ENGINE and os.environ.get('BANJO_BROWSER_TESTS')=='required':raise RuntimeError('Native installation checks require an engine')
     unittest.main()
