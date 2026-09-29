@@ -989,15 +989,6 @@ can you reach every material and every good the Workshop spends? A map that
 strands something is thrown away and another is seeded, because a generator that
 cannot say whether its world is playable is a random number generator.
 
-**It does not draw yet.** Open `/world?scene=new-game` today and you get bare
-ground: the engine has the room — its own greeting counts "9 things, made of
-concrete, oak, iron", and the clock runs — but the page draws none of them
-(`banjoRoom.hullsDrawn()` reports zero hulls, cells and triangles, on a fresh
-server with a fresh rooms directory). `/world?scene=tests-pour` is the same. The
-`world` and `explore` rooms draw normally, so this is these two rooms rather than
-the renderer. It is the same signature as the browser journey tests that are
-failing on `main`.
-
 It exists because a new game used to be unwinnable, and the loop is worth
 stating: the only thing that digs is the Workshop's rover, the rover costs
 copper wire, wire is drawn from copper, copper is smelted from ore, and ore has
@@ -1214,12 +1205,6 @@ Handling: two hands, grip and use points.
 
 **Known defects.**
 
-- **Two rooms draw nothing: `new-game` and `tests-pour`.** The engine runs them
-  — 9 and 3 bodies, the clock advancing, the room naming its own contents — and
-  the page shows bare ground. Reproduced 28 September on a fresh server with an
-  empty rooms directory; `world` and `explore` draw normally in the same
-  session. `new-game` is the room a new player is meant to start in, so this is
-  the first thing a newcomer would hit.
 
 - **The material range no longer matches its recorded baseline.**
   `scripts/material_qa.py` compares 96 impact cases against

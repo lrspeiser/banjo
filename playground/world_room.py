@@ -859,9 +859,16 @@ def pouring() -> dict[str, Any]:
     pail rides the body that carries it, so what is in it goes where it goes.
     Open it at /world?scene=tests-pour.
     """
+    # The flat terrain's surface is 800 mm up, as it is in every room that
+    # generates one, and a body's centre is absolute. Authored at 40 the bench
+    # sat 760 mm UNDER the sand with both pails on it, so the room opened on
+    # bare ground: three bodies, all reported visible, none of them in sight.
+    GROUND_MM = 800
+
     pail = lambda name, x: {
         "name": name, "shape": "box", "material": "iron",
-        "size_mm": [260, 280, 260], "center_mm": [x, 140, 0], "rest_on": "bench",
+        # `rest_on` puts it on the bench's own surface, so this y is not used.
+        "size_mm": [260, 280, 260], "center_mm": [x, 0, 0], "rest_on": "bench",
     }
     return {
         "algorithm": "lattice",
@@ -870,7 +877,8 @@ def pouring() -> dict[str, Any]:
         "terrain": {"generate": "flat"},
         "bodies": [
             {"name": "bench", "shape": "box", "material": "concrete",
-             "size_mm": [2400, 80, 800], "center_mm": [0, 40, 0], "anchored": True},
+             "size_mm": [2400, 80, 800], "center_mm": [0, GROUND_MM + 40, 0],
+             "anchored": True},
             pail("sand pail", -600),
             pail("empty pail", 600),
         ],
