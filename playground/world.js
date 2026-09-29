@@ -4682,6 +4682,7 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
@@ -4697,6 +4698,8 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 canvas.addEventListener("pointermove", (e) => {
   cursor = cursorAt(e);
+  if (cursor) cursor.touch = e.pointerType !== "mouse";
+  offerStick(e);
   markAt(cursor);
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -4735,6 +4738,9 @@ canvas.addEventListener("pointerup", (e) => {
   }
   const was = drag;
   drag = null;
+  // A finger that has lifted is nowhere, so nothing stays aimed at where it
+  // last was -- and the crosshair goes back to the middle.
+  if (e.pointerType !== "mouse") { cursor = null; markAt(null); }
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
   if (was && was.moved) return;          // that was a look, not a click
   // A tool is never dropped by a click -- E puts it down. A second click with
@@ -4796,6 +4802,10 @@ function lookPush(v) {
 function lookFromCursor(dt) {
   // Dragging already turns the view, and a wind-up is aimed by hand.
   if (!cursor || drag) return;
+  // And a finger is not a cursor. It has no hover: the last place it touched
+  // stays put once it lifts, so an edge push would turn the room for ever.
+  // On a touch screen looking around IS the drag, which already works.
+  if (cursor.touch) return;
   const box = canvas.getBoundingClientRect();
   if (!box.width || !box.height) return;
   // The side panel sits ON the canvas, so the canvas's own right edge is
@@ -4882,8 +4892,92 @@ function inTheWater() {
            head_under: camera.position.y < wet.level };
 }
 
+// A THUMBSTICK, for a screen with no keyboard. How far it is pushed, -1 to 1
+// each way, and whether a finger is on it. Fed into walk() exactly where W, A,
+// S and D are read, so everything downstream -- load, water, the ground under
+// you -- is the same walk it always was.
+const stick = { x: 0, y: 0, hard: 0, on: false };
+const STICK_REACH = 40;   // pixels from the middle that count as fully pushed
+// A shove PAST the pad is a run. Not a full push, which is just how a thumb
+// says "forward" -- measured at 0.92 of the rim it ran everywhere and never
+// walked. There is no Shift on a phone, so the extra has to be in the gesture.
+const STICK_RUN = 1.6;
+
+function installStick() {
+  const pad = $("stick");
+  if (!pad) return;
+  const thumb = pad.querySelector("i");
+  let holding = null;
+  const show = (dx, dy) => {
+    thumb.style.setProperty("--dx", `${dx}px`);
+    thumb.style.setProperty("--dy", `${dy}px`);
+  };
+  const move = (e) => {
+    const box = pad.getBoundingClientRect();
+    let dx = e.clientX - (box.left + box.width / 2);
+    let dy = e.clientY - (box.top + box.height / 2);
+    const out = Math.hypot(dx, dy);
+    // Held past the rim, the thumb stays on the rim and the push stays full:
+    // a thumb slides off a small pad constantly and should not cut the walk.
+    stick.hard = out / STICK_REACH;
+    if (out > STICK_REACH) { dx *= STICK_REACH / out; dy *= STICK_REACH / out; }
+    show(dx, dy);
+    stick.x = dx / STICK_REACH;
+    stick.y = dy / STICK_REACH;
+    stick.on = true;
+  };
+  const let_go = () => {
+    holding = null; stick.x = 0; stick.y = 0; stick.hard = 0; stick.on = false;
+    pad.dataset.held = "no"; show(0, 0);
+  };
+  pad.addEventListener("pointerdown", (e) => {
+    holding = e.pointerId; pad.dataset.held = "yes";
+    try { pad.setPointerCapture(e.pointerId); } catch { /* works without it */ }
+    move(e); e.preventDefault();
+  });
+  pad.addEventListener("pointermove", (e) => { if (holding === e.pointerId) move(e); });
+  for (const end of ["pointerup", "pointercancel", "pointerleave"]) {
+    pad.addEventListener(end, (e) => { if (holding === e.pointerId) let_go(); });
+  }
+}
+
+// The stick is for fingers, so it appears the first time one arrives and not
+// before: a mouse never sees it, and nobody has to choose.
+function offerStick(e) {
+  const pad = $("stick");
+  if (!pad || !pad.hidden || e.pointerType === "mouse") return;
+  pad.hidden = false;
+  pad.dataset.held = "no";
+}
+
+// FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
+// panel starts folded on one and is remembered either way.
+function foldPanel(away) {
+  document.body.classList.toggle("panel-away", away);
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.setAttribute("aria-expanded", String(!away));
+  if (show) show.hidden = !away;
+  try { localStorage.setItem("banjo.panel", away ? "away" : "out"); } catch { /* private */ }
+}
+
+function installPanelFold() {
+  const fold = $("panel-fold"), show = $("panel-show");
+  if (fold) fold.addEventListener("click", () => foldPanel(true));
+  if (show) show.addEventListener("click", () => foldPanel(false));
+  let kept = null;
+  try { kept = localStorage.getItem("banjo.panel"); } catch { /* private */ }
+  foldPanel(kept ? kept === "away" : window.innerWidth <= 760);
+}
+
+installStick();
+installPanelFold();
+
 function walk(dt) {
-  const running = (keys.has("ShiftLeft") || keys.has("ShiftRight")) && loadFraction() < 0.5;
+  // How far the stick is pushed, which is also how fast: a gentle push is a
+  // gentle walk. Keys stay what they were -- one key or two, always full pace.
+  const pushed = stick.on ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
+  const running = ((keys.has("ShiftLeft") || keys.has("ShiftRight")) || stick.hard > STICK_RUN)
+    && loadFraction() < 0.5;
   const water = inTheWater();
   world.inWater = water;
   document.body.classList.toggle("head-under-water", !!(water && water.head_under));
@@ -4895,7 +4989,16 @@ function walk(dt) {
   if (keys.has("KeyS")) move.sub(forward);
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
-  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+  // Up the screen is away from you, which is what a thumb means by it.
+  if (stick.on) { move.addScaledVector(forward, -stick.y); move.addScaledVector(right, stick.x); }
+  if (move.lengthSq() > 0) {
+    // The keys are all or nothing and the stick is not, so the pace is how far
+    // the stick is pushed. A key held is always a full walk -- and it has to be
+    // a WALKING key: Shift is in `keys` too, and counting it made a feather
+    // touch on the stick run.
+    const keyed = keys.has("KeyW") || keys.has("KeyS") || keys.has("KeyA") || keys.has("KeyD");
+    move.normalize().multiplyScalar(speed * (keyed ? 1 : Math.min(1, pushed || 1)));
+  }
   // Up, and down with Shift held (interaction.js BINDINGS). E used to be up and
   // Q down: E is the hand's and Q the bag's now.
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
