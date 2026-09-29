@@ -1,3294 +1,3294 @@
 {
- "actions": [
-  {
-   "body": "oak block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
+  "actions": [
     {
-     "do": "place"
+      "body": "oak block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "iron block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "glass block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "concrete block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "ceramic block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "ice block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "aluminium block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "rubber block",
+      "label": "Set it down",
+      "primary": true,
+      "steps": [
+        {
+          "do": "place"
+        }
+      ]
+    },
+    {
+      "body": "table",
+      "label": "Shove it along",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "bench",
+      "label": "Shove it along",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "chair",
+      "label": "Push it in",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "stool",
+      "label": "Push it in",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit",
+      "label": "Shove it along",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "mace",
+      "label": "Swing it",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.6,
+          "do": "strike",
+          "speed_m_s": 4.0
+        }
+      ]
+    },
+    {
+      "body": "cart",
+      "label": "Push the cart",
+      "primary": true,
+      "steps": [
+        {
+          "distance_m": 0.4,
+          "do": "push_forward",
+          "speed_m_s": 0.4
+        }
+      ]
+    },
+    {
+      "body": "cart-1",
+      "label": "Inspect",
+      "primary": true,
+      "steps": [
+        {
+          "do": "inspect"
+        }
+      ]
+    },
+    {
+      "body": "cart-2",
+      "label": "Inspect",
+      "primary": true,
+      "steps": [
+        {
+          "do": "inspect"
+        }
+      ]
     }
-   ]
+  ],
+  "algorithm": "lattice",
+  "bodies": [
+    {
+      "anchored": false,
+      "center_mm": [
+        -8500.0,
+        993.9311668325629,
+        -2750.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-0013c2baaf",
+      "join": "",
+      "material": "oak",
+      "name": "oak block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -7500.0,
+        982.1677896072298,
+        -2750.0
+      ],
+      "color_rgba": "d0d4dcff",
+      "id": "b-217d0ce076",
+      "join": "",
+      "material": "iron",
+      "name": "iron block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -6500.0,
+        972.6293700983265,
+        -2750.0
+      ],
+      "color_rgba": "9fd3ffff",
+      "id": "b-8ffdccc96f",
+      "join": "",
+      "material": "glass",
+      "name": "glass block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -5500.0,
+        968.1353068524717,
+        -2750.0
+      ],
+      "color_rgba": "8a8f99ff",
+      "id": "b-22024a09b9",
+      "join": "",
+      "material": "concrete",
+      "name": "concrete block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -8500.0,
+        992.5844170988578,
+        -1750.0
+      ],
+      "color_rgba": "efe6d8ff",
+      "id": "b-d484a6408f",
+      "join": "",
+      "material": "ceramic",
+      "name": "ceramic block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -7500.0,
+        978.5395990841619,
+        -1750.0
+      ],
+      "color_rgba": "bfe9f5ff",
+      "id": "b-67c3a9d351",
+      "join": "",
+      "material": "ice",
+      "name": "ice block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -6500.0,
+        973.2594709001239,
+        -1750.0
+      ],
+      "color_rgba": "9fd3ffff",
+      "id": "b-8663447a10",
+      "join": "",
+      "material": "aluminum",
+      "name": "aluminium block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -5500.0,
+        968.7288131570458,
+        -1750.0
+      ],
+      "color_rgba": "9fd3ffff",
+      "id": "b-f4a652a321",
+      "join": "",
+      "material": "rubber",
+      "name": "rubber block",
+      "part": "",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        200.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -440.0,
+        1540.0,
+        -440.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-c3ee137d4f",
+      "join": "table",
+      "material": "oak",
+      "name": "table",
+      "part": "table/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        1200.0,
+        40.0,
+        720.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -980.0,
+        1160.0,
+        -740.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-c430a6d3b2",
+      "join": "table",
+      "material": "oak",
+      "name": "table-1",
+      "part": "table/leg-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        720.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        100.0,
+        1160.0,
+        -740.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-ebb317bbe8",
+      "join": "table",
+      "material": "oak",
+      "name": "table-2",
+      "part": "table/leg-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        720.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        100.0,
+        1160.0,
+        -140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-8957c1b8be",
+      "join": "table",
+      "material": "oak",
+      "name": "table-3",
+      "part": "table/leg-3",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        720.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -980.0,
+        1160.0,
+        -140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-8e5e0613d1",
+      "join": "table",
+      "material": "oak",
+      "name": "table-4",
+      "part": "table/leg-4",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        720.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        8440.0,
+        1140.0,
+        -1400.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-e5c89c529d",
+      "join": "bench",
+      "material": "oak",
+      "name": "bench",
+      "part": "bench/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        1600.0,
+        40.0,
+        400.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        7700.0,
+        920.0,
+        -1540.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-93cbc62619",
+      "join": "bench",
+      "material": "oak",
+      "name": "bench-1",
+      "part": "bench/leg-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        9180.0,
+        920.0,
+        -1540.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-b79e17ccd1",
+      "join": "bench",
+      "material": "oak",
+      "name": "bench-2",
+      "part": "bench/leg-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        9180.0,
+        920.0,
+        -1260.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-0a7a9f9f71",
+      "join": "bench",
+      "material": "oak",
+      "name": "bench-3",
+      "part": "bench/leg-3",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        7700.0,
+        920.0,
+        -1260.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-35fded7cb9",
+      "join": "bench",
+      "material": "oak",
+      "name": "bench-4",
+      "part": "bench/leg-4",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4320.0,
+        1300.0,
+        -320.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-851e13a653",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair",
+      "part": "chair/seat",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        480.0,
+        40.0,
+        480.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4320.0,
+        1660.0,
+        -100.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-9e2fea96c5",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-1",
+      "part": "chair/back-panel",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        320.0,
+        200.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4500.0,
+        1560.0,
+        -100.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-ca5045c90f",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-2",
+      "part": "chair/back-post-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        480.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4140.0,
+        1560.0,
+        -100.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-bfa5f72c60",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-3",
+      "part": "chair/back-post-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        480.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4500.0,
+        1080.0,
+        -500.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-f842d3417d",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-4",
+      "part": "chair/leg-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4140.0,
+        1080.0,
+        -500.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-e85ed0c080",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-5",
+      "part": "chair/leg-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4140.0,
+        1080.0,
+        -140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-8b21d2af60",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-6",
+      "part": "chair/leg-3",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4500.0,
+        1080.0,
+        -140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-4451374b9d",
+      "join": "chair",
+      "material": "oak",
+      "name": "chair-7",
+      "part": "chair/leg-4",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3120.0,
+        1260.0,
+        -1140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-377a599d22",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        320.0,
+        40.0,
+        200.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3220.0,
+        1040.0,
+        -1260.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-edab9a2b9f",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-1",
+      "part": "stool/leg-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -2980.0,
+        1040.0,
+        -1260.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-980d59080f",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-2",
+      "part": "stool/leg-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -2980.0,
+        1040.0,
+        -1020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-67a2f793cd",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-3",
+      "part": "stool/leg-3",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3220.0,
+        1040.0,
+        -1020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-ea8e2a4c49",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-4",
+      "part": "stool/leg-4",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        400.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3100.0,
+        1260.0,
+        -1260.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-8f4df116d9",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-5",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        280.0,
+        40.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3100.0,
+        1260.0,
+        -1020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-1d17eb7569",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-6",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        280.0,
+        40.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3100.0,
+        1260.0,
+        -1300.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-eb9f045843",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-7",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        200.0,
+        40.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3100.0,
+        1260.0,
+        -980.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-1207c00278",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-8",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        120.0,
+        40.0,
+        40.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -2940.0,
+        1260.0,
+        -1140.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-b6057ff92f",
+      "join": "stool",
+      "material": "oak",
+      "name": "stool-9",
+      "part": "stool/top",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        40.0,
+        120.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        780.0,
+        1700.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-3c4bfed3b4",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit",
+      "part": "shelf-unit/side-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        1800.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        1660.0,
+        1700.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-8c7102b93b",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit-1",
+      "part": "shelf-unit/side-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        40.0,
+        1800.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        1220.0,
+        820.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-0946507ae2",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit-2",
+      "part": "shelf-unit/shelf-1",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        840.0,
+        40.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        1220.0,
+        1420.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-511994f4f1",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit-3",
+      "part": "shelf-unit/shelf-2",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        840.0,
+        40.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        1220.0,
+        1980.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-df39fa2309",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit-4",
+      "part": "shelf-unit/shelf-3",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        840.0,
+        40.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        1220.0,
+        2580.0,
+        -2020.0
+      ],
+      "color_rgba": "c9a06aff",
+      "id": "b-79072bc250",
+      "join": "shelf-unit",
+      "material": "oak",
+      "name": "shelf-unit-5",
+      "part": "shelf-unit/shelf-4",
+      "roll": false,
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size_mm": [
+        840.0,
+        40.0,
+        280.0
+      ],
+      "subtract": false,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -4240.0,
+        872.9334105916619,
+        -1920.0
+      ],
+      "id": "b-074e655332",
+      "material": "oak",
+      "name": "mace",
+      "shape": "box",
+      "size_mm": [
+        600.0,
+        40.0,
+        40.0
+      ],
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "anchored": false,
+      "center_mm": [
+        -3700.0,
+        892.9334105916619,
+        -1920.0
+      ],
+      "id": "b-f997cbb932",
+      "material": "iron",
+      "name": "mace head",
+      "shape": "box",
+      "size_mm": [
+        80.0,
+        80.0,
+        80.0
+      ],
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "cell_m": 0.04,
+  "interaction_points": [
+    {
+      "body": "oak block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "iron block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "glass block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "concrete block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "ceramic block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "ice block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "aluminium block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "rubber block",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "table",
+      "points": [
+        {
+          "id": "top",
+          "kind": "surface",
+          "label": "Top",
+          "position_m": [
+            0.0,
+            0.06470588235294117,
+            0.0
+          ],
+          "size_m": [
+            1.2,
+            2.0,
+            0.7
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            -0.04490110454662233,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            -0.04490110454662233,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "table-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "table-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "table-3",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "table-4",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "bench",
+      "points": [
+        {
+          "id": "top",
+          "kind": "surface",
+          "label": "Top",
+          "position_m": [
+            0.0,
+            0.04999999999999999,
+            0.0
+          ],
+          "size_m": [
+            1.6,
+            2.0,
+            0.36
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            -0.003990420044215237,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            -0.003990420044215237,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "bench-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "bench-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "bench-3",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "bench-4",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair",
+      "points": [
+        {
+          "id": "seat",
+          "kind": "surface",
+          "label": "Seat",
+          "position_m": [
+            0.0,
+            -0.02274193548387088,
+            -0.0567741935483871
+          ],
+          "size_m": [
+            0.46,
+            2.0,
+            0.46
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            -0.05554171262458629,
+            -0.031175198441161393
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            -0.05554171262458629,
+            -0.031175198441161393
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-3",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-4",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-5",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-6",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "chair-7",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool",
+      "points": [
+        {
+          "id": "top",
+          "kind": "surface",
+          "label": "Top",
+          "position_m": [
+            -0.0019523809523809554,
+            0.10880952380952386,
+            -0.0019523809523809554
+          ],
+          "size_m": [
+            0.36,
+            2.0,
+            0.36
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            -0.0019523809523809468,
+            -0.0026526784412416182,
+            -0.0019523809523809468
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            -0.0019523809523809468,
+            -0.0026526784412416182,
+            -0.0019523809523809468
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-3",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-4",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-5",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-6",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-7",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-8",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "stool-9",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            -0.004999999999999992,
+            1.1102230246251565e-16,
+            -0.010000000000000004
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            -0.004999999999999992,
+            1.1102230246251565e-16,
+            -0.010000000000000004
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit-3",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit-4",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "shelf-unit-5",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "mace",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "mace head",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "cart",
+      "points": [
+        {
+          "id": "deck",
+          "kind": "surface",
+          "label": "Cargo deck",
+          "position_m": [
+            0.0,
+            0.01673057058367472,
+            0.03350295428306452
+          ],
+          "size_m": [
+            0.7,
+            2.0,
+            1.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.2167305705836748,
+            -0.8664970457169355
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.2167305705836748,
+            -0.8664970457169355
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "cart-1",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    },
+    {
+      "body": "cart-2",
+      "points": [
+        {
+          "id": "grip",
+          "kind": "grip",
+          "label": "Grip",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "id": "use",
+          "kind": "use",
+          "label": "Use",
+          "position_m": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ]
+    }
+  ],
+  "joints": [
+    {
+      "a": "mace",
+      "at_mm": [
+        -3940.0,
+        872.9334105916619,
+        -1920.0
+      ],
+      "b": "mace head",
+      "breaks_at_n": 0.0,
+      "kind": "link",
+      "length_mm": 200.0,
+      "to_mm": [
+        -3740.0,
+        880.0,
+        -1920.0
+      ]
+    },
+    {
+      "a": "cart",
+      "at_mm": [
+        -2003.927893827901,
+        1891.5826685195516,
+        6844.732187211375
+      ],
+      "axis": [
+        -0.608538085035549,
+        7.304098846218136e-17,
+        -0.7935246682121906
+      ],
+      "b": "cart-1",
+      "friction_n_m": 0.0,
+      "kind": "hinge",
+      "lower_deg": -180.0,
+      "upper_deg": 180.0
+    },
+    {
+      "a": "cart",
+      "at_mm": [
+        -1496.072106172099,
+        1891.5826685195516,
+        6455.267812788625
+      ],
+      "axis": [
+        -0.608538085035549,
+        7.304098846218136e-17,
+        -0.7935246682121906
+      ],
+      "b": "cart-2",
+      "friction_n_m": 0.0,
+      "kind": "hinge",
+      "lower_deg": -180.0,
+      "upper_deg": 180.0
+    }
+  ],
+  "plasticity": "on",
+  "precise_rigid_bodies": [
+    {
+      "color_rgba": 3382733567,
+      "material": "oak",
+      "name": "cart",
+      "orientation_wxyz": [
+        0.44241491552865336,
+        0.0,
+        0.8968104830552409,
+        0.0
+      ],
+      "parts": [
+        {
+          "center_local_m": [
+            0.0,
+            0.36,
+            0.0
+          ],
+          "dimensions_m": [
+            0.7,
+            0.04,
+            1.0
+          ],
+          "name": "deck"
+        },
+        {
+          "center_local_m": [
+            -0.1925,
+            0.25,
+            -0.32
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.18000000000000002,
+            0.034499999999999996
+          ],
+          "name": "bearing-mount-11"
+        },
+        {
+          "center_local_m": [
+            0.1925,
+            0.25,
+            -0.32
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.18000000000000002,
+            0.034499999999999996
+          ],
+          "name": "bearing-mount-12"
+        },
+        {
+          "center_local_m": [
+            -0.1925,
+            0.25,
+            0.32
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.18000000000000002,
+            0.034499999999999996
+          ],
+          "name": "bearing-mount-21"
+        },
+        {
+          "center_local_m": [
+            0.1925,
+            0.25,
+            0.32
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.18000000000000002,
+            0.034499999999999996
+          ],
+          "name": "bearing-mount-22"
+        },
+        {
+          "center_local_m": [
+            -0.21,
+            0.48000000000000004,
+            -0.7
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.44721359549995804,
+            0.034499999999999996
+          ],
+          "name": "handle-arm-1",
+          "rotation_wxyz": [
+            0.6015009550075457,
+            -0.37174803446018445,
+            -0.6015009550075456,
+            0.37174803446018445
+          ]
+        },
+        {
+          "center_local_m": [
+            0.21,
+            0.48000000000000004,
+            -0.7
+          ],
+          "dimensions_m": [
+            0.034499999999999996,
+            0.44721359549995804,
+            0.034499999999999996
+          ],
+          "name": "handle-arm-2",
+          "rotation_wxyz": [
+            0.6015009550075457,
+            -0.37174803446018445,
+            -0.6015009550075456,
+            0.37174803446018445
+          ]
+        },
+        {
+          "center_local_m": [
+            0.0,
+            0.5800000000000001,
+            -0.9
+          ],
+          "dimensions_m": [
+            0.03,
+            0.42,
+            0.03
+          ],
+          "name": "handle",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        }
+      ],
+      "position_m": [
+        -1.75,
+        1.7315826685195517,
+        6.65
+      ]
+    },
+    {
+      "color_rgba": 3382733567,
+      "material": "oak",
+      "name": "cart-1",
+      "orientation_wxyz": [
+        0.44241491552865336,
+        0.0,
+        0.8968104830552409,
+        0.0
+      ],
+      "parts": [
+        {
+          "center_local_m": [
+            0.0,
+            0.16,
+            -0.32
+          ],
+          "dimensions_m": [
+            0.03,
+            0.76,
+            0.03
+          ],
+          "material": "iron",
+          "name": "axle-1",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        },
+        {
+          "center_local_m": [
+            -0.38,
+            0.16,
+            -0.32
+          ],
+          "dimensions_m": [
+            0.32,
+            0.06,
+            0.32
+          ],
+          "name": "wheel-11",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        },
+        {
+          "center_local_m": [
+            0.38,
+            0.16,
+            -0.32
+          ],
+          "dimensions_m": [
+            0.32,
+            0.06,
+            0.32
+          ],
+          "name": "wheel-12",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        }
+      ],
+      "position_m": [
+        -1.75,
+        1.7315826685195517,
+        6.65
+      ]
+    },
+    {
+      "color_rgba": 3382733567,
+      "material": "oak",
+      "name": "cart-2",
+      "orientation_wxyz": [
+        0.44241491552865336,
+        0.0,
+        0.8968104830552409,
+        0.0
+      ],
+      "parts": [
+        {
+          "center_local_m": [
+            0.0,
+            0.16,
+            0.32
+          ],
+          "dimensions_m": [
+            0.03,
+            0.76,
+            0.03
+          ],
+          "material": "iron",
+          "name": "axle-2",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        },
+        {
+          "center_local_m": [
+            -0.38,
+            0.16,
+            0.32
+          ],
+          "dimensions_m": [
+            0.32,
+            0.06,
+            0.32
+          ],
+          "name": "wheel-21",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        },
+        {
+          "center_local_m": [
+            0.38,
+            0.16,
+            0.32
+          ],
+          "dimensions_m": [
+            0.32,
+            0.06,
+            0.32
+          ],
+          "name": "wheel-22",
+          "rotation_wxyz": [
+            4.3297802811774664e-17,
+            0.7071067811865475,
+            0.7071067811865476,
+            4.3297802811774664e-17
+          ],
+          "shape": "cylinder"
+        }
+      ],
+      "position_m": [
+        -1.75,
+        1.7315826685195517,
+        6.65
+      ]
+    }
+  ],
+  "terrain": {
+    "generate": "valley"
   },
-  {
-   "body": "iron block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "glass block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "concrete block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "ceramic block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "ice block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "aluminium block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "rubber block",
-   "label": "Set it down",
-   "primary": true,
-   "steps": [
-    {
-     "do": "place"
-    }
-   ]
-  },
-  {
-   "body": "table",
-   "label": "Shove it along",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "bench",
-   "label": "Shove it along",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "chair",
-   "label": "Push it in",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "stool",
-   "label": "Push it in",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit",
-   "label": "Shove it along",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "mace",
-   "label": "Swing it",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.6,
-     "do": "strike",
-     "speed_m_s": 4.0
-    }
-   ]
-  },
-  {
-   "body": "cart",
-   "label": "Push the cart",
-   "primary": true,
-   "steps": [
-    {
-     "distance_m": 0.4,
-     "do": "push_forward",
-     "speed_m_s": 0.4
-    }
-   ]
-  },
-  {
-   "body": "cart-1",
-   "label": "Inspect",
-   "primary": true,
-   "steps": [
-    {
-     "do": "inspect"
-    }
-   ]
-  },
-  {
-   "body": "cart-2",
-   "label": "Inspect",
-   "primary": true,
-   "steps": [
-    {
-     "do": "inspect"
-    }
-   ]
+  "water": {
+    "discharge_m3_s": 0.35
   }
- ],
- "algorithm": "lattice",
- "bodies": [
-  {
-   "anchored": false,
-   "center_mm": [
-    -8500.0,
-    968.338,
-    -2750.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-0013c2baaf",
-   "join": "",
-   "material": "oak",
-   "name": "oak block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -7500.0,
-    958.891,
-    -2750.0
-   ],
-   "color_rgba": "d0d4dcff",
-   "id": "b-217d0ce076",
-   "join": "",
-   "material": "iron",
-   "name": "iron block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -6500.0,
-    949.579,
-    -2750.0
-   ],
-   "color_rgba": "9fd3ffff",
-   "id": "b-8ffdccc96f",
-   "join": "",
-   "material": "glass",
-   "name": "glass block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -5500.0,
-    945.79,
-    -2750.0
-   ],
-   "color_rgba": "8a8f99ff",
-   "id": "b-22024a09b9",
-   "join": "",
-   "material": "concrete",
-   "name": "concrete block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -8500.0,
-    968.229,
-    -1750.0
-   ],
-   "color_rgba": "efe6d8ff",
-   "id": "b-d484a6408f",
-   "join": "",
-   "material": "ceramic",
-   "name": "ceramic block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -7500.0,
-    957.576,
-    -1750.0
-   ],
-   "color_rgba": "bfe9f5ff",
-   "id": "b-67c3a9d351",
-   "join": "",
-   "material": "ice",
-   "name": "ice block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -6500.0,
-    946.103,
-    -1750.0
-   ],
-   "color_rgba": "9fd3ffff",
-   "id": "b-8663447a10",
-   "join": "",
-   "material": "aluminum",
-   "name": "aluminium block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -5500.0,
-    943.17,
-    -1750.0
-   ],
-   "color_rgba": "9fd3ffff",
-   "id": "b-f4a652a321",
-   "join": "",
-   "material": "rubber",
-   "name": "rubber block",
-   "part": "",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    200.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -440.0,
-    1540.0,
-    -440.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-c3ee137d4f",
-   "join": "table",
-   "material": "oak",
-   "name": "table",
-   "part": "table/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    1200.0,
-    40.0,
-    720.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -980.0,
-    1160.0,
-    -740.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-c430a6d3b2",
-   "join": "table",
-   "material": "oak",
-   "name": "table-1",
-   "part": "table/leg-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    720.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    100.0,
-    1160.0,
-    -740.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-ebb317bbe8",
-   "join": "table",
-   "material": "oak",
-   "name": "table-2",
-   "part": "table/leg-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    720.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    100.0,
-    1160.0,
-    -140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-8957c1b8be",
-   "join": "table",
-   "material": "oak",
-   "name": "table-3",
-   "part": "table/leg-3",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    720.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -980.0,
-    1160.0,
-    -140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-8e5e0613d1",
-   "join": "table",
-   "material": "oak",
-   "name": "table-4",
-   "part": "table/leg-4",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    720.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    8440.0,
-    1140.0,
-    -1400.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-e5c89c529d",
-   "join": "bench",
-   "material": "oak",
-   "name": "bench",
-   "part": "bench/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    1600.0,
-    40.0,
-    400.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    7700.0,
-    920.0,
-    -1540.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-93cbc62619",
-   "join": "bench",
-   "material": "oak",
-   "name": "bench-1",
-   "part": "bench/leg-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    9180.0,
-    920.0,
-    -1540.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-b79e17ccd1",
-   "join": "bench",
-   "material": "oak",
-   "name": "bench-2",
-   "part": "bench/leg-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    9180.0,
-    920.0,
-    -1260.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-0a7a9f9f71",
-   "join": "bench",
-   "material": "oak",
-   "name": "bench-3",
-   "part": "bench/leg-3",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    7700.0,
-    920.0,
-    -1260.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-35fded7cb9",
-   "join": "bench",
-   "material": "oak",
-   "name": "bench-4",
-   "part": "bench/leg-4",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4320.0,
-    1300.0,
-    -320.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-851e13a653",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair",
-   "part": "chair/seat",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    480.0,
-    40.0,
-    480.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4320.0,
-    1660.0,
-    -100.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-9e2fea96c5",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-1",
-   "part": "chair/back-panel",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    320.0,
-    200.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4500.0,
-    1560.0,
-    -100.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-ca5045c90f",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-2",
-   "part": "chair/back-post-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    480.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4140.0,
-    1560.0,
-    -100.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-bfa5f72c60",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-3",
-   "part": "chair/back-post-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    480.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4500.0,
-    1080.0,
-    -500.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-f842d3417d",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-4",
-   "part": "chair/leg-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4140.0,
-    1080.0,
-    -500.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-e85ed0c080",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-5",
-   "part": "chair/leg-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4140.0,
-    1080.0,
-    -140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-8b21d2af60",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-6",
-   "part": "chair/leg-3",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4500.0,
-    1080.0,
-    -140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-4451374b9d",
-   "join": "chair",
-   "material": "oak",
-   "name": "chair-7",
-   "part": "chair/leg-4",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3120.0,
-    1260.0,
-    -1140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-377a599d22",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    320.0,
-    40.0,
-    200.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3220.0,
-    1040.0,
-    -1260.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-edab9a2b9f",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-1",
-   "part": "stool/leg-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -2980.0,
-    1040.0,
-    -1260.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-980d59080f",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-2",
-   "part": "stool/leg-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -2980.0,
-    1040.0,
-    -1020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-67a2f793cd",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-3",
-   "part": "stool/leg-3",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3220.0,
-    1040.0,
-    -1020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-ea8e2a4c49",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-4",
-   "part": "stool/leg-4",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    400.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3100.0,
-    1260.0,
-    -1260.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-8f4df116d9",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-5",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    280.0,
-    40.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3100.0,
-    1260.0,
-    -1020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-1d17eb7569",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-6",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    280.0,
-    40.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3100.0,
-    1260.0,
-    -1300.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-eb9f045843",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-7",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    200.0,
-    40.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3100.0,
-    1260.0,
-    -980.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-1207c00278",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-8",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    120.0,
-    40.0,
-    40.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -2940.0,
-    1260.0,
-    -1140.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-b6057ff92f",
-   "join": "stool",
-   "material": "oak",
-   "name": "stool-9",
-   "part": "stool/top",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    40.0,
-    120.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    780.0,
-    1700.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-3c4bfed3b4",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit",
-   "part": "shelf-unit/side-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    1800.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    1660.0,
-    1700.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-8c7102b93b",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit-1",
-   "part": "shelf-unit/side-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    40.0,
-    1800.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    1220.0,
-    820.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-0946507ae2",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit-2",
-   "part": "shelf-unit/shelf-1",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    840.0,
-    40.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    1220.0,
-    1420.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-511994f4f1",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit-3",
-   "part": "shelf-unit/shelf-2",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    840.0,
-    40.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    1220.0,
-    1980.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-df39fa2309",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit-4",
-   "part": "shelf-unit/shelf-3",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    840.0,
-    40.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    1220.0,
-    2580.0,
-    -2020.0
-   ],
-   "color_rgba": "c9a06aff",
-   "id": "b-79072bc250",
-   "join": "shelf-unit",
-   "material": "oak",
-   "name": "shelf-unit-5",
-   "part": "shelf-unit/shelf-4",
-   "roll": false,
-   "rotation_deg": [
-    0.0,
-    0.0,
-    0.0
-   ],
-   "shape": "box",
-   "size_mm": [
-    840.0,
-    40.0,
-    280.0
-   ],
-   "subtract": false,
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -4240.0,
-    860.0,
-    -1920.0
-   ],
-   "id": "b-074e655332",
-   "material": "oak",
-   "name": "mace",
-   "shape": "box",
-   "size_mm": [
-    600.0,
-    40.0,
-    40.0
-   ],
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  },
-  {
-   "anchored": false,
-   "center_mm": [
-    -3700.0,
-    880.0,
-    -1920.0
-   ],
-   "id": "b-f997cbb932",
-   "material": "iron",
-   "name": "mace head",
-   "shape": "box",
-   "size_mm": [
-    80.0,
-    80.0,
-    80.0
-   ],
-   "velocity_m_s": [
-    0.0,
-    0.0,
-    0.0
-   ]
-  }
- ],
- "cell_m": 0.04,
- "interaction_points": [
-  {
-   "body": "oak block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "iron block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "glass block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "concrete block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "ceramic block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "ice block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "aluminium block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "rubber block",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "table",
-   "points": [
-    {
-     "id": "top",
-     "kind": "surface",
-     "label": "Top",
-     "position_m": [
-      0.0,
-      0.06470588235294117,
-      0.0
-     ],
-     "size_m": [
-      1.2,
-      2.0,
-      0.7
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      -0.04490110454662233,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.04490110454662233,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "table-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "table-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "table-3",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "table-4",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "bench",
-   "points": [
-    {
-     "id": "top",
-     "kind": "surface",
-     "label": "Top",
-     "position_m": [
-      0.0,
-      0.04999999999999999,
-      0.0
-     ],
-     "size_m": [
-      1.6,
-      2.0,
-      0.36
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      -0.003990420044215237,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.003990420044215237,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "bench-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "bench-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "bench-3",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "bench-4",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair",
-   "points": [
-    {
-     "id": "seat",
-     "kind": "surface",
-     "label": "Seat",
-     "position_m": [
-      0.0,
-      -0.02274193548387088,
-      -0.0567741935483871
-     ],
-     "size_m": [
-      0.46,
-      2.0,
-      0.46
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      -0.05554171262458629,
-      -0.031175198441161393
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      -0.05554171262458629,
-      -0.031175198441161393
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-3",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-4",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-5",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-6",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "chair-7",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool",
-   "points": [
-    {
-     "id": "top",
-     "kind": "surface",
-     "label": "Top",
-     "position_m": [
-      -0.0019523809523809554,
-      0.10880952380952386,
-      -0.0019523809523809554
-     ],
-     "size_m": [
-      0.36,
-      2.0,
-      0.36
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      -0.0019523809523809468,
-      -0.0026526784412416182,
-      -0.0019523809523809468
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      -0.0019523809523809468,
-      -0.0026526784412416182,
-      -0.0019523809523809468
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-3",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-4",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-5",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-6",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-7",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-8",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "stool-9",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      -0.004999999999999992,
-      1.1102230246251565e-16,
-      -0.010000000000000004
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      -0.004999999999999992,
-      1.1102230246251565e-16,
-      -0.010000000000000004
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit-3",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit-4",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "shelf-unit-5",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "mace",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "mace head",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "cart",
-   "points": [
-    {
-     "id": "deck",
-     "kind": "surface",
-     "label": "Cargo deck",
-     "position_m": [
-      0.0,
-      0.01673057058367472,
-      0.03350295428306452
-     ],
-     "size_m": [
-      0.7,
-      2.0,
-      1.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.2167305705836748,
-      -0.8664970457169355
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.2167305705836748,
-      -0.8664970457169355
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "cart-1",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  },
-  {
-   "body": "cart-2",
-   "points": [
-    {
-     "id": "grip",
-     "kind": "grip",
-     "label": "Grip",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    },
-    {
-     "id": "use",
-     "kind": "use",
-     "label": "Use",
-     "position_m": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "yaw_deg": 0.0
-    }
-   ]
-  }
- ],
- "joints": [
-  {
-   "a": "mace",
-   "at_mm": [
-    -3940.0,
-    860.0,
-    -1920.0
-   ],
-   "b": "mace head",
-   "breaks_at_n": 0.0,
-   "kind": "link",
-   "length_mm": 200.0,
-   "to_mm": [
-    -3740.0,
-    880.0,
-    -1920.0
-   ]
-  },
-  {
-   "a": "cart",
-   "at_mm": [
-    -2003.927893827901,
-    980.7033534049988,
-    6844.732187211375
-   ],
-   "axis": [
-    -0.608538085035549,
-    7.304098846218136e-17,
-    -0.7935246682121906
-   ],
-   "b": "cart-1",
-   "friction_n_m": 0.0,
-   "kind": "hinge",
-   "lower_deg": -180.0,
-   "upper_deg": 180.0
-  },
-  {
-   "a": "cart",
-   "at_mm": [
-    -1496.072106172099,
-    980.7033534049988,
-    6455.267812788625
-   ],
-   "axis": [
-    -0.608538085035549,
-    7.304098846218136e-17,
-    -0.7935246682121906
-   ],
-   "b": "cart-2",
-   "friction_n_m": 0.0,
-   "kind": "hinge",
-   "lower_deg": -180.0,
-   "upper_deg": 180.0
-  }
- ],
- "plasticity": "on",
- "precise_rigid_bodies": [
-  {
-   "color_rgba": 3382733567,
-   "material": "oak",
-   "name": "cart",
-   "orientation_wxyz": [
-    0.44241491552865336,
-    0.0,
-    0.8968104830552409,
-    0.0
-   ],
-   "parts": [
-    {
-     "center_local_m": [
-      0.0,
-      0.36,
-      0.0
-     ],
-     "dimensions_m": [
-      0.7,
-      0.04,
-      1.0
-     ],
-     "name": "deck"
-    },
-    {
-     "center_local_m": [
-      -0.1925,
-      0.25,
-      -0.32
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.18000000000000002,
-      0.034499999999999996
-     ],
-     "name": "bearing-mount-11"
-    },
-    {
-     "center_local_m": [
-      0.1925,
-      0.25,
-      -0.32
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.18000000000000002,
-      0.034499999999999996
-     ],
-     "name": "bearing-mount-12"
-    },
-    {
-     "center_local_m": [
-      -0.1925,
-      0.25,
-      0.32
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.18000000000000002,
-      0.034499999999999996
-     ],
-     "name": "bearing-mount-21"
-    },
-    {
-     "center_local_m": [
-      0.1925,
-      0.25,
-      0.32
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.18000000000000002,
-      0.034499999999999996
-     ],
-     "name": "bearing-mount-22"
-    },
-    {
-     "center_local_m": [
-      -0.21,
-      0.48000000000000004,
-      -0.7
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.44721359549995804,
-      0.034499999999999996
-     ],
-     "name": "handle-arm-1",
-     "rotation_wxyz": [
-      0.6015009550075457,
-      -0.37174803446018445,
-      -0.6015009550075456,
-      0.37174803446018445
-     ]
-    },
-    {
-     "center_local_m": [
-      0.21,
-      0.48000000000000004,
-      -0.7
-     ],
-     "dimensions_m": [
-      0.034499999999999996,
-      0.44721359549995804,
-      0.034499999999999996
-     ],
-     "name": "handle-arm-2",
-     "rotation_wxyz": [
-      0.6015009550075457,
-      -0.37174803446018445,
-      -0.6015009550075456,
-      0.37174803446018445
-     ]
-    },
-    {
-     "center_local_m": [
-      0.0,
-      0.5800000000000001,
-      -0.9
-     ],
-     "dimensions_m": [
-      0.03,
-      0.42,
-      0.03
-     ],
-     "name": "handle",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    }
-   ],
-   "position_m": [
-    -1.75,
-    0.8207033534049988,
-    6.65
-   ]
-  },
-  {
-   "color_rgba": 3382733567,
-   "material": "oak",
-   "name": "cart-1",
-   "orientation_wxyz": [
-    0.44241491552865336,
-    0.0,
-    0.8968104830552409,
-    0.0
-   ],
-   "parts": [
-    {
-     "center_local_m": [
-      0.0,
-      0.16,
-      -0.32
-     ],
-     "dimensions_m": [
-      0.03,
-      0.76,
-      0.03
-     ],
-     "material": "iron",
-     "name": "axle-1",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    },
-    {
-     "center_local_m": [
-      -0.38,
-      0.16,
-      -0.32
-     ],
-     "dimensions_m": [
-      0.32,
-      0.06,
-      0.32
-     ],
-     "name": "wheel-11",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    },
-    {
-     "center_local_m": [
-      0.38,
-      0.16,
-      -0.32
-     ],
-     "dimensions_m": [
-      0.32,
-      0.06,
-      0.32
-     ],
-     "name": "wheel-12",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    }
-   ],
-   "position_m": [
-    -1.75,
-    0.8207033534049988,
-    6.65
-   ]
-  },
-  {
-   "color_rgba": 3382733567,
-   "material": "oak",
-   "name": "cart-2",
-   "orientation_wxyz": [
-    0.44241491552865336,
-    0.0,
-    0.8968104830552409,
-    0.0
-   ],
-   "parts": [
-    {
-     "center_local_m": [
-      0.0,
-      0.16,
-      0.32
-     ],
-     "dimensions_m": [
-      0.03,
-      0.76,
-      0.03
-     ],
-     "material": "iron",
-     "name": "axle-2",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    },
-    {
-     "center_local_m": [
-      -0.38,
-      0.16,
-      0.32
-     ],
-     "dimensions_m": [
-      0.32,
-      0.06,
-      0.32
-     ],
-     "name": "wheel-21",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    },
-    {
-     "center_local_m": [
-      0.38,
-      0.16,
-      0.32
-     ],
-     "dimensions_m": [
-      0.32,
-      0.06,
-      0.32
-     ],
-     "name": "wheel-22",
-     "rotation_wxyz": [
-      4.3297802811774664e-17,
-      0.7071067811865475,
-      0.7071067811865476,
-      4.3297802811774664e-17
-     ],
-     "shape": "cylinder"
-    }
-   ],
-   "position_m": [
-    -1.75,
-    0.8207033534049988,
-    6.65
-   ]
-  }
- ],
- "terrain": {
-  "generate": "valley"
- },
- "water": {
-  "discharge_m3_s": 0.35
- }
 }

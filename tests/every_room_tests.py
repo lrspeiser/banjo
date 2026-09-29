@@ -36,6 +36,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
 import fracture_lab, live_session, room_store, world_room   # noqa: E402
 
 ENGINE = Path(os.environ["BANJO_LIVE_ENGINE"]).resolve() if os.environ.get("BANJO_LIVE_ENGINE") else None
+#: What the ground calls a tunnel somebody has dug, in its run of beds.
+WORKING = "a working"
 DT = 1 / 240
 # A second of world in each room, in twelve-step batches as the page asks for
 # them. Long enough for a machine to be reported and for anything unstable to
@@ -121,6 +123,66 @@ class EveryRoomOpensAndRuns(unittest.TestCase):
         # The owner's gate: a room has to run at realtime. Said separately so a
         # room that is merely slow is not confused with one that is broken.
         self.assertEqual({}, slow, "rooms that ran slower than realtime")
+
+    def test_nothing_starts_under_the_ground(self):
+        """A thing buried when its room opens is the worst kind of broken.
+
+        It is present, meshed, reported visible -- and invisible, and the
+        crosshair goes straight through it to the terrain. Nothing else in
+        this suite catches it: the room opens, its clock runs and its bodies
+        are counted, and every one of those is true of a room whose furniture
+        is under the field.
+
+        It happens because `standing_on_the_ground` seats a room only when the
+        ground is `flat`; on a generated valley the heights are whatever the
+        tool that laid the room out fitted to the surface IT generated, and
+        generated ground is build-dependent -- the valley's cache name mixes
+        in `fp::profileHash()` exactly so that "a valley another build made is
+        left in the cache and not used". So a room like that fits the machine
+        that built it and no other.
+
+        Anchored scenery is left out: a footing or a tunnel wall belongs under
+        the surface. What is asked of everything else is only that its CENTRE
+        is not below the ground under it, which is the point at which it stops
+        being findable.
+        """
+        buried = {}
+        for name in sorted(world_room.SCENES):
+            with self.subTest(room=name):
+                live = live_session.Live()
+                try:
+                    room = world_room.Room(name)
+                    app = SimpleNamespace(live=live, live_holder="world", room=room, engine_path=ENGINE,
+                                          runs_path=self.root / "runs",
+                                          store=room_store.RoomStore(self.root / "rooms" / name))
+                    live.open(app, {"spec": room.spec})
+                    under = []
+                    for pose in live.session.send(op="poses")["bodies"]:
+                        if pose.get("anchored"):
+                            continue
+                        x, y, z = pose["position_m"]
+                        survey = live.session.send(op="survey", at=[x, z])["survey"]
+                        runs = survey.get("runs")
+                        if runs:
+                            # Which bed the body's centre is in. A run called
+                            # "a working" is a tunnel somebody dug, so a lamp
+                            # or a breaker down there is exactly where it
+                            # belongs; anything else is solid matter.
+                            bed = next((r for r in runs
+                                        if float(r["from_m"]) <= y < float(r["to_m"])), None)
+                            if bed is not None and str(bed.get("material")) != WORKING:
+                                under.append(f"{pose['name']} {round((float(bed['to_m'])-y)*1000)} mm "
+                                             f"inside {bed.get('material')}")
+                            continue
+                        ground = survey.get("ground_m")
+                        if ground is not None and y < float(ground):
+                            under.append(f"{pose['name']} {round((float(ground)-y)*1000)} mm under")
+                    if under:
+                        buried[name] = under[:6]
+                        print(f"    {name}: BURIED {under[:6]}", flush=True)
+                finally:
+                    live.shutdown()
+        self.assertEqual({}, buried, "things that start under the ground of their own room")
 
 
 if __name__ == "__main__":
