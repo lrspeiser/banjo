@@ -1497,6 +1497,24 @@ public:
                    double lower_deg = -180.0, double upper_deg = 180.0,
                    double friction_torque_n_m = 0.0);
 
+    // Two wheels that turn together at a fixed ratio: a pair of gears in mesh,
+    // or two sprockets with a chain between them.
+    //
+    // It couples two PINS, so both wheels must already be on one -- a gear is a
+    // relationship between two pins and there is nothing to relate without
+    // them. The wheels never touch: no tooth is drawn, collided with or
+    // counted, and what makes a 12-tooth wheel turn a 36-tooth one a third as
+    // fast is the two numbers. What that buys is a gear train that costs
+    // nothing but its two wheels; what it costs is that the pair cannot jam or
+    // ride up, and the one way it can fail is `strips_at_n_m`.
+    //
+    // MESHED TEETH TURN THE WHEELS OPPOSITE WAYS AND A CHAIN TURNS THEM THE
+    // SAME WAY, which is the only difference between the two here.
+    //
+    // Returns 0 if either pin is not a pin, or they are the same one.
+    unsigned gear(unsigned pin_a, unsigned pin_b, unsigned teeth_a, unsigned teeth_b,
+                  bool chain = false, double strips_at_n_m = 0.0);
+
     // Let one named thing slide along a line fixed in another.
     //
     // The same idea as a pin, one degree of freedom the other way round: the
