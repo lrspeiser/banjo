@@ -185,6 +185,68 @@ inside one collapsed panel; there is no undo and no readable history; no test
 result is ever stored; and pass-or-fail reaches exactly one test with four
 criteria.
 
+## What the owner asked for on 29 September, after driving a rover
+
+Written down in his own words as far as possible, because this is a product
+brief and a paraphrase loses it. Nothing below is built. The Workshop already
+has Lab, Inventory, Skills and Recipes tabs; this is what they should BE.
+
+**Being stuck, and never being stuck.** "It was way too easy to get the rover
+stuck." The answer he asked for: "you should be able to hit reset and bring
+the rover back to a spawn point, or set new spawn point to pick a new place to
+allow it to go back to, and allow the user to choose multiple historic spawn
+points **so it can never end the game for a user**." That last clause is the
+requirement; the rest is detail. Started on `agent/rover-spawn-points` -- the
+mechanism is `park` and `unpark`, which put a machine back upright and at
+rest -- and held back only because it needs the journey harness to stop
+sharing one room across its tests.
+
+**What you are carrying, shown as a thing and not a number.** "We have to be
+way more clear about what you are collecting: if you are picking up soil it
+should show a little thumbnail area where you are filling up, and when it is
+maxed out it should show X/Y space or 100%." The engine already knows -- a
+routine's `load_reading()` has kg, capacity_kg and full, and the dig routine
+reports sand and soil in cubic metres -- so this is a page that does not show
+what the machine already says.
+
+**The Inventory is the screen you land on, and it holds only what you have.**
+"I want the inventory screen to only have the items I am carrying. Even the
+raw materials should be the same thumbnail just with quantity attached to it,
+no entry fields. And that inventory should be the default screen you go into
+when you switch out of the world."
+
+**A hot list of ten.** "You can then move items from your inventory into your
+hot list, which are the 10 slots you can see when in the world."
+
+**Inventory to bench, by dragging.** "From the inventory screen you can click
+on an item and drag it into the Workshop, which will then take you into the
+Workshop where you can modify it."
+
+**Recipes say what you are short of.** "You can go into the recipes area and
+see which inventory items you need to make that item and if you have enough --
+greyed out if missing some, mention how much is missing, like 20%. When you
+have everything on a recipe you can click Make and it will take you into your
+inventory and put the item there."
+
+**Skills are a tech tree you navigate.** "The Skills area will show you more of
+a tech tree you can navigate like Civilization, where you can see what types of
+items you can make with that skill, what you need to unlock next, and what you
+could make with those. Because we use LLMs and you can invent any new items,
+these are more representative." So the tree is a shape to move through, not a
+closed list of everything makeable -- which is the part that makes it
+different from Civilization and the part to get right.
+
+**And the chat can plot a course through it.** "We can give you the ability to
+ask the chat about an item and it will look at the tech tree, figure out all
+the skills you still need, and build it out to get to the item."
+
+**A skill is unlocked by doing, and says so.** "We need to indicate what you
+have to complete to get the skill, like collect 100 lbs of iron ore to unlock
+the next level of tools to collect iron ore." This agrees with what a rank
+already is here -- what you can MAKE, never a score -- and gives it a visible
+condition.
+
+
 ## Next
 
 1. **Every object should say what you do with it, and show you before it does
