@@ -288,5 +288,26 @@ From docs/how-robots-think.md:
   breaks. Nothing says so when you build one expecting to play with it.
 - **The rover journey flakes.** One CI red that passed on a re-run and was shown
   not to be the change under it.
+- **A saved room on generated ground only fits the machine that laid it out.**
+  `standing_on_the_ground` seats a room only when the ground is `flat`; on a
+  generated valley the body heights are whatever the building tool fitted to
+  the surface IT generated. And generated ground is build-dependent -- the
+  valley's cache name mixes in `fp::profileHash()` precisely so that "a valley
+  another build made is left in the cache and not used". So the same room on
+  another compiler has its things buried or hanging, and buried is the bad one:
+  present, meshed, reported visible, and invisible. `playground/rooms/
+  explore.json` is the instance -- 44 bodies, no `rest_on`, eight of them at
+  surface-fitted heights like 968.338 mm -- and it is why four of CI's browser
+  failures sit in the four journey classes that use that scene, reading as
+  "nothing was drawn to its design" and "E did not pick up oak block" with the
+  crosshair finding the ground. It does not reproduce on Windows, under load,
+  with the terrain cache cleared, or with a software renderer. Do not nudge the
+  heights: the valley is an iterative erosion simulation, nobody has measured
+  how far apart the two surfaces are, and a raise is a guess. Either seat each
+  body against the terrain as the room opens, or do not pin heights over
+  generated ground. Note the four classes want a VALLEY -- shadows, the sun
+  casting, "the valley did not open" -- so deleting `explore` (already on the
+  list above) means giving them a valley room whose blocks are not pinned,
+  not re-pointing them at flat ground.
 - **`agent/fracture-truth` is not merged.** Five commits: the bench round trip,
   the sit program, the tests-sit room, the plan, and the chat-built robot.
