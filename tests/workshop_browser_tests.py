@@ -982,11 +982,20 @@ class WorkshopBrowserRegression(unittest.TestCase):
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})['body']
         self.click('[data-mode="details"]');self.click('#ws-install-authoring');self.click('#ws-install-preview')
         self.wait("document.querySelector('#ws-install-result').dataset.status==='preview'")
-        advanced=self.install_api('/api/live/act',{'session':opened['session'],'op':'step','dt':1/120,'n':1})
-        self.assertEqual(200,advanced['status'],advanced)
+        # Stale is the room not being the room that was previewed -- NOT time
+        # passing. A world goes on running while its person is over here
+        # (world_clock), so a step of the engine between previewing and
+        # installing is the ordinary case, and refusing on it refused every
+        # installation made on a machine slow enough to let the clock tick.
+        # The world being REPLACED under the preview is the real thing, and
+        # what this is here to show: that it is said on the page and that
+        # nothing goes into the room. Which changes count is held test by
+        # test in workshop_install_engine_tests.
+        replaced=self.install_api('/api/world/open',{'scene':'yard','fresh':True})
+        self.assertEqual(200,replaced['status'],replaced)
         self.click('#ws-install-confirm');self.wait("!document.querySelector('#ws-install-confirm').disabled")
-        self.assertIn('changed after preview',self.js("document.querySelector('#ws-notice').textContent"))
-        state=self.install_api('/api/live/act',{'session':opened['session'],'op':'poses'})
+        self.assertIn('The source world changed',self.js("document.querySelector('#ws-notice').textContent"))
+        state=self.install_api('/api/live/act',{'session':replaced['body']['session'],'op':'poses'})
         self.assertEqual(200,state['status'],state)
         self.assertFalse(any(b['name'].startswith('workshop-') for b in state['body']['bodies']))
 

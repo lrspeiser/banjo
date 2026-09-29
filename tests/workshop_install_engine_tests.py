@@ -756,15 +756,54 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual(1,len(self.room.workshop_installs))
         self.assertEqual(1,sum(b['name']==p['root_body'] for b in self.snap()['bodies']))
 
-    def test_state_or_inventory_change_makes_preview_stale(self):
-        for change in ('step','inventory'):
-            with self.subTest(change=change):
-                self.ctx=install.context(self.app,{});p=self.preview();old=self.live.session
-                if change=='step':old.send(op='step',dt=1/120,n=1)
-                else:self.room.inventory.revision+=1
-                before=self.snap();spec=deepcopy(self.room.spec)
-                with self.assertRaisesRegex(ValueError,'changed after preview'):self.do_commit(p)
-                self.assertIs(old,self.live.session);self.assertEqual(before,self.snap());self.assertEqual(spec,self.room.spec)
+    def test_a_room_that_ran_on_is_still_installable(self):
+        """A world that merely kept going does not stop an installation.
+
+        This used to be the opposite: the preview pinned the whole saved world
+        and ONE step of the engine refused the commit. That was right while a
+        world nobody was watching stood still. The world clock ended that on
+        2026-09-26 -- a room goes on running while its person is in the
+        Workshop, which is exactly when they are installing -- so the old rule
+        made installing a race that a slow machine loses. Proved on the
+        Workshop browser suite under load: it fails with the clock on and
+        passes with BANJO_WORLD_CLOCK=0.
+
+        What is pinned now is the CAST of the room, the room's own spec and
+        the rack. Where things have got to is not pinned; whether the SPOT is
+        still free is asked again at the commit, of the world as it stands.
+        """
+        self.ctx=install.context(self.app,{});p=self.preview();old=self.live.session
+        old.send(op='step',dt=1/120,n=12)
+        answer=self.do_commit(p)
+        # It went in. (The session is a new one: installing makes one.)
+        self.assertEqual(1,sum(b['name']==answer['root_body'] for b in self.snap()['bodies']))
+
+    def test_a_changed_rack_makes_preview_stale(self):
+        self.ctx=install.context(self.app,{});p=self.preview();old=self.live.session
+        self.room.inventory.revision+=1
+        before=self.snap();spec=deepcopy(self.room.spec)
+        with self.assertRaisesRegex(ValueError,'What the rack holds changed after preview'):self.do_commit(p)
+        self.assertIs(old,self.live.session);self.assertEqual(before,self.snap());self.assertEqual(spec,self.room.spec)
+
+    def test_a_body_that_arrives_in_the_spot_makes_preview_stale(self):
+        """The question the whole-world hash used to answer by accident.
+
+        Where things have got to is no longer pinned, so this is the check
+        that has to carry it: something has come to rest where the preview
+        meant to put the thing, and the placement is refused -- on the bodies
+        where they are NOW, not where they were when it was previewed.
+        """
+        self.ctx=install.context(self.app,{});p=self.preview()
+        plan=install._preview_cache(self.app)[p['preview_id']]
+        # The same world, with one body moved onto the spot the preview chose.
+        moved=deepcopy(self.snap())
+        middle=[sum(c[a] for c in plan['clear_cells'])/len(plan['clear_cells'])*plan['clear_h']
+                for a in range(3)]
+        moved['bodies'][0]['pose']['com_m']=middle
+        with self.assertRaisesRegex(ValueError,'overlaps'):
+            install._still_clear(plan,moved,self.live.session)
+        # And out of the way again, it is clear.
+        install._still_clear(plan,self.snap(),self.live.session)
 
     def test_session_switch_and_expiry_are_refused(self):
         p=self.preview();req=self.request(p)

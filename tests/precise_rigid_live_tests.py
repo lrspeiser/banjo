@@ -364,10 +364,15 @@ class NativePreciseInstallation(unittest.TestCase):
         p2=self.preview(x=6)
         with patch.object(self.app.store,'save',side_effect=OSError('disk full')),self.assertRaises(OSError):self.commit(p2,'rigid-install-2')
         self.assertEqual(before,self.snap());self.assertIs(old,self.live.session)
+        # A room that merely ran on does not refuse the installation. It used
+        # to: the preview pinned the whole saved world, so one step of the
+        # engine was "the world changed". The world clock made a running room
+        # the normal case while somebody is in the Workshop, so what is pinned
+        # now is the cast of the room, its spec and the rack -- and whether
+        # the spot is still free, asked again at the commit.
         self.live.session.send(op='step',dt=1/240,n=1)
-        before=self.snap()
-        with self.assertRaisesRegex(ValueError,'changed after preview'):self.commit(p2,'rigid-install-2')
-        self.assertEqual(before,self.snap())
+        self.commit(p2,'rigid-install-2')
+        self.assertEqual(1,sum(b['name']==p2['root_body'] for b in self.snap()['bodies']))
 
     def test_old_binary_is_refused_and_a_loose_body_no_longer_blocks_installation(self):
         original=self.snap()

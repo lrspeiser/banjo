@@ -484,17 +484,22 @@ class NativeFabrication(unittest.TestCase):
         self.assertEqual(len(self.live.session.state["bodies"]),1)
         self.assertEqual(room_api.commit(self.app,request)["status"],"installed")
 
-    def test_changed_use_or_stale_preview_cannot_consume_a_workpiece(self):
+    def test_a_changed_use_cannot_consume_a_workpiece_and_a_running_room_can(self):
         self.begin();self.step(2)
         changed=candidate();changed["parameters"]["primary_use"]["label"]="Changed"
         p=workshop_install.preview(self.app,{**self.context(),"mode":"authoring","candidate":changed,"position_m":[0,0]})
         req={**self.context(),"job_id":"job-native-0001","preview_id":p["preview_id"],"request_id":"install-0001"}
         with self.assertRaisesRegex(ValueError,"funded design"):room_api.commit(self.app,req)
+        self.assertEqual(self.room.fabrication_record["jobs"]["job-native-0001"]["status"],"ready")
+        # And the room going on running does NOT refuse it: a world keeps
+        # going while its person is in the Workshop (world_clock), so a step
+        # of the engine between previewing and installing is the ordinary
+        # case, not staleness. What staleness means now -- a changed cast, a
+        # changed room, a spent rack, a spot taken -- is held in
+        # workshop_install_engine_tests and precise_rigid_live_tests.
         p=room_api.preview(self.app,{**self.context(),"job_id":"job-native-0001","position_m":[0,0]})
         self.step()
-        with self.assertRaisesRegex(ValueError,"changed after preview"):
-            room_api.commit(self.app,{**req,"preview_id":p["preview_id"]})
-        self.assertEqual(self.room.fabrication_record["jobs"]["job-native-0001"]["status"],"ready")
+        self.assertEqual(room_api.commit(self.app,{**req,"preview_id":p["preview_id"]})["status"],"installed")
         with self.assertRaisesRegex(ValueError,"already supplied"):self.call("configure",settings=settings(energy_j=100000),request_id="configure-0002")
 
     def test_funded_save_refuses_either_missing_half_or_changed_clock(self):

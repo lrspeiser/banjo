@@ -111,6 +111,67 @@ def _snapshot(live: Any) -> dict[str, Any]:
     return saved
 
 
+# The three things an installation is pinned to between preview and commit,
+# hashed apart rather than together.
+#
+# Together they gave one bit -- "something changed" -- and a person who has
+# just drawn a thing and pressed Install cannot act on that. Apart, the
+# message can say whether the room moved under them, whether somebody spent
+# the material, or whether the design's own room was edited, and those are
+# three different things to do about it.
+def _source_parts(live_saved: Any, room: Any) -> dict[str, str]:
+    # WHAT IS IN THE ROOM, NOT WHERE IT HAS GOT TO. This used to hash the whole
+    # saved world, so a single step of the engine between preview and commit
+    # refused the installation. That was right while the page was the world's
+    # only clock and a world nobody watched stood still. It stopped being right
+    # on 2026-09-26, when the world clock was added so that a room keeps
+    # running while its person is over in the Workshop -- which is exactly when
+    # an installation is being made. The two features then contradicted each
+    # other: proved by running the Workshop suite under load, where the
+    # installation fails with the clock on and passes with BANJO_WORLD_CLOCK=0.
+    #
+    # So the pin is the cast of the room, and a thing that merely drove on
+    # while you were drawing does not stop you installing. That the SPOT is
+    # still free is a separate question and still asked, against the world as
+    # it stands at the moment of committing (_still_clear).
+    return {"the world": _hash([sorted(str(b.get("name")) for b in live_saved.get("bodies") or [])]),
+            "the room": _hash([room.spec]),
+            "what the rack holds": _hash([_inventory(room)])}
+
+
+def _what_changed(was: dict[str, Any] | None, now: dict[str, str]) -> str:
+    if not isinstance(was, dict):
+        return "The world or inventory"
+    moved = [name for name, digest in now.items() if was.get(name) != digest]
+    if not moved:
+        return "Something about the world"
+    said = " and ".join(moved)
+    return said[0].upper() + said[1:]
+
+
+def _still_clear(plan: dict[str, Any], now: dict[str, Any], old: Any) -> None:
+    """Is the place the preview chose still free, in the world as it stands?
+
+    The preview asked this of the world it saw. Between then and the commit a
+    room goes on running, so it has to be asked again -- of the bodies where
+    they are NOW, not where they were.
+    """
+    if plan.get("clear_cells") is not None:
+        _clearance(now, plan["clear_cells"], plan["clear_h"])
+        return
+    bounds = plan.get("clear_bounds")
+    if bounds is None:
+        return
+    lo_new, hi_new = bounds
+    for existing in now["bodies"]:
+        if "parked" in existing:
+            continue
+        lo, hi = _body_bounds(existing, float(old.spec["cell_m"]))
+        if all(lo_new[a] < hi[a]+.001 and hi_new[a] > lo[a]-.001 for a in range(3)):
+            raise ValueError("Prototype placement overlaps the current collision envelope of "
+                             + existing["name"])
+
+
 def _supported(room: Any, old: Any) -> None:
     if room.scene not in world_room.SCENES:
         raise ValueError("Installation needs a persistently saved room")
@@ -1072,6 +1133,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
             del cache[next(iter(cache))]
         cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
+                        "source_parts": _source_parts(saved, room),
+                        "clear_cells": placed, "clear_h": h,
                         "spec": spec, "matter": matter, "root": root, "shift": shift,
                         "candidate_hash": _hash(body["candidate"])}
         return _with_needs(app, design, _replaces(app, _kept(app, answer, design, overrides), taking_out))
@@ -1167,6 +1230,8 @@ def _preview_articulated(app, room, live, old, design, overrides, pos, candidate
     while len(cache)>=MAX_PREVIEWS: del cache[next(iter(cache))]
     cache[token] = {"expires":time.monotonic()+PREVIEW_TTL_S, "answer":deepcopy(answer),
                     "source_hash":_hash([saved,room.spec,_inventory(room)]),
+                    "source_parts": _source_parts(saved, room),
+                    "clear_cells": placed, "clear_h": h,
                     "spec":spec, "matter":artifact, "root":roots, "shift":shift,
                     "candidate_hash":_hash(candidate)}
     return answer
@@ -1386,6 +1451,8 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
         del cache[next(iter(cache))]
     cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
                     "source_hash": _hash([saved, room.spec, _inventory(room)]),
+                    "source_parts": _source_parts(saved, room),
+                    "clear_bounds": bounds,
                     "spec": spec, "matter": set_down, "root": roots, "shift": None,
                     "candidate_hash": _hash(candidate)}
     return answer
@@ -1446,6 +1513,8 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
         del cache[next(iter(cache))]
     cache[token] = {"expires": time.monotonic()+PREVIEW_TTL_S, "answer": deepcopy(answer),
                     "source_hash": _hash([saved, room.spec, _inventory(room)]),
+                    "source_parts": _source_parts(saved, room),
+                    "clear_bounds": bounds,
                     "spec": spec, "matter": artifact, "root": root, "shift": None}
     return answer
 
@@ -1521,8 +1590,14 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         if plan["answer"]["session"] != old.id or plan["answer"]["scene"] != room.scene:
             raise ValueError("The preview belongs to a different world session")
         before = _snapshot(live)
-        if plan["source_hash"] != _hash([before,room.spec,_inventory(room)]):
-            raise ValueError("The world or inventory changed after preview. Preview again; nothing was installed")
+        parts = _source_parts(before, room)
+        if plan.get("source_parts") != parts:
+            moved = _what_changed(plan.get("source_parts"), parts)
+            raise ValueError(f"{moved} changed after preview. Preview again; nothing was installed")
+        # And the place itself, asked again of the world as it stands: the room
+        # has been running while this was being drawn, so something may have
+        # come to rest where the preview meant to put it.
+        _still_clear(plan, before, old)
         # Material leaves the rack here and nowhere else. A design may be drawn,
         # measured and tried on the bench with an empty rack; it cannot be MADE
         # out of stock that is not there. The fabrication lane funds its own
