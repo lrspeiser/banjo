@@ -1,6 +1,23 @@
 # Workshop Mode: fast isolated design, variants, tests and component learning
 
-Workshop Mode is a second view of Banjo for designing **one object or assembly at a time**. The live world is paused at an immutable revision while the workshop forks a cheap design sandbox. The sandbox may generate many candidates, compare them, run bounded tests and collect user feedback without advancing the outside world's clock or consuming its inventory.
+## Inventory selection and shared navigation — September 30, 2026
+
+Implemented browser behavior:
+
+- The Lab starts empty. A template URL (`kind`) or old remembered template does not populate it.
+- Explicitly select a physical item in your hands/bag, a saved design, or a saved assembly from Inventory. The current selection travels in `carry`, `design` or `library` when changing screens; reopening a carried item checks the current guest's inventory again. Clearing the Lab removes this selection, geometry, trials and undo history, without changing the physical inventory.
+- Workshop-built carried items reopen their recorded installation recipe, including the five-part Camp stool. A missing installation recipe fails visibly. Other carried items retain the existing one-part design adapter; sphere/capsule surrogates and unsupported shapes remain approximations, not state-preserving physical replicas.
+- A saved design is an editable design copy. Explicit Save updates the selection URL to the saved result, so reload reopens that result. Opening/editing alone does not alter its saved source or the carried object. Native Make still uses the existing admission, stock and commit pipeline.
+- World, Inventory, Lab, Skills, Recipes, Market and Goals share navigation in the right rail, above chat. Workshop tab changes preserve the selected world and guest. Returning through World preserves the explicit selection for a later Lab visit. Recipes still offers Make; templates no longer open an unselected Lab through “Design it.” Empty-Lab chat cannot submit an item request.
+- Startup loads catalog metadata without adopting its default candidate. Optional history arrives after selection and screen activation and cannot erase unsubmitted edits or pending trials.
+
+Verification: `tests/workshop_navigation_tests.py` covers an empty Lab with old template memory, missing/foreign carried selections, actual Inventory clicks, a saved design's round trip through World/Skills/reload, clearing/reload, native Camp stool dimensions/mass and unchanged bag/hand records. `tests/workshop_browser_tests.py` uses an explicitly selected saved fixture for its existing bench regressions. The new selection suite is required in CI. Windows evidence uses Chrome and the existing Visual Studio Release native engine, based on main `3f6f0a9`; no solver/material law or native source changed.
+
+Measured checkpoint: 3 selection tests, all 55 Workshop browser regressions, 4 opening-goal tests, 7 AI-character tests, 4 named-world tests and the existing native/browser bag-slot/Workshop-drag journey pass (74 checks). JavaScript syntax, Python compilation and source registration pass; all 286 C++ sources remain registered. `scripts/verify_screen_sim.py` includes selection tests in both modes; the complete broader physics screen suite was not rerun for this UI checkpoint. The published main revision is recorded by this section's Git commit and the task handoff.
+
+Ownership boundary: physical carried items are guest-specific, and database assemblies use the existing personal library. Legacy Saved designs remain in the existing world Workshop folder; this UI change does not migrate them to account-private storage. Neither the browser selection checks nor the design adapter certify strength, fracture, collision-aware avatars or production scaling.
+
+Workshop Mode is a second view of Banjo for designing **one object or assembly at a time**. Its design sandbox may generate candidates, compare them, run bounded trials and collect feedback without installing them or consuming native stock. Named-world simulation can continue through other viewers or characters; entering Workshop does not lock or freeze their world. Native Make remains an explicit transaction against the current room and stock.
 
 The core product rule is:
 

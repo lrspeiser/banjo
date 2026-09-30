@@ -525,3 +525,34 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-need-said { color:#8b9aac;font-variant-numeric:tabular-nums; }
 .ws-recipe-acts { display:flex;gap:.4rem;margin-top:.5rem; }
 .ws-recipe-acts button[disabled] { opacity:.45;cursor:not-allowed; }
+
+/* The world and Workshop keep the same right rail; only the main view changes. */
+.game-tabs { display:flex;flex-wrap:wrap;gap:.3rem;padding:.6rem .8rem;background:var(--panel);border-bottom:1px solid var(--edge);flex:none; }
+.game-tabs a,.game-tabs button { margin:0;padding:.35rem .5rem;border:1px solid var(--edge);border-radius:.35rem;background:transparent;color:var(--ink);font:inherit;font-size:.78rem;text-decoration:none;cursor:pointer; }
+.game-tabs [aria-current="page"],.game-tabs [aria-selected="true"] { background:var(--ink);color:var(--panel); }
+body.workshop-mode .ws-grid { display:grid!important;grid-template-columns:minmax(0,1fr) var(--panel-w)!important;grid-template-rows:minmax(0,1fr)!important; }
+body.workshop-mode #ws-centre { grid-column:1!important;grid-row:1!important;overflow:hidden; }
+body.workshop-mode .ws-left { grid-column:2!important;grid-row:1!important;padding:0;background:var(--panel);border-left:1px solid var(--edge);border-right:0; }
+body.workshop-mode .ws-viewport { grid-column:auto!important; }
+.game-rail-header { display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;padding:10px 16px 8px;border-bottom:1px solid var(--edge); }
+.game-rail-header h1 { margin:0;font-size:13px;letter-spacing:.14em;text-transform:uppercase; }
+.game-rail-header button { border:1px solid var(--edge);border-radius:.35rem;padding:.4rem .6rem;background:transparent;color:var(--ink);cursor:pointer; }
+#ws-screen-status { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim);font-size:.75rem; }
+body.workshop-mode #ws-chat-home { padding:12px 16px;overflow:hidden; }
+body.workshop-mode #ws-chat-log { margin:0;padding:.4rem 0;border:0;border-radius:0;background:transparent; }
+body.workshop-mode #ws-chat-home > h2 { display:none; }
+body.workshop-mode .ws-chat-intro { font-size:.75rem;line-height:1.5; }
+body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:auto; }
+#ws-empty { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;padding:1.5rem;background:#0d1117e8;text-align:center; }
+#ws-empty[hidden] { display:none; }
+#ws-empty h2,#ws-empty p { margin:0; }
+#ws-empty h2 { font-size:1.2rem; }
+#ws-empty p { max-width:28rem;color:var(--dim);line-height:1.5; }
+.lab-empty .ws-viewbar,.lab-empty #ws-takes,.lab-empty #ws-machine-bench,.lab-empty .ws-caption { display:none!important; }
+.lab-empty .ws-chat-suggestions { display:none; }
+@media(max-width:650px) {
+  body.workshop-mode .ws-grid { grid-template-columns:minmax(0,1fr) minmax(210px,42vw)!important; }
+  body.workshop-mode #ws-chat-home { padding:.6rem; }
+  .game-tabs { padding:.4rem;gap:.25rem; }
+  .game-tabs a,.game-tabs button { padding:.3rem;font-size:.7rem; }
+}

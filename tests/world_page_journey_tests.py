@@ -3247,7 +3247,7 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
         # screen you can click on an item and drag it into the workshop,
         # which will then take you into the workshop where you can modify
         # it." The Workshop link takes the same drag the slots do.
-        link = "#panel .workshop-entry"
+        link = '#panel .game-tabs [data-screen="inventory"]'
         self.assertEqual("yes", self.js(f"document.querySelector('{link}').dataset.takesThings"),
                          "the Workshop link does not take a thing")
         over = self.js(f"""(() => {{

@@ -1,5 +1,6 @@
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
+import { gameNavigation, refreshNavigation } from "/game_menu.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -69,6 +70,7 @@ const support = new THREE.LineSegments(
   new THREE.BufferGeometry(),
   new THREE.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.55 }));
 scene.add(support);
+balance.visible = false; support.visible = false;
 const raycaster = new THREE.Raycaster(); raycaster.params.Line.threshold = 0.045;
 const pointer = new THREE.Vector2();
 
@@ -92,6 +94,7 @@ let dragging = false, dragged = false, px = 0, py = 0, reach = 1.5;
 const target = new THREE.Vector3(0, 0.42, 0);
 
 const bench = {
+  inventorySelection: null,
   kind: "table", generation: 0, candidates: [], selected: 0,
   session: null, savedDesigns: [], personalLibrary: [], pricebook: null, rack: null, spread: 0,
   libraryInspection: null, selectedPart: null, forcePoint: null, openedLibraryItem: null, expandedProduct: null, isolated: null,
@@ -611,6 +614,7 @@ function frameSimulation(recording) {
 }
 
 function draw(candidate) {
+  if (!bench.inventorySelection || !candidate) { clearGroup(); balance.visible = false; support.visible = false; stage.dataset.showing = "empty"; return; }
   if (bench.libraryInspection) {
     clearGroup(); renderer.clippingPlanes=[]; balance.visible=false; support.visible=false;
     const preview = bench.libraryInspection.component_preview;
@@ -1436,8 +1440,13 @@ function installBench() {
   partsBox.append(make("h2", {}, "Parts"));
   if (parts) partsBox.append(parts);
   const rightKeep = [...right.children];
-  left.replaceChildren(chatHome);
-  // No right nav.
+  const railHeader = make("header", {class:"game-rail-header"});
+  railHeader.append(make("h1", {}, "Banjo"),
+    make("button", {type:"button", "data-game-menu":"", "aria-label":"Game menu"}, "Menu"),
+    make("span", {id:"ws-screen-status"}, "Inventory"));
+  left.classList.add("game-rail");
+  left.replaceChildren(railHeader, chatHome);
+  // The old control panel remains hidden machinery for chat and tests.
   //
   // The owner, twice: "there are so many buttons and fields I don't have a
   // clue where to begin on it", and then, of the four steps that replaced
@@ -1531,20 +1540,15 @@ function installBench() {
   renderRackStrip();
 
   // The tabs over the object: Lab is the object with its bar; Inventory,
-  // Skills and Recipes are read when opened (workshop_tabs). The chat on the
-  // left stays beside every one of them.
+  // Skills and Recipes are read when opened (workshop_tabs). Chat and shared
+  // navigation stay in the right rail; ws-left is its legacy DOM class.
   const centre = make("div", { id:"ws-centre" });
   viewport.parentElement.insertBefore(centre, viewport);
-  const tabs = make("nav", { class:"ws-tabs", role:"tablist", "aria-label":"Workshop" });
+  const tabs = gameNavigation(WORKSHOP_OPENS_ON, showTab);
   // Inventory first, and open: the owner asked for it to be "the default
   // screen you go into when you switch out of the world". Coming out of the
   // room, what you have is the question; the Lab is where you go next.
-  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"], ["goals", "Goals"]]) {
-    const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === WORKSHOP_OPENS_ON) }, label);
-    tab.onclick = () => showTab(name);
-    tabs.append(tab);
-  }
-  tabs.append(make("button", { type:"button", class:"ws-menu-button", "data-game-menu":"" }, "Menu"));
+  railHeader.after(tabs);
   // The takes: little pictures of the thing. The first is the clean one --
   // the design as it is, untouched by any run -- and every run adds one
   // beside it, so a test never replaces the thing and the runs stay to be
@@ -1553,7 +1557,20 @@ function installBench() {
   const takes = make("div", { id:"ws-takes", role:"tablist", "aria-label":"The thing, and every run of it" });
   const machineBench = make("section", { id:"ws-machine-bench", "aria-label":"Work it as in the world" });
   machineBench.hidden = true;
-  centre.append(tabs, takes, viewport, machineBench);
+  centre.append(takes, viewport, machineBench);
+  const empty = make("section", {id:"ws-empty", "aria-label":"Empty lab"});
+  empty.append(make("h2", {}, "Your lab is empty"),
+    make("p", {}, "Select a carried item or saved design from Inventory to examine it here."));
+  const pick = make("button", {type:"button", class:"ws-action"}, "Choose from Inventory");
+  pick.onclick = () => showTab("inventory"); empty.append(pick); viewport.append(empty);
+  const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
+  clear.onclick = () => { clearLab(); showTab("lab"); }; $(".ws-viewbar").append(clear);
+  chatForm?.addEventListener("submit", (event) => {
+    if (bench.inventorySelection) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    say("Select an item from Inventory before asking about it.", true);
+  }, true);
+  new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   renderTakes();
 }
@@ -1623,6 +1640,7 @@ function showTake(id) {
 function renderTakes() {
   const root = $("#ws-takes"); if (!root) return;
   root.replaceChildren();
+  if (!bench.inventorySelection) return;
   const shown = bench.playback ? (bench.shownTake || "") : "clean";
   const card = (id, title, said, thumb) => {
     const button = make("button", { type:"button", class:"ws-take", role:"tab", "data-take":id, "aria-selected":String(id === shown) });
@@ -1900,16 +1918,7 @@ async function showInventory() {
       quantity: thing.kg != null ? kgSaid(thing.kg) : null,
       where: thing.where,
       onOpen: async () => {
-        showTab("lab");
-        bench.openedLibraryItem = null;
-        if (thing.design_id) {
-          const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
-          if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
-        }
-        if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
-          $("#ws-archetype").value = "custom";
-          say(`${thing.name} is on the bench: one part, ${thing.material}.`);
-        }
+        await openTheCarriedThing(thing.id);
       },
     }));
   }
@@ -1939,9 +1948,15 @@ async function showInventory() {
   }
 
   // The library, under the fold: not what you have, but it lives nowhere else.
-  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} \u00b7 standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and ask the chat to make it.");
-  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " \u00b7 " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
-  fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No assemblies in the library.");
+  fill("#ws-inv-world", (inv.in_world || []).map((d) => item(d.name, `${d.kind} · standing in ${d.scene}. Pick it up in the world to bring that item into the Lab.`)), "Nothing made yet.");
+  fill("#ws-inv-saved", (inv.saved || []).map((d) => {
+    const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`);
+    li.append(inventoryDesignButton(d.design_id, "saved")); return li;
+  }), "No saved designs yet.");
+  fill("#ws-inv-designs", inv.designs.map((d) => {
+    const li = item(d.name, d.summary || d.kind || "");
+    li.append(inventoryDesignButton(d.item_id, "library")); return li;
+  }), "No assemblies in the library.");
   fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
   fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
 }
@@ -2213,7 +2228,7 @@ async function showRecipes() {
     li.append(make("p", { class:"ws-recipe-readiness" }, fit));
 
     const openRecipe = async () => {
-      showTab("lab"); bench.openedLibraryItem = null;
+      clearLab(); bench.openedLibraryItem = null;
       if (t.saved_design_id) {
         took(await api("/api/workshop/open", { saved_design_id:t.saved_design_id }));
       } else {
@@ -2243,9 +2258,7 @@ async function showRecipes() {
       }
       showTab("inventory");
     });
-    const open = make("button", { type: "button", class: "ws-action" }, "Design it");
-    open.onclick = () => guard(open, openRecipe);
-    row.append(made, open);
+    row.append(made);
     li.append(row);
     return li;
   }), "No templates.");
@@ -2311,33 +2324,45 @@ async function showMarket() {
 // same two routes the Inventory tab's own tiles take, because it is the
 // same act by a different gesture.
 async function openTheCarriedThing(id) {
+  clearLab();
+  const revision = bench.revision;
   let inv;
   try {
     inv = await api("/api/workshop/inventory");
   } catch {
+    if (revision !== bench.revision) return;
     showTab(WORKSHOP_OPENS_ON);
     return;
   }
+  if (revision !== bench.revision) return;
   const thing = (inv.carried || []).find((x) => String(x.id) === String(id));
   if (!thing) {
     // Put down between the drag and the arrival, or carried by somebody
     // else's page. The inventory is the honest place to land.
-    showTab(WORKSHOP_OPENS_ON);
+    clearLab(); showTab("lab");
     say("That is not being carried any more.", true);
     return;
   }
+  bench.inventorySelection = {id:thing.id, name:thing.name, source:"carried"};
   showTab("lab");
   bench.openedLibraryItem = null;
   try {
     if (thing.design_id) {
-      const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
+      const source = await api("/api/world/workshop/what_made", {body:thing.name});
+      if (revision !== bench.revision) return;
+      const answer = await api("/api/workshop/candidates", {...source.recipe, sweeps:{}});
+      if (revision !== bench.revision) return;
       if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
     }
-    if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
+    const answer = await api("/api/workshop/candidates", carriedDesign(thing));
+    if (revision !== bench.revision) return;
+    if (took(answer)) {
       $("#ws-archetype").value = "custom";
       say(`${thing.name} is on the bench: one part, ${thing.material}.`);
     }
   } catch (error) {
+    if (revision !== bench.revision) return;
+    clearLab(); showTab("lab");
     say(`${thing.name} could not be opened: ${error.message || error}`, true);
   }
 }
@@ -2345,6 +2370,27 @@ async function openTheCarriedThing(id) {
 function openTheTreeAt(id) {
   tree.picked = id || null;
   showTab("skills");
+}
+
+function inventoryDesignButton(id, source) {
+  const open = make("button", {type:"button", class:"ws-action", "data-lab-source":source, "data-item":id}, "Open in the Lab");
+  open.onclick = () => guard(open, () => openInventoryDesign(id, source));
+  return open;
+}
+
+async function openInventoryDesign(id, source) {
+  clearLab();
+  const revision = bench.revision;
+  try {
+    const answer = await api("/api/workshop/open", source === "saved" ? {saved_design_id:id} : {library_item_id:id});
+    if (revision !== bench.revision) return;
+    bench.inventorySelection = {id, source, name:answer.library_item?.name || answer.candidates[0]?.label || "Saved design"};
+    bench.openedLibraryItem = source === "library" ? id : null;
+    if (took(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
+  } catch (error) {
+    if (revision !== bench.revision) return;
+    clearLab(); showTab("lab"); say(`That saved design could not be opened: ${error.message || error}`, true);
+  }
 }
 
 async function showGoals() {
@@ -2398,6 +2444,7 @@ async function showGoals() {
         label = "Build camp stool";
         work = async () => {
           await api("/api/world/open", {});
+          clearLab();
           took(await api("/api/workshop/candidates", { ...goals.recipe, sweeps:{} }));
           $("#ws-archetype").value = goals.recipe.kind;
           await makeIt($("#ws-make"));
@@ -2425,15 +2472,54 @@ async function showGoals() {
 const WORKSHOP_OPENS_ON = "inventory";
 
 function showTab(name) {
+  if (!["inventory", "lab", "skills", "recipes", "market", "goals"].includes(name)) name = WORKSHOP_OPENS_ON;
+  const url = new URL(location.href); url.searchParams.set("tab", name);
+  for (const key of ["carry", "design", "library"]) url.searchParams.delete(key);
+  if (bench.inventorySelection) {
+    const key = {carried:"carry", saved:"design", library:"library"}[bench.inventorySelection.source];
+    if (key) url.searchParams.set(key, bench.inventorySelection.id);
+  }
+  window.history.replaceState(null, "", url);
+  refreshNavigation(name);
+  $("#ws-screen-status").textContent = name === "lab" && bench.inventorySelection ? bench.inventorySelection.name : name[0].toUpperCase() + name.slice(1);
   for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
   const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
   // The takes are the Lab's too: little pictures of the thing on the
   // bench, which mean nothing beside what you are carrying.
-  const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab";
+  const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab" || !bench.inventorySelection;
+  const machines = $("#ws-machine-bench"); if (machines && name !== "lab") machines.hidden = true;
   for (const pane of ["inventory", "skills", "recipes", "market", "goals"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
   if (name === "lab") resize();
   const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket, goals: showGoals }[name];
   if (loader) guard(null, loader);
+  updateLabSelection();
+}
+
+let labWasSelected = false;
+function updateLabSelection() {
+  const selected = Boolean(bench.inventorySelection && chosen());
+  $("#design-workshop").classList.toggle("lab-empty", !selected);
+  const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
+  const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
+  if (input && !selected) { input.disabled = true; input.placeholder = "Select an item from Inventory first"; }
+  else if (input && !labWasSelected) { input.disabled = false; input.placeholder = "Ask about this item or describe a change"; }
+  if (send && !selected) send.disabled = true;
+  else if (send && !labWasSelected) send.disabled = false;
+  const intro = $(".ws-chat-intro");
+  const text = selected ? "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them."
+    : "Select a carried item or saved design from Inventory to discuss, modify or test it in the Lab.";
+  if (intro && intro.textContent !== text) intro.textContent = text;
+  labWasSelected = selected;
+}
+
+function clearLab() {
+  bench.inventorySelection = null; bench.candidates = []; bench.selectedPart = null;
+  bench.libraryInspection = null; bench.isolated = null; bench.revision++; candidateRequest++;
+  clearPlayback(); clearGroup(); clearGhost(); balance.visible = false; support.visible = false;
+  stage.dataset.showing = "empty"; delete stage.dataset.kind;
+  $("#ws-name").textContent = "Empty lab"; $("#ws-parts").replaceChildren();
+  bench.takes = []; bench.cleanThumb = ""; renderTakes(); updateLabSelection();
+  history.past = []; history.now = null; history.future = [];
 }
 
 // The rack as a row of bins, the same shape as the world's numbered bag slots.
@@ -3361,6 +3447,7 @@ function headline(candidate, m) {
   metricLabel("#ws-tip", "Tips at"); $("#ws-tip").textContent = m.geometry_coherent === false ? "not validated" : `${Number(m.tip_angle_deg).toFixed(2)}°`;
 }
 function show(reframe = true) {
+  if (!bench.inventorySelection) { clearGroup(); balance.visible = false; support.visible = false; stage.dataset.showing = "empty"; updateLabSelection(); return; }
   // The buildability panel is hidden while one component is alone on screen;
   // do not pay for an analysis of the whole product that nobody can read.
   if (chosen() && !bench.isolated && !bench.libraryInspection && workspace.mode!=="test") scheduleBuildability();
@@ -3368,6 +3455,7 @@ function show(reframe = true) {
   const candidate = chosen(); if (!candidate) return;
   if (bench.selectedPart && !candidate.parts.some((part) => part.name === bench.selectedPart)) bench.selectedPart = null;
   draw(candidate); if (reframe) frameCandidate();
+  updateLabSelection();
   const m = currentMeasurements(candidate); headline(candidate, m);
   renderMachineBench(candidate);
   if (!bench.playback) scheduleCleanThumb();
@@ -3510,18 +3598,6 @@ function renderHistory() {
   }
 }
 
-// What was open last, so the bench opens on it again rather than on the
-// table every time (the owner, 2026-09-26). Kept in this browser only; a
-// browser that refuses to keep it simply opens on the table.
-const OPENED_KEY = "banjo.workshop.opened";
-function rememberOpened(what) {
-  try { localStorage.setItem(OPENED_KEY, JSON.stringify(what)); } catch { /* nothing to remember with */ }
-}
-function openedLast() {
-  try { const said = JSON.parse(localStorage.getItem(OPENED_KEY) || "null"); return said && typeof said === "object" ? said : null; }
-  catch { return null; }
-}
-
 function took(answer, keepPart = null) {
   if (answer.clientRequest != null && answer.clientRequest !== candidateRequest) return false;
   workspace.inspecting++;bench.libraryInspection=null;
@@ -3535,7 +3611,6 @@ function took(answer, keepPart = null) {
   $("#ws-push-result")?.replaceChildren(); showForceAt(null);
   $("#ws-bench-result").replaceChildren(); $("#ws-save-status").textContent = "";
   if (answer.session) bench.session = answer.session; if (answer.saved_designs) savedDesigns(answer.saved_designs);
-  rememberOpened(answer.library_item ? { library_item_id: answer.library_item.item_id } : { kind: answer.kind });
   if (answer.personal_library) { bench.personalLibrary = answer.personal_library; renderUserLibrary(); }
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
@@ -3856,6 +3931,14 @@ $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () =>
   if (answer.saved_designs) savedDesigns(answer.saved_designs);
   if (answer.bench_presets) bench.benchPresets = answer.bench_presets; const saved = answer.library_item || answer.design;
   if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id; $("#ws-save-status").textContent = saved ? `Saved to Saved designs and My Library · v${saved.version || saved.revision}` : "Not saved";
+  if (answer.design && bench.inventorySelection) {
+    bench.inventorySelection = {id:answer.design.design_id, source:"saved", name:label};
+    const url = new URL(location.href);
+    for (const key of ["carry", "library"]) url.searchParams.delete(key);
+    url.searchParams.set("design", answer.design.design_id);
+    window.history.replaceState(null, "", url); refreshNavigation(url.searchParams.get("tab") || "lab");
+    $("#ws-screen-status").textContent = label;
+  }
 });
 $("#ws-save-feedback").onclick = (event) => guard(event.currentTarget, async () => {
   const answer = await api("/api/workshop/feedback", { ...candidateBody(), rating:$("#ws-rating").value || null, note:$("#ws-note").value.trim(), selected:true });
@@ -3881,13 +3964,8 @@ stage.visibleGeometry = () => {
 };
 
 async function start() {
-  const params = new URLSearchParams(location.search), libraryItem = params.get("library"), saved = params.get("design");
-  // ?kind=cart opens the Workshop on that product, so a thing you are holding
-  // in the world can be taken straight to the bench to be looked at properly.
-  // The URL wins; then whatever was open last; then the table. A remembered
-  // thing that has since gone -- a library item thrown away, a template
-  // renamed -- is not an error: the bench opens on the table and says nothing.
-  const asked = (params.get("kind") || "").trim();
+  const params = new URLSearchParams(location.search);
+  const wantSaved = params.get("design"), wantLibrary = params.get("library");
   // ?tab=skills&technique=burning-lime opens the tree on that rung. The
   // world page's "Next: ..." line uses it.
   const wantTab = (params.get("tab") || "").trim();
@@ -3896,23 +3974,18 @@ async function start() {
   // Workshop. It opens on that thing's bench, which is what the owner meant
   // by "take you into the workshop where you can modify it".
   const wantCarried = (params.get("carry") || "").trim();
-  const last = asked || libraryItem || saved ? null : openedLast();
-  let answer;
-  try {
-    answer = await api("/api/workshop/open", libraryItem ? { library_item_id:libraryItem }
-      : saved ? { saved_design_id:saved }
-      : last?.library_item_id ? { library_item_id:last.library_item_id }
-      : { kind: asked || last?.kind || "table" });
-  } catch (error) {
-    if (!last) throw error;
-    answer = await api("/api/workshop/open", { kind: "table" });
-  }
-  if (answer.library_item) bench.openedLibraryItem = answer.library_item.item_id;
+  // Load the existing catalogs, never their default/remembered geometry.
+  // Only an explicitly selected item still carried by this guest opens Lab.
+  const answer = await api("/api/workshop/open", {kind:"table"});
   const picker = $("#ws-archetype"); picker.replaceChildren();
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
   picker.value = answer.kind; renderProductCatalog();
   bench.families = answer.families || []; savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
-  bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; renderUserLibrary(); renderRack(); renderBuildChoices(); took(answer);
+  bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; bench.session = answer.session || null; renderUserLibrary(); renderRack(); renderBuildChoices(); clearLab();
+  if (wantCarried) await openTheCarriedThing(wantCarried);
+  else if (wantSaved || wantLibrary) await openInventoryDesign(wantSaved || wantLibrary, wantSaved ? "saved" : "library");
+  if (wantTechnique && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
+  else showTab(wantTab || (wantCarried || wantSaved || wantLibrary ? "lab" : WORKSHOP_OPENS_ON));
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;
@@ -3923,13 +3996,6 @@ async function start() {
     // unsubmitted curve/material inputs if it arrives while the user edits.
     renderUserLibrary(); renderBenchPresets();
   } catch { /* optional */ }
-  // Last, because a tab other than the Lab hides the viewport and the
-  // Lab's own set-up above expects to be the thing on screen while it
-  // runs. ?tab=skills&technique=<id> is how the world page's "Next:"
-  // line gets you to the rung it is talking about.
-  if (wantCarried) await openTheCarriedThing(wantCarried);
-  else if (wantTechnique) openTheTreeAt(wantTechnique);
-  else showTab(wantTab || (asked || libraryItem || saved ? "lab" : WORKSHOP_OPENS_ON));
 }
 
 placeCamera(); resize(); requestAnimationFrame(frame); guard(null, start);

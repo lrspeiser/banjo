@@ -56,6 +56,7 @@ def steps(mode: str, fast: Path, evidence: Path) -> list[tuple[str, list[str]]]:
     if mode == "smoke":
         return [
             ("workshop-native-cards", tests("workshop_screen_sim_tests.py")),
+            ("game-screen-navigation", tests("workshop_navigation_tests.py")),
             ("workshop-browser", tests(
                 "workshop_browser_tests.py",
                 "WorkshopBrowserRegression.test_the_test_tab_offers_one_test_for_everything_it_can_make",
@@ -75,6 +76,7 @@ def steps(mode: str, fast: Path, evidence: Path) -> list[tuple[str, list[str]]]:
         ]
     return [
         ("workshop-native-cards", tests("workshop_screen_sim_tests.py")),
+        ("game-screen-navigation", tests("workshop_navigation_tests.py")),
         ("workshop-bench", tests("workshop_bench_tests.py")),
         ("workshop-native-room", tests("workshop_test_room_tests.py")),
         # world_page_journey_tests imports WorkshopBrowserRegression and

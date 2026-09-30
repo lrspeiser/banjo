@@ -187,3 +187,47 @@ $("#game-menu-join").addEventListener("submit", async (event) => {
 });
 
 render();
+
+// The same screen navigation in the world and Workshop, preserving the game
+// and an explicitly selected carried item. Selection is revalidated by Lab.
+export const SCREENS = [["world", "World"], ["inventory", "Inventory"], ["lab", "Lab"],
+  ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"], ["goals", "Goals"]];
+
+export function screenUrl(screen) {
+  const current = new URLSearchParams(location.search), query = new URLSearchParams();
+  for (const key of ["world", "scene", "carry", "design", "library"]) if (current.get(key)) query.set(key, current.get(key));
+  if (screen !== "world") { query.set("workshop", "1"); query.set("tab", screen); }
+  return `/world${query.size ? "?" + query : ""}`;
+}
+
+export function gameNavigation(active, onSelect = null) {
+  const nav = document.createElement("nav");
+  nav.className = "game-tabs ws-tabs"; nav.setAttribute("aria-label", "Game screens");
+  if (onSelect) nav.setAttribute("role", "tablist");
+  for (const [name, label] of SCREENS) {
+    const local = onSelect && name !== "world";
+    const tab = document.createElement(local ? "button" : "a");
+    tab.textContent = label; tab.dataset.screen = name; tab.dataset.tab = name;
+    if (local) {
+      tab.type = "button"; tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", name === "lab" ? "ws-centre" : `ws-pane-${name}`);
+      tab.setAttribute("aria-selected", String(name === active));
+      tab.onclick = () => onSelect(name);
+    } else {
+      tab.href = screenUrl(name);
+      if (name === active) tab.setAttribute("aria-current", "page");
+      if (name === "inventory") tab.classList.add("workshop-entry");
+      if (name === "goals") tab.classList.add("goals-entry");
+      if (name === "market") tab.classList.add("market-entry");
+    }
+    nav.append(tab);
+  }
+  return nav;
+}
+
+export function refreshNavigation(active) {
+  for (const tab of document.querySelectorAll(".game-tabs [data-screen]")) {
+    if (tab.tagName === "A") tab.href = screenUrl(tab.dataset.screen);
+    else tab.setAttribute("aria-selected", String(tab.dataset.screen === active));
+  }
+}

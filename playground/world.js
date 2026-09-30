@@ -23,10 +23,14 @@ import { cellSurface } from "/cellmesh.js";
 import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
+import { gameNavigation } from "/game_menu.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
 const watchedId = new URLSearchParams(location.search).get("watch");
+const worldNavigation = gameNavigation("world");
+$("panel").querySelector("header").after(worldNavigation);
+for (const link of document.querySelectorAll("#panel header .workshop-entry:not(.debug-entry)")) link.remove();
 let watchedView = null;
 let watchedAt = 0;
 if (worldId) {
@@ -4133,7 +4137,7 @@ const BAG_DRAG = "application/x-banjo-item";
 // it." The Workshop opens on that thing's bench rather than on whatever it
 // had open last.
 function workshopTakesDrops() {
-  const link = document.querySelector("#panel .workshop-entry");
+  const link = document.querySelector('#panel .game-tabs [data-screen="inventory"]');
   if (!link || link.dataset.takesThings) return;
   link.dataset.takesThings = "yes";
   link.addEventListener("dragover", (e) => {

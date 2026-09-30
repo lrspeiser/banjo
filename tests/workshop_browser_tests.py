@@ -78,11 +78,24 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page = self.chrome.page
         self.page.send("Runtime.enable")
         self.page.send("Page.enable")
-        # ?tab=lab: the Workshop opens on the Inventory now, and every check
-        # below this is about the bench.
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=inventory"})
         try:
             self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
+            # Bench regressions start with an explicit selection of a saved
+            # design, through the same Inventory button a person uses.
+            source = self.install_api('/api/workshop/candidates', {'kind':'table', 'generation':0})['body']['candidates'][0]
+            saved = self.install_api('/api/workshop/feedback', {
+                'kind':'table', 'generation':0, 'design_id':source['design_id'],
+                'parameters':source['parameters'], 'component_overrides':source.get('component_overrides', {}),
+                'save_design':True, 'label':'Browser fixture table'})
+            self.assertEqual(200, saved['status'], saved)
+            self.fixture_id = saved['body']['design']['design_id']
+            self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=inventory"})
+            selector = f'[data-lab-source="saved"][data-item="{self.fixture_id}"]'
+            self.wait(f'document.querySelector({json.dumps(selector)})')
+            self.js('document.querySelector("#ws-inv-more").open = true')
+            self.pointer_click(selector)
+            self.wait("document.querySelector('#workshop-stage').visibleGeometry()?.meshes > 0")
         except Exception:
             # unittest skips tearDown when setUp fails. Keep startup evidence
             # before the registered Chrome cleanup closes this page.
@@ -556,9 +569,10 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(0, self.js(
             "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
         self.assertEqual(0, self.js("document.querySelectorAll('#ws-extras').length"))
-        # The chat has the whole side, and it is the only thing on it.
-        self.assertEqual(["ws-chat-home"],
-                         self.js("[...document.querySelector('.ws-left').children].map(e=>e.id)"))
+        # Chat follows the same navigation as the world, on the right.
+        self.assertEqual(["World", "Inventory", "Lab", "Skills", "Recipes", "Market", "Goals"],
+                         self.js("[...document.querySelectorAll('.game-tabs [data-screen]')].map(e=>e.textContent)"))
+        self.assertTrue(self.js("document.querySelector('.ws-left').getBoundingClientRect().left >= document.querySelector('#workshop-stage').getBoundingClientRect().right - 1"))
         self.assertEqual(["Chat"],
                          self.js("[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
         self.assertTrue(self.js("document.querySelector('#ws-chat-log').getBoundingClientRect().height>200"),
@@ -572,7 +586,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # takes under the tabs are the views.
         bar = self.js("[...document.querySelector('.ws-viewbar').children].filter(e=>!e.hidden)"
                       ".map(e=>e.id||e.tagName.toLowerCase())")
-        self.assertEqual(["span", "ws-make-status", "ws-check", "ws-make", "a"], bar)
+        self.assertEqual(["span", "ws-make-status", "ws-check", "ws-make", "a", "ws-clear-lab"], bar)
         self.assertEqual([], self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
                                      " > button[data-view]')].filter(b=>!b.hidden).map(b=>b.textContent)"))
         # The picker and the points of view still exist, in the holder, because
@@ -765,11 +779,12 @@ class WorkshopBrowserRegression(unittest.TestCase):
         mine = ("[...document.querySelectorAll('#ws-saved-designs .ws-keep-row')]"
                 ".find(r=>r.textContent.includes(%s))")
         self.wait(f"{mine % repr('Browser keep-or-bin table')}")
+        saved_count = re.search(r'saved \d+ time', self.js(f"{mine % repr('Browser keep-or-bin table')}.textContent")).group()
         self.js("window.prompt=()=>'A better name'")
         self.js(f"{mine % repr('Browser keep-or-bin table')}.querySelector('.ws-keep-actions button').click()")
         self.wait(f"{mine % repr('A better name')}")
         # Renaming is not saving it again: the count of times it was saved holds.
-        self.assertIn('saved 1 time', self.js(f"{mine % repr('A better name')}.textContent"))
+        self.assertIn(saved_count, self.js(f"{mine % repr('A better name')}.textContent"))
         self.js("window.confirm=()=>true")
         self.js(f"{mine % repr('A better name')}.querySelector('.ws-keep-bin').click()")
         self.wait(f"!{mine % repr('A better name')}")
@@ -832,7 +847,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&history-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&design={self.fixture_id}&history-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-test-catalog button[data-value=try_in_a_room]')")
         self.click('[data-mode="test"]')
         self.click('#ws-test-catalog button[data-value="try_in_a_room"]')
@@ -860,7 +875,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&dirty-editor-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&design={self.fixture_id}&dirty-editor-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-parts button')")
         self.click('[data-mode="build"]')
         self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
