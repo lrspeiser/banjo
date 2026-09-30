@@ -55,6 +55,7 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-list li.reach { border-color:#8a7a3f; }
 .ws-list li.short { border-color:#8a4f4f; }
 .ws-list li.enough { border-color:#4f8a5f; }
+.ws-list li.blocked { border-color:#8a754f; }
 .ws-tag { display:inline-block;margin:.15rem .3rem 0 0;padding:.05rem .4rem;border-radius:.3rem;background:#233041;color:#c9d5e2;font-size:.76rem; }
 .ws-tag.short { background:#4a2a2a;color:#f0b8b8; }
 .ws-tag.ok { background:#23412c;color:#b8f0c4; }
@@ -508,6 +509,7 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 
 /* A recipe's lines: what it wants, how near you are, and how much is short. */
 .ws-missing { margin:.35rem 0 .1rem;font-size:.8rem;font-weight:600;color:#e2b85c; }
+.ws-recipe-readiness { margin:.4rem 0;font-size:.8rem;color:#d5c18e; }
 .ws-needs { display:grid;gap:.22rem;margin:.4rem 0 .1rem; }
 .ws-need { display:grid;grid-template-columns:minmax(72px,auto) 1fr auto;gap:.5rem;
            align-items:center;font-size:.76rem; }

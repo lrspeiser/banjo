@@ -1500,7 +1500,23 @@ class WorkshopBrowserRegression(unittest.TestCase):
             self.assertFalse(row["greyed"], "a recipe you can make has its Make greyed out")
             self.assertEqual("", row["missing"], "a recipe you can make says something is missing")
         # And each line of a recipe says what it wants against what you have.
-        self.assertTrue(all(r["lines"] > 0 for r in rows), "a recipe with no lines")
+        self.assertTrue(all(r["lines"] > 0 for r in rows if r["cls"] in ("short", "enough", "blocked")),
+                        "an assembled recipe has no material lines")
+
+    def test_recipes_show_grid_readiness_and_never_make_a_blocked_source(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
+        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        rows = json.loads(self.js("""JSON.stringify(
+          [...document.querySelectorAll('#ws-recipes-templates > li')].map(li => ({
+            name:li.querySelector('strong')?.textContent,
+            fit:li.querySelector('.ws-recipe-readiness')?.textContent || '',
+            disabled:li.querySelector('.ws-recipe-acts button')?.disabled})))"""))
+        by_name = {row["name"]: row for row in rows}
+        self.assertIn("Fits the Workshop and this world's", by_name["stool"]["fit"])
+        blocked = [row for row in rows if row["fit"] and not row["fit"].startswith("Fits the Workshop")]
+        self.assertTrue(blocked, "the catalog hid its unready recipes")
+        self.assertTrue(all(row["disabled"] for row in blocked), blocked)
 
     def test_the_shortfall_is_by_mass_not_by_counting_lines(self):
         """A recipe wanting 80 kg of iron and 20 g of wire is not half done

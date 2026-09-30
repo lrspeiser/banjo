@@ -70,6 +70,50 @@ class ALittleWorldAtTheBench(unittest.TestCase):
             workshop_library.set_rack(room.app, material, 500.0)
         return room
 
+    def test_recipe_stool_installs_unchanged_in_workshop_and_main_world_grids(self):
+        """A catalog recipe must survive both native paths, not just a drawing."""
+        from mcp.workshop import assemble
+        source = assemble("stool")
+        candidate = {"kind": "stool", "design_id": "recipe-stool",
+                     "parameters": dict(source.parameters)}
+        workshop = self.opened()
+        bench_receipt = workshop.make(candidate)
+        self.assertGreater(bench_receipt["cells"], 0)
+
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        root = Path(held.name)
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        out_there = world_room.Room("yard")
+        out_there.spec = {**bench.spec(), "cell_m": 0.05}
+        out_there.inventory = inventory.Inventory()
+        app = SimpleNamespace(live=live, live_holder="world", room=out_there, engine_path=ENGINE,
+                              runs_path=root / "runs", store=room_store.RoomStore(root / "rooms"))
+        workshop_library.set_rack(app, "oak", 500.0)
+        live.open(app, {"spec": out_there.spec})
+        ctx = install.context(app, {})
+        preview = install.preview(app, {"session": ctx["session"], "scene": "yard",
+                                        "mode": "authoring", "position_m": [0.0, 0.0],
+                                        "candidate": candidate})
+        self.assertGreater(preview["cells"], 0)
+        committed = install.commit(app, {"scene": "yard", "session": ctx["session"],
+                                         "preview_id": preview["preview_id"],
+                                         "request_id": "recipe-stool"})
+        self.assertEqual("installed", committed["status"])
+
+    def test_recipe_stool_holds_a_person_sized_load_in_the_workshop(self):
+        """The admitted source gets a concrete seating trial, not just a cell count."""
+        from mcp.workshop import assemble
+        source = assemble("stool")
+        candidate = {"kind": "stool", "design_id": "seat-trial-stool",
+                     "parameters": dict(source.parameters)}
+        said = bench.try_it(self.app, candidate, seconds=2.0, load_kg=100.0)
+        weight = said["ended"]["bodies"]["the weight"]
+        self.assertEqual([], said["broke"], said["says"])
+        self.assertFalse(said["fell_over"], said["says"])
+        self.assertGreater(weight["at_m"][1], bench.GROUND_M + said["did"]["weight_side_m"])
+
     def test_it_stands_on_the_ground_and_gravity_holds_it_there(self):
         room = self.opened()
         receipt = room.make(self.candidate())

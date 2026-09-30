@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "mcp")]
 import mcp  # noqa: E402,F401
 from mcp import workshop as w, workshop_machines  # noqa: E402
-import workshop_chat, workshop_library, workshop_tabs  # noqa: E402
+import workshop_api, workshop_chat, workshop_library, workshop_tabs, workshop_store  # noqa: E402
 
 
 def an_app(tmp: str) -> SimpleNamespace:
@@ -115,6 +115,33 @@ class TheTabs(unittest.TestCase):
                          {x["name"]: x["worked_by"] for x in r["room_recipes"]})
         self.assertEqual([("copper vein", "copper ore", 400.0)],
                          [(d["name"], d["substance"], d["left_kg"]) for d in r["deposits"]])
+
+    def test_recipe_must_fit_workshop_and_open_world_as_drawn(self):
+        self.app.room = SimpleNamespace(spec={"cell_m": 0.05})
+        recipes = {t["name"]: t for t in workshop_tabs.recipes(self.app)["templates"]}
+        stool = recipes["stool"]
+        self.assertEqual((0.05, 0.06),
+                         (stool["parameters"]["top_thickness_m"], stool["parameters"]["leg_section_m"]))
+        self.assertTrue(stool["readiness"]["ready_as_drawn"])
+        self.assertTrue(stool["readiness"]["workshop"]["as_drawn"])
+        self.assertEqual(0.05, stool["readiness"]["world"]["cell_size_m"])
+        self.assertEqual("built-in", stool["source"])
+        checked = workshop_api.library(self.app, {"action": "check_validity", "kind": "stool",
+                                                  "cell_size_m": 0.05})
+        self.assertTrue(checked["recipe_readiness"]["ready_as_drawn"])
+
+    def test_assistant_saved_design_is_a_draft_recipe_until_both_grids_fit(self):
+        root = Path(self.tmp.name) / "workshop"
+        design = w.assemble("stool", design_id="thin-stool",
+                            parameters={"top_thickness_m": 0.005, "leg_section_m": 0.015})
+        workshop_store.save(root, design, label="My thin stool")
+        self.app.room = SimpleNamespace(spec={"cell_m": 0.04})
+        recipes = {t["name"]: t for t in workshop_tabs.recipes(self.app)["templates"]}
+        saved = recipes["My thin stool"]
+        self.assertEqual(("saved", "thin-stool"), (saved["source"], saved["saved_design_id"]))
+        self.assertFalse(saved["readiness"]["ready_as_drawn"])
+        self.assertFalse(saved["readiness"]["workshop"]["as_drawn"])
+        self.assertTrue(saved["readiness"]["workshop"]["reason"])
 
     def test_skills_read_the_notebook_as_achievements(self):
         self.app.knowledge = lambda: {"techniques": [], "designs": [], "blocked": [], "not_modelled": [], "revision": 0}

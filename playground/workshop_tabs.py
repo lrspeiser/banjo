@@ -19,6 +19,8 @@ from __future__ import annotations
 from typing import Any
 
 import workshop_library
+import workshop_recipe
+import workshop_store
 from mcp import workshop as w, workshop_machines
 
 
@@ -130,7 +132,7 @@ def inventory(app: Any) -> dict[str, Any]:
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
-    """What a template can do, in words: from its program and its routine."""
+    """Declared use from a template's program and routine, not a test result."""
     out: list[str] = []
     for program in record.get("programs") or []:
         kind = program.get("kind")
@@ -157,13 +159,11 @@ def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
 def recipes(app: Any) -> dict[str, Any]:
     held = {r["material"]: float(r["mass_kg"]) for r in workshop_library.rack(app)["materials"]}
     held_goods = {r["substance"]: float(r["mass_kg"]) for r in workshop_library.goods_rack(app)["goods"]}
+    world_cell_m = workshop_recipe.world_cell_size(app)
     templates = []
-    for made in w.ASSEMBLIES:
-        try:
-            design = w.assemble(made.name, design_id=made.name)
-        except Exception as failed:               # a template that will not assemble is listed as such
-            templates.append({"name": made.name, "purpose": made.purpose, "problem": str(failed)[:160]})
-            continue
+    def add(design: w.WorkshopDesign, made: w.Assembly, *, name: str,
+            source: str, saved_design_id: str | None = None) -> None:
+        overrides = design.lineage.get("component_overrides", {})
         bom = workshop_library.bill_of_materials(app, design)
         materials = [{"material": r["material"], "kg": round(float(r["mass_kg"]), 2),
                       "held_kg": round(held.get(r["material"], 0.0), 2),
@@ -172,13 +172,36 @@ def recipes(app: Any) -> dict[str, Any]:
                   "enough": held_goods.get(s, 0.0) + 5e-5 >= kg}
                  for s, kg in sorted(workshop_library.goods_needed(design).items())]
         record = workshop_machines.of(design)
-        templates.append({"name": made.name, "purpose": made.purpose, "about": made.about,
+        templates.append({"name": name, "purpose": design.purpose, "about": made.about,
+                          "source": source, "saved_design_id": saved_design_id,
+                          "kind": design.kind, "parameters": dict(design.parameters),
+                          "component_overrides": overrides,
                           "parts": len(design.parts), "families": sorted({p.family for p in design.parts if p.family}),
                           "materials": materials, "goods": goods,
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),
                           **_shortfall(materials, goods),
                           "can_do": _can_do(record, made),
-                          "machines": workshop_machines.described(design)["says"] if record else None})
+                          "machines": workshop_machines.described(design)["says"] if record else None,
+                          "readiness": workshop_recipe.assess(design, overrides, world_cell_m=world_cell_m)})
+
+    for made in w.ASSEMBLIES:
+        try:
+            design = w.assemble(made.name, design_id=made.name)
+            add(design, made, name=made.name, source="built-in")
+        except Exception as failed:               # a template that will not assemble is listed as such
+            templates.append({"name": made.name, "purpose": made.purpose, "problem": str(failed)[:160]})
+    # A design saved by the Workshop assistant is a recipe too. Rebuild it from
+    # source on every listing; old readiness and stock claims cannot go stale.
+    import workshop_api_core
+    root = workshop_api_core._store(app)
+    for saved in workshop_store.list_saved(root, limit=50):
+        try:
+            record, design = workshop_store.load(root, saved["design_id"])
+            add(design, w.assembly(design.kind), name=record["label"], source="saved",
+                saved_design_id=record["design_id"])
+        except (OSError, ValueError, KeyError) as failed:
+            templates.append({"name": saved.get("label") or saved["design_id"],
+                              "source": "saved", "problem": str(failed)[:160]})
     room = getattr(getattr(app, "room", None), "spec", None) or {}
     block = room.get("goods") if isinstance(room, dict) else None
     room_recipes = []

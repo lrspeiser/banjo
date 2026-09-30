@@ -1020,14 +1020,24 @@ async function checkValidity(button) {
   button.disabled = true;
   try {
     setMakeStatus("Checking it over…", false);
-    const answer = await api("/api/workshop/library", Object.assign({ action:"check_validity" }, candidateBody()));
+    let worldCell = null;
+    try { worldCell = (await api("/api/world/workshop/context", {})).cell_size_m; }
+    catch (_) { /* A design can still be checked in the Workshop without a world. */ }
+    const answer = await api("/api/workshop/library", Object.assign({ action:"check_validity",
+      cell_size_m:worldCell || .04 }, candidateBody()));
     const said = answer.validity || {};
     if (!said.ok) { setMakeStatus(said.says || "It cannot be drawn to work.", true); return; }
     if (answer.candidate) {
       bench.candidates = [answer.candidate]; bench.selected = 0; bench.revision++;
       invalidateMatter(); invalidateInstallation(); show();
     }
-    setMakeStatus(said.says || "It works as drawn.", false);
+    const ready = answer.recipe_readiness;
+    const blocker = !ready?.workshop?.as_drawn ? ready?.workshop?.reason
+      : worldCell && !ready?.world?.as_drawn ? ready?.world?.reason : null;
+    setMakeStatus((said.says || "Checked.") + (blocker
+      ? ` Still blocked: ${blocker}`
+      : worldCell ? ` Both the Workshop and this world's ${Math.round(worldCell*1000)} mm grids accept it as drawn. Test the function and preview placement before making.`
+      : " Checked on the Workshop grid; open a world before making."), Boolean(blocker));
   } catch (error) {
     setMakeStatus(String(error.message || error), true);
   } finally {
@@ -2152,10 +2162,12 @@ function recipeLine(line) {
 async function showRecipes() {
   const r = await api("/api/workshop/recipes");
   fill("#ws-recipes-templates", r.templates.map((t) => {
-    if (t.problem) return item(t.name, `cannot be assembled: ${t.problem}`);
+    if (t.problem) return item(t.name, `Draft · recipe check failed: ${t.problem}`);
     const short = Math.round((t.short_share || 0) * 100);
-    const li = item(t.name, `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`,
-                    t.enough ? "enough" : "short");
+    const readiness = t.readiness || {}, world = readiness.world;
+    const label = readiness.ready_as_drawn ? "Grid ready" : "Draft";
+    const li = item(t.name, `${label} · ${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`,
+                    !t.enough ? "short" : readiness.ready_as_drawn ? "enough" : "blocked");
     // HOW MUCH IS MISSING, as the owner asked: one number at the top, and
     // the lines that are holding it up named after it.
     if (!t.enough) {
@@ -2166,24 +2178,34 @@ async function showRecipes() {
     const needs = make("div", { class: "ws-needs" });
     for (const line of [...(t.materials || []), ...(t.goods || [])]) needs.append(recipeLine(line));
     if (needs.childElementCount) li.append(needs);
-    if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
+    if (t.can_do) li.append(make("small", {}, "Declared use: " + t.can_do.join("; ") + "."));
+    const fit = !readiness.workshop?.as_drawn
+      ? `Workshop ${Math.round((readiness.workshop?.cell_size_m || .04)*1000)} mm grid: ${readiness.workshop?.reason || "not checked"}`
+      : !world ? "Open a world to check its native grid before making."
+      : !world.as_drawn ? `World ${Math.round(world.cell_size_m*1000)} mm grid: ${world.reason}`
+      : `Fits the Workshop and this world's ${Math.round(world.cell_size_m*1000)} mm grid as drawn. Native placement and a functional test are still required.`;
+    li.append(make("p", { class:"ws-recipe-readiness" }, fit));
+
+    const openRecipe = async () => {
+      showTab("lab"); bench.openedLibraryItem = null;
+      if (t.saved_design_id) {
+        took(await api("/api/workshop/open", { saved_design_id:t.saved_design_id }));
+      } else {
+        took(await api("/api/workshop/candidates", { kind:t.kind, parameters:t.parameters,
+          component_overrides:t.component_overrides, sweeps:{}, generation:bench.generation + 1 }));
+      }
+      $("#ws-archetype").value = t.kind;
+    };
 
     const row = make("div", { class: "ws-recipe-acts" });
-    // MAKE IT, straight from the recipe. Greyed while anything is missing,
-    // and it says what it is waiting for rather than just being dead.
+    // Only source geometry admitted by BOTH grids reaches the native preview.
+    // That preview still checks ground, stock and live engine state before commit.
     const made = make("button", { type: "button", class: "ws-action primary" }, "Make");
-    made.disabled = !t.enough;
-    made.title = t.enough ? `Make a ${t.name} and put it in your inventory`
-      : `${short}% of what this needs is missing`;
+    made.disabled = !t.enough || !readiness.ready_as_drawn;
+    made.title = !t.enough ? `${short}% of what this needs is missing`
+      : !readiness.ready_as_drawn ? fit : `Make a ${t.name} in the open world`;
     made.onclick = () => guard(made, async () => {
-      // The bench is what makes a thing, so the recipe opens it on this
-      // product and then makes it -- the same path the Lab's own button
-      // takes, so there is one way a thing gets made and not two.
-      showTab("lab");
-      bench.openedLibraryItem = null;
-      took(await api("/api/workshop/candidates",
-                     { kind: t.name, generation: bench.generation + 1 }));
-      $("#ws-archetype").value = t.name;
+      await openRecipe();
       await makeIt($("#ws-make"));
       // And back to what you have, with it in it -- ONLY if it was made.
       // A refusal ("Open a world first", a short rack) leaves its reason in
@@ -2196,12 +2218,7 @@ async function showRecipes() {
       showTab("inventory");
     });
     const open = make("button", { type: "button", class: "ws-action" }, "Design it");
-    open.onclick = () => guard(open, async () => {
-      showTab("lab");
-      bench.openedLibraryItem = null;
-      took(await api("/api/workshop/candidates", { kind: t.name, generation: bench.generation + 1 }));
-      $("#ws-archetype").value = t.name;
-    });
+    open.onclick = () => guard(open, openRecipe);
     row.append(made, open);
     li.append(row);
     return li;

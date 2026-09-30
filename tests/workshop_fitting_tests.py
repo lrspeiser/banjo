@@ -551,10 +551,12 @@ class AThingWithNothingThatTurns(unittest.TestCase):
         self.assertNotIn("bearing", (answer.get("why") or ""))
 
     def test_a_stool_too_thin_for_the_grid_is_redrawn_rather_than_refused(self):
-        # A stool's top is 40 mm, which is one cell of the room's 40 mm grid
+        # This thin stool's top is 40 mm, one cell of the room's 40 mm grid
         # and so leaves no cells of its own. That is the same condition the
         # articulated compiler refuses, and the same redraw answers it.
-        answer = workshop_fitting.check_validity(assemble("stool", design_id="s"), {}, cell_m=CELL)
+        answer = workshop_fitting.check_validity(
+            assemble("stool", design_id="s", parameters={"top_thickness_m": .04,
+                                                         "leg_section_m": .032}), {}, cell_m=CELL)
         print(f"    a stool: {answer['says'][:120]}", flush=True)
         self.assertTrue(answer["ok"], answer.get("why"))
         self.assertTrue(answer["changes"], "the stool was passed without redrawing anything")

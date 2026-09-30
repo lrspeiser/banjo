@@ -241,6 +241,20 @@ Important behavior:
   said to. take_it_back undoes the last change, or several. These were panels
   on the page once; they are yours now, so a person who asks you to "save this
   as the tall one" gets it saved rather than pointed at a control.
+- A SAVED RECIPE IS A DESIGN, NOT PROOF IT WORKS. For a new finished item:
+  name its purpose, every physical part and material, exact dimensions in
+  metres, where parts meet and how they are fastened, its grip/use point and
+  primary use if it has one. Inspect the assembled design. Run check_validity
+  against the open world's native grid; it may redraw parts, so report every
+  size/position change and check the new shape against the requested purpose.
+  It must also compile as drawn in the Workshop test room's 40 mm grid. Then
+  try_it_in_a_room with a concrete functional task and observable pass/fail
+  conditions. Use what_it_needs for stock. Save even an unfinished draft when
+  asked, but call it a draft until BOTH grids accept the same source geometry,
+  the functional trial passes, and native world placement previews successfully.
+  A preview and a trial establish only the measured scenario, not general
+  strength or durability. Never infer readiness from appearance, cell/box
+  counts, a saved recipe, or available stock alone.
 - DROPPING SOMETHING ON IT is try_it_in_a_room with load_kg and from_m. `strike`
   throws a block at its SIDE, along the floor, and is not what anyone means by
   "drop a block on it"; `drop_m` lets go of the THING, not of something onto it.
@@ -274,8 +288,9 @@ Important behavior:
   way you build the shape: say what is there, then let check_validity tell you
   whether it is wired to anything real. It names a motor driving a bonded
   joint, or drawing on a store that is not there, rather than quietly fixing it.
-- THEN CALL check_validity. The room carries matter on a 40 mm cell grid, and
-  sizes that read well to a person are usually not sizes the grid can hold. It
+- THEN CALL check_validity. It checks the OPEN WORLD'S native grid when one is
+  open (which may differ from the Workshop's 40 mm test grid). Sizes that read
+  well to a person are often not sizes the grid can hold. It
   redraws what it must and tells you every change: a part thinner than two cells
   is drawn thicker, faces are snapped to cell boundaries, a shaft that runs
   THROUGH its mounts becomes a stub per bearing (no lattice body can carry a
@@ -784,7 +799,7 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "several": {"type": "boolean",
                                         "description": "true when more than one option can be picked at once"}}}},
         {"type": "function", "name": "check_validity",
-         "description": "Say whether this assembly is a machine, and redraw it until the room can carry it. "
+         "description": "Check the open world's native grid and the Workshop test grid; redraw the source when needed and report every change. Say whether this assembly is a machine, and redraw it until the room can carry it. "
                         "It checks the concepts first -- every part fastened, every wheel with something to "
                         "turn on, something standing still for the rest to move against -- and refuses, "
                         "naming what is missing, rather than inventing it. Then it redraws: nothing thinner "
@@ -1258,7 +1273,10 @@ class _State:
                                       "programs": answer["ended"]["programs"]})
 
         if tool == "check_validity":
-            answer = workshop_fitting.check_validity(self.base, self.overrides, cell_m=0.04,
+            import workshop_recipe
+            world_cell_m = workshop_recipe.world_cell_size(self.app)
+            answer = workshop_fitting.check_validity(self.base, self.overrides,
+                                                     cell_m=world_cell_m or 0.04,
                                                      root=str(self.design.design_id or "assembly"))
             if answer["ok"] and answer["changes"]:
                 self.overrides = answer["overrides"]
@@ -1267,11 +1285,15 @@ class _State:
                 self.changed.append("redrawn")
             return self.record(tool, {
                 "summary": answer["says"][:400], "ok": answer["ok"], "stage": answer["stage"],
+                "world_cell_size_m": world_cell_m,
+                "recipe_readiness": workshop_recipe.assess(
+                    self.design, self.overrides, world_cell_m=world_cell_m),
                 "concepts": answer["concepts"],
                 "changes": [{"rule": c["rule"], "part": c["part"], "says": c["says"]}
                             for c in answer["changes"]],
                 "why": answer.get("why", ""),
-                "note": ("It is a machine and the room can carry it." if answer["ok"] else
+                "note": ("Report the redraw and verify both grids and a functional trial before claiming it works."
+                         if answer["ok"] else
                          "It is not ready. Say what is missing; do not claim it works."),
             }, ok=answer["ok"])
 

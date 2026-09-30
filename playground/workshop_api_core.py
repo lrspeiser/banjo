@@ -216,6 +216,7 @@ def library(app: Any = None, body: Any = None,
                         app, str(body.get("substance") or ""), float(body.get("mass_kg")))}
         if action == "check_validity":
             import workshop_fitting
+            import workshop_recipe
             kind = _kind(body, "custom")
             base = assemble(kind, design_id=str(body.get("design_id") or kind),
                             purpose=(str(body["purpose"]) if body.get("purpose") else None),
@@ -226,8 +227,11 @@ def library(app: Any = None, body: Any = None,
             out = {"schema": WORKSHOP_SCHEMA, "validity": {k: v for k, v in answer.items()
                                                            if k != "overrides"}}
             if answer["ok"]:
-                out["candidate"] = _candidate(app, workshop_components.apply_overrides(base, answer["overrides"]),
+                fitted = workshop_components.apply_overrides(base, answer["overrides"])
+                out["candidate"] = _candidate(app, fitted,
                                               assembly(kind), answer["overrides"])
+                out["recipe_readiness"] = workshop_recipe.assess(
+                    fitted, answer["overrides"], world_cell_m=workshop_recipe.world_cell_size(app))
             return out
         if action == "needs":
             design, _ = workshop_components.design_from_spec(body)
