@@ -1,8 +1,9 @@
 """Recorded product-use trials over the existing native ground-work model.
 
 Every case uses the same one-piece pick, bounded hand and swing. Material and
-ground are controlled inputs. A missing rock law is an unsupported outcome,
-never a successful mining test. The user's live room is never opened or stepped.
+ground are controlled inputs. Rock-work-v1 can account for partial progress;
+a whole cell is not claimed removed until native ground state says so. The
+user's live room is never opened or stepped.
 """
 from pathlib import Path
 import math
@@ -21,7 +22,7 @@ _LOCK = threading.Lock()
 LIMITATIONS = [
     "A one-piece reference pick, not the user's selected Workshop assembly or a rated head-handle joint.",
     "The same 800 N hand and 60 N m wrist drive every swing; actual impact speed depends on mass and contact.",
-    "Ground-work-v1 is an experimental dry-soil model. Hard-point rock excavation and wet soil are unsupported.",
+    "Dry soil uses ground-work-v1; rock under a harder point uses rock-work-v1. Neither is calibrated. Wet ground is unsupported.",
     "Tool condition comes from native state. Pending detailed damage stops as unresolved, never as survived.",
     "40 mm tool cells and 100 mm terrain columns; no calibration, wear, timestep convergence or full energy-closure claim.",
 ]
@@ -151,8 +152,8 @@ def run_case(engine, case, directory, cancel=None):
         deepest = max(meetings, key=lambda w:w["depth_m"])
         if case["ground"] == "soil" and (unsupported or not .03 <= deepest["depth_m"] <= .2+CELL):
             raise ValueError("Soil trial did not enter by 30 mm within the point length plus one cell")
-        if case["ground"] == "rock" and any(w["depth_m"] != 0 or w["loosened_kg"] != 0 for w in meetings):
-            raise ValueError("Rock trial claimed excavation without an implemented rock law")
+        if case["ground"] == "rock" and any(w["loosened_kg"] < 0 for w in meetings):
+            raise ValueError("Rock work reported negative removed mass")
         if any(math.dist([w["at_m"][k] for k in (0,2)], [.3,.02]) > .25 for w in meetings):
             raise ValueError("The point missed the intended 250 mm target radius")
         result.update(status="unsupported" if unsupported else "passed", meetings=meetings,
@@ -163,9 +164,12 @@ def run_case(engine, case, directory, cancel=None):
                 "tool_mass_kg": body["mass_kg"], "mass_residual_kg": session.state["bodies"][0]["mass_kg"]-body["mass_kg"],
                 "max_hand_force_n": max_force, "elapsed_s": session.state["t"],
                 "loosened_kg": sum(w["loosened_kg"] for w in meetings)},
-            outcome=("Unsupported rock excavation" if unsupported else
+            outcome=("Unsupported ground interaction" if unsupported else
                      "Tool damaged" if not all(w["tool_whole"] for w in meetings) else
-                     "Point entered soil" if deepest["depth_m"] > 0 else "Point stopped at rock"))
+                     "Point entered soil" if case["ground"] == "soil" and deepest["depth_m"] > 0 else
+                     "Rock cell removed" if case["ground"] == "rock" and any(w["loosened_kg"] > 0 for w in meetings) else
+                     "Point worked rock; no whole cell removed" if case["ground"] == "rock" and
+                     any(w["work_j"] > 0 for w in meetings) else "Point stopped at rock"))
         artifacts.write_json(directory/"native-report.json", native)
     except Exception as exc:
         result.update(status="cancelled" if cancel.is_set() else result["status"], error=str(exc))

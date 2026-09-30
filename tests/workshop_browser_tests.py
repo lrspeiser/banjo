@@ -1084,17 +1084,17 @@ class WorkshopBrowserRegression(unittest.TestCase):
         """There were four rigs and none of them had ground under it.
 
         They are one test now, in a room with ground and a sky. It is offered
-        wherever the thing can actually be MADE -- a table, a bench, and
-        anything drawn part by part through the chat. A cart, a kettle, a
-        chair, a stool and a shelf-unit cannot be installed at all today, and
-        that is a gap in the compiler, not a reason to offer a test that would
-        fail when someone pressed run.
+        wherever the default source can actually be MADE -- a table, stool,
+        bench and breaker, plus custom designs checked at run time. Other
+        templates need repairs or a separate mechanism adapter.
         """
         self.click('[data-mode="test"]')
         values=self.js("[...document.querySelectorAll('#ws-test-catalog button')].map(b=>b.dataset.value)")
         self.assertEqual(["try_in_a_room"],values)
         self.assertEqual("try_in_a_room",self.js("document.querySelector('#ws-bench-test').value"))
         self.assertIsNone(self.js("document.querySelector('[data-bench-control=record_trace]')"))
+        self.open_product("stool")
+        self.assertIn("try_in_a_room",self.js("[...document.querySelectorAll('#ws-test-catalog button')].map(b=>b.dataset.value)"))
         # A shelf-unit still cannot be MADE -- its template comes out with
         # disconnected components and never compiles -- so it is offered
         # nothing, rather than a test that would fail when it was run.
@@ -1102,6 +1102,14 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertTrue(self.js("document.querySelector('#ws-run-bench').disabled"))
         self.assertEqual(0,self.js("document.querySelectorAll('#ws-test-catalog button').length"))
         self.assertIn("No working simulation",self.js("document.querySelector('#ws-bench-controls').textContent"))
+
+    def test_debug_page_lists_all_qa_suites(self):
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/debug"})
+        self.wait("document.querySelectorAll('#suites-list .dbg-suite').length === 4")
+        titles = self.js("[...document.querySelectorAll('#suites-list .dbg-suite h3')].map(x=>x.textContent)")
+        self.assertEqual(["Material QA", "Mechanics QA", "Tool QA", "Fabrication QA"], titles)
+        self.assertEqual(3, self.js("document.querySelectorAll('#suites-list select').length"))
+        self.assertEqual(4, self.js("document.querySelectorAll('#suites-list button').length"))
 
     def test_a_glass_table_hit_hard_enough_is_seen_to_break_into_pieces(self):
         """And dropped onto soil from four metres, it is not.

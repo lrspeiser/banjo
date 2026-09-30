@@ -31,21 +31,16 @@ RETIRED = {"declared_static_load", "drop_product", "slide_product", "impact_prod
 #: little world can be offered for. This is not a property of the test: it is
 #: how far the Workshop's own compiler reaches today.
 #:
-#: - a cart and a kettle are refused outright -- "only fixed structural solids
-#:   can be placed by this adapter; articulated machines and containers need
-#:   their own interfaces";
-#: - a chair, a stool and a shelf-unit come out of their template with
-#:   "disconnected or missing physical components" and never compile at all,
-#:   which is why the old catalogue offered them nothing either.
+#: - a cart, kettle, rover and drone are refused by the little-world installer;
+#:   the cart and kettle have separate native trials for their own mechanisms;
+#: - a chair, shelf-unit and processor have disconnected default geometry;
+#: - the corrected stool and breaker now install as structural solids.
 #:
-#: Anything drawn part by part through the chat is kind "custom" and installs,
-#: which is how the robot and the solar cart are tried. Making the rest of the
-#: templates installable is real work and is on the list; it is not hidden by
-#: offering a test that would fail.
-# The robot templates install as exact bodies on pins through the same gate
-# (tests/workshop_rover_tests.py, workshop_drone_tests.py, goods_tests.py),
-# so the little world takes them too.
-CAN_BE_MADE = {"table", "bench", "custom", "rover", "drone", "processor"}
+#: Anything drawn part by part through the chat is kind "custom". Its source
+#: needs its own validation at run time; kind alone cannot say whether the
+#: parts connect and install. Making the remaining default templates installable
+#: is separate work.
+CAN_BE_MADE = {"table", "stool", "bench", "breaker", "custom"}
 
 #: What a bench does to a thing, all of it in one grounded room.
 LITTLE_WORLD = {

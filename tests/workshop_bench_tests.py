@@ -283,15 +283,15 @@ class VisibleSimulationContract(unittest.TestCase):
         # The rigs with no ground under them -- the load rig and the drop,
         # slide and strike rigs -- are retired and offered to nobody; each of
         # them is a setting of the little world now. The little world is
-        # offered wherever the thing can be made, which today is a table, a
-        # bench, and anything drawn part by part through the chat. A cart and a
-        # kettle the installer refuses; a chair, a stool and a shelf-unit come
-        # out of their templates with disconnected components and never
-        # compile. Those are gaps in the compiler, and they are on the list.
+        # offered for the default structural sources the native installer can
+        # make, and for custom designs that still need a run-time check. Cart
+        # and kettle retain their separate native mechanism trials.
         for kind, expected in {"table":{"try_in_a_room"},"bench":{"try_in_a_room"},
+                               "stool":{"try_in_a_room"},"breaker":{"try_in_a_room"},
                                "custom":{"try_in_a_room"},
                                "cart":{"cart_roll"},"kettle":{"kettle_heat"},
-                               "chair":set(),"stool":set(),"shelf-unit":set()}.items():
+                               "chair":set(),"shelf-unit":set(),
+                               "rover":set(),"drone":set(),"processor":set()}.items():
             visible = {t["test"] for t in workshop_bench.catalog(kind)
                        if t.get("category")=="simulation" and t.get("subject")=="selected-product"
                        and t.get("required_model","lattice") in ("lattice","any")}

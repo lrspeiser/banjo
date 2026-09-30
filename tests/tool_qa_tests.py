@@ -51,15 +51,14 @@ class HTTP(WorkbenchTestCase):
 
 @unittest.skipUnless(os.environ.get("BANJO_TRIAL_ENGINE"),"Set BANJO_TRIAL_ENGINE for native tool QA")
 class Native(unittest.TestCase):
-    def test_six_real_trials_show_motion_contact_and_explicit_unsupported_rock(self):
+    def test_six_real_trials_show_motion_contact_and_accounted_rock_work(self):
         with tempfile.TemporaryDirectory() as raw:
             folder=Path(raw)/"run"
             report=qa.run_suite(Path(os.environ["BANJO_TRIAL_ENGINE"]),folder)
             self.assertEqual(report["completed"],6)
-            self.assertEqual(report["status"],"unsupported")
+            self.assertEqual(report["status"],"passed")
             for r in report["results"]:
-                expected="unsupported" if r["ground"]=="rock" and r["material"]!="oak" else "passed"
-                self.assertEqual(r["status"],expected,r)
+                self.assertEqual(r["status"],"passed",r)
                 self.assertEqual(r["measured"]["mass_residual_kg"],0)
                 self.assertLessEqual(r["measured"]["max_hand_force_n"],800.001)
                 playback=qa.artifacts.read_json(folder/r["id"]/"playback.json")
@@ -69,6 +68,11 @@ class Native(unittest.TestCase):
                                     playback["frames"][60]["poses"][0]["position_m"])
                 self.assertTrue(all(len(f["poses"])==28 for f in playback["frames"]))
                 if r["ground"]=="soil":self.assertGreaterEqual(r["measured"]["depth_m"],.03)
+                elif r["material"]=="iron":
+                    self.assertGreater(r["measured"]["depth_m"],.005)
+                    self.assertGreater(r["measured"]["work_j"],0)
+                    self.assertEqual(r["measured"]["loosened_kg"],0)
+                    self.assertIn("no whole cell removed",r["outcome"])
                 else:self.assertEqual(r["measured"]["depth_m"],0)
 
     def test_cancelled_trial_does_not_claim_success(self):
