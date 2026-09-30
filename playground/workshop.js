@@ -2130,18 +2130,83 @@ async function showSkills() {
   $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
 }
 
+// A LINE OF A RECIPE: how much it wants, how much you have, and the bar that
+// says how near you are. A tag that reads "2.4 kg iron (have 0.6)" makes you
+// do the arithmetic; the bar does it.
+function recipeLine(line) {
+  const wants = Number(line.kg) || 0;
+  const have = Number(line.held_kg) || 0;
+  const got = wants > 0 ? Math.min(1, have / wants) : 1;
+  const row = make("div", { class: line.enough ? "ws-need ok" : "ws-need short" });
+  row.append(make("span", { class: "ws-need-what" }, line.material || line.substance || ""));
+  const bar = make("span", { class: "ws-need-bar" });
+  bar.append(make("i", { style: `width:${Math.round(got * 100)}%` }));
+  row.append(bar);
+  row.append(make("span", { class: "ws-need-said" },
+                  line.enough ? `${wants} kg` : `${have} of ${wants} kg`));
+  row.title = line.enough ? `you have enough ${line.material || line.substance}`
+    : `${line.short_kg} kg of ${line.material || line.substance} short`;
+  return row;
+}
+
 async function showRecipes() {
   const r = await api("/api/workshop/recipes");
   fill("#ws-recipes-templates", r.templates.map((t) => {
-    const li = item(t.name, t.problem ? `cannot be assembled: ${t.problem}` : `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`, t.problem ? "" : t.enough ? "enough" : "short");
-    for (const m of t.materials || []) li.append(tag(`${m.kg} kg ${m.material} (have ${m.held_kg})`, m.enough ? "ok" : "short"));
-    for (const g of t.goods || []) li.append(tag(`${g.kg} kg ${g.substance} (have ${g.held_kg})`, g.enough ? "ok" : "short"));
+    if (t.problem) return item(t.name, `cannot be assembled: ${t.problem}`);
+    const short = Math.round((t.short_share || 0) * 100);
+    const li = item(t.name, `${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`,
+                    t.enough ? "enough" : "short");
+    // HOW MUCH IS MISSING, as the owner asked: one number at the top, and
+    // the lines that are holding it up named after it.
+    if (!t.enough) {
+      const worst = (t.missing || []).slice(0, 3).map((m) => m.what).join(", ");
+      li.append(make("p", { class: "ws-missing" },
+                     `${short}% missing${worst ? ` \u2014 short of ${worst}` : ""}`));
+    }
+    const needs = make("div", { class: "ws-needs" });
+    for (const line of [...(t.materials || []), ...(t.goods || [])]) needs.append(recipeLine(line));
+    if (needs.childElementCount) li.append(needs);
     if (t.can_do) li.append(make("small", {}, "Can do: " + t.can_do.join("; ") + "."));
-    const open = make("button", { type:"button", class:"ws-action" }, "Design it");
-    open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:t.name, generation:bench.generation + 1 })); $("#ws-archetype").value = t.name; });
-    li.append(open); return li;
+
+    const row = make("div", { class: "ws-recipe-acts" });
+    // MAKE IT, straight from the recipe. Greyed while anything is missing,
+    // and it says what it is waiting for rather than just being dead.
+    const made = make("button", { type: "button", class: "ws-action primary" }, "Make");
+    made.disabled = !t.enough;
+    made.title = t.enough ? `Make a ${t.name} and put it in your inventory`
+      : `${short}% of what this needs is missing`;
+    made.onclick = () => guard(made, async () => {
+      // The bench is what makes a thing, so the recipe opens it on this
+      // product and then makes it -- the same path the Lab's own button
+      // takes, so there is one way a thing gets made and not two.
+      showTab("lab");
+      bench.openedLibraryItem = null;
+      took(await api("/api/workshop/candidates",
+                     { kind: t.name, generation: bench.generation + 1 }));
+      $("#ws-archetype").value = t.name;
+      await makeIt($("#ws-make"));
+      // And back to what you have, with it in it -- ONLY if it was made.
+      // A refusal ("Open a world first", a short rack) leaves its reason in
+      // the Lab's status line, and walking away from that shows a person an
+      // unchanged inventory and no explanation anywhere.
+      if ($("#ws-make-status")?.dataset.bad === "yes") {
+        say(`${t.name} was not made: ${$("#ws-make-status").textContent}`, true);
+        return;
+      }
+      showTab("inventory");
+    });
+    const open = make("button", { type: "button", class: "ws-action" }, "Design it");
+    open.onclick = () => guard(open, async () => {
+      showTab("lab");
+      bench.openedLibraryItem = null;
+      took(await api("/api/workshop/candidates", { kind: t.name, generation: bench.generation + 1 }));
+      $("#ws-archetype").value = t.name;
+    });
+    row.append(made, open);
+    li.append(row);
+    return li;
   }), "No templates.");
-  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
+  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u00b7 ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` \u00b7 worked by ${x.worked_by.join(", ")}` : " \u00b7 no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
   fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
   const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
 }

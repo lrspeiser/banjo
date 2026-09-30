@@ -451,10 +451,22 @@ the tech tree? if so link it to the tech tree".
   things: a tenth slot, a hotbar that can be dropped on, and an inventory op
   that names the slot.
 
-- **A recipe's shortfall as a percentage.** `workshop_tabs.recipes` computes
-  `enough` as a strict boolean per line and ANDs them; there is no ratio
-  anywhere. The percentage the owner asked for is a small change there, and
-  the tab shows "Design it" where it should show "Make".
+- **DONE: a recipe's shortfall as a percentage, and a Make button.**
+  `_shortfall` weighs every line by mass -- a recipe wanting 80 kg of iron
+  and 20 g of wire is not half done because you have the wire -- and the tab
+  greys Make out with "39% missing - short of copper". Make drives the same
+  path the Lab's own Make it does.
+
+  **But a fresh candidate often cannot be made at all**, and that is
+  pre-existing. Pressing Make on `table` in `tests-mine` answers "The
+  prototype has disconnected or missing physical components; repair it before
+  installation", and the Lab's own Make it gives the identical message on the
+  identical candidate -- so the recipe button is faithful and the refusal is
+  the product's. In `tests-rover` it is "Staging changed existing physical
+  state for rover", i.e. none of `MAKE_SPOTS` is clear. Until a fresh
+  candidate is buildable without a trip through Check it, the owner's
+  "click Make and it will take you into your inventory and put the item
+  there" is only true for some templates in some rooms.
 
 - **Drag from the inventory to the bench.** There is exactly one drag pair in
   the whole page (a library card onto the 3D stage, MIME

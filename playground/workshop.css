@@ -505,3 +505,16 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
    The takes strip is a sibling, so it needs saying separately. */
 .ws-viewport[hidden] { display: none; }
 #ws-takes[hidden] { display: none; }
+
+/* A recipe's lines: what it wants, how near you are, and how much is short. */
+.ws-missing { margin:.35rem 0 .1rem;font-size:.8rem;font-weight:600;color:#e2b85c; }
+.ws-needs { display:grid;gap:.22rem;margin:.4rem 0 .1rem; }
+.ws-need { display:grid;grid-template-columns:minmax(72px,auto) 1fr auto;gap:.5rem;
+           align-items:center;font-size:.76rem; }
+.ws-need-what { color:#c4d0dd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.ws-need-bar { position:relative;height:6px;border-radius:3px;background:#222c38;overflow:hidden; }
+.ws-need-bar > i { position:absolute;inset:0 auto 0 0;background:#4f8a5f;border-radius:3px; }
+.ws-need.short .ws-need-bar > i { background:#b08d3a; }
+.ws-need-said { color:#8b9aac;font-variant-numeric:tabular-nums; }
+.ws-recipe-acts { display:flex;gap:.4rem;margin-top:.5rem; }
+.ws-recipe-acts button[disabled] { opacity:.45;cursor:not-allowed; }

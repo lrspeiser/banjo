@@ -176,6 +176,7 @@ def recipes(app: Any) -> dict[str, Any]:
                           "parts": len(design.parts), "families": sorted({p.family for p in design.parts if p.family}),
                           "materials": materials, "goods": goods,
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),
+                          **_shortfall(materials, goods),
                           "can_do": _can_do(record, made),
                           "machines": workshop_machines.described(design)["says"] if record else None})
     room = getattr(getattr(app, "room", None), "spec", None) or {}
@@ -195,6 +196,42 @@ def recipes(app: Any) -> dict[str, Any]:
     return {"templates": templates, "room_recipes": room_recipes, "deposits": deposits,
             "goods_per": {k: {"substance": v[0], "per": v[1], "rate": v[2], "least_kg": v[3]}
                           for k, v in workshop_library.GOODS_PER.items()}}
+
+
+def _shortfall(materials: list[dict[str, Any]], goods: list[dict[str, Any]]) -> dict[str, Any]:
+    """How much of what a recipe asks for you have not got, as a share.
+
+    The owner asked for "how much is missing like 20%". `enough` alone made a
+    recipe you have 99% of look the same as one you have none of.
+
+    By MASS over every line, not by counting lines: a recipe wanting 80 kg of
+    iron and 20 g of wire is not half done because you have the wire. A line
+    you have more than enough of counts as met and no more -- a mountain of
+    oak does not make up for having no copper.
+    """
+    wants = 0.0
+    short = 0.0
+    missing: list[dict[str, Any]] = []
+    for line in [*materials, *goods]:
+        asked = float(line.get("kg") or 0.0)
+        have = float(line.get("held_kg") or 0.0)
+        if asked <= 0.0:
+            continue
+        wants += asked
+        gap = max(0.0, asked - have)
+        # Per line too, so a tag can say which one is holding it up.
+        line["short_kg"] = round(gap, 3)
+        if gap > 0.0:
+            short += gap
+            missing.append({"what": line.get("material") or line.get("substance"),
+                            "short_kg": round(gap, 3),
+                            "share": round(gap / asked, 4)})
+    share = (short / wants) if wants > 0.0 else 0.0
+    missing.sort(key=lambda m: -m["short_kg"])
+    return {"short_share": round(share, 4),
+            "short_kg": round(short, 3),
+            "wants_kg": round(wants, 3),
+            "missing": missing}
 
 
 def skills(app: Any) -> dict[str, Any]:

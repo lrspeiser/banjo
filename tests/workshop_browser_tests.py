@@ -1470,6 +1470,55 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(0, self.js("document.querySelectorAll('#ws-pane-inventory input').length"),
                          "the inventory still has entry fields")
 
+    def test_a_recipe_says_how_much_is_missing_and_greys_out_until_it_is_not(self):
+        """The owner: "see which inventory items you need to make that item
+        and if you ahve enough (gray'd out if missing some, mention how much
+        is missing like 20%)."
+
+        It was a boolean, so a recipe you had 99% of and one you had none of
+        read exactly the same."""
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
+        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        rows = json.loads(self.js("""JSON.stringify(
+          [...document.querySelectorAll('#ws-recipes-templates > li')].map(li => ({
+            cls: li.className,
+            missing: li.querySelector('.ws-missing')?.textContent || '',
+            greyed: li.querySelector('.ws-recipe-acts button')?.disabled,
+            lines: li.querySelectorAll('.ws-need').length})))"""))
+        self.assertTrue(rows, "no recipes at all")
+        short = [r for r in rows if r["cls"] == "short"]
+        enough = [r for r in rows if r["cls"] == "enough"]
+        self.assertTrue(short, "nothing is short, so the shortfall cannot be checked")
+        self.assertTrue(enough, "nothing can be made, so Make cannot be checked")
+        for row in short:
+            # A percentage, not just "short".
+            self.assertRegex(row["missing"], r"\d+% missing",
+                             f"a short recipe does not say how much: {row['missing']!r}")
+            self.assertTrue(row["greyed"], "a short recipe's Make is not greyed out")
+        for row in enough:
+            self.assertFalse(row["greyed"], "a recipe you can make has its Make greyed out")
+            self.assertEqual("", row["missing"], "a recipe you can make says something is missing")
+        # And each line of a recipe says what it wants against what you have.
+        self.assertTrue(all(r["lines"] > 0 for r in rows), "a recipe with no lines")
+
+    def test_the_shortfall_is_by_mass_not_by_counting_lines(self):
+        """A recipe wanting 80 kg of iron and 20 g of wire is not half done
+        because you have the wire."""
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
+        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        said = json.loads(self.js("""JSON.stringify(
+          [...document.querySelectorAll('#ws-recipes-templates > li')]
+            .filter(li => li.className === 'short')
+            .map(li => li.querySelector('.ws-missing').textContent))"""))
+        for line in said:
+            share = int(line.split("%")[0])
+            self.assertGreater(share, 0, f"a short recipe missing 0%: {line!r}")
+            self.assertLessEqual(share, 100, f"a recipe missing more than all of it: {line!r}")
+            # It names what is holding it up, not just a number.
+            self.assertIn("short of", line, f"it does not say what is missing: {line!r}")
+
     # -----------------------------------------------------------------
     # The tech tree
     # -----------------------------------------------------------------
