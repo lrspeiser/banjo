@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -2211,6 +2212,10 @@ public:
     [[nodiscard]] bool stroke(const LiveStroke &stroke, std::string &why);
     void cancelStroke();
     [[nodiscard]] LiveHand hand() const;
+    // Select the hand controlled by one player in a shared world. Empty means
+    // the original single-user hand. Selection changes no body pose or time.
+    void selectHand(const std::string &player);
+    [[nodiscard]] std::map<std::string, LiveHand> playerHands();
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.
     [[nodiscard]] LiveStrokePreview previewStroke(const LiveStroke &stroke, double dt_s,

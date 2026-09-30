@@ -136,3 +136,10 @@ def visible(app: Any) -> list[dict[str, Any]]:
                  "pose": p["pose"]}
                 for p in records(app).values()
                 if isinstance(p.get("pose"), dict) and now - p.get("seen_unix_s", 0) < ACTIVE_S]
+
+
+def personalize_hand(state: dict[str, Any], player_id: str) -> None:
+    """Show this guest only their own hand in the existing single-hand UI."""
+    if player_id:
+        state["hand"] = (state.get("player_hands") or {}).get(player_id) or {}
+        state["hand_owner"] = player_id

@@ -1240,6 +1240,10 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     const LiveHand hand = world.hand();
     if (!hand.holding.empty() || hand.let_go_at_s >= 0.0 || !hand.stroke_ended.empty())
         state["hand"] = handJson(hand);
+    nlohmann::json player_hands = nlohmann::json::object();
+    for (const auto &[player, own] : world.playerHands())
+        player_hands[player] = handJson(own);
+    if (!player_hands.empty()) state["player_hands"] = std::move(player_hands);
     // Every moment the world waited, or was spared waiting, since the last
     // reply carried them. Drained here rather than accumulated, so a host
     // reading each reply sees each one exactly once.
@@ -1785,6 +1789,7 @@ int main(int argc, char **argv) {
                 const nlohmann::json command = nlohmann::json::parse(line);
                 const std::string op = command.value("op", std::string());
                 if (op == "quit") break;
+                world->selectHand(command.value("actor", std::string{}));
                 // Set by whatever produced new bodies this line, so the
                 // reply carries their shape as well as their place.
                 bool made_bodies = false;

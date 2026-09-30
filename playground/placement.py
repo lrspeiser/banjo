@@ -8,6 +8,7 @@ import math
 import interaction_points
 import inventory
 import world_chat
+import live_session
 
 REACH_M = 3.0
 MOVE_TOLERANCE_M = 0.03
@@ -364,7 +365,7 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     it is being lifted onto."""
     import time
     session = app.live.session
-    hand = (session.state or {}).get("hand") or {}
+    hand = live_session.current_hand(session)
     if not hand.get("holding") or (hand.get("name") or hand.get("holding")) != name:
         return "", "pick up the object before placing it"
     request = {"session": session.id, "name": name, "person": person}
@@ -428,7 +429,7 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
         # And STILL: let go of a thing that is still swinging and it goes on
         # swinging. The hand reports how fast the point it grips is moving;
         # the turn is compared across two looks 30 ms apart.
-        grip = ((session.state or {}).get("hand") or {}).get("grip_velocity_m_s") or [0.0, 0.0, 0.0]
+        grip = live_session.current_hand(session).get("grip_velocity_m_s") or [0.0, 0.0, 0.0]
         still = math.hypot(*grip) < .1 * left and was is not None and \
             abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004 * left)
         was = q

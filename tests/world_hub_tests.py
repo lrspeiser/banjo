@@ -193,23 +193,51 @@ class NamedWorlds(unittest.TestCase):
                                 "revision": taken["record"]["revision"], "op": "equip",
                                 "item": first["name"], "person": person_at_spawn}, ident, alice["token"])
         self.assertTrue(alice_held["ok"], alice_held)
-        bob_rejoin = self.post("/api/world/open", {"scene": "new-game"}, ident, bob["token"])
-        self.assertEqual(alice["id"], bob_rejoin["hand_owner"])
-        self.assertEqual({"right": None, "left": None}, bob_rejoin["inventory"]["record"]["hands"])
-        with self.assertRaises(urllib.error.HTTPError):
-            self.post("/api/live/act", {"session": session, "op": "release"}, ident, bob["token"])
-        bob_blocked = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-first",
+        bob_held = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-first",
                                 "revision": bob_took["record"]["revision"], "op": "equip",
                                 "item": second["name"], "person": person_at_spawn}, ident, bob["token"])
-        self.assertFalse(bob_blocked["ok"])
-        self.assertIn("Another player's hand", bob_blocked["why"])
+        self.assertTrue(bob_held["ok"], bob_held)
+        bob_rejoin = self.post("/api/world/open", {"scene": "new-game"}, ident, bob["token"])
+        self.assertEqual(bob["id"], bob_rejoin["hand_owner"])
+        self.assertEqual(second["name"], bob_rejoin["hand"]["holding"])
+        self.assertEqual(first["name"], bob_rejoin["player_hands"][alice["id"]]["holding"])
+        self.assertNotEqual({"right": None, "left": None}, bob_rejoin["inventory"]["record"]["hands"])
+        # Each page sets only its own target. One shared physics step must
+        # advance both grips; release by one guest must leave the other held.
+        first_body = next(b for b in bob_rejoin["bodies"] if b["name"] == first["name"])
+        second_body = next(b for b in bob_rejoin["bodies"] if b["name"] == second["name"])
+        one_target = [first_body["position_m"][0] + .3, *first_body["position_m"][1:]]
+        two_target = [second_body["position_m"][0] - .3, *second_body["position_m"][1:]]
+        self.post("/api/live/act", {"session": session, "op": "move", "to": one_target},
+                  ident, alice["token"])
+        self.post("/api/live/act", {"session": session, "op": "move", "to": two_target},
+                  ident, bob["token"])
+        time.sleep(.12)
+        moving = self.post("/api/live/act", {"session": session, "op": "step",
+                           "dt": 1/240, "n": 24}, ident, alice["token"])
+        self.assertEqual({first["name"], second["name"]},
+                         {h["holding"] for h in moving["player_hands"].values() if h["holding"]})
+        self.assertEqual(one_target, moving["player_hands"][alice["id"]]["target_m"])
+        self.assertEqual(two_target, moving["player_hands"][bob["id"]]["target_m"])
+        self.assertTrue(all(next(b for b in moving["bodies"] if b["name"] == name)["held"]
+                            for name in (first["name"], second["name"])))
+        one_moved = next(b for b in moving["bodies"] if b["name"] == first["name"])
+        two_moved = next(b for b in moving["bodies"] if b["name"] == second["name"])
+        self.assertGreater(one_moved["position_m"][0], first_body["position_m"][0] + .01)
+        self.assertLess(two_moved["position_m"][0], second_body["position_m"][0] - .01)
+        self.stop()
+        self.start()
+        self.post("/api/world/player/join", {"token": alice["token"]}, ident)
+        self.post("/api/world/player/join", {"token": bob["token"]}, ident)
+        resumed = self.post("/api/world/open", {"scene": "new-game"}, ident, bob["token"])
+        session = resumed["session"]
+        self.assertEqual(first["name"], resumed["player_hands"][alice["id"]]["holding"])
+        self.assertEqual(second["name"], resumed["player_hands"][bob["id"]]["holding"])
         alice_stowed = self.post("/api/world/inventory", {"session": session, "request": "alice-stow",
                                   "op": "stow", "item": first["name"]}, ident, alice["token"])
         self.assertTrue(alice_stowed["ok"], alice_stowed)
-        bob_held = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-second",
-                              "op": "equip", "item": second["name"], "person": person_at_spawn},
-                              ident, bob["token"])
-        self.assertTrue(bob_held["ok"], bob_held)
+        after_alice = self.post("/api/live/act", {"session": session, "op": "poses"}, ident, bob["token"])
+        self.assertEqual(second["name"], after_alice["hand"]["holding"])
         bob_stowed = self.post("/api/world/inventory", {"session": session, "request": "bob-stow",
                                 "op": "stow", "item": second["name"]}, ident, bob["token"])
         self.assertTrue(bob_stowed["ok"], bob_stowed)

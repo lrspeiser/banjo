@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
 
 import world_chat  # noqa: E402  where the person is, as the page says and the chat is told
+import live_session
 
 # The person's shoulder is 0.17 m under their eyes (1.62 m eyes, 1.45 m
 # shoulder), as the page and the MCP's trial have it.
@@ -86,7 +87,7 @@ def profile_held(app: Any) -> dict[str, Any] | None:
     """The profile of the tool the hand holds, or None: the hand's `holding`,
     as the running room says it, is the body a tool profile names as its tool."""
     session = app.live.session
-    holding = ((session.state or {}).get("hand") or {}).get("holding") if session else None
+    holding = live_session.current_hand(session).get("holding") if session else None
     if not holding:
         return None
     return next((p for p in (app.room.spec.get("interactions") or [])
@@ -194,7 +195,10 @@ def run(app: Any, body: dict[str, Any],
         return {"action": label, "refused": said.get("reason") or "It cannot be used there.",
                 "done": []}
     session = app.live.session
-    if getattr(session, "tool_busy", False):
+    actor = getattr(getattr(session, "_actor_local", None), "actor", "")
+    busy_players = session.__dict__.setdefault("tool_busy_players", set()) if actor else set()
+    busy = actor in busy_players if actor else getattr(session, "tool_busy", False)
+    if busy:
         return {"action": label, "refused": "The hand is still busy with the last use.", "done": []}
     profile = profile_held(app)
     use = interaction_profiles.tool_use(profile)
@@ -212,7 +216,8 @@ def run(app: Any, body: dict[str, Any],
     listeners = getattr(app, "reply_listeners", None)
     if listeners is not None:
         listeners.append(listen)
-    session.tool_busy = True
+    if actor: busy_players.add(actor)
+    else: session.tool_busy = True
     done: list[str] = []
     record: dict[str, Any] | None = None
     short: str | None = None
@@ -283,7 +288,8 @@ def run(app: Any, body: dict[str, Any],
                     done.append(f"drew it out: the stroke {_pull(app, grip)}")
             record = _closed(app, tool, since, heard, record)
     finally:
-        session.tool_busy = False
+        if actor: busy_players.discard(actor)
+        else: session.tool_busy = False
         if listeners is not None and listen in listeners:
             listeners.remove(listen)
     carried = _carried(app)
@@ -317,7 +323,7 @@ def _stroke(app: Any) -> str:
     began = time.monotonic()
     started = False
     while time.monotonic() - began < STROKE_LIMIT_S:
-        hand = (app.live.session.state or {}).get("hand") or {}
+        hand = live_session.current_hand(app.live.session)
         waited = time.monotonic() - began
         if hand.get("stroking"):
             started = True
@@ -328,7 +334,7 @@ def _stroke(app: Any) -> str:
 
 
 def _grip(session: Any) -> list[float] | None:
-    return _point(((session.state or {}).get("hand") or {}).get("grip_m"))
+    return _point(live_session.current_hand(session).get("grip_m"))
 
 
 def _pull(app: Any, grip: list[float]) -> str:

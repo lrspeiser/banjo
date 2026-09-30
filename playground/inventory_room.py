@@ -75,6 +75,13 @@ def _state(app: Any) -> dict[str, Any]:
     return (session.state or {}) if session is not None else {}
 
 
+def _hand_of(app: Any, player_id: str = "") -> dict[str, Any]:
+    state = _state(app)
+    if player_id:
+        return (state.get("player_hands") or {}).get(player_id) or {}
+    return state.get("hand") or {}
+
+
 def _body(app: Any, name: str | None) -> dict[str, Any] | None:
     return next((b for b in _state(app).get("bodies") or [] if b.get("name") == name), None)
 
@@ -170,14 +177,15 @@ def _carried(app: Any, player_id: str = "") -> Any:
     engine's, and not changed here."""
     state = _state(app)
     carried = state.get("carried")
-    if player_id and getattr(app.room, "hand_owner", None) != player_id:
-        # The native hand belongs to somebody else. Its object must not be
-        # counted in this guest's bag meter.
-        if isinstance(carried, dict):
-            return dict(carried, objects_kg=0.0,
-                        total_kg=float(carried.get("ground_kg") or 0.0))
-        return carried
-    held = str((state.get("hand") or {}).get("holding") or "")
+    held = str(_hand_of(app, player_id).get("holding") or "")
+    if player_id and isinstance(carried, dict):
+        # The ground remains shared, while each player's held objects have
+        # their own mass. The legacy native carried meter has one hand only.
+        thing = item_holding(app, held) if held else None
+        own_kg = whole_kg(app, thing) if thing else 0.0
+        own_kg = float(own_kg or 0.0)
+        return dict(carried, objects_kg=own_kg,
+                    total_kg=float(carried.get("ground_kg") or 0.0) + own_kg)
     thing = item_holding(app, held) if held else None
     if not isinstance(carried, dict) or thing is None or len(thing["bodies"]) < 2:
         return carried
@@ -342,27 +350,44 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
         if session is None:
             return shown(app, player_id or next(iter(players)))
         items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
-        holding = str(((session.state or {}).get("hand") or {}).get("holding") or "")
+        # Worlds saved before per-player native hands kept one legacy hand and
+        # its owner in the room record. Transfer that live hold once, instead
+        # of filing the owner's item in a bag while the legacy hand keeps it.
+        legacy = (session.state or {}).get("hand") or {}
+        legacy_name = str(legacy.get("holding") or "")
+        if legacy_name:
+            owner = getattr(app.room, "hand_owner", None)
+            if owner not in players:
+                matches = [ident for ident in players
+                           if any(legacy_name in items[item]["bodies"]
+                                  for item in inventory_of(app, ident).hands.values() if item in items)]
+                owner = matches[0] if len(matches) == 1 else None
+            app.live.act({"session": session.id, "op": "release"})
+            if owner:
+                if legacy.get("mode") == "grip":
+                    app.live.act({"session": session.id, "op": "wield", "actor": owner,
+                                  "name": legacy_name, "grip": legacy.get("grip_m")})
+                else:
+                    app.live.act({"session": session.id, "op": "grab", "actor": owner,
+                                  "name": legacy_name})
+                target = legacy.get("target_m")
+                if isinstance(target, list) and len(target) == 3:
+                    app.live.act({"session": session.id, "op": "move", "actor": owner,
+                                  "to": target})
+        native_hands = (session.state or {}).get("player_hands") or {}
         restored = opened.get("restored") if isinstance(opened, dict) else None
         whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
-        owner = getattr(app.room, "hand_owner", None)
-        if owner not in players:
-            owner = None
-        if owner is None and holding:
-            matches = [ident for ident in players
-                       if any(holding in items[item]["bodies"]
-                              for item in inventory_of(app, ident).hands.values() if item in items)]
-            owner = matches[0] if len(matches) == 1 else None
-        kept_hand = False
         parked: set[str] = set()
         for ident in players:
             record = inventory_of(app, ident)
+            holding = str((native_hands.get(ident) or {}).get("holding") or "")
+            kept_hand = False
             with record.lock:
                 changed = False
                 for hand in inventory.HANDS:
                     item = record.hands.get(hand)
                     thing = items.get(item or "")
-                    if (whole and ident == owner and thing is not None
+                    if (whole and thing is not None
                             and hand == record.dominant and holding in thing["bodies"]):
                         kept_hand = True
                         continue
@@ -375,18 +400,15 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
                         continue
                 if changed:
                     record.revision += 1
-        if whole and owner and holding and not kept_hand:
-            held_item = next((item for item, thing in items.items()
-                              if holding in thing["bodies"]), None)
-            # A loose shard or advanced grip need not be an authored inventory
-            # item. The owner still has the native hand after a whole restore.
-            if held_item is None or all(inventory_of(app, ident).where(held_item) == "world"
-                                        for ident in players):
-                kept_hand = True
-        if holding and not kept_hand:
-            app.live.act({"session": session.id, "op": "release"})
-            owner = None
-        app.room.hand_owner = owner if kept_hand else None
+            if whole and holding and not kept_hand:
+                held_item = next((item for item, thing in items.items()
+                                  if holding in thing["bodies"]), None)
+                if held_item is None or all(inventory_of(app, other).where(held_item) == "world"
+                                            for other in players):
+                    kept_hand = True
+            if holding and not kept_hand:
+                app.live.act({"session": session.id, "op": "release", "actor": ident})
+        app.room.hand_owner = None
         present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
         for ident in players:
             record = inventory_of(app, ident)
@@ -467,12 +489,10 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
     kg = whole_kg(app, thing)
     person = world_chat.where_the_person_is(body.get("person"))
 
+    def live(plan: dict[str, Any]) -> dict[str, Any]:
+        return app.live.act({**plan, **({"actor": player_id} if player_id else {})})
+
     def act(plan: dict[str, Any]) -> dict[str, Any]:
-        if player_id and plan["to"] in inventory.HANDS:
-            owner = getattr(app.room, "hand_owner", None)
-            native = ((_state(app).get("hand") or {}).get("holding") or "")
-            if owner not in (None, player_id) or (native and owner is None):
-                raise ValueError("Another player's hand is occupied; take the item into your bag")
         # MOVING A THING BETWEEN SLOTS CHANGES NOTHING IN THE ROOM. It is
         # already set aside; only the order of the bag changes. Everything
         # below is about a thing crossing between the room and the person,
@@ -484,13 +504,13 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
         if session is None:
             raise ValueError("the room is not open")
         sid = session.id
-        holding = ((session.state or {}).get("hand") or {}).get("holding") or ""
+        holding = _hand_of(app, player_id).get("holding") or ""
         if plan["to"] == "stowed":
             now = _body(app, name)
             # Native park checks all constraints before releasing the hand.
             # Releasing here first would leave a refused stow saying "held"
             # in the inventory while the actual object had already been dropped.
-            app.live.act({"session": sid, "op": "park", "name": name})
+            live({"session": sid, "op": "park", "name": name})
             if now and now.get("orientation_wxyz"):
                 record.facing[item] = [float(v) for v in now["orientation_wxyz"]]
             # Every part went: a thing of parts on joints is set aside whole
@@ -506,7 +526,7 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
             if now is None or not now.get("position_m"):
                 raise ValueError(f"{inventory.said_name(by or asked)} is not in the room to take up")
             grip = [round(v, 4) for v in at] if at is not None else _grip(body.get("grip"), now)
-            app.live.act({"session": sid, "op": "wield", "name": by, "grip": grip})
+            live({"session": sid, "op": "wield", "name": by, "grip": grip})
             said = {"taken_up": name, "held": True, "grip_m": grip}
             if by != name:
                 said["by"] = by
@@ -518,16 +538,16 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
             into_hand = plan["to"] in inventory.HANDS
             out, down = (HOLD_OUT_M, HOLD_DOWN_M) if into_hand else (PUT_OUT_M, PUT_DOWN_M)
             at = [round(eyes[0] + fx * out, 4), round(eyes[1] - down, 4), round(eyes[2] + fz * out, 4)]
-            app.live.act({"session": sid, "op": "unpark", "name": name, "at": at,
+            live({"session": sid, "op": "unpark", "name": name, "at": at,
                           "q": record.facing.get(item, [1.0, 0.0, 0.0, 0.0])})
             if into_hand:
-                app.live.act({"session": sid, "op": "wield", "name": name, "grip": at})
+                live({"session": sid, "op": "wield", "name": name, "grip": at})
             return {"brought_back": name, "at_m": at, "held": into_hand}
         if plan["from"] in inventory.HANDS and plan["to"] == "world":
             # Whichever of its parts the hand has: a mace taken up by its head
             # is let go of just the same.
             if holding and holding in (thing["bodies"] if thing else [name]):
-                app.live.act({"session": sid, "op": "release"})
+                live({"session": sid, "op": "release"})
             return {"let_go": name}
         raise ValueError("that is not something the room can do yet")
 
@@ -539,11 +559,4 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
     answer = record.request(request_id, body.get("revision"), op, item, items, act, hand=hand,
                             kg=kg, lift_kg=room_world.banjo_mcp.HAND_LIFTS_KG,
                             slot=int(asked_slot) if isinstance(asked_slot, (int, float)) else None)
-    if answer.get("ok") and player_id:
-        if answer.get("to") in inventory.HANDS and record.where(item) in inventory.HANDS and (
-                ((_state(app).get("hand") or {}).get("holding") or "") in (thing["bodies"] if thing else [])):
-            app.room.hand_owner = player_id
-        elif answer.get("op") in ("stow", "drop") and getattr(app.room, "hand_owner", None) == player_id:
-            if not any(record.hands.values()):
-                app.room.hand_owner = None
     return dict(answer, shown=shown(app, player_id))

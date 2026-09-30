@@ -3208,6 +3208,82 @@ struct LiveWorld::Impl {
     double let_go_at_s{-1.0};
     double let_go_work_j{};
 
+    // The single-user hand remains the active working set. A named world saves
+    // one working set per player and selects it around commands and each step.
+    // This keeps the established stroke, haul and work laws identical for all
+    // players while the rigid world itself is stepped only once.
+    struct HandContext {
+        std::size_t holding{static_cast<std::size_t>(-1)};
+        Vec3 held_at{}, held_velocity{}, grip_local{}, hand_force{};
+        Quat held_facing{};
+        double hand_strength_n{800.0}, hand_torque_n_m{60.0}, hand_mass_kg{2.0};
+        bool wielding{};
+        std::optional<Stroke> stroke;
+        std::string stroke_ended, let_go_body;
+        double hand_work_j{}, let_go_at_s{-1.0}, let_go_work_j{};
+        Vec3 hand_applied_n{}, haul_pushed{}, let_go_velocity{};
+        HandStep hand_step;
+    };
+    std::map<std::string, HandContext> hands;
+    std::string selected_hand;
+    [[nodiscard]] HandContext handContext() const {
+        return {holding, held_at, held_velocity, grip_local, hand_force, held_facing,
+                hand_strength_n, hand_torque_n_m, hand_mass_kg, wielding, stroke,
+                stroke_ended, let_go_body, hand_work_j, let_go_at_s, let_go_work_j,
+                hand_applied_n, haul_pushed, let_go_velocity, hand_step};
+    }
+    void loadHand(const HandContext &h) {
+        holding = h.holding; held_at = h.held_at; held_velocity = h.held_velocity;
+        grip_local = h.grip_local; hand_force = h.hand_force;
+        held_facing = h.held_facing; hand_strength_n = h.hand_strength_n;
+        hand_torque_n_m = h.hand_torque_n_m; hand_mass_kg = h.hand_mass_kg;
+        wielding = h.wielding; stroke = h.stroke; stroke_ended = h.stroke_ended;
+        let_go_body = h.let_go_body; hand_work_j = h.hand_work_j;
+        let_go_at_s = h.let_go_at_s; let_go_work_j = h.let_go_work_j;
+        hand_applied_n = h.hand_applied_n; haul_pushed = h.haul_pushed;
+        let_go_velocity = h.let_go_velocity; hand_step = h.hand_step;
+    }
+    void selectHand(const std::string &player) {
+        if (player == selected_hand) return;
+        hands[selected_hand] = handContext();
+        selected_hand = player;
+        const auto found = hands.find(player);
+        loadHand(found == hands.end() ? HandContext{} : found->second);
+    }
+    [[nodiscard]] bool heldByAny(std::size_t body) const {
+        if (holding == body) return true;
+        for (const auto &[player, hand] : hands)
+            if (player != selected_hand && hand.holding == body) return true;
+        return false;
+    }
+    [[nodiscard]] bool heldByOther(std::size_t body) const {
+        for (const auto &[player, hand] : hands)
+            if (player != selected_hand && hand.holding == body) return true;
+        return false;
+    }
+    [[nodiscard]] bool carriedByAny(std::size_t body) const {
+        if (holding == body && !wielding) return true;
+        for (const auto &[player, hand] : hands)
+            if (player != selected_hand && hand.holding == body && !hand.wielding) return true;
+        return false;
+    }
+    [[nodiscard]] Vec3 handForceOn(std::size_t body) const {
+        if (holding == body && wielding) return hand_force;
+        for (const auto &[player, hand] : hands)
+            if (player != selected_hand && hand.holding == body && hand.wielding)
+                return hand.hand_force;
+        return {};
+    }
+    void erasedBody(std::size_t body) {
+        const auto adjust = [body](std::size_t &slot, bool &gripping) {
+            if (slot == body) { slot = static_cast<std::size_t>(-1); gripping = false; }
+            else if (slot != static_cast<std::size_t>(-1) && slot > body) --slot;
+        };
+        adjust(holding, wielding);
+        for (auto &[actor, hand] : hands)
+            if (actor != selected_hand) adjust(hand.holding, hand.wielding);
+    }
+
     // Tools that work the ground (ToolTerrain.hpp, docs/ground-work.md): the
     // points declared on bodies, and each one's meetings with the ground.
     ToolTerrain tools;
@@ -5882,6 +5958,32 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             lost.push_back("the hand: what it held, the " + holding + ", did not come back as it was, so the hand is "
                            "empty");
         }
+        const auto players = doc.value("player_hands", nlohmann::json::object());
+        if (!players.is_object()) throw std::invalid_argument("saved player hands are not an object");
+        std::set<std::size_t> occupied;
+        if (impl.holding != static_cast<std::size_t>(-1)) occupied.insert(impl.holding);
+        for (auto it = players.begin(); it != players.end(); ++it) {
+            if (it.key().empty() || !it.value().is_object()) continue;
+            const nlohmann::json &player_hand = it.value();
+            Impl::HandContext own;
+            own.hand_strength_n = numberFrom(player_hand.at("strength_n"));
+            own.hand_torque_n_m = numberFrom(player_hand.at("torque_n_m"));
+            own.hand_mass_kg = numberFrom(player_hand.at("mass_kg"));
+            own.grip_local = vecFrom(player_hand.at("grip_local_m"));
+            own.held_at = vecFrom(player_hand.at("held_at_m"));
+            own.held_facing = quatFrom(player_hand.at("held_facing_wxyz"));
+            own.hand_work_j = numberFrom(player_hand.at("work_j"));
+            const std::string name = player_hand.value("holding", std::string{});
+            if (const auto found = impl.index_of.find(name);
+                !name.empty() && found != impl.index_of.end() && impl.inWorld(found->second) &&
+                back(name) && occupied.insert(found->second).second) {
+                own.holding = found->second;
+                own.wielding = player_hand.value("wielding", false);
+            } else if (!name.empty()) {
+                lost.push_back("the hand of " + it.key() + ": what it held did not come back");
+            }
+            impl.hands[it.key()] = std::move(own);
+        }
     }
     // The clock and the counters, so what comes next is named and numbered
     // after what there is.
@@ -6126,12 +6228,27 @@ void LiveWorld::step(double dt_s) {
         }
     };
 
-    const auto holdStill = [&]() { carryOrHaul(dt_s); };
+    const std::string caller = impl_->selected_hand;
+    impl_->hands[caller] = impl_->handContext();
+    std::vector<std::string> actors;
+    actors.reserve(impl_->hands.size());
+    for (const auto &[actor, unused] : impl_->hands) {
+        (void)unused;
+        actors.push_back(actor);
+    }
+    const auto forHands = [&](const auto &action) {
+        for (const std::string &actor : actors) {
+            impl_->selectHand(actor);
+            action(actor);
+        }
+        impl_->selectHand(caller);
+    };
+    const auto holdStill = [&]() { forHands([&](const std::string &) { carryOrHaul(dt_s); }); };
 
     // Where a stroke wants the grip for this step, and where the grip is, for
     // the work the step does. Before the grip's pull below, which is towards
     // exactly that.
-    beginHandStep(dt_s);
+    forHands([&](const std::string &) { beginHandStep(dt_s); });
 
     // The hand on a wielded grip: pulling AT the grip with a bounded force and
     // turning with a bounded torque, both towards where the hand wants the body
@@ -6141,12 +6258,14 @@ void LiveWorld::step(double dt_s) {
     // Nothing here writes a pose: whatever the body meets can slow it, turn it
     // aside or stop it.
     struct HandPush {
+        std::string actor;
         bool on{};
         MatterBodyId id{};
         Vec3 force{}, torque{}, grip{};
     };
-    const HandPush hand = [&]() {
+    const auto handPush = [&](const std::string &actor) {
         HandPush out;
+        out.actor = actor;
         if (!impl_->wielding || impl_->holding == static_cast<std::size_t>(-1)) return out;
         const MatterBodyId id = impl_->body_of[impl_->holding];
         if (!impl_->world->contains(id)) return out;
@@ -6164,14 +6283,21 @@ void LiveWorld::step(double dt_s) {
         out.torque = pull.torque;
         out.grip = pull.grip;
         return out;
-    }();
+    };
+    std::vector<HandPush> hands;
+    forHands([&](const std::string &actor) {
+        HandPush push = handPush(actor);
+        impl_->hand_force = push.on ? push.force : Vec3{};
+        hands.push_back(std::move(push));
+    });
     // Which way the blade is being pushed, for the cut's rule at rest.
-    impl_->hand_force = hand.on ? hand.force : Vec3{};
     const auto pushHand = [&]() {
-        if (!hand.on) return;
-        impl_->world->pushBodyAt(hand.id, hand.force, hand.grip);
-        impl_->world->twistBody(hand.id, hand.torque);
-        impl_->world->wake(hand.id);
+        for (const HandPush &hand : hands) {
+            if (!hand.on) continue;
+            impl_->world->pushBodyAt(hand.id, hand.force, hand.grip);
+            impl_->world->twistBody(hand.id, hand.torque);
+            impl_->world->wake(hand.id);
+        }
     };
 
     // A step that would break something is taken back.
@@ -6304,7 +6430,7 @@ void LiveWorld::step(double dt_s) {
         // and the clock moves again.
         if (!committed) {
             // The step did not happen, so neither did the hand's part of it.
-            abandonHandStep();
+            forHands([&](const std::string &) { abandonHandStep(); });
             if (impl_->pending) queueBreaks();
             return;
         }
@@ -6341,7 +6467,11 @@ void LiveWorld::step(double dt_s) {
         settleEnvironment();
         // Last, because a stroke that has got to its end opens the hand, and
         // everything above still has to see the step as it was taken.
-        endHandStep(hand.force, hand.torque, dt_s);
+        forHands([&](const std::string &actor) {
+            const auto push = std::find_if(hands.begin(), hands.end(),
+                [&](const HandPush &h) { return h.actor == actor; });
+            endHandStep(push->force, push->torque, dt_s);
+        });
         return;
     }
     pushGas();
@@ -6387,7 +6517,11 @@ void LiveWorld::step(double dt_s) {
     foresee();
     settleThermo();
     settleEnvironment();
-    endHandStep(hand.force, hand.torque, dt_s);
+    forHands([&](const std::string &actor) {
+        const auto push = std::find_if(hands.begin(), hands.end(),
+            [&](const HandPush &h) { return h.actor == actor; });
+        endHandStep(push->force, push->torque, dt_s);
+    });
 }
 
 // Part every link carrying more than it can take.
@@ -6590,7 +6724,7 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
         out[i].velocity_m_s = snap.linear_velocity_m_s;
         out[i].mass_kg = out[i].anchored ? 0.0
                                          : impl_->world->mechanicalState(impl_->body_of[i]).mass_kg;
-        out[i].held = i == impl_->holding;
+        out[i].held = impl_->heldByAny(i);
     }
     // A thing set aside (park) is not in the world, so it is not said to be
     // anywhere: a host that drew it stops drawing it, and names it gone.
@@ -8113,6 +8247,7 @@ void LiveWorld::rehangJoints() {
 bool LiveWorld::grab(const std::string &name) {
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) return false;
+    if (impl_->heldByOther(found->second)) return false;
     // Anchored scenery is the world, not a prop. Letting it be dragged would
     // move the floor out from under everything standing on it.
     if (impl_->described[found->second].anchored) return false;
@@ -8620,7 +8755,7 @@ void LiveWorld::surveyLoads() {
 
     for (std::size_t i = 0; i < count; ++i) {
         if (impl_->described[i].anchored) continue;
-        if (i == impl_->holding) continue;             // in a hand, not on anything
+        if (impl_->heldByAny(i)) continue;             // in a hand, not on anything
         static const bool survey_trace = std::getenv("BANJO_CUT_TRACE") != nullptr;
         const bool traced = survey_trace && impl_->kerfs.count(impl_->described[i].name) != 0;
         if (traced)
@@ -8876,7 +9011,7 @@ void LiveWorld::guessAhead(const Foresight &guess, const std::string &name) {
     // The hand is not a collision anybody is waiting on.
     // The thing in the hand can be the thing that DOES the breaking -- that is
     // what a hold guess is -- but not the thing broken.
-    if (guess.struck == impl_->holding) return;
+    if (impl_->heldByAny(guess.struck)) return;
     std::unique_ptr<Pending> job = prepared(name, 0.003, &guess);
     if (job->settled) return;                    // nothing to run
     impl_->guess = guess;
@@ -9107,7 +9242,7 @@ std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
         // A hull is not enough: a dented whole object is a hull too, and it is
         // still the object it was. Only what came off something is debris.
         if (body.anchored || !body.fragment) continue;
-        if (i == impl_->holding || spoken_for.count(i)) continue;
+        if (impl_->heldByAny(i) || spoken_for.count(i)) continue;
         // Held by the person, in a hand this side does not keep: not debris.
         if (!except.empty() && body.name == except) continue;
         if (i >= impl_->nodes_of.size() || impl_->nodes_of[i].size() > largest_cells) continue;
@@ -9177,8 +9312,7 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
         drop(impl_->tensile_of); drop(impl_->compressive_of);
-        if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body)
-            --impl_->holding;
+        impl_->erasedBody(body);
     }
     // A guess holds indices into these tables as well, and unlike a queued job
     // it is speculative -- so it is thrown away rather than carefully followed.
@@ -9248,7 +9382,7 @@ void LiveWorld::foresee() {
     for (std::size_t i = 0; i < impl_->described.size(); ++i) {
         const LiveBodyPose &body = impl_->described[i];
         // Nor anything set aside (park): it is not going anywhere.
-        if (body.anchored || i == impl_->holding || !impl_->inWorld(i)) continue;
+        if (body.anchored || impl_->heldByAny(i) || !impl_->inWorld(i)) continue;
         // An exact body cannot go into the run a warning would start
         // (prepared), whichever end of the blow it is.
         if (impl_->isPrecise(i)) continue;
@@ -9500,7 +9634,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // Anchored scenery is the world. Breaking the floor is a different feature.
     impl_->last_outcome = LiveOutcome::Held;
     if (impl_->described[which].anchored) { job.settled = true; job.answer = 1; return held; }
-    if (impl_->holding == which) { job.settled = true; job.answer = 1; return held; }   // it is in a hand, not in a collision
+    if (impl_->heldByAny(which)) { job.settled = true; job.answer = 1; return held; }   // it is in a hand, not in a collision
     // An exact body has no cells to break: it holds, as it was built to.
     if (impl_->isPrecise(which)) { job.settled = true; job.answer = 1; return held; }
     const TileImpactSetup &setup = *impl_->setup;
@@ -9558,7 +9692,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         // a collision. A guess that names it is saying what will happen when it
         // is let go, and its state is overridden to the moment it lands, so it
         // belongs in the island exactly like anything else that is falling.
-        const bool in_a_hand = with == impl_->holding && !(guess && guess->striker == with);
+        const bool in_a_hand = impl_->heldByAny(with) && !(guess && guess->striker == with);
         // Nor does an exact body go in: an island is cells, and it would be
         // rebuilt from cells it does not have -- deleted, in fact. The step
         // declines a blow that would need one (judgeStep); a body merely
@@ -10485,7 +10619,7 @@ std::size_t LiveWorld::applyPending() {
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
         drop(impl_->tensile_of); drop(impl_->compressive_of);
-        if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body) --impl_->holding;
+        impl_->erasedBody(body);
     }
 
     // What was asked about is `asked_part`, taken above. The island may hold the
@@ -12118,7 +12252,7 @@ void LiveWorld::reviseMatter() {
                 // (planRecession). A box turned inside its body, one in a hand,
                 // or a stack the plan declines is woken and left to the solver.
                 Recession plan;
-                if (!record.round && i != I.holding && std::abs(std::abs(record.turn.w) - 1.0) < 1e-9) {
+                if (!record.round && !I.heldByAny(i) && std::abs(std::abs(record.turn.w) - 1.0) < 1e-9) {
                     std::vector<bool> jointed(I.described.size(), false);
                     for (const Impl::SceneJoint &joint : I.joints) {
                         if (!joint.attached) continue;
@@ -12277,12 +12411,7 @@ std::size_t LiveWorld::reformFromCells(std::size_t which) {
     drop(I.described); drop(I.body_of); drop(I.nodes_of);
     drop(I.limits_of); drop(I.impedance_of); drop(I.density_of); drop(I.tensile_of);
     drop(I.compressive_of);
-    if (I.holding == which) {
-        I.holding = static_cast<std::size_t>(-1);
-        I.wielding = false;
-    } else if (I.holding != static_cast<std::size_t>(-1) && I.holding > which) {
-        --I.holding;
-    }
+    I.erasedBody(which);
 
     std::vector<std::string> made;
     for (std::size_t k = 0; k < components.size(); ++k) {
@@ -12675,7 +12804,7 @@ std::vector<water::BodyInWater> LiveWorld::waterBodies() {
         b.angular_velocity_rad_s = snap.angular_velocity_rad_s;
         b.density_kg_m3 = i < impl_->density_of.size() ? impl_->density_of[i] : 1000.0;
         b.anchored = pose.anchored;
-        b.held = i == impl_->holding;
+        b.held = impl_->heldByAny(i);
         b.awake = impl_->world->isAwake(id);
         b.cell_m = cell;
         b.dimensions_m = pose.dimensions_m;
@@ -13460,6 +13589,24 @@ LiveHand LiveWorld::hand() const {
     return out;
 }
 
+void LiveWorld::selectHand(const std::string &player) {
+    impl_->selectHand(player);
+}
+
+std::map<std::string, LiveHand> LiveWorld::playerHands() {
+    const std::string caller = impl_->selected_hand;
+    impl_->hands[caller] = impl_->handContext();
+    std::map<std::string, LiveHand> out;
+    for (const auto &[actor, unused] : impl_->hands) {
+        (void)unused;
+        if (actor.empty()) continue;
+        impl_->selectHand(actor);
+        out.emplace(actor, hand());
+    }
+    impl_->selectHand(caller);
+    return out;
+}
+
 void LiveWorld::beginHandStep(double dt_s) {
     Impl &I = *impl_;
     I.hand_step = Impl::HandStep{};
@@ -13880,6 +14027,9 @@ void LiveWorld::prepareCuts(double dt_s) {
             for (std::size_t k = 0; k < blade.frame_nodes.size(); ++k)
                 blade.frame_offsets[k] = I.cell_offset_m[blade.frame_nodes[k]];
             if (I.wielding && I.holding == bi) I.grip_local = blade.grip_local;
+            for (auto &[player, hand] : I.hands)
+                if (player != I.selected_hand && hand.wielding && hand.holding == bi)
+                    hand.grip_local = blade.grip_local;
             blade.body_id = blade_id;
         }
 
@@ -13903,8 +14053,8 @@ void LiveWorld::prepareCuts(double dt_s) {
         const MaterialDefinition &blade_material = materialOf(bi);
         // Which way the blade is being pushed when it is not moving: the hand,
         // if it is in one, and its own weight.
-        const bool in_hand = I.wielding && I.holding == bi;
-        const Vec3 intent = (in_hand ? I.hand_force : Vec3{}) + blade_state.mass_kg * gravity;
+        const Vec3 grip_force = I.handForceOn(bi);
+        const Vec3 intent = grip_force + blade_state.mass_kg * gravity;
         // Whatever it is welded to is part of it, not something to cut.
         std::set<std::string> welded;
         for (const Impl::SceneJoint &joint : I.joints) {
@@ -13948,7 +14098,7 @@ void LiveWorld::prepareCuts(double dt_s) {
                                                  });
             const bool was_engaged = engaged_it != I.engaged.end();
             const MatterBodyId target_id = I.body_of[j];
-            const bool carried = j == I.holding && !I.wielding;
+            const bool carried = I.carriedByAny(j);
             const bool eligible = !I.described[j].anchored && welded.count(target_name) == 0 &&
                                   spoken_for.count(j) == 0 && !carried &&
                                   I.world->contains(target_id);
@@ -14951,12 +15101,7 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
     drop(I.compressive_of);
     // Its pieces measure their matter against their own cells' boxes.
     I.matter_of.erase(parent.name);
-    if (I.holding == which) {
-        I.holding = static_cast<std::size_t>(-1);
-        I.wielding = false;
-    } else if (I.holding != static_cast<std::size_t>(-1) && I.holding > which) {
-        --I.holding;
-    }
+    I.erasedBody(which);
 
     std::vector<std::string> made_names;
     for (std::size_t k = 0; k < components.size(); ++k) {
@@ -15225,6 +15370,7 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     const auto refusal = [&](std::size_t k) -> std::string {
         const std::string &own = I.described[k].name;
         if (I.isParked(k)) return "it is already set aside";
+        if (I.heldByOther(k)) return "another player's hand holds it";
         if (I.described[k].anchored) return "it is fixed in place: it is part of the room, not a thing to carry";
         if (!I.inWorld(k)) return "it is not in the world";
         for (const Impl::SceneJoint &joint : I.joints) {
@@ -15294,7 +15440,7 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     bool in_hand = false;
     for (const std::size_t k : group) {
         kg += I.world->mechanicalState(I.body_of[k]).mass_kg;
-        in_hand = in_hand || I.holding == k;
+        in_hand = in_hand || I.heldByAny(k);
     }
     if (I.environment && !in_hand &&
         I.carriedObjectsKg() + kg + I.environment->carriedKg() > I.environment->carryLimitKg()) {
@@ -15515,7 +15661,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     for (const LiveBodyPose &body : I.described)
         if (I.tools.inGround(body.name))
             return refuse("the " + body.name + "'s point is in the ground: the world is saved once it is out");
-    if (I.stroke) return refuse("the hand is making a stroke: the world is saved once it is over");
+    auto saved_hands = I.hands;
+    saved_hands[I.selected_hand] = I.handContext();
+    for (const auto &[actor, hand] : saved_hands) {
+        (void)actor;
+        if (hand.stroke) return refuse("a hand is making a stroke: the world is saved once it is over");
+    }
 
     nlohmann::json doc;
     doc["format"] = kWorldFormat;
@@ -15968,16 +16119,24 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"attached", p.attached}});
     doc["tool_points"] = std::move(points);
 
-    const bool holding = I.holding != static_cast<std::size_t>(-1) && I.holding < I.described.size();
-    doc["hand"] = {{"holding", holding ? I.described[I.holding].name : std::string{}},
-                   {"wielding", holding && I.wielding},
-                   {"grip_local_m", savedVec(I.grip_local)},
-                   {"held_at_m", savedVec(I.held_at)},
-                   {"held_facing_wxyz", savedQuat(I.held_facing)},
-                   {"strength_n", savedNumber(I.hand_strength_n)},
-                   {"torque_n_m", savedNumber(I.hand_torque_n_m)},
-                   {"mass_kg", savedNumber(I.hand_mass_kg)},
-                   {"work_j", savedNumber(I.hand_work_j)}};
+    const auto saveHand = [&](const Impl::HandContext &hand) {
+        const bool holding = hand.holding != static_cast<std::size_t>(-1) &&
+                             hand.holding < I.described.size();
+        return nlohmann::json{{"holding", holding ? I.described[hand.holding].name : std::string{}},
+                              {"wielding", holding && hand.wielding},
+                              {"grip_local_m", savedVec(hand.grip_local)},
+                              {"held_at_m", savedVec(hand.held_at)},
+                              {"held_facing_wxyz", savedQuat(hand.held_facing)},
+                              {"strength_n", savedNumber(hand.hand_strength_n)},
+                              {"torque_n_m", savedNumber(hand.hand_torque_n_m)},
+                              {"mass_kg", savedNumber(hand.hand_mass_kg)},
+                              {"work_j", savedNumber(hand.hand_work_j)}};
+    };
+    doc["hand"] = saveHand(saved_hands.count("") ? saved_hands.at("") : Impl::HandContext{});
+    nlohmann::json players = nlohmann::json::object();
+    for (const auto &[actor, hand] : saved_hands)
+        if (!actor.empty()) players[actor] = saveHand(hand);
+    doc["player_hands"] = std::move(players);
     // The water as it stands, for the scene's own "water": {"state": ...}.
     if (I.environment) {
         doc["ground"] = nlohmann::json::parse(I.environment->groundStateJson());

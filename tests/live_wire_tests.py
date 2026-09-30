@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -387,6 +388,107 @@ def aPreviewOfAThrowIsTheThrow() -> None:
         live.shutdown()
 
 
+def twoPlayersGripInOnePhysicsStep() -> None:
+    """Separate hands push two bodies in the same native step and survive save.
+
+    Equal 100 mm cubes at mirrored positions receive equal 0.5 m targets and
+    the same 800 N hand law. Oak, glass and iron therefore have different mass
+    and response; the paired horizontal displacement is symmetric without
+    assigning arbitrary velocities. This tests shared input, not a claim of
+    complete energy conservation or material realism.
+    """
+    masses, travels = {}, {}
+    with tempfile.TemporaryDirectory() as temporary:
+        for material in ("oak", "glass", "iron"):
+            spec = fracture_lab.validate({"algorithm": "lattice", "cell_m": 0.02,
+                "duration_s": 1.0, "bodies": [
+                    {"name": name, "shape": "box", "material": material,
+                     "size_mm": [100, 100, 100], "center_mm": [x, 1500, 0]}
+                    for name, x in (("a", -1000), ("b", 1000))]})
+            session = live_session.Session(ENGINE, spec, Path(temporary))
+            try:
+                start = bodies_by_name(session.state)
+                for actor, name, direction in (("alice", "a", 1), ("bob", "b", -1)):
+                    position = start[name]["position_m"]
+                    session.send(op="wield", actor=actor, name=name, grip=position)
+                    session.send(op="move", actor=actor,
+                                 to=[position[0] + direction * 0.5, position[1], position[2]])
+                try:
+                    session.send(op="wield", actor="alice", name="b",
+                                 grip=start["b"]["position_m"])
+                except live_session.LiveError:
+                    pass
+                else:
+                    raise AssertionError(f"{material}: one player took the other's held body")
+                moved = session.send(op="step", actor="alice", dt=1 / 240.0, n=12)
+                end = bodies_by_name(moved)
+                x_a = end["a"]["position_m"][0] - start["a"]["position_m"][0]
+                x_b = end["b"]["position_m"][0] - start["b"]["position_m"][0]
+                require(x_a > 0.01 and x_b < -0.01,
+                        f"{material}: both hands must move their own bodies")
+                require(abs(x_a + x_b) < 0.002,
+                        f"{material}: mirrored hands lost horizontal symmetry")
+                require({hand["holding"] for hand in moved["player_hands"].values()} == {"a", "b"},
+                        f"{material}: one player displaced the other's grip")
+                masses[material] = start["a"]["mass_kg"]
+                travels[material] = x_a
+                saved = session.send(op="snapshot").get("snapshot")
+                require(isinstance(saved, dict), f"{material}: the two grips were not saved")
+                restored = live_session.Session(ENGINE, spec, Path(temporary), snapshot=saved)
+                try:
+                    require({h["holding"] for h in restored.state["player_hands"].values()} == {"a", "b"},
+                            f"{material}: the two grips did not restore")
+                    restored.send(op="release", actor="alice")
+                    kept = restored.send(op="poses", actor="bob")
+                    require(kept["player_hands"]["bob"]["holding"] == "b" and
+                            not kept["player_hands"]["alice"]["holding"],
+                            f"{material}: one release changed the other's hand")
+                finally:
+                    restored.close()
+                print(f"  {material}: {masses[material]:.3f} kg, mirrored travel "
+                      f"{x_a:.3f}/{x_b:.3f} m in 12 x 1/240 s")
+            finally:
+                session.close()
+    require(masses["oak"] < masses["glass"] < masses["iron"],
+            "declared material density must change cube mass")
+    require(travels["oak"] > travels["glass"] > travels["iron"],
+            "equal bounded grips should move denser cubes less in this interval")
+
+
+def twoPlayersStrokeIndependently() -> None:
+    spec = fracture_lab.validate({"algorithm": "lattice", "cell_m": 0.02,
+        "duration_s": 1.0, "bodies": [
+            {"name": name, "shape": "box", "material": "oak",
+             "size_mm": [100, 100, 100], "center_mm": [x, 1500, 0]}
+            for name, x in (("a", -1000), ("b", 1000))]})
+    with tempfile.TemporaryDirectory() as temporary:
+        session = live_session.Session(ENGINE, spec, Path(temporary))
+        try:
+            for actor, name, start, stop in (("alice", "a", -1.0, -0.5),
+                                             ("bob", "b", 1.0, 0.5)):
+                session.send(op="wield", actor=actor, name=name, grip=[start, 1.5, 0])
+                session.send(op="stroke", actor=actor,
+                             path=[[start, 1.5, 0], [stop, 1.5, 0]],
+                             speed_m_s=3.0, accel_m_s2=100.0, lead_m=0.05,
+                             let_go=False, give_up_s=2.0)
+            first = session.send(op="step", actor="alice", dt=1 / 240.0, n=1)
+            require(all(h["stroking"] for h in first["player_hands"].values()),
+                    "both hands should start their strokes in the same step")
+            session.send(op="cancel_stroke", actor="alice")
+            for _ in range(120):
+                state = session.send(op="step", actor="bob", dt=1 / 240.0, n=1)
+                if not state["player_hands"]["bob"]["stroking"]:
+                    break
+            hands = state["player_hands"]
+            require(hands["alice"]["stroke_ended"] == "cancelled" and
+                    hands["bob"]["stroke_ended"] == "reached",
+                    "cancelling one player's action interrupted the other")
+            require(hands["bob"]["grip_m"][0] < 0.55,
+                    "the second player's stroke did not move its body")
+        finally:
+            session.close()
+
+
 def main() -> int:
     if not ENGINE.exists():
         print(f"no engine at {ENGINE} -- build banjo_live_world_run first")
@@ -398,6 +500,8 @@ def main() -> int:
         ("the session still answers with everything", theSessionStillAnswersWithEverything),
         ("what a spring holds comes with the step", whatASpringHoldsComesWithTheStep),
         ("a preview of a throw is the throw", aPreviewOfAThrowIsTheThrow),
+        ("two players grip in one physics step", twoPlayersGripInOnePhysicsStep),
+        ("two players stroke independently", twoPlayersStrokeIndependently),
     ]:
         try:
             test()

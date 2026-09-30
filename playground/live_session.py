@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,15 @@ MAX_STEPS_PER_CALL = 120
 MAX_DT_S = 1.0 / 30.0
 
 _log = logging.getLogger("banjo.live")
+
+
+def current_hand(session: Any) -> dict[str, Any]:
+    """Hand of the guest whose request is running on this thread."""
+    if session is None:
+        return {}
+    state = session.state or {}
+    actor = getattr(getattr(session, "_actor_local", None), "actor", "")
+    return ((state.get("player_hands") or {}).get(actor) or {}) if actor else (state.get("hand") or {})
 
 
 # What a person can carry of the ground they dig: what their hand can lift. The
@@ -440,6 +450,7 @@ class Session:
         scene.write_text(json.dumps(fracture_lab.scene_document(spec), indent=1),
                          encoding="utf-8")
         self._lock = threading.RLock()
+        self._actor_local = threading.local()
         self._closed = False
         command = [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"]
         # A saved world to open the scene into (LiveWorld::snapshot), beside
@@ -497,6 +508,9 @@ class Session:
         # A staged installation holds this reentrant lock from snapshot through
         # publication. No direct caller may step the old world in that interval.
         with self._lock:
+            actor = getattr(self._actor_local, "actor", "")
+            if actor and "actor" not in command:
+                command["actor"] = actor
             return self._send(command)
 
     def _send(self, command: dict[str, Any]) -> dict[str, Any]:
@@ -664,6 +678,19 @@ class Live:
     def __init__(self) -> None:
         self.session: Session | None = None
         self._lock = threading.RLock()
+
+    @contextmanager
+    def as_actor(self, player: str):
+        session = self.session
+        if session is None or not player:
+            yield
+            return
+        previous = getattr(session._actor_local, "actor", "")
+        session._actor_local.actor = player
+        try:
+            yield
+        finally:
+            session._actor_local.actor = previous
 
     def open(self, app: Any, body: Any, *, carry_from: Any = None) -> dict[str, Any]:
         if not isinstance(body, dict):
@@ -1578,7 +1605,16 @@ class Live:
 
     def act(self, body: Any) -> dict[str, Any]:
         with self._lock:
-            return self._act(body)
+            session = self.session
+            if session is None:
+                return self._act(body)
+            previous = getattr(session._actor_local, "actor", "")
+            session._actor_local.actor = (str(body.get("actor") or previous)
+                                          if isinstance(body, dict) else previous)
+            try:
+                return self._act(body)
+            finally:
+                session._actor_local.actor = previous
 
     def _act(self, body: Any) -> dict[str, Any]:
         if not isinstance(body, dict):
