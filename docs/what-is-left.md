@@ -327,6 +327,27 @@ From docs/how-robots-think.md:
 
 ## Known gaps, in the order they will bite
 
+- **The rover cannot drive straight, and friction is not the fix.** The owner,
+  driving one: "i can't stop it from going left". Measured, told only to go
+  forward with nothing else asked: it veers **+43 degrees in ten seconds**, and
+  +42 of those in the first four. The cause is visible in the same run -- the
+  front caster swings out to 14 degrees and steers the machine while it lines
+  itself up, and the moment it settles (t = 4.5 s) the rover tracks true. Its
+  swivel is frictionless (`friction_n_m: 0.0`, as all four of its pins are),
+  and the caster is at the FRONT with the driven wheels behind, which is a
+  trolley pushed from the back: directionally unstable by construction.
+  Swivel friction trades one fault for the other and does not fix it --
+  0 N m: veers 43 deg, turns 52 deg in 4 s; 4: veers 21, turns 47; 8: veers
+  -5, turns 13; 14: veers +1, turns 14. Stopping the veer costs the turning,
+  because it works by locking the trolley wheel.
+  THE ANSWER IS PROBABLY NOT GEOMETRY BUT HANDLING. A machine knows its
+  heading; "going forward" could mean "hold the heading you set off on",
+  correcting with the wheels the way a driver does, and then every machine
+  drives straight whatever its wheels are doing underneath. That is the
+  owner's own rule -- "automate the handling, not the physical outcome" --
+  and it leaves the physics honest: the caster still scrubs, the wheels still
+  slip, and the machine simply corrects for it.
+
 - **A room holds 32 exact bodies.** Measured: one thinking robot runs at 33x
   realtime, four at 20x, about 27 us a step for each one added -- the cost of
   its bodies, not its thinking. The cap, not the processor, is the ceiling.
