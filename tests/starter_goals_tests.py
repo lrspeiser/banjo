@@ -132,7 +132,7 @@ class StarterGoals(unittest.TestCase):
             "preview_id": preview["preview_id"], "request_id": "wrong-stool-geometry"}, world)
         self.assertFalse(self.post("/api/workshop/goals", {}, world)["goals"][2]["complete"])
 
-    def test_browser_can_complete_every_goal_using_visible_controls(self):
+    def test_browser_completes_goals_in_market_recipes_and_world(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required": self.fail("Chrome is required")
             self.skipTest("Chrome not installed")
@@ -147,32 +147,71 @@ class StarterGoals(unittest.TestCase):
                 except (RuntimeError, TimeoutError): pass
                 time.sleep(.15)
             self.fail(f"Browser did not reach {expression}; status=" + str(page.evaluate(
-                'document.querySelector("#ws-goals-status")?.textContent')))
-        page.send("Page.navigate", {"url": self.base + f"/world?world={world}&workshop=1&tab=goals"})
-        wait_for('!!document.querySelector("[data-goal-action=bank-solar]")')
-        page.evaluate('document.querySelector("[data-goal-action=bank-solar]").click()')
-        wait_for('!!document.querySelector("[data-goal-action=stock-oak]")')
-        page.evaluate('document.querySelector("[data-goal-bank]").click()')
-        wait_for('document.querySelector("#ws-goals-progress").textContent.includes("1000 J")')
+                'document.querySelector("#ws-market-status")?.textContent || document.querySelector("#ws-goals-status")?.textContent')))
+        def click(selector):
+            page.evaluate(f'document.querySelector({json.dumps(selector)}).scrollIntoView({{block:"center"}})')
+            point=page.evaluate(f'(()=>{{const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
+            for event in ("mousePressed", "mouseReleased"):
+                page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left", "clickCount":1})
+        def screenshot(name):
+            import base64
+            out=ROOT / "build" / "starter-goals"; out.mkdir(parents=True, exist_ok=True)
+            (out / name).write_bytes(base64.b64decode(page.send("Page.captureScreenshot")["data"]))
+        page.send("Page.navigate", {"url":self.base + f"/world?world={world}"})
+        wait_for('window.banjoRoom?.status().ready')
+        player=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
+        click('.game-tabs [data-screen="goals"]')
+        wait_for('!!document.querySelector("[data-goal-go=bank-solar]")')
+        self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
+        self.assertIn("In Market", page.evaluate('document.querySelector("[data-goal=bank-solar] .ws-goal-how").textContent'))
+        self.assertTrue(page.evaluate('document.querySelector("[data-goal=bank-solar] details").open'))
+        screenshot("guide.png")
+        before=self.post("/api/workshop/goals", {}, world, player)
+        click('[data-goal-go="bank-solar"]')
+        wait_for('document.querySelector("#ws-market-bank")?.textContent === "Bank 500 J"')
+        navigated=self.post("/api/workshop/goals", {}, world, player)
+        self.assertEqual(before["balance_j"], navigated["balance_j"])
+        self.assertEqual(before["goals"], navigated["goals"], "A Goals link completed a goal")
+        click('#ws-market-bank')
+        wait_for('document.querySelector("#ws-market-balance").textContent === "500 J"')
+        click('.game-tabs [data-screen="goals"]')
+        wait_for('document.querySelector("[data-goal=bank-solar]")?.dataset.complete === "true"')
+        click('[data-goal-go="stock-oak"]')
+        wait_for('document.querySelector("#ws-market-bank")?.textContent === "Bank 500 J"')
+        # Two real bank transactions fund the six dynamically quoted lots.
+        click('#ws-market-bank')
+        wait_for('document.querySelector("#ws-market-balance").textContent === "1,000 J"')
         for count in range(6):
-            page.evaluate('document.querySelector("[data-goal-action=stock-oak]").click()')
-            if count < 5:
-                wait_for(f'document.querySelector("[data-goal=stock-oak]").textContent.includes("{(count+1)*.5:g} / 3 kg")')
-            else:
-                wait_for('!!document.querySelector("[data-goal-action=build-camp]")')
-        page.evaluate('document.querySelector("[data-goal-action=build-camp]").click()')
-        wait_for('!!document.querySelector("[data-goal-action=carry-camp]")')
-        page.evaluate('document.querySelector("[data-goal-action=carry-camp]").click()')
-        wait_for('document.querySelector("#ws-goals-progress").textContent.includes("First camp complete")')
+            click('[data-market-item="oak-stock"] button')
+            wait_for(f'document.querySelectorAll("#ws-market-orders > li").length === {count+1}')
+            wait_for('document.querySelector("[data-market-item=oak-stock] button").disabled === false')
+        click('.game-tabs [data-screen="goals"]')
+        wait_for('document.querySelector("[data-goal=stock-oak]")?.dataset.complete === "true"')
+        click('[data-goal-go="build-camp"]')
+        camp_selector = '[data-recipe="stool:Camp stool"]'
+        wait_for(f'!!document.querySelector({json.dumps(camp_selector + ".ws-goal-target")})')
+        click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button')
+        wait_for('!!document.querySelector(".ws-recipe-result a[data-made-body]")')
+        click('.game-tabs [data-screen="goals"]')
+        wait_for('document.querySelector("[data-goal=build-camp]")?.dataset.complete === "true"')
+        click('[data-goal-go="carry-camp"]')
+        wait_for('window.banjoRoom?.status().ready && window.banjoRoom.world.bodies.has(new URLSearchParams(location.search).get("focus"))')
+        wait_for('window.banjoRoom.world.aim?.name === new URLSearchParams(location.search).get("focus")')
+        # The regular World Q binding performs native inventory take. Goals
+        # has no action that can substitute for this interaction.
+        for event in ("keyDown", "keyUp"):
+            page.send("Input.dispatchKeyEvent", {"type":event, "key":"q", "code":"KeyQ", "windowsVirtualKeyCode":81})
+        wait_for('window.banjoRoom.world.inventory?.record?.stowed?.includes(new URLSearchParams(location.search).get("focus"))')
+        screenshot("packed-in-world.png")
+        click('.game-tabs [data-screen="goals"]')
+        wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
+        self.assertTrue(self.post("/api/workshop/goals", {}, world, player)["complete"])
         page.send("Page.reload")
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
+        self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
         self.assertFalse([e for e in page.events if e.get("method") == "Runtime.exceptionThrown"])
-        out = ROOT / "build" / "starter-goals"; out.mkdir(parents=True, exist_ok=True)
-        import base64
-        (out / "completed.png").write_bytes(base64.b64decode(page.send("Page.captureScreenshot")["data"]))
+        screenshot("completed.png")
 
-
-class DurableEvidence(unittest.TestCase):
     def test_unsaved_inventory_does_not_award_packing(self):
         with tempfile.TemporaryDirectory() as temp:
             store = room_store.RoomStore(Path(temp))

@@ -2427,6 +2427,7 @@ async function showRecipes() {
     const li = item(t.source === "saved" || t.name === "Camp stool" ? t.name : titleCase(t.name), "",
       !t.enough ? "short" : ready ? "enough" : "blocked");
     li.dataset.recipe = recipeKey(t);
+    if (t.name === "Camp stool" && new URLSearchParams(location.search).get("guide") === "build-camp") li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
     if (t.problem) {
@@ -2501,6 +2502,7 @@ async function showRecipes() {
   }), "");
   fill("#ws-recipes-deposits", r.deposits.map(d=>item(d.name, `${d.left_kg} kg ${d.substance}`)), "");
   $("#ws-recipes-processes").hidden = !r.room_recipes.length && !r.deposits.length;
+  await showGoalGuide("recipes");
 }
 
 async function showMarket() {
@@ -2516,12 +2518,15 @@ async function showMarket() {
     ? `A ready recipe to work toward: ${rec}. The highlighted lot ${market.guidance.covers_gap ? "fills" : "reduces"} its ${kgSaid(market.guidance.gap_kg)} material gap.`
     : "Open Recipes to see what your next build needs. Market stock can fill material and machine-goods gaps.";
   const bank = $("#ws-market-bank");
+  const guide = new URLSearchParams(location.search).get("guide");
+  const bankJ = ["bank-solar", "stock-oak"].includes(guide) ? 500 : 100;
+  bank.textContent = `Bank ${bankJ} J`;
   bank.disabled = !market.bankable;
-  bank.title = market.bankable ? "Draw 100 measured joules from the solar farm's battery" : "Open the world before banking energy";
+  bank.title = market.bankable ? `Draw ${bankJ} measured joules from the solar farm's battery` : "Open the world before banking energy";
   bank.onclick = () => guard(bank, async () => {
     try {
-      const after = await api("/api/workshop/market", { action:"bank", joules:100, request_id:crypto.randomUUID() });
-      $("#ws-market-status").textContent = `Banked 100 J. Balance: ${after.balance_j.toLocaleString()} J.`;
+      const after = await api("/api/workshop/market", { action:"bank", joules:bankJ, request_id:crypto.randomUUID() });
+      $("#ws-market-status").textContent = `Banked ${bankJ} J. Balance: ${after.balance_j.toLocaleString()} J.`;
       await showMarket();
     } catch (error) {
       $("#ws-market-status").textContent = error.message || String(error);
@@ -2531,6 +2536,8 @@ async function showMarket() {
     const li = item(offer.name,
       `${kgSaid(offer.mass_kg)} ${offer.substance} · ${offer.price_j} J · ${offer.remaining} lots in this world`);
     if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
+    li.dataset.marketItem = offer.id;
+    if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
     const buy = make("button", { type:"button", class:"ws-action" }, "Buy for Workshop");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
     buy.onclick = () => guard(buy, async () => {
@@ -2550,6 +2557,7 @@ async function showMarket() {
   fill("#ws-market-orders", market.orders.map((order) => item(
     market.offers.find((offer) => offer.id === order.item_id)?.name || order.item_id,
     `${order.price_j} J · ${order.created_at}`)), "No purchases yet.");
+  await showGoalGuide("market");
 }
 
 // Opening the Workshop straight onto one rung of the tree: the world page's
@@ -2629,77 +2637,91 @@ async function openInventoryDesign(id, source) {
   }
 }
 
+const GOAL_GUIDES = {
+  "bank-solar": {where:"Market", screen:"market", steps:["Your World starts with a shared solar array.", "In Market, bank 500 J from its battery into your energy wallet.", "Your saved energy can pay for building supplies."]},
+  "stock-oak": {where:"Market", screen:"market", steps:["Choose Oak stock in Market. Each lot contains 0.5 kg.", "Buy six lots (3 kg). Bank more energy there if your wallet is short.", "Your purchases become personal supplies for Make."]},
+  "build-camp": {where:"Recipes", screen:"recipes", steps:["Find Camp stool in Recipes.", "Check its supplies and Build status, then choose Make.", "The stool appears in your World; Make does not put it in your bag."]},
+  "carry-camp": {where:"World", screen:"world", steps:["Find your made stool in the World.", "Walk over and point at it. Press Q to put it in your bag, or E to pick it up.", "Check your bag or hand. Goals records this automatically."]},
+};
+function goalWorldLink(body) {
+  const url = new URL(backToWorld("new-game"), location.origin);
+  if (body) url.searchParams.set("focus", body);
+  return url.pathname + url.search;
+}
+function goToGoalScreen(id, screen) {
+  const url = new URL(location.href); url.searchParams.set("guide", id);
+  window.history.replaceState(null, "", url); showTab(screen);
+}
+async function showGoalGuide(screen) {
+  const id = new URLSearchParams(location.search).get("guide"), guide = GOAL_GUIDES[id];
+  const pane = $(`#ws-pane-${screen}`);
+  let box = pane.querySelector(".ws-goal-guide");
+  if (!box) { box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box); }
+  box.replaceChildren(); box.hidden = !guide || guide.screen !== screen;
+  if (box.hidden) return;
+  box.append(make("strong", {}, "First camp"));
+  let goals;
+  try { goals = await api("/api/workshop/goals", {}); }
+  catch {
+    box.append(make("p", {}, "Progress unavailable. Open Goals to check again."));
+    const retry=make("button", {type:"button", class:"ws-action"}, "View checklist"); retry.onclick=()=>showTab("goals"); box.append(retry);
+    return;
+  }
+  const current = goals.goals.find(g=>g.id===goals.next_goal);
+  const text = goals.complete ? "First camp complete. You can explore other designs."
+    : screen === "market" ? (goals.goals.find(g=>g.id==="stock-oak").complete
+    ? "Supplies collected. Continue to Recipes to make your Camp stool."
+    : `Bank energy, then buy six Oak stock lots. Bought: ${goals.goals.find(g=>g.id==="stock-oak").value} / 3 kg.`)
+    : current?.id === "carry-camp" ? "Stool made. Choose View in World on its card, then press Q to pack it."
+    : "Choose Make on Camp stool. Then View in World to find and pack it.";
+  box.append(make("p", {}, text));
+  const next = make("button", {type:"button", class:"ws-action"}, "View checklist"); next.onclick=()=>showTab("goals"); box.append(next);
+  if (screen === "market" && current?.id === "build-camp") {
+    const recipes=make("button", {type:"button", class:"ws-action primary"}, "Find Camp stool");
+    recipes.onclick=()=>goToGoalScreen("build-camp", "recipes"); box.append(recipes);
+  }
+}
 async function showGoals() {
   const root = $("#ws-goals-list"), status = $("#ws-goals-status");
+  status.textContent=""; status.hidden=true;
   if (!worldId) {
-    root.replaceChildren(item("Start your first camp", "Use Menu to create or join a game."));
-    return;
+    root.replaceChildren(item("Start your first camp", "Use Menu to create or join a game.")); return;
   }
   const goals = await api("/api/workshop/goals", {});
   root.replaceChildren();
   $("#ws-goals-progress").textContent = goals.complete ? "First camp complete. Your progress is saved."
-    : `${goals.goals.filter((g) => g.complete).length} / ${goals.goals.length} goals complete · Your energy: ${goals.balance_j} J`;
-  $("#ws-goals-limits").textContent = goals.limits;
-  $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
-    : "Gather → build → carry. Your stool needs 2.5088 kg of oak; six lots leave wood for the next build. Prices change, so bank more energy when you need it.";
-  const act = async (button, work) => {
-    button.disabled = true; status.textContent = "Working…";
-    try { await work(); status.textContent = "Saved."; await showGoals(); }
-    catch (error) { status.textContent = error.message || String(error); }
-    finally { button.disabled = false; }
-  };
-  for (const goal of goals.goals) {
-    const li = item(goal.title, `${goal.complete ? "Complete" : `${goal.value} / ${goal.target} ${goal.unit}`} · ${goal.instruction}`,
-                    goal.complete ? "enough" : "short");
-    li.dataset.goal = goal.id;
-    li.dataset.complete = String(goal.complete);
-    if (goals.next_goal === goal.id) {
-      let label, work;
-      if (goal.id === "bank-solar") {
-        label = "Bank 500 J";
-        work = async () => {
-          await api("/api/world/open", {});
-          await api("/api/workshop/market", { action:"bank", joules:500, request_id:crypto.randomUUID() });
-        };
-      } else if (goal.id === "stock-oak") {
-        label = "Buy 0.5 kg of oak";
-        work = async () => {
-          const market = await api("/api/workshop/market", {});
-          const oak = market.offers.find((o) => o.id === "oak-stock");
-          if (market.balance_j < oak.price_j) throw new Error(`This lot costs ${oak.price_j} J. Bank another 500 J, then buy.`);
-          await api("/api/workshop/market", { action:"buy", item_id:oak.id,
-            quoted_price_j:oak.price_j, request_id:crypto.randomUUID() });
-        };
-        const bank = make("button", { type:"button", class:"ws-action", "data-goal-bank":"" }, "Bank another 500 J");
-        bank.onclick = () => act(bank, async () => {
-          await api("/api/world/open", {});
-          await api("/api/workshop/market", { action:"bank", joules:500, request_id:crypto.randomUUID() });
-        });
-        li.append(bank);
-      } else if (goal.id === "build-camp") {
-        label = "Build camp stool";
-        work = async () => {
-          await api("/api/world/open", {});
-          clearLab();
-          took(await api("/api/workshop/candidates", { ...goals.recipe, sweeps:{} }));
-          $("#ws-archetype").value = goals.recipe.kind;
-          await makeIt($("#ws-make"));
-          if ($("#ws-make-status")?.dataset.bad === "yes") throw new Error($("#ws-make-status").textContent);
-        };
+    : `${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
+  $("#ws-goals-next").textContent = goals.complete ? "Ready for your next project. Open Inventory to explore your designs."
+    : "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically.";
+  const limits = $("#ws-goals-limits"); limits.replaceChildren();
+  const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
+  for (const [index, goal] of goals.goals.entries()) {
+    const guide=GOAL_GUIDES[goal.id], current=goals.next_goal===goal.id;
+    const li=item(goal.title, "", goal.complete ? "enough" : current ? "ws-goal-current" : "ws-goal-later");
+    li.dataset.goal=goal.id; li.dataset.complete=String(goal.complete);
+    const state=make("div", {class:"ws-goal-state"});
+    state.append(tag(goal.complete ? "Complete ✓" : current ? "Next step" : `Step ${index+1}`),
+      make("span", {}, goal.complete ? "" : `${goal.value} / ${goal.target} ${goal.unit}`)); li.prepend(state);
+    if (!goal.complete) {
+      const progress=make("progress", {max:String(goal.target), value:String(goal.value), "aria-label":`${goal.title} progress`}); li.append(progress);
+      li.append(recipeValue("Where", guide.where));
+      const how=make("details", {class:"ws-goal-how"}); if (current) how.open=true;
+      how.append(make("summary", {}, "What to do"));
+      const steps=make("ol", {}); for (const step of guide.steps) steps.append(make("li", {}, step)); how.append(steps); li.append(how);
+      let link;
+      if (guide.screen === "world") {
+        link=make("a", {href:goalWorldLink(goals.camp_body), class:"ws-action primary", "data-goal-go":goal.id}, "Find my stool in World");
+        if (!goals.camp_body) {
+          li.append(make("p", {class:"ws-note"}, "Stool missing? Make another Camp stool in Recipes, then carry it."));
+          link=make("button", {type:"button", class:"ws-action", "data-goal-go":goal.id}, "Open Recipes"); link.onclick=()=>goToGoalScreen("build-camp", "recipes");
+        }
+      } else if (goal.id === "bank-solar" && !goals.session) {
+        link=make("a", {href:goalWorldLink("solar farm"), class:"ws-action primary", "data-goal-go":goal.id}, "Visit your World first");
       } else {
-        label = "Pack camp stool";
-        work = async () => {
-          const opened = await api("/api/world/open", {});
-          const current = await api("/api/workshop/goals", {});
-          if (!current.camp_body) throw new Error("Your camp stool is no longer in the world. Build another from the same recipe.");
-          const packed = await api("/api/world/inventory", { session:opened.session, op:"take",
-            item:current.camp_body, request:crypto.randomUUID() });
-          if (!packed.ok) throw new Error(packed.why || "The stool could not be packed.");
-        };
+        link=make("button", {type:"button", class:current ? "ws-action primary" : "ws-action", "data-goal-go":goal.id}, guide.screen === "recipes" ? "Find Camp stool in Recipes" : "Open Market");
+        link.onclick=()=>goToGoalScreen(goal.id, guide.screen);
       }
-      const button = make("button", { type:"button", class:"ws-action primary", "data-goal-action":goal.id }, label);
-      button.onclick = () => act(button, work);
-      li.append(button);
+      li.append(link);
     }
     root.append(li);
   }

@@ -1,5 +1,11 @@
 # Screen tests and native simulation verification
 
+The opening-goal browser regression now navigates Goals → Market → Recipes →
+World, performs banking/buying/Make through their normal visible controls,
+and packs the native stool with the World Q binding. Goals links spend
+nothing and award nothing; the test verifies server-derived progress and
+reload. See the [checklist contract](starter-goals.md#checklist-and-actions-in-their-own-screens--september-30-2026).
+
 September 30, 2026. This audit covers every place the current app offers a
 test, test result, or QA run for an object: Workshop Test and Build, Recipes,
 the world's Bench replay, and Debug. It distinguishes a running native trial

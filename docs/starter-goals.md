@@ -1,5 +1,15 @@
 # Opening goals and agent playthroughs
 
+## Checklist and actions in their own screens — September 30, 2026
+
+Goals is now a guide and progress view. It does not bank energy, buy stock, make a source or take an item. The current step expands a short numbered checklist; later steps keep their instructions folded. Each incomplete step names its destination and offers navigation only. Completion still comes from the existing authenticated Market ledger, native build receipt and saved guest bag/hand evidence.
+
+The human route is World → Goals → Market (bank energy and buy oak) → Recipes (Make Camp stool) → World (point at the stool and use Q for the bag or E to pick it up) → Goals. Visiting a destination never performs the action. The goal's Market route highlights oak and labels the existing bank control as 500 J; ordinary Market visits retain the 100 J control. Guided Market reads progress after transactions and offers Recipes when supplies are collected. Guided Recipes highlights Camp stool. The carry link uses the existing native-body focus/inspector route; it does not teleport the player or collect the body. A missing stool links back to Recipes for recovery.
+
+The Goals browser regression now follows real navigation, pointer clicks on normal Market/Recipes controls, and the regular World Q binding. It checks that the initial navigation leaves balance and goal evidence unchanged, then verifies all four achievements and completion after reload. This replaces the former test of direct task buttons on Goals. Existing two-player/restart, wrong receipt/geometry, unsaved inventory and autonomous-character tests remain applicable because server predicates and storage are unchanged. Screenshots of guidance, the native bag and completion were inspected on Windows with Chrome and the existing Visual Studio Release engine, on source based on main `030de96`. No native law, timestep, resolution, persistence schema, goal reward or technique unlock changes.
+
+Checkpoint verification: 4 opening-goal tests, 7 AI-character tests, 6 navigation/Inventory/Recipes tests and 55 Workshop browser tests pass (72 checks). The initial concurrent browser run had one cart-component removal timeout; that case passed in isolation and the complete 55-case rerun passed in 113.4 s. Its intermittent cause was not established, and no Lab control or tolerance was changed to hide it. JavaScript syntax, Python compilation, documentation links and all 286 C++ source registrations pass. The broader physics suite and a paid live model were not rerun. The published main revision is recorded by this section's Git commit and task handoff.
+
 **Character controller follow-up:** [Autonomous characters](ai-characters.md) now exposes a bounded OpenAI controller and a separately labeled reference bot in Menu, with personal state and camera watching. The action chain here remains unchanged and still awards no new technique.
 
 Implemented September 30, 2026. Chain `first-camp-v1` is a small, Minecraft-inspired
@@ -17,8 +27,8 @@ campaign and does not award technology knowledge.
 | Pack for the next adventure | That builder's stool in their saved bag or hand | Inventory take |
 
 The Goals link in the world and Goals tab in Workshop show the next incomplete
-goal, progress and action. The action buttons use the existing Market,
-Workshop preview/commit and inventory APIs. There is no client completion flag.
+goal, progress, instructions and destination. Perform banking/buying in Market,
+Make in Recipes, and carrying in the World. There is no client completion flag.
 `POST /api/workshop/goals` accepts only `{}` and authenticates the guest.
 
 The curated **Camp stool** is also in Recipes. It has a 240 × 240 mm square
@@ -27,8 +37,8 @@ Its five connected boxes weigh **2.5088 kg of oak**. Construction consumes
 personal material first, leaving **0.4912 kg** from six bought lots, while the
 shared rack remains available to other players. A fresh shelf prices the six
 lots at 120, 122, 123, 125, 126 and 128 J: **744 J total**. Two 500 J deposits
-cover that route. Scarcity can raise costs; the guide exposes another bank
-action and buys only the latest quote. A sold-out shelf awaits the existing
+cover that route. Scarcity can raise costs; bank more in Market when needed,
+and its purchase control uses the latest quote. A sold-out shelf awaits the existing
 trader's replenishment (one lot per 120 simulated seconds).
 
 The starter array is shared and initially charged. Banking that charge is
@@ -70,7 +80,12 @@ action catalog:
 > the initial world, player prerequisites, quantities with units, resource
 > acquisition routes, supported recipe and native interaction. Each step
 > needs a server-owned evidence predicate, prerequisites, a useful outcome,
-> a bounded action/time budget and a recovery route. Check that resources and
+> a bounded action/time budget and a recovery route. Give short numbered
+> instructions for a step that needs multiple actions, and name the normal
+> game screen/control where each action belongs. Goals should explain and
+> navigate; it must not execute the task or award completion from a button.
+> Test human journeys through those normal controls as well as bounded agent
+> API actions. Visiting a goal or destination must spend nothing. Check that resources and
 > tools are reachable without requiring the outcome they enable. Preserve
 > the declared material, dimensions and mechanical model. Names, client
 > assertions, narrative text and a plausible plan are never success evidence.
