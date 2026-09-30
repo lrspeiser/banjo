@@ -3057,6 +3057,152 @@ class ClickingSomethingKeepsIt(PageJourney):
                          "the hovering view did not come back")
 
 
+class TheHotListTakesWhatYouPutInIt(PageJourney):
+    """The owner: "you can then move items from your inventory into your hot
+    list which are the 10 slots you can see when in the world."
+
+    Which slot a thing landed in used to be the bag's own choice, and the row
+    was `pointer-events: none` -- something to look at, not to use.
+
+    ONE check, because it is one journey and because the class shares a room:
+    the harness keeps it between checks ("This is the room as you left it"),
+    so four checks each wanting something on the floor was four checks
+    fighting over one room, and the last of them found a single stone.
+
+    The drop itself is not dispatched -- an HTML5 drag is not something CDP
+    makes the way a person does -- so the check drives the call the drop
+    makes, `putInSlot`, and reads the row's own properties to show it really
+    is a target.
+    """
+
+    def bag(self):
+        return json.loads(self.js(
+            "JSON.stringify((banjoRoom.world.inventory.stowed || []).map(x => x && x.name))"))
+
+    def loose_things(self):
+        """What is on the floor, light enough to carry and not already yours,
+        lightest first. Asked of the room as it is now."""
+        return json.loads(self.js("""JSON.stringify((() => {
+          const mine = new Set((banjoRoom.world.inventory.stowed || [])
+            .filter(Boolean).map(x => x.name));
+          const held = banjoRoom.held();
+          if (held) mine.add(held.name);
+          return [...banjoRoom.world.bodies.entries()]
+            .filter(([name, b]) => !mine.has(name) && !b.anchored
+                                   && b.mass > 0 && b.mass < 20)
+            .sort((a, b) => a[1].mass - b[1].mass)
+            .map(([name]) => name);
+        })())"""))
+
+    def stow(self, name):
+        """Look at a thing, take it, put it in the bag -- as a person does.
+
+        Standing at GROUND level with the eye 1.62 m up and a metre back, and
+        waiting for the crosshair to land on it: guessing the eye height from
+        the object's own y put the camera inside the table."""
+        where = self.position(name)
+        if where is None:
+            return False
+        x, y, z = where
+        q = json.dumps(name)
+        for back in (1.0, 1.4, 0.7):
+            ground = self.js(f"banjoRoom.groundAt({x}, {z + back})") or 0.0
+            self.js(f"(banjoRoom.standAt({x:.3f}, {ground + 1.62:.3f}, {z + back:.3f}),"
+                    f" banjoRoom.lookAt({x:.3f}, {y:.3f}, {z:.3f}), true)")
+            if self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {q}", 10):
+                break
+        else:
+            return False
+        self.when_idle()
+        self.press_e()
+        if not self.wait_for(f"banjoRoom.held() && banjoRoom.held().name === {q}", 20):
+            return False
+        self.when_idle()
+        held = self.js("(banjoRoom.world.inventory.stowed || []).filter(Boolean).length")
+        self.press_key("KeyQ", "q")
+        return self.wait_for(
+            "(banjoRoom.world.inventory.stowed || []).filter(Boolean).length"
+            f" > {held}", 20)
+
+    def test_a_thing_goes_to_the_slot_you_put_it_in_and_stays_there(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-carry"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300),
+                        "the carry room did not open")
+        # The bodies arrive after ready(), and their masses later still.
+        self.assertTrue(self.wait_for(
+            "[...banjoRoom.world.bodies.values()].some(b => b.mass > 0 && b.mass < 20)", 120),
+            "the room never reported anything light enough to pick up")
+
+        got = []
+        for name in self.loose_things():
+            if self.stow(name):
+                got.append(name)
+            if len(got) >= 2:
+                break
+        self.assertGreaterEqual(len(got), 2,
+                                f"only {got} reached the bag: {self.bag()}")
+
+        # INTO THE SLOT YOU CHOSE. This is the call the drop makes.
+        was = sorted(x for x in self.bag() if x)
+        # Whatever the bag actually holds, by its own name: a body is not an
+        # item, and aiming at "mace head" puts a "mace" in the bag.
+        first = next(x for x in self.bag() if x)
+        mine = json.dumps(first)
+        ident = self.js(f"(banjoRoom.world.inventory.stowed.find("
+                        f"x => x && x.name === {mine}) || {{}}).id")
+        self.assertTrue(ident, f"{first} is not in the bag: {self.bag()}")
+        self.js(f"(banjoRoom.putInSlot({json.dumps(ident)}, 6), true)")
+        self.assertTrue(self.wait_for(
+            f"((banjoRoom.world.inventory.stowed[6] || {{}}).name) === {mine}", 30),
+            f"{first} did not go to slot 7: {self.bag()}")
+        # The swap moved exactly two things: nothing lost, nothing doubled.
+        now = sorted(x for x in self.bag() if x)
+        self.assertEqual(was, now, f"the bag changed: {was} -> {now}")
+        self.assertEqual(len(now), len(set(now)), f"a thing was duplicated: {now}")
+
+        # AND IT STAYS THERE. Take it out with its own key and put it back:
+        # that is what makes a hot list a hot list.
+        self.when_idle()
+        self.js("(banjoRoom.fromSlot(6), true)")
+        self.assertTrue(self.wait_for("!!banjoRoom.held()", 30), "7 did not bring it to hand")
+        self.when_idle()
+        self.press_key("KeyQ", "q")
+        self.assertTrue(self.wait_for(
+            f"((banjoRoom.world.inventory.stowed[6] || {{}}).name) === {mine}", 30),
+            f"it did not go back to the slot it was given: {self.bag()}")
+
+        # THE ROW IS SOMETHING YOU CAN DROP ON. It was `pointer-events: none`.
+        keys = json.loads(self.js(
+            "JSON.stringify([...document.querySelectorAll('#hotbar .slot b')]"
+            ".map(b => b.textContent))"))
+        self.assertEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], keys,
+                         f"the hot list is not ten slots numbered 1-9 then 0: {keys}")
+        self.assertEqual("auto", self.js(
+            "getComputedStyle(document.querySelector('#hotbar .slot')).pointerEvents"),
+            "a slot cannot be dropped on")
+        self.assertEqual("none", self.js(
+            "getComputedStyle(document.getElementById('hotbar')).pointerEvents"),
+            "the whole row takes the pointer, so it covers the view")
+
+        # An empty slot is hidden, so while a thing is carried every slot has
+        # to show itself or there is nothing to aim at. One empty slot is
+        # always drawn -- the one after the last full one -- so look past it.
+        beyond = "#hotbar .slot.empty:not(.next)"
+        self.assertTrue(self.js(f"!!document.querySelector('{beyond}')"),
+                        "the row has no spare slots to check")
+        hidden = self.js(f"getComputedStyle(document.querySelector('{beyond}')).display")
+        self.js("(document.body.classList.add('moving-a-thing'), true)")
+        shown = self.js(f"getComputedStyle(document.querySelector('{beyond}')).display")
+        self.js("(document.body.classList.remove('moving-a-thing'), true)")
+        self.assertEqual("none", hidden, "an empty slot is drawn when nothing is being moved")
+        self.assertNotEqual("none", shown, "an empty slot stays hidden while a thing is carried")
+
+        # And a thing in the bag can be picked up with the mouse at all.
+        self.assertTrue(self.js("!!document.querySelector('#inv-bag li[draggable]')"),
+                        "a thing in the bag cannot be picked up with the mouse")
+
+
 # Workshop controls share the existing required Chrome/engine CI gate.
 from workshop_browser_tests import WorkshopBrowserRegression  # noqa: E402,F401
 

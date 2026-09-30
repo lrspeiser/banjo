@@ -121,12 +121,17 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 
 #hotbar {
   position: fixed; bottom: 14px; z-index: 5; pointer-events: none;
+  /* Only the SLOTS take the pointer, not the row: the gaps between them
+     are still the room, and a click there looks around as it always did.
+     A row that took nothing could not be dropped on, which is what the
+     hot list is for. */
   left: min(50vw, calc(100vw - var(--panel-w) - 262px)); transform: translateX(-50%);
   display: flex; gap: 4px; margin: 0; padding: 0; list-style: none;
 }
 .slot {
   position: relative; width: 54px; height: 54px; border-radius: 6px;
   background: rgb(8 12 14 / .72); border: 1px solid var(--edge); backdrop-filter: blur(4px);
+  pointer-events: auto;
 }
 .slot b { position: absolute; left: 5px; top: 2px; font-size: 10px; font-weight: 650; color: var(--dim); }
 /* What it is made of, by the colour the room draws that material with, and
@@ -653,3 +658,15 @@ body.panel-away #panel { transform: translateX(100%); }
 .pk-ore { margin: 0; font-size: 12px; color: var(--warn); font-weight: 600; }
 /* A bed drawn shorter than it really is: the torn edge says the scale broke. */
 .pk-bed.cut { border-bottom: 2px dashed rgba(18,22,28,.45); }
+
+/* THE HOT LIST TAKES A DROP.
+   While a thing from the bag is being carried by the mouse, every slot shows
+   itself -- an empty slot is hidden the rest of the time, and you cannot aim
+   at something that is not drawn. The one under the cursor lights. */
+body.moving-a-thing .slot.empty { display: block; opacity: .55; }
+body.moving-a-thing .slot { border-style: dashed; }
+.slot.taking { border-color: var(--y); border-style: solid;
+               box-shadow: 0 0 0 2px var(--y), inset 0 0 12px rgb(240 180 41 / .25); }
+/* A thing in the bag list you can pick up. */
+#inv-bag li[draggable="true"] { cursor: grab; }
+#inv-bag li[draggable="true"]:active { cursor: grabbing; }

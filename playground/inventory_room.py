@@ -346,6 +346,13 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     person = world_chat.where_the_person_is(body.get("person"))
 
     def act(plan: dict[str, Any]) -> dict[str, Any]:
+        # MOVING A THING BETWEEN SLOTS CHANGES NOTHING IN THE ROOM. It is
+        # already set aside; only the order of the bag changes. Everything
+        # below is about a thing crossing between the room and the person,
+        # and the first branch -- anything going `to: "stowed"` -- would try
+        # to park a thing that is already parked, which the engine refuses.
+        if plan.get("op") == "slot":
+            return {"put_in_slot": plan["slot"]}
         session = app.live.session
         if session is None:
             raise ValueError("the room is not open")

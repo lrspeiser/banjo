@@ -3618,7 +3618,10 @@ function showStock() {
 // only when that changes.
 let inventorySaid = "";
 // How many of the bag's slots have a number key: 1 to 9.
-const SLOT_KEYS = 9;
+//: How many numbered slots the hot list shows. Ten, as the owner asked;
+//: the tenth is 0, because that is where a tenth goes on a keyboard, and
+//: `inventory.SLOTS` on the server is the same number.
+const SLOT_KEYS = 10;
 
 // A name as the view and the side view say it: "iron kettle" is "Iron Kettle".
 function titled(name) {
@@ -3728,6 +3731,8 @@ async function changeInventory(op, item, options, again = false) {
     const ask = { session: world.session, request: crypto.randomUUID(), op, item, revision,
                   person: whereIAm() };
     if (options.grip) ask.grip = options.grip;
+    // Which numbered slot to put it in, for `slot` (inventory.py).
+    if (Number.isInteger(options.slot)) ask.slot = options.slot;
     answer = await api("/api/world/inventory", ask);
   } catch (error) {
     say("bad", String(error.message || error));
@@ -3919,9 +3924,20 @@ function showInventory() {
     const li = document.createElement("li");
     const key = document.createElement("span");
     key.className = "slot-key";
-    key.textContent = i < SLOT_KEYS ? String(i + 1) : "";
+    key.textContent = i < SLOT_KEYS ? slotKeySaid(i) : "";
     li.append(key, document.createTextNode(bagName(thing)),
               button("Hold", "equip", thing.id), button("Hold to place", "drop", thing.id));
+    // PICK IT UP WITH THE MOUSE and drop it on a slot in the row over the
+    // room: that is the hot list. The buttons still work for anyone who
+    // would rather not drag, and for a touch screen, which has no drag.
+    li.draggable = true;
+    li.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData(BAG_DRAG, thing.id);
+      e.dataTransfer.effectAllowed = "move";
+      document.body.classList.add("moving-a-thing");
+    });
+    li.addEventListener("dragend", () => document.body.classList.remove("moving-a-thing"));
+    li.title = `${bagName(thing)} — drag it onto a slot in the row over the room`;
     const measured = storedHeat.get(thing.name);
     if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
       const condition = document.createElement("small");
@@ -3970,6 +3986,36 @@ setInterval(showInventory, 250);
 // the colour of what it is made of (round for a ball), and its name. A slot
 // whose thing is in the hand stays marked, since its number puts it back.
 // Hidden while nothing of the bag is in them.
+//: What a slot's key is called: 1 to 9, then 0 for the tenth.
+const slotKeySaid = (i) => String((i + 1) % 10);
+
+// DROPPING A THING INTO A SLOT. The owner asked to be able to move things
+// from the inventory into the hot list, and the row was `pointer-events:
+// none` -- something to look at, not to use. A slot takes a drop from the
+// bag list in the side panel, and the server swaps it with whatever was
+// there (inventory.py, the `slot` op).
+function slotTakesDrops(li, index) {
+  li.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes(BAG_DRAG)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    li.classList.add("taking");
+  });
+  li.addEventListener("dragleave", () => li.classList.remove("taking"));
+  li.addEventListener("drop", (e) => {
+    li.classList.remove("taking");
+    const id = e.dataTransfer.getData(BAG_DRAG);
+    if (!id) return;
+    e.preventDefault();
+    inventoryChange("slot", id, { slot: index });
+  });
+}
+
+//: The one kind of thing that can be dragged in the room: a thing of yours,
+//: by its id. Its own type, so a slot cannot be confused by anything else
+//: the browser is carrying (a file, a selection, a link).
+const BAG_DRAG = "application/x-banjo-item";
+
 function showHotbar(slots, hand) {
   const bar = $("hotbar");
   const home = hand && Number.isInteger(hand.slot) ? hand.slot : -1;
@@ -3989,7 +4035,7 @@ function showHotbar(slots, hand) {
     li.className = `slot${thing ? "" : " empty"}${!thing && i === next ? " next" : ""}`
                  + `${i === home ? " in-hand" : ""}`;
     const number = document.createElement("b");
-    number.textContent = String(i + 1);
+    number.textContent = slotKeySaid(i);
     li.append(number);
     if (thing) {
       const swatch = document.createElement("i");
@@ -3998,8 +4044,11 @@ function showHotbar(slots, hand) {
       const name = document.createElement("span");
       name.textContent = bagName(thing);
       li.append(swatch, name);
-      li.title = `${i + 1}: ${bagName(thing)}${i === home ? ", in your hand" : ""}`;
+      li.title = `${slotKeySaid(i)}: ${bagName(thing)}${i === home ? ", in your hand" : ""}`;
+    } else {
+      li.title = `Slot ${slotKeySaid(i)}: drag a thing from your bag here`;
     }
+    slotTakesDrops(li, i);
     return li;
   }));
 }
@@ -9885,6 +9934,10 @@ window.banjoRoom = {
                      name: li.querySelector("span") ? li.querySelector("span").textContent : null,
                      inHand: li.classList.contains("in-hand") })) }),
   doChoice, nextChoice, toTheBag, fromSlot, showTab,
+  // Putting a thing in a numbered slot, which the hot list's drop does
+  // (inventory.py, the `slot` op). A check drives the same call the drop
+  // makes: a browser drag is not something CDP can send.
+  putInSlot: (item, slot) => inventoryChange("slot", item, { slot }),
   arcShown: () => aimArc.group.visible,
   // What the aim arc is saying, which is the whole of how a throw is aimed:
   // whether it is up, whether it has drawn a flight or only marked the spot,
