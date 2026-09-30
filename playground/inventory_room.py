@@ -400,6 +400,9 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     # One hand in the engine: a thing taken into a hand goes to the dominant one,
     # and into the bag when that hand is full.
     hand = record.dominant if op in ("equip", "take_up") else body.get("hand")
+    # Which numbered slot to put it in, for `slot`. Nothing else reads it.
+    asked_slot = body.get("slot")
     answer = record.request(request_id, body.get("revision"), op, item, items, act, hand=hand,
-                            kg=kg, lift_kg=room_world.banjo_mcp.HAND_LIFTS_KG)
+                            kg=kg, lift_kg=room_world.banjo_mcp.HAND_LIFTS_KG,
+                            slot=int(asked_slot) if isinstance(asked_slot, (int, float)) else None)
     return dict(answer, shown=shown(app))

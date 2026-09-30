@@ -289,6 +289,87 @@ class TheBagKeepsItsSlots(unittest.TestCase):
         self.assertNotIn("unknown", gone)
 
 
+class TheHotListIsSlotsYouChose(unittest.TestCase):
+    """The owner: "you can then move items from your inventory into your hot
+    list which are the 10 slots you can see when in the world."
+
+    Which slot a thing landed in was the bag's own choice -- its home slot if
+    free, else the first free one -- and there was no way to say. The bag
+    already had the idea (`home` is the slot kept for a thing); this is the
+    way to set it.
+    """
+
+    def setUp(self):
+        names = ("cup", "jug", "bowl", "pan")
+        self.room = {"bodies": [body(n, f"b-{n}{i:06d}", center_mm=[200 * i, 40, 0])
+                                for i, n in enumerate(names)]}
+        self.items = inventory.items_of(self.room)
+        self.ids = {i["name"]: i["id"] for i in self.items}
+        self.inv = inventory.Inventory()
+        self.asked = 0
+        for name in names:
+            self.ask("take", name)
+
+    def ask(self, op, name, **extra):
+        self.asked += 1
+        return self.inv.request(f"r{self.asked}", None, op, self.ids[name], self.items,
+                                lambda plan: None, **extra)
+
+    def named(self):
+        back = {v: k for k, v in self.ids.items()}
+        return [back.get(x) for x in self.inv.stowed]
+
+    def test_a_thing_goes_to_the_slot_you_name(self):
+        said = self.ask("slot", "cup", slot=5)
+        self.assertTrue(said["ok"], said.get("why"))
+        self.assertEqual("cup", self.named()[5])
+        # Said in ones, because the keys are 1 to 10 and not 0 to 9.
+        self.assertIn("slot 6", said["did"])
+
+    def test_it_swaps_with_whatever_was_there(self):
+        """A thing pushed out has to go somewhere, and "the first free slot"
+        would move a second thing the person did not ask about."""
+        was = self.named()
+        self.assertEqual(["cup", "jug", "bowl", "pan"], was)
+        self.assertTrue(self.ask("slot", "cup", slot=2)["ok"])
+        self.assertEqual(["bowl", "jug", "cup", "pan"], self.named())
+
+    def test_the_slot_is_kept_for_it_afterwards(self):
+        """What makes a hot list a hot list: take the thing out, put it back,
+        and it goes where you put it."""
+        self.assertTrue(self.ask("slot", "pan", slot=7)["ok"])
+        self.assertTrue(self.ask("equip", "pan")["ok"])
+        self.assertNotIn("pan", self.named())
+        self.assertTrue(self.ask("stow", "pan")["ok"])
+        self.assertEqual("pan", self.named()[7], "it did not go back to the slot it was given")
+
+    def test_a_slot_out_of_range_is_refused(self):
+        self.assertFalse(self.ask("slot", "cup", slot=-1)["ok"])
+        self.assertFalse(self.ask("slot", "cup", slot=inventory.SLOTS)["ok"])
+        self.assertIn(f"1 to {inventory.SLOTS}", self.ask("slot", "cup", slot=99)["why"])
+        self.assertFalse(self.ask("slot", "cup", slot=None)["ok"])
+
+    def test_a_thing_not_in_the_bag_is_refused(self):
+        self.assertTrue(self.ask("equip", "jug")["ok"])
+        refused = self.ask("slot", "jug", slot=4)
+        self.assertFalse(refused["ok"])
+        self.assertIn("not in your bag", refused["why"])
+
+    def test_the_same_slot_twice_is_refused_rather_than_shuffling(self):
+        self.assertTrue(self.ask("slot", "cup", slot=6)["ok"])
+        again = self.ask("slot", "cup", slot=6)
+        self.assertFalse(again["ok"])
+        self.assertIn("already in slot 7", again["why"])
+
+    def test_nothing_is_lost_and_nothing_is_duplicated(self):
+        """The bag holds the same four things however they are shuffled."""
+        for name, slot in (("cup", 9), ("jug", 9), ("bowl", 0), ("pan", 9), ("cup", 1)):
+            self.ask("slot", name, slot=slot)
+        held = [x for x in self.named() if x is not None]
+        self.assertEqual(["bowl", "cup", "jug", "pan"], sorted(held))
+        self.assertEqual(len(held), len(set(held)), f"a thing was duplicated: {self.named()}")
+
+
 class WhatAPersonHasIsKeptWithTheRoom(unittest.TestCase):
     """room_store keeps the record with the room, so a server restart -- the sims
     are restarted whenever work lands -- does not hand the bag's things back."""

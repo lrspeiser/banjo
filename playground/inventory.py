@@ -37,6 +37,9 @@ HANDS = ("right", "left")
 # How many answers are remembered, so a request sent again -- a retry after a
 # dropped connection -- is answered as it was the first time, and done once.
 MAX_ANSWERS = 64
+#: How many numbered slots the hot list has. The owner asked for ten; the
+#: keys are 1-9 and then 0, which is where a tenth slot goes on a keyboard.
+SLOTS = 10
 
 
 def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -160,6 +163,10 @@ class Inventory:
         for it."""
         return self.stowed.index(item) if item in self.stowed else self.home.get(item)
 
+    def where_slot(self, item: str) -> int | None:
+        """Which numbered slot a thing is in, or None if it is not in the bag."""
+        return self.stowed.index(item) if item in self.stowed else None
+
     def _trim(self) -> None:
         while self.stowed and self.stowed[-1] is None:
             self.stowed.pop()
@@ -217,7 +224,8 @@ class Inventory:
         return None
 
     def plan(self, op: str, item: str, items: list[dict[str, Any]], hand: str | None = None,
-             kg: float | None = None, lift_kg: float | None = None) -> dict[str, Any]:
+             kg: float | None = None, lift_kg: float | None = None,
+             slot: int | None = None) -> dict[str, Any]:
         """What `op` on `item` would do, or why not, in words -- without doing it.
 
         The ops are:
@@ -227,7 +235,9 @@ class Inventory:
         - equip: from the inventory into a hand;
         - stow: from a hand into the inventory;
         - drop: from a hand or the inventory into the world, in front of the
-          person.
+          person;
+        - slot: move a thing already in the bag to a slot you name, which is
+          how the hot list is filled.
 
         A thing that is not one of the room's items -- a broken piece, which the
         room's spec does not have -- is refused as `unknown`, so the asker can
@@ -278,9 +288,43 @@ class Inventory:
                 return {"ok": False, "why": f"{said_name(name)} is not yours to put down"}
             return {"ok": True, "op": op, "item": item, "name": name, "from": here,
                     "to": "world", "did": f"Put {name} down."}
-        return {"ok": False, "why": f"there is no {op!r}: take, take_up, equip, stow or drop"}
+        if op == "slot":
+            # The hot list: a slot you chose, rather than the one the bag
+            # picked. Only for a thing already in the bag -- putting a thing
+            # from your hand into a numbered slot is `stow` and then this,
+            # two changes, because either can be refused on its own.
+            if here != "stowed":
+                return {"ok": False, "why": f"{said_name(name)} is not in your bag"}
+            if slot is None or not isinstance(slot, int) or not 0 <= slot < SLOTS:
+                return {"ok": False, "why": f"a slot is 1 to {SLOTS}"}
+            if self.where_slot(item) == slot:
+                return {"ok": False, "why": f"{said_name(name)} is already in slot {slot + 1}"}
+            return {"ok": True, "op": op, "item": item, "name": name, "from": "stowed",
+                    "to": "stowed", "slot": slot,
+                    "did": f"{said_name(name)} in slot {slot + 1}."}
+        return {"ok": False, "why": f"there is no {op!r}: take, take_up, equip, stow, drop or slot"}
+
+    def _put_in_slot(self, item: str, slot: int) -> None:
+        """Into the slot named, SWAPPING with whatever was there.
+
+        Swapping rather than displacing: a thing pushed out of its slot has
+        to go somewhere, and "the first free one" would move a second thing
+        the person did not ask about. A swap moves exactly the two."""
+        was = self.stowed.index(item)
+        self.stowed.extend([None] * (slot + 1 - len(self.stowed)))
+        other = self.stowed[slot]
+        self.stowed[slot] = item
+        self.stowed[was] = other
+        self.home[item] = slot
+        if other is not None:
+            self.home[other] = was
+        else:
+            self._trim()
 
     def _apply(self, plan: dict[str, Any]) -> None:
+        if plan.get("op") == "slot":
+            self._put_in_slot(plan["item"], plan["slot"])
+            return
         item, came, goes = plan["item"], plan["from"], plan["to"]
         if came == "stowed":
             slot = self._unstow(item)
@@ -298,7 +342,7 @@ class Inventory:
     def request(self, request_id: str, expected_revision: int | None, op: str, item: str,
                 items: list[dict[str, Any]], act: Callable[[dict[str, Any]], Any] | None = None,
                 hand: str | None = None, kg: float | None = None,
-                lift_kg: float | None = None) -> dict[str, Any]:
+                lift_kg: float | None = None, slot: int | None = None) -> dict[str, Any]:
         """One change, done once.
 
         `act(plan)` is the room's part: it sets the thing aside, puts it in the
@@ -311,7 +355,7 @@ class Inventory:
                 answer = {"ok": False, "why": "the inventory changed since you last saw it",
                           "record": self.record()}
                 return self._remember(request_id, answer)
-            plan = self.plan(op, item, items, hand, kg, lift_kg)
+            plan = self.plan(op, item, items, hand, kg, lift_kg, slot)
             if not plan["ok"]:
                 refused = {"ok": False, "why": plan["why"], "record": self.record()}
                 if plan.get("unknown"):

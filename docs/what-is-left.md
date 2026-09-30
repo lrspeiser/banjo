@@ -447,9 +447,30 @@ the tech tree? if so link it to the tech tree".
 - **The hot list.** `SLOT_KEYS = 9`, not ten, and `#hotbar` is
   `pointer-events: none` -- display only. Which slot a thing lands in is the
   server's choice (`inventory._stow`: home slot if free, else the first free
-  one). So "move items from your inventory into your hot list" needs three
-  things: a tenth slot, a hotbar that can be dropped on, and an inventory op
-  that names the slot.
+  one).
+
+  It is smaller than it looks, because the bag already has the idea: `home`
+  is "the slot kept for this thing", and `_stow` puts a thing back into its
+  home slot when that is free. Choosing a slot is setting `home`. The pieces:
+
+  1. A `slot` op in `Inventory.plan` beside take/take_up/equip/stow/drop. It
+     refuses unless the thing is `stowed` and the slot is in range, and its
+     plan carries `from: "stowed", to: "stowed", slot: n`.
+  2. `_apply` handles that case by SWAPPING: whatever is in slot n goes to
+     the slot this thing came from, so nothing is ever displaced into
+     nowhere. Everything else in `_apply` stays as it is.
+  3. `inventory_room.py` passes `slot` through from the request body, and
+     `request()` passes it to `plan()`.
+  4. `#hotbar` loses `pointer-events: none`, and a slot becomes a drop
+     target. The only drag pair in the whole page is workshop.js's library
+     card onto the 3D stage (MIME `application/x-banjo-library-item`); a
+     second pair wants its own MIME, `application/x-banjo-item`, carrying
+     the item id.
+  5. Ten slots, not nine: `SLOT_KEYS` and the `slots` binding, with Digit0
+     for the tenth.
+
+  Do it in that order and each step is testable on its own -- the op before
+  any UI, so a check can put a thing in slot 7 with no mouse at all.
 
 - **DONE: a recipe's shortfall as a percentage, and a Make button.**
   `_shortfall` weighs every line by mass -- a recipe wanting 80 kg of iron
