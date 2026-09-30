@@ -556,3 +556,35 @@ setting `display`, which outranks the browser's own `[hidden]`, so a
 an assertion that has nothing to do with what it is testing, suspect the
 layout before the feature.
 
+
+## The rocket's jet, and why a slow page misses it
+
+`test_all_three_machines_run_and_the_page_draws_what_they_do` fails on CI at
+`'motor' not found in []: the rocket's nozzle should have drawn a jet`, and
+it is worth writing down because the obvious diagnosis is wrong.
+
+It is NOT that the page cannot draw in time. `nozzleJet` -- which is what
+puts a name in `jetsSeen` -- runs from the function that handles a STATE
+REPLY, not from the frame loop, so it does not need a frame. And the check
+just above it passes: the rocket really did leave the bench by more than a
+bounce, so the room fired.
+
+What happens is that the page never SEES the thrust. It steps the room from
+its frame loop, so at CI's ~1.4 fps it takes about 1.4 snapshots a second,
+each one the state after a batch of substeps. A rocket motor burns for a
+fraction of a second of room time, and the two snapshots either side of it
+both read `thrust_n: 0`. `jetsSeen` is already the "has it ever happened"
+record the page keeps for short-lived things -- there is simply nothing to
+record.
+
+So the fix is not in the page. A reply has to carry what happened DURING
+the step and not only the state at the end of it: a peak thrust over the
+step, or a flag that is set once thrust was non-zero and cleared when read.
+That is an engine change (`LiveWorld`'s region report), and it is the same
+shape as the reason `events_` exists for contacts -- an instantaneous
+sample cannot see an event.
+
+The same reasoning probably covers "the arc is not up at all" and "a throw
+at the ground eighteen metres off is on target", both of which are about a
+short-lived state the page is sampling.
+
