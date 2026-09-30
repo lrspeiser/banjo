@@ -5510,6 +5510,129 @@ function rideTheCamera() {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT IT SENSES, as lamps and swatches rather than sentences
+// ---------------------------------------------------------------------------
+//
+// The owner, looking at the side panel: "we need to decide what is absolutely
+// critical on the right nav and be far more visual about things, like show me
+// what the rover can sense like if it can see ore in front of it. Use
+// thumbnails and such instead of gobs of text."
+//
+// This is the machine's own senses drawn as what they are. Its water sensors
+// are five lamps laid out as they sit on it -- three across the front, two
+// behind -- so a lit one tells you WHERE, not just that. What is ahead is a
+// swatch in the ground's own colour, the same colour the ground under it is
+// painted, so ore reads as ore without a word. Its battery is a bar.
+//
+// All of it is read from what the page already has: the sensors ride on the
+// program, and the beds come from the same `ground.runs` that `standingOn`
+// walks, so nothing here costs a round trip.
+
+const SENSE_AHEAD_M = 2.5;
+
+function senseLamp(lit, title) {
+  const dot = document.createElement("i");
+  dot.className = lit ? "sense-lamp lit" : "sense-lamp";
+  dot.title = title;
+  return dot;
+}
+
+// The five water sensors, laid out as they sit on the machine: front row
+// left-middle-right above the back row.
+function waterLamps(program) {
+  const grid = document.createElement("div");
+  grid.className = "sense-grid";
+  const of = (stops, side) => (program.sensors || []).find(
+    (s) => Math.sign(s.stops) === stops && Math.sign(s.side) === side);
+  for (const [stops, side, where] of [[1, 1, "ahead on its left"], [1, 0, "straight ahead"],
+                                      [1, -1, "ahead on its right"], [-1, 1, "behind, on its left"],
+                                      [0, 0, ""], [-1, -1, "behind, on its right"]]) {
+    if (!where) { grid.append(document.createElement("i")); continue; }
+    const sensor = of(stops, side);
+    grid.append(senseLamp(!!(sensor && sensor.sees), sensor ? `Water ${where}` : "no sensor here"));
+  }
+  return grid;
+}
+
+// A patch of ground drawn in the colour the ground itself is drawn in.
+function groundSwatch(at) {
+  const swatch = document.createElement("i");
+  swatch.className = "sense-swatch";
+  const made = groundMadeOf(at);
+  const kind = made ? RUN_NAMES.indexOf(made) : -1;
+  const colour = kind >= 0 ? GROUND_COLOURS[kind] : null;
+  if (colour) swatch.style.background = `#${colour.getHexString()}`;
+  swatch.title = made || "off the map";
+  return { swatch, made };
+}
+
+// A bar, 0 to 1, with what it is of written once.
+function senseBar(share, words) {
+  const wrap = document.createElement("div");
+  wrap.className = "sense-bar";
+  const fill = document.createElement("i");
+  fill.style.width = `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`;
+  const said = document.createElement("span");
+  said.textContent = words;
+  wrap.append(fill, said);
+  return wrap;
+}
+
+// Everything the machine you are being can tell you, redrawn each time the
+// room says something new.
+function showWhatItSenses() {
+  const box = $("settings-senses");
+  if (!box) return;
+  const mine = whatIsRidden();
+  if (!mine) { box.replaceChildren(); box.hidden = true; return; }
+  box.hidden = false;
+  const p = mine.program;
+
+  const rows = [];
+  const water = document.createElement("div");
+  water.className = "sense-row";
+  const waterWord = document.createElement("span");
+  waterWord.className = "sense-what";
+  waterWord.textContent = "Water";
+  water.append(waterWord, waterLamps(p));
+  rows.push(water);
+
+  // What it is standing on, and what is a couple of metres in front of it.
+  const body = world.bodies && world.bodies.get(mine.name);
+  if (body && body.mesh) {
+    const here = body.mesh.position;
+    const way = new THREE.Vector3(0, 0, 1).applyQuaternion(body.mesh.quaternion);
+    const ahead = [here.x + way.x * SENSE_AHEAD_M, here.y, here.z + way.z * SENSE_AHEAD_M];
+    const row = document.createElement("div");
+    row.className = "sense-row";
+    const word = document.createElement("span");
+    word.className = "sense-what";
+    word.textContent = "Ground";
+    const under = groundSwatch([here.x, here.y, here.z]);
+    const front = groundSwatch(ahead);
+    const said = document.createElement("span");
+    said.className = "sense-said";
+    said.textContent = front.made === under.made
+      ? (under.made || "off the map")
+      : `${under.made || "off the map"}, then ${front.made || "off the map"}`;
+    row.append(word, under.swatch, front.swatch, said);
+    rows.push(row);
+  }
+
+  if (typeof p.charge_share === "number") {
+    const row = document.createElement("div");
+    row.className = "sense-row";
+    const word = document.createElement("span");
+    word.className = "sense-what";
+    word.textContent = "Battery";
+    row.append(word, senseBar(p.charge_share, `${Math.round(p.charge_share * 100)}%`));
+    rows.push(row);
+  }
+
+  box.replaceChildren(...rows);
+}
+
+// ---------------------------------------------------------------------------
 // The Settings tab: what you are, and god mode
 // ---------------------------------------------------------------------------
 //
@@ -5548,7 +5671,11 @@ function buildRidingSettings() {
   said.textContent = "Looking for something to be…";
   const list = document.createElement("ul");
   list.id = "settings-riders";
-  who.append(title, said, list);
+  const senses = document.createElement("div");
+  senses.id = "settings-senses";
+  senses.className = "senses";
+  senses.hidden = true;
+  who.append(title, said, senses, list);
 
   const god = document.createElement("section");
   god.setAttribute("aria-label", "God mode");
@@ -5598,6 +5725,7 @@ function showRidingSettings() {
         ? "Pick something to be."
         : "There is no machine in this room to be, so you are a camera above it.";
 
+  showWhatItSenses();
   list.replaceChildren(...all.map((m) => {
     const li = document.createElement("li");
     const button = document.createElement("button");

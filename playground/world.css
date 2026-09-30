@@ -569,3 +569,26 @@ body.panel-away #panel { transform: translateX(100%); }
      panel out works out at -172 px -- off the side of the screen.  */
   #hotbar { bottom: 136px; left: 50vw; }
 }
+
+/* What a machine senses, drawn rather than written (world.js
+   showWhatItSenses). Lamps sit where the sensors sit -- three across the
+   front, two behind -- so a lit one says WHERE. */
+.senses { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0 .6rem; }
+.sense-row { display: flex; align-items: center; gap: .4rem; }
+.sense-what { flex: 0 0 4.2rem; font-size: .75rem; opacity: .7; text-transform: uppercase;
+              letter-spacing: .04em; }
+.sense-grid { display: grid; grid-template-columns: repeat(3, .6rem); gap: .18rem; }
+.sense-lamp { width: .6rem; height: .6rem; border-radius: 50%; display: block;
+              background: #2c2f33; border: 1px solid #454a50; }
+.sense-lamp.lit { background: #3da9fc; border-color: #8fd3ff; box-shadow: 0 0 .3rem #3da9fc; }
+.sense-swatch { width: .9rem; height: .9rem; border-radius: 2px; display: block;
+                border: 1px solid rgba(0, 0, 0, .35); background: #2c2f33; }
+.sense-said { font-size: .8rem; opacity: .85; }
+.sense-bar { position: relative; flex: 1 1 auto; height: .8rem; border-radius: 2px;
+             background: #2c2f33; overflow: hidden; }
+.sense-bar > i { position: absolute; inset: 0 auto 0 0; background: #4caf7d; display: block; }
+.sense-bar > span { position: relative; font-size: .7rem; line-height: .8rem;
+                    padding-left: .3rem; }
+/* A wheel its program owns: the hint that says so is the important line. */
+.mp-hint.owned { opacity: 1; color: #ffd479; }
+

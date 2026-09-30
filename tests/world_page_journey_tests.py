@@ -1275,6 +1275,23 @@ class YouAreAMachineInTheRoom(PageJourney):
             " banjoRoom.camera.position.z - r.mesh.position.z) < 0.35; })()", 30),
             f"the eye is not on the rover: {self.js('banjoRoom.camera.position.toArray()')}")
 
+        # AND WHAT IT SENSES, drawn rather than written. The owner: "be far
+        # more visual about things, like show me what the rover can sense".
+        # Five lamps laid out where the sensors sit, the ground under it and
+        # ahead of it as swatches in the ground's own colours, and a battery
+        # bar -- all off what the page already has, so none of it costs a
+        # round trip.
+        self.assertTrue(self.wait_for("!document.getElementById('settings-senses').hidden", 20),
+                        "the senses are not shown")
+        self.assertEqual(5, self.js("document.querySelectorAll('.sense-lamp').length"),
+                         "a water sensor is missing a lamp")
+        self.assertEqual(2, self.js("document.querySelectorAll('.sense-swatch').length"),
+                         "the ground under it and ahead of it are two swatches")
+        self.assertTrue(self.js("!!document.querySelector('.sense-swatch').title"),
+                        "a swatch does not say what it is")
+        self.assertTrue(self.js("!!document.querySelector('.sense-bar > i').style.width"),
+                        "the battery bar has no fill")
+
     def test_getting_in_turns_it_on_and_it_holds_still_until_you_drive(self):
         """A machine you are sitting in does not wander off by itself.
 
