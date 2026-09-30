@@ -1881,10 +1881,9 @@ function carriedDesign(thing) {
 // carrying. even the raw materials should be the same thumbnail just with
 // quantity attached to it, no entry fields."
 //
-// One grid. A thing you are carrying and a heap of oak on the rack are drawn
-// the same way -- a picture with its name under it and, for anything measured
-// by the kilogram, how much on the corner of the picture. The number boxes
-// are gone: the rack is still editable in the Lab, where spending it happens.
+// Carried products, raw materials and processed goods share pictured cards.
+// Quantities sit below names; material cards lead to filtered recipes without
+// changing stock. The Lab remains the place to edit a source and build it.
 //
 // A material has no shape and no colour of its own, so it borrows the room's:
 // MATERIAL_LOOK is the same table world.js paints bodies from, which is why a
@@ -1906,8 +1905,8 @@ function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
   const tile = make("button", { type: "button", class: "ws-tile", title: thing.name });
   const art = make("span", { class: "ws-tile-art" });
   art.append(thumbnail(thing));
-  if (quantity) art.append(make("b", { class: "ws-tile-count" }, quantity));
-  tile.append(art, make("span", { class: "ws-tile-name" }, thing.name));
+  tile.append(art, make("span", { class: "ws-tile-name" }, titleCase(thing.name)));
+  if (quantity) tile.append(make("b", { class: "ws-tile-count" }, quantity));
   if (where) tile.append(make("span", { class: "ws-tile-where" }, where));
   if (onOpen) tile.onclick = () => guard(tile, onOpen);
   else tile.disabled = true;
@@ -1924,12 +1923,14 @@ async function showInventory() {
   $("#ws-inv-note").textContent = carried.length ? "Select → Lab" : "Empty · Pick up items in World";
   const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => invTile({
     name:r.material, material:r.material, shape:"box", color_rgba:MATERIAL_LOOK[r.material] || "9aa7b4",
-  }, {quantity:kgSaid(r.mass_kg)}));
+  }, {quantity:`${Number(r.mass_kg).toLocaleString(undefined, {maximumFractionDigits:r.mass_kg >= .001 ? 3 : 6})} kg`,
+      onOpen:() => openMaterialRecipes(r.material || r.substance)}));
   $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
   const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => invTile({
     name:r.substance, material:r.substance, shape:"sphere", color_rgba:MATERIAL_LOOK[r.substance] || "8b9bab",
-  }, {quantity:kgSaid(r.mass_kg)}));
+  }, {quantity:`${Number(r.mass_kg).toLocaleString(undefined, {maximumFractionDigits:r.mass_kg >= .001 ? 3 : 6})} kg`,
+      onOpen:() => openMaterialRecipes(r.material || r.substance)}));
   $("#ws-inv-goods").replaceChildren(...goods);
   $("#ws-inv-goods-empty").hidden = goods.length > 0;
   await showInventoryEnergy();
@@ -1988,6 +1989,7 @@ function showDesignSources(inv, templates) {
       if (existing) group.querySelector(".ws-design-grid").append(existing);
       else {
         const card = designCard(record.name, "Design", inventoryDesignButton(record.id, record.source));
+        card.dataset.recipeSource = record.id;
         group.querySelector(".ws-design-grid").append(card); loadInventoryPicture(card, record);
       }
     }
@@ -2093,7 +2095,10 @@ async function loadInventoryPicture(card, record) {
       if (inventoryPictures.size >= 200) inventoryPictures.delete(inventoryPictures.keys().next().value);
       inventoryPictures.set(key, inventoryPictureRequest(record));
     }
-    paintInventoryPicture(card.querySelector("canvas"), await inventoryPictures.get(key));
+    const parts = await inventoryPictures.get(key);
+    if (!record.recipe) card.dataset.materials = JSON.stringify([...new Set(parts.map(p => p.material).filter(Boolean))]);
+    paintInventoryPicture(card.querySelector("canvas"), parts);
+    if (card.dataset.recipeSource) applyRecipeMaterialFilter();
   } catch {
     inventoryPictures.delete(key);
     card.querySelector("canvas").dataset.preview = "unavailable";
@@ -2398,16 +2403,18 @@ function installRecipes() {
   const pane = $("#ws-pane-recipes");
   pane.replaceChildren(make("h2", {}, "Recipes"));
   pane.append(make("p", {class:"ws-recipes-intro"}, "Make places an item in the World. Pick it up there to add it to your bag."),
-    make("h3", {}, "Build recipes"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+    make("div", {id:"ws-recipe-filter", class:"ws-recipe-filter", role:"group", "aria-label":"Filter recipes by material"}),
+    make("p", {id:"ws-recipe-filter-status", class:"ws-note", role:"status"}),
+    make("h3", {id:"ws-rec-build-title"}, "Build recipes"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
   screenSection(pane, "Saved designs", "ws-rec-saved", "ws-design-groups");
   screenSection(pane, "Saved parts", "ws-rec-components", "ws-design-grid").id = "ws-rec-components-section";
   const blocks = screenSection(pane, "Building blocks", "ws-rec-blocks", "ws-design-groups");
   blocks.id = "ws-rec-blocks-section";
   const start = make("button", {type:"button", class:"ws-action"}, "New design → Choose a block");
-  start.onclick = () => blocks.scrollIntoView({block:"start", behavior:"smooth"});
+  start.onclick = () => { setRecipeMaterial(""); blocks.scrollIntoView({block:"start", behavior:"smooth"}); };
   const jumps = make("div", {class:"ws-inventory-actions"});
   const saved = make("button", {type:"button", class:"ws-action"}, "Saved designs");
-  saved.onclick = () => $("#ws-rec-saved").scrollIntoView({block:"start", behavior:"smooth"});
+  saved.onclick = () => { setRecipeMaterial(""); $("#ws-rec-saved").scrollIntoView({block:"start", behavior:"smooth"}); };
   jumps.append(saved, start); pane.querySelector("h2").after(jumps);
   blocks.querySelector("h3").after(make("p", {class:"ws-note"}, "Choose shape → Lab → Describe changes → Save / Make"),
     make("div", {id:"ws-rec-ai-help", class:"ws-recipe-value"}));
@@ -2416,6 +2423,51 @@ function installRecipes() {
     make("ul", {id:"ws-recipes-deposits", class:"ws-list"}));
   pane.append(processes);
 }
+function openMaterialRecipes(material) {
+  setRecipeMaterial(material);
+  showTab("recipes");
+}
+function setRecipeMaterial(material) {
+  const url = new URL(location.href);
+  if (material) url.searchParams.set("material", material);
+  else url.searchParams.delete("material");
+  window.history.replaceState(null, "", url);
+  applyRecipeMaterialFilter();
+}
+function renderRecipeMaterialFilter(recipes, inventory) {
+  const selected = new URLSearchParams(location.search).get("material");
+  const materials = new Set(recipes.templates.flatMap(t => [...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance)));
+  for (const row of [...(inventory.materials || []), ...(inventory.goods || [])]) materials.add(row.material || row.substance);
+  if (selected) materials.add(selected);
+  const root = $("#ws-recipe-filter"); root.replaceChildren();
+  for (const material of ["", ...[...materials].filter(Boolean).sort()]) {
+    const button = make("button", {type:"button", class:"ws-action", "data-recipe-material":material}, material ? titleCase(material) : "All materials");
+    button.onclick = () => setRecipeMaterial(material); root.append(button);
+  }
+  applyRecipeMaterialFilter();
+}
+function applyRecipeMaterialFilter() {
+  const pane = $("#ws-pane-recipes"), selected = new URLSearchParams(location.search).get("material") || "";
+  if (!pane || !$("#ws-recipe-filter-status")) return;
+  let count = 0;
+  for (const card of pane.querySelectorAll("[data-recipe], [data-recipe-source]")) {
+    const matches = !selected || JSON.parse(card.dataset.materials || "[]").includes(selected);
+    card.hidden = !matches; if (matches) count++;
+  }
+  for (const group of pane.querySelectorAll("#ws-rec-saved .ws-design-group"))
+    group.hidden = ![...group.querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
+  const built = [...$("#ws-recipes-templates").querySelectorAll("[data-recipe]")].some(c => !c.hidden);
+  $("#ws-rec-build-title").hidden = !built;
+  $("#ws-rec-saved").closest(".ws-inventory-section").hidden = Boolean(selected) && ![...$("#ws-rec-saved").querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
+  $("#ws-rec-components-section").hidden = Boolean(selected) || !$("#ws-rec-components").childElementCount;
+  $("#ws-rec-blocks-section").hidden = Boolean(selected);
+  $("#ws-recipes-processes").hidden = Boolean(selected) || !$("#ws-recipes-room").querySelector("li") && !$("#ws-recipes-deposits").querySelector("li");
+  for (const button of $("#ws-recipe-filter").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.recipeMaterial === selected));
+  const status = $("#ws-recipe-filter-status");
+  status.hidden = !selected;
+  status.textContent = selected ? `${titleCase(selected)} · ${count} recipe${count === 1 ? "" : "s"}${count ? "" : " · No matches"}` : "";
+}
+
 function recipeValue(name, value, cls = "") {
   const row = make("div", {class:`ws-recipe-value ${cls}`.trim()});
   row.append(make("span", {}, name), make("b", {}, value)); return row;
@@ -2460,6 +2512,7 @@ async function showRecipes() {
     const li = item(t.source === "saved" || t.name === "Camp stool" ? t.name : titleCase(t.name), "",
       !t.enough ? "short" : ready ? "enough" : "blocked");
     li.dataset.recipe = recipeKey(t);
+    li.dataset.materials = JSON.stringify([...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance));
     if (t.name === "Camp stool" && new URLSearchParams(location.search).get("guide") === "build-camp") li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
@@ -2537,6 +2590,7 @@ async function showRecipes() {
   }), "");
   fill("#ws-recipes-deposits", r.deposits.map(d=>item(d.name, `${d.left_kg} kg ${d.substance}`)), "");
   $("#ws-recipes-processes").hidden = !r.room_recipes.length && !r.deposits.length;
+  renderRecipeMaterialFilter(r, inv);
   await showGoalGuide("recipes");
 }
 
@@ -2685,6 +2739,7 @@ function goalWorldLink(body) {
 }
 function goToGoalScreen(id, screen) {
   const url = new URL(location.href); url.searchParams.set("guide", id);
+  if (screen === "recipes") url.searchParams.delete("material");
   window.history.replaceState(null, "", url); showTab(screen);
 }
 async function showGoalGuide(screen) {

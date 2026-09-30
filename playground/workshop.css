@@ -476,23 +476,19 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 /* ---------------------------------------------------------------------------
    WHAT YOU HAVE
    ---------------------------------------------------------------------------
-   One grid. A thing you are carrying and a heap of oak on the rack are drawn
-   the same way: a picture, its name, and how much of it there is on the
-   corner of the picture. No number boxes -- the rack is edited in the Lab,
-   where spending it happens. */
+   Pictured cards share readable names and quantities on separate lines.
+   Carried items open in Lab; material cards lead to filtered Recipes. */
 .ws-inv-grid { display:grid;gap:.6rem;margin:0 0 1rem;
                grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); }
 .ws-tile { display:flex;flex-direction:column;align-items:center;gap:.25rem;
            border:1px solid #34404e;background:#151e28;color:#dfe7f1;
-           border-radius:.5rem;padding:.5rem .35rem;font:inherit;cursor:pointer; }
+           border-radius:.5rem;padding:.5rem .35rem;font:inherit;cursor:pointer;user-select:none;-webkit-user-select:none; }
 .ws-tile:disabled { cursor:default;opacity:.92; }
 .ws-tile:not(:disabled):hover { border-color:#6fb0ff;background:#18242f; }
 .ws-tile-art { position:relative;display:block;line-height:0; }
 .ws-tile-art canvas { display:block; }
-.ws-tile-count { position:absolute;right:-4px;bottom:-3px;padding:0 .25rem;
-                 border-radius:.28rem;background:#0d1319;border:1px solid #3d4a5a;
-                 font-size:.66rem;font-weight:600;color:#dfe7f1;
-                 font-variant-numeric:tabular-nums; }
+.ws-tile-count { display:block;font-size:.9rem;font-weight:650;color:#dfe7f1;
+                 font-variant-numeric:tabular-nums;line-height:1.4; }
 .ws-tile-name { font-size:.75rem;line-height:1.2;text-align:center;
                 overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
                 -webkit-line-clamp:2;-webkit-box-orient:vertical; }
@@ -613,3 +609,8 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 #ws-rec-saved li > canvas { align-self:center; }
 #ws-rec-saved li .ws-recipe-acts { flex-wrap:wrap;margin-top:auto; }
 .ws-inventory-section[hidden] { display:none; }
+
+.ws-tile:focus-visible { outline:2px solid #8dc3ff;outline-offset:3px; }
+.ws-recipe-filter { display:flex;flex-wrap:wrap;gap:.4rem;margin:.8rem 0; }
+.ws-recipe-filter [aria-pressed=true] { background:var(--ink);color:var(--panel); }
+#ws-pane-recipes [hidden] { display:none!important; }

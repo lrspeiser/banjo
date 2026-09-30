@@ -187,7 +187,10 @@ class StarterGoals(unittest.TestCase):
             wait_for('document.querySelector("[data-market-item=oak-stock] button").disabled === false')
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("[data-goal=stock-oak]")?.dataset.complete === "true"')
+        # An unrelated material filter must not hide the guided oak recipe.
+        page.evaluate('(()=>{const u=new URL(location.href);u.searchParams.set("material","glass");window.history.replaceState(null,"",u)})()')
         click('[data-goal-go="build-camp"]')
+        self.assertFalse(page.evaluate('new URLSearchParams(location.search).has("material")'))
         camp_selector = '[data-recipe="stool:Camp stool"]'
         wait_for(f'!!document.querySelector({json.dumps(camp_selector + ".ws-goal-target")})')
         click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button')

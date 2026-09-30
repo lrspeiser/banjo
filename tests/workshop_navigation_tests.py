@@ -61,6 +61,48 @@ class GameScreens(unittest.TestCase):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
 
+    def test_material_cards_open_filtered_recipes_and_all_materials_restores_catalog(self):
+        world, owner, app = self.setup_world()
+        table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
+        saved = self.post("/api/workshop/feedback", {"kind":"table", "design_id":table["design_id"],
+            "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
+            "save_design":True, "label":"Oak filter design"}, world)["design"]["design_id"]
+        stock = self.post("/api/workshop/inventory", {}, world)
+        self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
+        self.wait('document.querySelectorAll("#ws-inv-stock .ws-tile").length > 0')
+        self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-inv-stock .ws-tile")].every(c => !c.disabled && getComputedStyle(c).userSelect === "none" && c.querySelector(".ws-tile-count").parentElement === c && getComputedStyle(c.querySelector(".ws-tile-count")).position === "static")'))
+        self.assertEqual(f'{next(r["mass_kg"] for r in stock["materials"] if r["material"] == "oak"):g} kg', self.page.evaluate('document.querySelector("#ws-inv-stock [title=oak] .ws-tile-count").textContent'))
+        self.screenshot("material-quantities.png")
+        self.click('#ws-inv-stock [title="oak"]')
+        self.wait('new URLSearchParams(location.search).get("tab") === "recipes" && document.querySelectorAll("#ws-recipe-filter button").length > 1 && !!document.querySelector("#ws-rec-saved [data-recipe]")')
+        self.assertEqual("oak", self.page.evaluate('new URLSearchParams(location.search).get("material")'))
+        self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-pane-recipes [data-recipe]")].filter(c=>!c.hidden).every(c=>JSON.parse(c.dataset.materials).includes("oak"))'))
+        self.assertTrue(self.page.evaluate(f'!!document.querySelector("[data-recipe=\\"{saved}\\"]:not([hidden])")'))
+        total = self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]").length')
+        shown = self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length')
+        self.assertGreater(shown, 0); self.assertLess(shown, total)
+        self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
+        self.screenshot("oak-recipes.png")
+        self.page.send("Page.reload")
+        self.wait('document.querySelector("#ws-recipe-filter [data-recipe-material=oak]")?.getAttribute("aria-pressed") === "true"')
+        self.click('[data-recipe-material="glass"]')
+        self.assertEqual("glass", self.page.evaluate('new URLSearchParams(location.search).get("material")'))
+        self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])")].every(c=>JSON.parse(c.dataset.materials).includes("glass"))'))
+        self.click('[data-recipe-material=""]')
+        self.assertFalse(self.page.evaluate('new URLSearchParams(location.search).has("material")'))
+        self.assertEqual(total, self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length'))
+        self.assertFalse(self.page.evaluate('document.querySelector("#ws-rec-blocks-section").hidden'))
+        self.page.send("Page.reload"); self.wait('document.querySelectorAll("#ws-recipe-filter button").length > 1')
+        self.assertEqual("true", self.page.evaluate('document.querySelector("[data-recipe-material=\\"\\"]").getAttribute("aria-pressed")'))
+        self.navigate(world, "workshop=1&tab=recipes&material=unavailable-material")
+        self.wait('document.querySelector("#ws-recipe-filter-status")?.textContent.includes("No matches")')
+        self.assertFalse(self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length'))
+        self.click('[data-recipe-material=""]')
+        self.assertEqual(total, self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length'))
+        after = self.post("/api/workshop/inventory", {}, world)
+        for key in ("materials", "goods", "carried"): self.assertEqual(stock[key], after[key])
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
     def test_inventory_shows_private_wallet_and_native_meters_without_spending_or_stepping(self):
         world, owner, app = self.setup_world()
         self.post("/api/workshop/market", {"action":"bank", "joules":200,
