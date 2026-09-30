@@ -126,6 +126,14 @@ def update_pose(app: Any, ident: str, person: Any) -> None:
             player["pose"] = {"eyes_m": [round(v, 3) for v in eye],
                               "facing": [round(face[0] / norm, 3), 0,
                                          round(face[2] / norm, 3)]}
+            look = person.get("look_direction")
+            if isinstance(look, list) and len(look) == 3:
+                try:
+                    aim = [float(v) for v in look]
+                    length = math.hypot(*aim)
+                    if all(math.isfinite(v) for v in aim) and length > .1:
+                        player["pose"]["look_direction"] = [round(v / length, 4) for v in aim]
+                except (ValueError, TypeError): pass
             player["seen_unix_s"] = time.time()
 
 

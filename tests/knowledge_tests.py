@@ -390,10 +390,6 @@ class TheWayToAThing(unittest.TestCase):
                       workshop_chat._route_to_a_thing(Bare(), "a spaceship")["summary"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ThereIsAWayToLearnSomething(unittest.TestCase):
     """The knowledge layer kept a journal for a fortnight and nothing could
     write a technique into it.
@@ -572,3 +568,7 @@ class ARecipeYouWatchedIsARecipeYouKnow(unittest.TestCase):
     def test_a_batch_that_made_nothing_is_not_evidence(self):
         self.assertIsNone(progression.evidence_from_batch(
             "smelt copper", {}, {"copper ore": 5.0}, session_id="s1", at=self.now, batch=1))
+
+
+if __name__ == "__main__":
+    unittest.main()

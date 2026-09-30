@@ -26,6 +26,7 @@ dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="
   <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><button type="submit">New game · generate map</button></form>
   <form id="game-menu-join"><label>Join a world<input name="link" placeholder="Paste a world link or id" required></label><button type="submit">Join world</button></form>
   <div id="game-menu-share" hidden><p>People with this link join the same live world with their own avatar and bag.</p><button type="button" id="game-menu-copy">Copy world link</button></div>
+  <section id="game-menu-ai" hidden><h3>Characters</h3><p>Watch a character play the first-camp goals with its own bag, energy and tech journal.</p><form id="game-menu-ai-start"><label>Character name<input name="name" maxlength="32" value="Banjo explorer" required></label><label>Controller<select name="mode"><option value="openai">AI · OpenAI</option><option value="reference">Reference bot · no model calls</option></select></label><button type="submit">Start character</button></form><p id="game-menu-ai-status" role="status"></p><ul id="game-menu-ai-list"></ul><p>OpenAI play uses the server's configured model. Each run stops after 24 decisions or the opening goals. A server restart pauses characters.</p></section>
   <h3>Worlds in this browser</h3><ul id="game-menu-known"></ul><p id="game-menu-message" role="status" aria-live="polite"></p>`;
 document.body.append(dialog);
 const $ = (q) => dialog.querySelector(q);
@@ -49,10 +50,12 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("[data-game-menu]")) return;
   render();
   dialog.showModal();
+  if (currentId) loadCharacters().catch((error) => { $("#game-menu-ai-status").textContent = error.message; });
 });
 $("#game-menu-close").addEventListener("click", () => dialog.close());
 
 if (currentId && validId.test(currentId)) {
+  $("#game-menu-ai").hidden = false;
   $("#game-menu-avatar").hidden = false;
   $("#game-menu-avatar input").value = localStorage.getItem("banjo.avatar-name") || "Player";
   $("#game-menu-share").hidden = false;
@@ -81,6 +84,65 @@ $("#game-menu-avatar").addEventListener("submit", (event) => {
   localStorage.setItem("banjo.avatar-name", name);
   location.reload();
 });
+
+async function characterAction(body) {
+  const player = localStorage.getItem(`banjo.player.${currentId}`);
+  if (!player) throw new Error("Your character is still joining. Open Menu again when the world is ready.");
+  const status = await fetch("/api/status", { headers:{ "X-Banjo-World":currentId } }).then((r) => r.json());
+  const response = await fetch("/api/world/ai", { method:"POST",
+    headers:{ "Content-Type":"application/json", "X-Banjo-Token":status.csrf_token,
+              "X-Banjo-World":currentId, "X-Banjo-Player":player }, body:JSON.stringify(body) });
+  const answer = await response.json();
+  if (!response.ok) throw new Error(answer.error || "Character request failed");
+  return answer;
+}
+
+async function loadCharacters() {
+  const response = await characterAction({ action:"list" });
+  const list = $("#game-menu-ai-list"); list.replaceChildren();
+  const select = $("#game-menu-ai-start select");
+  select.querySelector('[value="openai"]').disabled = !response.model_available;
+  if (!response.model_available) select.value = "reference";
+  $("#game-menu-ai-status").textContent = response.model_available
+    ? "AI characters are ready. Reference mode is available for reproducible tests."
+    : "OpenAI is not configured. Reference bots can play without model calls.";
+  for (const character of response.characters) {
+    const li = document.createElement("li"), label = document.createElement("p");
+    li.dataset.character = character.id;
+    label.textContent = `${character.name} · ${character.mode === "openai" ? "AI" : "Reference bot"} · ${character.status} · ${character.message}`;
+    const watch = document.createElement("a"); watch.textContent = "Watch through its eyes";
+    watch.dataset.watch = character.id;
+    watch.href = `${worldUrl(currentId)}&watch=${character.id}`;
+    li.append(label, watch);
+    if (character.can_control && character.status !== "complete") {
+      const running = ["running", "thinking", "walking"].includes(character.status);
+      const control = document.createElement("button"); control.type = "button";
+      control.textContent = running ? "Pause" : "Resume";
+      control.onclick = async () => {
+        control.disabled = true;
+        try { await characterAction({ action:running ? "pause" : "start", id:character.id }); await loadCharacters(); }
+        catch (error) { $("#game-menu-ai-status").textContent = error.message; control.disabled = false; }
+      };
+      li.append(control);
+    }
+    list.append(li);
+  }
+  if (!list.children.length) list.textContent = "No characters started in this world yet.";
+}
+
+$("#game-menu-ai-start").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("#game-menu-ai-start button"); button.disabled = true;
+  try {
+    const character = await characterAction({ action:"start", name:$("#game-menu-ai-start input").value.trim(),
+                                            mode:$("#game-menu-ai-start select").value });
+    location.assign(`${worldUrl(currentId)}&watch=${character.id}`);
+  } catch (error) { $("#game-menu-ai-status").textContent = error.message; button.disabled = false; }
+});
+
+setInterval(() => {
+  if (dialog.open && currentId && !document.hidden) loadCharacters().catch(() => {});
+}, 3000);
 
 $("#game-menu-copy").addEventListener("click", async () => {
   try {

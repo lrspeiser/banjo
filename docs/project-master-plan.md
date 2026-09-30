@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Autonomous characters, September 30 (implemented, bounded):** [Character contract](ai-characters.md). Named games offer Menu controls to start, pause and watch a guest character with its own hand, bag, wallet, goals and tech journal. An OpenAI controller chooses bounded existing game actions; an explicitly labeled reference bot supports reproducible playthroughs. Journals are now per guest. The demonstrated action chain is first camp, with visual scripted movement; open-ended learning and exploration remain next gates.
+
 **Opening goals, September 30 (implemented):** Named games now offer a personal first-camp loop: bank solar energy, buy oak, build the curated rigid Camp stool, and pack it. Server evidence determines completion. See [opening goals](starter-goals.md) for the contract, AI authoring instructions, verification and unsupported survival/mining capabilities.
 
 **Starter economy direction, September 30:** [Energy Market checkpoint](market-economy.md). The generated world's solar array gives players a renewable way to bank measured joules; finite trader stock replenishes with world time, and purchased materials and machine goods go to each buyer's Workshop stock. This is a game-economy layer over explicit native energy debits and external goods supply. It does not convert display names into physical laws, certify manufacture or replace the broader material-backed creator plan below.

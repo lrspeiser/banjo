@@ -699,3 +699,15 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #game-menu a{color:#acd4ff}
 #game-menu p{font-size:.8rem;line-height:1.4}
 #game-menu-message{min-height:1.2rem;color:#eac483}
+/* Character observation shares the world renderer and keeps controls separate. */
+#watch-character { padding: .8rem; border-bottom: 1px solid #405366; background: #16222c; }
+#watch-character h2 { margin: 0 0 .4rem; font-size: 1rem; }
+#watch-character p, #watch-history { margin: .4rem 0; font-size: .8rem; }
+#watch-history { padding-left: 1.2rem; }
+#watch-return { color: #a9cfff; }
+#game-menu-ai-list a { display: inline-block; margin-right: .7rem; color: #a9cfff; }
+.watching-character #details, .watching-character #room-controls,
+.watching-character #machine-panel, .watching-character #pane-bench,
+.watching-character #tab-bench, .watching-character #tab-keys,
+.watching-character #tab-settings, .watching-character #pane-settings { display: none; }
+.watching-character #inventory button { display: none; }

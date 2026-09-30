@@ -26,6 +26,9 @@ import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
+const watchedId = new URLSearchParams(location.search).get("watch");
+let watchedView = null;
+let watchedAt = 0;
 if (worldId) {
   for (const link of document.querySelectorAll("#panel .workshop-entry:not(.debug-entry)")) {
     const target = new URL(link.href);
@@ -76,6 +79,9 @@ function linkFailure(error) {
 }
 
 async function api(path, body, renewed = false) {
+  if (watchedId && body !== undefined && path !== "/api/world/player/join"
+      && !(path === "/api/world/ai" && body.action === "watch"))
+    throw new Error("Watching is read-only. Return to your character to interact.");
   const headers = { "Content-Type": "application/json" };
   if (worldId) headers["X-Banjo-World"] = worldId;
   if (worldId && playerToken) headers["X-Banjo-Player"] = playerToken;
@@ -293,7 +299,7 @@ function showPlayers(players) {
   if (!playerId || !Array.isArray(players)) return;
   const seen = new Set();
   for (const person of players) {
-    if (person.id === playerId || !person.pose?.eyes_m) continue;
+    if (person.id === playerId || person.id === watchedId || !person.pose?.eyes_m) continue;
     seen.add(person.id);
     let avatar = avatars.get(person.id);
     if (!avatar) { avatar = makeAvatar(person); avatars.set(person.id, avatar); }
@@ -1574,6 +1580,7 @@ function placeBeyond(block) {
 // room back whole -- the reload after that is the one that most needs it. It
 // is only used for a room as it stood (asItStood), so keeping it costs nothing.
 function keepView() {
+  if (watchedId) return;
   if (!world.scene) return;
   const look = camera.position.clone().add(forwardVector().multiplyScalar(4));
   try {
@@ -3967,10 +3974,10 @@ function slotColour(material) {
 
 function showInventory() {
   const inv = world.inventory;
-  const held = world.held && world.held.name;
+  const hand = inv && inv.hands ? inv.hands[inv.hand_in_the_world] : null;
+  const held = watchedId ? hand?.name : world.held && world.held.name;
   const entry = held ? world.bodies.get(held) : null;
   const mass = entry && entry.mass ? ` · ${grams(entry.mass)}` : "";
-  const hand = inv && inv.hands ? inv.hands[inv.hand_in_the_world] : null;
   const left = inv && inv.hands && inv.hands.left ? inv.hands.left.name : null;
   const slots = inv && Array.isArray(inv.stowed) ? inv.stowed : [];
   const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
@@ -4033,14 +4040,14 @@ function showInventory() {
     // PICK IT UP WITH THE MOUSE and drop it on a slot in the row over the
     // room: that is the hot list. The buttons still work for anyone who
     // would rather not drag, and for a touch screen, which has no drag.
-    li.draggable = true;
+    li.draggable = !watchedId;
     li.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData(BAG_DRAG, thing.id);
       e.dataTransfer.effectAllowed = "move";
       document.body.classList.add("moving-a-thing");
     });
     li.addEventListener("dragend", () => document.body.classList.remove("moving-a-thing"));
-    li.title = `${bagName(thing)} — drag it onto a slot in the row over the `
+    li.title = watchedId ? bagName(thing) : `${bagName(thing)} — drag it onto a slot in the row over the `
             + "room, or onto Workshop to open it on the bench";
     const measured = storedHeat.get(thing.name);
     if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
@@ -8548,7 +8555,70 @@ function recordLostLink(gaveUp) {
   world.lost = 0;
 }
 
+function updateWatchedCharacter(view) {
+  watchedView = view;
+  let panel = $("watch-character");
+  if (!panel) {
+    panel = document.createElement("section"); panel.id = "watch-character";
+    panel.innerHTML = '<h2 id="watch-name"></h2><p id="watch-status" role="status"></p><p id="watch-progress"></p><p id="watch-tech"></p><ol id="watch-history"></ol>';
+    const back = document.createElement("a"); back.textContent = "Return to my character";
+    back.id = "watch-return"; back.href = `/world?world=${worldId}&scene=new-game`;
+    panel.append(back); $("panel").querySelector("header").after(panel);
+    document.body.classList.add("watching-character");
+    $("ask-text").disabled = true;
+    $("ask-send").disabled = true;
+    $("ask-text").placeholder = "Watching a character. Return to your character to interact.";
+  }
+  const character = view.character, pose = character.pose;
+  if (pose?.eyes_m) {
+    camera.position.set(...pose.eyes_m);
+    const f = pose.look_direction || pose.facing || [0, 0, -1];
+    yaw = Math.atan2(-f[0], -f[2]); pitch = Math.asin(clamp(f[1], -1, 1));
+    camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+  }
+  $("watch-name").textContent = `Watching ${character.name}`;
+  $("watch-status").textContent = `${character.mode === "openai" ? "AI" : "Reference bot"} · ${character.status} · ${character.message}`;
+  $("watch-progress").textContent = `${view.goals.goals.filter((g) => g.complete).length} / ${view.goals.goals.length} goals · ${view.goals.balance_j} J · ${character.decisions} / 24 decisions`;
+  const learned = view.skills.filter((s) => s.known);
+  $("watch-tech").textContent = `Its tech tree: ${learned.length} / ${view.skills.length} techniques known${learned.length ? " · " + learned.map((s) => s.name).join(", ") : ""}`;
+  $("watch-history").replaceChildren(...character.history.slice(-5).map((entry) => {
+    const li = document.createElement("li");
+    li.textContent = `${entry.action.replaceAll("_", " ")} · ${entry.result}${entry.error ? " · " + entry.error : ""}`;
+    return li;
+  }));
+  $("panel-state").textContent = `Watching ${character.name} · ${character.status}`;
+  world.inventory = view.state.inventory || null;
+  if (view.state.notebook) showNotebook(view.state.notebook, false);
+  showInventory();
+}
+
+async function tickWatchedCharacter() {
+  if (document.hidden || world.busy || !world.session || world.opening || performance.now() - watchedAt < 250) return;
+  world.busy = true; wants = null; watchedAt = performance.now();
+  try {
+    const view = await api("/api/world/ai", { action:"watch", id:watchedId });
+    if (view.state.session !== world.session) {
+      world.busy = false;
+      await open();
+      return;
+    }
+    const state = view.state;
+    draw(state); showPlayers(state.players);
+    followMachines(state.machines); followGoods(state.goods); followPorts(state.ports);
+    followVessels(state.vessels); drawStrength(state.mechanics); drawHeat(state.heat);
+    if (state.sun) lightFromSun(state.sun);
+    if (state.joints) drawJoints(state.joints);
+    world.clock = state.t;
+    $("room-clock").textContent = `The room's clock: ${Number(state.t).toFixed(1)} s · watching`;
+    updateWatchedCharacter(view);
+  } catch (error) {
+    $("panel-state").textContent = `Watching paused: ${error.message || error}`;
+    watchedAt = performance.now() + 750;
+  } finally { world.busy = false; }
+}
+
 async function tick() {
+  if (watchedId) { await tickWatchedCharacter(); return; }
   if (document.hidden) { world.lastTick = 0; return; }
   if (!world.session || world.busy || world.paused) return;
   // Waiting out a request that got no answer before asking again.
@@ -8950,13 +9020,15 @@ function frame() {
   last = now;
   traceFrame(gap);
   advanceGlides(now);
-  lookFromKeys(dt);
-  lookFromCursor(dt);
-  walk(dt);
-  payOutCable();
-  turnFromKeys(dt);
-  updateGuides();
-  updatePlacing(now);
+  if (!watchedId) {
+    lookFromKeys(dt);
+    lookFromCursor(dt);
+    walk(dt);
+    payOutCable();
+    turnFromKeys(dt);
+    updateGuides();
+    updatePlacing(now);
+  }
   fadePieces(now);
   animateHeat(now);
   animateWater(now);
@@ -9888,8 +9960,9 @@ async function open({ again = false } = {}) {
   showBuild(qa);
   try {
     const myPlayer = worldId ? await joinPlayer() : null;
-    const data = await api("/api/world/open",
-                           qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
+    const data = watchedId
+      ? (watchedView = await api("/api/world/ai", { action:"watch", id:watchedId, full:true })).state
+      : await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
     expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.
@@ -10001,7 +10074,8 @@ async function open({ again = false } = {}) {
       else if (upgrade.help)
         say("world", upgrade.help);
     }
-    say("world",
+    if (watchedId) say("world", "This camera follows the character's eyes. Its bag, goals and tech journal are shown here. Use Menu to pause it, or return to your character to play.");
+    else say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
       }. Click the room to look around, and walk with W A S D. ${keyOf("interact")} picks up`
@@ -10018,6 +10092,7 @@ async function open({ again = false } = {}) {
         + ` edge (left, down, right, up). It cuts what its edge meets hard enough, and`
         + ` nothing else.`);
     }
+    if (watchedId) updateWatchedCharacter(watchedView);
   } catch (error) {
     world.openError = String(error.message || error);
     $("panel-state").textContent = `Could not open the room: ${world.openError}`;

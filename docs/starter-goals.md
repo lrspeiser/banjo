@@ -1,5 +1,7 @@
 # Opening goals and agent playthroughs
 
+**Character controller follow-up:** [Autonomous characters](ai-characters.md) now exposes a bounded OpenAI controller and a separately labeled reference bot in Menu, with personal state and camera watching. The action chain here remains unchanged and still awards no new technique.
+
 Implemented September 30, 2026. Chain `first-camp-v1` is a small, Minecraft-inspired
 gather → build → carry loop in **named generated games**. It starts with the
 solar economy already present in those maps. It is not a survival or mining

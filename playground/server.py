@@ -60,6 +60,7 @@ import workshop_api
 import workshop_library
 import market
 import starter_goals
+import ai_player
 import workshop_install
 import world_upgrades
 import world_access
@@ -290,6 +291,8 @@ class Playground:
         # ground-work record the engine sends over in exactly one reply
         # (tool_use.run).
         self.journal = None
+        self.player_journals = {}
+        self.journal_lock = threading.RLock()
         self.reply_listeners = []
         self.on_live_reply = lambda session, reply: heard(self, session, reply)
         # What thinks for each machine's program on what it meets, and hears
@@ -317,7 +320,10 @@ class Playground:
                 at=at, batch=app.batches)
             if evidence is None:
                 return
-            journal = journal_of(app)
+            # A caller who advances world time is not necessarily witnessing
+            # this batch. Keep named-world machine research in the archive
+            # until a native machine/observer attribution rule exists.
+            journal = journal_of(app, shared=bool(getattr(app, "world_id", None)))
             if journal.add_evidence(evidence):
                 for learned in progression.earn(journal, registry(), at):
                     log.info("banjo: learned %s by watching %s", learned, recipe)
@@ -1244,6 +1250,7 @@ class WorldHub:
 
     def shutdown(self):
         for app in list(self.apps.values()):
+            if getattr(app, "ai_players", None) is not None: app.ai_players.shutdown()
             try: keep_world(app, "the server stopped")
             except Exception: log.exception("world %s could not be saved", app.world_id)
             app.clock.stop()
@@ -1303,7 +1310,11 @@ class Handler(BaseHTTPRequestHandler):
             app=self.app
             if path=="/api/status": return self.send(app.status())
             if path=="/api/runs": return self.send(app.runs())
-            if path=="/api/knowledge": return self.send(knowledge_view(app))
+            if path=="/api/knowledge":
+                if getattr(app, "world_id", None):
+                    owner = player_world.require(app, self.headers.get("X-Banjo-Player"))
+                    return self.send(progression.notebook(journal_of(app, owner), registry()))
+                return self.send(knowledge_view(app))
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
@@ -1426,7 +1437,7 @@ class Handler(BaseHTTPRequestHandler):
             path=urlsplit(self.path).path
             # Authenticate before a request can hold world access.
             owner_scope = None
-            if path.startswith(("/api/workshop/", "/api/world/workshop/")) and getattr(self.app, "world_id", None):
+            if path.startswith(("/api/workshop/", "/api/world/", "/api/live/")) and path != "/api/world/player/join" and getattr(self.app, "world_id", None):
                 guest = player_world.require(self.app, self.headers.get("X-Banjo-Player"))
                 owner_scope = workshop_library.REQUEST_OWNER.set(guest)
             try:
@@ -1445,6 +1456,19 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict) or set(body) - {"token", "name"}:
                 raise ValueError("Expected a player token and optional name")
             return self.send(player_world.join(self.app, body.get("token"), body.get("name")))
+        if path == "/api/world/ai":
+            app = self.app
+            if not getattr(app, "world_id", None): raise ValueError("AI characters belong to a named game")
+            owner = player_world.require(app, self.headers.get("X-Banjo-Player"))
+            with player_world.lock_of(app):
+                if getattr(app, "ai_players", None) is None:
+                    app.ai_players = ai_player.Manager(app, self.server.server_port, keep_world, journal_of, registry)
+            # Control may start a worker that needs exclusive world access.
+            # Never hold a shared world lease across start/pause.
+            if isinstance(body, dict) and body.get("action") == "watch":
+                with world_access.gate(app).enter():
+                    return self.send(app.ai_players.handle(owner, body))
+            return self.send(app.ai_players.handle(owner, body, self.headers.get("Cookie", "")))
         player = player_world.require(self.app, self.headers.get("X-Banjo-Player")) \
             if getattr(self.app, "world_id", None) and (
                 path.startswith(("/api/world/", "/api/live/")) or path=="/api/workshop/inventory") else ""
@@ -3315,10 +3339,20 @@ def registry():
     return _REGISTRY
 
 
-def journal_of(app):
-    """The person's notebook: one to a server, in its rooms' folder, so it
-    outlives every rebuild of a room and every restart. In memory only when the
-    server keeps no rooms."""
+def journal_of(app, owner=None, *, shared=False):
+    """Named games keep a journal per guest; standalone rooms keep the legacy
+    shared journal. Both outlive native rebuilds and server restarts."""
+    if getattr(app, "world_id", None) and not shared:
+        owner = owner or workshop_library.REQUEST_OWNER.get()
+        if owner:
+            if not WORLD_ID.fullmatch(str(owner)): raise ValueError("Invalid player journal id")
+            with app.journal_lock:
+                journals = getattr(app, "player_journals", None)
+                if journals is None: journals = app.player_journals = {}
+                if owner not in journals:
+                    journals[owner] = progression.Journal(Path(app.store.folder) / "players" / owner / "journal.json", owner=owner)
+                    progression.teach_the_start(journals[owner], registry(), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                return journals[owner]
     journal=getattr(app,"journal",None)
     if journal is None:
         store=getattr(app,"store",None)
@@ -3350,14 +3384,25 @@ def hear(app,session,reply):
     records=reply.get("ground_work") if isinstance(reply,dict) else None
     spec=getattr(session,"room_spec",None)
     if not records or not isinstance(spec,dict): return
-    journal=journal_of(app)
+    legacy_journal = journal_of(app) if not getattr(app, "world_id", None) else None
     at=time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
     strikes=list(getattr(session,"strikes",None) or [])
+    journals = {}
     for record in records:
         if not isinstance(record,dict) or record.get("open"): continue
         # Only what one of their strikes did: a tool put down or knocked
         # into the ground meets it too, and that tests nothing it is for.
-        if not progression.from_a_strike(record,strikes): continue
+        if getattr(app, "world_id", None):
+            candidates = [(owner, strike) for owner, entries in
+                          (getattr(session, "player_strikes", None) or {}).items() for strike in entries
+                          if record.get("tool") in strike["parts"]
+                          and progression.from_a_strike(record, [strike["t"]])]
+            if not candidates: continue
+            owner = max(candidates, key=lambda pair: pair[1]["t"])[0]
+            journal = journals.setdefault(owner, journal_of(app, owner))
+        else:
+            if not progression.from_a_strike(record,strikes): continue
+            journal = journals.setdefault("", legacy_journal)
         why=progression.not_modelled(record)
         if why:
             journal.add_note(progression.result_key(session.id,record),why)
@@ -3367,8 +3412,9 @@ def hear(app,session,reply):
     # And what that has now earned them. Learning is the only thing here that
     # was missing: evidence has been piling up in the journal since increment 2
     # and no code path could turn any of it into a capability.
-    for learned in progression.earn(journal,registry(),at):
-        logging.getLogger("banjo").info("banjo: learned %s",learned)
+    for journal in journals.values():
+        for learned in progression.earn(journal,registry(),at):
+            logging.getLogger("banjo").info("banjo: learned %s",learned)
 
 
 def note_strike(app,answer):
@@ -3377,6 +3423,18 @@ def note_strike(app,answer):
     to be credited with (hear)."""
     session=app.live.session
     if session is None or not isinstance(answer,dict) or answer.get("t") is None: return
+    owner = workshop_library.REQUEST_OWNER.get() if getattr(app, "world_id", None) else None
+    if owner:
+        hand = (session.state.get("player_hands") or {}).get(owner) or live_session.current_hand(session)
+        name = hand.get("holding")
+        if not name: return
+        thing = inventory_room.item_holding(app, name)
+        parts = list(thing["bodies"]) if thing else [name]
+        if not hasattr(session, "player_strikes"): session.player_strikes = {}
+        entries = session.player_strikes.setdefault(owner, [])
+        entries.append({"t": float(answer["t"]), "parts": parts})
+        del entries[:-32]
+        return
     strikes=getattr(session,"strikes",None)
     if strikes is None: strikes=session.strikes=[]
     strikes.append(float(answer["t"]))
