@@ -162,6 +162,14 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
   position: fixed; right: 0; top: 0; bottom: 0; width: var(--panel-w); z-index: 6;
   background: var(--panel); border-left: 1px solid var(--edge);
   display: flex; flex-direction: column;
+  /* THE BOTTOM OF THE PANEL HAS TO BE REACHABLE. It is as tall as the
+     window and its contents are not: on a short window -- a laptop, a
+     browser with a lot of chrome, the 960x600 the checks run at -- the
+     Settings tab's own buttons fell below the fold with `overflow:
+     visible`, so there was nothing to scroll and no way to press them.
+     Measured at 960x460: the panel wanted 500 px and the Fly button sat
+     at y=473, outside the window and unreachable. */
+  overflow-y: auto; overflow-x: hidden;
 }
 #panel header {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
@@ -596,7 +604,7 @@ body.panel-away #panel { transform: translateX(100%); }
                     padding-left: .3rem; }
 /* A wheel its program owns: the hint that says so is the important line. */
 .mp-hint.owned { opacity: 1; color: #ffd479; }
-
+
 
 /* ---------------------------------------------------------------------------
    WHAT YOU CLICKED

@@ -533,3 +533,24 @@ check with a wall-clock threshold in it is measuring the runner. Two of
 today's did, and both now measure a rate over a short window rather than a
 distance over a long one.
 
+
+## The panel's foot was unreachable on a short window
+
+`#panel` is `position: fixed; top: 0; bottom: 0` -- as tall as the window --
+and its contents are not. With `overflow: visible`, a window shorter than
+the panel's content simply lost the bottom of it: nothing to scroll and no
+way to press what was down there. Measured at 960x460, the panel wanted 500
+px and the Settings tab's Fly button sat at y=473. That is not a checking
+artefact: a laptop, or a browser carrying a lot of chrome, gives a person
+the same window. Fixed with `overflow-y: auto`.
+
+It was found only because the journey suite's `click()` started checking it
+had hit something. Before that, a press went wherever those coordinates
+happened to land and the check failed several assertions later with no hint
+-- "'Flying' not found in 'You are rover'" in a check about god mode. BOTH
+of this session's layout bugs surfaced that way; the other was an `#id` rule
+setting `display`, which outranks the browser's own `[hidden]`, so a
+"hidden" card kept its padding and pushed a button down. If a check fails on
+an assertion that has nothing to do with what it is testing, suspect the
+layout before the feature.
+
