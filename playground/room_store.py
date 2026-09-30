@@ -39,6 +39,7 @@ import logging
 import os
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,17 @@ class RoomStore:
         has = kept.record() if callable(getattr(kept, "record", None)) else getattr(room, "inventory_record", None)
         if isinstance(has, dict):
             record["inventory"] = has
+        players = getattr(room, "player_records", None)
+        if isinstance(players, dict):
+            # Snapshot each guest's inventory beside the native world. Tokens
+            # stay server-side; API replies expose public ids only.
+            with (getattr(room, "player_lock", None) or nullcontext()):
+                live = getattr(room, "player_inventories", {})
+                record["players"] = {
+                    ident: dict(profile, inventory=(live[ident].record() if ident in live
+                                                    else profile.get("inventory", {})))
+                    for ident, profile in players.items() if isinstance(profile, dict)}
+                record["hand_owner"] = getattr(room, "hand_owner", None)
         # The running world as it stood when last saved (server.keep_world),
         # written in the same file as the record of what the person has, so
         # the two are kept together or not at all.
@@ -158,6 +170,8 @@ class RoomStore:
                                       or not isinstance(record.get("world"), dict)):
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
+        room.player_records = record["players"] if isinstance(record.get("players"), dict) else {}
+        room.hand_owner = record.get("hand_owner") if record.get("hand_owner") in room.player_records else None
         room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
         receipts = record.get("workshop_installs")
         room.workshop_installs = [r for r in receipts[-64:] if isinstance(r, dict)] if isinstance(receipts, list) else []

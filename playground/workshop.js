@@ -9,6 +9,24 @@ const backToWorld = (scene) => worldId
   : `/world?scene=${encodeURIComponent(scene)}&hold=1`;
 const homeWorld = () => worldId ? backToWorld("new-game") : "/world";
 let token = "";
+let playerReady = null;
+async function ensurePlayer() {
+  if (!worldId) return;
+  if (!playerReady) playerReady = (async () => {
+    const key = `banjo.player.${worldId}`;
+    const response = await fetch("/api/world/player/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Banjo-Token": token, ...worldHeaders },
+      body: JSON.stringify({ token: localStorage.getItem(key) || undefined,
+                             name: localStorage.getItem("banjo.avatar-name") || undefined }),
+    });
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error || "Could not join the world");
+    localStorage.setItem(key, answer.token);
+    worldHeaders["X-Banjo-Player"] = answer.token;
+  })();
+  return playerReady;
+}
 let candidateRequest = 0;
 async function api(path, body) {
   const changesCandidate = ["/api/workshop/open", "/api/workshop/candidates", "/api/workshop/more"].includes(path);
@@ -17,6 +35,7 @@ async function api(path, body) {
     const status = await fetch("/api/status", { headers: worldHeaders }).then((r) => r.json());
     token = status.csrf_token || "";
   }
+  await ensurePlayer();
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Banjo-Token": token, ...worldHeaders },

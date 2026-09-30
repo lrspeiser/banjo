@@ -26,6 +26,10 @@ import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
+let playerToken = null;
+let playerId = null;
+let playerName = null;
+let joinedPlayer = null;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // What has gone wrong on this page, for whoever checks it from outside
@@ -67,6 +71,7 @@ function linkFailure(error) {
 async function api(path, body, renewed = false) {
   const headers = { "Content-Type": "application/json" };
   if (worldId) headers["X-Banjo-World"] = worldId;
+  if (worldId && playerToken) headers["X-Banjo-Player"] = playerToken;
   if (token) headers["X-Banjo-Token"] = token;
   let res, text;
   try {
@@ -188,6 +193,32 @@ async function act(op, extra) {
   return answer;
 }
 
+async function joinPlayer() {
+  if (!worldId) return;
+  if (joinedPlayer) return joinedPlayer;
+  joinedPlayer = (async () => {
+    const key = `banjo.player.${worldId}`;
+    const remembered = localStorage.getItem(key);
+    const name = localStorage.getItem("banjo.avatar-name") || undefined;
+    const data = await api("/api/world/player/join", { token: remembered || undefined, name });
+    playerToken = data.token;
+    playerId = data.id;
+    playerName = data.name;
+    localStorage.setItem(key, playerToken);
+    const label = document.querySelector("#players-online");
+    if (label) label.textContent = `You: ${playerName}`;
+    return data;
+  })();
+  try { return await joinedPlayer; }
+  catch (error) { joinedPlayer = null; throw error; }
+}
+
+function playerView(pose) {
+  if (!pose?.eyes_m || !pose.facing) return null;
+  const eye_m = pose.eyes_m;
+  return { eye_m, look_m: eye_m.map((v, i) => v + 4 * pose.facing[i]) };
+}
+
 // ---------------------------------------------------------------------------
 // The room
 // ---------------------------------------------------------------------------
@@ -213,6 +244,65 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070b0d);
 scene.fog = new THREE.Fog(0x0a1116, 18, 55);
+const avatars = new Map();
+const online = document.createElement("p");
+online.id = "players-online";
+online.setAttribute("aria-live", "polite");
+online.hidden = !worldId;
+document.querySelector("#panel > header")?.append(online);
+
+function makeAvatar(person) {
+  const group = new THREE.Group();
+  const cloth = new THREE.MeshStandardMaterial({ color: person.color || "#66b8b2", roughness: .84 });
+  const skin = new THREE.MeshStandardMaterial({ color: "#e4bb91", roughness: .9 });
+  const part = (geometry, material, x, y, z) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+  };
+  part(new THREE.CylinderGeometry(.19, .23, .7, 10), cloth, 0, 1.02, 0);
+  part(new THREE.SphereGeometry(.15, 12, 9), skin, 0, 1.55, 0);
+  for (const side of [-1, 1]) {
+    part(new THREE.CylinderGeometry(.055, .065, .57, 7), cloth, side * .28, 1.00, 0);
+    part(new THREE.CylinderGeometry(.075, .08, .67, 7), cloth, side * .11, .34, 0);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 64;
+  const ink = canvas.getContext("2d");
+  ink.fillStyle = "#101b27dd"; ink.fillRect(0, 0, 256, 64);
+  ink.fillStyle = "#ffffff"; ink.font = "bold 24px sans-serif";
+  ink.textAlign = "center"; ink.textBaseline = "middle";
+  ink.fillText(person.name || "Player", 128, 32, 240);
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas),
+                                                           transparent: true, depthWrite: false }));
+  label.position.y = 1.95;
+  label.scale.set(1.3, .33, 1);
+  group.add(label);
+  scene.add(group);
+  return group;
+}
+
+function showPlayers(players) {
+  if (!playerId || !Array.isArray(players)) return;
+  const seen = new Set();
+  for (const person of players) {
+    if (person.id === playerId || !person.pose?.eyes_m) continue;
+    seen.add(person.id);
+    let avatar = avatars.get(person.id);
+    if (!avatar) { avatar = makeAvatar(person); avatars.set(person.id, avatar); }
+    const eye = person.pose.eyes_m;
+    avatar.position.set(eye[0], eye[1] - 1.62, eye[2]);
+    const f = person.pose.facing || [0, 0, -1];
+    avatar.rotation.y = Math.atan2(-f[0], -f[2]);
+  }
+  for (const [id, avatar] of avatars) {
+    if (seen.has(id)) continue;
+    scene.remove(avatar);
+    avatar.traverse((part) => { part.geometry?.dispose(); part.material?.map?.dispose(); part.material?.dispose(); });
+    avatars.delete(id);
+  }
+  online.textContent = `${playerName || "You"} · ${seen.size + 1} here`;
+}
 
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 300);
 // ZOOM. The owner, 2026-09-26: "i need a slider that lets me zoom in and out
@@ -3649,7 +3739,7 @@ function heldName() {
 function recordHolds(name) {
   const inv = world.inventory;
   const hand = inv && inv.hands && inv.hands[inv.hand_in_the_world];
-  return !!(name && hand && hand.name === name);
+  return !!(name && hand && (hand.name === name || hand.parts?.includes(name)));
 }
 
 // The page's hand has let go of a thing into the world -- put down, dropped,
@@ -8530,8 +8620,10 @@ async function tick() {
     if (hand_q) ask.hand_q = hand_q;
     // Where the person stands, for the machines' senses: a machine told to
     // come to them, or asked what to do with someone close, reads it.
-    if (world.machines && world.machines.programs && world.machines.programs.length) ask.person = whereIAm();
+    if (worldId || (world.machines && world.machines.programs && world.machines.programs.length))
+      ask.person = whereIAm();
     let state = await act("step", ask);
+    if (worldId) showPlayers(state.players);
     // The pins too: they only come with a step when their set changes, and
     // the change may have been in the reply that was lost.
     if (!moved) await refreshJoints();
@@ -9787,12 +9879,14 @@ async function open({ again = false } = {}) {
   const qa = qaBuild();
   showBuild(qa);
   try {
+    const myPlayer = worldId ? await joinPlayer() : null;
     const data = await api("/api/world/open",
                            qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
     expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;
+    if (worldId) showPlayers(data.players);
     world.scene = data.scene || null;
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
@@ -9848,12 +9942,12 @@ async function open({ again = false } = {}) {
       if (data.water) drawWater(data.water);
       // Somewhere to stand that looks at something: the valley says where --
       // or, when the room is as it stood, where the person was standing.
-      placeCamera((asItStood && keptView(data.scene)) || (data.gameplay
+      placeCamera((asItStood && (keptView(data.scene) || playerView(myPlayer?.pose))) || (data.gameplay
         ? {eye_m: data.gameplay.spawn_m, look_m: data.gameplay.nodes[0].at_m}
         : data.terrain.view));
     } else {
       clearGround();
-      if (asItStood) placeCamera(keptView(data.scene));
+      if (asItStood) placeCamera(keptView(data.scene) || playerView(myPlayer?.pose));
     }
     // What this room's ground has had dug out of it and not put back: the
     // engine's count, the room's own edits replayed. A room with no ground has
@@ -9863,7 +9957,9 @@ async function open({ again = false } = {}) {
     // back so: what the engine's hand holds is the person's again, taken over
     // the way a thing out of the bag is (adoptGrip) -- or, on a joint, the way
     // the hand's hold is at the end of an action (adoptHold).
-    const holding = asItStood && data.hand ? data.hand.holding : "";
+    const holding = asItStood && data.hand && (!worldId || data.hand_owner === playerId
+                                                || recordHolds(data.hand.holding))
+      ? data.hand.holding : "";
     if (holding && world.bodies.has(holding)) {
       const pinned = (data.joints || []).some((j) => j.attached !== false
                                                 && (j.a === holding || j.b === holding));
@@ -10145,6 +10241,9 @@ window.banjoRoom = {
   // clock, what the panel says, and every error it has seen.
   status: () => ({
     session: world.session,
+    player_id: playerId,
+    player_name: playerName,
+    avatars: avatars.size,
     paused: !!world.paused,
     scene: world.scene || null,
     ready: roomReady(),

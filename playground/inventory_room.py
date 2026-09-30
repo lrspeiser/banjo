@@ -32,6 +32,7 @@ import math
 from typing import Any
 
 import inventory
+import player_world
 import room_world
 import world_chat
 
@@ -49,9 +50,19 @@ GRIP_REACH_M = 1.5
 DECLARED_GRIP_M = 0.02
 
 
-def inventory_of(app: Any) -> inventory.Inventory:
+def inventory_of(app: Any, player_id: str = "") -> inventory.Inventory:
     """The room's record, made from what the room kept (room_store) the first time."""
     room = app.room
+    if getattr(app, "world_id", None):
+        profile = getattr(room, "player_records", {}).get(player_id)
+        if profile is None:
+            raise ValueError("Join this world before reading an inventory")
+        live = getattr(room, "player_inventories", None)
+        if live is None:
+            live = room.player_inventories = {}
+        if player_id not in live:
+            live[player_id] = inventory.Inventory(profile.get("inventory"))
+        return live[player_id]
     kept = getattr(room, "inventory", None)
     if not isinstance(kept, inventory.Inventory):
         kept = inventory.Inventory(getattr(room, "inventory_record", None))
@@ -150,7 +161,7 @@ def use_point(app: Any, thing: dict[str, Any] | None, grip: list[float], held: s
     return max(uses, key=lambda u: math.dist(u[2], grip))[2]
 
 
-def _carried(app: Any) -> Any:
+def _carried(app: Any, player_id: str = "") -> Any:
     """What the person carries, as the engine counts it -- with ALL of a thing of
     several parts in the hand, not only the part the hand grips. The engine
     counts the one body its hand holds (LiveWorld carriedObjectsKg), so a mace
@@ -159,6 +170,13 @@ def _carried(app: Any) -> Any:
     engine's, and not changed here."""
     state = _state(app)
     carried = state.get("carried")
+    if player_id and getattr(app.room, "hand_owner", None) != player_id:
+        # The native hand belongs to somebody else. Its object must not be
+        # counted in this guest's bag meter.
+        if isinstance(carried, dict):
+            return dict(carried, objects_kg=0.0,
+                        total_kg=float(carried.get("ground_kg") or 0.0))
+        return carried
     held = str((state.get("hand") or {}).get("holding") or "")
     thing = item_holding(app, held) if held else None
     if not isinstance(carried, dict) or thing is None or len(thing["bodies"]) < 2:
@@ -189,12 +207,12 @@ def _grip(asked: Any, now: dict[str, Any]) -> list[float]:
     return [round(v, 4) for v in grip]
 
 
-def shown(app: Any) -> dict[str, Any]:
+def shown(app: Any, player_id: str = "") -> dict[str, Any]:
     """The record as the page shows it: each hand and the bag's slots, by name,
     with what each thing is made of and its shape. An empty slot is None, so the
     page numbers the slots as the record does; a thing in a hand carries the slot
     kept for it (`slot`), which its number puts it back into."""
-    record = inventory_of(app).record()
+    record = inventory_of(app, player_id).record()
     spec = app.room.spec
     bodies = {str(b["name"]): b for b in spec.get("bodies") or [] if isinstance(b, dict) and b.get("name")}
     items = {item["id"]: item for item in inventory.items_of(spec)}
@@ -217,14 +235,15 @@ def shown(app: Any) -> dict[str, Any]:
             out["parts"] = list(thing["bodies"])
         return out
 
-    return {"record": record, "carried": _carried(app),
+    return {"record": record, "carried": _carried(app,player_id),
             "hands": {hand: named(item, record["home"].get(item)) for hand, item in record["hands"].items()},
             "stowed": [named(item) for item in record["stowed"]],
             # The hand the engine has: the only one that holds anything yet.
             "hand_in_the_world": record["dominant"]}
 
 
-def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]:
+def after_open(app: Any, opened: dict[str, Any] | None = None,
+               player_id: str = "") -> dict[str, Any]:
     """After the room is opened, or opened again because the chat changed it:
     put what the person has back where the record says.
 
@@ -240,6 +259,8 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
     cannot be set aside now (the chat fixed it to the room), leaves the record
     -- the record says only what is true of the room. Returns what the page
     shows."""
+    if getattr(app, "world_id", None):
+        return _after_open_players(app, opened, player_id)
     record = inventory_of(app)
     session = app.live.session
     if session is None:
@@ -310,7 +331,101 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
     return shown(app)
 
 
-def request(app: Any, body: Any) -> dict[str, Any]:
+def _after_open_players(app: Any, opened: dict[str, Any] | None,
+                        player_id: str) -> dict[str, Any]:
+    """Reconcile every guest's bag with one restored native room."""
+    with player_world.lock_of(app):
+        players = player_world.records(app)
+        if not players:
+            raise ValueError("Join this world before opening its room")
+        session = app.live.session
+        if session is None:
+            return shown(app, player_id or next(iter(players)))
+        items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
+        holding = str(((session.state or {}).get("hand") or {}).get("holding") or "")
+        restored = opened.get("restored") if isinstance(opened, dict) else None
+        whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
+        owner = getattr(app.room, "hand_owner", None)
+        if owner not in players:
+            owner = None
+        if owner is None and holding:
+            matches = [ident for ident in players
+                       if any(holding in items[item]["bodies"]
+                              for item in inventory_of(app, ident).hands.values() if item in items)]
+            owner = matches[0] if len(matches) == 1 else None
+        kept_hand = False
+        parked: set[str] = set()
+        for ident in players:
+            record = inventory_of(app, ident)
+            with record.lock:
+                changed = False
+                for hand in inventory.HANDS:
+                    item = record.hands.get(hand)
+                    thing = items.get(item or "")
+                    if (whole and ident == owner and thing is not None
+                            and hand == record.dominant and holding in thing["bodies"]):
+                        kept_hand = True
+                        continue
+                    changed = record.back_to_bag(hand) or changed
+                for item in [i for i in record.stowed if i]:
+                    thing = items.get(item)
+                    if thing is None or thing["installed"]:
+                        record.forget(item)
+                        changed = True
+                        continue
+                if changed:
+                    record.revision += 1
+        if whole and owner and holding and not kept_hand:
+            held_item = next((item for item, thing in items.items()
+                              if holding in thing["bodies"]), None)
+            # A loose shard or advanced grip need not be an authored inventory
+            # item. The owner still has the native hand after a whole restore.
+            if held_item is None or all(inventory_of(app, ident).where(held_item) == "world"
+                                        for ident in players):
+                kept_hand = True
+        if holding and not kept_hand:
+            app.live.act({"session": session.id, "op": "release"})
+            owner = None
+        app.room.hand_owner = owner if kept_hand else None
+        present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
+        for ident in players:
+            record = inventory_of(app, ident)
+            for item in [i for i in record.stowed if i]:
+                thing = items.get(item)
+                if thing and thing["name"] in present:
+                    try:
+                        app.live.act({"session": session.id, "op": "park", "name": thing["name"]})
+                        parked.update(thing["bodies"])
+                    except Exception:
+                        with record.lock:
+                            record.forget(item)
+                            record.revision += 1
+        if whole:
+            in_bags = {name for ident in players
+                       for item in inventory_of(app, ident).stowed if item in items
+                       for name in items[item]["bodies"]}
+            for away in restored.get("parked") or []:
+                name = away.get("name") if isinstance(away, dict) else None
+                if name and name not in in_bags:
+                    try:
+                        app.live.act({"session": session.id, "op": "unpark", "name": name,
+                                      "at": away["at_m"], "q": away["facing_wxyz"]})
+                    except Exception:
+                        pass
+        if isinstance(opened, dict) and parked:
+            opened["bodies"] = [b for b in opened.get("bodies") or []
+                                if b.get("name") not in parked]
+        return shown(app, player_id or next(iter(players)))
+
+
+def request(app: Any, body: Any, player_id: str = "") -> dict[str, Any]:
+    if getattr(app, "world_id", None):
+        with player_world.lock_of(app):
+            return _request(app, body, player_id)
+    return _request(app, body, player_id)
+
+
+def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
     """One change to what the person has (POST /api/world/inventory).
 
     The body carries:
@@ -329,13 +444,20 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     request_id = str(body.get("request") or "")
     if not request_id:
         raise ValueError("a change needs its own request id, so a retry is not done twice")
-    record = inventory_of(app)
+    record = inventory_of(app, player_id)
     items = inventory.items_of(app.room.spec)
     op = str(body.get("op") or "")
     asked = str(body.get("item") or "")
     thing = next((i for i in items if i["id"] == asked), None) or \
         next((i for i in items if asked in i["bodies"]), None)
     item = thing["id"] if thing else asked
+    if player_id and request_id not in record.answers:
+        for other_id in player_world.records(app):
+            if other_id != player_id and inventory_of(app, other_id).where(item) != "world":
+                with record.lock:
+                    refused = record._remember(request_id, {"ok": False,
+                        "why": "That item belongs to another player", "record": record.record()})
+                return dict(refused, shown=shown(app, player_id))
     name = thing["name"] if thing else None
     # The part the hand takes hold of: the one the person pointed at -- the page
     # asks by the name of the part under its sight -- or, asked for by id, the
@@ -346,6 +468,11 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     person = world_chat.where_the_person_is(body.get("person"))
 
     def act(plan: dict[str, Any]) -> dict[str, Any]:
+        if player_id and plan["to"] in inventory.HANDS:
+            owner = getattr(app.room, "hand_owner", None)
+            native = ((_state(app).get("hand") or {}).get("holding") or "")
+            if owner not in (None, player_id) or (native and owner is None):
+                raise ValueError("Another player's hand is occupied; take the item into your bag")
         # MOVING A THING BETWEEN SLOTS CHANGES NOTHING IN THE ROOM. It is
         # already set aside; only the order of the bag changes. Everything
         # below is about a thing crossing between the room and the person,
@@ -412,4 +539,11 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     answer = record.request(request_id, body.get("revision"), op, item, items, act, hand=hand,
                             kg=kg, lift_kg=room_world.banjo_mcp.HAND_LIFTS_KG,
                             slot=int(asked_slot) if isinstance(asked_slot, (int, float)) else None)
-    return dict(answer, shown=shown(app))
+    if answer.get("ok") and player_id:
+        if answer.get("to") in inventory.HANDS and record.where(item) in inventory.HANDS and (
+                ((_state(app).get("hand") or {}).get("holding") or "") in (thing["bodies"] if thing else [])):
+            app.room.hand_owner = player_id
+        elif answer.get("op") in ("stow", "drop") and getattr(app.room, "hand_owner", None) == player_id:
+            if not any(record.hands.values()):
+                app.room.hand_owner = None
+    return dict(answer, shown=shown(app, player_id))

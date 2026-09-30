@@ -20,6 +20,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(ROOT / "playground"))
 import qa_browser  # noqa: E402
 RUNNER = Path(os.environ.get("BANJO_LIVE_ENGINE", ""))
 SUFFIX = ".exe" if os.name == "nt" else ""
@@ -75,17 +76,24 @@ class NamedWorlds(unittest.TestCase):
                                     timeout=30) as response:
             return json.load(response)
 
-    def post(self, path, body, world=None):
+    def post(self, path, body, world=None, player=None):
         headers = {"Content-Type": "application/json", "X-Banjo-Token": self.token}
         if world: headers["X-Banjo-World"] = world
+        if world and path != "/api/world/player/join":
+            headers["X-Banjo-Player"] = player or self.players[world]["token"]
         request = urllib.request.Request(self.base + path, method="POST", headers=headers,
                                          data=json.dumps(body).encode())
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.load(response)
 
+    def join(self, world, name):
+        return self.post("/api/world/player/join", {"name": name}, world)
+
     def test_generated_worlds_are_isolated_and_joinable(self):
         first = self.post("/api/worlds", {"name": "First map"})
         second = self.post("/api/worlds", {"name": "Second map"})
+        self.players = {first["id"]: self.join(first["id"], "Alice"),
+                        second["id"]: self.join(second["id"], "Alice")}
         self.assertNotEqual(first["id"], second["id"])
         self.assertIn(first["id"], first["url"])
         self.assertEqual("First map", self.get(f"/api/worlds/{first['id']}")["name"])
@@ -144,6 +152,92 @@ class NamedWorlds(unittest.TestCase):
         self.assertGreaterEqual(reopened["t"], saved_time)
         self.assertEqual(first["id"], self.get("/api/status", first["id"])["world_id"])
 
+    def test_each_guest_has_an_avatar_and_inventory(self):
+        import inventory
+        world = self.post("/api/worlds", {"name": "Together"})
+        ident = world["id"]
+        # Two lightweight world items are an explicit inventory fixture. The
+        # generated starter map otherwise consists of installed machinery.
+        room_path = Path(self.temp.name) / "rooms" / "worlds" / ident / "rooms" / "new-game.json"
+        room = json.loads(room_path.read_text())
+        for index, material in enumerate(("oak", "iron")):
+            room["spec"]["bodies"].append({"name": f"player-test-{material}",
+                "shape": "box", "material": material, "size_mm": [100, 100, 100],
+                "center_mm": [10000 + 500 * index, 5000, 10000]})
+        room_path.write_text(json.dumps(room))
+        alice = self.join(ident, "Alice")
+        bob = self.join(ident, "Bob")
+        self.players = {ident: alice}
+        opened = self.post("/api/world/open", {"scene": "new-game"}, ident)
+        session = opened["session"]
+        loose = [item for item in inventory.items_of(opened["spec"])
+                 if item["name"].startswith("player-test-")]
+        self.assertGreaterEqual(len(loose), 2)
+        first, second = loose[:2]
+        taken = self.post("/api/world/inventory", {"session": session, "request": "alice-take",
+                          "op": "take", "item": first["name"]}, ident, alice["token"])
+        self.assertTrue(taken["ok"], taken)
+        bob_view = self.post("/api/world/inventory/shown", {"session": session}, ident, bob["token"])
+        self.assertEqual([], bob_view["record"]["stowed"])
+        refused = self.post("/api/world/inventory", {"session": session, "request": "bob-steal",
+                            "op": "take", "item": first["name"]}, ident, bob["token"])
+        self.assertFalse(refused["ok"])
+        self.assertIn("another player", refused["why"])
+        bob_took = self.post("/api/world/inventory", {"session": session, "request": "bob-take",
+                             "op": "take", "item": second["name"]}, ident, bob["token"])
+        self.assertTrue(bob_took["ok"], bob_took)
+        self.assertNotEqual(taken["shown"]["record"]["stowed"], bob_took["shown"]["record"]["stowed"])
+        person_at_spawn = {"standing_m": [0, 0, 2], "eyes_m": [0, 1.62, 2],
+                           "facing": [0, 0, -1], "look_direction": [0, 0, -1]}
+        alice_held = self.post("/api/world/inventory", {"session": session, "request": "alice-equip",
+                                "revision": taken["record"]["revision"], "op": "equip",
+                                "item": first["name"], "person": person_at_spawn}, ident, alice["token"])
+        self.assertTrue(alice_held["ok"], alice_held)
+        bob_rejoin = self.post("/api/world/open", {"scene": "new-game"}, ident, bob["token"])
+        self.assertEqual(alice["id"], bob_rejoin["hand_owner"])
+        self.assertEqual({"right": None, "left": None}, bob_rejoin["inventory"]["record"]["hands"])
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post("/api/live/act", {"session": session, "op": "release"}, ident, bob["token"])
+        bob_blocked = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-first",
+                                "revision": bob_took["record"]["revision"], "op": "equip",
+                                "item": second["name"], "person": person_at_spawn}, ident, bob["token"])
+        self.assertFalse(bob_blocked["ok"])
+        self.assertIn("Another player's hand", bob_blocked["why"])
+        alice_stowed = self.post("/api/world/inventory", {"session": session, "request": "alice-stow",
+                                  "op": "stow", "item": first["name"]}, ident, alice["token"])
+        self.assertTrue(alice_stowed["ok"], alice_stowed)
+        bob_held = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-second",
+                              "op": "equip", "item": second["name"], "person": person_at_spawn},
+                              ident, bob["token"])
+        self.assertTrue(bob_held["ok"], bob_held)
+        bob_stowed = self.post("/api/world/inventory", {"session": session, "request": "bob-stow",
+                                "op": "stow", "item": second["name"]}, ident, bob["token"])
+        self.assertTrue(bob_stowed["ok"], bob_stowed)
+        alice_bench = self.post("/api/workshop/inventory", {}, ident, alice["token"])
+        bob_bench = self.post("/api/workshop/inventory", {}, ident, bob["token"])
+        self.assertEqual({first["name"]}, {i["name"] for i in alice_bench["carried"]})
+        self.assertEqual({second["name"]}, {i["name"] for i in bob_bench["carried"]})
+        for person, eye in ((alice, [0, 1.62, 2]), (bob, [2, 1.62, 2])):
+            state = self.post("/api/live/act", {"session": session, "op": "step", "dt": 1/240,
+                              "n": 1, "person": {"eyes_m": eye, "facing": [0, 0, -1]}},
+                              ident, person["token"])
+        self.assertEqual({alice["id"], bob["id"]}, {p["id"] for p in state["players"]})
+        self.assertEqual([2, 1.62, 2], next(p["pose"]["eyes_m"] for p in state["players"]
+                                            if p["id"] == bob["id"]))
+        self.assertTrue(all("token" not in p for p in state["players"]))
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post("/api/world/inventory/shown", {"session": session}, ident, "0" * 64)
+        self.stop()
+        self.start()
+        alice = self.post("/api/world/player/join", {"token": alice["token"]}, ident)
+        bob = self.post("/api/world/player/join", {"token": bob["token"]}, ident)
+        self.players[ident] = alice
+        restored = self.post("/api/world/open", {"scene": "new-game"}, ident, alice["token"])
+        self.assertIn(first["name"], restored["inventory"]["record"]["stowed"])
+        bob_view = self.post("/api/world/inventory/shown", {"session": restored["session"]},
+                             ident, bob["token"])
+        self.assertIn(second["name"], bob_view["record"]["stowed"])
+
     def test_menu_creates_and_joins_a_game_in_the_browser(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required":
@@ -162,7 +256,8 @@ class NamedWorlds(unittest.TestCase):
                     if page.evaluate(expression): return
                 except (RuntimeError, TimeoutError): pass
                 time.sleep(.2)
-            self.fail(f"Browser did not reach: {expression}")
+            self.fail(f"Browser did not reach: {expression}; URL={page.evaluate('location.href')}; "
+                      f"exceptions={[e for e in page.events if e.get('method') == 'Runtime.exceptionThrown'][-2:]}")
 
         page.send("Page.navigate", {"url": self.base + "/world"})
         wait_for('!!document.querySelector("#game-menu")')
@@ -205,6 +300,10 @@ class NamedWorlds(unittest.TestCase):
         else: self.fail("Second browser could not join the running world")
         self.assertEqual(first_session, other_page.evaluate('window.banjoRoom.status().session'))
         self.assertEqual(first_session, page.evaluate('window.banjoRoom.status().session'))
+        self.assertNotEqual(page.evaluate('window.banjoRoom.status().player_id'),
+                            other_page.evaluate('window.banjoRoom.status().player_id'))
+        wait_for('window.banjoRoom.status().avatars === 1')
+        self.assertEqual(1, other_page.evaluate('window.banjoRoom.status().avatars'))
         self.assertLessEqual(page.evaluate('window.banjoRoom.status().time_s') - first_time,
                              time.monotonic() - together_at + .3)
         exceptions = [event for event in page.events

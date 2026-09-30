@@ -22,9 +22,10 @@ const dialog = document.createElement("dialog");
 dialog.id = "game-menu";
 dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="button" id="game-menu-close" aria-label="Close menu">×</button></div>
   <p id="game-menu-current">Current world</p>
+  <form id="game-menu-avatar" hidden><label>Your avatar name<input name="name" maxlength="32" required></label><button type="submit">Save avatar name</button></form>
   <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><button type="submit">New game · generate map</button></form>
   <form id="game-menu-join"><label>Join a world<input name="link" placeholder="Paste a world link or id" required></label><button type="submit">Join world</button></form>
-  <div id="game-menu-share" hidden><p>People with this link join the same live world.</p><button type="button" id="game-menu-copy">Copy world link</button></div>
+  <div id="game-menu-share" hidden><p>People with this link join the same live world with their own avatar and bag.</p><button type="button" id="game-menu-copy">Copy world link</button></div>
   <h3>Worlds in this browser</h3><ul id="game-menu-known"></ul><p id="game-menu-message" role="status" aria-live="polite"></p>`;
 document.body.append(dialog);
 const $ = (q) => dialog.querySelector(q);
@@ -52,6 +53,8 @@ document.addEventListener("click", (event) => {
 $("#game-menu-close").addEventListener("click", () => dialog.close());
 
 if (currentId && validId.test(currentId)) {
+  $("#game-menu-avatar").hidden = false;
+  $("#game-menu-avatar input").value = localStorage.getItem("banjo.avatar-name") || "Player";
   $("#game-menu-share").hidden = false;
   document.querySelector("#reset").hidden = true;
   document.querySelector("#scene").hidden = true;
@@ -70,6 +73,14 @@ if (currentId && validId.test(currentId)) {
     remember(data);
   }).catch((error) => { $("#game-menu-current").textContent = error.message; });
 }
+
+$("#game-menu-avatar").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = $("#game-menu-avatar input").value.trim();
+  if (!name) return;
+  localStorage.setItem("banjo.avatar-name", name);
+  location.reload();
+});
 
 $("#game-menu-copy").addEventListener("click", async () => {
   try {

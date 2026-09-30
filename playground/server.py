@@ -46,6 +46,7 @@ import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import inventory_room
+import player_world
 import gameplay_room
 import rover_brain
 import rover_talk
@@ -1154,11 +1155,16 @@ class WorldHub:
             folder = self._folder(world_id)
             store = room_store.RoomStore(folder / "rooms")
             # Never turn an unreadable world into the starter template.
-            if store.load("new-game") is None:
+            room = store.load("new-game")
+            if room is None:
                 raise ValueError("The world's saved room is unreadable")
             app = Playground(self.base.engine_path, self.base.studio_path,
                              folder / "runs", planner=self.base.planner)
             app.store, app.world_id, app.world_name = store, world_id, meta["name"]
+            app.room = room
+            app.rooms = {"new-game": room}
+            app.players_lock = threading.RLock()
+            room.player_lock = app.players_lock
             app.password, app.public_host = self.base.password, self.base.public_host
             app.csrf_token = self.base.csrf_token
             # The in-process lane cannot return a complete rejoin pose set;
@@ -1424,6 +1430,13 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict) or set(body) - {"name"}:
                 raise ValueError("Expected a world name")
             return self.send(self.server.app.hub.create(body.get("name")), 201)
+        if path == "/api/world/player/join":
+            if not isinstance(body, dict) or set(body) - {"token", "name"}:
+                raise ValueError("Expected a player token and optional name")
+            return self.send(player_world.join(self.app, body.get("token"), body.get("name")))
+        player = player_world.require(self.app, self.headers.get("X-Banjo-Player")) \
+            if getattr(self.app, "world_id", None) and (
+                path.startswith(("/api/world/", "/api/live/")) or path=="/api/workshop/inventory") else ""
         if getattr(self.app, "world_id", None) and path == "/api/live/open":
             raise ValueError("The shared world cannot be replaced by a laboratory scene")
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
@@ -1499,7 +1512,8 @@ class Handler(BaseHTTPRequestHandler):
                 # NOT `app.journal` -- that name already holds the Journal
                 # itself, and a function there is what journal_of returns.
                 app.journal_now=lambda app=app: journal_of(app)
-                return self.send(getattr(workshop_tabs,path.rsplit("/",1)[1])(app))
+                return self.send(workshop_tabs.inventory(app,player) if path=="/api/workshop/inventory"
+                                 else getattr(workshop_tabs,path.rsplit("/",1)[1])(app))
             # What a chat turn is doing WHILE it does it. A turn is one POST
             # that answers at the end; this is how the page says what is going
             # on in the meantime instead of showing a spinner for half a minute.
@@ -1599,7 +1613,7 @@ class Handler(BaseHTTPRequestHandler):
                     opened=app.live.open(app,{"spec":room.spec})
                     app.live_holder="world"
                     rooms[key]=app.room=room
-                    opened["inventory"]=inventory_room.after_open(app,opened)
+                    opened["inventory"]=inventory_room.after_open(app,opened,player)
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
                     return self.send(opened)
@@ -1627,10 +1641,16 @@ class Handler(BaseHTTPRequestHandler):
                 # again from what it is held as, which is the way out of a room
                 # that has stopped.
                 if not body.get("fresh") and not body.get("again"):
-                    rejoined=_rejoin(app,scene)
-                    if rejoined is not None: return self.send(rejoined)
+                    rejoined=_rejoin(app,scene,player)
+                    if rejoined is not None:
+                        if player: rejoined["inventory"] = inventory_room.shown(app,player)
+                        if player:
+                            rejoined["players"] = player_world.visible(app)
+                            rejoined["hand_owner"] = getattr(app.room,"hand_owner",None)
+                        return self.send(rejoined)
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
                 rooms[scene]=app.room=room
+                if player: room.player_lock = player_world.lock_of(app)
                 funded_room = room_store.funded(room)
                 # The running world as this server last saved it (keep_world),
                 # for a room read back from disk or revisited in this process:
@@ -1694,7 +1714,10 @@ class Handler(BaseHTTPRequestHandler):
                 app.live_holder="world"
                 # What the person has is put back where the record says: the
                 # bag's things are set aside again (inventory_room.after_open).
-                opened["inventory"]=inventory_room.after_open(app,opened)
+                opened["inventory"]=inventory_room.after_open(app,opened,player)
+                if player:
+                    opened["players"] = player_world.visible(app)
+                    opened["hand_owner"] = getattr(app.room,"hand_owner",None)
                 if body.get("fresh"): room_store.keep(app,room)
                 opened=world_upgrades.apply(app,opened)
                 # Saved now, so what a restart gives back is this world from
@@ -1748,13 +1771,14 @@ class Handler(BaseHTTPRequestHandler):
                                           # Working what is in the room -- a thing's action
                                           # pressed, a motor told -- happens to the room as
                                           # it stands.
-                                          live=lambda name,args:_chat_live(app,name,args,body.get("person")))
+                                          live=lambda name,args:_chat_live(app,name,args,body.get("person"),player))
                 except Exception as failure:
                     world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
                     room_store.keep(app,room)
                     remember_chat(app,message,trace,None,failure,_now()-began,person)
                     raise
                 world_chat.remember_turn(room.chat,message,answer)
+                if player: _sync_hand_owner(app,player)
                 # What the chat built is in room.spec now (export_spec) and the
                 # turn is in room.chat: both are kept, so a restart has them.
                 room_store.keep(app,room)
@@ -1776,7 +1800,8 @@ class Handler(BaseHTTPRequestHandler):
                         saved,_=world_to_carry(app,session)
                         opened=app.live.open(app,{"spec":spec,**({"snapshot":saved,"carry":True} if saved else {})})
                         app.live_holder="world"
-                        opened["inventory"]=inventory_room.after_open(app,opened)
+                        opened["inventory"]=inventory_room.after_open(app,opened,player)
+                        if player: opened["hand_owner"] = getattr(app.room,"hand_owner",None)
                         # The world the chat's room is now, kept with it.
                         keep_world(app,"the chat changed the room")
                         answer["reopened"]=True
@@ -1789,7 +1814,7 @@ class Handler(BaseHTTPRequestHandler):
                         # Now it is: done on the room with the change in it.
                         then=[]
                         for call in held:
-                            try: done=_chat_live(app,call["name"],call["args"],body.get("person"))
+                            try: done=_chat_live(app,call["name"],call["args"],body.get("person"),player)
                             except Exception as failure: done={"error":str(failure)[:300]}
                             then.append({"name":call["name"],**done})
                         if then: answer["then"]=then
@@ -1810,14 +1835,25 @@ class Handler(BaseHTTPRequestHandler):
                 # Putting a thing down is its own verb, not one of its uses.
                 # See put_it_down. Only on the room the page has open.
                 _this_pages_room(self.app,body)
-                return self.send(put_it_down(self.app,body))
+                with (player_world.lock_of(self.app) if player else nullcontext()):
+                    if player and getattr(self.app.room,"hand_owner",None)!=player:
+                        raise ValueError("That is not your hand")
+                    answer=put_it_down(self.app,body,player)
+                return self.send(answer)
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
                 # no model is asked: the room's chat wrote the program when it
                 # made the thing. See run_action. Only on the room the page
                 # has open (_this_pages_room).
                 _this_pages_room(self.app,body)
-                return self.send(run_action(self.app,body))
+                if player and getattr(self.app.room,"hand_owner",None) not in (None,player):
+                    raise ValueError("Another player's hand is occupied")
+                answer=run_action(self.app,body,player_id=player)
+                if player: _sync_hand_owner(self.app,player)
+                if player and isinstance(answer.get("state"),dict):
+                    answer["state"]["inventory"]=inventory_room.shown(self.app,player)
+                    answer["state"]["hand_owner"]=getattr(self.app.room,"hand_owner",None)
+                return self.send(answer)
             if path=="/api/world/machine":
                 # A machine worked from its panel (operate_machine): power, a
                 # direction, a drive setting, by the page's own count, straight
@@ -1847,7 +1883,14 @@ class Handler(BaseHTTPRequestHandler):
                 # the page keeps the room running (tool_use.run). The swing is
                 # the person's, so what it does is credited to their notebook.
                 _this_pages_room(self.app,body)
-                return self.send(tool_use.run(self.app,body,note=note_strike))
+                if player and getattr(self.app.room,"hand_owner",None)!=player:
+                    raise ValueError("That is not your hand")
+                with (player_world.lock_of(self.app) if player else nullcontext()):
+                    if player and getattr(self.app.room,"hand_owner",None)!=player:
+                        raise ValueError("That is not your hand")
+                    answer=tool_use.run(self.app,body,note=note_strike)
+                if player: _sync_hand_owner(self.app,player)
+                return self.send(answer)
             if path=="/api/world/inventory":
                 # One change to what the person has (inventory_room.request):
                 # taken into the bag, held, stowed or put down -- done once
@@ -1855,7 +1898,7 @@ class Handler(BaseHTTPRequestHandler):
                 # open, and kept with the room when it is done.
                 app=self.app
                 _this_pages_room(app,body)
-                answer=inventory_room.request(app,body)
+                answer=inventory_room.request(app,body,player)
                 # Kept with the world as it now stands -- the thing in the hand
                 # or in the bag in the engine as the record says -- or, with a
                 # world that will not be saved just now, on its own.
@@ -1865,7 +1908,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/world/inventory/shown":
                 # And what the person has now, as the page shows it.
                 _this_pages_room(self.app,body)
-                return self.send(inventory_room.shown(self.app))
+                return self.send(inventory_room.shown(self.app,player))
             if path=="/api/live/open":
                 if (gameplay_room.active(self.app) or fabrication_room.active(self.app)) and not keep_world(self.app, "opening laboratory"):
                     raise ValueError("Save the expedition before opening the laboratory")
@@ -1876,8 +1919,21 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/live/act":
                 # The notebook revision the page has shown: the answer carries
                 # the notebook when the server's is newer (with_notebook).
-                seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
+                if not isinstance(body,dict): raise ValueError("Expected a live action object")
+                seen=body.pop("notebook_seen",None)
                 app=self.app
+                if player and isinstance(body,dict):
+                    owner=getattr(app.room,"hand_owner",None)
+                    hand_ops={"wield","grab","hand","move","release","stroke","throw","place","place_check"}
+                    if body.get("op") in hand_ops and owner and owner!=player:
+                        raise ValueError("Another player's hand holds that object")
+                    if body.get("op") in {"park","unpark"}:
+                        raise ValueError("Use your inventory to move a world item")
+                    if body.get("op")=="step":
+                        player_world.update_pose(app,player,body.get("person"))
+                        if owner and owner!=player:
+                            body.pop("hand",None)
+                            body.pop("hand_q",None)
                 if getattr(app, "world_id", None) and isinstance(body,dict) and body.get("op")=="step":
                     # Every tab used to advance a full frame, so two people
                     # made time run twice as fast. Share a wall-time budget
@@ -1929,12 +1985,27 @@ class Handler(BaseHTTPRequestHandler):
                     clock.page_stepped()
                     self.app.brains.unattended=False
                 self.app.brains.before(self.app,body)
-                answer=self.app.live.act(body)
+                with (player_world.lock_of(app) if player else nullcontext()):
+                    if player:
+                        owner=getattr(app.room,"hand_owner",None)
+                        if body.get("op") in hand_ops and owner and owner!=player:
+                            raise ValueError("Another player's hand holds that object")
+                        if body.get("op")=="step" and owner and owner!=player:
+                            body.pop("hand",None)
+                            body.pop("hand_q",None)
+                    answer=self.app.live.act(body)
+                    if player and body.get("op") in ("wield","grab") and (
+                            (answer.get("hand") or {}).get("holding") or
+                            ((app.live.session.state or {}).get("hand") or {}).get("holding")):
+                        app.room.hand_owner=player
+                    if player and body.get("op")=="release":
+                        app.room.hand_owner=None
                 self.app.brains.attach(body,answer)
                 gameplay_room.sync(self.app, answer)
                 fabrication_room.sync(self.app, answer)
                 remember_ground(self.app,body,answer)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.app,answer)
+                if player: answer["players"] = player_world.visible(app)
                 self.send(with_notebook(self.app,answer,seen))
                 # After the page has its answer: the running world kept with
                 # the room when a break is done, and every few seconds of it.
@@ -2632,7 +2703,7 @@ def keep_world_after(app,body,answer):
         room.world_refused_t=float(t)
 
 
-def _rejoin(app,scene):
+def _rejoin(app,scene,player_id=""):
     """The room this server is running, for a page that opens it again: every
     body where it is and as it is now -- moved, broken, dented -- the hand still
     holding what it held, and the bag as the record has it. A reload used to open
@@ -2650,7 +2721,8 @@ def _rejoin(app,scene):
     if opened is None: return None
     opened=world_upgrades.apply(app,opened)
     gameplay_room.opened(app, opened)
-    opened["inventory"]=inventory_room.shown(app)
+    opened["inventory"]=inventory_room.shown(app,player_id)
+    if player_id: opened["hand_owner"]=getattr(room,"hand_owner",None)
     opened["scene"]=room.scene
     opened["scenes"]=sorted(world_room.SCENES)
     # Not read back from disk: this server holds it (kept means that).
@@ -2691,6 +2763,18 @@ def _this_pages_room(app,body):
     if asked!=session.id:
         raise ValueError("this page no longer has the room: it was opened again, in another tab or"
                          " page, so nothing was done here. Reload the page to take the room back")
+
+
+def _sync_hand_owner(app, player_id):
+    if not player_id or app.live.session is None:
+        return
+    with player_world.lock_of(app):
+        holding=((app.live.session.state or {}).get("hand") or {}).get("holding")
+        if holding:
+            if getattr(app.room,"hand_owner",None) in (None,player_id):
+                app.room.hand_owner=player_id
+        elif getattr(app.room,"hand_owner",None)==player_id:
+            app.room.hand_owner=None
 
 
 def _motor_for(app,part):
@@ -2754,7 +2838,7 @@ def operate_machine(app,body):
     if said.get("operated")=="applied": keep_world(app,"a machine was told what to do")
     return {"operated":said.get("operated"),"control":said.get("control")}
 
-def _chat_live(app,name,args,person=None):
+def _chat_live(app,name,args,person=None,player_id=""):
     """What the room's chat does to the room as it stands (room_world.LIVE): one
     of a thing's actions pressed, as the page's E presses it, or its motor told
     what to do. The running room takes it, and nothing is opened again -- the
@@ -2762,10 +2846,13 @@ def _chat_live(app,name,args,person=None):
     {"error": why}, for the model."""
     try:
         if name=="use_action":
+            if player_id and getattr(app.room,"hand_owner",None) not in (None,player_id):
+                raise ValueError("Another player's hand is occupied")
             thing=str(args.get("name",""))[:200]
             offered=[a for a in (app.room.spec.get("actions") or []) if a.get("body")==thing]
             if args.get("primary") is True:
-                said = run_action(app, {"object": thing, "primary": True, "person": person})
+                said = run_action(app, {"object": thing, "primary": True, "person": person},
+                                  player_id=player_id)
                 if said.get("refused"):
                     return {"error": said["refused"], "done": said.get("done", [])}
                 return {"used": thing, **said}
@@ -2777,7 +2864,8 @@ def _chat_live(app,name,args,person=None):
             if index is None and key.isdigit() and 1<=int(key)<=len(offered):
                 index=int(key)-1
             if index is None: raise ValueError(f"{thing} has no action {which!r}: its actions are {', '.join(labels)}")
-            said=run_action(app,{"object":thing,"action":index,"person":person})
+            said=run_action(app,{"object":thing,"action":index,"person":person},
+                            player_id=player_id)
             if said.get("refused"): return {"error":said["refused"],"done":said.get("done",[])}
             return {"used":thing,"action":said["action"],"done":said["done"],
                     "in_the_room":"done to the room as it stands, as the person's E does it; nothing was opened again"}
@@ -2888,20 +2976,23 @@ def _core_hand_step(app, name, step, person):
     return f"pushed {name} forward {moved:.2f} m (stroke {ended})", None
 
 
-def run_action(app, body, *, own_hold=False):
+def run_action(app, body, *, own_hold=False, player_id=""):
     # A product cannot start overlapping programs on the same physical hand.
     # setdefault is not available on the app Namespace; initialize under GIL.
     #
     # `own_hold` is for put_it_down alone: it runs put_on_ground on the thing
     # already in the hand. It is a keyword, never read from a request, so
     # nothing arriving over HTTP can say it.
-    lock = app.__dict__.setdefault("action_lock", threading.Lock())
-    if not lock.acquire(blocking=False):
-        raise ValueError("a Use action is already running")
-    try:
-        return _run_action(app, body, own_hold=own_hold)
-    finally:
-        lock.release()
+    with (player_world.lock_of(app) if player_id else nullcontext()):
+        if player_id and getattr(app.room,"hand_owner",None) not in (None,player_id):
+            raise ValueError("Another player's hand is occupied")
+        lock = app.__dict__.setdefault("action_lock", threading.Lock())
+        if not lock.acquire(blocking=False):
+            raise ValueError("a Use action is already running")
+        try:
+            return _run_action(app, body, own_hold=own_hold)
+        finally:
+            lock.release()
 
 
 # Measured in the Explorer (tests/explore_visual_qa.py): an oak block carried
@@ -2925,7 +3016,7 @@ def put_down_pace(mass_kg):
     return min(PUT_DOWN_SPEED_M_S,max(0.5,math.sqrt(accel))),accel
 
 
-def put_it_down(app,body):
+def put_it_down(app,body,player_id=""):
     """Set down what the hand holds, where the preview says it would go
     (POST /api/world/putdown).
 
@@ -2968,10 +3059,11 @@ def put_it_down(app,body):
         # weight, wherever that turns out to be.
         settled=problem
         said=run_action(app,{"session":body.get("session"),"object":name,
-                             "builtin":"put_on_ground","person":body.get("person")},own_hold=True)
+                             "builtin":"put_on_ground","person":body.get("person")},
+                       own_hold=True,player_id=player_id)
         if said.get("refused"):
             return {"ok":False,"why":problem,"also":said["refused"],
-                    "shown":inventory_room.shown(app)}
+                    "shown":inventory_room.shown(app,player_id)}
         line=f"Set the {name} down on the ground in front of you"
     # The hand is empty now, so the record's own release is a no-op and this
     # only writes down what already happened. A record that refuses -- because
@@ -2982,10 +3074,10 @@ def put_it_down(app,body):
         noted=inventory_room.request(app,{
             "session":body.get("session"),
             "request":f"putdown-{name}-{app.live.session.id}-{time.time_ns()}",
-            "op":"drop","item":name,"person":body.get("person")})
+            "op":"drop","item":name,"person":body.get("person")},player_id)
     except Exception as trouble:
         noted={"ok":False,"why":str(trouble)}
-    answer={"ok":True,"did":line,"shown":inventory_room.shown(app)}
+    answer={"ok":True,"did":line,"shown":inventory_room.shown(app,player_id)}
     # Say when it did not go where the preview promised, rather than letting the
     # ghost sit on a table top and the thing end up on the floor beside it.
     if settled: answer["instead"]=settled

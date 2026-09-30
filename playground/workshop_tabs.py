@@ -32,7 +32,7 @@ _BENCH_SHAPE = {"box": "box", "cylinder": "cylinder", "tapered": "tapered",
                 "sphere": "cylinder", "capsule": "cylinder"}
 
 
-def carried(app: Any) -> list[dict[str, Any]]:
+def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
     """What the person has in their hands and their bag, for the bench to show.
 
     The bench used to know nothing about it: the Inventory tab read the rack,
@@ -47,7 +47,7 @@ def carried(app: Any) -> list[dict[str, Any]]:
         room = getattr(app, "room", None)
         if room is None or not getattr(room, "spec", None):
             return []
-        shown = inventory_room.shown(app)
+        shown = inventory_room.shown(app, player_id)
         spec = room.spec
         bodies = {str(b["name"]): b for b in (spec.get("bodies") or [])
                   if isinstance(b, dict) and b.get("name")}
@@ -99,7 +99,7 @@ def carried(app: Any) -> list[dict[str, Any]]:
         return []
 
 
-def inventory(app: Any) -> dict[str, Any]:
+def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
     rack = workshop_library.rack(app)
     goods = workshop_library.goods_rack(app)
     items = workshop_library.list_items(app, limit=200)
@@ -128,7 +128,7 @@ def inventory(app: Any) -> dict[str, Any]:
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
             "families": families, "in_world": in_world, "saved": saved,
-            "carried": carried(app)}
+            "carried": carried(app, player_id)}
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
