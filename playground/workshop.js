@@ -1539,7 +1539,7 @@ function installBench() {
   // Inventory first, and open: the owner asked for it to be "the default
   // screen you go into when you switch out of the world". Coming out of the
   // room, what you have is the question; the Lab is where you go next.
-  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"]]) {
+  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"], ["goals", "Goals"]]) {
     const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === WORKSHOP_OPENS_ON) }, label);
     tab.onclick = () => showTab(name);
     tabs.append(tab);
@@ -1554,7 +1554,7 @@ function installBench() {
   const machineBench = make("section", { id:"ws-machine-bench", "aria-label":"Work it as in the world" });
   machineBench.hidden = true;
   centre.append(tabs, takes, viewport, machineBench);
-  for (const name of ["inventory", "skills", "recipes", "market"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+  for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   renderTakes();
 }
 
@@ -2347,6 +2347,81 @@ function openTheTreeAt(id) {
   showTab("skills");
 }
 
+async function showGoals() {
+  const root = $("#ws-goals-list"), status = $("#ws-goals-status");
+  if (!worldId) {
+    root.replaceChildren(item("Start your first camp", "Use Menu to create or join a game."));
+    return;
+  }
+  const goals = await api("/api/workshop/goals", {});
+  root.replaceChildren();
+  $("#ws-goals-progress").textContent = goals.complete ? "First camp complete. Your progress is saved."
+    : `${goals.goals.filter((g) => g.complete).length} / ${goals.goals.length} goals complete · Your energy: ${goals.balance_j} J`;
+  $("#ws-goals-limits").textContent = goals.limits;
+  $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
+    : "Gather → build → carry. Your stool needs 2.5088 kg of oak; six lots leave wood for the next build. Prices change, so bank more energy when you need it.";
+  const act = async (button, work) => {
+    button.disabled = true; status.textContent = "Working…";
+    try { await work(); status.textContent = "Saved."; await showGoals(); }
+    catch (error) { status.textContent = error.message || String(error); }
+    finally { button.disabled = false; }
+  };
+  for (const goal of goals.goals) {
+    const li = item(goal.title, `${goal.complete ? "Complete" : `${goal.value} / ${goal.target} ${goal.unit}`} · ${goal.instruction}`,
+                    goal.complete ? "enough" : "short");
+    li.dataset.goal = goal.id;
+    li.dataset.complete = String(goal.complete);
+    if (goals.next_goal === goal.id) {
+      let label, work;
+      if (goal.id === "bank-solar") {
+        label = "Bank 500 J";
+        work = async () => {
+          await api("/api/world/open", {});
+          await api("/api/workshop/market", { action:"bank", joules:500, request_id:crypto.randomUUID() });
+        };
+      } else if (goal.id === "stock-oak") {
+        label = "Buy 0.5 kg of oak";
+        work = async () => {
+          const market = await api("/api/workshop/market", {});
+          const oak = market.offers.find((o) => o.id === "oak-stock");
+          if (market.balance_j < oak.price_j) throw new Error(`This lot costs ${oak.price_j} J. Bank another 500 J, then buy.`);
+          await api("/api/workshop/market", { action:"buy", item_id:oak.id,
+            quoted_price_j:oak.price_j, request_id:crypto.randomUUID() });
+        };
+        const bank = make("button", { type:"button", class:"ws-action", "data-goal-bank":"" }, "Bank another 500 J");
+        bank.onclick = () => act(bank, async () => {
+          await api("/api/world/open", {});
+          await api("/api/workshop/market", { action:"bank", joules:500, request_id:crypto.randomUUID() });
+        });
+        li.append(bank);
+      } else if (goal.id === "build-camp") {
+        label = "Build camp stool";
+        work = async () => {
+          await api("/api/world/open", {});
+          took(await api("/api/workshop/candidates", { ...goals.recipe, sweeps:{} }));
+          $("#ws-archetype").value = goals.recipe.kind;
+          await makeIt($("#ws-make"));
+          if ($("#ws-make-status")?.dataset.bad === "yes") throw new Error($("#ws-make-status").textContent);
+        };
+      } else {
+        label = "Pack camp stool";
+        work = async () => {
+          const opened = await api("/api/world/open", {});
+          const current = await api("/api/workshop/goals", {});
+          if (!current.camp_body) throw new Error("Your camp stool is no longer in the world. Build another from the same recipe.");
+          const packed = await api("/api/world/inventory", { session:opened.session, op:"take",
+            item:current.camp_body, request:crypto.randomUUID() });
+          if (!packed.ok) throw new Error(packed.why || "The stool could not be packed.");
+        };
+      }
+      const button = make("button", { type:"button", class:"ws-action primary", "data-goal-action":goal.id }, label);
+      button.onclick = () => act(button, work);
+      li.append(button);
+    }
+    root.append(li);
+  }
+}
+
 const WORKSHOP_OPENS_ON = "inventory";
 
 function showTab(name) {
@@ -2355,9 +2430,9 @@ function showTab(name) {
   // The takes are the Lab's too: little pictures of the thing on the
   // bench, which mean nothing beside what you are carrying.
   const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab";
-  for (const pane of ["inventory", "skills", "recipes", "market"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
+  for (const pane of ["inventory", "skills", "recipes", "market", "goals"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
   if (name === "lab") resize();
-  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket }[name];
+  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket, goals: showGoals }[name];
   if (loader) guard(null, loader);
 }
 

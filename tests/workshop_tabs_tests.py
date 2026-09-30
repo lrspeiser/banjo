@@ -119,6 +119,8 @@ class TheTabs(unittest.TestCase):
     def test_recipe_must_fit_workshop_and_open_world_as_drawn(self):
         self.app.room = SimpleNamespace(spec={"cell_m": 0.05})
         recipes = {t["name"]: t for t in workshop_tabs.recipes(self.app)["templates"]}
+        self.assertTrue(recipes["Camp stool"]["readiness"]["ready_as_drawn"])
+        self.assertEqual(2.51, recipes["Camp stool"]["materials"][0]["kg"])
         stool = recipes["stool"]
         self.assertEqual((0.05, 0.06),
                          (stool["parameters"]["top_thickness_m"], stool["parameters"]["leg_section_m"]))

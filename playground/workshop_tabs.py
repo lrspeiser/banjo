@@ -184,6 +184,11 @@ def recipes(app: Any) -> dict[str, Any]:
                           "machines": workshop_machines.described(design)["says"] if record else None,
                           "readiness": workshop_recipe.assess(design, overrides, world_cell_m=world_cell_m)})
 
+    # The tutorial uses the same recipe/readiness pipeline as other builds.
+    from mcp import workshop_components
+    import starter_goals
+    starter, _ = workshop_components.design_from_spec(starter_goals.recipe())
+    add(starter, w.assembly("stool"), name="Camp stool", source="built-in")
     for made in w.ASSEMBLIES:
         try:
             design = w.assemble(made.name, design_id=made.name)

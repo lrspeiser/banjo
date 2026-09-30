@@ -720,7 +720,7 @@ def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
               if float(row["needed_kg"]) > 0.0}
     goods_wanted = {row["substance"]: float(row["needed_kg"]) for row in needs.get("goods") or []
                     if float(row["needed_kg"]) > 0.0}
-    who, now, took = rack_owner_id(app), _now(), []
+    who, now, took, debits = rack_owner_id(app), _now(), [], []
     owners = rack_owners(app)
     with _connect(app) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -753,11 +753,33 @@ def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
                                    f"WHERE owner_id=? AND {key}=?",
                                    (max(0.0, have - taking), now, owner, name))
                         need -= taking
+                        debits.append({"owner_id": owner, "table": table, "key": key,
+                                       "name": name, "mass_kg": taking})
                 took.append({"material": name, **({"substance": name} if key == "substance" else {}),
                              "took_kg": round(want, 4), "left_kg": round(max(0.0, total - want), 4)})
         spend("workshop_material_rack", "material", wanted, material_held)
         spend("workshop_goods_rack", "substance", goods_wanted, goods_held)
-    return {"schema": RACK_SCHEMA, "took": took, "rack": rack(app), "goods_rack": goods_rack(app)}
+    return {"schema": RACK_SCHEMA, "took": took, "debits": debits,
+            "rack": rack(app), "goods_rack": goods_rack(app)}
+
+
+def refund_rack(app: Any, drawn: dict[str, Any]) -> None:
+    """Internal failed-install compensation to each original rack owner.
+
+    Add the exact debits back; overwriting totals would erase another player's
+    purchase. No client endpoint accepts this record.
+    """
+    with _connect(app) as db:
+        db.execute("BEGIN IMMEDIATE")
+        for row in drawn["debits"]:
+            table, key = row["table"], row["key"]
+            if (table, key) not in (("workshop_material_rack", "material"),
+                                    ("workshop_goods_rack", "substance")):
+                raise ValueError("Invalid internal rack refund")
+            db.execute(f"INSERT INTO {table}(owner_id,{key},mass_kg,updated_at) VALUES (?,?,?,?) "
+                       f"ON CONFLICT(owner_id,{key}) DO UPDATE SET "
+                       "mass_kg=mass_kg+excluded.mass_kg,updated_at=excluded.updated_at",
+                       (row["owner_id"], row["name"], row["mass_kg"], _now()))
 
 
 def save_bench_preset(app: Any, *, name: str, test_name: str, config: dict[str, Any],

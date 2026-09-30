@@ -59,6 +59,7 @@ import access_gate
 import workshop_api
 import workshop_library
 import market
+import starter_goals
 import workshop_install
 import world_upgrades
 import world_access
@@ -1511,6 +1512,9 @@ class Handler(BaseHTTPRequestHandler):
                 app.journal_now = lambda app=app: journal_of(app)
                 return self.send(market.request(app, workshop_library.REQUEST_OWNER.get() or player
                                                 or workshop_library.owner_id(app), body, keep_world))
+            if path == "/api/workshop/goals":
+                with world_access.gate(self.app).enter():
+                    return self.send(starter_goals.view(self.app, workshop_library.REQUEST_OWNER.get(), body))
             # The Workshop's other tabs (workshop_tabs): what the person has,
             # what each thing would take, and what they know how to do.
             # Driving a thing at the bench with the keys (workshop_drive): a
@@ -1588,6 +1592,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path in operations:
                     try:
                         answer = operations[path](self.app,body)
+                        if path.endswith("/commit"):
+                            starter_goals.observe(self.app, player)
                     except OSError as exc:
                         return self.send({"error": "Installation could not be saved; the original world is unchanged: " + str(exc)}, 503)
                     return self.send(answer)
@@ -1916,6 +1922,8 @@ class Handler(BaseHTTPRequestHandler):
                 # world that will not be saved just now, on its own.
                 if answer.get("ok") and not keep_world(app,"what the person has changed"):
                     room_store.keep(app,app.room)
+                if answer.get("ok"):
+                    starter_goals.observe(app, player)
                 return self.send(answer)
             if path=="/api/world/inventory/shown":
                 # And what the person has now, as the page shows it.

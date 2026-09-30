@@ -1643,6 +1643,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                        # design drew it or which revision, so nothing could tell
                        # whether it still matched the design on the bench.
                        "replaced": sorted(removed),
+                       "owner_id": workshop_library.rack_owner_id(app),
                        "fingerprint": (plan.get("matter") or {}).get("physics_hash")}
             if plan.get("recipe") is not None:
                 receipt["recipe"] = deepcopy(plan["recipe"])
@@ -1661,6 +1662,12 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                                      gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
                                      fabrication_record=fabrication_state,
                                      world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
+            # Installation replaces the live session and saves the whole room.
+            # Keep every guest, their bag and pending paired energy draws too.
+            for field in ("player_records", "player_inventories", "player_lock", "hand_owner",
+                          "market_pending"):
+                if hasattr(room, field):
+                    setattr(record, field, getattr(room, field))
             # The only fallible persistent write occurs BEFORE the live swap.
             # A failed atomic save leaves the original process and room intact.
             if not app.store.save(record):
@@ -1668,8 +1675,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         except BaseException:
             # Nothing was installed, so nothing was spent: put the stock back.
             if drawn is not None:
-                for row in drawn["took"]:
-                    workshop_library.set_rack(app, row["material"], row["left_kg"] + row["took_kg"])
+                workshop_library.refund_rack(app, drawn)
             staged.session.close()
             raise
         room.spec = plan["spec"]

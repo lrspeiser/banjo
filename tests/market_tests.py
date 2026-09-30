@@ -64,12 +64,21 @@ class MarketLedger(unittest.TestCase):
                                               if o["id"] == "oak-stock")["remaining"])
                 self.assertAlmostEqual(0.6, next(r["mass_kg"] for r in workshop_library.rack(app)["materials"]
                                                 if r["material"] == "oak"))
-                workshop_library.take_from_rack(app, {"materials": [{"material": "oak", "needed_kg": 0.55}],
-                                                       "goods": []})
+                drawn = workshop_library.take_from_rack(app, {"materials": [{"material": "oak", "needed_kg": 0.55}],
+                                                             "goods": []})
                 alice_oak = next(r for r in workshop_library.rack(app)["materials"]
                                  if r["material"] == "oak")
                 self.assertAlmostEqual(0, alice_oak["personal_kg"])
                 self.assertAlmostEqual(0.05, alice_oak["shared_kg"])
+                # A concurrent purchase followed by an installation failure
+                # must restore the original owners without erasing that order.
+                with workshop_library._connect(app) as db:
+                    market._buy(app, "alice", {"item_id": "oak-stock", "quoted_price_j": 122,
+                                              "request_id": "concurrent-oak-lot"})
+                workshop_library.refund_rack(app, drawn)
+                refunded = next(r for r in workshop_library.rack(app)["materials"] if r["material"] == "oak")
+                self.assertAlmostEqual(1.0, refunded["personal_kg"])
+                self.assertAlmostEqual(.1, refunded["shared_kg"])
                 with self.assertRaisesRegex(ValueError, "comes from the world and Market"):
                     workshop_library.set_rack(app, "oak", 100)
                 app.room.world_record["t_s"] = 120
@@ -77,8 +86,8 @@ class MarketLedger(unittest.TestCase):
                     market._schema(db)
                     market._restock(app, db)
                     restored = next(o for o in market._offers(db) if o["id"] == "oak-stock")
-                self.assertEqual(60, restored["remaining"])
-                self.assertEqual(before, restored["price_j"])
+                self.assertEqual(59, restored["remaining"])
+                self.assertEqual(122, restored["price_j"])
             finally:
                 workshop_library.REQUEST_OWNER.reset(scope)
 
