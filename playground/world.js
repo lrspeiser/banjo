@@ -5395,6 +5395,14 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => {
   keys.delete(e.code);
   if (isKey("primary", e.code) && primaryUsed) { primaryUsed = false; releasePrimary(); }
+  // LETTING GO IS AN EVENT, not something to notice on the next frame. The
+  // renewal belongs on the frame loop -- it is a heartbeat -- but the
+  // release happens at a known instant and this is it. Leaving it to the
+  // loop meant a machine went on being told to drive until the loop next
+  // ran, and since an ask now stands for three seconds rather than six
+  // tenths that was far worse than it used to be: CI measured one still
+  // doing 4.13 m/s three seconds after the key came up.
+  if (RIDE_KEYS.has(e.code)) letGoOfTheKeys();
 });
 addEventListener("blur", () => keys.clear());
 // A tab put behind another never gets the keyup for what was held when it
@@ -5966,6 +5974,29 @@ function chooseSomethingToRide() {
     riding.name = null;
     riding.godMode = true;
   }
+}
+
+//: The keys that drive a machine. A keyup for one of these tells it to stop
+//: there and then; every other key can wait for the next frame.
+const RIDE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "Space"]);
+
+// Nothing is being asked for any more. Sent the moment the last driving key
+// comes up, so a machine stops when you stop rather than when the page next
+// gets round to it.
+function letGoOfTheKeys() {
+  const mine = whatIsRidden();
+  if (!mine || !world.session) return;
+  if ([...RIDE_KEYS].some((code) => keys.has(code))) return;   // another still held
+  if (riding.asked === "") return;                             // already told
+  riding.asked = "";
+  riding.at = performance.now();
+  act("behave", { program: mine.program.id, sender: "person", by_person: true,
+                  seq: ++riding.seq, doing: "waiting", for_s: RIDE_FOR_S,
+                  why: "you let go of the keys" })
+    .then((said) => { if (said && said.program) mergeProgram(said.program); })
+    // The next frame renews it; a lost release is not worth saying anything
+    // about, and `asked` is put back so the loop sends it again.
+    .catch(() => { riding.asked = null; });
 }
 
 // The keys, as the thing being ridden hears them.

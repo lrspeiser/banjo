@@ -588,3 +588,39 @@ The same reasoning probably covers "the arc is not up at all" and "a throw
 at the ground eighteen metres off is on target", both of which are about a
 short-lived state the page is sampling.
 
+
+## A machine standing still rolls down a hill
+
+Sit in the rover on the valley side, touch nothing, and it creeps away at
+about 0.3 m/s -- some 3 m in six seconds. It is not being driven: the rate
+is a third of what a program does with it, and the check that guards
+against a program taking the machine back passes. It is gravity.
+
+Its two driven wheels have a brake (`brake_torque_n_m: 40` in the room) and
+hold. Its front caster has none and is free to roll and free to swivel, so
+the machine as a whole does not hold. That is also why it veers under power
+-- the same caster -- which is the older note above.
+
+A parked machine ought to stay parked. The options, none of them measured
+yet: a brake on the caster; more brake torque on the pair; or the program
+holding position the way a hovering drone does (`LiveWorld` already has
+that for the flying kind -- it remembers `hold_at` and leans back towards
+it). The drone's version is the one to look at first, because it exists.
+
+
+## The water reflex is not certain
+
+`ARoverRoamsTheShore` failed once in a full run and passed twice on its own
+straight afterwards: "a wheel went INTO the water: rover: left wheel 150 mm
+while 'turning right', sensors seeing [True, True, True, True, True]". All
+five sensors wet and 150 mm of wheel under, after roaming 19.9 m and
+turning away five times.
+
+So the reflex usually saves it and sometimes does not. Forty seconds of
+roaming along a shore is chaotic and the run that fails is not the run that
+passes, which is why it shows as a flake. It is worth chasing as a real
+intermittent rather than re-run away: the interesting state is in the print
+the check already makes -- what it was doing, and what the sensors saw --
+and "turning right with everything wet" says it had already committed to a
+turn that took it in further.
+
