@@ -647,6 +647,80 @@ def what_is_next(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
     return out
 
 
+def ranks_of(registry: Registry) -> dict[str, int]:
+    """How many rungs deep each technique is: 0 for one that stands on
+    nothing, and one more than the deepest thing it stands on otherwise.
+
+    This is what makes a tree drawable. The graph is small and acyclic --
+    Registry refuses a cycle when it loads -- so a fixed-point pass over it
+    costs nothing and needs no ordering.
+    """
+    rank: dict[str, int] = {ident: 0 for ident in registry.techniques}
+    for _pass in range(len(registry.techniques) + 1):
+        moved = False
+        for ident, technique in registry.techniques.items():
+            needs = (technique.get("prerequisites") or {}).get("all_of") or []
+            deep = max((rank.get(n, 0) + 1 for n in needs if n in rank), default=0)
+            if deep > rank[ident]:
+                rank[ident] = deep
+                moved = True
+        if not moved:
+            break
+    return rank
+
+
+def tech_tree(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
+    """Every technique there is, placed, for a tree you can look at.
+
+    `what_is_next` is the ladder -- what to do now -- and leaves out
+    everything already known, which is most of what a tree is for: seeing
+    the whole shape and where you are in it. This says, for each technique:
+    where it sits, what it stands on, what stands on it, what would earn it
+    and what it opens. Nothing here decides anything; it is the same graph
+    `earn` walks, read out.
+    """
+    known = journal.knows()
+    rank = ranks_of(registry)
+    leads_to: dict[str, list[str]] = {ident: [] for ident in registry.techniques}
+    for ident, technique in registry.techniques.items():
+        for need in (technique.get("prerequisites") or {}).get("all_of") or []:
+            if need in leads_to:
+                leads_to[need].append(ident)
+    named = {ident: t["name"] for ident, t in registry.techniques.items()}
+
+    out = []
+    for ident, technique in registry.techniques.items():
+        needs = list((technique.get("prerequisites") or {}).get("all_of") or [])
+        unmet = [n for n in needs if n not in known]
+        # WHAT YOU HAVE TO DO TO GET IT. Each route is one way, with the
+        # sentence that says it in words ("Watch a smelter work copper ore
+        # into copper, once") and whether the journal has seen it happen.
+        routes = [{"id": route.get("id"), "says": route.get("says", ""),
+                   "done": all(_met(journal, need) for need in route.get("all_of") or []),
+                   # The conditions themselves, so a page can show progress
+                   # rather than only a sentence.
+                   "all_of": [dict(need) for need in route.get("all_of") or []]}
+                  for route in (technique.get("earned_by") or {}).get("any_of") or []]
+        out.append({
+            "id": ident, "name": technique["name"],
+            "describes": technique.get("describes", ""),
+            "rank": rank.get(ident, 0),
+            "known": ident in known,
+            # Within reach: everything it stands on is known, and there is a
+            # way to earn it that is not "somebody teaches you".
+            "within_reach": ident not in known and not unmet and bool(routes),
+            "taught_only": ident not in known and not unmet and not routes,
+            "needs": [{"id": n, "name": named.get(n, n), "known": n in known} for n in needs],
+            "unmet": unmet,
+            "leads_to": [{"id": n, "name": named.get(n, n), "known": n in known}
+                         for n in sorted(leads_to.get(ident, []))],
+            "earned_by": routes,
+            "opens": opened_by(registry, ident),
+        })
+    out.sort(key=lambda row: (row["rank"], row["name"]))
+    return out
+
+
 def opened_by(registry: Registry, technique: str) -> list[dict[str, str]]:
     """The designs a technique is a condition of, by id and by name.
 

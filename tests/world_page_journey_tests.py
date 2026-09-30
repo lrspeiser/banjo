@@ -215,7 +215,7 @@ class PageJourney(unittest.TestCase):
     # which is why nothing could press Escape until now.
     NAMED_KEYS = {"Escape": 27, "Tab": 9, "Enter": 13, "Backspace": 8, "Delete": 46,
                   "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
-                  "Shift": 16, "Control": 17, "Alt": 18, " ": 32}
+                  "Shift": 16, "Control": 17, "Alt": 18}
 
     def key_event(self, kind, code, key, **extra):
         named = key in self.NAMED_KEYS

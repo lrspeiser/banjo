@@ -4263,7 +4263,9 @@ function keysForPicked(name) {
   if (whatCanBeRidden().some((m) => m.name === name)) {
     out.push({ key: "Settings", what: "be it, from the Settings tab" });
   }
-  if (machinesOfPart(name).length) out.push({ key: "Click", what: "open its panel" });
+  if (machinesOfPart(name).length && !out.some((k) => /panel/.test(k.what))) {
+    out.push({ key: "Click", what: "open its panel" });
+  }
   return out;
 }
 
@@ -9070,6 +9072,7 @@ function showNextStep(book) {
   if (!line) return;
   const step = (book.next || []).find((n) => n.within_reach);
   if (!step) { line.hidden = true; return; }
+  nextRung = step.technique || null;
   const way = (step.earned_by || []).find((e) => !e.done) || (step.earned_by || [])[0];
   const opens = opensSays(step);
   line.replaceChildren();
@@ -9079,7 +9082,19 @@ function showNextStep(book) {
   line.hidden = false;
 }
 
-$("next-step")?.addEventListener("click", () => $("tab-notes")?.click());
+// IT IS THE TECH TREE, so it opens the tech tree. The owner, seeing the line:
+// "why does it say 'Next: Burning Lime' is that the tech tree? if so link it
+// to the tech tree." It used to open the Notes tab, which lists what you know
+// -- near the right thing and not it. The Workshop's Skills tab is the tree,
+// and ?technique= opens it on this rung with its path lit.
+let nextRung = null;
+$("next-step")?.addEventListener("click", () => {
+  const url = new URL("/world", location.origin);
+  url.searchParams.set("workshop", "1");
+  url.searchParams.set("tab", "skills");
+  if (nextRung) url.searchParams.set("technique", nextRung);
+  location.href = url.toString();
+});
 
 // What the person knows (docs/knowledge-and-progression.md): the notebook the
 // server keeps from what the engine measured their own tools doing. What was

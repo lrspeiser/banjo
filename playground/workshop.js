@@ -1866,10 +1866,221 @@ async function showInventory() {
   fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
 }
 
+// ---------------------------------------------------------------------------
+// THE TECH TREE
+// ---------------------------------------------------------------------------
+//
+// The owner: "The Skills area will show you more of a tech tree you can
+// navigate like civilization where you can see what types of items you can
+// make with that skill, what you need to unlock next, and what you could make
+// with those... We also need to indicate what you have to complete to get the
+// skill."
+//
+// It is a real graph and it is drawn as one: a column per rank, a card per
+// technique, and a line from a technique to everything it stands on. The
+// server works out the ranks (progression.ranks_of) because that is where the
+// graph lives; this only places what it is told.
+//
+// Clicking a card picks it: the card beside the tree fills with what it is,
+// what has to be done to earn it, and what it would let you make -- and the
+// tree dims to the path, so what you are looking at is the route to that one
+// thing and not nine things at once.
+const tree = { picked: null, techniques: [], lines: null };
+
+function techniqueById(id) { return tree.techniques.find((t) => t.id === id) || null; }
+
+// Everything a technique stands on, all the way down, and everything that
+// stands on it, all the way up. This is the lit path.
+function treePath(id) {
+  const lit = new Set([id]);
+  const walk = (at, way) => {
+    for (const next of (techniqueById(at) || {})[way] || []) {
+      if (lit.has(next.id)) continue;
+      lit.add(next.id);
+      walk(next.id, way);
+    }
+  };
+  walk(id, "needs");
+  walk(id, "leads_to");
+  return lit;
+}
+
+function pickTechnique(id) {
+  tree.picked = tree.picked === id ? null : id;
+  drawTree();
+}
+
+// The card beside the tree: everything about the one that is picked.
+function treeAbout(t) {
+  const box = $("#ws-tree-about");
+  box.replaceChildren();
+  if (!t) { box.hidden = true; return; }
+  box.hidden = false;
+  box.append(make("h3", {}, t.name));
+  box.append(make("p", { class: "ws-note" }, t.describes || ""));
+
+  const state = t.known ? "You know this." : t.within_reach ? "You can earn this now."
+    : `First: ${t.needs.filter((n) => !n.known).map((n) => n.name).join(", ")}.`;
+  box.append(make("p", { class: t.known ? "ws-tree-state ok" : t.within_reach
+                                          ? "ws-tree-state reach" : "ws-tree-state" }, state));
+
+  // WHAT YOU HAVE TO COMPLETE. Each way of earning it, in the words the
+  // registry gives, ticked when the journal has seen it happen.
+  if (t.earned_by && t.earned_by.length) {
+    box.append(make("h4", {}, t.known ? "How it was earned" : "To earn it"));
+    const list = make("ul", { class: "ws-tree-todo" });
+    for (const route of t.earned_by) {
+      const li = make("li", { class: route.done ? "done" : "" });
+      li.append(make("i", { class: "ws-tick", "aria-hidden": "true" },
+                     route.done ? "\u2713" : "\u25cb"));
+      li.append(make("span", {}, route.says || route.id || ""));
+      list.append(li);
+    }
+    box.append(list);
+  } else if (!t.known) {
+    box.append(make("p", { class: "ws-note" },
+                    "Nothing in the world demonstrates this yet: it has to be taught."));
+  }
+
+  // WHAT IT LETS YOU MAKE, which is the whole reason to want it.
+  if (t.opens && t.opens.length) {
+    box.append(make("h4", {}, t.known ? "It lets you make" : "It would let you make"));
+    const list = make("ul", { class: "ws-tree-opens" });
+    for (const design of t.opens) {
+      const li = make("li", {});
+      const go = make("button", { type: "button", class: "ws-link" }, design.name);
+      // Straight to the bench for that thing: a tech tree that cannot be
+      // acted on is a poster.
+      go.onclick = () => guard(go, async () => {
+        showTab("lab");
+        bench.openedLibraryItem = null;
+        took(await api("/api/workshop/candidates",
+                       { kind: design.name, generation: bench.generation + 1 }));
+        const picker = $("#ws-archetype");
+        if (picker && [...picker.options].some((o) => o.value === design.name)) {
+          picker.value = design.name;
+        }
+      });
+      li.append(go);
+      list.append(li);
+    }
+    box.append(list);
+  }
+
+  // AND WHAT COMES AFTER IT.
+  const after = (t.leads_to || []).filter((n) => !n.known);
+  if (after.length) {
+    box.append(make("h4", {}, "Then you could learn"));
+    const list = make("ul", { class: "ws-tree-opens" });
+    for (const next of after) {
+      const li = make("li", {});
+      const go = make("button", { type: "button", class: "ws-link" }, next.name);
+      go.onclick = () => pickTechnique(next.id);
+      li.append(go);
+      list.append(li);
+    }
+    box.append(list);
+  }
+}
+
+function drawTree() {
+  const board = $("#ws-tree");
+  if (!board) return;
+  board.replaceChildren();
+  const lit = tree.picked ? treePath(tree.picked) : null;
+  const ranks = [];
+  for (const t of tree.techniques) (ranks[t.rank] || (ranks[t.rank] = [])).push(t);
+
+  const cards = new Map();
+  for (const [depth, row] of ranks.entries()) {
+    if (!row) continue;
+    const column = make("div", { class: "ws-tree-rank" });
+    column.append(make("p", { class: "ws-tree-rank-head" },
+                       depth === 0 ? "From the start" : `After ${depth}`));
+    for (const t of row) {
+      const state = t.known ? "known" : t.within_reach ? "reach" : "locked";
+      const card = make("button", {
+        type: "button", class: `ws-tech ${state}`, "data-technique": t.id,
+        role: "treeitem", "aria-selected": String(tree.picked === t.id),
+      });
+      card.append(make("b", {}, t.name));
+      // One line under the name, and it is the useful one: what it makes.
+      const opens = (t.opens || []).map((o) => o.name);
+      card.append(make("span", { class: "ws-tech-opens" },
+                       opens.length ? opens.join(", ") : "nothing new yet"));
+      if (t.known) card.append(make("i", { class: "ws-tech-mark" }, "\u2713"));
+      if (lit && !lit.has(t.id)) card.classList.add("dim");
+      if (tree.picked === t.id) card.classList.add("on");
+      card.onclick = () => pickTechnique(t.id);
+      column.append(card);
+      cards.set(t.id, card);
+    }
+    board.append(column);
+  }
+
+  // The lines. An SVG over the board rather than between the columns: the
+  // columns scroll and wrap, and a line has to follow wherever a card ended
+  // up. Measured NOW, not on the next frame -- a tab that is not on screen
+  // gets no frame, and the lines would never have been drawn at all.
+  // getBoundingClientRect is what we were waiting for anyway: it forces the
+  // layout.
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ws-tree-lines");
+  board.append(svg);
+  treeLines(board, svg, cards, lit);
+  treeAbout(tree.picked ? techniqueById(tree.picked) : null);
+}
+
+function treeLines(board, svg, cards, lit) {
+  const box = board.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+  svg.setAttribute("width", String(box.width));
+  svg.setAttribute("height", String(box.height));
+  svg.replaceChildren();
+  for (const t of tree.techniques) {
+    const to = cards.get(t.id);
+    if (!to) continue;
+    for (const need of t.needs || []) {
+      const from = cards.get(need.id);
+      if (!from) continue;
+      const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const x1 = a.right - box.left + board.scrollLeft;
+      const y1 = a.top + a.height / 2 - box.top;
+      const x2 = b.left - box.left + board.scrollLeft;
+      const y2 = b.top + b.height / 2 - box.top;
+      const mid = (x1 + x2) / 2;
+      path.setAttribute("d", `M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`);
+      path.setAttribute("class", need.known ? "ws-tree-line met" : "ws-tree-line");
+      if (lit && !(lit.has(t.id) && lit.has(need.id))) path.classList.add("dim");
+      svg.append(path);
+    }
+  }
+}
+
+// A pane that changes width moves every card, and a line drawn to where a
+// card used to be points at nothing.
+let treeResizing = null;
+addEventListener("resize", () => {
+  if (!tree.techniques.length) return;
+  const pane = $("#ws-pane-skills");
+  if (!pane || pane.hidden) return;
+  clearTimeout(treeResizing);
+  treeResizing = setTimeout(drawTree, 120);
+});
+
 async function showSkills() {
   const s = await api("/api/workshop/skills");
-  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} techniques known. A technique is earned by what the engine measured your own hands, or your machines, doing.` : "The world has no techniques to learn yet.";
-  fill("#ws-skills-techniques", s.techniques.map((t) => { const li = item(t.name, t.describes, t.known ? "unlocked" : t.within_reach ? "reach" : ""); li.append(tag(t.known ? "unlocked" : t.within_reach ? "within reach" : `needs ${t.needs.join(", ")}`, t.known ? "ok" : "")); for (const d of t.opens) li.append(tag(`opens ${d}`)); return li; }), "No techniques.");
+  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} skills. A skill is earned by what the engine measured your own hands, or your machines, doing \u2014 click one to see what it takes and what it makes.` : "The world has no skills to learn yet.";
+  tree.techniques = s.techniques || [];
+  if (tree.picked && !techniqueById(tree.picked)) tree.picked = null;
+  // Nothing picked: open on the one to do next -- the nearest rung that is
+  // within reach -- so the tree arrives answering "what now".
+  if (!tree.picked) {
+    const next = tree.techniques.find((t) => t.within_reach);
+    if (next) tree.picked = next.id;
+  }
+  drawTree();
   fill("#ws-skills-designs", s.designs.map((d) => item(d.name, (d.demonstrated.length ? `demonstrated: ${d.demonstrated.join(", ")}. ` : "") + `${d.evidence.length} piece${d.evidence.length === 1 ? "" : "s"} of evidence`, d.demonstrated.length ? "unlocked" : "")), "Nothing demonstrated yet: use a tool of your own on the ground, or watch a machine work.");
   fill("#ws-skills-blocked", s.blocked.map((b) => item(b.name, `${b.route}: ${(b.because || []).join("; ")}`)), "Nothing is blocked.");
   $("#ws-skills-notes").textContent = s.not_modelled.length ? `The engine said it does not model: ${s.not_modelled.join("; ")}.` : "";
@@ -1889,6 +2100,14 @@ async function showRecipes() {
   fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} · ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` · worked by ${x.worked_by.join(", ")}` : " · no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
   fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
   const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
+}
+
+// Opening the Workshop straight onto one rung of the tree: the world page's
+// "Next: ..." line links here, because that line IS the tech tree and saying
+// so in a place you cannot get to from it is not saying it.
+function openTheTreeAt(id) {
+  tree.picked = id || null;
+  showTab("skills");
 }
 
 function showTab(name) {
@@ -3350,6 +3569,10 @@ async function start() {
   // thing that has since gone -- a library item thrown away, a template
   // renamed -- is not an error: the bench opens on the table and says nothing.
   const asked = (params.get("kind") || "").trim();
+  // ?tab=skills&technique=burning-lime opens the tree on that rung. The
+  // world page's "Next: ..." line uses it.
+  const wantTab = (params.get("tab") || "").trim();
+  const wantTechnique = (params.get("technique") || "").trim();
   const last = asked || libraryItem || saved ? null : openedLast();
   let answer;
   try {
@@ -3377,6 +3600,12 @@ async function start() {
     // unsubmitted curve/material inputs if it arrives while the user edits.
     renderUserLibrary(); renderBenchPresets();
   } catch { /* optional */ }
+  // Last, because a tab other than the Lab hides the viewport and the
+  // Lab's own set-up above expects to be the thing on screen while it
+  // runs. ?tab=skills&technique=<id> is how the world page's "Next:"
+  // line gets you to the rung it is talking about.
+  if (wantTechnique) openTheTreeAt(wantTechnique);
+  else if (wantTab) showTab(wantTab);
 }
 
 placeCamera(); resize(); requestAnimationFrame(frame); guard(null, start);

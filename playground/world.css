@@ -604,6 +604,10 @@ body.panel-away #panel { transform: translateX(100%); }
   padding: 10px 12px 12px; border-bottom: 1px solid var(--edge);
   display: flex; flex-direction: column; gap: 9px;
 }
+/* An id beats the browser's own [hidden] rule, so without this the empty card
+   keeps its padding and its border and everything below it sits lower --
+   which is enough to make a click land above the button it was aimed at. */
+#picked[hidden] { display: none; }
 .pk-head { display: flex; align-items: flex-start; gap: 8px; }
 .pk-head > div { flex: 1; min-width: 0; }
 .pk-head h2 { margin: 0; font-size: 15px; line-height: 1.25; }

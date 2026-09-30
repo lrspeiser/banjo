@@ -473,3 +473,28 @@ chemistry a person writes, and a recipe with no design against it makes no
 evidence at all rather than inventing a technique for itself. A batch that made
 nothing is not evidence either, and the same batch read twice awards nothing
 twice -- it is named by the session, the recipe and which batch it was.
+
+## Looking at the whole graph
+
+`what_is_next` answers "what should I do now", and leaves out everything
+already known -- which is most of what a tech tree is for. `tech_tree` says
+where every technique sits instead: its rank (`ranks_of`: 0 for one that
+stands on nothing, one more than the deepest thing it stands on otherwise),
+what it stands on and what stands on it, each way of earning it with the
+registry's own sentence and whether the journal has seen it done, and what it
+opens by id and name.
+
+Nothing in it decides anything. It is the same graph `earn` walks, read out,
+so the tree cannot disagree with what you are actually awarded.
+
+The Workshop's Skills tab draws it: a column per rank, a card per technique, a
+line to each prerequisite, and picking one dims everything off its path. The
+world page's "Next: ..." line links to `/world?workshop=1&tab=skills&
+technique=<id>`, which opens the tree on that rung -- the line IS the tech
+tree, and it used to open the Notes tab, which is near the right thing and not
+it.
+
+The owner asked for a condition like "collect 100 lbs of iron ore". There is
+no such condition: `_met` knows a design `found` and a design `demonstrated`
+passing a named test, and nothing anywhere keeps a running total of what has
+been gathered. A quantity rung needs the journal to count.

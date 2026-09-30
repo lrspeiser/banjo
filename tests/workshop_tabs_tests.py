@@ -121,7 +121,58 @@ class TheTabs(unittest.TestCase):
         s = workshop_tabs.skills(self.app)
         self.assertEqual((0, len(s["techniques"])), (s["known"], s["of"]))
         wood = next(t for t in s["techniques"] if t["id"] == "rough-shaping-wood")
-        self.assertEqual((False, True, ["One-piece wooden pick"]), (wood["known"], wood["within_reach"], wood["opens"]))
+        # `opens` carries the id as well as the name: the tree's card links
+        # each one to the bench that makes it, and a name is not a thing you
+        # can look anything up by.
+        self.assertEqual((False, True, [{"id": "one-piece-wooden-pick", "name": "One-piece wooden pick"}]),
+                         (wood["known"], wood["within_reach"], wood["opens"]))
+
+    def test_skills_are_served_as_a_tree(self):
+        """Enough to draw one: where each skill sits, what it stands on, what
+        stands on it, and what has to be done to earn it.
+
+        The tab used to walk the graph itself, which is why `needs` listed
+        things you already knew and `learn_from` -- the same four words on
+        every technique -- was served and never read."""
+        self.app.knowledge = lambda: {"techniques": [], "designs": [], "blocked": [],
+                                      "not_modelled": [], "revision": 0}
+        s = workshop_tabs.skills(self.app)
+        by = {t["id"]: t for t in s["techniques"]}
+
+        # A rank per rung, and the tab says how many there are so a column
+        # can be drawn for each.
+        self.assertEqual(0, by["smelting-copper"]["rank"])
+        self.assertEqual(1, by["drawing-wire"]["rank"])
+        self.assertEqual(2, by["smelting-aluminium"]["rank"])
+        self.assertEqual(max(t["rank"] for t in s["techniques"]) + 1, s["ranks"])
+
+        # Both ways along every edge.
+        self.assertEqual(["smelting-copper"], [n["id"] for n in by["drawing-wire"]["needs"]])
+        self.assertIn("drawing-wire", [n["id"] for n in by["smelting-copper"]["leads_to"]])
+
+        # Nothing known, so nothing above the first rank is within reach.
+        self.assertTrue(by["smelting-copper"]["within_reach"])
+        self.assertFalse(by["drawing-wire"]["within_reach"])
+        self.assertEqual(["smelting-copper"], by["drawing-wire"]["unmet"])
+
+        # WHAT YOU HAVE TO COMPLETE, in the words the registry gives, with
+        # whether it has been done. This is the whole of what the owner asked
+        # the tree to say about earning a skill.
+        route = by["smelting-copper"]["earned_by"][0]
+        self.assertEqual("Watch a smelter work copper ore into copper, once.", route["says"])
+        self.assertFalse(route["done"])
+        self.assertEqual([{"design": "copper-smelter", "demonstrated": True, "test": "smelts-ore"}],
+                         route["all_of"])
+
+        # A technique already known says so, and what it needed reads as met.
+        self.app.knowledge = lambda: {"techniques": [{"id": "smelting-copper", "name": "Smelting copper"}],
+                                      "designs": [], "blocked": [], "not_modelled": [], "revision": 1}
+        s = workshop_tabs.skills(self.app)
+        by = {t["id"]: t for t in s["techniques"]}
+        self.assertTrue(by["smelting-copper"]["known"])
+        self.assertTrue(by["drawing-wire"]["within_reach"])
+        self.assertEqual([], by["drawing-wire"]["unmet"])
+        self.assertEqual([True], [n["known"] for n in by["drawing-wire"]["needs"]])
         self.app.knowledge = lambda: {"techniques": [{"id": "rough-shaping-wood", "name": "Rough-shaping wood"}],
                                       "designs": [{"design": "pick@1", "name": "pick", "registered": True, "standing": [],
                                                    "demonstrated": ["dig"], "evidence": [{"id": "e1"}]}],

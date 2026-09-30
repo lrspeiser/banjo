@@ -1346,6 +1346,11 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.server.app
                 app.knowledge=lambda app=app: knowledge_view(app)
                 app.registry=registry
+                # The journal too: the tech tree says which of a technique's
+                # routes have been done, and only the journal knows that.
+                # NOT `app.journal` -- that name already holds the Journal
+                # itself, and a function there is what journal_of returns.
+                app.journal_now=lambda app=app: journal_of(app)
                 return self.send(getattr(workshop_tabs,path.rsplit("/",1)[1])(app))
             # What a chat turn is doing WHILE it does it. A turn is one POST
             # that answers at the end; this is how the page says what is going

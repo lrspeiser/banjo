@@ -208,21 +208,48 @@ def skills(app: Any) -> dict[str, Any]:
         from mcp import progression  # type: ignore
     registry = app.registry() if callable(getattr(app, "registry", None)) else progression.Registry()
     known = {t["id"] for t in notebook.get("techniques") or []}
-    opens: dict[str, list[str]] = {}
-    for design in registry.designs.values():
-        for route in design["routes"]["any_of"]:
-            for need in route.get("all_of") or []:
-                if isinstance(need, dict) and need.get("technique"):
-                    opens.setdefault(need["technique"], []).append(design["name"])
-    techniques = []
-    for ident, t in registry.techniques.items():
-        needs = [n for n in (t.get("prerequisites") or {}).get("all_of") or []]
-        techniques.append({"id": ident, "name": t["name"], "describes": t.get("describes", ""),
-                           "known": ident in known,
-                           "within_reach": ident not in known and all(n in known for n in needs),
-                           "needs": [registry.techniques.get(n, {}).get("name", n) for n in needs],
-                           "opens": sorted(set(opens.get(ident, []))),
-                           "learn_from": t.get("learn_from", [])})
+    # THE TREE, from progression itself. This used to be walked here by hand,
+    # which meant `needs` listed things you already knew and `learn_from` --
+    # the same four words on every technique -- was served and never read.
+    journal = app.journal_now() if callable(getattr(app, "journal_now", None)) else None
+    techniques = (progression.tech_tree(journal, registry) if journal is not None
+                  else _tree_from_known(progression, registry, known))
     return {"techniques": techniques, "designs": notebook.get("designs") or [],
             "blocked": notebook.get("blocked") or [], "not_modelled": notebook.get("not_modelled") or [],
-            "revision": notebook.get("revision"), "known": len(known), "of": len(registry.techniques)}
+            "revision": notebook.get("revision"), "known": len(known), "of": len(registry.techniques),
+            "ranks": max((t["rank"] for t in techniques), default=0) + 1}
+
+
+def _tree_from_known(progression: Any, registry: Any, known: set[str]) -> list[dict[str, Any]]:
+    """The tree without a journal: shape and names, and nothing about what has
+    been demonstrated.
+
+    A caller that only handed us a notebook still gets a drawable tree -- the
+    graph does not depend on anybody -- but every route reads as not done,
+    because with no journal there is nothing to ask.
+    """
+    rank = progression.ranks_of(registry)
+    named = {ident: t["name"] for ident, t in registry.techniques.items()}
+    leads: dict[str, list[str]] = {ident: [] for ident in registry.techniques}
+    for ident, t in registry.techniques.items():
+        for need in (t.get("prerequisites") or {}).get("all_of") or []:
+            if need in leads:
+                leads[need].append(ident)
+    out = []
+    for ident, t in registry.techniques.items():
+        needs = list((t.get("prerequisites") or {}).get("all_of") or [])
+        unmet = [n for n in needs if n not in known]
+        routes = [{"id": r.get("id"), "says": r.get("says", ""), "done": False,
+                   "all_of": [dict(c) for c in r.get("all_of") or []]}
+                  for r in (t.get("earned_by") or {}).get("any_of") or []]
+        out.append({"id": ident, "name": t["name"], "describes": t.get("describes", ""),
+                    "rank": rank.get(ident, 0), "known": ident in known,
+                    "within_reach": ident not in known and not unmet and bool(routes),
+                    "taught_only": ident not in known and not unmet and not routes,
+                    "needs": [{"id": n, "name": named.get(n, n), "known": n in known} for n in needs],
+                    "unmet": unmet,
+                    "leads_to": [{"id": n, "name": named.get(n, n), "known": n in known}
+                                 for n in sorted(leads.get(ident, []))],
+                    "earned_by": routes, "opens": progression.opened_by(registry, ident)})
+    out.sort(key=lambda row: (row["rank"], row["name"]))
+    return out

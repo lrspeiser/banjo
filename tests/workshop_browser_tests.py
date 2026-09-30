@@ -1415,5 +1415,76 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertIn('No visible simulation',self.js("document.querySelector('#ws-simulation-status').textContent"))
 
 
+    # -----------------------------------------------------------------
+    # The tech tree
+    # -----------------------------------------------------------------
+
+    def open_the_tree(self, technique=""):
+        url = f"http://127.0.0.1:{self.port}/world?workshop=1&tab=skills"
+        if technique:
+            url += f"&technique={technique}"
+        self.page.send("Page.navigate", {"url": url})
+        self.wait("!document.getElementById('ws-pane-skills').hidden"
+                  " && document.querySelectorAll('.ws-tech').length > 0")
+
+    def test_the_skills_tab_draws_the_tree_with_its_lines(self):
+        """The owner asked for "a tech tree you can navigate like
+        civilization". A column per rank, a card per skill, and a line to
+        everything it stands on."""
+        self.open_the_tree()
+        cards = self.js("document.querySelectorAll('.ws-tech').length")
+        self.assertGreaterEqual(cards, 5, f"only {cards} skills drawn")
+        ranks = self.js("document.querySelectorAll('.ws-tree-rank').length")
+        self.assertGreaterEqual(ranks, 2, "the tree has no depth: one column only")
+        # THE LINES. Drawn without waiting for an animation frame, because a
+        # tab that is not on screen never gets one.
+        lines = self.js("document.querySelectorAll('.ws-tree-line').length")
+        self.assertGreaterEqual(lines, 1, "no line joins a skill to what it stands on")
+        # And they are real geometry, not empty paths.
+        drawn = self.js("[...document.querySelectorAll('.ws-tree-line')]"
+                        ".every(p => (p.getAttribute('d') || '').length > 10)")
+        self.assertTrue(drawn, "a line was drawn with no path")
+
+    def test_a_skill_says_what_earns_it_and_what_it_makes(self):
+        """What the owner asked the card to say: "what you need to unlock
+        next, and what you could make with those ... We also need to indicate
+        what you have to complete to get the skill"."""
+        self.open_the_tree("smelting-copper")
+        self.wait("document.querySelector('.ws-tech.on')")
+        said = self.js("document.getElementById('ws-tree-about').innerText")
+        self.assertIn("Smelting copper", said)
+        # What has to be done, in the registry's own words.
+        self.assertIn("Watch a smelter work copper ore into copper", said,
+                      f"the card does not say what earns it: {said!r}")
+        # What it makes, and what comes after it.
+        self.assertIn("Copper smelter", said, f"the card does not say what it makes: {said!r}")
+        self.assertIn("Drawing wire", said, f"the card does not say what is next: {said!r}")
+
+    def test_picking_a_skill_dims_everything_off_its_path(self):
+        """A tree you cannot read is a poster. Picking one leaves the route to
+        it lit and puts the rest back."""
+        self.open_the_tree("smelting-copper")
+        self.wait("document.querySelector('.ws-tech.on')")
+        # Lit: smelting copper itself and everything that stands on it.
+        self.assertFalse(self.js("document.querySelector('[data-technique=\"drawing-wire\"]')"
+                                 ".classList.contains('dim')"),
+                         "what the picked skill leads to was dimmed")
+        # Dimmed: a skill on another thread entirely.
+        self.assertTrue(self.js("document.querySelector('[data-technique=\"burning-lime\"]')"
+                                ".classList.contains('dim')"),
+                        "a skill off the path stayed lit")
+        # Picking the same one again lets go, and nothing is dim.
+        self.click('[data-technique="smelting-copper"]')
+        self.wait("!document.querySelector('.ws-tech.dim')")
+
+    def test_the_tree_opens_on_the_rung_the_url_names(self):
+        """The world page's "Next: ..." line links here with ?technique=, so
+        the line goes to the thing it is talking about."""
+        self.open_the_tree("mixing-concrete")
+        self.wait("document.querySelector('.ws-tech.on')")
+        self.assertEqual("mixing-concrete",
+                         self.js("document.querySelector('.ws-tech.on').dataset.technique"))
+
+
 if __name__ == "__main__":
     unittest.main()

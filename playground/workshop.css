@@ -417,3 +417,52 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-watching{position:absolute;left:1rem;right:1rem;bottom:1rem;z-index:4;display:grid;gap:.4rem;
   padding:.6rem .75rem;border:1px solid #465363;border-radius:.5rem;background:#0b1017ee;font-size:.78rem}
 .ws-watching[hidden]{display:none!important}
+
+/* ---------------------------------------------------------------------------
+   THE TECH TREE
+   ---------------------------------------------------------------------------
+   A column per rank, a card per skill, and a line from a card to everything it
+   stands on. Picking one dims everything off its path, so what is on the
+   screen is the route to that one thing. */
+.ws-tree { position:relative;display:flex;gap:2.4rem;align-items:flex-start;
+           overflow:auto;padding:.3rem .3rem 1rem;min-height:120px; }
+.ws-tree-rank { display:flex;flex-direction:column;gap:.55rem;min-width:170px; }
+.ws-tree-rank-head { margin:0 0 .15rem;font-size:.7rem;text-transform:uppercase;
+                     letter-spacing:.09em;color:#6f7d8e; }
+.ws-tech { position:relative;z-index:1;text-align:left;cursor:pointer;
+           border:1px solid #34404e;background:#151e28;color:#dfe7f1;
+           border-radius:.5rem;padding:.5rem .6rem;display:flex;
+           flex-direction:column;gap:.15rem;font:inherit;transition:opacity .15s; }
+.ws-tech b { font-size:.85rem;line-height:1.25; }
+.ws-tech-opens { font-size:.73rem;color:#8b9aac;line-height:1.3; }
+.ws-tech-mark { position:absolute;top:.35rem;right:.45rem;font-style:normal;color:#9ed4ad; }
+.ws-tech.known { border-color:#4f8a5f;background:#16221a; }
+.ws-tech.reach { border-color:#b08d3a;background:#221d12; }
+.ws-tech.reach b::after { content:" \2022 within reach";color:#e2b85c;font-weight:400;font-size:.73rem; }
+.ws-tech.locked { opacity:.78; }
+.ws-tech.on { outline:2px solid #6fb0ff;outline-offset:1px; }
+.ws-tech.dim { opacity:.24; }
+.ws-tech:hover { border-color:#6fb0ff; }
+.ws-tree-lines { position:absolute;inset:0;z-index:0;pointer-events:none;overflow:visible; }
+.ws-tree-line { fill:none;stroke:#3d4a5a;stroke-width:1.6; }
+.ws-tree-line.met { stroke:#4f8a5f; }
+.ws-tree-line.dim { opacity:.18; }
+
+/* The card beside the tree: the one that is picked, in full. */
+.ws-tree-about { border:1px solid #34404e;background:#131b24;border-radius:.5rem;
+                 padding:.7rem .85rem;margin-top:.5rem; }
+.ws-tree-about h3 { margin:0 0 .2rem;font-size:.95rem; }
+.ws-tree-about h4 { margin:.75rem 0 .3rem;font-size:.72rem;text-transform:uppercase;
+                    letter-spacing:.08em;color:#8b9aac; }
+.ws-tree-about p { margin:0;font-size:.82rem;line-height:1.45; }
+.ws-tree-state { margin-top:.4rem !important;font-weight:600;color:#c9d5e2; }
+.ws-tree-state.ok { color:#9ed4ad; }
+.ws-tree-state.reach { color:#e2b85c; }
+.ws-tree-todo,.ws-tree-opens { list-style:none;margin:0;padding:0;display:grid;gap:.3rem; }
+.ws-tree-todo li { display:flex;gap:.45rem;font-size:.82rem;line-height:1.4;color:#c4d0dd; }
+.ws-tree-todo li.done { color:#9ed4ad; }
+.ws-tick { font-style:normal;flex:none;width:1em; }
+.ws-tree-opens li { font-size:.82rem; }
+.ws-link { background:none;border:0;padding:0;font:inherit;color:#8ec5ff;
+           cursor:pointer;text-align:left;text-decoration:underline; }
+.ws-link:hover { color:#bcdcff; }

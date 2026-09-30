@@ -395,5 +395,83 @@ From docs/how-robots-think.md:
   casting, "the valley did not open" -- so deleting `explore` (already on the
   list above) means giving them a valley room whose blocks are not pinned,
   not re-pointing them at flat ground.
+## The owner's inventory brief, 29 September
+
+Given twice, and only partly done. In their words:
+
+> i want the inventory screen to only have the items I am carrying. even the
+> raw materials should be the same thumbnail just with quantity attached to
+> it, no entry fields. and that inventory should be the default screen you go
+> into when you switch out of the world. you can then move items from your
+> inventory into your hot list which are the 10 slots you can see when in the
+> world. from the inventory screen you can click on an item and drag it into
+> the workshop, which will then take you into the workshop where you can
+> modify it. You can also go into the recipes area and see which inventory
+> items you need to make that item and if you ahve enough (gray'd out if
+> missing some, mention how much is missing like 20%). When you have
+> everything on a recipe you can click "Make" on the recipe and it will take
+> you into your inventory and put the item there. The Skills area will show
+> you more of a tech tree you can navigate like civilization where you can see
+> what types of items you can make with that skill, what you need to unlock
+> next, and what you could make with those. because we use LLMs and you can
+> invent any new items, these are more representative. We can give you the
+> ability to ask the chat about an item and it will look at the tech tree,
+> figure out all the skills you still need and build it out to get to the
+> item. We also need to indicate what you have to complete to get the skill,
+> like collect 100lbs of iron ore to unlock the next level of tools to collect
+> iron ore, for instance.
+
+**Done: the Skills tab is a tech tree.** A column per rank, a card per skill,
+a line to everything it stands on, and picking one dims everything off its
+path. The card beside it says what the skill is, what has to be done to earn
+it (the registry's own sentence, ticked when the journal has seen it), what it
+would let you make -- each a button that opens that thing on the bench -- and
+what you could learn after it. `progression.tech_tree` and `ranks_of` are the
+graph; the tab only places what they say. The world page's "Next: ..." line
+opens it at that rung, which is what the owner asked when they said "is that
+the tech tree? if so link it to the tech tree".
+
+**Still owed, in the order it is worth doing:**
+
+- **Inventory as one grid of thumbnails, and the default tab.** Today it is
+  seven `<ul>`s in three columns (`showInventory`, workshop.js), all text rows
+  except the carried list, with a number input on every rack material --
+  exactly the entry fields the owner asked to be rid of. `workshop_tabs.carried`
+  already returns what is wanted (where it is carried, material, shape, colour,
+  size, kg) and `thumbnail()` already draws one. The work is to show carried
+  things and rack materials in ONE grid, quantity as a badge on the thumbnail,
+  and to open the Workshop on it rather than on the Lab (the default is the
+  static `aria-selected` in `installBench`, and `start()` never calls
+  `showTab`).
+
+- **The hot list.** `SLOT_KEYS = 9`, not ten, and `#hotbar` is
+  `pointer-events: none` -- display only. Which slot a thing lands in is the
+  server's choice (`inventory._stow`: home slot if free, else the first free
+  one). So "move items from your inventory into your hot list" needs three
+  things: a tenth slot, a hotbar that can be dropped on, and an inventory op
+  that names the slot.
+
+- **A recipe's shortfall as a percentage.** `workshop_tabs.recipes` computes
+  `enough` as a strict boolean per line and ANDs them; there is no ratio
+  anywhere. The percentage the owner asked for is a small change there, and
+  the tab shows "Design it" where it should show "Make".
+
+- **Drag from the inventory to the bench.** There is exactly one drag pair in
+  the whole page (a library card onto the 3D stage, MIME
+  `application/x-banjo-library-item`) and it refuses unless a part is already
+  selected. An inventory thumbnail dragged to the Lab is a second source and a
+  second target.
+
+- **"Collect 100 lbs of iron ore" cannot be expressed.** `progression._met`
+  knows two kinds of condition: a design `found`, and a design `demonstrated`
+  passing a named test. There is no quantity condition and nothing counts what
+  has been gathered over time -- `taken_kg` is per-deposit extraction and the
+  inventory is what you hold now. A third kind needs a running total the
+  journal keeps.
+
+- **Asking the chat to plot a course to an item.** The graph walk is now there
+  (`tech_tree` gives ranks, needs and unmet), so this is a tool over it rather
+  than new modelling.
+
 - **`agent/fracture-truth` is not merged.** Five commits: the bench round trip,
   the sit program, the tests-sit room, the plan, and the chat-built robot.
