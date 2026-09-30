@@ -489,11 +489,13 @@ the tech tree? if so link it to the tech tree".
   "click Make and it will take you into your inventory and put the item
   there" is only true for some templates in some rooms.
 
-- **Drag from the inventory to the bench.** There is exactly one drag pair in
-  the whole page (a library card onto the 3D stage, MIME
-  `application/x-banjo-library-item`) and it refuses unless a part is already
-  selected. An inventory thumbnail dragged to the Lab is a second source and a
-  second target.
+- **DONE: drag a thing onto the Workshop.** A thing in the bag can be picked
+  up with the mouse (`application/x-banjo-item`, its own type so a slot
+  cannot be confused by a file or a link) and dropped either on a hot-list
+  slot or on the Workshop link, which opens that thing on the bench --
+  `?carry=<item id>`, its own design if the bench made it, else a bench copy
+  of its shape. A thing put down between the drag and the arrival lands on
+  the Inventory and says so rather than erroring.
 
 - **"Collect 100 lbs of iron ore" cannot be expressed.** `progression._met`
   knows two kinds of condition: a design `found`, and a design `demonstrated`

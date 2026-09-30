@@ -3920,6 +3920,9 @@ function showInventory() {
   if (recordHolds(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
   $("inv-left").textContent = left ? titled(left) : "free";
   const bag = slots.map((thing, i) => [thing, i]).filter(([thing]) => thing);
+  // The Workshop link takes a drop too, whether or not the bag has
+  // anything in it this moment. Made once; the guard sees to that.
+  workshopTakesDrops();
   $("inv-bag").replaceChildren(...(bag.length ? bag.map(([thing, i]) => {
     const li = document.createElement("li");
     const key = document.createElement("span");
@@ -3937,7 +3940,8 @@ function showInventory() {
       document.body.classList.add("moving-a-thing");
     });
     li.addEventListener("dragend", () => document.body.classList.remove("moving-a-thing"));
-    li.title = `${bagName(thing)} — drag it onto a slot in the row over the room`;
+    li.title = `${bagName(thing)} — drag it onto a slot in the row over the `
+            + "room, or onto Workshop to open it on the bench";
     const measured = storedHeat.get(thing.name);
     if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
       const condition = document.createElement("small");
@@ -4015,6 +4019,35 @@ function slotTakesDrops(li, index) {
 //: by its id. Its own type, so a slot cannot be confused by anything else
 //: the browser is carrying (a file, a selection, a link).
 const BAG_DRAG = "application/x-banjo-item";
+
+// AND THE OTHER PLACE A THING CAN BE DROPPED: the Workshop. The owner:
+// "from the inventory screen you can click on an item and drag it into the
+// workshop, which will then take you into the workshop where you can modify
+// it." The Workshop opens on that thing's bench rather than on whatever it
+// had open last.
+function workshopTakesDrops() {
+  const link = document.querySelector("#panel .workshop-entry");
+  if (!link || link.dataset.takesThings) return;
+  link.dataset.takesThings = "yes";
+  link.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes(BAG_DRAG)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    link.classList.add("taking");
+  });
+  link.addEventListener("dragleave", () => link.classList.remove("taking"));
+  link.addEventListener("drop", (e) => {
+    link.classList.remove("taking");
+    const id = e.dataTransfer.getData(BAG_DRAG);
+    if (!id) return;
+    e.preventDefault();
+    document.body.classList.remove("moving-a-thing");
+    const url = new URL("/world", location.origin);
+    url.searchParams.set("workshop", "1");
+    url.searchParams.set("carry", id);
+    location.href = url.toString();
+  });
+}
 
 function showHotbar(slots, hand) {
   const bar = $("hotbar");

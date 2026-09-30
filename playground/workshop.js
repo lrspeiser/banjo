@@ -2231,6 +2231,42 @@ async function showRecipes() {
 // Opening the Workshop straight onto one rung of the tree: the world page's
 // "Next: ..." line links here, because that line IS the tech tree and saying
 // so in a place you cannot get to from it is not saying it.
+// A thing dragged out of the world's bag and dropped on the Workshop. Its
+// own design if the bench made it, else a bench copy of its shape -- the
+// same two routes the Inventory tab's own tiles take, because it is the
+// same act by a different gesture.
+async function openTheCarriedThing(id) {
+  let inv;
+  try {
+    inv = await api("/api/workshop/inventory");
+  } catch {
+    showTab(WORKSHOP_OPENS_ON);
+    return;
+  }
+  const thing = (inv.carried || []).find((x) => String(x.id) === String(id));
+  if (!thing) {
+    // Put down between the drag and the arrival, or carried by somebody
+    // else's page. The inventory is the honest place to land.
+    showTab(WORKSHOP_OPENS_ON);
+    say("That is not being carried any more.", true);
+    return;
+  }
+  showTab("lab");
+  bench.openedLibraryItem = null;
+  try {
+    if (thing.design_id) {
+      const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
+      if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
+    }
+    if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
+      $("#ws-archetype").value = "custom";
+      say(`${thing.name} is on the bench: one part, ${thing.material}.`);
+    }
+  } catch (error) {
+    say(`${thing.name} could not be opened: ${error.message || error}`, true);
+  }
+}
+
 function openTheTreeAt(id) {
   tree.picked = id || null;
   showTab("skills");
@@ -3704,6 +3740,10 @@ async function start() {
   // world page's "Next: ..." line uses it.
   const wantTab = (params.get("tab") || "").trim();
   const wantTechnique = (params.get("technique") || "").trim();
+  // ?carry=<item id>: a thing dragged out of the bag and dropped on the
+  // Workshop. It opens on that thing's bench, which is what the owner meant
+  // by "take you into the workshop where you can modify it".
+  const wantCarried = (params.get("carry") || "").trim();
   const last = asked || libraryItem || saved ? null : openedLast();
   let answer;
   try {
@@ -3735,7 +3775,8 @@ async function start() {
   // Lab's own set-up above expects to be the thing on screen while it
   // runs. ?tab=skills&technique=<id> is how the world page's "Next:"
   // line gets you to the rung it is talking about.
-  if (wantTechnique) openTheTreeAt(wantTechnique);
+  if (wantCarried) await openTheCarriedThing(wantCarried);
+  else if (wantTechnique) openTheTreeAt(wantTechnique);
   else showTab(wantTab || (asked || libraryItem || saved ? "lab" : WORKSHOP_OPENS_ON));
 }
 

@@ -678,3 +678,8 @@ body.moving-a-thing .slot { border-style: dashed; }
 /* A thing in the bag list you can pick up. */
 #inv-bag li[draggable="true"] { cursor: grab; }
 #inv-bag li[draggable="true"]:active { cursor: grabbing; }
+
+/* The Workshop link, while a thing is being carried to it. */
+#panel .workshop-entry.taking { border-color: var(--y); color: var(--y);
+                                box-shadow: 0 0 0 2px var(--y); }
+body.moving-a-thing #panel .workshop-entry { border-style: dashed; }

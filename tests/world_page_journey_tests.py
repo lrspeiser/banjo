@@ -3240,6 +3240,37 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
         self.assertTrue(self.js("!!document.querySelector('#inv-bag li[draggable]')"),
                         "a thing in the bag cannot be picked up with the mouse")
 
+        # THE OTHER PLACE IT CAN BE DROPPED. The owner: "from the inventory
+        # screen you can click on an item and drag it into the workshop,
+        # which will then take you into the workshop where you can modify
+        # it." The Workshop link takes the same drag the slots do.
+        link = "#panel .workshop-entry"
+        self.assertEqual("yes", self.js(f"document.querySelector('{link}').dataset.takesThings"),
+                         "the Workshop link does not take a thing")
+        over = self.js(f"""(() => {{
+          const el = document.querySelector('{link}');
+          const dt = new DataTransfer();
+          dt.setData('application/x-banjo-item', {json.dumps(ident)});
+          const e = new DragEvent('dragover', {{dataTransfer: dt, bubbles: true, cancelable: true}});
+          el.dispatchEvent(e);
+          return JSON.stringify({{lights: el.classList.contains('taking'),
+                                  took: e.defaultPrevented}});
+        }})()""")
+        self.assertEqual({"lights": True, "took": True}, json.loads(over),
+                         "the Workshop link does not answer a thing dragged over it")
+
+        # Dropped, it opens that thing on the bench.
+        self.page.send("Page.navigate", {
+            "url": f"http://127.0.0.1:{self.port}/world?workshop=1&carry={ident}"})
+        self.assertTrue(self.wait_for(
+            "[...document.querySelectorAll('.ws-tabs button')]"
+            ".some(b => b.dataset.tab === 'lab' && b.getAttribute('aria-selected') === 'true')",
+            120),
+            "dropping a thing on the Workshop did not open the bench")
+        self.assertTrue(self.wait_for("!!document.querySelector('#ws-name')"
+                                      " && document.querySelector('#ws-name').textContent.trim()", 60),
+                        "the bench opened on nothing")
+
 
 # Workshop controls share the existing required Chrome/engine CI gate.
 from workshop_browser_tests import WorkshopBrowserRegression  # noqa: E402,F401

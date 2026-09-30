@@ -2518,3 +2518,22 @@ drive a machine nobody is in; both ways out -- Escape and the Fly button --
 go through it. Getting out keeps the machine's NAME, because that is what
 going back puts you into; `whatIsRidden` already answers null while you are
 flying.
+
+## Carrying a thing to the bench
+
+A thing in the bag can be picked up with the mouse. It carries its item id
+under `application/x-banjo-item` -- its own type, so a slot cannot be
+confused by a file, a selection or a link the browser happens to be holding
+-- and there are two places to drop it.
+
+A slot in the row over the room puts it there, swapping with whatever was in
+that slot, and the slot is kept for it afterwards: take it out with its own
+number and put it back and it returns to where you put it.
+
+The Workshop link opens it on the bench: its own design where the bench made
+it, else a bench copy of its shape, which are the same two routes the
+Inventory tab's tiles take. Dropped after it has been put down, the Workshop
+opens on the Inventory and says the thing is not being carried any more.
+
+While something is being carried every slot shows itself -- an empty one is
+hidden the rest of the time, and there is no aiming at what is not drawn.
