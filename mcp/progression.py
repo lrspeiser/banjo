@@ -721,6 +721,85 @@ def tech_tree(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
     return out
 
 
+def route_to(journal: Journal, registry: Registry, design: str) -> dict[str, Any]:
+    """What it would take to be able to make `design`, in the order it goes.
+
+    A design is opened by one of its routes, and a route asks for techniques.
+    This takes the route that is NEAREST -- fewest techniques still to learn
+    -- and lays out what is missing, deepest-first, so the list can be worked
+    down from the top.
+
+    The order is the graph's, not a guess: a technique's own prerequisites
+    come before it, which is the same walk `earn` does. Nothing here decides
+    anything, and a model given this list has no arithmetic left to get
+    wrong.
+    """
+    known = journal.knows()
+    found = registry.designs.get(design)
+    if found is None:
+        by_name = {d["name"].lower(): d for d in registry.designs.values()}
+        found = by_name.get(str(design).lower())
+    if found is None:
+        return {"design": design, "known_design": False,
+                "says": f"there is no design called {design!r}",
+                "routes": sorted(d["name"] for d in registry.designs.values())[:20]}
+
+    rank = ranks_of(registry)
+
+    def needed(technique: str, into: list[str]) -> None:
+        """A technique and everything under it that is not known, deepest
+        first, each one once."""
+        if technique in known or technique in into:
+            return
+        for under in (registry.techniques.get(technique, {}).get("prerequisites")
+                      or {}).get("all_of") or []:
+            needed(under, into)
+        if technique not in into:
+            into.append(technique)
+
+    ways = []
+    for route in found["routes"]["any_of"]:
+        asks = [need["technique"] for need in route.get("all_of") or []
+                if isinstance(need, dict) and need.get("technique")]
+        missing: list[str] = []
+        for technique in asks:
+            needed(technique, missing)
+        missing.sort(key=lambda t: (rank.get(t, 0), t))
+        ways.append({"route": route.get("id"), "obtain": route.get("obtain"),
+                     "asks": asks, "missing": missing})
+
+    # EVERY DESIGN HAS A ROUTE THAT ASKS FOR NOTHING -- "the whole tool,
+    # found" -- so "fewest still to learn" alone always answers "find one".
+    # True, and not what anybody asking how to MAKE a thing wants. So a route
+    # that builds it comes first, nearest of those, and being able to find
+    # one is said separately.
+    made = [w for w in ways if w["asks"]]
+    found_whole = [w for w in ways if not w["asks"]]
+    made.sort(key=lambda w: (len(w["missing"]), len(w["asks"])))
+    best = made[0] if made else (found_whole[0] if found_whole
+                                 else {"missing": [], "asks": [], "route": None})
+
+    steps = []
+    for ident in best["missing"]:
+        technique = registry.techniques.get(ident) or {}
+        steps.append({
+            "technique": ident, "name": technique.get("name", ident),
+            "describes": technique.get("describes", ""),
+            "earned_by": [{"id": r.get("id"), "says": r.get("says", ""),
+                           "done": all(_met(journal, need) for need in r.get("all_of") or [])}
+                          for r in (technique.get("earned_by") or {}).get("any_of") or []],
+            "opens": opened_by(registry, ident),
+        })
+    return {"design": found["id"], "name": found["name"], "known_design": True,
+            "can_make_it": not best["missing"],
+            "route": best.get("route"), "obtain": best.get("obtain"),
+            "still_to_learn": len(steps), "steps": steps,
+            # There is one of these for every design, so it is said plainly
+            # rather than offered as the answer.
+            "or_find_one": [w.get("obtain") or w.get("route") for w in found_whole],
+            "other_ways": [w for w in made[1:] if w["missing"] != best["missing"]][:3]}
+
+
 def opened_by(registry: Registry, technique: str) -> list[dict[str, str]]:
     """The designs a technique is a condition of, by id and by name.
 

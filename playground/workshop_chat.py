@@ -56,6 +56,7 @@ PROGRESS_TTL_S = 900.0
 #: the code's word for it; nobody watching wants to read edit_components.
 DOING = {
     "inspect_design": "looking at the design",
+    "how_do_i_make_it": "working out what it would take",
     "inspect_component": "looking at that part",
     "inspect_physics": "measuring it",
     "search_library": "looking through your library",
@@ -440,6 +441,18 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                 "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward", "place"]},
                                                "distance_m": {"type": "number"},
                                                "speed_m_s": {"type": "number"}}}}}}},
+        {"type": "function", "name": "how_do_i_make_it",
+         "description": "What it would take to be able to make a named thing: "
+                        "the skills still to learn, in the order they go, and what "
+                        "earns each. Walks the tech tree, so the answer is the "
+                        "graph's and not a guess. Use it whenever somebody asks how "
+                        "to get to a thing, what they need for it, or why they "
+                        "cannot make it yet.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["thing"],
+                        "properties": {"thing": {"type": "string",
+                                                 "description": "The design, by name or id: "
+                                                                "\"copper mill\", \"lime-kiln\"."}}}},
         {"type": "function", "name": "inspect_design",
          "description": "Inspect the complete current Workshop candidate including every component's 3D centre, size, rotation and measured design metrics.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
@@ -1047,6 +1060,10 @@ class _State:
             return self.record(tool, {"summary": question,
                                       "options": [o["label"] for o in options]})
 
+        if tool == "how_do_i_make_it":
+            route = _route_to_a_thing(self.app, str(arguments.get("thing") or ""))
+            return self.record(tool, route)
+
         if tool == "inspect_design":
             measured = self.design.measure()
             return self.record(tool, {
@@ -1421,6 +1438,52 @@ def _extract_text(response: dict[str, Any]) -> str:
             if content.get("type") == "output_text":
                 texts.append(str(content.get("text") or ""))
     return "".join(texts).strip()
+
+
+def _route_to_a_thing(app: Any, thing: str) -> dict[str, Any]:
+    """The tech tree walked to a named thing, with a sentence to lead on.
+
+    The summary is written here rather than left to the model, because it is
+    the one line most answers will be built out of and it should say the
+    same thing every time."""
+    try:
+        import progression
+    except ImportError:
+        from mcp import progression  # type: ignore
+    try:
+        registry = progression.Registry()
+        journal = _journal_for(app)
+        route = progression.route_to(journal, registry, thing)
+    except Exception as failed:
+        return {"summary": f"the tech tree could not be read: {failed}", "thing": thing}
+    if not route.get("known_design"):
+        return {**route, "summary": route.get("says", f"there is no {thing!r}")}
+    if route["can_make_it"]:
+        return {**route, "summary": f"you already know everything {route['name']} needs"}
+    names = [step["name"] for step in route["steps"]]
+    said = ", then ".join(names)
+    return {**route,
+            "summary": f"{route['name']} needs {len(names)} skill"
+                       f"{'' if len(names) == 1 else 's'} you have not got: {said}"}
+
+
+def _journal_for(app: Any):
+    """The person's notebook, however this app hands it over.
+
+    The server binds `journal_now` for the Workshop's tabs; a bare app in a
+    check may have the Journal itself on `journal`, or nothing at all, and a
+    tech tree read against an empty notebook is still the right SHAPE."""
+    try:
+        import progression
+    except ImportError:
+        from mcp import progression  # type: ignore
+    getter = getattr(app, "journal_now", None)
+    if callable(getter):
+        return getter()
+    held = getattr(app, "journal", None)
+    if held is not None and not callable(held):
+        return held
+    return progression.Journal(None)
 
 
 def _call_model(app: Any, payload: dict[str, Any]) -> dict[str, Any]:

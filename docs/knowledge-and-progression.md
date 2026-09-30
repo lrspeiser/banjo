@@ -498,3 +498,28 @@ The owner asked for a condition like "collect 100 lbs of iron ore". There is
 no such condition: `_met` knows a design `found` and a design `demonstrated`
 passing a named test, and nothing anywhere keeps a running total of what has
 been gathered. A quantity rung needs the journal to count.
+
+## Asking how to get to a thing
+
+`progression.route_to(journal, registry, design)` answers "what would it
+take to be able to make this": the skills still to learn, deepest first --
+a technique's own prerequisites come before it, the same walk `earn` does
+-- each with what earns it and what else it opens.
+
+It prefers a route that MAKES the thing. Every design also has a route that
+asks for nothing ("the whole tool, found"), so "fewest skills still to
+learn" on its own always answers "find one" -- true, and not what anybody
+asking how to make a thing wants. Being able to find one is said separately,
+in `or_find_one`.
+
+The Workshop chat has it as `how_do_i_make_it`. The walk is the part that
+must not be the model's guess: which skills a thing needs, which you have,
+and what order the rest go in are all answerable from the registry, and a
+model asked to work them out will sometimes be wrong in a way nobody can
+see. The tool answers those and writes the one-line summary too -- it is the
+sentence most answers get built out of, and it should say the same thing
+every time. What to DO about the list is the model's.
+
+    Copper mill needs 2 skills you have not got: Smelting copper,
+    then Drawing wire
+

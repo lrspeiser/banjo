@@ -311,6 +311,85 @@ class TheChatReadsItAndCannotWriteIt(unittest.TestCase):
         self.assertEqual(len(journal.data["evidence"]), 1, "reading it changed nothing")
 
 
+class TheWayToAThing(unittest.TestCase):
+    """The owner: "ask the chat about an item and it will look at the tech
+    tree, figure out all the skills you still need and build it out to get
+    to the item."
+
+    The walk is the part that must not be a guess. Which skills a thing
+    needs, which you have, and what order the rest go in are answerable from
+    the registry, and a model asked to work them out is wrong in ways nobody
+    can see.
+    """
+
+    def setUp(self):
+        self.registry = progression.Registry()
+        self.journal = progression.Journal(None)
+
+    def route(self, thing):
+        return progression.route_to(self.journal, self.registry, thing)
+
+    def test_it_lists_the_skills_in_the_order_they_go(self):
+        out = self.route("aluminium-cell")
+        self.assertTrue(out["known_design"])
+        self.assertFalse(out["can_make_it"])
+        # Deepest first: you cannot draw wire before you can smelt copper,
+        # and you cannot win aluminium before you can draw wire.
+        self.assertEqual(["smelting-copper", "drawing-wire", "smelting-aluminium"],
+                         [s["technique"] for s in out["steps"]])
+
+    def test_each_step_says_what_earns_it(self):
+        out = self.route("lime-kiln")
+        step = out["steps"][0]
+        self.assertEqual("burning-lime", step["technique"])
+        self.assertEqual("Watch a lime kiln burn limestone into cement, once.",
+                         step["earned_by"][0]["says"])
+        self.assertFalse(step["earned_by"][0]["done"])
+
+    def test_it_prefers_a_way_that_MAKES_the_thing(self):
+        """Every design can also be found whole, so "fewest skills" alone
+        always answers "find one" -- true, and not what anybody asking how
+        to make a thing wants."""
+        out = self.route("copper-mill")
+        self.assertEqual("built-on-the-bench", out["route"])
+        self.assertTrue(out["or_find_one"], "being able to find one is not said at all")
+
+    def test_what_you_know_drops_out_of_the_list(self):
+        self.journal.learn("smelting-copper", {"kind": "lesson", "id": "a check"},
+                           "2026-09-30T00:00:00Z")
+        out = self.route("copper-mill")
+        self.assertEqual(["drawing-wire"], [s["technique"] for s in out["steps"]])
+        self.journal.learn("drawing-wire", {"kind": "lesson", "id": "a check"},
+                           "2026-09-30T00:00:00Z")
+        self.assertTrue(self.route("copper-mill")["can_make_it"])
+
+    def test_a_thing_that_is_not_there_says_so(self):
+        out = self.route("a spaceship")
+        self.assertFalse(out["known_design"])
+        self.assertIn("no design called", out["says"])
+        self.assertTrue(out["routes"], "it does not say what there IS")
+
+    def test_the_chat_tool_leads_with_one_sentence(self):
+        """Written in the tool and not left to the model: it is the line most
+        answers are built out of, and it should say the same thing every
+        time."""
+        import workshop_chat
+
+        class Bare:
+            pass
+
+        said = workshop_chat._route_to_a_thing(Bare(), "copper mill")
+        self.assertEqual("Copper mill needs 2 skills you have not got: "
+                         "Smelting copper, then Drawing wire", said["summary"])
+        self.assertEqual(["smelting-copper", "drawing-wire"],
+                         [s["technique"] for s in said["steps"]])
+        # One skill, not "1 skills".
+        self.assertIn("needs 1 skill you", workshop_chat._route_to_a_thing(Bare(), "lime kiln")["summary"])
+        # And a thing nobody has heard of does not pretend.
+        self.assertIn("no design called",
+                      workshop_chat._route_to_a_thing(Bare(), "a spaceship")["summary"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -504,9 +504,11 @@ the tech tree? if so link it to the tech tree".
   inventory is what you hold now. A third kind needs a running total the
   journal keeps.
 
-- **Asking the chat to plot a course to an item.** The graph walk is now there
-  (`tech_tree` gives ranks, needs and unmet), so this is a tool over it rather
-  than new modelling.
+- **DONE: asking the chat to plot a course to an item.**
+  `progression.route_to` walks the tree to a named design and the Workshop
+  chat has it as `how_do_i_make_it`. It prefers a route that MAKES the
+  thing, because every design can also be found whole and "fewest skills"
+  alone always answers "find one".
 
 - **`agent/fracture-truth` is not merged.** Five commits: the bench round trip,
   the sit program, the tests-sit room, the plan, and the chat-built robot.
