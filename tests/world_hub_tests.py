@@ -163,7 +163,7 @@ class NamedWorlds(unittest.TestCase):
         for index, material in enumerate(("oak", "iron")):
             room["spec"]["bodies"].append({"name": f"player-test-{material}",
                 "shape": "box", "material": material, "size_mm": [100, 100, 100],
-                "center_mm": [10000 + 500 * index, 5000, 10000]})
+                "center_mm": [-10000 + 20000 * index, 5000, 10000]})
         room_path.write_text(json.dumps(room))
         alice = self.join(ident, "Alice")
         bob = self.join(ident, "Bob")
@@ -187,15 +187,16 @@ class NamedWorlds(unittest.TestCase):
                              "op": "take", "item": second["name"]}, ident, bob["token"])
         self.assertTrue(bob_took["ok"], bob_took)
         self.assertNotEqual(taken["shown"]["record"]["stowed"], bob_took["shown"]["record"]["stowed"])
-        person_at_spawn = {"standing_m": [0, 0, 2], "eyes_m": [0, 1.62, 2],
-                           "facing": [0, 0, -1], "look_direction": [0, 0, -1]}
+        def person_at(x):
+            return {"standing_m": [x, 0, 10], "eyes_m": [x, 1.62, 10],
+                    "facing": [0, 0, -1], "look_direction": [0, 0, -1]}
         alice_held = self.post("/api/world/inventory", {"session": session, "request": "alice-equip",
                                 "revision": taken["record"]["revision"], "op": "equip",
-                                "item": first["name"], "person": person_at_spawn}, ident, alice["token"])
+                                "item": first["name"], "person": person_at(-10)}, ident, alice["token"])
         self.assertTrue(alice_held["ok"], alice_held)
         bob_held = self.post("/api/world/inventory", {"session": session, "request": "bob-equip-first",
                                 "revision": bob_took["record"]["revision"], "op": "equip",
-                                "item": second["name"], "person": person_at_spawn}, ident, bob["token"])
+                                "item": second["name"], "person": person_at(10)}, ident, bob["token"])
         self.assertTrue(bob_held["ok"], bob_held)
         bob_rejoin = self.post("/api/world/open", {"scene": "new-game"}, ident, bob["token"])
         self.assertEqual(bob["id"], bob_rejoin["hand_owner"])
@@ -206,6 +207,7 @@ class NamedWorlds(unittest.TestCase):
         # advance both grips; release by one guest must leave the other held.
         first_body = next(b for b in bob_rejoin["bodies"] if b["name"] == first["name"])
         second_body = next(b for b in bob_rejoin["bodies"] if b["name"] == second["name"])
+        self.assertGreater(second_body["position_m"][0] - first_body["position_m"][0], 15)
         one_target = [first_body["position_m"][0] + .3, *first_body["position_m"][1:]]
         two_target = [second_body["position_m"][0] - .3, *second_body["position_m"][1:]]
         self.post("/api/live/act", {"session": session, "op": "move", "to": one_target},
@@ -245,12 +247,12 @@ class NamedWorlds(unittest.TestCase):
         bob_bench = self.post("/api/workshop/inventory", {}, ident, bob["token"])
         self.assertEqual({first["name"]}, {i["name"] for i in alice_bench["carried"]})
         self.assertEqual({second["name"]}, {i["name"] for i in bob_bench["carried"]})
-        for person, eye in ((alice, [0, 1.62, 2]), (bob, [2, 1.62, 2])):
+        for person, eye in ((alice, [-10, 1.62, 10]), (bob, [10, 1.62, 10])):
             state = self.post("/api/live/act", {"session": session, "op": "step", "dt": 1/240,
                               "n": 1, "person": {"eyes_m": eye, "facing": [0, 0, -1]}},
                               ident, person["token"])
         self.assertEqual({alice["id"], bob["id"]}, {p["id"] for p in state["players"]})
-        self.assertEqual([2, 1.62, 2], next(p["pose"]["eyes_m"] for p in state["players"]
+        self.assertEqual([10, 1.62, 10], next(p["pose"]["eyes_m"] for p in state["players"]
                                             if p["id"] == bob["id"]))
         self.assertTrue(all("token" not in p for p in state["players"]))
         with self.assertRaises(urllib.error.HTTPError):
@@ -332,6 +334,10 @@ class NamedWorlds(unittest.TestCase):
                             other_page.evaluate('window.banjoRoom.status().player_id'))
         wait_for('window.banjoRoom.status().avatars === 1')
         self.assertEqual(1, other_page.evaluate('window.banjoRoom.status().avatars'))
+        page.evaluate('window.banjoRoom.standAt(-10, 2, 10)')
+        other_page.evaluate('window.banjoRoom.standAt(10, 2, 10)')
+        self.assertAlmostEqual(-10, page.evaluate('window.banjoRoom.camera.position.x'))
+        self.assertAlmostEqual(10, other_page.evaluate('window.banjoRoom.camera.position.x'))
         self.assertLessEqual(page.evaluate('window.banjoRoom.status().time_s') - first_time,
                              time.monotonic() - together_at + .3)
         exceptions = [event for event in page.events
