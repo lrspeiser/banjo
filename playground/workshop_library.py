@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 import re
 import sqlite3
@@ -33,9 +34,23 @@ DEFAULT_RACK = {
     "alumina ceramic": 0.0, "rubber": 1.1, "ice": 0.0, "concrete": 40.0,
 }
 
+# A named world's Workshop requests run for their authenticated guest. ContextVar
+# keeps simultaneous HTTP threads from spending another guest's purchased stock.
+# The pre-existing component/design library stays shared for compatibility.
+REQUEST_OWNER: ContextVar[str] = ContextVar("banjo_workshop_owner", default="")
+
 
 def owner_id(app: Any) -> str:
     return str(getattr(app, "workshop_owner_id", "owner") or "owner")[:120]
+
+
+def rack_owner_id(app: Any) -> str:
+    return str(REQUEST_OWNER.get() or owner_id(app))[:120] if getattr(app, "world_id", None) else owner_id(app)
+
+
+def rack_owners(app: Any) -> tuple[str, ...]:
+    who = rack_owner_id(app)
+    return (who, "owner") if getattr(app, "world_id", None) and who != "owner" else (who,)
 
 
 def db_path(app: Any) -> Path:
@@ -179,10 +194,11 @@ def _open_connection(app: Any) -> sqlite3.Connection:
         db.execute("""INSERT OR IGNORE INTO workshop_material_prices
                     (owner_id, material, price_per_kg, currency, updated_at)
                     VALUES (?, ?, ?, 'credits', ?)""", (who, material, price, now))
+    seed_owner = "owner" if getattr(app, "world_id", None) else who
     for material, mass in DEFAULT_RACK.items():
         db.execute("""INSERT OR IGNORE INTO workshop_material_rack
                     (owner_id, material, mass_kg, updated_at)
-                    VALUES (?, ?, ?, ?)""", (who, material, mass, now))
+                    VALUES (?, ?, ?, ?)""", (seed_owner, material, mass, now))
     db.commit()
     return db
 
@@ -543,15 +559,26 @@ _SLACK_KG = 5e-5
 
 def rack(app: Any) -> dict[str, Any]:
     """What the workshop holds, per material, in kilograms."""
+    who, owners = rack_owner_id(app), rack_owners(app)
     with _connect(app) as db:
         rows = db.execute("""SELECT material,mass_kg,updated_at FROM workshop_material_rack
-                           WHERE owner_id=? ORDER BY material""", (owner_id(app),)).fetchall()
+                           WHERE owner_id IN ({}) ORDER BY material""".format(
+                               ",".join("?" for _ in owners)), owners).fetchall()
+        by_owner = {owner: {r["material"]: r["mass_kg"] for r in db.execute(
+            "SELECT material,mass_kg FROM workshop_material_rack WHERE owner_id=?", (owner,))}
+                    for owner in owners}
+    materials = sorted({r["material"] for r in rows})
     return {"schema": RACK_SCHEMA, "unit": "kg",
-            "materials": [{"material": r["material"], "mass_kg": round(r["mass_kg"], 4),
-                           "updated_at": r["updated_at"]} for r in rows]}
+            "materials": [{"material": material,
+                           "mass_kg": round(sum(by_owner[o].get(material, 0) for o in owners), 4),
+                           "personal_kg": round(by_owner[who].get(material, 0), 4) if who != "owner" else 0,
+                           "shared_kg": round(by_owner.get("owner", {}).get(material, 0), 4)}
+                          for material in materials]}
 
 
 def set_rack(app: Any, material: str, mass_kg: float) -> dict[str, Any]:
+    if getattr(app, "world_id", None):
+        raise ValueError("A game's material stock comes from the world and Market")
     material, mass = engine_materials.canonical(material), float(mass_kg)
     if not 0.0 <= mass <= 1e9:
         raise ValueError("mass_kg must be between 0 and 1e9")
@@ -580,15 +607,26 @@ GOODS_PER = {
 
 def goods_rack(app: Any) -> dict[str, Any]:
     """What the workshop holds of goods, per substance, in kilograms."""
+    who, owners = rack_owner_id(app), rack_owners(app)
     with _connect(app) as db:
         rows = db.execute("""SELECT substance,mass_kg,updated_at FROM workshop_goods_rack
-                           WHERE owner_id=? ORDER BY substance""", (owner_id(app),)).fetchall()
+                           WHERE owner_id IN ({}) ORDER BY substance""".format(
+                               ",".join("?" for _ in owners)), owners).fetchall()
+        by_owner = {owner: {r["substance"]: r["mass_kg"] for r in db.execute(
+            "SELECT substance,mass_kg FROM workshop_goods_rack WHERE owner_id=?", (owner,))}
+                    for owner in owners}
+    substances = sorted({r["substance"] for r in rows})
     return {"schema": RACK_SCHEMA, "unit": "kg",
-            "goods": [{"substance": r["substance"], "mass_kg": round(r["mass_kg"], 4),
-                       "updated_at": r["updated_at"]} for r in rows]}
+            "goods": [{"substance": substance,
+                       "mass_kg": round(sum(by_owner[o].get(substance, 0) for o in owners), 4),
+                       "personal_kg": round(by_owner[who].get(substance, 0), 4) if who != "owner" else 0,
+                       "shared_kg": round(by_owner.get("owner", {}).get(substance, 0), 4)}
+                      for substance in substances]}
 
 
 def set_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
+    if getattr(app, "world_id", None):
+        raise ValueError("A game's machine goods come from the world and Market")
     substance, mass = " ".join(str(substance).split())[:64], float(mass_kg)
     if not substance or not 0.0 <= mass <= 1e9:
         raise ValueError("a substance has a name, and mass_kg is between 0 and 1e9")
@@ -680,41 +718,45 @@ def take_from_rack(app: Any, needs: dict[str, Any]) -> dict[str, Any]:
     """
     wanted = {row["material"]: float(row["needed_kg"]) for row in needs.get("materials") or []
               if float(row["needed_kg"]) > 0.0}
-    who, now, took = owner_id(app), _now(), []
+    goods_wanted = {row["substance"]: float(row["needed_kg"]) for row in needs.get("goods") or []
+                    if float(row["needed_kg"]) > 0.0}
+    who, now, took = rack_owner_id(app), _now(), []
+    owners = rack_owners(app)
     with _connect(app) as db:
-        held = {r["material"]: float(r["mass_kg"]) for r in db.execute(
-            "SELECT material,mass_kg FROM workshop_material_rack WHERE owner_id=?", (who,)).fetchall()}
-        missing = [{"material": m, "short_kg": round(want - held.get(m, 0.0), 4)}
-                   for m, want in sorted(wanted.items()) if want - held.get(m, 0.0) > _SLACK_KG]
+        db.execute("BEGIN IMMEDIATE")
+        def held_at(table: str, key: str) -> dict[str, dict[str, float]]:
+            return {owner: {r[key]: float(r["mass_kg"]) for r in db.execute(
+                f"SELECT {key},mass_kg FROM {table} WHERE owner_id=?", (owner,))}
+                for owner in owners}
+        material_held = held_at("workshop_material_rack", "material")
+        goods_held = held_at("workshop_goods_rack", "substance")
+        missing = []
+        for requested, held, category in ((wanted, material_held, "material"),
+                                          (goods_wanted, goods_held, "substance")):
+            for name, want in requested.items():
+                short = want - sum(held[o].get(name, 0.0) for o in owners)
+                if short > _SLACK_KG:
+                    missing.append({category: name, "short_kg": round(short, 4)})
         if missing:
             raise ValueError("the rack is short " + ", ".join(
-                f"{m['short_kg']:g} kg of {m['material']}" for m in missing))
-        # The goods its machines take, out of the goods rack, in the same
-        # transaction: all of it or none.
-        goods_wanted = {row["substance"]: float(row["needed_kg"]) for row in needs.get("goods") or []
-                        if float(row["needed_kg"]) > 0.0}
-        goods_held = {r["substance"]: float(r["mass_kg"]) for r in db.execute(
-            "SELECT substance,mass_kg FROM workshop_goods_rack WHERE owner_id=?", (who,)).fetchall()}
-        missing += [{"material": s, "substance": s, "short_kg": round(want - goods_held.get(s, 0.0), 4)}
-                    for s, want in sorted(goods_wanted.items()) if want - goods_held.get(s, 0.0) > _SLACK_KG]
-        if missing:
-            raise ValueError("the rack is short " + ", ".join(
-                f"{m['short_kg']:g} kg of {m['material']}" for m in missing))
-        for material, want in sorted(wanted.items()):
-            left = max(0.0, held.get(material, 0.0) - want)
-            db.execute("""INSERT INTO workshop_material_rack(owner_id,material,mass_kg,updated_at)
-                        VALUES (?,?,?,?) ON CONFLICT(owner_id,material) DO UPDATE SET
-                        mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
-                       (who, material, left, now))
-            took.append({"material": material, "took_kg": round(want, 4), "left_kg": round(left, 4)})
-        for substance, want in sorted(goods_wanted.items()):
-            left = max(0.0, goods_held.get(substance, 0.0) - want)
-            db.execute("""INSERT INTO workshop_goods_rack(owner_id,substance,mass_kg,updated_at)
-                        VALUES (?,?,?,?) ON CONFLICT(owner_id,substance) DO UPDATE SET
-                        mass_kg=excluded.mass_kg,updated_at=excluded.updated_at""",
-                       (who, substance, left, now))
-            took.append({"material": substance, "substance": substance, "took_kg": round(want, 4),
-                         "left_kg": round(left, 4)})
+                f"{m['short_kg']:g} kg of {m.get('material') or m.get('substance')}" for m in missing))
+        def spend(table: str, key: str, requested: dict[str, float],
+                  held: dict[str, dict[str, float]]) -> None:
+            for name, want in sorted(requested.items()):
+                need = want
+                total = sum(held[o].get(name, 0.0) for o in owners)
+                for owner in owners:
+                    have = held[owner].get(name, 0.0)
+                    taking = min(have, max(0.0, need))
+                    if taking > 0.0:
+                        db.execute(f"UPDATE {table} SET mass_kg=?,updated_at=? "
+                                   f"WHERE owner_id=? AND {key}=?",
+                                   (max(0.0, have - taking), now, owner, name))
+                        need -= taking
+                took.append({"material": name, **({"substance": name} if key == "substance" else {}),
+                             "took_kg": round(want, 4), "left_kg": round(max(0.0, total - want), 4)})
+        spend("workshop_material_rack", "material", wanted, material_held)
+        spend("workshop_goods_rack", "substance", goods_wanted, goods_held)
     return {"schema": RACK_SCHEMA, "took": took, "rack": rack(app), "goods_rack": goods_rack(app)}
 
 

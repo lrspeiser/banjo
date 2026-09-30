@@ -88,6 +88,19 @@ class RoomStore:
                                                     else profile.get("inventory", {})))
                     for ident, profile in players.items() if isinstance(profile, dict)}
                 record["hand_owner"] = getattr(room, "hand_owner", None)
+        pending = getattr(room, "market_pending", None)
+        if isinstance(pending, list):
+            world_for_market = getattr(room, "world_record", None)
+            if pending and not isinstance(world_for_market, dict):
+                raise ValueError("Banked energy requires its matching native world")
+            for deposit in pending:
+                if not isinstance(deposit, dict):
+                    raise ValueError("Invalid bank deposit")
+                meter = next((s for s in world_for_market.get("energy_stores", [])
+                              if s.get("id") == deposit.get("store_id")), None)
+                if meter is None or float(meter.get("given_j", -1)) + 1e-6 < float(deposit.get("given_after_j", 1e30)):
+                    raise ValueError("Banked energy is not in the matching native snapshot")
+            record["market_pending"] = pending
         # The running world as it stood when last saved (server.keep_world),
         # written in the same file as the record of what the person has, so
         # the two are kept together or not at all.
@@ -122,6 +135,8 @@ class RoomStore:
             partial = path.with_name(path.name + ".partial")
             partial.write_text(text, encoding="utf-8")
             os.replace(partial, path)
+            room.market_durable_pending = {r.get("request_id") for r in record.get("market_pending", [])
+                                           if isinstance(r, dict)}
         return True
 
     def load(self, scene: str) -> Any:
@@ -171,6 +186,18 @@ class RoomStore:
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         room.player_records = record["players"] if isinstance(record.get("players"), dict) else {}
+        room.market_pending = record.get("market_pending", [])
+        if not isinstance(room.market_pending, list):
+            raise ValueError("Invalid market deposit record")
+        for deposit in room.market_pending:
+            meters = (record.get("world") or {}).get("energy_stores", [])
+            meter = next((s for s in meters if isinstance(s, dict) and isinstance(deposit, dict)
+                          and s.get("id") == deposit.get("store_id")), None)
+            if (meter is None or float(meter.get("given_j", -1)) + 1e-6 <
+                    float(deposit.get("given_after_j", 1e30))):
+                raise ValueError("Saved market deposit does not match native energy")
+        room.market_durable_pending = {r.get("request_id") for r in room.market_pending
+                                       if isinstance(r, dict)}
         room.hand_owner = record.get("hand_owner") if record.get("hand_owner") in room.player_records else None
         room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
         receipts = record.get("workshop_installs")

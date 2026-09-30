@@ -268,6 +268,60 @@ class NamedWorlds(unittest.TestCase):
                              ident, bob["token"])
         self.assertIn(second["name"], bob_view["record"]["stowed"])
 
+    def test_solar_energy_market_is_personal_and_durable(self):
+        world = self.post("/api/worlds", {"name": "Solar traders"})
+        ident = world["id"]
+        alice, bob = self.join(ident, "Alice"), self.join(ident, "Bob")
+        self.players = {ident: alice}
+        opened = self.post("/api/world/open", {"scene": "new-game"}, ident)
+        source = next(s for s in opened["machines"]["stores"] if s["body"] == "solar farm")
+        before = self.post("/api/workshop/market", {"action": "view"}, ident)
+        self.assertEqual(0, before["balance_j"])
+        self.assertTrue(before["bankable"])
+        self.assertTrue(before["guidance"]["skill"])
+        bob_before = self.post("/api/workshop/inventory", {}, ident, bob["token"])
+        alice_before = self.post("/api/workshop/inventory", {}, ident, alice["token"])
+        bank = {"action": "bank", "joules": 200, "request_id": "alice-first-deposit"}
+        funded = self.post("/api/workshop/market", bank, ident)
+        self.assertEqual(200, funded["balance_j"])
+        self.assertEqual(200, self.post("/api/workshop/market", bank, ident)["balance_j"])
+        native = self.post("/api/live/act", {"session": opened["session"], "op": "poses"}, ident)
+        after_store = next(s for s in native["machines"]["stores"] if s["id"] == source["id"])
+        self.assertAlmostEqual(source["charge_j"] - 200, after_store["charge_j"], places=4)
+        oak = next(o for o in funded["offers"] if o["id"] == "oak-stock")
+        bought = self.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
+                           "quoted_price_j": oak["price_j"], "request_id": "alice-oak"}, ident)
+        self.assertEqual(200 - oak["price_j"], bought["balance_j"])
+        self.assertGreater(next(o for o in bought["offers"] if o["id"] == "oak-stock")["price_j"],
+                           oak["price_j"])
+        alice_after = self.post("/api/workshop/inventory", {}, ident, alice["token"])
+        bob_after = self.post("/api/workshop/inventory", {}, ident, bob["token"])
+        def oak_kg(inventory):
+            return next(r["mass_kg"] for r in inventory["materials"] if r["material"] == "oak")
+        self.assertAlmostEqual(oak_kg(alice_before) + 0.5, oak_kg(alice_after), places=4)
+        self.assertEqual(oak_kg(bob_before), oak_kg(bob_after))
+        def recipe_oak(player_token):
+            recipes = self.post("/api/workshop/recipes", {}, ident, player_token)["templates"]
+            return next(line["held_kg"] for recipe in recipes if recipe.get("source") == "built-in"
+                        for line in recipe.get("materials", []) if line["material"] == "oak")
+        self.assertAlmostEqual(recipe_oak(bob["token"]) + 0.5,
+                               recipe_oak(alice["token"]), places=2)
+        self.assertEqual(0, self.post("/api/workshop/market", {}, ident, bob["token"])["balance_j"])
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
+                      "quoted_price_j": oak["price_j"], "request_id": "stale-oak"}, ident)
+        self.stop()
+        self.start()
+        self.post("/api/world/player/join", {"token": alice["token"]}, ident)
+        self.post("/api/world/player/join", {"token": bob["token"]}, ident)
+        restored = self.post("/api/world/open", {"scene": "new-game"}, ident, alice["token"])
+        saved_source = next(s for s in restored["machines"]["stores"] if s["body"] == "solar farm")
+        self.assertAlmostEqual(after_store["charge_j"], saved_source["charge_j"], places=4)
+        self.assertEqual(bought["balance_j"],
+                         self.post("/api/workshop/market", {}, ident, alice["token"])["balance_j"])
+        self.assertAlmostEqual(oak_kg(alice_after), oak_kg(
+            self.post("/api/workshop/inventory", {}, ident, alice["token"])), places=4)
+
     def test_menu_creates_and_joins_a_game_in_the_browser(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required":
@@ -299,10 +353,14 @@ class NamedWorlds(unittest.TestCase):
         world_id = page.evaluate('new URLSearchParams(location.search).get("world")')
         self.assertEqual("Browser game", self.get(f"/api/worlds/{world_id}")["name"])
 
-        page.send("Page.navigate", {"url": self.base + f"/world?world={world_id}&workshop=1"})
+        self.assertIn(world_id, page.evaluate('document.querySelector(".market-entry").href'))
+        page.evaluate('document.querySelector(".market-entry").click()')
         wait_for('document.body.classList.contains("workshop-mode") && '
                  'document.querySelectorAll("[data-game-menu]").length === 2 && '
                  '!!document.querySelector("#game-menu")')
+        wait_for('document.querySelector("[data-tab=market]")?.getAttribute("aria-selected") === "true" && '
+                 'document.querySelector("#ws-market-offers")?.children.length > 0')
+        self.assertEqual("0 J", page.evaluate('document.querySelector("#ws-market-balance").textContent'))
         self.assertTrue(page.evaluate('getComputedStyle(document.querySelectorAll("[data-game-menu]")[1]).display !== "none"'))
         page.evaluate('document.querySelectorAll("[data-game-menu]")[1].click()')
         self.assertTrue(page.evaluate('document.querySelector("#game-menu").open'))

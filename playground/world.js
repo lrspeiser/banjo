@@ -26,6 +26,13 @@ import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
+if (worldId) {
+  for (const link of document.querySelectorAll("#panel .workshop-entry:not(.debug-entry)")) {
+    const target = new URL(link.href);
+    target.searchParams.set("world", worldId);
+    link.href = target.pathname + target.search;
+  }
+}
 let playerToken = null;
 let playerId = null;
 let playerName = null;
@@ -4137,6 +4144,7 @@ function workshopTakesDrops() {
     document.body.classList.remove("moving-a-thing");
     const url = new URL("/world", location.origin);
     url.searchParams.set("workshop", "1");
+    if (worldId) url.searchParams.set("world", worldId);
     url.searchParams.set("carry", id);
     location.href = url.toString();
   });

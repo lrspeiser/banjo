@@ -47,6 +47,10 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-tabcols { display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem; }
 .ws-tabcols .ws-wide { grid-column:span 2; }
 .ws-tabpane h2 { margin:.2rem 0 .6rem;font-size:.88rem;text-transform:uppercase;letter-spacing:.08em;color:#9ba9ba; }
+.ws-market-balance { display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin:.8rem 0;padding:.75rem;background:#17212c;border:1px solid #425269;border-radius:.5rem; }
+.ws-market-balance strong { font-size:1.25rem;color:#ffe09a; }
+.ws-market-balance button { margin-left:auto; }
+.ws-market-next { border-left:3px solid #ffd166;padding-left:.6rem; }
 .ws-list { list-style:none;margin:0 0 1rem;padding:0;display:grid;gap:.45rem; }
 .ws-list li { border:1px solid #34404e;background:#151e28;border-radius:.5rem;padding:.55rem .7rem;font-size:.84rem;line-height:1.4; }
 .ws-list li strong { display:block;color:#e7edf4; }

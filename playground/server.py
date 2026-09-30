@@ -57,6 +57,8 @@ import tool_use
 import placement
 import access_gate
 import workshop_api
+import workshop_library
+import market
 import workshop_install
 import world_upgrades
 import world_access
@@ -1422,7 +1424,15 @@ class Handler(BaseHTTPRequestHandler):
             body=strict_json(raw_body)
             path=urlsplit(self.path).path
             # Authenticate before a request can hold world access.
-            return self._dispatch_POST(path,body)
+            owner_scope = None
+            if path.startswith(("/api/workshop/", "/api/world/workshop/")) and getattr(self.app, "world_id", None):
+                guest = player_world.require(self.app, self.headers.get("X-Banjo-Player"))
+                owner_scope = workshop_library.REQUEST_OWNER.set(guest)
+            try:
+                return self._dispatch_POST(path,body)
+            finally:
+                if owner_scope is not None:
+                    workshop_library.REQUEST_OWNER.reset(owner_scope)
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
     def _dispatch_POST(self,path,body):
@@ -1494,6 +1504,13 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.app,body))
             if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.app,body))
             if path=="/api/workshop/library": return self.send(workshop_api.library(self.app,body))
+            if path=="/api/workshop/market":
+                app = self.app
+                app.knowledge = lambda app=app: knowledge_view(app)
+                app.registry = registry
+                app.journal_now = lambda app=app: journal_of(app)
+                return self.send(market.request(app, workshop_library.REQUEST_OWNER.get() or player
+                                                or workshop_library.owner_id(app), body, keep_world))
             # The Workshop's other tabs (workshop_tabs): what the person has,
             # what each thing would take, and what they know how to do.
             # Driving a thing at the bench with the keys (workshop_drive): a

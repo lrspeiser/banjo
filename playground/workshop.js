@@ -1539,7 +1539,7 @@ function installBench() {
   // Inventory first, and open: the owner asked for it to be "the default
   // screen you go into when you switch out of the world". Coming out of the
   // room, what you have is the question; the Lab is where you go next.
-  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"]]) {
+  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"]]) {
     const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === WORKSHOP_OPENS_ON) }, label);
     tab.onclick = () => showTab(name);
     tabs.append(tab);
@@ -1554,7 +1554,7 @@ function installBench() {
   const machineBench = make("section", { id:"ws-machine-bench", "aria-label":"Work it as in the world" });
   machineBench.hidden = true;
   centre.append(tabs, takes, viewport, machineBench);
-  for (const name of ["inventory", "skills", "recipes"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+  for (const name of ["inventory", "skills", "recipes", "market"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   renderTakes();
 }
 
@@ -2254,6 +2254,55 @@ async function showRecipes() {
   const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
 }
 
+async function showMarket() {
+  const market = await api("/api/workshop/market", { action:"view" });
+  $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
+  $("#ws-market-pricing").textContent = `${market.pricing} The trader restocks one lot of each item every two minutes of world time, up to its shelf capacity. Your solar farm keeps generating energy while the world runs.`;
+  const next = market.guidance?.skill;
+  $("#ws-market-next").textContent = next
+    ? `Next skill: ${next.name}. ${next.route} Buying stock does not teach the skill; use it in the world to demonstrate the technique.`
+    : "You have reached the currently available skills. Keep building and testing designs.";
+  const rec = market.guidance?.recipe;
+  $("#ws-market-recipe").textContent = rec
+    ? `A ready recipe to work toward: ${rec}. The highlighted lot ${market.guidance.covers_gap ? "fills" : "reduces"} its ${kgSaid(market.guidance.gap_kg)} material gap.`
+    : "Open Recipes to see what your next build needs. Market stock can fill material and machine-goods gaps.";
+  const bank = $("#ws-market-bank");
+  bank.disabled = !market.bankable;
+  bank.title = market.bankable ? "Draw 100 measured joules from the solar farm's battery" : "Open the world before banking energy";
+  bank.onclick = () => guard(bank, async () => {
+    try {
+      const after = await api("/api/workshop/market", { action:"bank", joules:100, request_id:crypto.randomUUID() });
+      $("#ws-market-status").textContent = `Banked 100 J. Balance: ${after.balance_j.toLocaleString()} J.`;
+      await showMarket();
+    } catch (error) {
+      $("#ws-market-status").textContent = error.message || String(error);
+    }
+  });
+  fill("#ws-market-offers", market.offers.map((offer) => {
+    const li = item(offer.name,
+      `${kgSaid(offer.mass_kg)} ${offer.substance} · ${offer.price_j} J · ${offer.remaining} lots in this world`);
+    if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
+    const buy = make("button", { type:"button", class:"ws-action" }, "Buy for Workshop");
+    buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
+    buy.onclick = () => guard(buy, async () => {
+      try {
+        const after = await api("/api/workshop/market", { action:"buy", item_id:offer.id,
+          quoted_price_j:offer.price_j, request_id:crypto.randomUUID() });
+        $("#ws-market-status").textContent = `${offer.name} is on your Workshop rack. ${after.balance_j.toLocaleString()} J remains.`;
+        await showMarket();
+      } catch (error) {
+        $("#ws-market-status").textContent = error.message || String(error);
+        await showMarket();
+      }
+    });
+    li.append(buy);
+    return li;
+  }), "The trader has no stock right now. A new lot arrives after two minutes of world time.");
+  fill("#ws-market-orders", market.orders.map((order) => item(
+    market.offers.find((offer) => offer.id === order.item_id)?.name || order.item_id,
+    `${order.price_j} J · ${order.created_at}`)), "No purchases yet.");
+}
+
 // Opening the Workshop straight onto one rung of the tree: the world page's
 // "Next: ..." line links here, because that line IS the tech tree and saying
 // so in a place you cannot get to from it is not saying it.
@@ -2306,9 +2355,9 @@ function showTab(name) {
   // The takes are the Lab's too: little pictures of the thing on the
   // bench, which mean nothing beside what you are carrying.
   const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab";
-  for (const pane of ["inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
+  for (const pane of ["inventory", "skills", "recipes", "market"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
   if (name === "lab") resize();
-  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
+  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket }[name];
   if (loader) guard(null, loader);
 }
 
@@ -2328,6 +2377,7 @@ function renderRackStrip() {
     bin.append(make("span", { class:"ws-bin-name" }, row.material));
     const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(row.mass_kg),
                                   "aria-label":`${row.material} in the rack, kilograms` });
+    if (worldId) { input.disabled = true; input.title = "Game stock comes from the world and Market"; }
     input.addEventListener("change", () => guard(input, async () => {
       const mass = input.valueAsNumber;
       if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
@@ -3133,6 +3183,7 @@ function renderRack() {
   for (const row of rows) {
     const label = make("label", { class:"ws-field" }, row.material);
     const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(row.mass_kg) });
+    if (worldId) { input.disabled = true; input.title = "Game stock comes from the world and Market"; }
     input.dataset.material = row.material;
     input.addEventListener("change", () => guard(input, async () => {
       const mass = input.valueAsNumber;
