@@ -4044,6 +4044,431 @@ function groundUnderfoot(at) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT YOU CLICKED, AND IT STAYS CLICKED
+// ---------------------------------------------------------------------------
+//
+// The owner, 2026-09-29: "If I do click on something it would be good to
+// highlight the thing i click on on the page and leave it in the right nav
+// until I click on something else. If I click on something not a machine, like
+// some land, it should show me what it is composed of, a mineral and if so how
+// much."
+//
+// Until now the side view followed the crosshair, so the moment you looked
+// away to read it, it was about something else. This pins: a click says THAT
+// ONE, a box is drawn round it in the room, and the panel is about it until
+// you click something else. Escape lets go.
+//
+// A pinned thing REPLACES the hovering view rather than sitting under it. The
+// owner had already said there was too much in the panel, and two cards saying
+// nearly the same thing about two different objects is the worst of it.
+
+const picked = { name: null, at: null, box: null };
+
+// Its section, made here. world.html's inline blocks are hashed into the
+// content policy every running server sends, so a card added there would shut
+// every open page; one made from script is the page's own doing.
+(function makePickedCard() {
+  const details = document.getElementById("details");
+  if (!details || document.getElementById("picked")) return;
+  const box = document.createElement("section");
+  box.id = "picked";
+  box.hidden = true;
+  box.setAttribute("aria-label", "What you clicked");
+  box.setAttribute("aria-live", "polite");
+  details.parentNode.insertBefore(box, details);
+})();
+
+// The box drawn round what is pinned. One set of lines, reused: it is moved
+// and resized each frame rather than rebuilt, because the thing it is round
+// may be being driven.
+let pickedBox = null;
+function pickedOutline() {
+  if (pickedBox) return pickedBox;
+  const lines = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+    new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.95,
+                                  depthTest: false }));
+  lines.renderOrder = 998;      // over the room, so it reads through a wall
+  lines.visible = false;
+  scene.add(lines);
+  pickedBox = lines;
+  return lines;
+}
+
+// Each frame: sit the box on what is pinned. A thing that has left the room
+// takes the pin with it -- otherwise the box hangs in the air over nothing.
+const pickedBounds = new THREE.Box3();
+const pickedSize = new THREE.Vector3();
+const pickedMiddle = new THREE.Vector3();
+function drawPickedOutline() {
+  const lines = pickedOutline();
+  const body = picked.name && world.bodies && world.bodies.get(picked.name);
+  if (!body || !body.mesh) {
+    lines.visible = false;
+    if (picked.name && world.bodies && !world.bodies.has(picked.name)) unpick();
+    return;
+  }
+  pickedBounds.setFromObject(body.mesh);
+  if (pickedBounds.isEmpty()) { lines.visible = false; return; }
+  pickedBounds.getSize(pickedSize);
+  pickedBounds.getCenter(pickedMiddle);
+  // A little proud of the thing, so the lines are not inside its own surface.
+  lines.scale.set(pickedSize.x + 0.02, pickedSize.y + 0.02, pickedSize.z + 0.02);
+  lines.position.copy(pickedMiddle);
+  lines.visible = true;
+}
+
+// A click pins whatever it was on: a body by name, or, on open ground, the
+// place on the ground it met. Clicking the same thing twice lets it go, which
+// is what a second click on a selected thing does everywhere else.
+function pinWhatWasClicked() {
+  const was = picked.name;
+  if (world.aim && world.aim.name) {
+    picked.name = was === world.aim.name ? null : world.aim.name;
+    picked.at = picked.name ? (world.aim.point_m || null) : null;
+  } else if (world.groundAim) {
+    picked.name = null;
+    picked.at = world.groundAim.slice();
+  } else {
+    return;                     // a click on the sky pins nothing and clears nothing
+  }
+  showPicked();
+}
+
+function unpick() {
+  picked.name = null;
+  picked.at = null;
+  showPicked();
+}
+
+function somethingIsPinned() { return !!(picked.name || picked.at); }
+
+// ---------------------------------------------------------------------------
+// The battery, drawn as a battery
+// ---------------------------------------------------------------------------
+//
+// The owner: "a rover or drone or machine should show an intuitive image for
+// power, like a battery symbol with % full. It should show something that
+// indicates charging speed or time until full like a tesla."
+//
+// So: the symbol fills with the charge and colours with it, and beside it the
+// one number a driver wants, which is not watts. Taking in more than it
+// spends, that is how long until it is full; spending more than it takes in,
+// how long until it stops. The watts are there too, small, because this is a
+// game about machines and somebody will want them.
+const BATTERY_LOW = 0.15, BATTERY_FAIR = 0.4;
+
+function batterySymbol(share) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 44 22");
+  svg.setAttribute("class", "battery");
+  svg.setAttribute("role", "img");
+  const el = (kind, attrs) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", kind);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  };
+  const full = Math.max(0, Math.min(1, share));
+  const colour = full <= BATTERY_LOW ? "var(--bad)" : full <= BATTERY_FAIR ? "var(--warn)" : "var(--good)";
+  svg.append(
+    el("rect", { x: 1, y: 1, width: 36, height: 20, rx: 3, class: "battery-shell" }),
+    el("rect", { x: 38, y: 7, width: 5, height: 8, rx: 1.5, class: "battery-cap" }),
+    el("rect", { x: 3.5, y: 3.5, width: Math.max(0, 31 * full), height: 15, rx: 1.5,
+                 fill: colour, class: "battery-fill" }));
+  const says = el("title", {});
+  says.textContent = `${Math.round(full * 100)}% charged`;
+  svg.append(says);
+  return svg;
+}
+
+// "45 min until full", "1.2 hours left", "holding steady".
+function batteryWord(power) {
+  const { store, using, taking } = power;
+  const room = Math.max(0, store.capacity_j - store.charge_j);
+  if (taking - using > 0.05) {
+    return room < 1 ? "full" : `${forHowLong(room / (taking - using))} until full`;
+  }
+  if (using - taking > 0.05) return `${forHowLong(store.charge_j / (using - taking))} left`;
+  if (room < Math.max(1, store.capacity_j * 0.005)) return "full";
+  return store.charge_j > 0 ? "holding steady" : "flat";
+}
+
+function batteryRow(power) {
+  const share = power.store.capacity_j > 0 ? power.store.charge_j / power.store.capacity_j : 0;
+  const row = document.createElement("div");
+  row.className = "pk-battery";
+  const said = document.createElement("div");
+  said.className = "pk-battery-said";
+  const big = document.createElement("strong");
+  big.textContent = `${Math.round(share * 100)}%`;
+  const when = document.createElement("span");
+  when.className = "pk-when";
+  when.textContent = batteryWord(power);
+  const flow = document.createElement("span");
+  flow.className = "pk-flow";
+  // Which way the energy is going, as an arrow, because that is the thing to
+  // see at a glance -- the numbers are for afterwards.
+  const net = power.taking - power.using;
+  flow.textContent = net > 0.05 ? `▲ ${wattsSaid(power.taking - power.using)} in`
+    : net < -0.05 ? `▼ ${wattsSaid(power.using - power.taking)} out`
+    : "— nothing flowing";
+  flow.classList.add(net > 0.05 ? "in" : net < -0.05 ? "out" : "still");
+  said.append(big, when, flow);
+  row.append(batterySymbol(share), said);
+  row.title = `${joulesSaid(power.store.charge_j)} of ${joulesSaid(power.store.capacity_j)}`
+    + ` · its motors are asking ${wattsSaid(power.using)}`
+    + ` · its panels are putting back ${wattsSaid(power.taking)}`;
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// The keys that do something TO THIS THING
+// ---------------------------------------------------------------------------
+//
+// The owner: "it should show any specific keys to it, in this case E does
+// nothing, P doesn't seem to do anything, J doesn't do anything."
+//
+// They were right, and the panel was wrong to offer them. E is "do the thing
+// the side view is offering", J swings what your hand holds and P lays cable
+// from a battery -- none of which is a thing you can do to a rover you are
+// driving. So the keys are worked out from the thing rather than listed: a
+// machine you are being gets the driving keys, a machine you are not gets
+// whatever the side view really offers, and a key with nothing behind it is
+// not shown at all.
+function keysForPicked(name) {
+  const out = [];
+  const mine = whatIsRidden();
+  if (mine && mine.name === name) {
+    out.push({ key: "W / S", what: "drive it forward and back" },
+             { key: "A / D", what: "turn it" });
+    if (RIDE_FLIES_ONLY.some((a) => (mine.program.can || []).includes(a))) {
+      out.push({ key: "Space", what: "climb" }, { key: "Shift+Space", what: "come down" });
+    }
+    out.push({ key: "Esc", what: "get out of it" });
+    return out;
+  }
+  // Not being it: what the side view is really offering for it, each with the
+  // key that runs it. This is the same list E walks with Tab, so it cannot
+  // promise anything E will not do.
+  const { list } = chosen();
+  if (world.aim && world.aim.name === name) {
+    for (const [i, choice] of list.entries()) {
+      out.push({ key: i === 0 ? keyOf("interact") : `Tab ×${i}, ${keyOf("interact")}`,
+                 what: choice.label.toLowerCase() });
+    }
+  }
+  // Being it. The offer only appears for something that can really be ridden,
+  // which is what whatCanBeRidden() answers -- a key that is shown is a key
+  // that works.
+  if (whatCanBeRidden().some((m) => m.name === name)) {
+    out.push({ key: "Settings", what: "be it, from the Settings tab" });
+  }
+  if (machinesOfPart(name).length) out.push({ key: "Click", what: "open its panel" });
+  return out;
+}
+
+function keyRows(keys) {
+  const list = document.createElement("ul");
+  list.className = "pk-keys";
+  for (const { key, what } of keys) {
+    const li = document.createElement("li");
+    const cap = document.createElement("kbd");
+    cap.textContent = key;
+    const said = document.createElement("span");
+    said.textContent = what;
+    li.append(cap, said);
+    list.append(li);
+  }
+  return list;
+}
+
+// ---------------------------------------------------------------------------
+// What the land is made of
+// ---------------------------------------------------------------------------
+//
+// The owner: "if I click on something not a machine, like some land, it should
+// show me what it is composed of, a mineral and if so how much."
+//
+// A core sample, drawn the way a core sample is drawn: the beds in order down
+// the page, each band as deep as the bed is thick and in the colour that bed
+// is painted in the room, so what you see in the panel is what you are
+// standing on. Ore is called out with its thickness, because that is the
+// number you came for.
+const CORE_TALL = 132;          // pixels for the whole column
+const ORE_NAMES = ["ore", "oxidised ore"];
+
+// The beds under a point, top down: [{name, kind, thick_m, top_m}].
+function bedsUnder(at) {
+  const runs = ground.runs, g = ground.grid;
+  if (!Array.isArray(at) || !g || !runs) return [];
+  const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return [];
+  const c = j * g.nx + i, out = [];
+  for (let k = runs.count[c] - 1; k >= 0; --k) {
+    const at_k = c * runs.stride + k;
+    const below = k > 0 ? runs.top[c * runs.stride + k - 1] : ground.floor;
+    const thick = runs.top[at_k] - below;
+    if (thick <= 0.001) continue;
+    out.push({ kind: runs.kind[at_k], name: RUN_NAMES[runs.kind[at_k]] || "soil",
+               thick_m: thick, top_m: runs.top[at_k], hole: runs.kind[at_k] === RUN_VOID });
+  }
+  return out;
+}
+
+const deepSaid = (m) => (m < 1 ? `${Math.round(m * 100)} cm` : `${m.toFixed(1)} m`);
+
+// A BROKEN SCALE, the way a core log is really drawn. Straight to scale, 60 cm
+// of soil beside 30 m of rock is a 7-pixel sliver -- and the 60 cm is the part
+// you were asking about. So no bed may take more than a share of the column
+// and none less than enough to read its own label; a bed that was cut short
+// says so with a torn edge, which is the geologist's own mark for it.
+const BED_MOST = 0.42, BED_LEAST_PX = 17;
+
+function coreColumn(beds) {
+  const deep = beds.reduce((sum, b) => sum + b.thick_m, 0) || 1;
+  const least = BED_LEAST_PX / Math.max(CORE_TALL, beds.length * BED_LEAST_PX);
+  const want = beds.map((b) => Math.min(BED_MOST, Math.max(least, b.thick_m / deep)));
+  const sum = want.reduce((a, b) => a + b, 0) || 1;
+  const tall = Math.max(CORE_TALL, beds.length * BED_LEAST_PX);
+  const column = document.createElement("div");
+  column.className = "pk-core";
+  for (const [i, bed] of beds.entries()) {
+    const band = document.createElement("div");
+    band.className = bed.hole ? "pk-bed hole" : "pk-bed";
+    if (bed.thick_m / deep > BED_MOST) band.classList.add("cut");
+    band.style.height = `${(want[i] / sum) * tall}px`;
+    if (!bed.hole) {
+      const colour = GROUND_COLOURS[bed.kind];
+      if (colour) band.style.background = `#${colour.getHexString()}`;
+    }
+    if (ORE_NAMES.includes(bed.name)) band.classList.add("ore");
+    const said = document.createElement("span");
+    said.textContent = bed.hole ? "dug out" : `${bed.name} · ${deepSaid(bed.thick_m)}`;
+    band.append(said);
+    band.title = bed.hole ? `${deepSaid(bed.thick_m)} of nothing: this has been dug`
+      : `${deepSaid(bed.thick_m)} of ${bed.name}, its top ${bed.top_m.toFixed(2)} m up`
+        + (bed.thick_m / deep > BED_MOST ? " -- drawn short to leave room for the rest" : "");
+    column.append(band);
+  }
+  return column;
+}
+
+// ---------------------------------------------------------------------------
+
+function pickedTitle(words, sub) {
+  const head = document.createElement("header");
+  head.className = "pk-head";
+  const box = document.createElement("div");
+  const h = document.createElement("h2");
+  h.textContent = words;
+  box.append(h);
+  if (sub) {
+    const p = document.createElement("p");
+    p.className = "pk-sub";
+    p.textContent = sub;
+    box.append(p);
+  }
+  const shut = document.createElement("button");
+  shut.type = "button";
+  shut.className = "quiet";
+  shut.id = "pk-close";
+  shut.setAttribute("aria-label", "Stop looking at this");
+  shut.textContent = "×";
+  shut.addEventListener("click", unpick);
+  head.append(box, shut);
+  return head;
+}
+
+// The whole card. Called every time the room says something new, so everything
+// in it is live: the battery empties while you watch it.
+function showPicked() {
+  const box = $("picked");
+  if (!box) return;
+  const details = $("details");
+  if (!somethingIsPinned()) {
+    box.hidden = true;
+    box.replaceChildren();
+    if (details) details.hidden = false;
+    return;
+  }
+  box.hidden = false;
+  if (details) details.hidden = true;     // one card about one thing, not two
+  const rows = [];
+
+  if (picked.name) {
+    const entry = world.bodies && world.bodies.get(picked.name);
+    const part = tools.profileOf(picked.name) || profileOf(picked.name);
+    const programs = machinesOfPart(picked.name);
+    const program = programs.find((p) => isProgram(p));
+    rows.push(pickedTitle(titled(part ? part.object : picked.name),
+                          program ? "a machine" : entry && entry.anchored ? "fixed in place" : null));
+
+    const power = program ? energyOf(program) : null;
+    if (power) rows.push(batteryRow(power));
+    else {
+      // Not a program, but it may still BE a battery: the store on this body.
+      const store = ((world.machines && world.machines.stores) || [])
+        .find((s) => s.body === picked.name && s.capacity_j > 0);
+      if (store) rows.push(batteryRow({ store, using: 0, taking: 0 }));
+    }
+
+    if (program) {
+      const doing = document.createElement("p");
+      doing.className = "pk-doing";
+      doing.textContent = program.power ? (program.why || program.doing || "running")
+                                        : "switched off";
+      rows.push(doing);
+    }
+
+    const facts = document.createElement("p");
+    facts.className = "pk-facts";
+    // Whatever the battery row already showed as a picture is dropped from the
+    // words: saying "100%" twice is the clutter the owner asked to be rid of.
+    const drawn = rows.some((r) => r.className === "pk-battery");
+    facts.textContent = factsOf(picked.name, entry, undefined)
+      .split(" · ").filter((bit) => !(drawn && /^a battery, /.test(bit))).join(" · ");
+    if (facts.textContent) rows.push(facts);
+
+    const keys = keysForPicked(picked.name);
+    if (keys.length) rows.push(keyRows(keys));
+  } else {
+    const beds = bedsUnder(picked.at);
+    const top = beds.find((b) => !b.hole);
+    const away = camera.position.distanceTo(
+      new THREE.Vector3(picked.at[0], picked.at[1], picked.at[2]));
+    rows.push(pickedTitle(titled(top ? top.name : "the ground"),
+                          `the ground, ${away.toFixed(1)} m away`));
+    if (beds.length) {
+      rows.push(coreColumn(beds));
+      // The one thing worth calling out of a column of dirt.
+      const ore = beds.filter((b) => ORE_NAMES.includes(b.name));
+      const said = document.createElement("p");
+      said.className = ore.length ? "pk-ore" : "pk-facts";
+      if (ore.length) {
+        const thick = ore.reduce((sum, b) => sum + b.thick_m, 0);
+        const under = Math.max(0, (beds[0].top_m || 0) - ore[0].top_m);
+        said.textContent = `${deepSaid(thick)} of ${ore[0].name}`
+          + (under > 0.05 ? `, ${deepSaid(under)} down` : ", at the surface");
+      } else {
+        said.textContent = "no ore in this column";
+      }
+      rows.push(said);
+    }
+    const water = waterAt(picked.at[0], picked.at[2]);
+    if (water && water.depth > 0.05) {
+      const wet = document.createElement("p");
+      wet.className = "pk-facts";
+      wet.textContent = `under ${deepSaid(water.depth)} of water`;
+      rows.push(wet);
+    }
+    rows.push(keyRows([{ key: keyOf("dig"), what: "dig here" },
+                       { key: keyOf("heap"), what: "heap what you carry here" }]));
+  }
+
+  box.replaceChildren(...rows);
+}
+
+// ---------------------------------------------------------------------------
 // What you look at, or hold: the side view's details
 // ---------------------------------------------------------------------------
 //
@@ -4394,6 +4819,9 @@ function detailsModel() {
 let detailsSaid = "";
 let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
 function showDetails(now = false) {
+  // What is pinned is about one thing and stays about it, but everything IN it
+  // is live -- the battery empties while you watch. Rebuilt on the same beat.
+  if (somethingIsPinned()) showPicked();
   const model = detailsModel();
   const useName = world.held?.name || world.aim?.name;
   if (useName && (actionsFor(useName).length || !world.held)) {
@@ -4814,7 +5242,17 @@ addEventListener("keydown", (e) => {
   if (e.key === "/" || isKey("talk", e.code)) { e.preventDefault(); talk(); return; }
   if (isKey("next", e.code)) e.preventDefault();   // not the browser's focus hop
   if (e.repeat) return;
+  // CTRL, ALT AND THE COMMAND KEY BELONG TO THE BROWSER, not to the room.
+  // Ctrl+A is select-all, and taking its A as "strafe left" is how the owner
+  // ended up flying sideways: "it was like i was flying left when i hit
+  // ctrl+A to try to select all it started doing it." Whether the keyup
+  // arrives after a shortcut is the browser's business and not something to
+  // rely on -- so a modified key is never taken as a held control in the
+  // first place. Shift is ours: Shift+Space is how a flying camera goes
+  // down, and Shift runs.
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
   keys.add(e.code);
+
   // The one control language (interaction.js): E does what the side view marks
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
@@ -4839,6 +5277,17 @@ addEventListener("keydown", (e) => {
   // Esc closes a machine's panel when nothing else is using it -- and not
   // while the mouse is looking round, where Esc gives the mouse back first.
   else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
+  // Esc is "never mind", and it means the lightest thing still standing:
+  // let go of what is pinned before letting go of the machine you are being.
+  else if (e.code === "Escape" && somethingIsPinned()) unpick();
+  // And last, out of the machine. The panel tells you this key, so it has to
+  // be true -- the owner's complaint about the panel was keys that were not.
+  else if (e.code === "Escape" && !riding.godMode && riding.name && !document.pointerLockElement) {
+    riding.godMode = true;
+    riding.name = null;
+    rememberRiding();
+    if (typeof showRidingSettings === "function") showRidingSettings();
+  }
   if (isKey("primary", e.code)) { e.preventDefault(); primaryUsed = pressPrimary(); }
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
@@ -4867,6 +5316,9 @@ addEventListener("keyup", (e) => {
   if (isKey("primary", e.code) && primaryUsed) { primaryUsed = false; releasePrimary(); }
 });
 addEventListener("blur", () => keys.clear());
+// A tab put behind another never gets the keyup for what was held when it
+// went, and a machine you are riding would go on being told to turn.
+document.addEventListener("visibilitychange", () => { if (document.hidden) keys.clear(); });
 // Every control, in the side view's Keys tab, said from the same table the keys
 // are read from.
 $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
@@ -5097,6 +5549,16 @@ canvas.addEventListener("pointerup", (e) => {
   if (world.held) { intend("drop"); return; }
   // Hand empty, and the cursor is on something: do the thing.
   if (world.aim && world.aim.name) intend(doChoice);
+});
+
+// AND THE SAME CLICK PINS IT. Separate from doing the thing: picking a stone
+// up and reading about the stone you picked up are not in each other's way,
+// and a click on bare ground -- which does nothing at all -- now says what
+// the ground is.
+canvas.addEventListener("click", (e) => {
+  if (e.button !== 0) return;
+  if (world.held && world.held.pick) return;   // a swing, not a choice
+  pinWhatWasClicked();
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -8253,6 +8715,7 @@ function frame() {
   aimLamps();
   skyEnvironment();
   if (ground.facesStale) buildFaces();
+  drawPickedOutline();
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -9315,6 +9778,25 @@ window.banjoRoom = {
     camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
+  // WHICH KEYS THE ROOM THINKS ARE DOWN. A key stuck here is a camera that
+  // will not stop: Ctrl+A was one, and a check can only see that by looking
+  // at the set itself.
+  keysDown: () => [...keys].sort(),
+  // What is pinned in the side view, and pinning it without a mouse: a check
+  // drives the same state a click sets, so what it reads is what a person
+  // would see.
+  pick(name) {
+    picked.name = name || null;
+    picked.at = null;
+    showPicked();
+  },
+  pickGround(x, y, z) {
+    picked.name = null;
+    picked.at = [x, y, z];
+    showPicked();
+  },
+  picked: () => ({ name: picked.name, at: picked.at, outlined: !!(pickedBox && pickedBox.visible),
+                   said: (document.getElementById("picked") || {}).innerText || "" }),
   aim, pickUp, dropIt, putDown, letFly, intend,
   // Mining: the breaker's trigger and the cable drum, which the M and P keys
   // are bound to (tests/lamp_shots.py drives these, not the engine behind the

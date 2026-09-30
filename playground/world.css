@@ -592,3 +592,60 @@ body.panel-away #panel { transform: translateX(100%); }
 /* A wheel its program owns: the hint that says so is the important line. */
 .mp-hint.owned { opacity: 1; color: #ffd479; }
 
+
+/* ---------------------------------------------------------------------------
+   WHAT YOU CLICKED
+   ---------------------------------------------------------------------------
+   Pinned by a click and held until the next one. It takes the side view's
+   place rather than stacking under it: the owner's note was that the panel had
+   too much in it, and two cards about two different things is how that starts.
+   Everything here is a shape or a colour first and a word second. */
+#picked {
+  padding: 10px 12px 12px; border-bottom: 1px solid var(--edge);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.pk-head { display: flex; align-items: flex-start; gap: 8px; }
+.pk-head > div { flex: 1; min-width: 0; }
+.pk-head h2 { margin: 0; font-size: 15px; line-height: 1.25; }
+.pk-sub { margin: 1px 0 0; font-size: 11px; color: var(--dim); }
+#pk-close { flex: none; font-size: 17px; line-height: 1; padding: 0 5px; }
+
+/* The battery, as a battery. */
+.pk-battery { display: flex; align-items: center; gap: 10px; }
+.battery { width: 52px; height: 26px; flex: none; }
+.battery-shell { fill: none; stroke: var(--dim); stroke-width: 1.6; }
+.battery-cap { fill: var(--dim); }
+.battery-fill { transition: width .25s linear; }
+.pk-battery-said { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pk-battery-said strong { font-size: 17px; line-height: 1; font-variant-numeric: tabular-nums; }
+.pk-when { font-size: 11.5px; color: var(--ink); }
+.pk-flow { font-size: 11px; font-variant-numeric: tabular-nums; }
+.pk-flow.in { color: var(--good); }
+.pk-flow.out { color: var(--warn); }
+.pk-flow.still { color: var(--dim); }
+
+.pk-doing { margin: 0; font-size: 12px; color: var(--ink); }
+.pk-facts { margin: 0; font-size: 11.5px; color: var(--dim); line-height: 1.4; }
+
+/* The keys that really do something to this thing. */
+.pk-keys { list-style: none; margin: 0; padding: 0; display: flex;
+           flex-direction: column; gap: 3px; }
+.pk-keys li { display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; }
+.pk-keys kbd { flex: none; min-width: 42px; text-align: center; }
+.pk-keys span { color: var(--dim); }
+
+/* A core sample: the beds down the page, each as deep as it is thick. */
+.pk-core { display: flex; flex-direction: column; border-radius: 4px;
+           overflow: hidden; border: 1px solid var(--edge); }
+.pk-bed { position: relative; display: flex; align-items: center;
+          padding: 0 7px; min-height: 7px; }
+.pk-bed span { font-size: 10.5px; line-height: 1.1; color: #12161c;
+               text-shadow: 0 0 3px rgba(255,255,255,.45); white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+.pk-bed.hole { background: repeating-linear-gradient(135deg,
+                 rgba(255,255,255,.05) 0 5px, rgba(255,255,255,.12) 5px 10px); }
+.pk-bed.hole span { color: var(--dim); text-shadow: none; }
+.pk-bed.ore { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.pk-ore { margin: 0; font-size: 12px; color: var(--warn); font-weight: 600; }
+/* A bed drawn shorter than it really is: the torn edge says the scale broke. */
+.pk-bed.cut { border-bottom: 2px dashed rgba(18,22,28,.45); }

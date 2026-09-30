@@ -210,23 +210,37 @@ class PageJourney(unittest.TestCase):
             time.sleep(0.2)
         return False
 
-    def press_key(self, code, key):
+    # A named key is not a character: it has its own virtual key code and it
+    # types nothing. `ord(key.upper())` is fine for "a" and dies on "Escape",
+    # which is why nothing could press Escape until now.
+    NAMED_KEYS = {"Escape": 27, "Tab": 9, "Enter": 13, "Backspace": 8, "Delete": 46,
+                  "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
+                  "Shift": 16, "Control": 17, "Alt": 18, " ": 32}
+
+    def key_event(self, kind, code, key, **extra):
+        named = key in self.NAMED_KEYS
+        where = self.NAMED_KEYS.get(key, ord(key.upper()) if len(key) == 1 else 0)
+        self.page.send("Input.dispatchKeyEvent", {
+            "type": "rawKeyDown" if named and kind == "keyDown" else kind,
+            "key": key, "code": code,
+            "windowsVirtualKeyCode": where, "nativeVirtualKeyCode": where,
+            # Only a key that types something carries text. Saying Escape
+            # types the six letters of its name is how a room ends up with
+            # "Escape" in its chat box.
+            **({"text": key, "unmodifiedText": key} if kind == "keyDown" and not named else {}),
+            **extra})
+
+    def press_key(self, code, key, **extra):
         """One key, pressed as a person presses it. The page listens for real
         key events, so nothing here reaches into its handlers."""
         for kind in ("keyDown", "keyUp"):
-            self.page.send("Input.dispatchKeyEvent", {
-                "type": kind, "key": key, "code": code,
-                "windowsVirtualKeyCode": ord(key.upper()), "nativeVirtualKeyCode": ord(key.upper()),
-                **({"text": key, "unmodifiedText": key} if kind == "keyDown" else {})})
+            self.key_event(kind, code, key, **extra)
             time.sleep(0.05)
 
     def hold_key(self, code, key, seconds):
         """A key held down, as driving something needs. press_key taps it."""
         def send(kind):
-            self.page.send("Input.dispatchKeyEvent", {
-                "type": kind, "key": key, "code": code,
-                "windowsVirtualKeyCode": ord(key.upper()), "nativeVirtualKeyCode": ord(key.upper()),
-                **({"text": key, "unmodifiedText": key} if kind == "keyDown" else {})})
+            self.key_event(kind, code, key)
         send("keyDown")
         try:
             time.sleep(seconds)
@@ -2882,6 +2896,110 @@ class TheMineShowsWhatEachThingHolds(PageJourney):
         self.assertTrue(self.wait_for("document.getElementById('machine-panel').hidden && "
                                       "!document.body.classList.contains('machine-open')", 10),
                         "closing the panel left it open")
+
+
+class ClickingSomethingKeepsIt(PageJourney):
+    """A click says THAT ONE, and the panel stays about it.
+
+    Two owner reports on the same day. First: "it was like i was flying left
+    when I hit ctrl+A to try to select all it started doing it" -- a key
+    pressed as part of a browser shortcut was being taken as a held control,
+    and the A never came back up. Second: "if I do click on something it would
+    be good to highlight the thing i click on on the page and leave it in the
+    right nav until I click on something else", and for land, "show me what it
+    is composed of, a mineral and if so how much".
+    """
+
+    def open_rover_room(self):
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-rover'"
+                                      " && banjoRoom.ready()", 300), "the rover room did not open")
+
+    def keys_down(self):
+        return self.js("JSON.stringify(banjoRoom.keysDown())")
+
+    def test_a_key_held_with_ctrl_is_the_browsers_and_not_the_rooms(self):
+        self.open_rover_room()
+        where = "banjoRoom.camera.position"
+        before = self.js(f"[{where}.x, {where}.z].map(v => +v.toFixed(3)).join()")
+        # Ctrl+A, as a browser sends it when somebody tries to select all.
+        self.js("(dispatchEvent(new KeyboardEvent('keydown', "
+                "{code:'KeyA', key:'a', ctrlKey:true, bubbles:true})), true)")
+        time.sleep(1.2)
+        self.assertEqual(self.keys_down(), "[]",
+                         "a key chorded with ctrl was taken as a held control")
+        after = self.js(f"[{where}.x, {where}.z].map(v => +v.toFixed(3)).join()")
+        self.assertEqual(before, after, "ctrl+A flew the camera sideways")
+        # And it left nothing stuck: the camera is still where it was a
+        # second later, with no keyup ever sent for that A.
+        time.sleep(1.0)
+        self.assertEqual(self.js(f"[{where}.x, {where}.z].map(v => +v.toFixed(3)).join()"), after,
+                         "the camera kept drifting after a chorded key")
+
+    def test_a_plain_key_still_walks(self):
+        """The fix must not be 'the key does nothing now'."""
+        self.open_rover_room()
+        where = "banjoRoom.camera.position"
+        before = [float(v) for v in self.js(f"[{where}.x, {where}.z].join()").split(",")]
+        self.hold_key("KeyA", "a", 1.5)
+        after = [float(v) for v in self.js(f"[{where}.x, {where}.z].join()").split(",")]
+        moved = math.hypot(after[0] - before[0], after[1] - before[1])
+        self.assertGreater(moved, 0.3, f"A no longer strafes: it moved {moved:.2f} m")
+
+    def test_clicking_a_machine_keeps_it_in_the_panel_and_draws_a_box_round_it(self):
+        self.open_rover_room()
+        self.js("(banjoRoom.pick('rover'), true)")
+        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
+                        "clicking the rover showed nothing")
+        said = self.js("document.getElementById('picked').innerText")
+        self.assertIn("Rover", said)
+        # The battery is a picture with a percentage, not a sentence.
+        self.assertTrue(self.js("!!document.querySelector('#picked .battery')"),
+                        "no battery symbol")
+        self.assertRegex(said, r"\d+%", "the battery does not say how full it is")
+        # And the words about the same battery are gone: it is said once.
+        self.assertNotIn("a battery,", said, "the battery is written out as well as drawn")
+        # A box round it in the room, following it.
+        self.assertTrue(self.wait_for("banjoRoom.picked().outlined", 10),
+                        "nothing was drawn round what was clicked")
+        # It stays about the rover even though the view has moved on.
+        self.js("(banjoRoom.lookAt(20, 0, 20), true)")
+        time.sleep(1.0)
+        self.assertEqual(self.js("banjoRoom.picked().name"), "rover",
+                         "looking away let go of what was clicked")
+        self.assertTrue(self.js("document.getElementById('details').hidden"),
+                        "the hovering view is still up beside the pinned one")
+
+    def test_clicking_land_says_what_it_is_made_of(self):
+        self.open_rover_room()
+        self.js("(banjoRoom.pickGround(-4.8, 0, 4.1), true)")
+        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
+                        "clicking the ground showed nothing")
+        beds = json.loads(self.js(
+            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
+            ".map(b => b.innerText))"))
+        self.assertTrue(beds, "the ground has no beds in the panel")
+        # Every bed says what it is and how thick, and each is drawn tall
+        # enough to read -- a 60 cm bed under 30 m of rock used to be 7 px.
+        for said in beds:
+            self.assertRegex(said, r"\d+ (cm|m)\b", f"a bed with no thickness: {said!r}")
+        tall = json.loads(self.js(
+            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
+            ".map(b => b.getBoundingClientRect().height))"))
+        self.assertGreater(min(tall), 12, f"a bed too thin to read: {tall}")
+        self.assertIn("ore", self.js("document.getElementById('picked').innerText"),
+                      "the panel says nothing about ore either way")
+
+    def test_escape_lets_go_of_what_was_clicked(self):
+        self.open_rover_room()
+        self.js("(banjoRoom.pick('rover'), true)")
+        self.assertTrue(self.wait_for("banjoRoom.picked().name === 'rover'", 15))
+        self.press_key("Escape", "Escape")
+        self.assertTrue(self.wait_for("!banjoRoom.picked().name", 10),
+                        "Escape did not let go")
+        self.assertFalse(self.js("document.getElementById('details').hidden"),
+                         "the hovering view did not come back")
 
 
 # Workshop controls share the existing required Chrome/engine CI gate.
