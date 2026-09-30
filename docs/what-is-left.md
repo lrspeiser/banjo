@@ -475,3 +475,28 @@ the tech tree? if so link it to the tech tree".
 
 - **`agent/fracture-truth` is not merged.** Five commits: the bench round trip,
   the sit program, the tests-sit room, the plan, and the chat-built robot.
+
+## CI on main, 30 September
+
+Main had not been green for six runs before this session's work, and the
+failures were not all one thing. Run 36666517211 (`3088a35`) had 8; the run
+before it (`5185f73`, before any of today's work) had 11. Three kinds:
+
+- **Fixed here.** The ridden machine drove off on its own (`RIDE_FOR_S` lost
+  the renewal race at 1.4 fps -- see docs/machine-world.md), the god-mode
+  check could not press its own button, and a check of mine died on its first
+  poll because `wait()` let a page exception out instead of waiting.
+- **Known and still open.** Bodies buried in `explore` on generated terrain,
+  which is the entry above and shows as "nothing was drawn to its design" and
+  "E did not pick up oak block". These four vary from run to run, which is why
+  the two lists differ.
+- **Not yet looked at.** "the rocket's nozzle should have drawn a jet", "the
+  rover's hopper never held ore" / "the hopper's slot never lit as it filled",
+  and "the arc is not up at all". All three appear on CI and not here.
+
+**A CI run takes 50 to 105 minutes** and the Python boundary step is most of
+it (2,000+ seconds). The page runs at about 1.4 fps on the runner, so any
+check with a wall-clock threshold in it is measuring the runner. Two of
+today's did, and both now measure a rate over a short window rather than a
+distance over a long one.
+

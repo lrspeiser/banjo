@@ -2497,3 +2497,24 @@ reduced model is always measured, never invented.
     a bell then swings for as long as its bearing lets it, and every joule it
     loses is named.*
   - Keep today's slowing on everything except what a motor turns.
+
+## A machine you are riding, and a slow frame
+
+The ask that holds a ridden machine lapses on purpose: a page that dies must
+not leave a machine driving for ever. That means the page has to renew it,
+and the lapse has to beat the slowest frame by a wide margin -- because a
+`roam` program with no standing ask does what it is for, and roams, with you
+aboard.
+
+It was 0.6 s renewed every 0.3 s, which is comfortable at 60 fps and loses
+at 1.4 fps. On a CI runner at that rate the rover drove 3.3 m with nobody at
+the keys. It is not a CI artefact: anyone on a slow machine, in a big room or
+over a slow link gets the same. `RIDE_FOR_S` is 3 s now, renewed at a third
+of it, which survives two 700 ms frames and the round trip.
+
+A long ask needs an explicit release to match. `letGoOfTheMachine` tells the
+machine to wait before dropping out, so the last thing you asked for cannot
+drive a machine nobody is in; both ways out -- Escape and the Fly button --
+go through it. Getting out keeps the machine's NAME, because that is what
+going back puts you into; `whatIsRidden` already answers null while you are
+flying.

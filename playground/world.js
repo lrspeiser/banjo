@@ -4241,7 +4241,7 @@ function keysForPicked(name) {
   if (mine && mine.name === name) {
     out.push({ key: "W / S", what: "drive it forward and back" },
              { key: "A / D", what: "turn it" });
-    if (RIDE_FLIES_ONLY.some((a) => (mine.program.can || []).includes(a))) {
+    if ((mine.program.can || []).some((a) => RIDE_FLIES_ONLY.has(a))) {
       out.push({ key: "Space", what: "climb" }, { key: "Shift+Space", what: "come down" });
     }
     out.push({ key: "Esc", what: "get out of it" });
@@ -5285,10 +5285,7 @@ addEventListener("keydown", (e) => {
   // And last, out of the machine. The panel tells you this key, so it has to
   // be true -- the owner's complaint about the panel was keys that were not.
   else if (e.code === "Escape" && !riding.godMode && riding.name && !document.pointerLockElement) {
-    riding.godMode = true;
-    riding.name = null;
-    rememberRiding();
-    if (typeof showRidingSettings === "function") showRidingSettings();
+    letGoOfTheMachine();
   }
   if (isKey("primary", e.code)) { e.preventDefault(); primaryUsed = pressPrimary(); }
   if (isKey("interact", e.code)) intend(doChoice);
@@ -5813,7 +5810,15 @@ const RIDE_FLIES_ONLY = new Set(["rising", "descending"]);
 //: How long an ask stands if the page stops sending. Long enough to cover a
 //: slow frame, short enough that letting go of the key stops the machine
 //: rather than leaving it driving into the lake.
-const RIDE_FOR_S = 0.6;
+// HOW LONG AN ASK STANDS. It lapses on purpose: a page that dies must not
+// leave a machine driving for ever. But it has to outlive a slow frame by a
+// wide margin, because a roam-kind program with no standing ask goes back to
+// roaming -- with you aboard. At 0.6 s, renewed once a frame, a CI run at
+// 1.4 fps lost the race and the rover drove 3.3 m off on its own. Three
+// seconds, renewed at a third of it, survives two 700 ms frames and the
+// round trip.
+const RIDE_FOR_S = 3.0;
+const RIDE_RENEW_S = RIDE_FOR_S / 3;
 //: Where the eye sits above the middle of what you are riding. A rover's deck
 //: is about a third of a metre up and you want to see over it, not along it.
 const RIDE_EYE_M = 1.1;
@@ -5941,7 +5946,7 @@ async function driveWhatIsRidden(now) {
   // being told that nobody is asking for anything -- or it takes itself
   // back and starts roaming with you aboard. Measured: it turned away from
   // the lake on its own while I sat in it.
-  const again = now - riding.at > RIDE_FOR_S * 500;
+  const again = now - riding.at > RIDE_RENEW_S * 1000;
   if (want === riding.asked && !again) return;
   riding.sending = true;
   riding.asked = want;
@@ -5958,6 +5963,22 @@ async function driveWhatIsRidden(now) {
     // The room may have been rebuilt under it; the next frame asks again.
     riding.asked = null;
   } finally { riding.sending = false; }
+}
+
+// LETTING GO. Told to wait first: the ask now stands for three seconds, and
+// one that outlives the person who gave it drives a machine nobody is in.
+function letGoOfTheMachine() {
+  const mine = whatIsRidden();
+  if (mine && world.session) {
+    riding.seq += 1;
+    act("behave", { program: mine.program.id, sender: "person", by_person: true,
+                    seq: riding.seq, doing: "waiting", for_s: RIDE_FOR_S,
+                    why: "you got out of it" }).catch(() => { /* it stops when the ask lapses */ });
+  }
+  riding.godMode = true;
+  riding.asked = null;
+  rememberRiding();
+  if (typeof showRidingSettings === "function") showRidingSettings();
 }
 
 // The eye goes where the machine is. Looking about is still the mouse's --
@@ -6156,7 +6177,11 @@ function buildRidingSettings() {
   godButton.textContent = "Fly";
   godButton.addEventListener("click", () => {
     godButton.blur();
-    riding.godMode = !riding.godMode;
+    // Going up: let go properly, which tells the machine to wait. An ask
+    // stands for three seconds now, and one that outlives the person who
+    // gave it drives a machine nobody is in.
+    if (!riding.godMode) { letGoOfTheMachine(); return; }
+    riding.godMode = false;
     riding.asked = null;
     chooseSomethingToRide();
     rememberRiding();

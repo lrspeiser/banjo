@@ -423,10 +423,45 @@ class PageJourney(unittest.TestCase):
         return self.js(f"(() => {{ const r = document.getElementById({json.dumps(element_id)})"
                        f".getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()")
 
+    def aim_at(self, element_id):
+        """Where to press for this control, and whether pressing there would
+        reach it: the panel scrolls, so a control can be off screen, and
+        anything drawn over it takes the press instead.
+
+        Returns (x, y, why) with why empty when the point really lands on the
+        control or something inside it."""
+        return self.js(f"""(() => {{
+          const el = document.getElementById({json.dumps(element_id)});
+          if (!el) return [0, 0, "there is no such control"];
+          el.scrollIntoView({{block: "center", inline: "nearest"}});
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) return [0, 0, "the control has no size"];
+          const x = r.left + r.width / 2, y = r.top + r.height / 2;
+          if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) {{
+            return [x, y, `the control is off screen at ${{Math.round(x)}},${{Math.round(y)}}`];
+          }}
+          const on = document.elementFromPoint(x, y);
+          if (!on) return [x, y, "nothing is at the middle of the control"];
+          if (on !== el && !el.contains(on)) {{
+            const what = on.id || on.className || on.tagName;
+            return [x, y, `${{what}} is over it`];
+          }}
+          return [x, y, ""];
+        }})()""")
+
     def click(self, element_id):
         """A button pressed with the mouse, as a person presses it: moved over
-        its middle, down and up (Input.dispatchMouseEvent)."""
-        x, y = self.middle_of(element_id)
+        its middle, down and up (Input.dispatchMouseEvent).
+
+        It checks the press will reach the control first. A click that lands
+        on something else used to fail the check several assertions later,
+        with nothing saying the button had moved."""
+        x, y, why = self.aim_at(element_id)
+        if why:
+            # Once more: the panel may have been mid-layout.
+            time.sleep(0.3)
+            x, y, why = self.aim_at(element_id)
+        self.assertFalse(why, f"cannot press {element_id}: {why}")
         self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
         for kind in ("mousePressed", "mouseReleased"):
             self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left",
@@ -1325,8 +1360,17 @@ class YouAreAMachineInTheRoom(PageJourney):
         was = self.rover_at()
         time.sleep(5.0)
         now = self.rover_at()
-        self.assertLess(math.dist(was, now), 0.25,
-                        f"it wandered off with nobody driving: {was} -> {now}")
+        time.sleep(1.0)
+        after = self.rover_at()
+        # Two things, and they are different. It must not be UNDER WAY -- a
+        # roaming program that took itself back drives at about a metre a
+        # second -- and it must not have taken itself somewhere.
+        crept = math.dist(now, after)
+        self.assertLess(crept, 0.12,
+                        f"it is driving itself with nobody at the keys: {crept:.2f} m/s, "
+                        f"{now} -> {after}")
+        self.assertLess(math.dist(was, after), 1.0,
+                        f"it wandered off with nobody driving: {was} -> {after}")
 
     def test_the_keys_drive_it_and_letting_go_stops_it(self):
         self.page.send("Page.navigate",
@@ -1339,10 +1383,18 @@ class YouAreAMachineInTheRoom(PageJourney):
         drove = self.rover_at()
         self.assertGreater(math.dist(was, drove), 0.5,
                            f"W did not drive it: {was} -> {drove}")
+        # It has to come to REST, which is not the same as not having gone
+        # far: its wheels brake, its caster is free, and on a slope it
+        # coasts. So let it settle and then measure the last second -- under
+        # power that is a metre, stopped it is millimetres.
         time.sleep(3.0)
-        stopped = self.rover_at()
-        self.assertLess(math.dist(drove, stopped), 0.5,
-                        f"it did not stop when the key came up: {drove} -> {stopped}")
+        settled = self.rover_at()
+        time.sleep(1.0)
+        rest = self.rover_at()
+        crept = math.dist(settled, rest)
+        self.assertLess(crept, 0.12,
+                        f"it did not stop when the key came up: still moving {crept:.2f} m/s "
+                        f"three seconds after, {settled} -> {rest}")
 
     def test_a_wheel_its_program_owns_says_so_instead_of_pretending(self):
         """The panel has to say who has the wheel.
@@ -1384,7 +1436,10 @@ class YouAreAMachineInTheRoom(PageJourney):
         self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
         time.sleep(0.2)
         self.click("settings-god")
-        self.assertIn("Flying", self.js("document.getElementById('settings-said').textContent"))
+        self.assertTrue(self.wait_for(
+            "document.getElementById('settings-said').textContent.includes('Flying')", 15),
+            "pressing Fly did not let go of the machine: "
+            + self.js("document.getElementById('settings-said').textContent"))
         # Free of it: Space now takes the eye up, and the rover is left alone.
         above = self.js("banjoRoom.camera.position.y")
         self.hold_key("Space", " ", 2.0)

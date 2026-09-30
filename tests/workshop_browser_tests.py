@@ -108,12 +108,24 @@ class WorkshopBrowserRegression(unittest.TestCase):
 
     def wait(self, condition, timeout=25):
         deadline = time.monotonic() + timeout
+        thrown = None
         while time.monotonic() < deadline:
             # DOM elements serialize as empty objects through DevTools.
             # Evaluate presence in JavaScript, not Python dict truthiness.
-            if self.js(f"Boolean({condition})"):
-                return
+            #
+            # A CONDITION THAT THROWS MEANS "NOT YET". `getElementById(x).hidden`
+            # raises while x is not there, and letting that out aborted the
+            # whole check on the first poll rather than waiting the timeout it
+            # asked for. It never showed here, where the page is up before the
+            # first poll; it showed on CI, at 1.4 fps.
+            try:
+                if self.js(f"Boolean({condition})"):
+                    return
+            except Exception as error:      # a page throw, or a navigation mid-poll
+                thrown = error
             time.sleep(.1)
+        if thrown is not None:
+            print(f"  (the condition kept throwing: {thrown})")
         diagnostics = self.js("""JSON.stringify({
           notice:document.querySelector('#ws-notice')?.textContent,
           build:document.querySelector('#ws-build-status')?.textContent,
@@ -1424,7 +1436,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         Coming out of the room, what you are carrying is the question. The
         Lab is where you go next, not where you land."""
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
-        self.wait("!document.getElementById('ws-pane-inventory').hidden")
+        self.wait("!!document.querySelector('#ws-pane-inventory:not([hidden])')")
         self.assertEqual("inventory", self.js(
             "[...document.querySelectorAll('.ws-tabs button')]"
             ".find(b => b.getAttribute('aria-selected') === 'true').dataset.tab"))
@@ -1467,7 +1479,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         if technique:
             url += f"&technique={technique}"
         self.page.send("Page.navigate", {"url": url})
-        self.wait("!document.getElementById('ws-pane-skills').hidden"
+        self.wait("!!document.querySelector('#ws-pane-skills:not([hidden])')"
                   " && document.querySelectorAll('.ws-tech').length > 0")
 
     def test_the_skills_tab_draws_the_tree_with_its_lines(self):
