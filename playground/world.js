@@ -2525,8 +2525,23 @@ function showMachinePanel() {
   setPressed("mp-back", c.power && c.direction < 0, !on);
   setPressed("mp-stop", c.power && c.direction === 0, !on);
   setPressed("mp-ahead", c.power && c.direction > 0, !on);
+  // ITS PROGRAM HAS THIS WHEEL. Do not offer a direction that will be
+  // overwritten before the next frame; say who has it and where you can
+  // drive it from instead.
+  const owner = programOwning(c.id);
+  const ownedHint = document.querySelector("#machine-panel .mp-hint");
+  for (const id of ["mp-back", "mp-stop", "mp-ahead"]) $(id).disabled = !!owner || !on;
+  if (ownedHint) {
+    ownedHint.textContent = owner
+      ? `${titled(owner.name)}'s program has this wheel and tells it every step, on or off, `
+        + "so a direction set here would be put back before the next frame. "
+        + "Turn that program off to work it by hand — or be the machine: Settings, "
+        + `then ${owner.name}.`
+      : "A share of the battery's voltage, not a speed: what the machine does with it is below.";
+    ownedHint.classList.toggle("owned", !!owner);
+  }
   const slider = $("mp-setting");
-  if (slider.disabled) slider.disabled = false;
+  slider.disabled = !!owner;
   if (document.activeElement !== slider) {
     const value = String(Math.round(c.setting * 100));
     if (slider.value !== value) slider.value = value;
@@ -2559,6 +2574,21 @@ function showMachinePanel() {
   showMachineHolds();
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
 }
+
+// The program that owns a controller, if one does.
+//
+// A machine with a program TELLS its wheels every step -- off or on -- so
+// pressing Forward on a wheel of the rover does nothing at all: the program
+// puts it back before the next frame is drawn. That was deliberate and it was
+// also invisible, which is the half that was wrong. The owner, having tried
+// it: "I don't understand all the commands for the rover in the side bar,
+// they don't seem to do things they say."
+function programOwning(controlId) {
+  const programs = (world.machines && world.machines.programs) || [];
+  return programs.find((p) => p && (p.left === controlId || p.right === controlId
+                                    || p.pose === controlId)) || null;
+}
+
 
 // A program is turned on and off, and nothing else: its wheels' directions
 // and their setting are its own to decide, so those rows are put away -- by

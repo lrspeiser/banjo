@@ -1313,6 +1313,35 @@ class YouAreAMachineInTheRoom(PageJourney):
         self.assertLess(math.dist(drove, stopped), 0.5,
                         f"it did not stop when the key came up: {drove} -> {stopped}")
 
+    def test_a_wheel_its_program_owns_says_so_instead_of_pretending(self):
+        """The panel has to say who has the wheel.
+
+        A machine with a program tells its wheels every step, on or off, so
+        Forward on a wheel of the rover does nothing: the program puts it
+        back before the next frame. That was deliberate and documented as a
+        gap -- "it should be said in the panel rather than discovered" -- and
+        the owner discovered it: "I don't understand all the commands for the
+        rover in the side bar, they don't seem to do things they say."
+        """
+        self.page.send("Page.navigate",
+                       {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
+        self.assertTrue(self.wait_for("document.querySelectorAll('#machine-list button').length > 0", 60),
+                        "the room listed no machines")
+        self.js("(document.querySelectorAll('#machine-list button')[0].click(), true)")
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 20),
+                        "the wheel's panel did not open")
+        # Not offered, because it would not happen.
+        for button in ("mp-back", "mp-ahead", "mp-stop"):
+            self.assertTrue(self.js(f"document.getElementById('{button}').disabled"),
+                            f"{button} is still offered on a wheel its program owns")
+        self.assertTrue(self.js("document.getElementById('mp-setting').disabled"),
+                        "the drive setting is still offered")
+        hint = self.js("document.querySelector('#machine-panel .mp-hint').textContent")
+        self.assertIn("program has this wheel", hint, hint)
+        # And it says where you CAN drive it from.
+        self.assertIn("Settings", hint, hint)
+
     def test_god_mode_lets_go_of_the_machine_and_flies(self):
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})

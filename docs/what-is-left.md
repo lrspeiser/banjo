@@ -342,7 +342,10 @@ From docs/how-robots-think.md:
   joint under a flat face is how a swivel is drawn.
 - **A machine with a program owns its wheels.** An off program still tells them
   every step, so a person cannot drive a programmed machine by hand. Deliberate,
-  but it should be said in the panel rather than discovered.
+  and now SAID: a wheel its program owns offers no direction and no setting, and
+  the panel says whose it is and that you can be the machine instead (Settings).
+  The owner found it the way this line predicted -- "they don't seem to do things
+  they say" -- which is the argument for saying a thing rather than noting it.
 - **A lab scene and a world object are different things.** The bowling job
   (`?job=e72b...`) went through the fracture lab: 12 bare bodies, 13,872 cells at
   30 mm, "nothing is moving", 2.99x of realtime against the 1.1x limit. A lab
