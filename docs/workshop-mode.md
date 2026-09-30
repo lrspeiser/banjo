@@ -1,5 +1,17 @@
 # Workshop Mode: fast isolated design, variants, tests and component learning
 
+## Visual Inventory and starting a design — September 30, 2026
+
+Inventory shows Hands & bag, Materials & supplies, categorized Saved designs, Saved parts when present, and Building blocks. Cards show names, shape thumbnails and a relevant action rather than family parameter dumps. Supplies retain useful mass quantities; they are stock for Make, not editable physical items. Saved designs open in Lab; a saved part starts a separate design copy. The redundant list of objects standing in the World is removed from Inventory.
+
+Sixteen supported single-part families are grouped into Frames & supports, Surfaces & panels, Wheels & axles and Machine housings. Choosing one creates a uniquely identified saved draft through the existing authoring/feedback APIs, then explicitly selects it in Lab. It spends no stock and creates no native world object. These are starting shapes, not working machines: collector/power behavior and container walls require further authoring. Multi-part families that cannot seed the existing custom-source API are not offered here.
+
+The screen explains the intended path: choose a block or open a saved design, describe changes in Lab chat, Save the design, then Make a physical item when admission and stock allow it. Merely visiting Inventory generates no LLM request. With an AI key connected, chat uses the existing assistant authoring tools; without one, the screen states that only basic chat edits and existing Recipes are available. Paid-provider quality and arbitrary prompt-to-functional-product success are not measured by this checkpoint.
+
+Saved thumbnails read actual source parts with up to three requests in flight and a bounded revision cache. A reusable offscreen renderer leaves Lab geometry and selection unchanged. Shape previews do not certify grid admission, function or strength. Legacy Saved storage and carried-state adapter boundaries below still apply; this is not a persistence migration or new physics law.
+
+Windows verification on source based on main `7b1b4d1`, using Chrome and the existing Visual Studio Release native engine: 55 Workshop browser tests and 4 navigation/Inventory tests pass (59 total). The added journey clicks all 16 blocks, checks distinct saved drafts and Lab selection, unchanged native carried/material/goods records, preview isolation, and a saved-part copy/reload with the original preserved. Screenshots were inspected. JavaScript syntax, Python compilation and the source-registration guard pass. The broader physics suite and a live paid model were not rerun for this UI checkpoint. The published revision is recorded by this section's Git commit.
+
 ## Inventory selection and shared navigation — September 30, 2026
 
 Implemented browser behavior:

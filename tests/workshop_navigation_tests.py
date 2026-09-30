@@ -86,7 +86,6 @@ class GameScreens(unittest.TestCase):
             "label":"My selected table"}, world)["design"]["design_id"]
         self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
         self.wait(f'!!document.querySelector("[data-lab-source=saved][data-item=\\"{saved}\\"]")')
-        self.click("#ws-inv-more summary")
         self.click(f'[data-lab-source="saved"][data-item="{saved}"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
@@ -102,6 +101,56 @@ class GameScreens(unittest.TestCase):
         self.page.send("Page.reload"); self.wait('document.querySelector("#workshop-stage")?.visibleGeometry()?.meshes > 0')
         self.click("#ws-clear-lab"); self.assert_empty()
         self.page.send("Page.reload"); self.assert_empty()
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
+    def test_inventory_building_blocks_create_saved_designs_without_spending_stock(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        before = self.post("/api/workshop/inventory", {}, world)
+        self.navigate(world, "workshop=1&tab=inventory")
+        self.wait('document.querySelectorAll("[data-building-block]").length === 16')
+        self.assertNotRegex(self.page.evaluate('document.querySelector("#ws-pane-inventory").textContent'),
+                            r'width_m|height_m|depth_m|splay_deg|lean_x|component_overrides')
+        self.assertEqual(["Frames & supports", "Surfaces & panels", "Wheels & axles", "Machine housings"],
+            self.page.evaluate('[...document.querySelectorAll("#ws-inv-blocks h4")].map(e=>e.textContent)'))
+        self.assertEqual(16, self.page.evaluate('document.querySelectorAll("#ws-inv-blocks canvas[data-preview=ready]").length'))
+        self.assertIn("AI design is not connected", self.page.evaluate('document.querySelector("#ws-inv-ai-help").textContent'))
+        self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
+        # Every offered block really starts a source design; none relies on an
+        # invented machine behavior or physical inventory to appear on screen.
+        families = self.page.evaluate('[...document.querySelectorAll("[data-building-block]")].map(e=>e.dataset.buildingBlock)')
+        ids = set()
+        for family in families:
+            previous = self.page.evaluate('new URLSearchParams(location.search).get("library")')
+            self.click(f'[data-building-block="{family}"]')
+            self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0 && document.querySelector(".ws-viewport").hidden === false && new URLSearchParams(location.search).has("library") && new URLSearchParams(location.search).get("library") !== ' + json.dumps(previous))
+            ids.add(self.page.evaluate('new URLSearchParams(location.search).get("library")'))
+            self.assertEqual("1", self.page.evaluate('document.querySelector("#ws-part-count").textContent'))
+            self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
+            self.click('.game-tabs [data-screen="inventory"]')
+            self.wait('document.querySelectorAll("[data-building-block]").length === 16')
+        self.assertEqual(16, len(ids))
+        after = self.post("/api/workshop/inventory", {}, world)
+        for key in ("carried", "materials", "goods", "in_world"): self.assertEqual(before[key], after[key])
+        self.assertEqual(16, len(after["designs"]))
+        self.wait('document.querySelectorAll("#ws-inv-saved canvas[data-preview=ready]").length === 16')
+        self.screenshot("inventory-categories.png")
+        self.page.evaluate('document.querySelector("#ws-pane-inventory").scrollTop = 0')
+        self.screenshot("inventory-overview.png")
+        # Saved component cards create a new editable design, leaving the
+        # reusable original intact and keeping the selected item on reload.
+        table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
+        component = self.post("/api/workshop/library", {"action":"save_component", "kind":"table",
+            "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
+            "part_name":"top", "name":"Reusable tabletop"}, world)["library_item"]
+        self.navigate(world, "workshop=1&tab=inventory")
+        self.wait(f'!!document.querySelector("[data-lab-component=\\"{component["item_id"]}\\"]")')
+        self.click(f'[data-lab-component="{component["item_id"]}"]')
+        self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
+        selected = self.page.evaluate('new URLSearchParams(location.search).get("library")')
+        self.page.send("Page.reload"); self.wait('document.querySelector("#workshop-stage")?.visibleGeometry()?.meshes > 0')
+        self.assertEqual(selected, self.page.evaluate('new URLSearchParams(location.search).get("library")'))
+        unchanged = self.post("/api/workshop/library", {"action":"load", "item_id":component["item_id"]}, world)["library_item"]
+        self.assertEqual(component["payload"], unchanged["payload"])
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
     def test_carried_item_requires_own_inventory_and_lab_leaves_it_unchanged(self):

@@ -23,9 +23,10 @@ allowed), runs browser tests against their own temporary rooms, and
 writes each log plus `summary.json` under `build/screen-sim-verification/`.
 Both modes also run `tests/workshop_navigation_tests.py`: an empty Lab,
 explicit Inventory selection, shared right navigation and unchanged native
-bag/hand records. These three browser/native checks were added at the
-Inventory-selected Lab checkpoint; they are additional to the earlier full
-run counts below.
+bag/hand records. Its fourth journey verifies categorized thumbnail cards,
+all 16 offered design-starting blocks, preserved stock and saved-part copying.
+These four browser/native checks are additional to the earlier full run
+counts below; see the [Visual Inventory evidence](workshop-mode.md#visual-inventory-and-starting-a-design--september-30-2026).
 `smoke` executes the real Workshop card contract, representative Workshop and
 world browser journeys, a matched glass/oak/iron material triplet, and native
 Mechanics and Tool QA. `full` executes the complete Workshop native suite, the

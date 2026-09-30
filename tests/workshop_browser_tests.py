@@ -93,7 +93,6 @@ class WorkshopBrowserRegression(unittest.TestCase):
             self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=inventory"})
             selector = f'[data-lab-source="saved"][data-item="{self.fixture_id}"]'
             self.wait(f'document.querySelector({json.dumps(selector)})')
-            self.js('document.querySelector("#ws-inv-more").open = true')
             self.pointer_click(selector)
             self.wait("document.querySelector('#workshop-stage').visibleGeometry()?.meshes > 0")
         except Exception:
@@ -1478,13 +1477,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         """The owner: "even the raw materials should be the same thumbnail
         just with quantity attached to it, no entry fields"."""
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
-        self.wait("document.querySelectorAll('#ws-inv-grid .ws-tile').length > 0")
+        self.wait("document.querySelectorAll('#ws-inv-stock .ws-tile').length > 0")
         # Every tile is a picture.
-        self.assertTrue(self.js("[...document.querySelectorAll('#ws-inv-grid .ws-tile')]"
+        self.assertTrue(self.js("[...document.querySelectorAll('#ws-pane-inventory .ws-tile')]"
                                 ".every(t => !!t.querySelector('canvas'))"),
                         "a tile with no picture")
         # A material says how much, on the picture.
-        counts = self.js("[...document.querySelectorAll('#ws-inv-grid .ws-tile-count')]"
+        counts = self.js("[...document.querySelectorAll('#ws-inv-stock .ws-tile-count')]"
                          ".map(b => b.textContent)")
         self.assertTrue(counts, "nothing says how much there is")
         for said in counts:

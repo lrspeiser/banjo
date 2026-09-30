@@ -10,6 +10,7 @@ const backToWorld = (scene) => worldId
   : `/world?scene=${encodeURIComponent(scene)}&hold=1`;
 const homeWorld = () => worldId ? backToWorld("new-game") : "/world";
 let token = "";
+let designAssistantConnected = false;
 let playerReady = null;
 async function ensurePlayer() {
   if (!worldId) return;
@@ -29,12 +30,13 @@ async function ensurePlayer() {
   return playerReady;
 }
 let candidateRequest = 0;
-async function api(path, body) {
-  const changesCandidate = ["/api/workshop/open", "/api/workshop/candidates", "/api/workshop/more"].includes(path);
+async function api(path, body, {preview = false} = {}) {
+  const changesCandidate = !preview && ["/api/workshop/open", "/api/workshop/candidates", "/api/workshop/more"].includes(path);
   const requestId = changesCandidate ? ++candidateRequest : null;
   if (!token) {
     const status = await fetch("/api/status", { headers: worldHeaders }).then((r) => r.json());
     token = status.csrf_token || "";
+    designAssistantConnected = Boolean(status.key_configured);
   }
   await ensurePlayer();
   const response = await fetch(path, {
@@ -1572,6 +1574,7 @@ function installBench() {
   }, true);
   new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
+  installInventory();
   renderTakes();
 }
 
@@ -1908,6 +1911,9 @@ function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
 
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
+  $("#ws-inv-ai-help").textContent = designAssistantConnected
+    ? "Building blocks are ready-made shapes. The AI creates new designs when you ask in Lab chat—for example, ‘Turn this into a small stool.’ Save keeps a design; Make builds it using your supplies."
+    : "Building blocks are ready-made shapes. AI design is not connected right now; Lab chat can make basic edits, while Recipes offers existing designs to build. With AI connected, describe a new item in Lab chat.";
   const grid = $("#ws-inv-grid");
   if (!grid) return;
   const tiles = [];
@@ -1938,27 +1944,180 @@ async function showInventory() {
                        { quantity: kgSaid(r.mass_kg), where: "goods" }));
   }
 
+  const stock = tiles.splice((inv.carried || []).length);
   grid.replaceChildren(...tiles);
+  $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-note").textContent = tiles.length
-    ? "What is in your hands, your bag and on the rack. Click a thing to open it on the bench."
-    : "You are carrying nothing and the rack is empty.";
-  if (!tiles.length) {
-    grid.append(make("p", { class: "ws-note" },
-                     "Pick something up in the world, or dig, and it turns up here."));
+    ? "Click an item to open a design copy in the Lab. Your carried item stays where it is."
+    : "Your hands and bag are empty. Pick up an item in the World to bring it here.";
+  $("#ws-inv-stock-empty").hidden = stock.length > 0;
+  const designs = $("#ws-inv-saved"); designs.replaceChildren();
+  const saved = inv.saved || [];
+  const records = [...saved.map(d => ({id:d.design_id, source:"saved", name:d.label || titleCase(d.kind), kind:d.kind, version:d.revision})),
+    ...(inv.designs || []).filter(d => !saved.some(s => s.design_id === d.payload?.design_id && s.label === d.name))
+      .map(d => ({id:d.item_id, source:"library", name:d.name, kind:d.payload?.kind, version:d.version}))];
+  for (const category of ["Furniture", "Structures", "Machines", "Other designs"]) {
+    const matching = records.filter(d => designCategory(d.kind) === category);
+    if (!matching.length) continue;
+    const group = inventoryGroup(category);
+    for (const record of matching) {
+      const card = designCard(record.name, "Saved design", inventoryDesignButton(record.id, record.source));
+      group.querySelector(".ws-design-grid").append(card);
+      loadInventoryPicture(card, record);
+    }
+    designs.append(group);
   }
+  if (!records.length) designs.append(make("p", {class:"ws-note"}, "No saved designs yet. Choose a building block to start one."));
+  const components = $("#ws-inv-components"); components.replaceChildren();
+  for (const component of inv.components || []) {
+    const open = make("button", {type:"button", class:"ws-action", "data-lab-component":component.item_id}, "Use in new design");
+    open.onclick = () => guard(open, () => designFromPart({library_item_id:component.item_id}, `${component.name} design`));
+    const card = designCard(component.name, "Reusable part", open);
+    components.append(card); paintInventoryPicture(card.querySelector("canvas"), [component.payload]);
+  }
+  $("#ws-inv-components-section").hidden = !(inv.components || []).length;
+  renderBuildingBlocks(inv.families || []);
+}
 
-  // The library, under the fold: not what you have, but it lives nowhere else.
-  fill("#ws-inv-world", (inv.in_world || []).map((d) => item(d.name, `${d.kind} · standing in ${d.scene}. Pick it up in the world to bring that item into the Lab.`)), "Nothing made yet.");
-  fill("#ws-inv-saved", (inv.saved || []).map((d) => {
-    const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`);
-    li.append(inventoryDesignButton(d.design_id, "saved")); return li;
-  }), "No saved designs yet.");
-  fill("#ws-inv-designs", inv.designs.map((d) => {
-    const li = item(d.name, d.summary || d.kind || "");
-    li.append(inventoryDesignButton(d.item_id, "library")); return li;
-  }), "No assemblies in the library.");
-  fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
-  fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
+const titleCase = name => String(name || "Design").replaceAll("-", " ").replace(/\b\w/g, c => c.toUpperCase());
+const designCategory = kind => ["table", "stool", "bench", "chair", "shelf-unit"].includes(kind) ? "Furniture"
+  : ["frame", "shelter", "bridge"].includes(kind) ? "Structures"
+  : ["cart", "rover", "drone", "kettle", "processor", "breaker"].includes(kind) ? "Machines" : "Other designs";
+
+function installInventory() {
+  const pane = $("#ws-pane-inventory"); pane.replaceChildren(make("h2", {}, "Inventory"));
+  pane.append(make("p", {class:"ws-inventory-intro"}, "Open an item to change or test it in the Lab. To invent something new, choose a building block, then tell the Lab assistant what you want to make."));
+  const actions = make("div", {class:"ws-inventory-actions"});
+  const create = make("button", {type:"button", class:"ws-action primary", id:"ws-inv-create"}, "Start a new design");
+  create.onclick = () => $("#ws-inv-blocks").scrollIntoView({block:"start", behavior:"smooth"});
+  const recipes = make("button", {type:"button", class:"ws-action"}, "See what you can make"); recipes.onclick = () => showTab("recipes");
+  actions.append(create, recipes); pane.append(actions);
+  pane.append(make("p", {id:"ws-inv-ai-help", class:"ws-note"}));
+  const section = (title, note, id, cls = "ws-design-grid") => {
+    const box = make("section", {class:"ws-inventory-section"}); box.append(make("h3", {}, title));
+    if (note) box.append(make("p", {class:"ws-note"}, note));
+    const content = make("div", {id, class:cls}); box.append(content); pane.append(box); return box;
+  };
+  const carried = section("Hands & bag", "", "ws-inv-grid", "ws-inv-grid");
+  carried.querySelector("h3").after(make("p", {id:"ws-inv-note", class:"ws-note"}));
+  const stock = section("Materials & supplies", "These are used when you Make an item. Recipes shows what you can build; Market sells more supplies.", "ws-inv-stock", "ws-inv-grid");
+  stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "No supplies yet. Visit Market to buy some with energy."));
+  section("Saved designs", "Open a design, ask for changes, then Save it or Make a physical item.", "ws-inv-saved", "ws-design-groups");
+  section("Saved parts", "Use a reusable part as the start of a new design.", "ws-inv-components").id = "ws-inv-components-section";
+  const blocks = section("Building blocks", "Choose a starting shape. This saves a new design and opens it in the Lab. Designing is free; Make uses materials. The assistant can add and arrange supported parts when you ask. These previews show shapes, not working machines.", "ws-inv-blocks", "ws-design-groups");
+  blocks.id = "ws-inv-blocks-section";
+}
+
+function inventoryGroup(name) {
+  const group = make("section", {class:"ws-design-group"});
+  group.append(make("h4", {}, name), make("div", {class:"ws-design-grid"})); return group;
+}
+
+function designCard(name, description, action) {
+  const card = make("article", {class:"ws-design-card"});
+  card.append(make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${name} shape preview`}),
+    make("h5", {}, name), make("p", {}, description), action);
+  card.querySelector("canvas").onclick = () => action.click();
+  return card;
+}
+
+// One reusable offscreen renderer; no thumbnail touches the Lab scene,
+// selection or candidate request counter.
+let inventoryRenderer = null;
+function paintInventoryPicture(canvas, parts) {
+  if (!parts?.length || !canvas.isConnected) return;
+  inventoryRenderer ||= new THREE.WebGLRenderer({alpha:true, antialias:true});
+  inventoryRenderer.setSize(160, 112, false);
+  inventoryRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  const preview = new THREE.Scene(), objects = new THREE.Group(); preview.add(objects);
+  preview.add(new THREE.HemisphereLight(0xffffff, 0x45505c, 2.1));
+  const light = new THREE.DirectionalLight(0xffffff, 2.8); light.position.set(3, 5, 4); preview.add(light);
+  for (const part of parts) {
+    if (!part.size_m) continue;
+    const mesh = new THREE.Mesh(shapeFor(part), new THREE.MeshStandardMaterial({color:materialColor(part.material), roughness:.7}));
+    mesh.position.set(...(part.center_m || [0, 0, 0])); mesh.rotation.copy(spinFor(part.rotation_deg)); objects.add(mesh);
+  }
+  const bounds = new THREE.Box3().setFromObject(objects), centre = bounds.getCenter(new THREE.Vector3());
+  const radius = Math.max(.01, bounds.getSize(new THREE.Vector3()).length() / 2);
+  const camera = new THREE.PerspectiveCamera(38, 160 / 112, .001, radius * 20 + 10);
+  camera.position.copy(centre).add(new THREE.Vector3(1.3, .9, 1.7).normalize().multiplyScalar(radius / Math.sin(19 * Math.PI / 180) * 1.12));
+  camera.lookAt(centre); inventoryRenderer.render(preview, camera);
+  canvas.getContext("2d").drawImage(inventoryRenderer.domElement, 0, 0);
+  canvas.dataset.preview = "ready";
+  for (const mesh of objects.children) { mesh.geometry.dispose(); mesh.material.dispose(); }
+}
+
+const inventoryPictures = new Map();
+const inventoryPictureQueue = [];
+let inventoryPictureJobs = 0;
+function inventoryPictureRequest(record) {
+  return new Promise((resolve, reject) => {
+    inventoryPictureQueue.push({record, resolve, reject}); pumpInventoryPictures();
+  });
+}
+function pumpInventoryPictures() {
+  while (inventoryPictureJobs < 3 && inventoryPictureQueue.length) {
+    const {record, resolve, reject} = inventoryPictureQueue.shift(); inventoryPictureJobs++;
+    api("/api/workshop/open", record.source === "saved" ? {saved_design_id:record.id} : {library_item_id:record.id}, {preview:true})
+      .then(answer => resolve(answer.candidates[0].parts), reject)
+      .finally(() => { inventoryPictureJobs--; pumpInventoryPictures(); });
+  }
+}
+async function loadInventoryPicture(card, record) {
+  const key = `${record.source}:${record.id}:${record.version}`;
+  try {
+    if (!inventoryPictures.has(key)) {
+      if (inventoryPictures.size >= 200) inventoryPictures.delete(inventoryPictures.keys().next().value);
+      inventoryPictures.set(key, inventoryPictureRequest(record));
+    }
+    paintInventoryPicture(card.querySelector("canvas"), await inventoryPictures.get(key));
+  } catch { inventoryPictures.delete(key); card.querySelector("p").textContent = "Preview unavailable. Open in Lab to inspect."; }
+}
+
+const BLOCK_GROUPS = {
+  "Frames & supports": ["leg", "apron", "stretcher", "beam", "post", "brace", "handle"],
+  "Surfaces & panels": ["surface", "panel", "solar-panel"],
+  "Wheels & axles": ["wheel", "axle", "mount"],
+  "Machine housings": ["battery", "bin", "hopper"],
+};
+const BLOCK_LABELS = {surface:"Flat surface", apron:"Support rail", stretcher:"Cross rail", mount:"Axle mount", "solar-panel":"Solar panel shape", battery:"Battery housing", bin:"Container block", hopper:"Hopper block"};
+const BLOCK_PURPOSES = {leg:"Support a table or seat", surface:"Start a tabletop, seat or shelf", apron:"Join legs under a tabletop",
+  stretcher:"Connect the lower frame", beam:"Connect a frame", post:"Start an upright frame", brace:"Support a corner",
+  handle:"Give an item a grip", panel:"Start a back, side or partition", wheel:"A turning wheel shape", axle:"A shaft for turning parts",
+  mount:"Support an axle", "solar-panel":"Collector shape; add solar behavior in Lab", battery:"Housing shape; add power in Lab",
+  bin:"Solid block; ask for container walls", hopper:"Solid block; ask for container walls"};
+function renderBuildingBlocks(families) {
+  const root = $("#ws-inv-blocks"); root.replaceChildren();
+  for (const [category, names] of Object.entries(BLOCK_GROUPS)) {
+    const group = inventoryGroup(category); root.append(group);
+    for (const name of names) {
+      const family = families.find(f => f.name === name); if (!family) continue;
+      const values = Object.fromEntries(family.parameters.map(p => [p.name, p.default]));
+      const label = BLOCK_LABELS[name] || titleCase(name);
+      const open = make("button", {type:"button", class:"ws-action", "data-building-block":name}, "Use in new design");
+      open.onclick = () => guard(open, () => designFromPart({family:name, material:"oak"}, `${label} design`));
+      const card = designCard(label, BLOCK_PURPOSES[name], open);
+      group.querySelector(".ws-design-grid").append(card);
+      const spanning = family.offers.includes("start"), round = ["wheel", "axle", "handle"].includes(name);
+      const size = spanning ? [values.width_m, .5, values.depth_m]
+        : name === "wheel" ? [values.diameter_m, values.width_m, values.diameter_m]
+        : name === "mount" ? [values.section_m, values.height_m, values.section_m]
+        : [values.width_m, values.height_m || values.thickness_m, values.depth_m || values.thickness_m];
+      paintInventoryPicture(card.querySelector("canvas"), [{size_m:size, material:"oak", shape:round ? "cylinder" : "box"}]);
+    }
+  }
+}
+
+async function designFromPart(first_part, label) {
+  const source = await api("/api/workshop/open", {kind:"custom", first_part}, {preview:true});
+  const candidate = source.candidates[0];
+  const saved = await api("/api/workshop/feedback", {kind:"custom", design_id:`draft-${crypto.randomUUID()}`,
+    purpose:label, parameters:candidate.parameters, component_overrides:candidate.component_overrides,
+    save_design:true, label});
+  await openInventoryDesign(saved.library_item.item_id, "library");
+  say(designAssistantConnected
+    ? "Your draft is in the Lab. Tell the AI what to make from it—for example, ‘Build a small stool from this part.’ Save keeps the design; Make builds it using your materials."
+    : "Your draft is in the Lab. AI design is not connected; basic chat edits still work. Save keeps the design; Make builds it using your materials.");
 }
 
 // ---------------------------------------------------------------------------
