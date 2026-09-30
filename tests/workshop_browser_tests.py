@@ -78,7 +78,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page = self.chrome.page
         self.page.send("Runtime.enable")
         self.page.send("Page.enable")
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
+        # ?tab=lab: the Workshop opens on the Inventory now, and every check
+        # below this is about the bench.
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab"})
         try:
             self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
         except Exception:
@@ -818,7 +820,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&history-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&history-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-test-catalog button[data-value=try_in_a_room]')")
         self.click('[data-mode="test"]')
         self.click('#ws-test-catalog button[data-value="try_in_a_room"]')
@@ -846,7 +848,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&dirty-editor-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&dirty-editor-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-parts button')")
         self.click('[data-mode="build"]')
         self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
@@ -1414,6 +1416,47 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertTrue(self.js("document.querySelector('#ws-playback').hidden"))
         self.assertIn('No visible simulation',self.js("document.querySelector('#ws-simulation-status').textContent"))
 
+
+    def test_the_workshop_opens_on_what_you_have(self):
+        """The owner: "that inventory should be the default screen you go
+        into when you switch out of the world."
+
+        Coming out of the room, what you are carrying is the question. The
+        Lab is where you go next, not where you land."""
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
+        self.wait("!document.getElementById('ws-pane-inventory').hidden")
+        self.assertEqual("inventory", self.js(
+            "[...document.querySelectorAll('.ws-tabs button')]"
+            ".find(b => b.getAttribute('aria-selected') === 'true').dataset.tab"))
+        # And the Lab's own furniture is not sitting over it. `.ws-viewport`
+        # sets display in CSS, which beats [hidden], so hiding it did nothing
+        # and the 3D stage and its Make it bar covered every other tab.
+        seen = "(el) => !!(el && el.offsetParent !== null)"
+        self.assertFalse(self.js(f"({seen})(document.querySelector('.ws-viewport'))"),
+                         "the Lab's 3D stage is over the inventory")
+        self.assertFalse(self.js(f"({seen})(document.getElementById('ws-takes'))"),
+                         "the Lab's takes strip is over the inventory")
+        self.assertFalse(self.js(f"({seen})(document.getElementById('ws-make'))"),
+                         "the Lab's Make it bar is over the inventory")
+
+    def test_what_you_have_is_pictures_with_quantities_and_no_entry_fields(self):
+        """The owner: "even the raw materials should be the same thumbnail
+        just with quantity attached to it, no entry fields"."""
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1"})
+        self.wait("document.querySelectorAll('#ws-inv-grid .ws-tile').length > 0")
+        # Every tile is a picture.
+        self.assertTrue(self.js("[...document.querySelectorAll('#ws-inv-grid .ws-tile')]"
+                                ".every(t => !!t.querySelector('canvas'))"),
+                        "a tile with no picture")
+        # A material says how much, on the picture.
+        counts = self.js("[...document.querySelectorAll('#ws-inv-grid .ws-tile-count')]"
+                         ".map(b => b.textContent)")
+        self.assertTrue(counts, "nothing says how much there is")
+        for said in counts:
+            self.assertRegex(said, r"(kg|g|t)$", f"a quantity with no unit: {said!r}")
+        # And NO entry fields anywhere on the screen.
+        self.assertEqual(0, self.js("document.querySelectorAll('#ws-pane-inventory input').length"),
+                         "the inventory still has entry fields")
 
     # -----------------------------------------------------------------
     # The tech tree

@@ -466,3 +466,42 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-link { background:none;border:0;padding:0;font:inherit;color:#8ec5ff;
            cursor:pointer;text-align:left;text-decoration:underline; }
 .ws-link:hover { color:#bcdcff; }
+
+/* ---------------------------------------------------------------------------
+   WHAT YOU HAVE
+   ---------------------------------------------------------------------------
+   One grid. A thing you are carrying and a heap of oak on the rack are drawn
+   the same way: a picture, its name, and how much of it there is on the
+   corner of the picture. No number boxes -- the rack is edited in the Lab,
+   where spending it happens. */
+.ws-inv-grid { display:grid;gap:.6rem;margin:0 0 1rem;
+               grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); }
+.ws-tile { display:flex;flex-direction:column;align-items:center;gap:.25rem;
+           border:1px solid #34404e;background:#151e28;color:#dfe7f1;
+           border-radius:.5rem;padding:.5rem .35rem;font:inherit;cursor:pointer; }
+.ws-tile:disabled { cursor:default;opacity:.92; }
+.ws-tile:not(:disabled):hover { border-color:#6fb0ff;background:#18242f; }
+.ws-tile-art { position:relative;display:block;line-height:0; }
+.ws-tile-art canvas { display:block; }
+.ws-tile-count { position:absolute;right:-4px;bottom:-3px;padding:0 .25rem;
+                 border-radius:.28rem;background:#0d1319;border:1px solid #3d4a5a;
+                 font-size:.66rem;font-weight:600;color:#dfe7f1;
+                 font-variant-numeric:tabular-nums; }
+.ws-tile-name { font-size:.75rem;line-height:1.2;text-align:center;
+                overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+                -webkit-line-clamp:2;-webkit-box-orient:vertical; }
+.ws-tile-where { font-size:.66rem;color:#7f8d9e; }
+#ws-inv-more { margin-top:1rem;border-top:1px solid #2a3340;padding-top:.6rem; }
+#ws-inv-more > summary { cursor:pointer;font-size:.8rem;color:#9ba9ba;
+                         padding:.2rem 0;list-style-position:inside; }
+#ws-inv-more[open] > summary { margin-bottom:.7rem; }
+
+/* The Lab's own furniture goes away with the Lab.
+   `.ws-viewport { display: grid }` (above) outranks the browser's
+   `[hidden] { display: none }`, so hiding the viewport in showTab did
+   nothing at all and the 3D stage, its Check it / Make it bar and its
+   buildability notice sat over every other tab. It was survivable while the
+   Lab was the tab you landed on; it is not, now that Inventory is.
+   The takes strip is a sibling, so it needs saying separately. */
+.ws-viewport[hidden] { display: none; }
+#ws-takes[hidden] { display: none; }

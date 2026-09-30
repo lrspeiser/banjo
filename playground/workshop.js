@@ -1501,8 +1501,11 @@ function installBench() {
   const centre = make("div", { id:"ws-centre" });
   viewport.parentElement.insertBefore(centre, viewport);
   const tabs = make("nav", { class:"ws-tabs", role:"tablist", "aria-label":"Workshop" });
-  for (const [name, label] of [["lab", "Lab"], ["inventory", "Inventory"], ["skills", "Skills"], ["recipes", "Recipes"]]) {
-    const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === "lab") }, label);
+  // Inventory first, and open: the owner asked for it to be "the default
+  // screen you go into when you switch out of the world". Coming out of the
+  // room, what you have is the question; the Lab is where you go next.
+  for (const [name, label] of [["inventory", "Inventory"], ["lab", "Lab"], ["skills", "Skills"], ["recipes", "Recipes"]]) {
+    const tab = make("button", { type:"button", role:"tab", "data-tab":name, "aria-selected":String(name === WORKSHOP_OPENS_ON) }, label);
     tab.onclick = () => showTab(name);
     tabs.append(tab);
   }
@@ -1808,59 +1811,100 @@ function carriedDesign(thing) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// WHAT YOU HAVE
+// ---------------------------------------------------------------------------
+//
+// The owner: "i want the inventory screen to only have the items I am
+// carrying. even the raw materials should be the same thumbnail just with
+// quantity attached to it, no entry fields."
+//
+// One grid. A thing you are carrying and a heap of oak on the rack are drawn
+// the same way -- a picture with its name under it and, for anything measured
+// by the kilogram, how much on the corner of the picture. The number boxes
+// are gone: the rack is still editable in the Lab, where spending it happens.
+//
+// A material has no shape and no colour of its own, so it borrows the room's:
+// MATERIAL_LOOK is the same table world.js paints bodies from, which is why a
+// heap of oak in here is the colour oak is out there.
+const MATERIAL_LOOK = {
+  "iron": "8d949c", "aluminum": "c6ccd2", "glass": "9fd3ff",
+  "alumina ceramic": "eee6da", "oak": "b07a43", "rubber": "2b2f33",
+  "ice": "cfeaf5", "concrete": "9a9285", "copper": "b87333",
+  "limestone": "ded6c4", "clay": "9d7b5f", "sand": "d8c89a",
+  "copper ore": "7f8b74", "iron ore": "8a6a58", "cement": "b9b4a8",
+  "wire": "c98b5a", "steel": "9aa3ab",
+};
+const kgSaid = (kg) => (kg >= 1000 ? `${(kg / 1000).toFixed(1)} t`
+  : kg >= 10 ? `${Math.round(kg)} kg` : kg >= 0.1 ? `${kg.toFixed(1)} kg`
+  : `${Math.round(kg * 1000)} g`);
+
+// One tile: a picture, a name, and how much of it there is.
+function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
+  const tile = make("button", { type: "button", class: "ws-tile", title: thing.name });
+  const art = make("span", { class: "ws-tile-art" });
+  art.append(thumbnail(thing));
+  if (quantity) art.append(make("b", { class: "ws-tile-count" }, quantity));
+  tile.append(art, make("span", { class: "ws-tile-name" }, thing.name));
+  if (where) tile.append(make("span", { class: "ws-tile-where" }, where));
+  if (onOpen) tile.onclick = () => guard(tile, onOpen);
+  else tile.disabled = true;
+  return tile;
+}
+
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
-  // What the person has on them. The bench knew nothing of this until now: a
-  // thing you had just picked up was in the room's bag and nowhere in here.
-  fill("#ws-inv-carried", (inv.carried || []).map((thing) => {
-    const li = make("li");
-    const of = make("div", { class: "ws-carry-of" });
-    of.append(make("strong", {}, thing.name));
-    const facts = [thing.where, thing.material, thing.shape,
-                   thing.kg != null ? `${thing.kg} kg` : null,
-                   thing.size_mm ? thing.size_mm.map((v) => Math.round(v)).join(" × ") + " mm" : null]
-      .filter(Boolean).join(" · ");
-    of.append(make("small", {}, facts));
-    if (!thing.same_shape) {
-      of.append(make("small", { class: "ws-approx" },
-        `The bench has no ${thing.shape}: it opens as a ${thing.bench_shape} of the same size.`));
-    }
-    const open = make("button", { type: "button", class: "ws-action" },
-                      thing.design_id ? "Open its design" : "Open in the Lab");
-    open.onclick = () => guard(open, async () => {
-      showTab("lab");
-      bench.openedLibraryItem = null;
-      if (thing.design_id) {
-        const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
-        if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
-      }
-      if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
-        $("#ws-archetype").value = "custom";
-        say(`${thing.name} is on the bench: one part, ${thing.material}.`);
-      }
-    });
-    of.append(open);
-    li.append(thumbnail(thing), of);
-    return li;
-  }), "Your hands and bag are empty.");
-  // The rack, editable here: what the bench holds of each material. Making
-  // is what spends it; designing never does.
-  fill("#ws-inv-materials", inv.materials.map((r) => {
-    const li = item(r.material, "");
-    const input = make("input", { type:"number", min:"0", max:"100000", step:"0.1", value:String(r.mass_kg),
-                                  "aria-label":`${r.material} on the rack, kilograms` });
-    input.addEventListener("change", () => guard(input, async () => {
-      const mass = input.valueAsNumber;
-      if (!Number.isFinite(mass) || mass < 0) throw new Error("Enter a mass in kilograms, zero or more.");
-      const answer = await api("/api/workshop/library", { action:"set_rack", material:r.material, mass_kg:mass });
-      bench.rack = answer.rack; renderRack(); renderRackStrip(); reprobe();
-      say(`The rack holds ${mass} kg of ${r.material}.`);
+  const grid = $("#ws-inv-grid");
+  if (!grid) return;
+  const tiles = [];
+
+  // What is on you: hands first, then the bag, in the order the room has them.
+  for (const thing of inv.carried || []) {
+    tiles.push(invTile(thing, {
+      quantity: thing.kg != null ? kgSaid(thing.kg) : null,
+      where: thing.where,
+      onOpen: async () => {
+        showTab("lab");
+        bench.openedLibraryItem = null;
+        if (thing.design_id) {
+          const answer = await api("/api/workshop/open", { saved_design_id: thing.design_id });
+          if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
+        }
+        if (took(await api("/api/workshop/candidates", carriedDesign(thing)))) {
+          $("#ws-archetype").value = "custom";
+          say(`${thing.name} is on the bench: one part, ${thing.material}.`);
+        }
+      },
     }));
-    li.append(input, make("small", {}, "kg")); return li;
-  }), "The rack is empty.");
-  fill("#ws-inv-goods", inv.goods.map((r) => item(r.substance, `${r.mass_kg} kg`)), "No goods yet: run the mine, and what lands on its rack stockpile comes here.");
-  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} · standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and ask the chat to make it.");
-  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " · " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
+  }
+
+  // Raw stock, drawn the same way. A material is a heap, so it is a box in
+  // the material's own colour with its weight on the corner.
+  for (const r of inv.materials || []) {
+    if (!(r.mass_kg > 0)) continue;
+    tiles.push(invTile({ name: r.material, material: r.material, shape: "box",
+                         color_rgba: MATERIAL_LOOK[r.material] || "9aa7b4" },
+                       { quantity: kgSaid(r.mass_kg), where: "on the rack" }));
+  }
+  for (const r of inv.goods || []) {
+    if (!(r.mass_kg > 0)) continue;
+    tiles.push(invTile({ name: r.substance, material: r.substance, shape: "sphere",
+                         color_rgba: MATERIAL_LOOK[r.substance] || "8b9bab" },
+                       { quantity: kgSaid(r.mass_kg), where: "goods" }));
+  }
+
+  grid.replaceChildren(...tiles);
+  $("#ws-inv-note").textContent = tiles.length
+    ? "What is in your hands, your bag and on the rack. Click a thing to open it on the bench."
+    : "You are carrying nothing and the rack is empty.";
+  if (!tiles.length) {
+    grid.append(make("p", { class: "ws-note" },
+                     "Pick something up in the world, or dig, and it turns up here."));
+  }
+
+  // The library, under the fold: not what you have, but it lives nowhere else.
+  fill("#ws-inv-world", (inv.in_world || []).map((d) => { const li = item(d.name, `${d.kind} \u00b7 standing in ${d.scene}`); const open = make("button", { type:"button", class:"ws-action" }, "See it in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); bench.openedLibraryItem = null; took(await api("/api/workshop/candidates", { kind:d.kind, generation:bench.generation + 1 })); $("#ws-archetype").value = d.kind; }); li.append(open); return li; }), "Nothing made yet: design something in the Lab and ask the chat to make it.");
+  fill("#ws-inv-saved", (inv.saved || []).map((d) => { const li = item(d.label || d.design_id, `${d.kind}${d.saved_at ? " \u00b7 " + d.saved_at : ""}`); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { saved_design_id:d.design_id }); bench.openedLibraryItem = null; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No saved designs yet.");
   fill("#ws-inv-designs", inv.designs.map((d) => { const li = item(d.name, d.summary || d.kind || ""); const open = make("button", { type:"button", class:"ws-action" }, "Open in the Lab"); open.onclick = () => guard(open, async () => { showTab("lab"); const answer = await api("/api/workshop/open", { library_item_id:d.item_id }); bench.openedLibraryItem = d.item_id; if (took(answer)) $("#ws-archetype").value = answer.kind; }); li.append(open); return li; }), "No assemblies in the library.");
   fill("#ws-inv-components", inv.components.map((c) => item(c.name, c.summary || "")), "No saved components.");
   fill("#ws-inv-families", inv.families.map((f) => { const li = item(f.name, f.about); for (const p of f.parameters) li.append(tag(`${p.name} ${p.default}${p.unit ? " " + p.unit : ""}`)); return li; }), "");
@@ -2110,9 +2154,14 @@ function openTheTreeAt(id) {
   showTab("skills");
 }
 
+const WORKSHOP_OPENS_ON = "inventory";
+
 function showTab(name) {
   for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
   const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
+  // The takes are the Lab's too: little pictures of the thing on the
+  // bench, which mean nothing beside what you are carrying.
+  const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab";
   for (const pane of ["inventory", "skills", "recipes"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
   if (name === "lab") resize();
   const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes }[name];
@@ -3605,7 +3654,7 @@ async function start() {
   // runs. ?tab=skills&technique=<id> is how the world page's "Next:"
   // line gets you to the rung it is talking about.
   if (wantTechnique) openTheTreeAt(wantTechnique);
-  else if (wantTab) showTab(wantTab);
+  else showTab(wantTab || (asked || libraryItem || saved ? "lab" : WORKSHOP_OPENS_ON));
 }
 
 placeCamera(); resize(); requestAnimationFrame(frame); guard(null, start);
