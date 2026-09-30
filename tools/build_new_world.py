@@ -89,7 +89,7 @@ def built_from() -> dict:
 SEED = 1
 
 
-def compose(ground: dict, world: dict) -> dict:
+def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     """The valley, the generated goods, and the two machines standing in it.
 
     The rover room's own composer is used for the rover, because it knows how
@@ -113,7 +113,8 @@ def compose(ground: dict, world: dict) -> dict:
     was = (rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN)
     rover_room.ROVER_AT = _clear_of(ground, intake, 2.0, away_from=middle)
     rover_room.POST_AT = _clear_of(ground, rack, 2.5, away_from=middle)
-    rover_room.TERRAIN = {"generate": "valley"}
+    rover_room.TERRAIN = {"generate": "valley" if terrain_seed is None else
+                          {"kind": "valley", "seed": terrain_seed}}
     try:
         spec = rover_room.compose(ground, "tests-dig")
     finally:

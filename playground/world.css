@@ -683,3 +683,19 @@ body.moving-a-thing .slot { border-style: dashed; }
 #panel .workshop-entry.taking { border-color: var(--y); color: var(--y);
                                 box-shadow: 0 0 0 2px var(--y); }
 body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
+/* The game menu belongs to both the room and the Workshop. */
+#game-menu{box-sizing:border-box;width:min(92vw,480px);max-height:85vh;overflow:auto;padding:1.2rem;border:1px solid #52647a;border-radius:.8rem;background:#101b27;color:#e7eff8;box-shadow:0 1rem 4rem #000a}
+#game-menu::backdrop{background:#06101bc9}
+#game-menu .game-menu-head{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+#game-menu h2{margin:0;font-size:1.2rem}
+#game-menu h3{margin:.9rem 0 .4rem;font-size:.9rem}
+#game-menu form{display:grid;gap:.5rem;margin:.8rem 0;padding:.8rem;border:1px solid #35485a;border-radius:.5rem}
+#game-menu label{display:grid;gap:.35rem;font-size:.8rem}
+#game-menu input{box-sizing:border-box;width:100%;padding:.5rem;border:1px solid #52647a;border-radius:.35rem;background:#08131e;color:#fff;font:inherit}
+#game-menu button{padding:.5rem .7rem;border:1px solid #738ca5;border-radius:.35rem;background:#23394e;color:#fff;cursor:pointer;font:inherit}
+#game-menu button:disabled{opacity:.5;cursor:wait}
+#game-menu ul{margin:.3rem 0;padding-left:1.2rem}
+#game-menu li{margin:.3rem 0}
+#game-menu a{color:#acd4ff}
+#game-menu p{font-size:.8rem;line-height:1.4}
+#game-menu-message{min-height:1.2rem;color:#eac483}

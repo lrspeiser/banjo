@@ -132,7 +132,7 @@ BLOCK_NOTE = {
 # The ground
 # --------------------------------------------------------------------------
 
-def read_ground(engine: Path) -> dict:
+def read_ground(engine: Path, terrain_seed: int | None = None) -> dict:
     """Open a bare valley and read its heightfield, so everything after this
     knows where the ground actually is -- and where the water is on it.
 
@@ -142,7 +142,8 @@ def read_ground(engine: Path) -> dict:
     bench in it, their legs in the water."""
     spec = fracture_lab.validate({
         "algorithm": "lattice", "cell_m": CELL_M, "duration_s": 1.0,
-        "terrain": {"generate": "valley"}, "water": dict(WATER),
+        "terrain": {"generate": "valley" if terrain_seed is None else
+                    {"kind": "valley", "seed": terrain_seed}}, "water": dict(WATER),
         "bodies": [{"name": "sounding", "shape": "box", "material": "oak",
                     "size_mm": [100, 100, 100], "center_mm": [0, 8000, 0]}]})
     with tempfile.TemporaryDirectory() as tmp:

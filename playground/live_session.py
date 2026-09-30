@@ -926,7 +926,7 @@ class Live:
             out["machines"] = session.state["machines"]
         return out
 
-    def rejoin(self, app: Any) -> dict[str, Any] | None:
+    def rejoin(self, app: Any, *, shared: bool = False) -> dict[str, Any] | None:
         """The world that is running, for a page opening its room again.
 
         A reload is not a new room. Opening again from the room's spec put
@@ -936,9 +936,9 @@ class Live:
         itself instead: a poses reply carries every body with its cells, the
         pins, the edges, the tool points, the hand and the ground whole.
 
-        The world takes a new id on the way. A page still holding the old one is
-        told its room was opened again, as it was when opening replaced the room,
-        rather than stepping this world as well as the page that rejoined it.
+        Ordinary single-page rooms take a new id on the way, invalidating the
+        page that previously held them. Named shared worlds keep the id so
+        another client can join without evicting the first.
 
         None when there is nothing to rejoin, or when the lane cannot say the
         whole of its world -- the in-process one sends neither a piece's cells
@@ -951,7 +951,10 @@ class Live:
                 whole = session.send(op="poses")
             except LiveError:
                 return None
-            session.id = uuid.uuid4().hex
+            # Named worlds deliberately admit several pages at once. Their
+            # full-pose replies and shared step budget are handled by server.
+            if not shared:
+                session.id = uuid.uuid4().hex
             return {"session": session.id, "spec": session.room_spec, **whole, "rejoined": True}
 
     def snapshot(self) -> tuple[dict[str, Any] | None, str]:

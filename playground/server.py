@@ -21,6 +21,8 @@ import re
 import secrets
 import signal
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 from urllib import error, request
@@ -328,6 +330,8 @@ class Playground:
 
     def status(self):
         return {"key_configured": bool(self.api_key), "model": self.model,
+            "world_id": getattr(self, "world_id", None),
+            "world_name": getattr(self, "world_name", None),
             "jev_configured": bool(rover_brain.environment_key(_environment_files())),
             "engine_ready": self.engine_path.is_file(), "studio_ready": self.studio_path.is_file(),
             # Whether the one live world is the world page's room. Opening
@@ -1110,6 +1114,137 @@ class Playground:
             self.studios.append(process)
             return {"opened":True}
 
+WORLD_ID = re.compile(r"[0-9a-f]{32}", re.ASCII)
+
+
+class WorldHub:
+    """One native session, room store, clock and Workshop ledger per world id.
+
+    The id is a bearer link, not a user account. Hosted access still uses the
+    server password; anyone with an admitted link joins that same world.
+    """
+
+    def __init__(self, base):
+        self.base = base
+        self.folder = base.store.folder / "worlds"
+        self.apps = {}
+        self.lock = threading.RLock()
+
+    def _folder(self, world_id):
+        if not isinstance(world_id, str) or not WORLD_ID.fullmatch(world_id):
+            raise ValueError("Invalid world link")
+        return self.folder / world_id
+
+    def metadata(self, world_id):
+        path = self._folder(world_id) / "manifest.json"
+        if not path.is_file():
+            raise FileNotFoundError("That world does not exist on this server")
+        value = strict_json(path.read_text(encoding="utf-8"))
+        if (not isinstance(value, dict) or value.get("format") != "banjo.world.v1"
+                or value.get("id") != world_id or not isinstance(value.get("name"), str)
+                or not 1 <= len(value["name"]) <= 80):
+            raise ValueError("Invalid world record")
+        return value
+
+    def get(self, world_id):
+        with self.lock:
+            if world_id in self.apps:
+                return self.apps[world_id]
+            meta = self.metadata(world_id)
+            folder = self._folder(world_id)
+            store = room_store.RoomStore(folder / "rooms")
+            # Never turn an unreadable world into the starter template.
+            if store.load("new-game") is None:
+                raise ValueError("The world's saved room is unreadable")
+            app = Playground(self.base.engine_path, self.base.studio_path,
+                             folder / "runs", planner=self.base.planner)
+            app.store, app.world_id, app.world_name = store, world_id, meta["name"]
+            app.password, app.public_host = self.base.password, self.base.public_host
+            app.csrf_token = self.base.csrf_token
+            # The in-process lane cannot return a complete rejoin pose set;
+            # shared pages need the subprocess lane's complete geometry.
+            app.live_inprocess = False
+            app.world_lock = threading.Lock()
+            app.step_lock = threading.Lock()
+            app.step_budget_s = 0.0
+            app.step_at = time.monotonic()
+            app.clock = world_clock.WorldClock(app, keep=keep_world)
+            if os.environ.get("BANJO_WORLD_CLOCK", "1") != "0": app.clock.start()
+            self.apps[world_id] = app
+            return app
+
+    def create(self, name=None):
+        # The builder temporarily lends positions and terrain to the rover
+        # composer, so two generations must not overlap.
+        with self.lock:
+            return self._create(name)
+
+    def _create(self, name):
+        if name is None: name = "New world"
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+            raise ValueError("World name must be 1 to 80 characters")
+        name = name.strip()
+        if not self.base.engine_path.is_file():
+            raise ValueError("Build the native engine before starting a new game")
+        # The existing world builder supplies the graph reachability proof,
+        # seats machines against this exact terrain, and validates the spec.
+        tools_dir = str(ROOT / "tools")
+        if tools_dir not in sys.path: sys.path.insert(0, tools_dir)
+        import build_explore_world as grounds
+        import build_new_world as new_game
+        import world_seed
+        # These two terrain seeds have room for the complete starter ladder.
+        # Many arbitrary valley seeds do not; world_seed refuses them. The
+        # resource positions still vary for every game.
+        terrain_seed = (4, 7)[secrets.randbelow(2)]
+        ground = grounds.read_ground(self.base.engine_path, terrain_seed)
+        for _ in range(6):
+            goods_seed = secrets.randbelow(2**31 - 1) + 1
+            try:
+                generated = world_seed.new_world(ground, goods_seed,
+                                                 start_xz=new_game.ARRIVE_AT)
+                break
+            except ValueError:
+                continue
+        else:
+            raise ValueError("Could not generate a reachable resource map; try again")
+        spec = new_game.compose(ground, generated, terrain_seed)
+        validated = fracture_lab.validate(spec)
+        # Admission must reach the native engine, not stop at Python schema.
+        with tempfile.TemporaryDirectory() as temp:
+            session = live_session.Session(self.base.engine_path, validated, Path(temp))
+            session.close()
+        with self.lock:
+            world_id = uuid.uuid4().hex
+            folder = self._folder(world_id)
+            room = world_room.Room("new-game")
+            room.spec = spec
+            store = room_store.RoomStore(folder / "rooms")
+            if not store.save(room): raise ValueError("The new world could not be saved")
+            proof = generated["proof"]
+            meta = {"format": "banjo.world.v1", "id": world_id, "name": name,
+                    "created_unix_s": time.time(), "terrain_seed": terrain_seed,
+                    "goods_seed": proof["seed"], "reachability": proof}
+            path = folder / "manifest.json"
+            partial = folder / "manifest.json.partial"
+            partial.write_text(json.dumps(meta, allow_nan=False), encoding="utf-8")
+            os.replace(partial, path)
+        return {"id": world_id, "name": name,
+                "url": f"/world?world={world_id}&scene=new-game",
+                "terrain_seed": terrain_seed, "goods_seed": proof["seed"]}
+
+    def shutdown(self):
+        for app in list(self.apps.values()):
+            try: keep_world(app, "the server stopped")
+            except Exception: log.exception("world %s could not be saved", app.world_id)
+            app.clock.stop()
+            for name in ("tool_qa", "material_qa", "mechanics_qa", "fabrication_qa"):
+                manager = getattr(app, name, None)
+                if manager is not None: manager.shutdown()
+            app.live.shutdown()
+            app.pool.shutdown(wait=False, cancel_futures=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "BanjoPlayground/1"
     # HTTP/1.1, so the page's connections stay open between steps. Under 1.0
@@ -1121,6 +1256,11 @@ class Handler(BaseHTTPRequestHandler):
     # keeping a connection open needs.
     protocol_version = "HTTP/1.1"
     timeout = 5
+    @property
+    def app(self):
+        world_id = self.headers.get("X-Banjo-World")
+        return self.server.app.hub.get(world_id) if world_id else self.server.app
+
     def log_message(self, *_): pass # No prompts, credentials or response bodies in access logs.
     def send(self, value, status=200, content_type="application/json; charset=utf-8"):
         data = json.dumps(value,allow_nan=False).encode() if isinstance(value,(dict,list)) else value
@@ -1149,7 +1289,9 @@ class Handler(BaseHTTPRequestHandler):
             # Behind a password nothing is served without a session (access_gate).
             if access_gate.answered(self,"GET"): return
             path=urlsplit(self.path).path
-            app=self.server.app
+            match=re.fullmatch(r"/api/worlds/([0-9a-f]{32})", path)
+            if match: return self.send(self.server.app.hub.metadata(match[1]))
+            app=self.app
             if path=="/api/status": return self.send(app.status())
             if path=="/api/runs": return self.send(app.runs())
             if path=="/api/knowledge": return self.send(knowledge_view(app))
@@ -1200,7 +1342,7 @@ class Handler(BaseHTTPRequestHandler):
                 if match[3]=="native":
                     return self.send(material_qa.read_json(qa.folder(match[1])/match[2]/"native-report.json"))
                 return self.send(qa.case(match[1],match[2],playback=match[3]=="playback"))
-            if path=="/api/fracture": return self.send(fracture_lab.describe(self.server.app.engine_path))
+            if path=="/api/fracture": return self.send(fracture_lab.describe(self.app.engine_path))
             if path=="/api/builder": return self.send({
                 "schema":builder.BUILDER_SCHEMA,"default":builder.DEFAULT,
                 "materials":builder.MATERIALS,"projectiles":sorted(builder.PROJECTILES),
@@ -1232,7 +1374,7 @@ class Handler(BaseHTTPRequestHandler):
             # it. Anything built for debugging belongs on that page rather
             # than in a page of its own, which is how there came to be seven.
             allowed={"/":"world.html","/world":"world.html","/world.html":"world.html",
-                "/world.js":"world.js","/gameplay.js":"gameplay.js","/world.css":"world.css",
+                "/world.js":"world.js","/gameplay.js":"gameplay.js","/game_menu.js":"game_menu.js","/world.css":"world.css",
                 "/base.css":"base.css",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
@@ -1278,14 +1420,20 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
     def _dispatch_POST(self,path,body):
+        if path == "/api/worlds":
+            if not isinstance(body, dict) or set(body) - {"name"}:
+                raise ValueError("Expected a world name")
+            return self.send(self.server.app.hub.create(body.get("name")), 201)
+        if getattr(self.app, "world_id", None) and path == "/api/live/open":
+            raise ValueError("The shared world cannot be replaced by a laboratory scene")
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.server.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
-             (gameplay_room.LOCK if world_call and (gameplay_room.active(self.server.app)
-                 or fabrication_room.active(self.server.app)
+        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
+             (gameplay_room.LOCK if world_call and (gameplay_room.active(self.app)
+                 or fabrication_room.active(self.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
-            if fabrication_room.active(self.server.app):
+            if fabrication_room.active(self.app):
                 allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/tool", "/api/world/tool/use"}
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
@@ -1296,14 +1444,14 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]
                 try:
-                    if operation == "preview": answer = fabrication_room.preview(self.server.app,body)
-                    elif operation == "commit": answer = fabrication_room.commit(self.server.app,body)
-                    elif operation == "wait": answer = fabrication_room.wait(self.server.app,body)
-                    else: answer = fabrication_room.request(self.server.app,operation,body)
+                    if operation == "preview": answer = fabrication_room.preview(self.app,body)
+                    elif operation == "commit": answer = fabrication_room.commit(self.app,body)
+                    elif operation == "wait": answer = fabrication_room.wait(self.app,body)
+                    else: answer = fabrication_room.request(self.app,operation,body)
                 except OSError as exc:
                     return self.send({"error":"Fabrication save was not acknowledged. Read state before retrying: "+str(exc)},503)
                 return self.send(answer)
-            if gameplay_room.active(self.server.app):
+            if gameplay_room.active(self.app):
                 if world_call and not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
                 if path.startswith("/api/world/") and path not in ("/api/world/open", "/api/world/gameplay"):
@@ -1312,12 +1460,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("This operation is not part of the bounded expedition")
             if path == "/api/world/gameplay":
                 try:
-                    answer = gameplay_room.request(self.server.app, body, keep_world)
+                    answer = gameplay_room.request(self.app, body, keep_world)
                 except OSError as exc:
                     return self.send({"error": "Expedition action was not saved: " + str(exc)}, 503)
                 return self.send(answer)
-            if path=="/api/chat": return self.send(self.server.app.submit(body),202)
-            if path=="/api/packages/run": return self.send(self.server.app.run_package(body),202)
+            if path=="/api/chat": return self.send(self.app.submit(body),202)
+            if path=="/api/packages/run": return self.send(self.app.run_package(body),202)
             # Pure computation: admission verdict, repair and cost for a builder
             # setup. Nothing is executed, so the panel can show what a run would
             # cost before anyone commits to waiting for it.
@@ -1326,24 +1474,24 @@ class Handler(BaseHTTPRequestHandler):
             # Every one of these is pure computation over mcp/workshop.py: no
             # engine, no room, no inventory. The page renders what they return
             # and decides no geometry of its own.
-            if path=="/api/workshop/open": return self.send(workshop_api.open_workshop(self.server.app,body))
-            if path=="/api/workshop/candidates": return self.send(workshop_api.candidates(self.server.app,body))
-            if path=="/api/workshop/more": return self.send(workshop_api.more_like_this(self.server.app,body))
-            if path=="/api/workshop/plan": return self.send(workshop_api.plan(self.server.app,body))
-            if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.server.app,body))
-            if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.server.app,body))
-            if path=="/api/workshop/library": return self.send(workshop_api.library(self.server.app,body))
+            if path=="/api/workshop/open": return self.send(workshop_api.open_workshop(self.app,body))
+            if path=="/api/workshop/candidates": return self.send(workshop_api.candidates(self.app,body))
+            if path=="/api/workshop/more": return self.send(workshop_api.more_like_this(self.app,body))
+            if path=="/api/workshop/plan": return self.send(workshop_api.plan(self.app,body))
+            if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.app,body))
+            if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.app,body))
+            if path=="/api/workshop/library": return self.send(workshop_api.library(self.app,body))
             # The Workshop's other tabs (workshop_tabs): what the person has,
             # what each thing would take, and what they know how to do.
             # Driving a thing at the bench with the keys (workshop_drive): a
             # little world kept open and stepped as the keys arrive.
             if path=="/api/workshop/drive":
                 import workshop_drive
-                if body.get("action")=="start": workshop_drive.sweep(self.server.app)
-                return self.send(workshop_drive.handle(self.server.app,body))
+                if body.get("action")=="start": workshop_drive.sweep(self.app)
+                return self.send(workshop_drive.handle(self.app,body))
             if path in ("/api/workshop/inventory","/api/workshop/recipes","/api/workshop/skills"):
                 import workshop_tabs
-                app=self.server.app
+                app=self.app
                 app.knowledge=lambda app=app: knowledge_view(app)
                 app.registry=registry
                 # The journal too: the tech tree says which of a technique's
@@ -1362,40 +1510,40 @@ class Handler(BaseHTTPRequestHandler):
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
             if path=="/api/tool-qa/run":
-                return self.send(tool_qa.manager(self.server.app).start(body),202)
+                return self.send(tool_qa.manager(self.app).start(body),202)
             if path=="/api/tool-qa/cancel":
                 if not isinstance(body,dict) or set(body)!={"run_id"}: raise ValueError("Use run_id")
-                return self.send(tool_qa.manager(self.server.app).cancel(body["run_id"]))
+                return self.send(tool_qa.manager(self.app).cancel(body["run_id"]))
             if path=="/api/mechanics-qa/plan":
-                return self.send(physics_trial_planner.propose(self.server.app,body))
+                return self.send(physics_trial_planner.propose(self.app,body))
             if path=="/api/fabrication-qa/run":
-                return self.send(fabrication_qa.manager(self.server.app).start(body),202)
+                return self.send(fabrication_qa.manager(self.app).start(body),202)
             if path=="/api/fabrication-qa/status":
                 physics_trials.obj(body,{"run_id"},set(),"status")
-                manager=fabrication_qa.manager(self.server.app)
+                manager=fabrication_qa.manager(self.app)
                 return self.send(manager.status(body["run_id"]) if "run_id" in body else manager.list_runs())
             if path=="/api/fabrication-qa/cancel":
                 physics_trials.obj(body,{"run_id"},{"run_id"},"cancel")
-                return self.send(fabrication_qa.manager(self.server.app).cancel(body["run_id"]))
+                return self.send(fabrication_qa.manager(self.app).cancel(body["run_id"]))
             if path=="/api/mechanics-qa/validate":
                 physics_trials.obj(body, {"document"}, {"document"}, "validate")
                 document,_=physics_trials.validate(body["document"])
                 return self.send({"valid":True,"document":document})
             if path=="/api/mechanics-qa/run":
-                return self.send(mechanics_qa.manager(self.server.app).start(body),202)
+                return self.send(mechanics_qa.manager(self.app).start(body),202)
             if path=="/api/mechanics-qa/cancel":
                 physics_trials.obj(body, {"run_id"}, {"run_id"}, "cancel")
-                return self.send(mechanics_qa.manager(self.server.app).cancel(body["run_id"]))
+                return self.send(mechanics_qa.manager(self.app).cancel(body["run_id"]))
             if path=="/api/material-qa/run":
-                return self.send(material_qa.manager(self.server.app).start(body),202)
+                return self.send(material_qa.manager(self.app).start(body),202)
             if path=="/api/material-qa/cancel":
                 if not isinstance(body,dict) or set(body)!={"run_id"}:
                     raise ValueError("QA cancel requires only run_id")
-                return self.send(material_qa.manager(self.server.app).cancel(body["run_id"]))
-            if path=="/api/fracture/run": return self.send(fracture_lab.run(self.server.app,body))
+                return self.send(material_qa.manager(self.app).cancel(body["run_id"]))
+            if path=="/api/fracture/run": return self.send(fracture_lab.run(self.app,body))
             # Words in, a validated scene spec out. The model fills the same
             # fields the manual controls do and nothing skips fracture_lab.validate.
-            if path=="/api/scene/chat": return self.send(scene_chat.plan(self.server.app,body))
+            if path=="/api/scene/chat": return self.send(scene_chat.plan(self.app,body))
             # A live world, instead of a recording. /open starts one from a
             # validated scene; /act steps it, takes hold of an object, moves it,
             # lets go, or puts something back into the lattice to be broken.
@@ -1408,12 +1556,17 @@ class Handler(BaseHTTPRequestHandler):
                               "/api/world/workshop/commit": workshop_install.commit}
                 if path in operations:
                     try:
-                        answer = operations[path](self.server.app,body)
+                        answer = operations[path](self.app,body)
                     except OSError as exc:
                         return self.send({"error": "Installation could not be saved; the original world is unchanged: " + str(exc)}, 503)
                     return self.send(answer)
             if path=="/api/world/open":
-                app=self.server.app
+                app=self.app
+                if not isinstance(body, dict): raise ValueError("Expected a JSON object")
+                if getattr(app, "world_id", None):
+                    if body.get("qa") or body.get("fresh") or body.get("again"):
+                        raise ValueError("Create another world from the menu to start a new game")
+                    body = {"scene": "new-game"}
                 # Which room. The bench is the materials room this playground
                 # opened with; the courtyard is the one with things that swing.
                 # Each room is kept, with whatever the chat has built in it.
@@ -1491,15 +1644,15 @@ class Handler(BaseHTTPRequestHandler):
                 if world is not None and world.get("spec_digest")!=live_session.spec_digest(room.spec):
                     log.info("rooms: the world kept with %s was saved from another spec; the room opens from its spec",
                              scene)
-                    if funded_room:
-                        raise ValueError("Funded room spec changed; refusing to reset its clock or inventories")
+                    if funded_room or getattr(app, "world_id", None):
+                        raise ValueError("Saved room spec changed; refusing to reset its clock or inventories")
                     room.world_record=world=None
                 world_problem=None
                 try:
                     try:
                         opened=app.live.open(app,{"spec":room.spec,**({"snapshot":world} if world else {})})
                     except Exception as failed:
-                        if world is None or funded_room: raise
+                        if world is None or funded_room or getattr(app, "world_id", None): raise
                         # A saved world the engine would not open at all: set
                         # aside, never deleted, and the room opens from its spec.
                         world_problem=str(failed)[:300]
@@ -1507,6 +1660,7 @@ class Handler(BaseHTTPRequestHandler):
                         world=None
                         opened=app.live.open(app,{"spec":room.spec})
                 except Exception as problem:
+                    if getattr(app, "world_id", None): raise
                     if not kept or funded_room: raise
                     # A kept room that no longer opens -- kept by an older build,
                     # say -- is set aside, never deleted, and the room opens as
@@ -1522,12 +1676,12 @@ class Handler(BaseHTTPRequestHandler):
                 # Opened, but not as it stood: the engine said why (its
                 # `restored`). Set aside with that, and said.
                 restored=opened.get("restored") if world is not None else None
-                if funded_room and world is not None and (
+                if (funded_room or getattr(app, "world_id", None)) and world is not None and (
                         not isinstance(restored, dict) or restored.get("tier") != "whole"):
-                    raise ValueError("A complete native restore is required for this funded room")
+                    raise ValueError("A complete native restore is required for this persistent room")
                 if isinstance(restored,dict) and restored.get("tier")!="whole":
-                    if funded_room:
-                        raise ValueError("A complete native restore is required for this funded room")
+                    if funded_room or getattr(app, "world_id", None):
+                        raise ValueError("A complete native restore is required for this persistent room")
                     world_problem=str(restored.get("why") or "the engine could not put it back")[:300]
                     app.store.set_aside_world(room,world_problem)
                 if world_problem:
@@ -1566,7 +1720,7 @@ class Handler(BaseHTTPRequestHandler):
                     opened["sight"]=app.brains.sight.shown()
                 return self.send(opened)
             if path=="/api/world/ask":
-                app=self.server.app
+                app=self.app
                 _this_pages_room(app,body)
                 session=app.live.session
                 message=str(body.get("message",""))[:2000]
@@ -1650,56 +1804,56 @@ class Handler(BaseHTTPRequestHandler):
                                          " be added and it will be built.").strip()
                 return self.send(answer)
             if path=="/api/world/placement":
-                _this_pages_room(self.server.app,body)
-                return self.send(placement.resolve(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(placement.resolve(self.app,body))
             if path=="/api/world/putdown":
                 # Putting a thing down is its own verb, not one of its uses.
                 # See put_it_down. Only on the room the page has open.
-                _this_pages_room(self.server.app,body)
-                return self.send(put_it_down(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(put_it_down(self.app,body))
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
                 # no model is asked: the room's chat wrote the program when it
                 # made the thing. See run_action. Only on the room the page
                 # has open (_this_pages_room).
-                _this_pages_room(self.server.app,body)
-                return self.send(run_action(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(run_action(self.app,body))
             if path=="/api/world/machine":
                 # A machine worked from its panel (operate_machine): power, a
                 # direction, a drive setting, by the page's own count, straight
                 # to its controller. Only on the room the page has open.
-                _this_pages_room(self.server.app,body)
-                return self.send(operate_machine(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(operate_machine(self.app,body))
             if path=="/api/world/rover/talk":
                 # Talking to a machine from its panel (rover_talk): opened, it
                 # turns to the person; what they say is sorted and done; closed,
                 # it goes on. Only on the room the page has open.
-                _this_pages_room(self.server.app,body)
-                return self.send(rover_talk.talk(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(rover_talk.talk(self.app,body))
             if path=="/api/world/rover/brain":
                 # Who decides for a machine's program on what it meets: its
                 # reflexes alone, or Jev asked at each thing that happens
                 # (rover_brain.Brains.request).
-                _this_pages_room(self.server.app,body)
-                return self.send(self.server.app.brains.request(body))
+                _this_pages_room(self.app,body)
+                return self.send(self.app.brains.request(body))
             if path=="/api/world/tool":
                 # What the tool in the person's hand does where they look
                 # (tool_use.resolve): its action, whether it can be done there
                 # and why not, and the ring the page draws. Asking does nothing.
-                _this_pages_room(self.server.app,body)
-                return self.send(tool_use.resolve(self.server.app,body))
+                _this_pages_room(self.app,body)
+                return self.send(tool_use.resolve(self.app,body))
             if path=="/api/world/tool/use":
                 # And doing it: the whole of it, with the bounded hand, while
                 # the page keeps the room running (tool_use.run). The swing is
                 # the person's, so what it does is credited to their notebook.
-                _this_pages_room(self.server.app,body)
-                return self.send(tool_use.run(self.server.app,body,note=note_strike))
+                _this_pages_room(self.app,body)
+                return self.send(tool_use.run(self.app,body,note=note_strike))
             if path=="/api/world/inventory":
                 # One change to what the person has (inventory_room.request):
                 # taken into the bag, held, stowed or put down -- done once
                 # however often it is asked, only on the room the page has
                 # open, and kept with the room when it is done.
-                app=self.server.app
+                app=self.app
                 _this_pages_room(app,body)
                 answer=inventory_room.request(app,body)
                 # Kept with the world as it now stands -- the thing in the hand
@@ -1710,23 +1864,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(answer)
             if path=="/api/world/inventory/shown":
                 # And what the person has now, as the page shows it.
-                _this_pages_room(self.server.app,body)
-                return self.send(inventory_room.shown(self.server.app))
+                _this_pages_room(self.app,body)
+                return self.send(inventory_room.shown(self.app))
             if path=="/api/live/open":
-                if (gameplay_room.active(self.server.app) or fabrication_room.active(self.server.app)) and not keep_world(self.server.app, "opening laboratory"):
+                if (gameplay_room.active(self.app) or fabrication_room.active(self.app)) and not keep_world(self.app, "opening laboratory"):
                     raise ValueError("Save the expedition before opening the laboratory")
-                opened=self.server.app.live.open(self.server.app,body)
+                opened=self.app.live.open(self.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
-                self.server.app.live_holder="lab"
+                self.app.live_holder="lab"
                 return self.send(opened)
             if path=="/api/live/act":
                 # The notebook revision the page has shown: the answer carries
                 # the notebook when the server's is newer (with_notebook).
                 seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
+                app=self.app
+                if getattr(app, "world_id", None) and isinstance(body,dict) and body.get("op")=="step":
+                    # Every tab used to advance a full frame, so two people
+                    # made time run twice as fast. Share a wall-time budget
+                    # across this world's callers. A caller with no budget
+                    # reads the full pose set without advancing physics.
+                    with app.step_lock:
+                        now=time.monotonic()
+                        app.step_budget_s=min(0.25, app.step_budget_s + max(0.0, now-app.step_at))
+                        app.step_at=now
+                        dt=float(body.get("dt", 1/60))
+                        if not math.isfinite(dt) or not 0 < dt <= live_session.MAX_DT_S:
+                            raise ValueError("Invalid world step")
+                        requested=max(1,min(int(body.get("n",1)),live_session.MAX_STEPS_PER_CALL))
+                        granted=min(requested,int((app.step_budget_s+1e-9)/dt))
+                        if granted:
+                            app.step_budget_s-=granted*dt
+                            body["n"]=granted
+                            # Native moved tracking belongs to the session,
+                            # not to a browser. Every page needs the full set.
+                            body["moved"]=False
+                        else:
+                            body={"session":body.get("session"),"op":"poses"}
                 # THE PAGE HAS THE ROOM. Said before the step and not after,
                 # so a slow one does not read as nobody being there and let
                 # the world clock in on top of it (world_clock).
-                clock=getattr(self.server.app,"clock",None)
+                clock=getattr(self.app,"clock",None)
                 if clock is not None and isinstance(body,dict) and body.get("op")=="step":
                     # THE PAGE'S RECORD IS STALE IF THE CLOCK HAS BEEN STEPPING.
                     # A step asked for with `moved` sends only what changed
@@ -1750,36 +1927,36 @@ class Handler(BaseHTTPRequestHandler):
                     # only stops the page drawing a stale world.
                     if clock.has_it(): body["moved"]=False
                     clock.page_stepped()
-                    self.server.app.brains.unattended=False
-                self.server.app.brains.before(self.server.app,body)
-                answer=self.server.app.live.act(body)
-                self.server.app.brains.attach(body,answer)
-                gameplay_room.sync(self.server.app, answer)
-                fabrication_room.sync(self.server.app, answer)
-                remember_ground(self.server.app,body,answer)
-                if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.server.app,answer)
-                self.send(with_notebook(self.server.app,answer,seen))
+                    self.app.brains.unattended=False
+                self.app.brains.before(self.app,body)
+                answer=self.app.live.act(body)
+                self.app.brains.attach(body,answer)
+                gameplay_room.sync(self.app, answer)
+                fabrication_room.sync(self.app, answer)
+                remember_ground(self.app,body,answer)
+                if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.app,answer)
+                self.send(with_notebook(self.app,answer,seen))
                 # After the page has its answer: the running world kept with
                 # the room when a break is done, and every few seconds of it.
-                keep_world_after(self.server.app,body,answer)
+                keep_world_after(self.app,body,answer)
                 return
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
-            if path=="/api/capture": return self.send(self.server.app.capture(body))
-            if path=="/api/trace": return self.send(self.server.app.trace(body))
+            if path=="/api/capture": return self.send(self.app.capture(body))
+            if path=="/api/trace": return self.send(self.app.trace(body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
-            if match: return self.send(self.server.app.analyze(match[1],body))
+            if match: return self.send(self.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
-            if match: return self.send(self.server.app.rerun(match[1],body),202)
+            if match: return self.send(self.app.rerun(match[1],body),202)
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/control",path)
             if match:
                 if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
-                return self.send(self.server.app.at_rest_control(match[1],body["case_index"]))
+                return self.send(self.app.at_rest_control(match[1],body["case_index"]))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/open",path)
             if match:
                 if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
-                return self.send(self.server.app.open_case(match[1],body["case_index"]))
+                return self.send(self.app.open_case(match[1],body["case_index"]))
             self.send({"error":"Not found"},404)
 
 def clock_went_back(report):
@@ -2468,7 +2645,8 @@ def _rejoin(app,scene):
             or app.live.session is None):
         return None
     rejoin=getattr(app.live,"rejoin",None)
-    opened=rejoin(app) if rejoin is not None else None
+    opened=(rejoin(app, shared=True) if getattr(app,"world_id",None) else rejoin(app)) \
+        if rejoin is not None else None
     if opened is None: return None
     opened=world_upgrades.apply(app,opened)
     gameplay_room.opened(app, opened)
@@ -2500,9 +2678,10 @@ def _rejoin(app,scene):
 
 
 def _this_pages_room(app,body):
-    """A page acts on the room it has open, and on no other. The playground runs
-    one room at a time, so a page whose room was opened again -- in another tab,
-    by another person, by the lab -- no longer has one. Measured 2026-09-14 on
+    """A page acts on the room it has open, and on no other. Each playground
+    session has one room; named worlds let several pages share that session.
+    In an ordinary room, a page whose room was opened again no longer has one.
+    Measured 2026-09-14 on
     8781: a checker's page that had lost its room to the owner's went on
     pressing "Put it on the ground in front of me", and each press carried the
     oak plank about in the owner's room, from where the checker stood."""
@@ -3226,6 +3405,7 @@ def main():
     logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s")
     app=Playground(args.engine,args.studio,args.runs)
     app.store=room_store.RoomStore(args.rooms or ROOT/"build"/"playground-rooms"/str(args.port))
+    app.hub=WorldHub(app)
     print(f"rooms are kept in {app.store.folder}",flush=True)
     app.live_inprocess=args.live_inprocess
     if args.live_inprocess:
@@ -3265,6 +3445,7 @@ def main():
     except KeyboardInterrupt: pass
     finally:
         server.server_close()
+        app.hub.shutdown()
         # The room as it stands now, for the server that starts next.
         try: keep_world(app,"the server stopped")
         except Exception: log.exception("rooms: the running world could not be saved as the server stopped")

@@ -2,18 +2,24 @@
 import * as THREE from "/vendor/three.module.js";
 
 const $ = (q) => document.querySelector(q);
+const worldId = new URLSearchParams(location.search).get("world");
+const worldHeaders = worldId ? { "X-Banjo-World": worldId } : {};
+const backToWorld = (scene) => worldId
+  ? `/world?world=${worldId}&scene=new-game`
+  : `/world?scene=${encodeURIComponent(scene)}&hold=1`;
+const homeWorld = () => worldId ? backToWorld("new-game") : "/world";
 let token = "";
 let candidateRequest = 0;
 async function api(path, body) {
   const changesCandidate = ["/api/workshop/open", "/api/workshop/candidates", "/api/workshop/more"].includes(path);
   const requestId = changesCandidate ? ++candidateRequest : null;
   if (!token) {
-    const status = await fetch("/api/status").then((r) => r.json());
+    const status = await fetch("/api/status", { headers: worldHeaders }).then((r) => r.json());
     token = status.csrf_token || "";
   }
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Banjo-Token": token },
+    headers: { "Content-Type": "application/json", "X-Banjo-Token": token, ...worldHeaders },
     body: JSON.stringify(body || {}),
   });
   const answer = await response.json().catch(() => ({ error: "the bench gave no answer" }));
@@ -102,7 +108,7 @@ function installPlacementControls(right) {
   const box = make("section", {id:"ws-install-box"});
   box.append(make("h3", {}, "Place prototype in world"),
     make("p", {class:"ws-note"}, "Creates one single-material solid in a flat-floor room. This is an authoring prototype, not manufactured inventory or a certified assembly. Open a world first and leave it paused while previewing."));
-  const yard = make("a", {href:"/world?scene=yard&hold=1"}, "Open the yard"); box.append(yard);
+  const yard = make("a", {href:backToWorld("yard")}, "Open the yard"); box.append(yard);
   for (const [axis,value] of [["x",3],["z",0]]) {
     const label=make("label", {class:"ws-field"}, `World ${axis.toUpperCase()} (m)`);
     const input=make("input", {id:`ws-install-${axis}`, type:"number",min:"-100",max:"100",step:"0.001",value:String(value)});
@@ -157,7 +163,7 @@ function installPlacementControls(right) {
       installation.preview=null;installation.request=null;
       const result=$("#ws-install-result");result.dataset.status="installed";
       result.textContent=`Installed ${answer.design_id} as ${answer.root_body} in ${answer.scene}. The original world state and inventory were preserved. `;
-      result.append(make("a",{href:`/world?scene=${encodeURIComponent(answer.scene)}&hold=1`},"Return to the world"));
+      result.append(make("a",{href:backToWorld(answer.scene)},"Return to the world"));
       if (answer.materials_taken && answer.materials_taken.length) {
         result.append(make("p",{class:"ws-bom-total"}, "Taken from the rack: " + answer.materials_taken
           .map(r=>`${r.took_kg} kg of ${r.material}, ${r.left_kg} kg left`).join("; ")));
@@ -1491,7 +1497,7 @@ function installBench() {
     keep.append(views);
     for (const button of [...viewbar.children]) if (button.dataset.view) button.hidden = true;
     viewbar.append(make("span", { class:"ws-spacer" }), status,
-                   checkButton, madeButton, make("a", { class:"ws-bar-link", href:"/world" }, "The world"));
+                   checkButton, madeButton, make("a", { class:"ws-bar-link", href:homeWorld() }, "The world"));
     if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
 
@@ -1519,6 +1525,7 @@ function installBench() {
     tab.onclick = () => showTab(name);
     tabs.append(tab);
   }
+  tabs.append(make("button", { type:"button", class:"ws-menu-button", "data-game-menu":"" }, "Menu"));
   // The takes: little pictures of the thing. The first is the clean one --
   // the design as it is, untouched by any run -- and every run adds one
   // beside it, so a test never replaces the thing and the runs stay to be

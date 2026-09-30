@@ -25,6 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
+const worldId = new URLSearchParams(location.search).get("world");
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // What has gone wrong on this page, for whoever checks it from outside
@@ -65,6 +66,7 @@ function linkFailure(error) {
 
 async function api(path, body, renewed = false) {
   const headers = { "Content-Type": "application/json" };
+  if (worldId) headers["X-Banjo-World"] = worldId;
   if (token) headers["X-Banjo-Token"] = token;
   let res, text;
   try {
@@ -81,7 +83,7 @@ async function api(path, body, renewed = false) {
     // after a restart every request was refused, "Start the room again"
     // included, until the page was reloaded.
     let status;
-    try { status = await (await fetch("/api/status")).json(); }
+    try { status = await (await fetch("/api/status", { headers })).json(); }
     catch (error) { throw linkFailure(error); }
     token = status.csrf_token;
     if (!token) throw new Error("the server would not hand out a session token");
@@ -1478,13 +1480,14 @@ function keepView() {
   if (!world.scene) return;
   const look = camera.position.clone().add(forwardVector().multiplyScalar(4));
   try {
-    sessionStorage.setItem(`banjo.view.${world.scene}`,
+    sessionStorage.setItem(worldId ? `banjo.view.${worldId}.${world.scene}` : `banjo.view.${world.scene}`,
       JSON.stringify({ eye_m: camera.position.toArray(), look_m: look.toArray() }));
   } catch (_) { /* no storage here: a reload starts at the view point */ }
 }
 function keptView(scene) {
   try {
-    const view = JSON.parse(sessionStorage.getItem(`banjo.view.${scene}`) || "null");
+    const key = worldId ? `banjo.view.${worldId}.${scene}` : `banjo.view.${scene}`;
+    const view = JSON.parse(sessionStorage.getItem(key) || "null");
     return view && Array.isArray(view.eye_m) && Array.isArray(view.look_m) ? view : null;
   } catch (_) { return null; }
 }
@@ -8754,6 +8757,17 @@ async function tick() {
         $("panel-state").textContent = `Lost the server for a moment (${why}) —`
           + ` trying again, ${world.lost} of ${RETRY_MS.length}…`;
       } else {
+        // Another collaborator can install or author a change that reopens
+        // this named world's native session. Join its new session rather than
+        // leaving this page stopped with no reset control.
+        if (worldId && !error.transient &&
+            /no longer open|has closed|room is not open|no longer has the room/i.test(why)) {
+          world.session = null;
+          world.lastTick = 0;
+          $("panel-state").textContent = "Rejoining the shared world…";
+          setTimeout(() => { if (!world.session && !world.opening) open(); }, 300);
+          return;
+        }
         // Out of reach before this, whether it ended in giving up or in the
         // server answering that the world is gone -- a restarted server has
         // lost every world it held.

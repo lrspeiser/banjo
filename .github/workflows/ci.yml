@@ -42,6 +42,7 @@ jobs:
         run: |
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
+          node --check playground/game_menu.js
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
@@ -179,6 +180,9 @@ jobs:
             python3 tests/machine_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_upgrades_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_seed_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
+            BANJO_BROWSER_TESTS=required python3 tests/world_hub_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_clock_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/electric_furnace_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/engines_room_tests.py -v

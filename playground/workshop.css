@@ -11,7 +11,7 @@
 .ws-carry small { overflow-wrap:anywhere; }
 .ws-carry .ws-approx { color:#ffd195; }
 body.workshop-mode { margin:0;background:#0d1117;color:#e7edf4;overflow:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-body.workshop-mode > :not(#design-workshop) { display:none!important; }
+body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!important; }
 #design-workshop[hidden] { display:none; }
 #design-workshop { position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr;background:#0d1117; }
 /* The tabs over the object: Lab (the object and its bar), Inventory, Skills,
@@ -41,6 +41,7 @@ body.workshop-mode > :not(#design-workshop) { display:none!important; }
 .ws-tabs { display:flex;gap:.25rem;padding:.45rem .8rem 0;background:#0f151d; }
 .ws-tabs button { border:1px solid #465363;background:#17212c;color:#dfe7f1;border-radius:.4rem;padding:.38rem .7rem;cursor:pointer; }
 .ws-tabs button[aria-selected="true"] { background:#dce7f5;color:#111820; }
+.ws-tabs .ws-menu-button { margin-left:auto; }
 .ws-tabpane { min-height:0;overflow:auto;padding:1rem 1.2rem; }
 .ws-tabpane[hidden] { display:none; }
 .ws-tabcols { display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem; }
